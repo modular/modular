@@ -39,11 +39,10 @@ from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -76,7 +75,7 @@ class Llama4Inputs(ModelInputs):
 
 
 class Llama4Model(
-    AlwaysSignalBuffersMixin, PipelineModel[TextContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
 ):
     """A Llama 4 pipeline model for text generation.
 

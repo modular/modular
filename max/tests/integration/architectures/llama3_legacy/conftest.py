@@ -140,7 +140,7 @@ def make_kv_inputs(hf_config: LlamaConfig) -> Callable[..., KVCacheInputs]:
             contexts.append(ctx)
             batches.append([ctx])
 
-        runtime_inputs = kv_manager.get_runtime_inputs(batches)
+        runtime_inputs = kv_manager.runtime_inputs(batches)
         kv_inputs: KVCacheInputs
         if len(device_refs) > 1:
             kv_inputs = KVCacheInputsSequence(kv_cache_inputs=runtime_inputs)

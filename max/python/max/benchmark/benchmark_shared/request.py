@@ -457,7 +457,6 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "temperature": request_func_input.temperature,
-            "top_p": request_func_input.top_p,
             "best_of": 1,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
@@ -468,6 +467,9 @@ class OpenAICompletionsRequestDriver(RequestDriver):
 
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
+
+        if request_func_input.top_p is not None:
+            payload["top_p"] = request_func_input.top_p
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"

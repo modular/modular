@@ -27,14 +27,13 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
 from ..config_enums import supported_encoding_dtype
 from ..kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
-from .kv_cache import KVCacheMixin
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -226,29 +225,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         self.max_seq_len = self.calculate_max_seq_len(
             pipeline_config, self.huggingface_config
         )
-
-        if isinstance(self, KVCacheMixin):
-            self.kv_params = self.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                pipeline_config=pipeline_config,
-                devices=self.device_refs,
-                kv_cache_config=kv_cache_config,
-                cache_dtype=pipeline_config.model.kv_cache.cache_dtype,
-            )
-            assert self.kv_cache_config._available_cache_memory is not None, (
-                "Available cache memory should have been set during memory estimation"
-            )
-            assert pipeline_config.max_batch_size is not None, (
-                "max_batch_size should have been set during memory estimation"
-            )
-            self.kv_managers = self.load_kv_managers(
-                kv_params=self.kv_params,
-                max_batch_size=pipeline_config.max_batch_size,
-                max_seq_len=self.max_seq_len,
-                session=session,
-                available_cache_memory=self.kv_cache_config._available_cache_memory,
-            )
-            self.kv_manager = self.kv_managers[0]
 
         self._lora_manager: LoRAManager | None = (
             LoRAManager(
@@ -483,3 +459,52 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         raise NotImplementedError(
             f"Log probabilities not implemented for {type(self)}."
         )
+
+
+class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
+    """A pipeline model that supports KV cache."""
+
+    kv_params: KVCacheParams
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: WeightsAdapter | None,
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+    ) -> None:
+        super().__init__(
+            pipeline_config=pipeline_config,
+            session=session,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            weights=weights,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+        )
+        self.kv_params = self.get_kv_params(
+            huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
+            devices=self.device_refs,
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
+        )
+
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
+    @classmethod
+    @abstractmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Returns the KV cache params for the pipeline model."""
+        ...

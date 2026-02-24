@@ -2012,8 +2012,7 @@ struct DeviceFunction[
             elif _is_path_like(env_val):
                 return True, _DumpPath(Path(env_val))
             else:
-                constrained[
-                    False,
+                comptime assert False, String(
                     "the environment variable '",
                     env_var,
                     (
@@ -2022,7 +2021,7 @@ struct DeviceFunction[
                     ),
                     env_val,
                     "'",
-                ]()
+                )
                 return False, val
 
         elif val.isa[Bool]():

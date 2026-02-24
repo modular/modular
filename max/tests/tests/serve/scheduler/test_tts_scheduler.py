@@ -211,7 +211,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
 
         for context in ctxs:
             self.kv_cache.alloc(context, replica_idx=0, num_steps=num_tokens)
-        self.kv_cache.get_runtime_inputs([ctxs], num_steps=num_tokens)
+        self.kv_cache.runtime_inputs([ctxs], num_steps=num_tokens)
 
         # Generate the responses
         responses = {}

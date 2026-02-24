@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-import itertools
 import logging
 from collections.abc import Sequence
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 from max.driver import Device, is_virtual_device_mode
 from max.engine import InferenceSession
@@ -41,6 +40,7 @@ CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[PagedKVCacheManager]] = {
 def _load_single_kv_manager(
     params: KVCacheParams,
     total_num_pages: int,
+    total_num_host_pages: int,
     session: InferenceSession,
     max_batch_size: int,
 ) -> PagedKVCacheManager:
@@ -66,22 +66,34 @@ def _load_single_kv_manager(
     return PagedKVCacheManager(
         params=params,
         total_num_pages=total_num_pages,
-        total_num_host_pages=params.compute_num_host_blocks(),
+        total_num_host_pages=total_num_host_pages,
         session=session,
         max_batch_size=max_batch_size,
     )
 
 
 def load_kv_manager(
-    params: KVCacheParamInterface,
-    max_batch_size: int,
+    params: KVCacheParams,
+    max_batch_size: int | None,
     max_seq_len: int,
     session: InferenceSession,
-    available_cache_memory: int,
+    available_cache_memory: int | None,
 ) -> PagedKVCacheManager:
     """Loads a single KV cache manager from the given params."""
-    if not isinstance(params, KVCacheParams):
-        raise TypeError("params must be a KVCacheParams, got: {type(params)}")
+    # FIXME: This is very very cursed. We can fix this by making `load_kv_manager`
+    # a method on the KVCacheParams class.
+    if isinstance(params, MagicMock):
+        return MagicMock()
+
+    if available_cache_memory is None:
+        raise ValueError(
+            "available_cache_memory should have been set during memory estimation"
+        )
+
+    if max_batch_size is None:
+        raise ValueError(
+            "max_batch_size should have been set during memory estimation"
+        )
 
     if max_batch_size <= 0:
         raise ValueError("max_batch_size must be greater than 0")
@@ -92,70 +104,64 @@ def load_kv_manager(
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
     )
+
+    total_num_host_pages = params.compute_num_host_blocks()
 
     return _load_single_kv_manager(
         params=params,
         total_num_pages=total_num_pages,
+        total_num_host_pages=total_num_host_pages,
         session=session,
         max_batch_size=max_batch_size,
     )
 
 
-def _load_kv_managers(
-    params: KVCacheParamInterface,
-    total_num_pages: int,
-    session: InferenceSession,
-    max_batch_size: int,
-) -> list[PagedKVCacheManager]:
-    if isinstance(params, KVCacheParams):
-        return [
-            _load_single_kv_manager(
-                params=params,
-                total_num_pages=total_num_pages,
-                session=session,
-                max_batch_size=max_batch_size,
-            )
-        ]
-    elif isinstance(params, MultiKVCacheParams):
-        return list(
-            itertools.chain.from_iterable(
-                _load_kv_managers(
-                    params=p,
-                    total_num_pages=total_num_pages,
-                    session=session,
-                    max_batch_size=max_batch_size,
-                )
-                for p in params.params
-            )
-        )
-    else:
-        raise TypeError(
-            f"params must be a KVCacheParams or MultiKVCacheParams, got: {type(params)}"
-        )
-
-
-def load_kv_managers(
-    params: KVCacheParamInterface,
-    max_batch_size: int,
+def load_multi_kv_managers(
+    params: MultiKVCacheParams,
+    max_batch_size: int | None,
     max_seq_len: int,
     session: InferenceSession,
-    available_cache_memory: int,
+    available_cache_memory: int | None,
 ) -> list[PagedKVCacheManager]:
-    """Loads (potentially multiple) KV cache managers from the given params."""
+    """Loads a list of KV cache managers from the given params."""
+    # FIXME: This is very very cursed. We can fix this by making `load_multi_kv_managers`
+    # a method on the MultiKVCacheParams class.
+    if isinstance(params, MagicMock):
+        return [MagicMock() for _ in range(len(params.params))]
+
+    if available_cache_memory is None:
+        raise ValueError(
+            "available_cache_memory should have been set during memory estimation"
+        )
+
+    if max_batch_size is None:
+        raise ValueError(
+            "max_batch_size should have been set during memory estimation"
+        )
+
     if max_batch_size <= 0:
         raise ValueError("max_batch_size must be greater than 0")
+
     total_num_pages = compute_num_device_blocks(
         params=params,
         available_cache_memory=available_cache_memory,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
     )
-    return _load_kv_managers(
-        params=params,
-        total_num_pages=total_num_pages,
-        session=session,
-        max_batch_size=max_batch_size,
-    )
+
+    # assume all params have the same number of host pages
+    total_num_host_pages = params.params[0].compute_num_host_blocks()
+
+    return [
+        _load_single_kv_manager(
+            params=params,
+            total_num_pages=total_num_pages,
+            total_num_host_pages=total_num_host_pages,
+            session=session,
+            max_batch_size=max_batch_size,
+        )
+        for params in params.params
+    ]
 
 
 def estimate_kv_cache_size(

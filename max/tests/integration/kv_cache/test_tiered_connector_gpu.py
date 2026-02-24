@@ -89,8 +89,8 @@ def test_connector_name() -> None:
 
 def test_host_tensors_are_pinned() -> None:
     connector = create_tiered_connector()
-    assert connector.host_tensors is not None
-    for tensor in connector.host_tensors:
+    assert connector._host_tensors
+    for tensor in connector._host_tensors:
         assert tensor.pinned, "Host tensors should be pinned memory"
     connector.shutdown()
 
@@ -180,7 +180,7 @@ def test_load_returns_hashes_for_loaded_blocks() -> None:
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
     connector.lookup(ctx, [100, 200])
-    loaded_hashes = connector.load(ctx, [10, 11], [])
+    loaded_hashes = connector.load(ctx, [10, 11])
     assert loaded_hashes == [100, 200]
     connector.shutdown()
 
@@ -188,7 +188,7 @@ def test_load_returns_hashes_for_loaded_blocks() -> None:
 def test_load_without_lookup_returns_empty() -> None:
     connector = create_tiered_connector()
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
-    loaded_hashes = connector.load(ctx, [0, 1], [])
+    loaded_hashes = connector.load(ctx, [0, 1])
     assert loaded_hashes == []
     connector.shutdown()
 
@@ -286,7 +286,7 @@ def test_disk_promotion_to_cpu() -> None:
         assert tokens == page_size  # disk hit
 
         # Load should work (waits for disk read, then H2D)
-        loaded = connector.load(ctx, [10], [])
+        loaded = connector.load(ctx, [10])
         assert loaded == [100]
 
         connector.shutdown()
@@ -328,7 +328,7 @@ def test_full_round_trip() -> None:
         assert tokens == 2 * page_size
 
         # Load to GPU
-        loaded = connector.load(ctx, [20, 21], [])
+        loaded = connector.load(ctx, [20, 21])
         assert loaded == [100, 200]
 
         connector.shutdown()
@@ -365,7 +365,7 @@ def test_metrics_track_disk_operations() -> None:
 
         ctx = create_text_context(np.array([1], dtype=np.int64))
         connector.lookup(ctx, [100])
-        connector.load(ctx, [10], [])
+        connector.load(ctx, [10])
 
         metrics = connector.metrics
         assert metrics.disk_blocks_read >= 1
@@ -476,7 +476,7 @@ def test_warm_restart_loads_disk_cache() -> None:
         tokens = c2.lookup(ctx, [100, 200])
         assert tokens == 2 * page_size
 
-        loaded = c2.load(ctx, [10, 11], [])
+        loaded = c2.load(ctx, [10, 11])
         assert loaded == [100, 200]
 
         c2.shutdown()
@@ -528,7 +528,7 @@ def test_lookup_pins_blocks_during_disk_read() -> None:
             )
 
         # After load(), the block should be released (ref_cnt=0, in free queue)
-        loaded = connector.load(ctx, [10], [])
+        loaded = connector.load(ctx, [10])
         assert loaded == [100]
         for host_block, _hash in pending:
             assert host_block.ref_cnt == 0, (

@@ -240,8 +240,8 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
       dtype: The data type of SIMD vector elements.
       size: The number of elements in the SIMD vector. The size must not be greater than 2**15.
     """
-    constrained[dtype != DType.invalid, "simd type cannot be DType.invalid"]()
-    constrained[size.is_power_of_two(), "simd width must be power of 2"]()
+    comptime assert dtype != DType.invalid, "simd type cannot be DType.invalid"
+    comptime assert size.is_power_of_two(), "simd width must be power of 2"
     # MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
     # a limit of 2^15 for the number of operands of the instruction.
     # NOTE: Even after the limit increases in LLVM, compile time might be 3x
@@ -249,9 +249,9 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
     # SIMD, we better to keep limit at 2^15.
     # NOTE: Might need to revisit the limit for targets that use GlobalISel
     # as it does have smaller limit now.
-    constrained[
-        size <= 2**15, "simd size is too large and must be less than 2^15"
-    ]()
+    comptime assert (
+        size <= 2**15
+    ), "simd size is too large and must be less than 2^15"
 
 
 @always_inline("nodebug")
@@ -1285,13 +1285,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is greater than `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Strict inequality is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.gt(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Strict inequality is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.gt(...)`?"
+        )
         return self.gt(rhs).__bool__()
 
     @always_inline("builtin")
@@ -1304,13 +1301,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is greater than or equal to `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Greater than or equal is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.ge(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Greater than or equal is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.ge(...)`?"
+        )
         return self.ge(rhs).__bool__()
 
     @always_inline("builtin")
@@ -1323,13 +1317,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is less than `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Strict inequality is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.lt(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Strict inequality is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.lt(...)`?"
+        )
         return self.lt(rhs).__bool__()
 
     @always_inline("builtin")
@@ -1342,13 +1333,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is less than or equal to `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Less than or equal is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.le(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Less than or equal is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.le(...)`?"
+        )
         return self.le(rhs).__bool__()
 
     # ===------------------------------------------------------------------=== #
@@ -4029,6 +4017,6 @@ fn _write_scalar[
     elif dtype.is_integral():
         _ = _write_int(writer, value)
     else:
-        constrained[
-            False, "unable to write dtype, only integral/float/bool supported"
-        ]()
+        comptime assert (
+            False
+        ), "unable to write dtype, only integral/float/bool supported"

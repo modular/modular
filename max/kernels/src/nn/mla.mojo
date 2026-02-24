@@ -1457,7 +1457,7 @@ fn flare_mla_prefill[
         )
 
 
-# entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]as K_rope input, used by tests.
+# entrypoint for as K_rope LayoutTensor input, used by tests.
 @always_inline
 fn flare_mla_prefill[
     rank: Int,
@@ -1567,6 +1567,169 @@ fn flare_mla_prefill[
                 k_rope.ptr,
                 RuntimeLayout[k_rope.layout].row_major(
                     k_rope.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+        )
+
+        comptime output_type = output.dtype
+        comptime kv_num_heads = Int(k_rope.layout.shape[2])
+        comptime cache_depth = Int(k_rope.layout.shape[3])
+        comptime q_depth = Int(q.layout.shape[q.rank - 1])  # hard code for now
+        comptime num_keys_per_block = UInt(
+            64
+        ) if has_nvidia_gpu_accelerator() else UInt(
+            128
+        )  # BN = 64 for nvidia, 128 in the only supported BN for amd
+        comptime mha_config = MHAConfig[dtype](
+            UInt(Int(q_layout.shape[rank - 2])),
+            UInt(Int(k.layout.shape[rank - 1])),
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
+            algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
+        )
+        flare_mla_prefill_dispatch[
+            kv_num_heads=kv_num_heads,
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            config=mha_config,
+            _ndbuffer_mha_operand=True,
+        ](
+            output,
+            q,
+            k_operand,
+            v_operand,
+            k_rope_operand,
+            mask_functor,
+            score_mod_functor,
+            valid_length,
+            max_prompt_len,
+            scale,
+            ctx,
+            cache_offsets,
+        )
+
+
+# entrypoint for as K_rope LayoutTensor input, used by tests.
+@always_inline
+fn flare_mla_prefill[
+    rank: Int,
+    mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
+    dtype: DType,
+    q_layout: Layout,
+    //,
+    use_score_mod: Bool = False,
+](
+    output: LayoutTensor[
+        mut=True, _, address_space = AddressSpace.GENERIC, ...
+    ],
+    q: LayoutTensor[
+        mut=False, dtype, q_layout, address_space = AddressSpace.GENERIC, ...
+    ],
+    k: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
+    v: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
+    k_rope: LayoutTensor[
+        mut=False, _, address_space = AddressSpace.GENERIC, ...
+    ],
+    k_rope_scales: LayoutTensor[
+        mut=False, _, address_space = AddressSpace.GENERIC, ...
+    ],
+    mask_functor: mask_t,
+    score_mod_functor: score_mod_t,
+    valid_length: LayoutTensor[
+        mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
+    ],
+    cache_row_offsets: LayoutTensor[
+        mut=True, DType.uint32, address_space = AddressSpace.GENERIC, ...
+    ],
+    scale: Float32,
+    ctx: DeviceContext,
+    q_max_seq_len: OptionalReg[Int] = None,
+    cache_offsets: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        ]
+    ] = None,
+) raises:
+    comptime assert rank == 3, "only support ragged inputs"
+    comptime assert (
+        q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
+    ) if k_rope.dtype == DType.bfloat16 else (
+        q.dtype == k.dtype == v.dtype == output.dtype
+    ), (
+        "Q, K, V, output should have same type if k_rope.dtype is bfloat16,"
+        " otherwise only Q, K, V should have same type."
+    )
+    comptime assert (
+        q.dtype == DType.float32 or q.dtype.is_half_float()
+    ), "Only support single and half precision."
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("k", k.runtime_layout.shape.value),
+                    trace_arg("v", v.runtime_layout.shape.value),
+                    trace_arg("output", output.runtime_layout.shape.value),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target = ctx.default_device_info.api](
+        "flare_mla_prefill",
+        Trace[
+            TraceLevel.OP, target = ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
+    ):
+        var max_prompt_len: Int = q.dim[0]()
+
+        if q_max_seq_len:
+            max_prompt_len = q_max_seq_len.value()
+        var cache_row_offsets_lt = LayoutTensor[
+            cache_row_offsets.dtype,
+            cache_row_offsets.layout,
+            MutAnyOrigin,
+        ](
+            cache_row_offsets.ptr,
+            RuntimeLayout[cache_row_offsets.layout].row_major(
+                cache_row_offsets.runtime_layout.shape.value.canonicalize()
+            ),
+        )
+        var k_operand = RaggedMHAOperand(
+            LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+                k.ptr,
+                RuntimeLayout[k.layout].row_major(
+                    k.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+        var v_operand = RaggedMHAOperand(
+            LayoutTensor[v.dtype, v.layout, MutAnyOrigin](
+                v.ptr,
+                RuntimeLayout[v.layout].row_major(
+                    v.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+        var k_rope_operand = LayoutTensorMHAOperand(
+            LayoutTensor[k_rope.dtype, k_rope.layout, MutAnyOrigin](
+                k_rope.ptr,
+                RuntimeLayout[k_rope.layout].row_major(
+                    k_rope.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            LayoutTensor[
+                k_rope_scales.dtype, k_rope_scales.layout, MutAnyOrigin
+            ](
+                k_rope_scales.ptr,
+                RuntimeLayout[k_rope_scales.layout].row_major(
+                    k_rope_scales.runtime_layout.shape.value.canonicalize()
                 ),
             ),
         )

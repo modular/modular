@@ -129,11 +129,12 @@ what we publish.
 - As part of "init unification", the `__moveinit__` and `__copyinit__` methods
   [are now
   renamed](https://github.com/modular/modular/blob/main/mojo/proposals/remove_move_and_copy_init.md)
-  to `__init__(*, take=)` and `__init__(*, copy=)` respectively.  Mojo now
+  to `fn __init__(out self, *, take: Self)` and
+  `fn __init__(out self, *, copy: Self)` respectively.  Mojo now
   accepts these names for initializers, but also supports the legacy
   `__moveinit__` and `__copyinit__` names as well (for now).  However, the
   argument name for these legacy methods must now be named `take` and `copy`
-  respectively.  Please move to the more modern names.
+  respectively.  Please move to the more modern `__init__` names when possible.
 
 - As part of init unification, the `__moveinit__is_trivial` and
   `__copyinit__is_trivial` members of `Movable` and `Copyable` have been renamed
@@ -441,6 +442,9 @@ what we publish.
   names updated to reflect the `init` name. It also now exposes a `zeroed()` method
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
   being copied or moved, allowing for more practical uses.
+
+- `Span[T]` is no longer restricted to `Copyable` types. It now works with `T: AnyType`.
+  There are a few restrictions including iteration requiring `T: Copyable`.
 
 - `Int.write_padded` now accounts for a negative sign when calculating the
   width, resulting in a consistent width regardless of sign:

@@ -689,7 +689,7 @@ except e:
 :::note
 
 For a complete working example of all three function forms, see
-[`fn_vs_def_errors.mojo`](https://github.com/modularml/modular/blob/main/mojo/docs/code/manual/errors/fn_vs_def_errors.mojo).
+[`fn_vs_def_errors.mojo`](https://github.com/modular/modular/blob/main/mojo/docs/code/manual/errors/fn_vs_def_errors.mojo).
 
 :::
 
@@ -827,7 +827,7 @@ When working with both `Error` and typed errors:
 :::note
 
 For a complete working example of these interaction patterns, see
-[`error_interaction.mojo`](https://github.com/modularml/modular/blob/main/mojo/docs/code/manual/errors/error_interaction.mojo).
+[`error_interaction.mojo`](https://github.com/modular/modular/blob/main/mojo/docs/code/manual/errors/error_interaction.mojo).
 
 :::
 
@@ -1018,7 +1018,7 @@ content = f.read()
 f.close()
 ```
 
-Calling [`close()`](/mojo/std/builtin/file/FileHandle#close) releases the
+Calling [`close()`](/mojo/std/io/file/FileHandle#close) releases the
 memory and other operating system resources associated with the opened file. If
 your program were to open many files without closing them, you could exhaust the
 resources available to your program and cause errors. The problem is even worse
@@ -1028,7 +1028,7 @@ program were to crash instead of exiting normally, that buffered data could be
 lost instead of being written to storage.
 
 The example above includes the call to `close()`, but it ignores the
-possibility that [`read()`](/mojo/std/builtin/file/FileHandle#read) could
+possibility that [`read()`](/mojo/std/io/file/FileHandle#read) could
 raise an error, which would prevent the `close()` from executing.
 To handle this scenario, you could rewrite the code to use `try` like this:
 
@@ -1044,8 +1044,8 @@ finally:
     f.close()
 ```
 
-However, the [`FileHandle`](/mojo/std/builtin/file/FileHandle) struct
-returned by [`open()`](/mojo/std/builtin/file/open) is a context manager.
+However, the [`FileHandle`](/mojo/std/io/file/FileHandle) struct
+returned by [`open()`](/mojo/std/io/file/open) is a context manager.
 When used with Mojo's `with` statement, a context manager ensures that the
 resources it manages are properly released at the end of the block, even if an
 error occurs. In the case of a `FileHandle`, that means the call to `close()`
@@ -1287,7 +1287,7 @@ fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool
 
 This method receives the typed error directly, preserving its full type
 information. You can use
-[reflection](/mojo/manual/metaprogramming/reflection) to inspect the error
+[reflection](/mojo/manual/reflection/) to inspect the error
 type at compile time. For example, you can:
 
 - `get_type_name[ErrType]()` — Get the error type's name as a string.
@@ -1366,6 +1366,6 @@ Continued after suppressed error
 :::note
 
 For a complete working example including error suppression and propagation, see
-[`resource_guard.mojo`](https://github.com/modularml/modular/blob/main/mojo/docs/code/manual/errors/resource_guard.mojo).
+[`resource_guard.mojo`](https://github.com/modular/modular/blob/main/mojo/docs/code/manual/errors/resource_guard.mojo).
 
 :::

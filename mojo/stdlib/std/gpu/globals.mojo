@@ -90,7 +90,7 @@ Warpgroup is used for wgmma instructions on Hopper and tcgen05.ld on Blackwell.
 fn _resolve_warpgroup_size() -> Int:
     # We can't constrain it here because the constant is used on host for
     # compilation test w/o nvidia GPUs.
-    # constrained[is_nvidia_gpu(), "Warpgroup only applies to Nvidia GPUs."]()
+    # comptime assert is_nvidia_gpu(), "Warpgroup only applies to Nvidia GPUs."
 
     return 128
 

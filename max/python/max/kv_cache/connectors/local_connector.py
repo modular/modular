@@ -60,10 +60,6 @@ class LocalConnector:
             raise ValueError(
                 "LocalConnector requires prefix caching to be enabled"
             )
-        if not params.enable_kvcache_swapping_to_host:
-            raise ValueError(
-                "LocalConnector requires kvcache swapping to host to be enabled"
-            )
         if total_num_host_blocks <= 0:
             raise ValueError("LocalConnector requires host blocks")
 
@@ -149,11 +145,6 @@ class LocalConnector:
         return "LocalConnector"
 
     @property
-    def host_tensors(self) -> list[Buffer]:
-        """Get the host tensors for KV cache swapping."""
-        return self._host_tensors
-
-    @property
     def host_scale_tensors(self) -> list[Buffer] | None:
         """Get the host scale tensors for FP8 quantization swapping."""
         return self._host_scale_tensors
@@ -203,7 +194,6 @@ class LocalConnector:
         self,
         ctx: TextGenerationContext,
         target_block_ids: list[int],
-        device_tensors: list[Buffer],
     ) -> list[int]:
         """Load data from host cache into device blocks.
 

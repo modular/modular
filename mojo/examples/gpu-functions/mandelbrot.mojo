@@ -36,9 +36,9 @@ comptime layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
 
 
 def main():
-    constrained[
-        has_accelerator(), "This example requires a supported accelerator"
-    ]()
+    comptime assert (
+        has_accelerator()
+    ), "This example requires a supported accelerator"
 
     # Get the context for the attached GPU
     var ctx = DeviceContext()

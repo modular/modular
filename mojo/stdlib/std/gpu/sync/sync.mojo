@@ -309,9 +309,9 @@ fn schedule_group_barrier(
             Int32(Int(mask)), size, sync_id
         )
     else:
-        constrained[
-            False, "schedule_group_barrier is only supported on AMDGPU."
-        ]()
+        comptime assert (
+            False
+        ), "schedule_group_barrier is only supported on AMDGPU."
 
 
 # reference for waitcnt_arg and related synchronization utilities:

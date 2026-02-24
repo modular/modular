@@ -293,14 +293,16 @@ class DeepseekV3DecoderLayer(Module):
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
         num_devices = len(kv_blocks)
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
-        for i in range(num_devices):
-            mla_prefill_metadata.append(
-                MLAPrefillMetadata(
-                    buffer_row_offsets=mla_prefill_metadata_flat[3 * i],
-                    cache_offsets=mla_prefill_metadata_flat[3 * i + 1],
-                    buffer_lengths=mla_prefill_metadata_flat[3 * i + 2],
+        if self.config.graph_mode != "decode":
+            assert len(mla_prefill_metadata_flat) == 3 * num_devices
+            for i in range(num_devices):
+                mla_prefill_metadata.append(
+                    MLAPrefillMetadata(
+                        buffer_row_offsets=mla_prefill_metadata_flat[3 * i],
+                        cache_offsets=mla_prefill_metadata_flat[3 * i + 1],
+                        buffer_lengths=mla_prefill_metadata_flat[3 * i + 2],
+                    )
                 )
-            )
 
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)

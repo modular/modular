@@ -405,7 +405,7 @@ def run_sgmv_qkv_lora_kernel(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
 
     rank = combined_rank // 3
     result = compiled.execute(

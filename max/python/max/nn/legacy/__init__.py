@@ -55,7 +55,6 @@ from .layer import Layer, LayerList, Module, Shardable
 from .linear import (
     MLP,
     ColumnParallelLinear,
-    DistributedGemmConfig,
     GPTQLinear,
     Linear,
 )
@@ -105,7 +104,6 @@ __all__ = [
     "Conv3D",
     "ConvTranspose1d",
     "DistributedAttentionImpl",
-    "DistributedGemmConfig",
     "DistributedTransformer",
     "DistributedTransformerBlock",
     "DynamicRotaryEmbedding",

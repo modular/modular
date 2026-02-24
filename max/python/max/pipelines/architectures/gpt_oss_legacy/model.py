@@ -38,11 +38,10 @@ from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -76,7 +75,7 @@ class GptOssInputs(ModelInputs):
 
 
 class GptOssModel(
-    AlwaysSignalBuffersMixin, PipelineModel[TextContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
 ):
     """A GPT OSS pipeline model for text generation.
 

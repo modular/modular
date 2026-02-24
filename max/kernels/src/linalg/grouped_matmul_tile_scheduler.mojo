@@ -104,7 +104,7 @@ struct TileScheduler[
 ](TrivialRegisterPassable):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
-        DType.uint32, Self.offsets_layout, MutAnyOrigin
+        DType.uint32, Self.offsets_layout, ImmutAnyOrigin
     ]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
@@ -129,7 +129,7 @@ struct TileScheduler[
         out self,
         num_active_experts: Int,
         group_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, MutAnyOrigin
+            DType.uint32, Self.offsets_layout, ImmutAnyOrigin
         ],
     ):
         comptime assert (
