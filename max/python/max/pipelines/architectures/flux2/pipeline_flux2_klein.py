@@ -43,6 +43,7 @@ class Flux2KleinModelInputs(PixelModelInputs):
     guidance_scale: float = 4.0
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
+    mask: np.ndarray | None = None
     input_image: Image.Image | None = None
 
     @property
@@ -75,104 +76,53 @@ class Flux2KleinPipeline(Flux2Pipeline):
             )
         return Flux2KleinModelInputs.from_context(context)
 
-    def _get_qwen3_prompt_embeds(
+    def prepare_prompt_embeddings(
         self,
         tokens: TokenBuffer,
+        num_images_per_prompt: int = 1,
         attention_mask: np.ndarray | None = None,
         hidden_states_layers: list[int] | None = None,
-        max_sequence_length: int | None = None,
-    ) -> Tensor:
+    ) -> tuple[Tensor, Tensor]:
         layers = hidden_states_layers or [9, 18, 27]
         token_ids = tokens.array
-        if token_ids.ndim == 1:
-            token_ids = token_ids[None, :]
-        max_seq = (
-            int(token_ids.shape[-1])
-            if max_sequence_length is None
-            else max_sequence_length
-        )
+        if token_ids.ndim == 2:
+            token_ids = token_ids[0]
+        max_seq = int(token_ids.shape[-1])
 
         # NOTE: Qwen3TextEncoderModel currently does not accept attention_mask as an input.
         # Keep the full padded sequence (max_seq=512) to avoid quality regression from
         # manual trimming/zero-padding approximations.
         _ = attention_mask
 
-        per_batch_embeds: list[Tensor] = []
-        for batch_idx in range(token_ids.shape[0]):
-            sample_ids = token_ids[batch_idx]
-
-            text_input_ids = Tensor.constant(
-                sample_ids,
-                dtype=DType.int64,
-                device=self.text_encoder.devices[0],
-            )
-            hs_all = self.text_encoder(text_input_ids)
-
-            selected: list[Tensor] = []
-            for i in layers:
-                hs = hs_all[i - 1]
-                hs = hs if isinstance(hs, Tensor) else Tensor.from_dlpack(hs)
-
-                if hs.rank == 2:
-                    seq_len, hidden_dim = map(int, hs.shape)
-                    if seq_len < max_seq:
-                        hs = F.concat(
-                            [
-                                hs,
-                                Tensor.zeros(
-                                    [max_seq - seq_len, hidden_dim],
-                                    dtype=hs.dtype,
-                                    device=hs.device,
-                                ),
-                            ],
-                            axis=0,
-                        )
-                    elif seq_len > max_seq:
-                        hs = hs[:max_seq]
-                    hs = F.reshape(hs, [1, max_seq, hidden_dim])
-                elif hs.rank == 3:
-                    batch_size, seq_len, hidden_dim = map(int, hs.shape)
-                    if seq_len < max_seq:
-                        hs = F.concat(
-                            [
-                                hs,
-                                Tensor.zeros(
-                                    [batch_size, max_seq - seq_len, hidden_dim],
-                                    dtype=hs.dtype,
-                                    device=hs.device,
-                                ),
-                            ],
-                            axis=1,
-                        )
-                    elif seq_len > max_seq:
-                        hs = hs[:, :max_seq, :]
-                selected.append(hs)
-
-            stacked = F.stack(selected, axis=1)
-            stacked = F.permute(stacked, [0, 2, 1, 3])
-            _, seq_len, num_layers, hidden_dim = map(int, stacked.shape)
-            sample_embeds = F.reshape(
-                stacked, [1, seq_len, num_layers * hidden_dim]
-            )
-            per_batch_embeds.append(sample_embeds)
-
-        if len(per_batch_embeds) == 1:
-            return per_batch_embeds[0]
-        return F.concat(per_batch_embeds, axis=0)
-
-    def _prepare_prompt_embeddings(
-        self,
-        tokens: TokenBuffer,
-        num_images_per_prompt: int = 1,
-        hidden_states_layers: list[int] | None = None,
-        *,
-        attention_mask: np.ndarray | None = None,
-    ) -> tuple[Tensor, Tensor]:
-        prompt_embeds = self._get_qwen3_prompt_embeds(
-            tokens=tokens,
-            attention_mask=attention_mask,
-            hidden_states_layers=hidden_states_layers,
+        text_input_ids = Tensor.constant(
+            token_ids, dtype=DType.int64, device=self.text_encoder.devices[0]
         )
+        hidden_states_all = self.text_encoder(text_input_ids)
+        hidden_states_selected = []
+        for i in layers:
+            hs = hidden_states_all[i - 1]
+            if hs.rank == 3:
+                hs = hs[0]
+
+            seq_len = int(hs.shape[0])
+            hidden_dim = int(hs.shape[1])
+            if seq_len < max_seq:
+                hs = F.concat(
+                    [
+                        hs,
+                        Tensor.zeros(
+                            [max_seq - seq_len, hidden_dim],
+                            dtype=hs.dtype,
+                            device=hs.device,
+                        ),
+                    ],
+                    axis=0,
+                )
+            elif seq_len > max_seq:
+                hs = hs[:max_seq]
+            hidden_states_selected.append(hs)
+
+        prompt_embeds = self._prepare_prompt_embeddings(*hidden_states_selected)
         batch_size = int(prompt_embeds.shape[0])
         seq_len = int(prompt_embeds.shape[1])
 
@@ -188,15 +138,29 @@ class Flux2KleinPipeline(Flux2Pipeline):
         )
         return prompt_embeds, text_ids
 
+    def _prepare_prompt_embeddings(self, *hidden_states: Tensor) -> Tensor:
+        # [L, S, D] -> [1, S, L, D] -> [1, S, L*D]
+        stacked = F.stack(hidden_states, axis=0)
+        stacked = F.unsqueeze(stacked, axis=0)
+        stacked = F.permute(stacked, [0, 2, 1, 3])
+        batch_size = stacked.shape[0]
+        seq_len = stacked.shape[1]
+        num_layers = stacked.shape[2]
+        hidden_dim = stacked.shape[3]
+        prompt_embeds = F.reshape(
+            stacked, [batch_size, seq_len, num_layers * hidden_dim]
+        )
+        return prompt_embeds
+
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2KleinModelInputs,
         callback_queue: Queue[np.ndarray] | None = None,
         output_type: Literal["np", "latent"] = "np",
     ) -> Flux2KleinPipelineOutput:
-        prompt_embeds, text_ids = self._prepare_prompt_embeddings(
+        prompt_embeds, text_ids = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
-            attention_mask=model_inputs.extra_params.get("attention_mask"),
+            attention_mask=model_inputs.mask,
             num_images_per_prompt=model_inputs.num_images_per_prompt,
         )
 
@@ -213,11 +177,9 @@ class Flux2KleinPipeline(Flux2Pipeline):
         do_cfg = model_inputs.do_classifier_free_guidance and not is_distilled
         if do_cfg and model_inputs.negative_tokens is not None:
             negative_prompt_embeds, negative_text_ids = (
-                self._prepare_prompt_embeddings(
+                self.prepare_prompt_embeddings(
                     tokens=model_inputs.negative_tokens,
-                    attention_mask=model_inputs.extra_params.get(
-                        "negative_attention_mask"
-                    ),
+                    attention_mask=None,
                     num_images_per_prompt=model_inputs.num_images_per_prompt,
                 )
             )
@@ -257,20 +219,14 @@ class Flux2KleinPipeline(Flux2Pipeline):
         sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(
             self.transformer.devices[0]
         )
-        timesteps: np.ndarray = model_inputs.timesteps
-        num_timesteps = timesteps.shape[0]
-        timesteps_np = np.broadcast_to(
-            timesteps[:, None], (num_timesteps, batch_size)
-        )
-        timesteps_batched = (
-            Tensor.from_dlpack(timesteps_np)
-            .to(self.transformer.devices[0])
-            .cast(dtype)
-        )
+        all_timesteps, dts = self.prepare_scheduler(sigmas)
+        num_timesteps = int(all_timesteps.shape[0])
 
         num_noise_tokens = int(latents.shape[1])
+        is_img2img = image_latents is not None
         for i in tqdm(range(num_timesteps), desc="Denoising"):
-            timestep = timesteps_batched[i]
+            timestep = all_timesteps[i : i + 1]
+            dt = dts[i : i + 1]
 
             if image_latents is not None:
                 latent_model_input = F.concat([latents, image_latents], axis=1)
@@ -309,11 +265,18 @@ class Flux2KleinPipeline(Flux2Pipeline):
                     noise_pred - neg_noise_pred
                 )
 
-            latents = self._scheduler_step(latents, noise_pred, sigmas, i)
+            latents = self.scheduler_step(
+                latents, noise_pred, dt, num_noise_tokens
+            )
 
             if callback_queue is not None and output_type == "np":
-                decoded = self._decode_latents(
-                    latents, latent_image_ids, output_type="np"
+                decoded = self.decode_latents(
+                    latents,
+                    latent_image_ids,
+                    model_inputs.height,
+                    model_inputs.width,
+                    output_type="np",
+                    is_img2img=is_img2img,
                 )
                 if isinstance(decoded, Tensor):
                     decoded = np.array(decoded)
@@ -324,8 +287,13 @@ class Flux2KleinPipeline(Flux2Pipeline):
             latents_b = latents[b : b + 1]
             latent_image_ids_b = latent_image_ids[b : b + 1]
             image_list.append(
-                self._decode_latents(
-                    latents_b, latent_image_ids_b, output_type=output_type
+                self.decode_latents(
+                    latents_b,
+                    latent_image_ids_b,
+                    model_inputs.height,
+                    model_inputs.width,
+                    output_type=output_type,
+                    is_img2img=is_img2img,
                 )
             )
 
