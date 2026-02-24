@@ -17,7 +17,7 @@ Expert Parallelism (EP) Communication Kernel.
 
 
 import compiler_internal as compiler
-from comm.sync import can_enable_p2p
+from comm.sync import is_p2p_enabled
 from gpu.primitives.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceBuffer, get_gpu_target
 from gpu.host.info import is_gpu
@@ -236,7 +236,7 @@ struct Struct_ep_init:
             combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
 
         else:
-            if not can_enable_p2p():
+            if not is_p2p_enabled():
                 raise Error("P2P is not supported on this system.")
             dispatch_send_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
                 dispatch_send_size

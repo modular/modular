@@ -127,7 +127,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
-    can_enable_p2p,
+    is_p2p_enabled,
 )
 from .device_query import get_sm_version, _dispatch_max_num_blocks
 
@@ -806,7 +806,7 @@ fn allreduce[
         )
 
     # Check P2P availability.
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         comptime if use_multimem:
             raise Error(
                 "Allreduce with multimem requires P2P access between GPUs"

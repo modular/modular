@@ -45,7 +45,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
-    can_enable_p2p,
+    is_p2p_enabled,
 )
 
 # On AMD Systems, the loads from GLOBAL addressspace gives an improvement
@@ -423,7 +423,7 @@ fn reducescatter[
     if num_elements == 0:
         return
 
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         raise Error("Reducescatter currently requires P2P access between GPUs")
 
     # Determine max number of blocks

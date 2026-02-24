@@ -60,7 +60,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
-    can_enable_p2p,
+    is_p2p_enabled,
 )
 
 
@@ -391,7 +391,7 @@ fn allreduce_rmsnorm_fp8[
         The start barrier of the NEXT allreduce call protects the
         input buffers that are read by remote GPUs.
     """
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         raise Error("allreduce_rmsnorm_fp8 requires P2P access between GPUs")
 
     var cols = input_buffers[0].dim(rank - 1)

@@ -40,7 +40,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
-    can_enable_p2p,
+    is_p2p_enabled,
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
 
@@ -465,7 +465,7 @@ fn broadcast[
         "Buffer shapes don't match",
     )
 
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         raise Error("Broadcast currently requires P2P access between GPUs")
 
     comptime BLOCK_SIZE = 256

@@ -31,7 +31,7 @@ from benchmark import (
     Report,
     ThroughputMeasure,
 )
-from comm.sync import can_enable_p2p
+from comm.sync import enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
@@ -1296,7 +1296,7 @@ def test_dispatch_nvfp4[
 def main():
     comptime test_gpu_counts = (2, 4, 8)
 
-    if can_enable_p2p():
+    if enable_p2p():
         print("Enabled P2P Mem Access on all GPUs.")
     else:
         raise Error("Cannot enable P2P Mem Access!")

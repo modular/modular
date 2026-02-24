@@ -465,6 +465,19 @@ def is_virtual_device_mode() -> bool:
         bool: True if virtual device mode is enabled (count > 0), False otherwise.
     """
 
+def enable_all_peer_access() -> None:
+    """
+    Enables peer-to-peer memory access between all available GPU pairs.
+
+    This must be called before any collective operations (allreduce,
+    broadcast, etc.) that require direct GPU-to-GPU memory access.
+    It is safe to call multiple times; the underlying runtime caches
+    the result after the first successful enablement.
+
+    Raises:
+        RuntimeError: If P2P access cannot be enabled between any GPU pair.
+    """
+
 def set_virtual_device_api(api: str) -> None:
     """
     Set the target API for virtual devices in compile-only mode.
