@@ -28,12 +28,10 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Type, Value
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache import PagedKVCacheManager, load_kv_managers
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
-    KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
 )
@@ -43,11 +41,10 @@ from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -175,7 +172,8 @@ class Gemma3MultiModalModelInputs(ModelInputs):
 
 
 class Gemma3_MultiModalModel(
-    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+    AlwaysSignalBuffersMixin,
+    PipelineModelWithKVCache[TextAndVisionContext],
 ):
     """Gemma 3 multimodal pipeline model for text generation.
 
@@ -238,6 +236,16 @@ class Gemma3_MultiModalModel(
 
         self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self.load_model(session)
+
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        del pipeline_config, huggingface_config  # Unused.
+
+        # FIXME: We arbitrarily set some memory for activation memory to leave headroom
+        # for vision processing. We should determine this in a more principled way.
+        return 6 * 1024 * 1024 * 1024  # 6 GiB
 
     @classmethod
     def calculate_max_seq_len(
@@ -689,24 +697,6 @@ class Gemma3_MultiModalModel(
 
         # Create tensor and distribute to device
         return [Buffer.from_numpy(np_indices).to(dev) for dev in self.devices]
-
-    def load_kv_managers(
-        self,
-        kv_params: KVCacheParamInterface,
-        max_batch_size: int,
-        max_seq_len: int,
-        session: InferenceSession,
-        available_cache_memory: int,
-    ) -> list[PagedKVCacheManager]:
-        return load_kv_managers(
-            params=kv_params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            # FIXME: Decrease KVCache memory usage by 10% to leave headroom for
-            # vision processing.
-            available_cache_memory=int(available_cache_memory * 0.9),
-            session=session,
-        )
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]

@@ -30,7 +30,6 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
@@ -43,7 +42,7 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
     SamplingConfig,
 )
 from max.pipelines.lib.lora import LoRAManager, LoRAModel
@@ -92,7 +91,7 @@ class MockModelInputs(ModelInputs):
         return self._batch_size
 
 
-class MockPipelineModel(PipelineModel[ContextT]):
+class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
     def __init__(
         self,
         vocab_size: int = 1000,
@@ -103,13 +102,7 @@ class MockPipelineModel(PipelineModel[ContextT]):
         self.devices = [CPU()]
         self.max_seq_len = 2048
 
-        self.kv_manager = MagicMock(spec=PagedKVCacheManager)
-        self.kv_manager.contains = MagicMock(return_value=True)
-        self.kv_manager.claim = MagicMock()
-        self.kv_manager.alloc = MagicMock()
-        self.kv_manager.step = MagicMock()
-        self.kv_manager.runtime_inputs = MagicMock(return_value=[])
-        self.kv_manager.increment_cache_lengths = MagicMock(return_value=[])
+        self.kv_params = MagicMock()
 
         self._lora_manager = lora_manager
 
@@ -124,20 +117,13 @@ class MockPipelineModel(PipelineModel[ContextT]):
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
-        devices: list[Device],
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
         del huggingface_config, kv_cache_config
-        return KVCacheParams(
-            dtype=cache_dtype,
-            n_kv_heads=1,
-            head_dim=1,
-            num_layers=1,
-            enable_prefix_caching=False,
-            cache_strategy="paged",
-            devices=[DeviceRef.from_device(d) for d in devices],
-        )
+        return MagicMock()
 
     @classmethod
     def infer_optional_batch_size(
@@ -325,6 +311,7 @@ def create_pipeline_with_lora(
             self.vocab_size = 1000
             self._sampler_without_bitmask = MagicMock()
             self._sampler_with_bitmask = None
+            self._kv_manager = MagicMock()
 
         with patch.object(TextGenerationPipeline, "__init__", mock_text_init):
             return TextGenerationPipeline(
@@ -353,6 +340,7 @@ def create_pipeline_with_lora(
             self._sampler_without_bitmask = MagicMock()
             self._sampler_with_bitmask = None
             self.d2h_stream = MagicMock()
+            self._kv_manager = MagicMock()
 
         with patch.object(
             SpeechTokenGenerationPipeline, "__init__", mock_speech_init

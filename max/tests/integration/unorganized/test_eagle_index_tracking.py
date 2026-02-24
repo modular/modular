@@ -20,6 +20,7 @@ across all acceptance/rejection scenarios. No model loading or GPU required.
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 import numpy.typing as npt
@@ -55,7 +56,7 @@ class MockKVManager:
 
 class MockModel:
     def __init__(self) -> None:
-        self.kv_manager = MockKVManager()
+        self.kv_params = MagicMock()
 
     def prepare_initial_token_inputs(self, **kwargs: Any) -> ModelInputs:
         return ModelInputs()
@@ -68,6 +69,8 @@ class EAGLEIndexTracker:
         self._draft_kv_start_idx: dict[RequestID, int] = {}
         self._last_verified_token: dict[RequestID, int] = {}
         self._metrics = SpeculativeDecodingMetrics()
+        self._draft_kv_manager = MagicMock()
+        self._target_kv_manager = MagicMock()
 
     def update_contexts(
         self,

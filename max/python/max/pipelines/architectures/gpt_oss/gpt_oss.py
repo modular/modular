@@ -21,11 +21,10 @@ from collections.abc import Sequence
 from max import functional as F
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
-from max.kv_cache import PagedKVCacheManager
 from max.nn import Module
 from max.nn.embedding import Embedding
 from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.linear import Linear
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
@@ -170,12 +169,12 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
     def __init__(
         self,
         config: GptOssConfig,
-        kv_manager: PagedKVCacheManager,
+        kv_params: KVCacheParams,
     ) -> None:
         super().__init__()
         self.language_model = GptOssTextModel(config)
         self.config = config
-        self.kv_manager = kv_manager
+        self.kv_params = kv_params
 
     def forward(
         self,
@@ -185,7 +184,7 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
         *variadic_args,
     ) -> tuple[Tensor, ...]:
         kv_collection = _unflatten_kv_inputs(
-            self.config, self.kv_manager, variadic_args
+            self.config, self.kv_params, variadic_args
         )
         return self.language_model(
             tokens, kv_collection[0], return_n_logits, input_row_offsets
@@ -194,12 +193,12 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
 
 def _unflatten_kv_inputs(
     config: GptOssConfig,
-    kv_manager: PagedKVCacheManager,
+    kv_params: KVCacheParams,
     kv_inputs_flat: Sequence[Tensor],
 ) -> list[PagedCacheValues]:
     kv_params = config.kv_params
     n_devices = kv_params.n_devices
-    fetch_types = kv_manager.params.get_symbolic_inputs()[0]
+    fetch_types = kv_params.get_symbolic_inputs()[0]
     len_of_kv_tuple_per_dev = len(list(fetch_types))
     kv_caches_per_dev: list[PagedCacheValues] = []
     for i in range(n_devices):

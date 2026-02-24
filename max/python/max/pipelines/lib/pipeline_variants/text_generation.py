@@ -18,6 +18,7 @@ import copy
 import dataclasses
 import json
 import logging
+from abc import abstractmethod
 from os import environ
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
@@ -48,6 +49,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn.legacy import ReturnLogits
 from max.nn.legacy.kv_cache import KVCacheInputsSequence
 from max.profiler import Tracer, traced
@@ -62,9 +64,9 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from ..config import PipelineConfig
+    from ..config import MAXModelConfig, PipelineConfig
 
-from ..interfaces import PipelineModel
+from ..interfaces import PipelineModel, PipelineModelWithKVCache
 from ..interfaces.generate import GenerateMixin
 from ..sampling import (
     FusedSamplingProcessor,
@@ -100,7 +102,13 @@ class TextGenerationPipelineInterface(
 
     # TODO: Get rid of these fields
     _devices: list[Device]
-    _pipeline_model: PipelineModel[TextGenerationContextType]
+    _pipeline_model: PipelineModelWithKVCache[TextGenerationContextType]
+
+    @property
+    @abstractmethod
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the KV cache managers for this pipeline."""
+        ...
 
 
 class TextGenerationPipeline(
@@ -141,7 +149,7 @@ class TextGenerationPipeline(
                 requested without a valid tokenizer delegate.
         """
         self._pipeline_config = pipeline_config
-        model_config = pipeline_config.model
+        model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
@@ -186,6 +194,10 @@ class TextGenerationPipeline(
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = get_weight_paths(model_config)
 
+        if not issubclass(pipeline_model, PipelineModelWithKVCache):
+            raise ValueError(
+                f"TextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
+            )
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -198,8 +210,17 @@ class TextGenerationPipeline(
             else ReturnLogits.LAST_TOKEN,
         )
 
+        self._kv_manager: PagedKVCacheManager = load_kv_manager(
+            params=self._pipeline_model.kv_params,
+            max_batch_size=pipeline_config.max_batch_size,
+            max_seq_len=self._pipeline_model.max_seq_len,
+            session=session,
+            available_cache_memory=model_config.kv_cache._available_cache_memory,
+        )
+
         # Load sampler.
         self._sampler_with_bitmask: Model | None = None
+        self._sampler_without_bitmask: Model | None = None
         if pipeline_config.sampling.enable_structured_output:
             self._sampler_with_bitmask = session.load(
                 token_sampler(
@@ -222,7 +243,6 @@ class TextGenerationPipeline(
                     device=DeviceRef.from_device(self._devices[0]),
                 )
             )
-            self._sampler_with_bitmask = None
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -239,13 +259,6 @@ class TextGenerationPipeline(
     ]:
         """Return the tokenizer used for building contexts and decoding."""
         return self._tokenizer
-
-    @property
-    def kv_managers(
-        self,
-    ) -> list[Any]:
-        """Return the list of KV cache managers backing this pipeline."""
-        return [self._pipeline_model.kv_manager]
 
     def update_for_structured_output(
         self,
@@ -379,7 +392,7 @@ class TextGenerationPipeline(
             num_steps = 1
 
         # Retrieve the KV Cache Inputs.
-        kv_cache_inputs = self._pipeline_model.kv_manager.runtime_inputs(
+        kv_cache_inputs = self._kv_manager.runtime_inputs(
             replica_batches, num_steps
         )
 
@@ -490,6 +503,7 @@ class TextGenerationPipeline(
                 )
                 sampler = self._sampler_with_bitmask
             else:
+                assert self._sampler_without_bitmask is not None
                 sampler = self._sampler_without_bitmask
 
             with Tracer("FusedSamplingProcessor"):
@@ -588,7 +602,7 @@ class TextGenerationPipeline(
                 curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
             ), "increment_cache_lengths instantiates and passes this as a list"
             curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._pipeline_model.kv_manager.increment_cache_lengths(
+                self._kv_manager.increment_cache_lengths(
                     curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
@@ -635,7 +649,7 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        self._pipeline_model.kv_manager.step(inputs.batches)
+        self._kv_manager.step(inputs.batches)
 
         return res
 
@@ -647,3 +661,8 @@ class TextGenerationPipeline(
         """
         # KV cache release is handled by the scheduler via batch_constructor
         pass
+
+    @property
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the KV cache manager for this pipeline."""
+        return self._kv_manager

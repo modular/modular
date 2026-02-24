@@ -68,6 +68,7 @@ from typing import (
     Any,
     Generic,
     Protocol,
+    final,
     runtime_checkable,
 )
 
@@ -95,13 +96,14 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.interfaces.tokens import TokenBuffer
+from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy import kernels
 from max.nn.legacy.kv_cache import KVCacheInputsSequence
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 
-from .text_generation import TextGenerationPipelineInterface
+from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     get_eos_tokens,
     get_weight_paths,
@@ -109,12 +111,20 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from ..config import PipelineConfig
+    from ..config import (
+        MAXModelConfig,
+        PipelineConfig,
+    )
 
 from dataclasses import dataclass
 
 from ..graph_capture import ServeGraphCaptureRunner
-from ..interfaces import ModelInputs, ModelOutputs, PipelineModel
+from ..interfaces import (
+    ModelInputs,
+    ModelOutputs,
+    PipelineModel,
+    PipelineModelWithKVCache,
+)
 from ..sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
@@ -311,13 +321,14 @@ class ScatterFutureTokenProcessor:
         return new_ragged_input_tokens
 
 
+@final
 class OverlapTextGenerationPipeline(
     TextGenerationPipelineInterface[TextGenerationContextType],
     Generic[TextGenerationContextType],
 ):
     """Overlap text generation pipeline."""
 
-    _pipeline_model: PipelineModel[Any]
+    _pipeline_model: PipelineModelWithKVCache[Any]
 
     def __init__(
         self,
@@ -352,7 +363,7 @@ class OverlapTextGenerationPipeline(
         """
         self._pipeline_config = pipeline_config
 
-        model_config = pipeline_config.model
+        model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
@@ -383,7 +394,11 @@ class OverlapTextGenerationPipeline(
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = get_weight_paths(model_config)
 
-        self._pipeline_model: PipelineModel[Any] = pipeline_model(
+        if not issubclass(pipeline_model, PipelineModelWithKVCache):
+            raise ValueError(
+                f"OverlapTextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
+            )
+        self._pipeline_model: PipelineModelWithKVCache[Any] = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
             devices=self._devices,
@@ -395,20 +410,29 @@ class OverlapTextGenerationPipeline(
             else ReturnLogits.LAST_TOKEN,
         )
 
+        available_cache_memory = model_config.kv_cache._available_cache_memory
+        self._kv_manager: PagedKVCacheManager = load_kv_manager(
+            params=self._pipeline_model.kv_params,
+            max_batch_size=self._pipeline_config.max_batch_size,
+            max_seq_len=self._pipeline_model.max_seq_len,
+            session=session,
+            available_cache_memory=available_cache_memory,
+        )
+
         # Load sampler.
-        self._sampler = session.load(
+        self._sampler: Model = session.load(
             token_sampler(
                 self._pipeline_config.sampling,
                 device=DeviceRef.from_device(self._devices[0]),
             )
         )
 
-        self._kv_manager = self._pipeline_model.kv_manager
-
         # Overlap scheduling specific initialization.
 
         # Load the scatter future tokens graph.
-        self._scatter_future_tokens = ScatterFutureTokenProcessor(session)
+        self._scatter_future_tokens: ScatterFutureTokenProcessor = (
+            ScatterFutureTokenProcessor(session)
+        )
         # Set previous asynchronously executing batch to None.
         self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
         self._graph_capture_runner: ServeGraphCaptureRunner | None = None
@@ -428,13 +452,6 @@ class OverlapTextGenerationPipeline(
     ]:
         """Return the tokenizer used for building contexts and decoding."""
         return self._tokenizer
-
-    @property
-    def kv_managers(
-        self,
-    ) -> list[Any]:
-        """Return the list of KV cache managers backing this pipeline."""
-        return [self._kv_manager]
 
     def has_pending_outputs(self) -> bool:
         """Returns True if there are pending outputs for the previous batch.
@@ -696,3 +713,8 @@ class OverlapTextGenerationPipeline(
         """
         # KV cache release is handled by the scheduler via batch_constructor
         pass
+
+    @property
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the KV cache manager for this pipeline."""
+        return self._kv_manager

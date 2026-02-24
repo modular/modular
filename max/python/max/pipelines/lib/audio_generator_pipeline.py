@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 from max.serve.telemetry.metrics import METRICS
 
-from .interfaces import PipelineModel
+from .interfaces import PipelineModel, PipelineModelWithKVCache
 
 AudioGeneratorPipelineType = Pipeline[
     AudioGenerationInputs[TTSContext], AudioGenerationOutput
@@ -51,7 +51,7 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
             ignored.
     """
 
-    pipeline_model: PipelineModel[TTSContext]
+    pipeline_model: PipelineModelWithKVCache[TTSContext]
 
     def __init__(
         self,
@@ -60,7 +60,7 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         **unused_kwargs,
     ) -> None:
         # Create the pipeline model.
-        # None of the arguments are used except for the config and devices.
+        # None of the arguments are used except for the config and devices
         devices = load_devices(pipeline_config.model.device_specs)
         self.pipeline_model = pipeline_model(
             pipeline_config=pipeline_config,
@@ -73,6 +73,8 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         )
         assert hasattr(self.pipeline_model, "speech_lm_pipeline")
         self.speech_lm_pipeline = self.pipeline_model.speech_lm_pipeline
+        assert hasattr(self.speech_lm_pipeline, "kv_manager")
+        self._kv_manager = self.speech_lm_pipeline.kv_manager
 
     def execute(
         self, inputs: AudioGenerationInputs[TTSContext]
@@ -105,5 +107,4 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
     @property
     def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache manager for this pipeline."""
-        assert hasattr(self.pipeline_model, "kv_manager")
-        return self.pipeline_model.kv_manager
+        return self._kv_manager

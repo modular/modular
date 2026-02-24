@@ -39,13 +39,12 @@ from max.pipelines import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
     SupportedArchitecture,
     TextContext,
     TextTokenizer,
     upper_bounded_default,
 )
-from max.pipelines.lib import KVCacheMixin
+from max.pipelines.lib import PipelineModelWithKVCache
 from max.pipelines.lib.interfaces import ArchConfigWithAttentionKVCache
 from transformers import AutoConfig
 
@@ -58,7 +57,7 @@ class DummyModelInputs(ModelInputs):
     input4: Buffer | None = None
 
 
-class DummyPipelineModel(PipelineModel, KVCacheMixin):
+class DummyPipelineModel(PipelineModelWithKVCache):
     """A pipeline model with setup, input preparation and execution methods."""
 
     def execute(
@@ -198,6 +197,7 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         session: InferenceSession,
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
+        assert hasattr(self, "kv_params")
         kv_inputs = self.kv_params.get_symbolic_inputs()[0]
         with Graph(
             "dummy",

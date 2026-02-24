@@ -38,11 +38,10 @@ from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.float8 import parse_float8_config
 from max.pipelines.lib.log_probabilities import (
@@ -80,7 +79,7 @@ class Gemma3Inputs(ModelInputs):
 
 
 class Gemma3Model(
-    AlwaysSignalBuffersMixin, PipelineModel[TextContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
 ):
     """A Gemma 3 pipeline model for text generation.
 

@@ -198,10 +198,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             # For target model: scheduler handles claiming, so skip here
             if is_draft:
                 replica_idx = request_to_replica.get(context.request_id, 0)
-                if not model.kv_manager.contains(
+                if not self._draft_kv_manager.contains(
                     context.request_id, replica_idx=replica_idx
                 ):
-                    model.kv_manager.claim(
+                    self._draft_kv_manager.claim(
                         context.request_id, replica_idx=replica_idx
                     )
                 self._draft_replica_idx[context.request_id] = replica_idx
@@ -281,10 +281,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         for replica_idx, replica_batch in enumerate(replica_batches):
             for ctx in replica_batch:
-                model.kv_manager.alloc(
+                self._draft_kv_manager.alloc(
                     ctx, replica_idx=replica_idx, num_steps=num_steps
                 )
-        kv_cache_inputs = model.kv_manager.runtime_inputs(
+        kv_cache_inputs = self._draft_kv_manager.runtime_inputs(
             replica_batches, num_steps
         )
 
@@ -381,10 +381,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         """
         for replica_idx, replica_batch in enumerate(replica_batches):
             for ctx in replica_batch:
-                model.kv_manager.alloc(
+                self._target_kv_manager.alloc(
                     ctx, replica_idx=replica_idx, num_steps=num_steps
                 )
-        kv_cache_inputs = model.kv_manager.runtime_inputs(
+        kv_cache_inputs = self._target_kv_manager.runtime_inputs(
             replica_batches, num_steps
         )
 
@@ -437,10 +437,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         if kv_cache_inputs is None:
             for replica_idx, replica_batch in enumerate(replica_batches):
                 for ctx in replica_batch:
-                    model.kv_manager.alloc(
+                    self._target_kv_manager.alloc(
                         ctx, replica_idx=replica_idx, num_steps=num_steps
                     )
-            kv_cache_inputs = model.kv_manager.runtime_inputs(
+            kv_cache_inputs = self._target_kv_manager.runtime_inputs(
                 replica_batches, num_steps
             )
 
@@ -585,7 +585,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
             ), "increment_cache_lengths instantiates and passes this as a list"
             curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._draft_model.kv_manager.increment_cache_lengths(
+                self._draft_kv_manager.increment_cache_lengths(
                     curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
@@ -634,10 +634,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         ):
             for replica_idx, replica_batch in enumerate(replica_batches):
                 for ctx in replica_batch:
-                    self._target_model.kv_manager.alloc(
+                    self._target_kv_manager.alloc(
                         ctx, replica_idx=replica_idx, num_steps=1
                     )
-            kv_cache_inputs = self._target_model.kv_manager.runtime_inputs(
+            kv_cache_inputs = self._target_kv_manager.runtime_inputs(
                 replica_batches, 1
             )
 
@@ -824,7 +824,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             target_inputs.kv_cache_inputs.kv_cache_inputs, list
         ), "increment_cache_lengths instantiates and passes this as a list"
         target_inputs.kv_cache_inputs.kv_cache_inputs = (
-            self._target_model.kv_manager.increment_cache_lengths(
+            self._target_kv_manager.increment_cache_lengths(
                 target_inputs.kv_cache_inputs.kv_cache_inputs,
                 target_inputs,
             )
@@ -922,7 +922,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
         assert isinstance(draft_ce_inputs.kv_cache_inputs.kv_cache_inputs, list)
         draft_ce_inputs.kv_cache_inputs.kv_cache_inputs = (
-            self._draft_model.kv_manager.increment_cache_lengths(
+            self._draft_kv_manager.increment_cache_lengths(
                 draft_ce_inputs.kv_cache_inputs.kv_cache_inputs,
                 draft_ce_inputs,
             )
@@ -1059,8 +1059,8 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         res = self.build_response(context_batch=context_batch)
 
-        self._target_model.kv_manager.step(replica_batches)
-        self._draft_model.kv_manager.step(replica_batches)
+        self._target_kv_manager.step(replica_batches)
+        self._draft_kv_manager.step(replica_batches)
 
         return res
 

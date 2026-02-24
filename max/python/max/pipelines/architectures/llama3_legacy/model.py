@@ -35,11 +35,10 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
@@ -120,7 +119,7 @@ class Llama3Inputs(ModelInputs):
         )
 
 
-class LlamaModelBase(PipelineModel[TextContext], KVCacheMixin):
+class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
     """Base Llama pipeline model implementation."""
 
     model: Model

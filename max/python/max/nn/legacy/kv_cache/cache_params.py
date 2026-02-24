@@ -496,7 +496,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     KV caches (e.g., different cache configurations for different layers).
     """
 
-    params: Sequence[KVCacheParamInterface]
+    params: Sequence[KVCacheParams]
     """List of KV cache parameter sets to aggregate."""
 
     cache_strategy: KVCacheStrategy
@@ -505,7 +505,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     n_devices: int
 
     @classmethod
-    def from_params(cls, *params: KVCacheParamInterface) -> MultiKVCacheParams:
+    def from_params(cls, *params: KVCacheParams) -> MultiKVCacheParams:
         if len(params) == 0:
             raise ValueError("MultiKVCacheParams requires at least one param.")
         return cls(

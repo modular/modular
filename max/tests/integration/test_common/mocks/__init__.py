@@ -14,15 +14,11 @@
 
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Optional, Union
 
 import hf_repo_lock
 from max.driver import DeviceSpec, scan_available_devices
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    TextGenerationPipeline,
-    generate_local_model_path,
-)
+from max.pipelines.lib import TextGenerationPipeline, generate_local_model_path
 
 from .pipeline_config import (
     DummyMAXModelConfig,

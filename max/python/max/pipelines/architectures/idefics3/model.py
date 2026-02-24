@@ -43,11 +43,10 @@ from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers.models.auto.configuration_auto import AutoConfig
 
@@ -184,7 +183,7 @@ class Idefics3Inputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Idefics3Model(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
     """An Idefics3 pipeline model for multimodal text generation."""
 
     vision_model: Model

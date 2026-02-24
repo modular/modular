@@ -120,7 +120,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 1):  # noqa: ANN201
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
 
-    target_kv_manager = pipeline.kv_managers[-1]
+    target_kv_manager = pipeline.kv_manager
     target_kv_manager.claim(req_id1, replica_idx=0)
     target_kv_manager.claim(req_id2, replica_idx=0)
     target_kv_manager.alloc(context1, replica_idx=0, num_steps=num_steps)
@@ -353,10 +353,8 @@ def test_kv_cache_claiming_protocol() -> None:
     mock_kv_manager.runtime_inputs.side_effect = track_runtime_inputs
 
     # Replace the KV manager in both models
-    with patch.object(pipeline._draft_model, "kv_manager", mock_kv_manager):
-        with patch.object(
-            pipeline._target_model, "kv_manager", mock_kv_manager
-        ):
+    with patch.object(pipeline, "_draft_kv_manager", mock_kv_manager):
+        with patch.object(pipeline, "_target_kv_manager", mock_kv_manager):
             # Call prepare_batch for draft model
             pipeline.prepare_batch(
                 pipeline._draft_model,

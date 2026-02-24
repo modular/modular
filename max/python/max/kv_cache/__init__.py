@@ -24,7 +24,6 @@ from .registry import (
     estimate_kv_cache_size,
     infer_optimal_batch_size,
     load_kv_manager,
-    load_kv_managers,
 )
 
 __all__ = [
@@ -38,5 +37,4 @@ __all__ = [
     "estimate_kv_cache_size",
     "infer_optimal_batch_size",
     "load_kv_manager",
-    "load_kv_managers",
 ]

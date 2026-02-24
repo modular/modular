@@ -36,11 +36,10 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from max.pipelines.lib.log_probabilities import (
     compute_log_probabilities_ragged,
@@ -80,7 +79,7 @@ class Llama3Inputs(ModelInputs):
         )
 
 
-class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
+class Llama3Model(PipelineModelWithKVCache[TextContext]):
     """Llama3 pipeline model using the ModuleV3 API."""
 
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
@@ -180,7 +179,7 @@ class Llama3Model(PipelineModel[TextContext], KVCacheMixin):
             return_hidden_states=self.return_hidden_states,
         )
         with F.lazy():
-            nn_model = Llama3(model_config, self.kv_manager)
+            nn_model = Llama3(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
