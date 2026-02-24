@@ -119,7 +119,7 @@ public:
                                    FnTypeGeneratorType expected);
   LogicalResult matchSingleEltStruct(TypedAttr actual, TypedAttr expected);
 
-  void resetError();
+  void resetError() { failureReason.reset(); }
 
 private:
   LogicalResult error(MatchFailure &&reason) {
@@ -127,14 +127,7 @@ private:
     return failure();
   }
 
-  LogicalResult setInferredValue(size_t paramIdx, TypedAttr paramVal);
-
 private:
-  // The set of index binding that is inferred during this matching. It is used
-  // the undo the inference when `resetError` is called (meaning that the
-  // previous matching result should be discard).
-  llvm::BitVector inferredIdx;
-
   /// This is how many signature types deep inference is inside parameter
   /// expressions and determines which index references we match against.
   ///

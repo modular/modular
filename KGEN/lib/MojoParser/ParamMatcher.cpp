@@ -102,53 +102,9 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
 
 ParamMatcher::ParamMatcher(const ExprNode *expr, ParamInf &state,
                            bool allowImplicitConversions)
-    : inferredIdx(state.evaluator.getNumIndexBindings()), expr(expr),
-      state(state), shared(state.getShared()),
+    : expr(expr), state(state), shared(state.getShared()),
       allowImplicitConversions(allowImplicitConversions),
       scopedBinder(shared.getParameterEvaluator()) {}
-
-LogicalResult ParamMatcher::setInferredValue(size_t paramIdx,
-                                             TypedAttr paramVal) {
-  LogicalResult ret = state.setInferredValue(paramIdx, paramVal);
-  inferredIdx.set(paramIdx);
-  return ret;
-}
-
-void ParamMatcher::resetError() {
-  failureReason.reset();
-
-  // Upon error being discarded, we need to undo the falsely inferred parameter.
-  // This detect error and avoid the following code being compiles:
-  //
-  // @fieldwise_init
-  // @register_passable("trivial")
-  // struct NDBuffer[
-  //     mut: Bool,
-  //     //,
-  //     dtype: DType,
-  //     rank: Int,
-  //     origin: Origin[mut=mut],
-  //     ...
-  // ](
-  //   @implicit
-  //   fn __init__(
-  //       out self,
-  //       # note that `other` here does NOT uses `Self.origin`
-  //       other: NDBuffer[Self.dtype, Self.rank, ...],
-  //   ):
-  //        pass
-  //
-  // In this case, we can should NOT infer `Self.origin` to `other.origin`.
-  // This could happens without the reset since we can successfully match
-  // `other` against `Self` all the way till we pass `origin`. At that point,
-  // although matcher returns failure, `origin` has been inferred, and the
-  // implicit convertibility is then tested against parameter inferred from a
-  // failed match.
-  for (unsigned i : inferredIdx.set_bits())
-    state.evaluator.overwriteIndexBinding(i, nullptr);
-
-  inferredIdx.reset();
-}
 
 void ParamMatcher::appendLocallyDefinedParam(Type paramType) {
   auto paramIdx = scopedBinder.getIndexBindings().size();
@@ -772,7 +728,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           state.evaluator.getIndexBindings()[parameterIndex];
       // If this is a new parameter we've inferred, huzzah, remember it.
       if (!inferredValue) {
-        if (failed(setInferredValue(parameterIndex, actualAttr)))
+        if (failed(state.setInferredValue(parameterIndex, actualAttr)))
           return error(MatchFailure::UnprovableConstraints{parameterIndex});
         return success();
       }
