@@ -61,10 +61,69 @@ fn _inline_array_construction_checks[size: Int]():
     ), "number of elements in `InlineArray` must be >= 0"
 
 
+@fieldwise_init
+struct _InlineArrayIter[
+    mut: Bool,
+    //,
+    T: Copyable,
+    size: Int,
+    origin: Origin[mut=mut],
+    forward: Bool = True,
+](ImplicitlyCopyable, Iterable, Iterator):
+    """Iterator for `InlineArray`.
+
+    Parameters:
+        mut: A boolean to indicate if the iterator is mutable.
+        T: The type of the elements in the iterator.
+        size: The size of the array.
+        origin: The origin of the iterator.
+        forward: A boolean to indicate if the iterator is forward.
+    """
+
+    comptime Element = Self.T
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var index: Int
+    var src: Pointer[InlineArray[Self.T, Self.size], Self.origin]
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
+        comptime if Self.forward:
+            if self.index >= Self.size:
+                raise StopIteration()
+            self.index += 1
+            return self.src[][self.index - 1]
+        else:
+            if self.index <= 0:
+                raise StopIteration()
+            self.index -= 1
+            return self.src[][self.index]
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var iter_len: Int
+
+        comptime if Self.forward:
+            iter_len = Self.size - self.index
+        else:
+            iter_len = self.index
+
+        return (iter_len, {iter_len})
+
+
 struct InlineArray[ElementType: Copyable, size: Int](
     Copyable,
     Defaultable,
     DevicePassable,
+    Iterable,
     Representable,
     Sized,
     Stringable,
@@ -113,6 +172,18 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     comptime device_type: AnyType = Self
     """The device-side type for this array."""
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = _InlineArrayIter[
+        Self.ElementType, Self.size, iterable_origin, True
+    ]
+    """The iterator type for this array.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
@@ -692,3 +763,21 @@ struct InlineArray[ElementType: Copyable, size: Int](
         output = String()
         self.write_repr_to(output)
         return output^
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        """Iterate over elements of the array, returning immutable references.
+
+        Returns:
+            An iterator of immutable references to the array elements.
+        """
+        return {0, Pointer(to=self)}
+
+    fn __reversed__(
+        ref self,
+    ) -> _InlineArrayIter[Self.ElementType, Self.size, origin_of(self), False]:
+        """Iterate over elements of the array in reverse order, returning immutable references.
+
+        Returns:
+            An iterator of immutable references to the array elements in reverse order.
+        """
+        return _InlineArrayIter[forward=False](Self.size, Pointer(to=self))

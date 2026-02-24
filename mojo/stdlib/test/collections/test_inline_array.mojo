@@ -412,5 +412,53 @@ def test_inline_array_copy_and_move_llvm_ir():
     _test(copy_info.asm)
 
 
+def test_inline_array_iter():
+    var arr: InlineArray[Int, 3] = [0, 1, 2]
+    var s = 0
+    for el in arr:
+        s += el
+    assert_equal(s, 3)
+
+    for el in reversed(arr):
+        s -= el
+    assert_equal(s, 0)
+
+
+def test_inline_array_iter_mut():
+    var arr: InlineArray[Int, 3] = [0, 1, 2]
+    for ref el in arr:
+        el += 1
+
+    var s = 0
+    for el in arr:
+        s += el
+    assert_equal(s, 6)
+
+
+def _test_inline_array_iter_bounds[
+    I: Iterator
+](var array_iter: I, array_len: Int):
+    var iter = array_iter^
+
+    for i in range(array_len):
+        var lower, upper = iter.bounds()
+        print(lower, upper, i)
+        assert_equal(array_len - i, lower)
+        assert_equal(array_len - i, upper.value())
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
+            iter.__next__()
+        )
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
+
+
+def test_inline_array_iter_bounds():
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    _test_inline_array_iter_bounds(iter(arr), len(arr))
+    _test_inline_array_iter_bounds(reversed(arr), len(arr))
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
