@@ -246,14 +246,14 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
-- `StringSlice` now has `is_ascii_alpha()`, `is_ascii_alnum()`, `capitalize()`,
-  and `title()` methods:
+- `String` and `StringSlice` now have `is_ascii_alpha()`, `is_ascii_alnum()`,
+  `capitalize()`, and `title()` methods:
 
   ```mojo
-  StringSlice("hello world").capitalize()  # "Hello world"
-  StringSlice("hello world").title()       # "Hello World"
-  StringSlice("abc").is_ascii_alpha()      # True
-  StringSlice("abc123").is_ascii_alnum()   # True
+  String("hello world").capitalize()        # "Hello world"
+  StringSlice("hello world").title()        # "Hello World"
+  String("abc").is_ascii_alpha()            # True
+  StringSlice("abc123").is_ascii_alnum()    # True
   ```
 
 ## Tooling changes
