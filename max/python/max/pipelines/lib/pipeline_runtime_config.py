@@ -21,7 +21,7 @@ from max.config import ConfigFileModel
 from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, PrivateAttr
 
-from .config_enums import PipelineRole
+from .config.config_enums import PipelineRole
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192

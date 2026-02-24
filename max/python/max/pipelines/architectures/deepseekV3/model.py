@@ -37,7 +37,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.config_enums import (
+from max.pipelines.lib.config.config_enums import (
     is_float4_encoding,
     supported_encoding_dtype,
 )

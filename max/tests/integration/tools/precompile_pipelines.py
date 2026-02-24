@@ -30,7 +30,7 @@ from multiprocessing.sharedctypes import Synchronized
 
 import click
 from create_pipelines import PIPELINE_ORACLES
-from max.pipelines.lib.config_enums import SupportedEncoding
+from max.pipelines.lib.config.config_enums import SupportedEncoding
 from verify_pipelines import (
     PIPELINES,
     DeviceKind,

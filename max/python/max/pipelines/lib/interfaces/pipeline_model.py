@@ -31,8 +31,8 @@ from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
-from ..config_enums import supported_encoding_dtype
-from ..kv_cache_config import KVCacheConfig
+from ..config.config_enums import supported_encoding_dtype
+from ..config.kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
 
 if TYPE_CHECKING:

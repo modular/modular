@@ -189,7 +189,7 @@ def apply_hf_config_override(
     the HuggingFace config. In a future version of the MAXModelConfig class,
     we should be able to edit the object directly.
     """
-    from max.pipelines.lib.model_config import MAXModelConfig
+    from max.pipelines.lib.config.model_config import MAXModelConfig
 
     orig_hf_prop = MAXModelConfig.huggingface_config
     if not isinstance(orig_hf_prop, property) or orig_hf_prop.fget is None:

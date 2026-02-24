@@ -17,7 +17,7 @@ import numpy as np
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from transformers import LlamaConfig
 
 # Maps from Safetensor to MAX weight names.

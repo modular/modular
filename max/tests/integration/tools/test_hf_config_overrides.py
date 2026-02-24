@@ -21,7 +21,7 @@ import pytest
 import transformers
 from max.nn.layer import Module
 from max.nn.module_v3 import Module as ModuleV3
-from max.pipelines.lib.model_config import MAXModelConfig
+from max.pipelines.lib.config.model_config import MAXModelConfig
 
 
 def test_set_config_overrides() -> None:

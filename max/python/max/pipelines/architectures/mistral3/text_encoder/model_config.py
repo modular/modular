@@ -22,7 +22,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
-from max.pipelines.lib.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from pydantic import Field
 
 # Mapping from HuggingFace config keys to our config keys

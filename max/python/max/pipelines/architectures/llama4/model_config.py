@@ -22,7 +22,7 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
-from max.pipelines.lib.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override

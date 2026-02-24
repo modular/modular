@@ -38,7 +38,7 @@ from requests.exceptions import ConnectionError as RequestsConnectionError
 from tqdm.contrib.concurrent import thread_map
 from tqdm.std import TqdmDefaultWriteLock
 
-from .config_enums import (
+from .config.config_enums import (
     RepoType,
     SupportedEncoding,
     parse_supported_encoding_from_file_name,

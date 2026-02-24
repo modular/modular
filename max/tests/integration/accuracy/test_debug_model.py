@@ -19,7 +19,7 @@ from tempfile import TemporaryDirectory
 import max.tests.integration.tools.debugging_utils as dbg
 import transformers
 from max.nn.layer import Module
-from max.pipelines.lib.model_config import MAXModelConfig
+from max.pipelines.lib.config.model_config import MAXModelConfig
 
 
 def test_apply_max_hooks_without_output_dir() -> None:

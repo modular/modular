@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .audio_generator_pipeline import AudioGeneratorPipeline
-from .config_enums import RopeType, SupportedEncoding
+from .config.config_enums import RopeType, SupportedEncoding
 from .embeddings_pipeline import EmbeddingsPipeline
 from .hf_utils import HuggingFaceRepo, is_diffusion_pipeline
 from .interfaces import ArchConfig, ArchConfigWithKVCache, PipelineModel

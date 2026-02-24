@@ -22,11 +22,18 @@ from max.config import (
 )
 
 from .bfloat16_utils import float32_to_bfloat16_as_uint16
-from .config import AudioGenerationConfig, PipelineConfig
-from .config_enums import (
+from .config import (
+    AudioGenerationConfig,
+    KVCacheConfig,
+    LoRAConfig,
+    MAXModelConfig,
+    MAXModelConfigBase,
+    PipelineConfig,
     PipelineRole,
+    ProfilingConfig,
     RepoType,
     RopeType,
+    SpeculativeConfig,
     SupportedEncoding,
     is_float4_encoding,
     parse_supported_encoding_from_file_name,
@@ -51,19 +58,15 @@ from .interfaces import (
     PipelineModel,
     PipelineModelWithKVCache,
 )
-from .kv_cache_config import KVCacheConfig
 from .lora import LoRAManager
-from .lora_config import LoRAConfig
 from .lora_request_processor import LoRARequestProcessor
 from .memory_estimation import MemoryEstimator
-from .model_config import MAXModelConfig, MAXModelConfigBase
 from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
 from .pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
-from .profiling_config import ProfilingConfig
 from .registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .sampling import (
     SamplingConfig,
@@ -71,7 +74,6 @@ from .sampling import (
     rejection_sampler_with_residuals,
     token_sampler,
 )
-from .speculative_config import SpeculativeConfig
 from .speculative_decoding import (
     EAGLESpeculativeDecodingPipeline,
     SpeculativeDecodingPipelineBase,

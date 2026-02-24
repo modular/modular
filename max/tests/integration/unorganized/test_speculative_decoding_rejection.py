@@ -27,9 +27,9 @@ from max.interfaces import (
 )
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
-from max.pipelines.lib.kv_cache_config import KVCacheConfig
-from max.pipelines.lib.model_config import MAXModelConfig
-from max.pipelines.lib.speculative_config import SpeculativeConfig
+from max.pipelines.lib.config.kv_cache_config import KVCacheConfig
+from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )

@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max.pipelines.lib.speculative_config import SpeculativeConfig
+from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 
 
 def test_is_eagle() -> None:

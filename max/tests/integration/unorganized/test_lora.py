@@ -20,8 +20,8 @@ from max.dtype import DType
 from max.graph.weights import WeightData
 from max.interfaces import LoRAOperation, LoRARequest, LoRAResponse, LoRAStatus
 from max.pipelines.core import TextContext
+from max.pipelines.lib.config.lora_config import LoRAConfig
 from max.pipelines.lib.lora import LoRAManager
-from max.pipelines.lib.lora_config import LoRAConfig
 
 
 @pytest.fixture

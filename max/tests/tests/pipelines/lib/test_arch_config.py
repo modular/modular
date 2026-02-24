@@ -29,7 +29,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config_enums import SupportedEncoding
+from max.pipelines.lib.config.config_enums import SupportedEncoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,

@@ -21,7 +21,7 @@ from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn import ReturnLogits, YarnScalingParams
 from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
-from max.pipelines.lib.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override

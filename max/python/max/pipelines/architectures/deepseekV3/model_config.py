@@ -24,7 +24,7 @@ from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, KVCacheQuantizationConfig
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
-from max.pipelines.lib.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig

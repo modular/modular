@@ -24,7 +24,7 @@ from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
-from max.pipelines.lib.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override

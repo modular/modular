@@ -27,8 +27,8 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
+from .config.model_config import MAXModelConfig
 from .interfaces import ArchConfig, ArchConfigWithKVCache
-from .model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
 
