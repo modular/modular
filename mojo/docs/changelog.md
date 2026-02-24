@@ -503,6 +503,9 @@ what we publish.
   conflicted with Python-specific formatters in pre-commit hooks. Users who
   want to format Python files can use `mblack` directly.
 
+- `mojo format` now supports `--print-cache-dir` (hidden, use `--help-hidden`
+  to see it) to display the path to the formatter cache directory.
+
 ### ❌ Removed
 
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
