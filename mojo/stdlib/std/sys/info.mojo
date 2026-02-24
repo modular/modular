@@ -391,9 +391,9 @@ fn platform_map[
     """
 
     comptime if CompilationTarget.is_macos() and macos:
-        return materialize[macos.value()]()
+        return macos.value().copy()
     elif CompilationTarget.is_linux() and linux:
-        return materialize[linux.value()]()
+        return linux.value().copy()
     else:
         return CompilationTarget.unsupported_target_error[
             T, operation=operation
