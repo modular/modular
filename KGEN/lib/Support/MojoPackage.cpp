@@ -109,7 +109,7 @@ bool M::KGEN::isMojoPackage(llvm::MemoryBufferRef buffer) {
 template <typename T>
 ErrorOr<std::pair<T, llvm::StringRef>> readInt(llvm::StringRef buffer) {
   if (buffer.size() < sizeof(T))
-    return Error("invalid Mojo package");
+    return Error("read past end of buffer");
   return std::make_pair<T, llvm::StringRef>(
       llvm::support::endian::read<T, llvm::support::unaligned>(
           buffer.data(), llvm::endianness::little),
@@ -120,7 +120,7 @@ static ErrorOr<std::pair<MojoPackageVersion, llvm::StringRef>>
 readVersion(llvm::StringRef buffer) {
   MojoPackageVersion version;
 
-  // Manor
+  // Major
   if (auto err = readInt<uint8_t>(buffer))
     return err.takeError();
   else
@@ -142,7 +142,7 @@ readVersion(llvm::StringRef buffer) {
   // Check we've reached a nul terminator
   auto remaining = buffer.drop_front(version.label.size());
   if (remaining.empty() || remaining.front() != '\0')
-    return Error("invalid Mojo package - invalid version encoding");
+    return Error("invalid version encoding");
 
   return std::make_pair(version, remaining.drop_front());
 }
@@ -151,12 +151,12 @@ ErrorOr<MojoPackageHeader>
 M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
   llvm::StringRef bufferStr = buffer.getBuffer();
   if (!isMojoPackage(buffer))
-    return Error("invalid Mojo package - invalid magic bytes");
+    return Error("invalid magic bytes");
 
   // A package header must be at least 8 bytes, to begin with. We'll keep
   // checking as we go.
   if (bufferStr.size() < 8)
-    return Error("invalid Mojo package - invalid header size");
+    return Error("invalid header size");
 
   MojoPackageHeader header;
   // Skip past the 4 magic bytes
@@ -186,13 +186,13 @@ M::KGEN::readBinaryPackageHeader(llvm::MemoryBufferRef buffer) {
 
   // Skip past the NUL terminator (as readVersion does for version labels).
   if (bufferStr.empty() || bufferStr.front() != '\0')
-    return Error("invalid Mojo package - invalid checksum encoding");
+    return Error("invalid checksum encoding");
   bufferStr = bufferStr.drop_front(1);
 
   header.headerSize =
       llvm::alignTo(buffer.getBufferSize() - bufferStr.size(), 8);
   if (buffer.getBufferSize() < header.headerSize)
-    return Error("invalid Mojo package - invalid header size");
+    return Error("invalid header size");
 
   return header;
 }
@@ -202,7 +202,8 @@ ErrorOr<std::pair<MojoPackageHeader, llvm::MemoryBufferRef>>
 M::KGEN::getMLIRBufferAndHeaderFromPackage(llvm::MemoryBufferRef buffer) {
   auto header = readBinaryPackageHeader(buffer);
   if (header.isError())
-    return header.takeError();
+    return Error("invalid Mojo package '" + buffer.getBufferIdentifier() +
+                 "': " + header.getError());
   // Return the header and a buffer pointing to the start of the MLIR section.
   return std::make_pair(
       *header, llvm::MemoryBufferRef(
@@ -219,7 +220,8 @@ M::KGEN::getMLIRBufferFromPackage(llvm::MemoryBufferRef buffer,
   auto &[header, mlirBuffer] = *mlirBufferAndHeaderOrErr;
   if (!ignoreIncompatiblePackageErrs)
     if (auto err = KGEN::checkCompatiblePackage(header))
-      return Error(Twine("Invalid Mojo package: ") + err.takeError().get());
+      return Error("invalid Mojo package '" + buffer.getBufferIdentifier() +
+                   "': " + err.takeError().get());
   return mlirBuffer;
 }
 
