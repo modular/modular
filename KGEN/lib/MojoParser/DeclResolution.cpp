@@ -23,6 +23,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGPreElabDecorators.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -2606,20 +2607,244 @@ ParseResult DeclResolver::resolveBody(AliasDeclOp op, Lexer &lexer,
 // Struct Decl implementation
 //===----------------------------------------------------------------------===//
 
+struct ParsedTraitConstraint {
+  SymbolRefAttr traitSymbol;
+  ConstraintAttr constraint;
+  /// Whether this constraint was for an explicitly listed trait in the
+  /// inheritance list (vs propagated from an ancestor).
+  bool isExplicit;
+};
+
+/// Verify that each explicitly listed derived trait's constraint implies its
+/// explicitly listed ancestor's constraint. This enforces that whenever a
+/// derived trait is available, its ancestors are also available.
+///
+/// Example -- rejected because `condA` does not imply `condB`:
+///
+///   trait Derived(Base): ...
+///   struct S(Derived where condA, Base where condB): ...
+///
+/// Example -- rejected because unconditional `Derived` always requires `Base`,
+/// so `Base` cannot be conditional:
+///
+///   struct S(Derived, Base where cond): ...
+///
+/// Example -- accepted because `condA and condB` implies `condB`:
+///
+///   struct S(Derived where condA and condB, Base where condB): ...
+///
+/// Returns failure if any implication errors were found.
+static LogicalResult verifyDerivedAncestorImplication(
+    const DenseMap<SymbolRefAttr, ConstraintAttr> &explicitConstraints,
+    SharedState &shared) {
+  bool hasErrors = false;
+  for (const auto &[symbol, constraint] : explicitConstraints) {
+    TypedAttr prop = constraint.getProposition();
+
+    ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+    auto traitDeclOp =
+        dyn_cast_or_null<TraitDeclOp>(traitDecl.getIfOperation());
+    if (!traitDeclOp)
+      continue;
+
+    for (SymbolRefAttr ancestor :
+         traitDeclOp.getCanonicalTrait().getSymbols()) {
+      if (ancestor == symbol)
+        continue;
+
+      auto it = explicitConstraints.find(ancestor);
+      if (it == explicitConstraints.end())
+        continue; // Not explicitly listed -- handled by propagation.
+
+      TypedAttr ancestorProp = it->second.getProposition();
+
+      if (!constraintImplies(prop, ancestorProp)) {
+        shared.emitError(constraint.getLoc())
+            << "constraint for '" << symbol.getLeafReference()
+            << "' does not imply constraint for ancestor trait '"
+            << ancestor.getLeafReference()
+            << "'; strengthen the derived constraint by adding the ancestor's "
+               "constraint with 'and'";
+        hasErrors = true;
+      }
+    }
+  }
+  return failure(hasErrors);
+}
+
+/// Resolve propagated (non-explicit) ancestor constraints after all explicit
+/// constraints have been collected. Applies three rules:
+///   - Any unconditional path makes the ancestor unconditional.
+///   - Single path or all paths agree: auto-propagate the constraint.
+///   - Multiple paths disagree (diamond): require explicit listing.
+///
+/// Returns failure if any diamond errors were found.
+static LogicalResult resolvePropagatedConstraints(
+    const DenseMap<SymbolRefAttr,
+                   SmallVector<std::pair<TypedAttr, LocationAttr>, 2>>
+        &propagated,
+    DenseMap<SymbolRefAttr, ConstraintAttr> &traitConstraints,
+    SharedState &shared) {
+  ConstraintAttr unconditional =
+      getUnconditionalConstraint(shared.getContext());
+  bool hasErrors = false;
+
+  for (const auto &[symbol, paths] : propagated) {
+    assert(!paths.empty() && "propagated constraint entry cannot be empty");
+
+    // Any unconditional path makes the ancestor unconditional.
+    bool hasUnconditionalPath = llvm::any_of(paths, [](const auto &pair) {
+      return isTriviallyTrueProposition(pair.first);
+    });
+    if (hasUnconditionalPath) {
+      traitConstraints[symbol] = unconditional;
+      continue;
+    }
+
+    // Single path or all paths carry the same constraint: auto-propagate.
+    // Canonicalization already normalizes operand order for commutative ops
+    // like AND/OR, so structural equality suffices here.
+    TypedAttr firstProp = getCanonicalAttr(paths.front().first);
+    bool allSame = llvm::all_of(paths, [&](const auto &pair) {
+      return getCanonicalAttr(pair.first) == firstProp;
+    });
+
+    if (allSame) {
+      traitConstraints[symbol] =
+          ConstraintAttr::get(firstProp, paths.front().second);
+      continue;
+    }
+
+    // Diamond: multiple paths disagree -- require explicit listing.
+    shared.emitError(paths.front().second)
+        << "ancestor trait '" << symbol.getLeafReference()
+        << "' is reached via multiple inheritance paths with different "
+           "constraints; it must be explicitly listed in the inheritance "
+           "list with the desired constraint";
+    hasErrors = true;
+  }
+  return failure(hasErrors);
+}
+
+/// Build the trait constraint map from parsed constraints and explicit trait
+/// information. Partitions constraints into explicit vs. propagated, verifies
+/// derived->ancestor implication for explicit traits, and resolves propagated
+/// constraints for ancestor traits.
+///
+/// Given an inheritance list like:
+///
+///   trait Base: ...
+///   trait Mid(Base): ...
+///   trait Other(Base): ...
+///   struct S(Mid where cond, Other where cond): ...
+///
+/// The parsed constraints contain both explicit entries (`Mid where cond`,
+/// `Other where cond`) and propagated ancestors (`Base` via `Mid` with `cond`,
+/// `Base` via `Other` with `cond`). This function:
+///   1. Records explicit constraints and checks for duplicates.
+///   2. Verifies derived->ancestor implication (see
+///      `verifyDerivedAncestorImplication`).
+///   3. Resolves propagated ancestors -- here `Base` is reached via two paths
+///      that agree on `cond`, so it auto-propagates. If they disagreed (e.g.,
+///      `Mid where condA, Other where condB`), an error requires the user to
+///      explicitly list `Base` with the desired constraint.
+///
+/// `compilerInjectedTraits` contains canonical symbols for traits that the
+/// compiler injects into every struct's parent list when the stdlib is
+/// available (e.g., `AnyType`, `ImplicitlyDestructible`). These are treated
+/// as unconditionally available and never require explicit listing. The set
+/// may be empty when builtins are disabled (`--mojo-disable-builtins`).
+///
+/// Returns failure if any constraint errors were found.
+static LogicalResult buildTraitConstraintsMap(
+    ArrayRef<ParsedTraitConstraint> parsedConstraints,
+    const DenseSet<SymbolRefAttr> &explicitTraits,
+    const DenseSet<SymbolRefAttr> &compilerInjectedTraits,
+    DenseMap<SymbolRefAttr, ConstraintAttr> &traitConstraints,
+    SharedState &shared) {
+  ConstraintAttr unconditional =
+      getUnconditionalConstraint(shared.getContext());
+  DenseMap<SymbolRefAttr, ConstraintAttr> explicitConstraints;
+  DenseMap<SymbolRefAttr, SmallVector<std::pair<TypedAttr, LocationAttr>, 2>>
+      propagated;
+  bool hasErrors = false;
+
+  // Partition parsed constraints into explicit and propagated.
+  for (const auto &pc : parsedConstraints) {
+    TypedAttr prop = pc.constraint.getProposition();
+
+    if (pc.isExplicit) {
+      auto newConstraint = ConstraintAttr::get(prop, pc.constraint.getLoc());
+      auto [it, inserted] =
+          explicitConstraints.try_emplace(pc.traitSymbol, newConstraint);
+      // Catches cases where a trait is listed twice with different constraints.
+      // Canonicalization normalizes operand order for commutative ops, so
+      // structural equality after canonicalization suffices here.
+      if (!inserted && getCanonicalAttr(it->second.getProposition()) !=
+                           getCanonicalAttr(prop)) {
+        shared.emitError(pc.constraint.getLoc())
+            << "trait '" << pc.traitSymbol.getLeafReference()
+            << "' appears multiple times in the inheritance list with "
+               "different constraints";
+        hasErrors = true;
+      }
+      continue;
+    }
+
+    // The explicit constraint takes precedence over any propagated one.
+    if (explicitTraits.contains(pc.traitSymbol))
+      continue;
+
+    // Compiler-injected traits are always unconditionally available --
+    // don't require explicit listing.
+    if (compilerInjectedTraits.contains(pc.traitSymbol)) {
+      traitConstraints.try_emplace(pc.traitSymbol, unconditional);
+      continue;
+    }
+
+    propagated[pc.traitSymbol].push_back({prop, pc.constraint.getLoc()});
+  }
+
+  // Verify derived->ancestor implication for explicitly listed traits.
+  // This operates on explicitConstraints only, before propagated entries are
+  // resolved, so it cannot accidentally inspect propagated ancestors.
+  if (failed(verifyDerivedAncestorImplication(explicitConstraints, shared)))
+    hasErrors = true;
+
+  // Merge explicit constraints into the output map (after verification).
+  traitConstraints.insert(explicitConstraints.begin(),
+                          explicitConstraints.end());
+
+  // Resolve propagated constraints for non-explicit ancestor traits.
+  if (failed(
+          resolvePropagatedConstraints(propagated, traitConstraints, shared)))
+    hasErrors = true;
+
+  return failure(hasErrors);
+}
+
 /// For a struct or trait declaration, parse an optional list of parent traits
 /// to inherit from. `immediateParents` will be populated with the smallest set
 /// of equivalent parent trait decls.
 ///
-/// For struct declarations with parameters already in scope, `traitConstraints`
-/// can be provided to collect constraint expressions for conditional
-/// conformance. Traits with a `where` clause carry the emitted constraint;
-/// traits without carry the trivially-true (unconditional) constraint.
+/// For struct declarations with parameters already in scope,
+/// `traitConstraints` will be populated with a constraint entry for every
+/// trait encountered (explicit and propagated ancestors). Entries from `where`
+/// clauses carry the emitted constraint; entries without a `where` clause
+/// carry the trivially-true (unconditional) constraint. Parameters must be in
+/// scope in declScope for constraint emission to work correctly.
 /// Note: Trait declarations cannot have where clauses on their inheritance
 /// lists - only struct declarations support conditional conformance.
+///
+/// `explicitTraits` (if provided) will be populated with all traits that are
+/// explicitly listed in the inheritance list (regardless of whether they have
+/// a where clause). This is used to give explicit constraints precedence over
+/// propagated ones during constraint map building.
 static ParseResult parseOptionalInheritanceList(
     ParserBase &p, ASTDecl &declScope, ASTDecl &decl, StringRef declName,
     SharedState &shared, DenseSet<SymbolRefAttr> &immediateParents,
-    DenseMap<SymbolRefAttr, ConstraintAttr> *traitConstraints = nullptr) {
+    SmallVectorImpl<ParsedTraitConstraint> *traitConstraints = nullptr,
+    DenseSet<SymbolRefAttr> *explicitTraits = nullptr) {
   if (!p.consumeIf(Token::l_paren) || p.consumeIf(Token::r_paren))
     return success();
 
@@ -2687,7 +2912,22 @@ static ParseResult parseOptionalInheritanceList(
     // available to check.
     // TODO: Encode an "inherited from" here, to make diagnostics nice.
     for (SymbolRefAttr symbol : traitType.getSymbols()) {
-      // If this symbol is already a parent, skip it.
+      // Track explicitly listed traits BEFORE checking if already a parent.
+      // This ensures that even if a trait was already added as an ancestor
+      // of a previously processed trait, we still record that it was
+      // explicitly listed (for constraint propagation decisions).
+      if (explicitTraits)
+        explicitTraits->insert(symbol);
+
+      // Store the constraint for the explicitly listed trait (conditional or
+      // unconditional). This must happen BEFORE the inheritedFrom check
+      // because an ancestor trait may be explicitly listed with its own
+      // constraint that differs from the propagated constraint.
+      if (traitConstraints)
+        traitConstraints->push_back({symbol, constraint, /*isExplicit=*/true});
+
+      // If this symbol is already a parent, skip further processing.
+      // Note: The explicit constraint was already recorded above.
       if (inheritedFrom->contains(symbol))
         continue;
       ASTDecl &traitDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
@@ -2704,18 +2944,25 @@ static ParseResult parseOptionalInheritanceList(
       TraitType canonicalParent =
           cast_or_null<TraitDeclOp>(traitDecl.getIfOperation())
               .getCanonicalTrait();
+
       for (SymbolRefAttr parent : canonicalParent.getSymbols()) {
         inheritedFrom->try_emplace(parent, std::make_pair(symbol, loc));
         // Any immediate parent that is actually a parent of this `symbol` is no
         // longer an immediate parent.
         immediateParents.erase(parent);
+
+        // Propagate the constraint to ancestor traits (the immediate symbol
+        // was already added above as an explicit entry).
+        // Each path's constraint is collected; the final constraint map
+        // builder checks that all paths to the same ancestor agree, or
+        // requires explicit listing if they disagree (diamond case).
+        if (traitConstraints && parent != symbol)
+          traitConstraints->push_back(
+              {parent, constraint, /*isExplicit=*/false});
       }
       // Insert this `symbol` as an immediate parent. This must happen after the
       // loop, because this symbol itself is part of `canonicalParent` too.
       immediateParents.insert(symbol);
-
-      if (traitConstraints)
-        (*traitConstraints)[symbol] = constraint;
     }
     return success();
   };
@@ -2939,13 +3186,36 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   // Now parse the inheritance list. Parameters are in scope in sigDecl,
   // so where clause constraints can be emitted immediately.
   DenseSet<SymbolRefAttr> immediateParents; // unused.
-  DenseMap<SymbolRefAttr, ConstraintAttr> traitConstraints;
+  SmallVector<ParsedTraitConstraint> parsedConstraints;
+  DenseSet<SymbolRefAttr> explicitTraits;
   if (parseOptionalInheritanceList(p, sigDecl, decl, structOp.getSymName(),
-                                   shared, immediateParents,
-                                   &traitConstraints) ||
+                                   shared, immediateParents, &parsedConstraints,
+                                   &explicitTraits) ||
       p.parseToken(Token::colon, "expected ':' in struct definition") ||
       decl.isErroneous())
     return failure();
+
+  // Look up traits the compiler unconditionally injects into every struct.
+  // These lookups are reused below both for constraint building (to skip
+  // propagated constraints) and for the actual injection into parentTraits,
+  // so the trait names are stated only once here.
+  ASTDecl *anyTypeDecl =
+      shared.lookupBuiltinTrait("AnyType", decl.getParentDecl(), decl.getLoc());
+  ASTDecl *implDestrDecl = shared.lookupBuiltinTrait(
+      "ImplicitlyDestructible", decl.getParentDecl(), decl.getLoc());
+
+  DenseSet<SymbolRefAttr> compilerInjectedTraits;
+  if (anyTypeDecl)
+    compilerInjectedTraits.insert(anyTypeDecl->getSymbolRef());
+  if (implDestrDecl)
+    compilerInjectedTraits.insert(implDestrDecl->getSymbolRef());
+
+  // Build the final constraint map from the parsed constraints.
+  DenseMap<SymbolRefAttr, ConstraintAttr> traitConstraints;
+  if (failed(buildTraitConstraintsMap(parsedConstraints, explicitTraits,
+                                      compilerInjectedTraits, traitConstraints,
+                                      shared)))
+    decl.setErroneous();
 
   auto paramsArrayAttr =
       ParamDeclArrayAttr::get(getContext(), paramSignature.paramDeclAttrs);
@@ -2962,9 +3232,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       parentTraits.push_back(symbol);
 
   // Make every nominal struct type inherit from `AnyType`.
-  if (ASTDecl *traitDecl = shared.lookupBuiltinTrait(
-          "AnyType", decl.getParentDecl(), decl.getLoc()))
-    parentTraits.push_back(traitDecl->getSymbolRef());
+  if (anyTypeDecl)
+    parentTraits.push_back(anyTypeDecl->getSymbolRef());
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
@@ -3017,10 +3286,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
     structOp.setLinearTypeErrorMsg(
         std::make_optional(llvm::StringRef(linearTypeErrorMsg)));
   } else {
-    if (ASTDecl *implicitlyDestructibleDecl = shared.lookupBuiltinTrait(
-            "ImplicitlyDestructible", decl.getParentDecl(), decl.getLoc())) {
-      parentTraits.push_back(implicitlyDestructibleDecl->getSymbolRef());
-    }
+    if (implDestrDecl)
+      parentTraits.push_back(implDestrDecl->getSymbolRef());
   }
 
   // Build canonical trait with constraints for conditional conformance.
