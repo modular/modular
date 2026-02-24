@@ -728,7 +728,7 @@ struct WrongType(RegisterPassable):
   fn __init__(out self, *, copy: Int): pass
 
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
-  # expected-error @+1 {{'@register_passable' types may not have an explicit move constructor, they are always movable by copying a register}}
+  # expected-error @+1 {{'RegisterPassable' types may not have an explicit move constructor, they are always movable by copying a register}}
   fn __init__(out self, *, deinit take: Self): pass
 
 
@@ -769,7 +769,7 @@ struct MLIRAttrWithinStruct:
 # In register structs may only have stored properties of other in-reg values.
 struct InMemStruct: pass
 
-# expected-error @+1 {{all members of '@register_passable' (RegisterPassable) struct must themselves be '@register_passable' (RegisterPassable)}}
+# expected-error @+1 {{all members of 'RegisterPassable' struct must themselves be 'RegisterPassable'}}
 struct InRegStruct(RegisterPassable):
   var x: Int # ok
   # expected-error @+1 {{cannot synthesize move constructor because field 'y' has non-copyable and non-movable type 'InMemStruct'}}
@@ -787,7 +787,7 @@ struct MoveInitTakeWrongName:
 # expected-note @+1 {{previous definition here}}
 struct InvalidMember(TrivialRegisterPassable):
   var x: __mlir_type.index
-  # expected-error @+1 {{'@register_passable' types may not have an explicit move constructor, they are always movable by copying a register}}
+  # expected-error @+1 {{'RegisterPassable' types may not have an explicit move constructor, they are always movable by copying a register}}
   fn __init__(out self, *, deinit take: Self): pass
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
   # expected-error @+1 {{trivial types may not have an explicit copy constructor, they are always trivially copyable}}
@@ -879,7 +879,7 @@ struct NotRegisterPassable:
 # Don't crash on emitting methods when the struct itself is erroneous.
 
 @fieldwise_init
-struct Outer34551(ImplicitlyCopyable, RegisterPassable): # expected-error {{all members of '@register_passable' (RegisterPassable) struct must themselves be '@register_passable' (RegisterPassable)}}
+struct Outer34551(ImplicitlyCopyable, RegisterPassable): # expected-error {{all members of 'RegisterPassable' struct must themselves be 'RegisterPassable'}}
     # expected-error @below {{cannot synthesize move constructor because field '_inner' has non-copyable and non-movable type 'NotRegisterPassable'}}
     # expected-error @below {{cannot synthesize copy constructor because field '_inner' has non-copyable type 'NotRegisterPassable'}}
     # expected-note @below {{'_inner' declared with type 'NotRegisterPassable'}}
@@ -1068,7 +1068,7 @@ struct Inner:
     pass
 
 @fieldwise_init
-struct Outer(RegisterPassable): # expected-error {{all members of '@register_passable' (RegisterPassable) struct must themselves be '@register_passable' (RegisterPassable)}}
+struct Outer(RegisterPassable): # expected-error {{all members of 'RegisterPassable' struct must themselves be 'RegisterPassable'}}
     # expected-error @+1{{cannot synthesize move constructor because field 'inner' has non-copyable and non-movable type 'Inner'}}
     var inner: Inner # expected-note {{'inner' declared with type 'Inner'}}
 

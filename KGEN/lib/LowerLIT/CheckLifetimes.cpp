@@ -501,7 +501,7 @@ struct ValueInfo {
   /// Enum indicating whether the value is initialized at function exit.
   const OriginTrackable::ExitInitState endInitState;
 
-  /// True if this value lives in memory, not a @register_passable SSA value.
+  /// True if this value lives in memory, not a RegisterPassable SSA value.
   const bool isIndirect;
 
   /// True if this is a byref_result argument for a self argument in an
@@ -557,7 +557,7 @@ struct ValueRef {
   unsigned startBit = ~0U, endBit = ~0U;
 
   /// This is true if this value reference is looking at the value indirectly,
-  /// not as a @register_passable value in an SSA value.
+  /// not as a RegisterPassable value in an SSA value.
   bool isIndirect = false;
 
   ValueRef() = default;
@@ -2279,7 +2279,7 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
          "dtor should have one result (none type)");
   assert(signature.getNumArguments() == 1 && "dtor should have one operand");
 
-  // We may have a @register_passable value direct (e.g. because it is not in a
+  // We may have a RegisterPassable value direct (e.g. because it is not in a
   // var).  If so, it needs to be stored into a temporary to invoke the
   // destructor, because it takes it by-ref.
   if (!isa<RefType>(value.getType())) {

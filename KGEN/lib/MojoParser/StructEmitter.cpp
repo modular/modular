@@ -504,7 +504,7 @@ std::pair<FnOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structDeclOp.getLoc(), &structDeclOp.getFields().front());
   InlineLevel inlineLevel = InlineLevel::Automatic;
-  // If the struct is register_passable("trivial"), make this
+  // If the struct is TrivialRegisterPassable, make this
   // @always_inline("nodebug").
   if (structDeclOp.getConvention() == TypeConvention::RegisterPassableTrivial)
     inlineLevel = InlineLevel::AlwaysNoDebug;

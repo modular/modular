@@ -32,7 +32,7 @@
 //       PValue         <- with a parameter value
 //
 // Note that SRValue is not compatible with memory-only types, but MRValue
-// can hold any type, including a @register_passable type.
+// can hold any type, including a RegisterPassable type.
 //
 // One of the important functions of IRValue is to allow the parser to track
 // different value kinds without inserting lots of casts everywhere.  In
@@ -262,7 +262,7 @@ private:
 
 /// Instances of PValue model compile time values that are represented as MLIR
 /// attributes.  It is both a BValue and an RValue, it may contain both
-/// @register_passable and memory-only types.
+/// RegisterPassable and memory-only types.
 class PValue {
 public:
   PValue() = default;

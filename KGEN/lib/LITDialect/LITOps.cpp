@@ -2173,7 +2173,7 @@ Value RefPackCreateOp::findRefPackCreate(Value val) {
   // it has a memory-style init.
   Value loadOperand;
 
-  // VariadicPack is a @register_passable type so it often is immediately
+  // VariadicPack is a RegisterPassable type so it often is immediately
   // available.  However, it gets passed by-ref to function calls.
   // If the operand is already a reference to a pack, then use it.  Otherwise
   // we must have a register pack.  Figure out how it is formed.

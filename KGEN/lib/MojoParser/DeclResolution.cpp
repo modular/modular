@@ -2193,7 +2193,7 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       continue;
     }
     if (convention == ArgConvention::ReadReg) {
-      // borrowed_in_reg is used for @register_passable("trivial") types, where
+      // borrowed_in_reg is used for TrivialRegisterPassable types, where
       // borrowed vs owned doesn't matter so we use SRValue.
       setDecl(SRValue(bbArg));
       continue;
@@ -3510,7 +3510,7 @@ LogicalResult StructDecorators::processBodyDecorator(ExprNode *decorator) {
   return failure();
 }
 
-/// Process the @register_passable decorator on structs.  This finalizes
+/// Process the RegisterPassable decorator on structs.  This finalizes
 /// semantic checks.
 static void processRegisterPassableDecorator(
     StructDeclOp structOp, ASTDecl &structDecl,
@@ -3532,18 +3532,15 @@ static void processRegisterPassableDecorator(
     // we're happy.
     if (fieldType.getRegisterPassability(fieldDecl->getLoc(), resolver.shared) <
         structPassability) {
-      StringRef trivialSuffix;
-      StringRef regTypeName = "RegisterPassable";
+      StringRef trivialPrefix;
       if (isTrivial) {
-        trivialSuffix = "(\"trivial\")";
-        regTypeName = "TrivialRegisterPassable";
+        trivialPrefix = "Trivial";
       }
 
       auto diag = resolver.emitError(structOp.getLoc())
-                  << "all members of '@register_passable" << trivialSuffix
-                  << "' (" << regTypeName
-                  << ") struct must themselves be '@register_passable"
-                  << trivialSuffix << "' (" << regTypeName << ")";
+                  << "all members of '" << trivialPrefix
+                  << "RegisterPassable' struct must themselves be '"
+                  << trivialPrefix << "RegisterPassable'";
       diag.attachNote(fieldDecl->getLoc())
           << fieldOp.getNameAttr() << " declared with type " << fieldType;
 
@@ -3732,9 +3729,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (conformsToTrait("TrivialRegisterPassable"))
     structOp.setConvention(TypeConvention::RegisterPassableTrivial);
 
-  // If the struct is @register_passable, check invariants imposed by it before
+  // If the struct is RegisterPassable, check invariants imposed by it before
   // checking other decorators.  This ensures that we reject invalid
-  // register_passable types before processing them.
+  // RegisterPassable types before processing them.
   if (structOp.isRegisterPassable())
     processRegisterPassableDecorator(structOp, structDecl, structFields, *this,
                                      structOp.getConvention());

@@ -2288,7 +2288,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       emitter.emitError(call.getLoc())
           << ASTType(type)
           << " cannot be returned directly from __mlir_op as it is not a "
-             "'@register_passable' types";
+             "'RegisterPassable' types";
       return {};
     }
   }
@@ -3643,8 +3643,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 
   auto resultType = trueVal.getRValueType();
 
-  // Ok, we now know if the types were register_passable or not, so finish up
-  // the logic.  register_passable values get merged together as SSA registers
+  // Ok, we now know if the types were RegisterPassable or not, so finish up
+  // the logic. RegisterPassable values get merged together as SSA registers
   // in the 'if' result.
   if (resultType.isRegisterPassable(trueExpr->getLoc(), emitter.shared)) {
     // Finish false.

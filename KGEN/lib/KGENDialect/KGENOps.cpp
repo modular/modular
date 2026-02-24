@@ -1576,7 +1576,7 @@ LogicalResult StructGEPOp::verify() {
     if (!structType) {
       // Allow identity case: when input and output types are the same,
       // this is a no-op that can arise from single-element struct flattening.
-      // For example, a single-element @register_passable("trivial") struct
+      // For example, a single-element TrivialRegisterPassable struct
       // with an Int field gets flattened to just `index`, and accessing
       // field 0 becomes an identity operation.
       if (getContainer().getType() == getType())

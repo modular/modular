@@ -121,8 +121,8 @@ public:
   TypeConvention getRegisterPassability(llvm::SMLoc loc,
                                         SharedState &shared) const;
 
-  /// Return true if this type is @register_passable or if it is a generic type
-  /// that could bind to a concrete @register_passable type.
+  /// Return true if this type is RegisterPassable or if it is a generic type
+  /// that could bind to a concrete RegisterPassable type.
   bool mightBeRegisterPassable(llvm::SMLoc loc, SharedState &shared) const;
 
   /// Return the @__nonmaterializable decorator target for the type, or null if
