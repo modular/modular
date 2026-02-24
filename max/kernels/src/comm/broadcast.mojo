@@ -175,6 +175,8 @@ fn broadcast_pull_1stage_kernel[
     # Stride equals total threads in grid dimension for grid-strided loops.
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
+    comptime alignment = align_of[SIMD[dtype, simd_width]]()
+
     comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
@@ -186,25 +188,30 @@ fn broadcast_pull_1stage_kernel[
     var num_elements = output_buffer.num_elements()
     var num_simd_vectors = num_elements // simd_width
 
+    # Use raw pointers with invariant loads and explicit alignment for
+    # better codegen (matching the 2-stage kernel's approach).
+    var in_ptr = input_buffer.data.address_space_cast[
+        _target_address_space
+    ]()
+    var out_ptr = output_buffer.data.address_space_cast[
+        _target_address_space
+    ]()
+
     # Grid-strided loop to cover all elements (vectorized).
     for idx in range(global_tid, num_simd_vectors, stride):
         var elem_idx = idx * simd_width
-        output_buffer.store[width=simd_width](
-            output_buffer.get_nd_index(elem_idx),
-            input_buffer.load[width=simd_width](
-                input_buffer.get_nd_index(elem_idx)
-            ),
-        )
+        var data = in_ptr.load[
+            width=simd_width, alignment=alignment, invariant=True
+        ](elem_idx)
+        out_ptr.store[alignment=alignment](elem_idx, data)
 
     # Handle tail elements (when num_elements is not a multiple of simd_width)
     # Spread across threads instead of just thread 0
     var tail_start = num_simd_vectors * simd_width
     var tail_idx = tail_start + global_tid
     if tail_idx < num_elements:
-        output_buffer.store[width=1](
-            output_buffer.get_nd_index(tail_idx),
-            input_buffer.load[width=1](input_buffer.get_nd_index(tail_idx)),
-        )
+        var data = in_ptr.load[width=1, invariant=True](tail_idx)
+        out_ptr.store(tail_idx, data)
 
     _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
