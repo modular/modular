@@ -90,10 +90,11 @@ def test_pipeline_model_capture_replay() -> None:
         warmup_model_inputs=MagicMock(),
         execute_model=model.execute,
         max_batch_size=1,
+        decode_max_cache_length_upper_bound=128,
     )
 
     trace_inputs = inputs.buffers
-    runner.graph_entries[1] = (
+    runner.graph_entries[(1, 1)] = (
         trace_inputs,
         ModelOutputs(*model.model.capture(1, *trace_inputs)),
     )
@@ -133,10 +134,11 @@ def test_pipeline_model_replay_miss_raises() -> None:
         warmup_model_inputs=MagicMock(),
         execute_model=model.execute,
         max_batch_size=1,
+        decode_max_cache_length_upper_bound=128,
     )
     with pytest.raises(
         RuntimeError,
-        match=r"No captured device graph found for batch_token_count: 4\.",
+        match=r"No captured device graph found for key:",
     ):
         runner.replay(model_inputs=inputs)
 
@@ -171,10 +173,11 @@ def test_pipeline_model_debug_verify_uses_runtime_inputs() -> None:
         warmup_model_inputs=MagicMock(),
         execute_model=model.execute,
         max_batch_size=1,
+        decode_max_cache_length_upper_bound=128,
     )
 
     trace_inputs = replay_inputs.buffers
-    runner.graph_entries[1] = (
+    runner.graph_entries[(1, 1)] = (
         trace_inputs,
         ModelOutputs(*model.model.capture(1, *trace_inputs)),
     )
@@ -217,10 +220,11 @@ def test_pipeline_model_debug_verify_rejects_mismatched_graph_keys() -> None:
         warmup_model_inputs=MagicMock(),
         execute_model=model.execute,
         max_batch_size=1,
+        decode_max_cache_length_upper_bound=128,
     )
 
     trace_inputs = replay_inputs.buffers
-    runner.graph_entries[1] = (
+    runner.graph_entries[(1, 1)] = (
         trace_inputs,
         ModelOutputs(*model.model.capture(1, *trace_inputs)),
     )

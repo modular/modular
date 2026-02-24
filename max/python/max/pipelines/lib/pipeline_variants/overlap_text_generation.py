@@ -514,6 +514,7 @@ class OverlapTextGenerationPipeline(
             warmup_model_inputs=self._warmup_model_inputs,
             execute_model=self._pipeline_model.execute,
             max_batch_size=self._pipeline_config.max_batch_size,
+            decode_max_cache_length_upper_bound=self._pipeline_model.max_seq_len,
         )
         self._graph_capture_runner = graph_capture_runner
         logger.info("Starting serve device graph capture warmup.")
