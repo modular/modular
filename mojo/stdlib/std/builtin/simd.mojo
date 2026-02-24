@@ -2144,7 +2144,7 @@ struct SIMD[dtype: DType, size: Int](
         ](self._mlir_value)
         return SIMD(mlir_value=res)
 
-    @always_inline
+    @always_inline("builtin")
     fn is_power_of_two(self) -> SIMD[DType.bool, Self.size]:
         """Checks if the input value is a power of 2 for each element of a SIMD vector.
 
@@ -2157,10 +2157,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         comptime assert Self.dtype.is_integral(), "must be integral"
 
-        comptime if Self.dtype.is_unsigned():
-            return pop_count(self).eq(1)
-        else:
-            return self.gt(0) & (self & (self - 1)).eq(0)
+        return self.gt(0) & (self & (self - 1)).eq(0)
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
