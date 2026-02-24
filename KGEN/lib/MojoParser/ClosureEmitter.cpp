@@ -2806,8 +2806,9 @@ static bool canTypeConformToAliasConstraint(Type actualType,
 
   // If the constraint is a trait type, check conformance
   if (auto traitType = sugarDynCast<TraitType>(constraintType)) {
-    ASTDecl *actualDecl = ASTType(actualType).getDecl(shared);
-    if (!actualDecl || !actualDecl->doesNominalTypeConformTo(traitType))
+    ASTType astActualType(actualType);
+    if (astActualType.checkConformance(traitType, shared) !=
+        ConformanceResult::Yes)
       return false;
     TypedAttr typeValue = TypeParamAttr::get(actualType, traitType);
     return tryRecordSubstitution(substitutions, aliasName, typeValue);
@@ -2875,9 +2876,8 @@ static bool canArgTypeMatchTraitArgType(Type actualType, Type expectedType,
   // If both are trait types, check conformance.
   if (auto actualTrait = sugarDynCast<TraitType>(actualConstraint)) {
     if (auto expectedTrait = sugarDynCast<TraitType>(expectedConstraint)) {
-      ASTDecl *actualTraitDecl = ASTType(actualTrait).getDecl(shared);
-      if (!actualTraitDecl ||
-          !actualTraitDecl->doesNominalTypeConformTo(expectedTrait))
+      if (ASTType(actualTrait).checkConformance(expectedTrait, shared) ==
+          ConformanceResult::No)
         return false;
       TypedAttr upcastValue = UpcastAttr::get(expectedTrait, actualParam);
       return tryRecordSubstitution(substitutions, aliasName, upcastValue);

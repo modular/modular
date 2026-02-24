@@ -29,6 +29,7 @@ class DocStringAttr;
 class DocString;
 class TraitDeclOp;
 class TraitType;
+enum class ConformanceResult;
 
 using DeclIRValue = SmartVariant<Operation *, CValue, std::nullopt_t>;
 
@@ -155,9 +156,17 @@ public:
   /// Return the parsed `DocString` for this decl if available.
   std::optional<DocString> getParsedDocString() const;
 
-  /// Given a decl for a struct or trait type, return true if this type conforms
-  /// to the specified trait type.
-  bool doesNominalTypeConformTo(TraitType trait);
+  /// Given a decl for a struct or trait type, check if this type conforms
+  /// to the specified trait type. Returns a 3-state result:
+  /// - ConformanceResult::Yes if the type definitely conforms
+  /// - ConformanceResult::No if the type definitely does not conform
+  /// - ConformanceResult::NeedsEvidence if conformance depends on constraints
+  ///   that cannot be evaluated statically (e.g., generic parameters)
+  ///
+  /// If concreteType is provided, its parameter bindings are used to evaluate
+  /// conditional trait conformances.
+  ConformanceResult doesNominalTypeConformTo(TraitType trait,
+                                             ASTType concreteType = {});
 
   /// Find all extensions in this scope that target a specific struct.
   /// If filterTrait is provided, only returns extensions that implement that

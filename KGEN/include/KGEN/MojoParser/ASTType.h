@@ -42,6 +42,16 @@ enum class TypeConvention : uint32_t;
 class RefType;
 class RefPackType;
 class SharedState;
+class TraitType;
+
+/// Result of checking whether a type conforms to a trait.
+/// This is a 3-state result because conditional conformances may not be
+/// provable at parse time.
+enum class ConformanceResult {
+  Yes,          // Definitely conforms (unconditional or constraint proven true)
+  No,           // Definitely does not conform (constraint proven false)
+  NeedsEvidence // Conditional conformance that can't be proven statically
+};
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
@@ -167,6 +177,18 @@ public:
   /// or conforms to TrivialRegisterPassable trait.
   /// Note: this resolves the body of a struct type.
   bool isTrivialRegisterType(llvm::SMLoc loc, SharedState &shared) const;
+
+  /// Check whether this type conforms to the specified trait, returning a
+  /// 3-state result. This uses the concrete type's parameter bindings to
+  /// evaluate any conditional trait conformances.
+  ///
+  /// Returns:
+  /// - ConformanceResult::Yes if the type definitely conforms
+  /// - ConformanceResult::No if the type definitely does not conform
+  /// - ConformanceResult::NeedsEvidence if conformance depends on constraints
+  ///   that cannot be evaluated statically
+  ConformanceResult checkConformance(TraitType trait,
+                                     SharedState &shared) const;
 
   /// Given a reference, return the element as an ASTType.  This aborts
   /// if the current type isn't a reference.

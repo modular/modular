@@ -421,13 +421,6 @@ LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       continue;
     }
     if (auto conformance = dyn_cast<ConformanceOp>(member)) {
-      // Conditional conformances are not yet supported.
-      ConstraintAttr constraint = conformance.getConstraint();
-      if (!isTriviallyTrueConstraint(constraint)) {
-        return emitError(constraint.getLoc())
-               << "conditional trait conformance for structs is not yet "
-                  "supported";
-      }
       // The trait decl is going away. This reference is no longer necessary.
       conformance.removeTraitRefAttr();
       conformance->moveBefore(structGenBody, structGenBody->end());
