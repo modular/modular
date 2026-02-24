@@ -1,5 +1,5 @@
 :title: lora
-:type: module
+:type: package
 :lang: python
 
 

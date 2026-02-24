@@ -118,8 +118,7 @@ def split_batch_replicated(
     Example:
         devices = [device_1, device_2]
         input = [seq_1, seq_2, seq_3, seq_4] (replicated for each device)
-        input_row_offsets = [0, offset_1, offset_2, offset_3, offset_4]
-            (replicated for each device)
+        input_row_offsets = [0, offset_1, offset_2, offset_3, offset_4] (replicated for each device)
         data_parallel_splits = [0, 2, 4]
 
     Outputs:

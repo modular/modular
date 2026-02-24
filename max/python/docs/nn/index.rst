@@ -28,9 +28,11 @@ Use these modules for building graph-based neural networks.
 * :code_link:`/max/api/python/nn/comm|comm`: Communication primitives for distributed training.
 * :code_link:`/max/api/python/nn/conv|conv`: Convolutional layers for spatial processing.
 * :code_link:`/max/api/python/nn/conv_transpose|conv_transpose`: Transposed convolution for upsampling.
+* :code_link:`/max/api/python/nn/data_parallelism|data_parallelism`: Utilities for splitting batches across devices.
 * :code_link:`/max/api/python/nn/embedding|embedding`: Embedding layers with vocabulary support.
 * :code_link:`/max/api/python/nn/float8_config|float8_config`: Configuration for FP8 quantization.
 * :code_link:`/max/api/python/nn/hooks|hooks`: Extension hooks for layer customization.
+* :code_link:`/max/api/python/nn/identity|identity`: Identity layer that passes inputs through unchanged.
 * :code_link:`/max/api/python/nn/kernels|kernels`: Custom kernel implementations.
 * :code_link:`/max/api/python/nn/kv_cache|kv_cache`: Key-value cache for efficient generation.
 * :code_link:`/max/api/python/nn/layer|layer`: Base classes for building graph-based layers.
@@ -48,11 +50,15 @@ Eager API (module_v3)
 
 .. note::
    The eager API provides PyTorch-style execution. Import from ``max.nn.module_v3``.
+   Enable with ``--prefer-module-v3`` when running ``max serve`` or ``max generate``.
 
 * :code_link:`/max/api/python/nn/module_v3/module|module`: Base class for all neural network modules.
-* :code_link:`/max/api/python/nn/module_v3/Linear|Linear`: Linear transformation layer with weights and bias.
+* :code_link:`/max/api/python/nn/module_v3/Conv2d|Conv2d`: 2D convolution layer.
 * :code_link:`/max/api/python/nn/module_v3/Embedding|Embedding`: Vector embedding layer for token representation.
+* :code_link:`/max/api/python/nn/module_v3/Linear|Linear`: Linear transformation layer with weights and bias.
 * :code_link:`/max/api/python/nn/module_v3/sequential|sequential`: Containers for composing modules sequentially.
+* :code_link:`/max/api/python/nn/module_v3/norm|norm`: Normalization layers (GemmaRMSNorm, RMSNorm, LayerNorm, GroupNorm).
+* :code_link:`/max/api/python/nn/module_v3/rope|rope`: Rotary position embeddings (RotaryEmbedding, TransposedRotaryEmbedding).
 
 
 .. toctree::
@@ -62,9 +68,11 @@ Eager API (module_v3)
    comm/index
    conv
    conv_transpose
+   data_parallelism
    embedding
    float8_config
    hooks
+   identity
    kernels
    kv_cache/index
    layer
@@ -77,7 +85,11 @@ Eager API (module_v3)
    sequential
    transformer/index
    attention/index
+   module_v3/index
    module_v3/module
+   module_v3/Conv2d
    module_v3/Linear
    module_v3/Embedding
    module_v3/sequential
+   module_v3/norm/index
+   module_v3/rope/index

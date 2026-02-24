@@ -1,5 +1,5 @@
 :title: sampling
-:type: module
+:type: package
 :lang: python
 
 

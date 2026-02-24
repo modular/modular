@@ -1,5 +1,5 @@
 :title: hooks
-:type: module
+:type: package
 :lang: python
 
 

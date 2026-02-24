@@ -1,4 +1,4 @@
-:description: Transformer blocks for graph-based models.
+:description: Graph-based transformer blocks.
 :title: transformer
 :type: package
 :lang: python
@@ -6,9 +6,9 @@
 :source: max/nn/transformer/
 
 max.nn.transformer
-------------------
+-------------------------
 
-Transformer building blocks for graph-based neural networks.
+Graph-based transformer building blocks for neural networks.
 
 Modules
 =======

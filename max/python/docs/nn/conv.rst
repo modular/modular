@@ -12,7 +12,7 @@ Here's an example demonstrating how to use a 1D convolution:
 
 .. code-block:: python
 
-    import max.nn as nn
+    from max.nn import Conv1D
     from max.graph import Graph, ops, Weight, DeviceRef
     from max.dtype import DType
     import numpy as np
@@ -33,18 +33,18 @@ Here's an example demonstrating how to use a 1D convolution:
         filter_1d = Weight(
             name="filter_weight",
             dtype=DType.float32,
-            shape=[kernel_size, in_channels, out_channels]
+            shape=[kernel_size, in_channels, out_channels],
             device=DeviceRef.CPU()
         )
         bias_1d = Weight(
             name="bias_weight",
             dtype=DType.float32,
-            shape=[out_channels]
+            shape=[out_channels],
             device=DeviceRef.CPU()
         )
 
         # Create and apply Conv1D layer
-        conv1d = nn.Conv1D(
+        conv1d = Conv1D(
             filter=filter_1d,
             bias=bias_1d,
             stride=1,

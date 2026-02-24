@@ -36,7 +36,7 @@ def group_norm(
     batch sizes where batch normalization is unstable.
 
     Args:
-        x: Input tensor of shape [N, C, *] where C is number of channels
+        x: Input tensor of shape [N, C, \\*] where C is number of channels
         weight: Weight tensor of shape [C]
         bias: Bias tensor of shape [C]
         num_groups: Number of groups to separate the channels into
@@ -142,7 +142,7 @@ class GroupNorm(Module[[Tensor], Tensor]):
         """Apply group normalization to input tensor.
 
         Args:
-            x: Input tensor of shape [N, C, *] where C is number of channels
+            x: Input tensor of shape [N, C, \\*] where C is number of channels
 
         Returns:
             Normalized tensor of same shape as input

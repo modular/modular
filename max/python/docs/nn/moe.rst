@@ -1,5 +1,5 @@
 :title: moe
-:type: module
+:type: package
 :lang: python
 
 

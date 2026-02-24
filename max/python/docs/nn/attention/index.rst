@@ -1,4 +1,4 @@
-:description: Attention mechanisms for graph-based models.
+:description: Graph-based attention mechanisms.
 :title: attention
 :type: package
 :lang: python
@@ -6,9 +6,9 @@
 :source: max/nn/attention/
 
 max.nn.attention
-----------------
+-----------------------
 
-Attention mechanisms for graph-based neural networks.
+Graph-based attention mechanisms for neural networks.
 
 Modules
 =======
