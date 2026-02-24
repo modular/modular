@@ -112,7 +112,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             ).destroy_pointee()
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy construct the tuple.
 
         Args:
@@ -139,7 +139,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable, Sized, Writable):
             ).init_pointee_copy(trait_downcast[Copyable](copy[i]))
 
     @always_inline("nodebug")
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Move construct the tuple.
 
         Args:

@@ -105,8 +105,8 @@ struct Bool(
     # ===-------------------------------------------------------------------===#
 
     comptime __del__is_trivial: Bool = True
-    comptime __moveinit__is_trivial: Bool = True
-    comptime __copyinit__is_trivial: Bool = True
+    comptime __move_ctor_is_trivial: Bool = True
+    comptime __copy_ctor_is_trivial: Bool = True
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods

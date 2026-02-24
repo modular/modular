@@ -12,10 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import Optional
 from math import align_up, ceildiv
-from sys import (
-    has_amd_gpu_accelerator,
-    simd_width_of,
-)
+from sys import simd_width_of
 
 import gpu.primitives.warp as warp
 from algorithm.reduction import _reduce_generator
@@ -411,6 +408,9 @@ fn gemv_split_k[
 
 
 # Row Vector-Matrix multiplication
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_size))
+)
 fn gevm_kernel[
     c_type: DType,
     a_type: DType,
@@ -428,13 +428,12 @@ fn gevm_kernel[
     n: Int,
     k: Int,
 ):
-    var warps_per_block = block_dim.x // UInt(WARP_SIZE)
-    var warp_id = warp_id()
-    var lane_id = lane_id()
-    var accum = Scalar[s_type]()
-    var col = block_idx.x * UInt(WARP_SIZE) + lane_id
-    var tid = global_idx.x
-    var global_warp_id = tid // UInt(WARP_SIZE)
+    comptime warps_per_block = tile_size // WARP_SIZE
+
+    var warp_id = Int(warp_id())
+    var lane_id = Int(lane_id())
+    var col = Int(block_idx.x) * WARP_SIZE + lane_id
+    var global_warp_id = Int(global_idx.x) // warps_per_block
 
     var x_shared = stack_allocation[
         tile_size,
@@ -445,25 +444,26 @@ fn gevm_kernel[
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
+    var accum = Scalar[s_type]()
+
     # Every block computes warp size length of output values
-    for i in range(ceildiv(UInt(k), warps_per_block)):
+    for i in range(ceildiv(k, warps_per_block)):
         var row = i * warps_per_block + warp_id
-        var lhs = a.load(row)
-        var rhs = b.load(row * UInt(n) + col)
+        var lhs = a[row]
+        var rhs = b[row * n + col]
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
-    x_shared[lane_id * UInt(WARP_SIZE) + warp_id] = accum
+    x_shared[lane_id * warps_per_block + warp_id] = accum
     barrier()
 
-    var total = x_shared.load(thread_idx.x).cast[s_type]()
-    total = warp.sum(total)
+    var total = warp.lane_group_sum[num_lanes=warps_per_block](
+        x_shared[thread_idx.x]
+    )
 
-    if lane_id == 0:
+    if lane_id % warps_per_block == 0:
         comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](
-                Index(0, global_warp_id), total.cast[c_type]()
-            )
+            elementwise_lambda(Index(0, global_warp_id), total.cast[c_type]())
         else:
             c[global_warp_id] = total.cast[c_type]()
 
@@ -807,10 +807,6 @@ fn gemv_gpu[
 
     elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
         kernel_func = GEMVAlgorithm.GEVM_KERNEL
-
-        # GEVM_KERNEL does not work with AMDGPU yet
-        comptime if has_amd_gpu_accelerator():
-            kernel_func = GEMVAlgorithm.MATMUL_NAIVE
 
     else:
         kernel_func = GEMVAlgorithm.MATMUL_NAIVE

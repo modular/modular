@@ -408,7 +408,7 @@ struct List[T: Copyable](
         self._annotate_increase(unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a deep copy of the given list.
 
         Args:

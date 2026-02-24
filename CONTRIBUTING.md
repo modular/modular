@@ -40,6 +40,8 @@ Before you start your first pull request, please complete this checklist:
 
 - Read this entire contributor guide.
 - Read the [Code of Conduct](./CODE_OF_CONDUCT.md).
+- If you are using AI to assist with coding, read our
+  [AI Tool Use Policy](./AI_TOOL_POLICY.md).
 
 ### Step 1: Evaluate and get buy-in on the change
 
@@ -102,6 +104,21 @@ and it will apply the formatting to all Mojo and Python files.
 
 You can also consider setting up your editor to automatically format
 Mojo and Python files upon saving.
+
+#### Validate your changes
+
+Before submitting, make sure your changes are correct and complete:
+
+- **Run the relevant tests.** If you changed code, run the tests for the
+  affected area. For the Mojo standard library, see the
+  [development guide](mojo/stdlib/docs/development.md) for instructions.
+- **Check for regressions.** Run a broader test pass if your change touches
+  shared infrastructure or has wide impact.
+- **Assess quality.** Review your diff as a maintainer would. Is the logic
+  clear? Are edge cases handled? Is the change well-scoped?
+
+Contributors are responsible for the correctness and quality of their
+submissions regardless of whether AI tools were used to produce them.
 
 #### Pull request walkthrough
 
@@ -295,9 +312,9 @@ To ensure quicker reviews:
 
 - **Ensure your PR is small and focused.** See the [pull request size section](#about-pull-request-sizes)
   for more info.
-- Write a good commit message/PR summary outlining the motivation and describing
-  the changes.  In the near future, we'll provide a pull request template to
-  clarify this further.
+- Write a good commit message/PR description outlining the motivation and
+  describing the changes. Use the [pull request template](.github/PULL_REQUEST_TEMPLATE.md)
+  as a guide.
 - Use descriptive titles and comments for clarity.
 - Code-review other contributor pull requests and help each other.
 
