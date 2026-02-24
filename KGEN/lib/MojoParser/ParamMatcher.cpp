@@ -68,7 +68,7 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
   if (sugarIsa<TypeType>(failure.paramType)) {
     if (auto anyStruct = sugarDynCast<StructMetaType>(failure.argParamType)) {
       diag << ", argument type " << ASTType(anyStruct.getType())
-           << " is not a '@register_passable(\"trivial\")' type, so "
+           << " is not a 'TrivialRegisterPassable' type, so "
               "does not satisfy __TypeOfAllTypes";
       return;
     }

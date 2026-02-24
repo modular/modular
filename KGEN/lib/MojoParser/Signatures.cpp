@@ -1896,7 +1896,7 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
         continue;
 
       // The argument is only a potential problem if it is generic that might
-      // expand to a @register_passable type.
+      // expand to a RegisterPassable type.
       auto refType = cast<RefType>(fullType);
       if (!ASTType(refType.getElementType())
                .mightBeRegisterPassable(parsedArg.loc, shared))
@@ -1923,9 +1923,9 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
       ASTType argType =
           ASTType(tcSignature.fullArgTypes[argIdx]).getReferenceElementType();
       if (argType.isRegisterPassable(badArg.loc, shared))
-        diag << "has @register_passable type " << argType;
+        diag << "has RegisterPassable type " << argType;
       else
-        diag << "might expand to a @register_passable type";
+        diag << "might expand to a RegisterPassable type";
       diag << resultArg.typeExpr->getRange()
            << SourceRange(badArg.loc, badArg.loc);
       break;
@@ -2093,12 +2093,12 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       return failure();
     }
 
-    // @register_passable values are movable by passing the register around, so
+    // RegisterPassable values are movable by passing the register around, so
     // they can't define a move ctor.
     if (fnInfo.kind == SpecialFunctionKind::kMoveCtor &&
         selfType.isRegisterPassable(fnDecl->getLoc(), shared)) {
       shared.emitError(fnDecl->getLoc())
-          << "'@register_passable' types may not have an explicit move "
+          << "'RegisterPassable' types may not have an explicit move "
              "constructor, they are always movable by copying a register";
       return failure();
     }

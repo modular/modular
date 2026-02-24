@@ -128,11 +128,11 @@ fn ref_result_invalid4(mut a: MemoryType, b: Int) -> ref [a] MemoryType:
     # expected-error @+1 {{cannot implicitly convert 'Int' value to 'MemoryType'}}
     return b
 
-# expected-error @+1 {{cannot return 'a's origin, because it might expand to a @register_passable type}}
+# expected-error @+1 {{cannot return 'a's origin, because it might expand to a RegisterPassable type}}
 fn ref_result_invalid5[T: AnyType](a: T) -> ref [a] T:
     return a
 
-# expected-error @+1 {{cannot return 'b's origin, because it has @register_passable type 'Int'}}
+# expected-error @+1 {{cannot return 'b's origin, because it has RegisterPassable type 'Int'}}
 fn ref_result_invalid6(mut a: MemoryType, mut b: Int) -> ref [b] Int:
     pass
 

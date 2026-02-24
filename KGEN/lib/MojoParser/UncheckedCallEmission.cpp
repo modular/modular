@@ -812,7 +812,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // use of references in other address spaces need to do a copyinit.  Right
     // now Copyable requires the source to be borrowed (it doesn't allow a
     // `ref ` existing so there is no way to define a
-    // non-@register_passable("trivial") type in another address space. Diagnose
+    // non-TrivialRegisterPassable type in another address space. Diagnose
     // this error with a specific message, and copy trivially-copyable types
     // into address space 0 implicitly.
     auto refType = someMValue.getMValueType();

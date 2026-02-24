@@ -504,7 +504,7 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
   return {};
 }
 
-/// Return whether the specified type is known to be @register_passable; if
+/// Return whether the specified type is known to be RegisterPassable; if
 /// generic, this returns the 'genericsDefault' value.
 static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
                                              SharedState &shared,
@@ -701,8 +701,8 @@ bool ASTType::isRegisterPassable(llvm::SMLoc loc, SharedState &shared) const {
          convention == TypeConvention::RegisterPassableTrivial;
 }
 
-/// Return true if this type is @register_passable or if it is a generic type
-/// that could bind to a concrete @register_passable type.
+/// Return true if this type is RegisterPassable or if it is a generic type
+/// that could bind to a concrete RegisterPassable type.
 bool ASTType::mightBeRegisterPassable(llvm::SMLoc loc,
                                       SharedState &shared) const {
   // If this is a generic type, we treat it as register passable conservatively.
@@ -809,7 +809,7 @@ bool isRegisterTypeHelper(const ASTType &asttype, llvm::SMLoc loc,
     return true; // MLIR Types are trivial register passable.
 
   // TODO: probably no need to check this
-  // once we deprecate @register_passable("trivial")
+  // once we deprecate TrivialRegisterPassable
   if (auto *declOp = typeDecl->getIfOperation()) {
     if (checkFn(declOp))
       return true;
