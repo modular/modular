@@ -33,15 +33,15 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.parallel import ParallelArrayOps
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.layer import Module
+from max.nn.parallel import ParallelArrayOps
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,

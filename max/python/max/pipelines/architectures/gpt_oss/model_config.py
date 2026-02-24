@@ -18,9 +18,9 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.rotary_embedding import YarnScalingParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParams
+from max.nn.rotary_embedding import YarnScalingParams
+from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
@@ -159,11 +159,10 @@ class GptOssConfig(ArchConfigWithKVCache):
         """
         return kv_cache_config.to_params(
             dtype=cache_dtype,
-            num_layers=GptOssConfig.get_num_layers(huggingface_config),
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
+            num_layers=GptOssConfig.get_num_layers(huggingface_config),
             devices=devices,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @staticmethod

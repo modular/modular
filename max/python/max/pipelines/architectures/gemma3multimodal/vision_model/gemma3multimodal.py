@@ -26,15 +26,15 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import MLP, ColumnParallelLinear
-from max.nn.legacy.norm import LayerNorm
-from max.nn.legacy.rotary_embedding import (
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import LayerList, Module
+from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.norm import LayerNorm
+from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention

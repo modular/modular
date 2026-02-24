@@ -34,8 +34,8 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.attention import MHAMaskVariant
+from max.nn.kernels import flash_attention_gpu
 
 # Try importing external libraries (installed via Bazel pycross_wheel_library)
 _flashinfer: types.ModuleType | None

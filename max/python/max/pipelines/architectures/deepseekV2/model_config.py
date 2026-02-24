@@ -19,7 +19,7 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache

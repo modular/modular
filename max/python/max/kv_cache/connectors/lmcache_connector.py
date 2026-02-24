@@ -75,9 +75,9 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, Graph, TensorType, Type
 from max.graph.type import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kernels import lmcache_offload, lmcache_onload
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kernels import lmcache_offload, lmcache_onload
+from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
 logger = logging.getLogger("max.pipelines")

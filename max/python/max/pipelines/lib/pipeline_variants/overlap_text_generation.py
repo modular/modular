@@ -98,9 +98,9 @@ from max.interfaces import (
 )
 from max.interfaces.tokens import TokenBuffer
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy import kernels
-from max.nn.legacy.kv_cache import KVCacheInputsSequence
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn import kernels
+from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 

@@ -43,7 +43,7 @@ from max.kv_cache.paged_kv_cache.cache_manager import PagedKVCacheManager
 from max.kv_cache.paged_kv_cache.tp_cache_manager import (
     _TPPagedKVCacheManager,
 )
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
 from test_common.context_utils import create_text_context
 

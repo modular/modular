@@ -19,11 +19,11 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.kernels import flash_attention_gpu
+from max.nn.layer import Module, Shardable
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
 
 
 def compute_heads_per_device(

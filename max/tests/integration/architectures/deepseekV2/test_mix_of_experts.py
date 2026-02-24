@@ -19,7 +19,7 @@ from max.driver import Accelerator, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.moe import MoE
+from max.nn.moe import MoE
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )

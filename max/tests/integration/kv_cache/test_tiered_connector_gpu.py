@@ -24,7 +24,7 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.kv_cache.connectors.tiered_connector import TieredConnector
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 

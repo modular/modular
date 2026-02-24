@@ -19,14 +19,14 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
-from max import functional as F
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental import functional as F
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy import ReturnLogits
-from max.nn.legacy.kv_cache import (
+from max.nn import ReturnLogits
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,

@@ -50,8 +50,8 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
-from max.nn.legacy import ReturnLogits
-from max.nn.legacy.kv_cache import KVCacheInputsSequence
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheInputsSequence
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast

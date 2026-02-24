@@ -16,10 +16,10 @@ from __future__ import annotations
 from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 
-from ..llama3_legacy.model import Llama3Model
+from ..llama3.model import Llama3Model
 
 
 class Qwen2Model(Llama3Model):

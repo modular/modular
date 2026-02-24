@@ -19,14 +19,14 @@ from unittest.mock import MagicMock, Mock
 
 from max.driver import Device, is_virtual_device_mode
 from max.engine import InferenceSession
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     MultiKVCacheParams,
     compute_num_device_blocks,
     estimated_memory_size,
 )
-from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
 
 from .paged_kv_cache import PagedKVCacheManager
 

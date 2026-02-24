@@ -29,8 +29,8 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,

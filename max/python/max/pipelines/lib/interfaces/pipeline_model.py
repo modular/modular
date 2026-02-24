@@ -27,8 +27,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
 from ..config_enums import supported_encoding_dtype
@@ -77,7 +77,7 @@ class AlwaysSignalBuffersMixin:
         if is_virtual_device_mode():
             return []
 
-        from max.nn.legacy.comm import Signals
+        from max.nn.comm import Signals
 
         return [
             Buffer.zeros(
@@ -286,7 +286,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             return []
 
         # Import here to avoid circular dependency
-        from max.nn.legacy.comm import Signals
+        from max.nn.comm import Signals
 
         # Initialize state needed for communication collectives.
         # Contents of signal buffer should be filled with zeros.

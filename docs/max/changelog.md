@@ -65,7 +65,7 @@ what we publish.
   usage to the default context automatically.
 
 - Added the `prod` op for computing the product of elements along an axis,
-  available as `max.graph.ops.prod`, `max.functional.prod`, and
+  available as `max.graph.ops.prod`, `max.experimental.functional.prod`, and
   `Tensor.prod()`.
 
 ### Breaking changes {#26-2-breaking}
@@ -93,6 +93,14 @@ what we publish.
   `model.debug_verify_replay(*inputs)` to
   `model.capture(graph_key, *inputs)`, `model.replay(graph_key, *inputs)`,
   and `model.debug_verify_replay(graph_key, *inputs)`.
+
+- **`max.nn` namespace reorganization**. The graph-based neural network API has
+  been restored as the default `max.nn` namespace (previously located under
+  `max.nn.legacy`). The eager module API has moved from `max.nn` to
+  `max.nn.module_v3`. Additionally, `max.tensor`, `max.functional`, and
+  `max.random` have moved back under `max.experimental` (i.e.,
+  `max.experimental.tensor`, `max.experimental.functional`,
+  `max.experimental.random`). Update imports accordingly.
 
 #### Mojo API {#26-2-max-mojo}
 

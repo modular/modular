@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 from max.dtype import DType
-from max.nn import Embedding
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
+from max.nn.module_v3 import Embedding
 
 
 def test_repr() -> None:

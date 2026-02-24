@@ -31,18 +31,18 @@ from max.graph import (
     ops,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention.attention_with_rope import (
+from max.nn.attention.attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeNoOpaque,
     Module,
     PagedKVCacheTensorsNoOpaque,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     NestedIterableDataclass,
     PagedCacheValues,
 )
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
 AttentionFn = Callable[

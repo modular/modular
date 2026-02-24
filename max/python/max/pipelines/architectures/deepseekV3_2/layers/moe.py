@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.legacy.comm.ep.ep_kernels import fused_silu
-from max.nn.legacy.kernels import grouped_matmul_ragged, moe_create_indices
-from max.nn.legacy.moe import MoE
+from max.nn.comm.ep.ep_kernels import fused_silu
+from max.nn.kernels import grouped_matmul_ragged, moe_create_indices
+from max.nn.moe import MoE
 
 
 class DeepseekV3_2MoE(MoE):

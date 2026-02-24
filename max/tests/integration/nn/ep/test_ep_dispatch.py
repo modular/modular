@@ -21,7 +21,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from test_common.graph_utils import gpu_warp_size
 
 # EP_DATA_READY_FLAG constant from ep_comm.mojo

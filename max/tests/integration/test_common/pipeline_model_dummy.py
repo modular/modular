@@ -29,7 +29,7 @@ from max.interfaces import (
     TextGenerationRequest,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheQuantizationConfig,

@@ -67,7 +67,7 @@ def validate_qwen2_5vl_required_args(
 
 
 qwen2_5_vl_arch = SupportedArchitecture(
-    name="Qwen2_5_VLForConditionalGeneration_Legacy",
+    name="Qwen2_5_VLForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "Qwen/Qwen2.5-VL-3B-Instruct",

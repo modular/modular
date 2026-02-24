@@ -26,13 +26,13 @@ import numpy.typing as npt
 from max._core.driver import Device
 from max.driver import CPU, Accelerator
 from max.engine import InferenceSession, Model
+from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.interfaces.tokens import TokenBuffer
-from max.nn import Module
+from max.nn.module_v3 import Module
 from max.pipelines.lib.interfaces.component_model import ComponentModel
-from max.tensor import Tensor
 from PIL import Image
 from tqdm import tqdm
 from typing_extensions import Self

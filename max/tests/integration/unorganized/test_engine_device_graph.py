@@ -22,7 +22,7 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy import Linear
+from max.nn import Linear
 
 
 @pytest.fixture(autouse=True)

@@ -19,7 +19,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 

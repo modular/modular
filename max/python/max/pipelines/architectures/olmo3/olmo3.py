@@ -18,16 +18,16 @@ from __future__ import annotations
 import functools
 from collections.abc import Sequence
 
-from max import functional as F
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn import Module
-from max.nn.embedding import Embedding
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.linear import Linear
-from max.nn.sequential import ModuleList
-from max.tensor import Tensor
+from max.nn.attention import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.module_v3 import Module
+from max.nn.module_v3.embedding import Embedding
+from max.nn.module_v3.linear import Linear
+from max.nn.module_v3.sequential import ModuleList
 
 from ..common_layers.mlp import MLP
 from ..common_layers.rotary_embedding import (

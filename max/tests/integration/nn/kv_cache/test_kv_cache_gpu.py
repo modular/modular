@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from test_common.context_utils import create_text_context
 
 

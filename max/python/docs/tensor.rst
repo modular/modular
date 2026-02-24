@@ -4,6 +4,8 @@
 :type: module
 :lang: python
 
-.. automodule:: max.tensor
+.. py:currentmodule:: max.experimental
+
+.. automodule:: max.experimental.tensor
    :members:
    :undoc-members:

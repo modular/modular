@@ -34,8 +34,8 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.conv import Conv2d
-from max.nn.legacy.layer import Module, Shardable
+from max.nn.conv import Conv2d
+from max.nn.layer import Module, Shardable
 
 
 class Learnable2DInterpPosEmbDividedFixed(Module, Shardable):

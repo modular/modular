@@ -18,12 +18,13 @@ import re
 import weakref
 
 import pytest
-from max import driver, random
-from max import functional as F
+from max import driver
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.nn.module import Module, module_dataclass
-from max.tensor import Tensor, TensorType, defaults
+from max.experimental import functional as F
+from max.experimental import random
+from max.experimental.tensor import Tensor, TensorType, defaults
+from max.nn.module_v3.module import Module, module_dataclass
 
 
 @module_dataclass

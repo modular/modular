@@ -28,7 +28,7 @@ from .model import PixtralModel
 from .model_config import PixtralConfig
 
 pixtral_arch = SupportedArchitecture(
-    name="LlavaForConditionalGeneration_Legacy",
+    name="LlavaForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistral-community/pixtral-12b"],
     default_encoding="bfloat16",

@@ -68,8 +68,8 @@ def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
 
     .. code-block:: python
 
-        import max.functional as F
-        from max.tensor import Tensor
+        import max.experimental.functional as F
+        from max.experimental.tensor import Tensor
 
         # Create a 2x4 matrix
         x = Tensor.constant([[1.2, 3.5, 2.1, 0.8], [2.3, 1.9, 4.2, 3.1]])

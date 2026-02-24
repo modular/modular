@@ -30,7 +30,7 @@ from max.graph import (
     TensorValue,
     Value,
 )
-from max.nn.legacy import Allreduce, Signals
+from max.nn import Allreduce, Signals
 from max.pipelines.architectures.kimi2_5.layers.mlp import MLP2
 from test_common.graph_utils import are_all_buffer_values_sequence
 from transformers.activations import GELUTanh

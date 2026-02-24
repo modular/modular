@@ -61,11 +61,11 @@ These components are core to building model architectures.
 :::note Legacy modules
 
 For legacy layer-based components like attention mechanisms and transformers,
-use `max.nn.legacy`:
+use `max.nn`:
 
 ```python
-from max.nn.legacy import Module, Layer, Linear
-from max.nn.legacy.attention import AttentionWithRope
+from max.nn import Module, Layer, Linear
+from max.nn.attention import AttentionWithRope
 ```
 
 :::
@@ -76,7 +76,7 @@ multi-layer perceptron:
 
 ```python
 from max.driver import Accelerator
-from max.nn import Module, Linear
+from max.nn.module_v3 import Module, Linear
 
 class MLP(Module):
     fc1: Linear

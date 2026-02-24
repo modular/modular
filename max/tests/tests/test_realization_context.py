@@ -16,17 +16,17 @@ import asyncio
 import weakref
 
 import pytest
-from max import _realization_context as rc
-from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import Graph
-from max.tensor import (
+from max.experimental import functional as F
+from max.experimental import realization_context as rc
+from max.experimental.tensor import (
     Tensor,
     TensorType,
     current_realization_context,
     realization_context,
 )
+from max.graph import Graph
 
 
 def test_eager_context_executes_on_exit() -> None:

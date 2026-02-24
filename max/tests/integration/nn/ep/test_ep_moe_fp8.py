@@ -29,16 +29,16 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.legacy.float8_config import (
+from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.float8_config import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
-from max.nn.legacy.moe import MoEGate, MoEQuantized
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.moe import MoEGate, MoEQuantized
+from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from test_common.graph_utils import is_b100_b200, is_h100_h200

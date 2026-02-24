@@ -15,10 +15,10 @@ from types import SimpleNamespace
 from typing import Any
 
 from max.driver import Device
+from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
-from max.nn import Module
+from max.nn.module_v3 import Module
 from max.pipelines.lib import SupportedEncoding
-from max.tensor import Tensor
 
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLFlux2Config

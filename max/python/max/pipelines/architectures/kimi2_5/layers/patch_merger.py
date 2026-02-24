@@ -17,10 +17,10 @@ from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import LayerNorm
+from max.nn.float8_config import Float8Config
+from max.nn.layer import Module, Shardable
+from max.nn.linear import Linear
+from max.nn.norm import LayerNorm
 
 
 class PatchMergerMLP(Module, Shardable):

@@ -22,7 +22,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.kv_cache import load_kv_manager
 from max.kv_cache.registry import load_multi_kv_managers
-from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 
 
 def create_kv_params(

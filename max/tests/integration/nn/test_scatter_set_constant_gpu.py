@@ -18,7 +18,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import scatter_set_constant
+from max.nn.kernels import scatter_set_constant
 
 
 @pytest.mark.parametrize("device", [CPU(), Accelerator()])

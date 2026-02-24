@@ -17,7 +17,7 @@ import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, SymbolicDim, Weight
-from max.nn.legacy import Module
+from max.nn import Module
 
 
 class TestLayer(Module):

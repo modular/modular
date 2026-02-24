@@ -19,8 +19,8 @@ from unittest.mock import Mock, patch
 import max.tests.integration.tools.hf_config_overrides as hf_overrides
 import pytest
 import transformers
-from max.nn import Module as ModuleV3
-from max.nn.legacy.layer import Module
+from max.nn.layer import Module
+from max.nn.module_v3 import Module as ModuleV3
 from max.pipelines.lib.model_config import MAXModelConfig
 
 

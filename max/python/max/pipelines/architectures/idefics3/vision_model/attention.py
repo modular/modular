@@ -19,8 +19,8 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
-from max.nn.legacy.attention.multihead_attention import MultiheadAttention
-from max.nn.legacy.linear import Linear
+from max.nn.attention.multihead_attention import MultiheadAttention
+from max.nn.linear import Linear
 
 
 class Idefics3VisionAttention(MultiheadAttention):

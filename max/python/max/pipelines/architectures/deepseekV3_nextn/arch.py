@@ -24,7 +24,7 @@ from .model import DeepseekV3NextNModel
 from .model_config import DeepseekV3NextNConfig
 
 deepseekV3_nextn_arch = SupportedArchitecture(
-    name="DeepseekV3ForCausalLMNextN_Legacy",
+    name="DeepseekV3ForCausalLMNextN",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "SGLang/DeepSeek-V3-NextN",

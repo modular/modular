@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.metrics import KVCacheMetrics
 
 if TYPE_CHECKING:
     from max.interfaces import RequestID, TextGenerationContext

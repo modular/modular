@@ -23,10 +23,10 @@ from typing import Any
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
 from .increment_cache_lengths import IncrementCacheLengthsProcessor

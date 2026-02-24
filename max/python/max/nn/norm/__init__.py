@@ -10,10 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Normalization layers for MAX neural networks."""
 
 from .group_norm import GroupNorm
-from .layer_norm import LayerNorm
-from .rms_norm import GemmaRMSNorm, RMSNorm, rms_norm
+from .layer_norm import ConstantLayerNorm, LayerNorm
+from .rms_norm import RMSNorm
 
-__all__ = ["GemmaRMSNorm", "GroupNorm", "LayerNorm", "RMSNorm", "rms_norm"]
+__all__ = [
+    "ConstantLayerNorm",
+    "GroupNorm",
+    "LayerNorm",
+    "RMSNorm",
+]

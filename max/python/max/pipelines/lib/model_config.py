@@ -28,7 +28,7 @@ from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
-from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.nn.kv_cache import KVCacheStrategy
 from pydantic import (
     ConfigDict,
     Field,

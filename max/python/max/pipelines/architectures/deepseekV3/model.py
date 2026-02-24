@@ -25,9 +25,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.comm.ep.ep_config import NUM_GROUPS, estimate_ep_memory_usage
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.comm.ep import EPCommInitializer, EPConfig
+from max.nn.comm.ep.ep_config import NUM_GROUPS, estimate_ep_memory_usage
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,

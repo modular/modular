@@ -26,14 +26,14 @@ from max.engine.api import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.layer import Module
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,

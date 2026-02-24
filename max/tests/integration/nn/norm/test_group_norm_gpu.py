@@ -18,7 +18,7 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy import GroupNorm
+from max.nn import GroupNorm
 
 
 def max_group_norm(  # noqa: ANN201

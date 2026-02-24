@@ -19,10 +19,10 @@ from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, Shape, TensorValue, Weight, ops
-from max.nn.legacy.kernels import moe_router_group_limited
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.moe import MoEGate
-from max.nn.legacy.moe.moe import ShardingStrategy
+from max.nn.kernels import moe_router_group_limited
+from max.nn.linear import Linear
+from max.nn.moe import MoEGate
+from max.nn.moe.moe import ShardingStrategy
 
 
 def _fill(

@@ -4,8 +4,8 @@
 :type: module
 :lang: python
 
-.. py:currentmodule:: max
+.. py:currentmodule:: max.experimental
 
-.. automodule:: max.random
+.. automodule:: max.experimental.random
    :members:
    :undoc-members:

@@ -5,5 +5,5 @@
 .. py:currentmodule:: max.nn.norm
 
 .. automodule:: max.nn.norm.rms_norm
-   :members: rms_norm, RMSNorm
+   :members: RMSNorm
    :undoc-members:

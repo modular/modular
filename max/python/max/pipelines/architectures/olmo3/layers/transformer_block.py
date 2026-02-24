@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from max.nn import Module
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.norm import RMSNorm
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.module_v3 import Module
+from max.nn.module_v3.norm import RMSNorm
 
 from ...common_layers.mlp import MLP
 from .attention import Olmo3Attention

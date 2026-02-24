@@ -18,18 +18,18 @@ import asyncio
 from typing import Generic, TypeVar
 
 import pytest
-from max import functional as F
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef, Dim, DimLike
-from max.nn import (
+from max.nn.module_v3 import (
     Embedding,
     Linear,
     Module,
     Sequential,
     module_dataclass,
 )
-from max.tensor import Tensor, TensorType
 
 
 # Tricky: because this function adds two dimensions, it needs

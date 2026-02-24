@@ -28,7 +28,7 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
 
     .. code-block:: python
 
-        from max.tensor import Tensor
+        from max.experimental.tensor import Tensor
 
         # Create two 2x2 matrices
         x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]])  # Shape: (2, 2)
@@ -43,7 +43,7 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         # Computed as: result[i,j] = sum(x[i,k] * w[k,j])
 
         # Can also call directly via functional API
-        import max.functional as F
+        import max.experimental.functional as F
         result2 = F.matmul(x, w)
         # Same result as x @ w
 

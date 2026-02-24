@@ -15,11 +15,10 @@
 from collections.abc import Iterator
 
 import pytest
-from max import _passes
-from max import _realization_context as realization_context
 from max.driver import CPU
 from max.dtype import DType
 from max.engine.api import InferenceSession
+from max.experimental import _passes, realization_context
 from max.graph import Graph, TensorType
 
 

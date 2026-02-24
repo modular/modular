@@ -16,13 +16,13 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.legacy.kernels import (
+from max.nn.kernels import (
     apply_penalties_to_logits,
     scatter_set_constant,
     topk_fused_sampling,
     update_frequency_data,
 )
-from max.nn.legacy.sampling import (
+from max.nn.sampling import (
     RejectionSampler,
     RejectionSamplerWithResiduals,
 )

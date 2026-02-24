@@ -21,9 +21,9 @@ from pathlib import Path
 
 import pytest
 from conftest import assert_all_close
-from max import functional as F
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 
 
 @pytest.fixture

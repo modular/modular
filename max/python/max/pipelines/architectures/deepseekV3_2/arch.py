@@ -24,7 +24,7 @@ from .model import DeepseekV3_2Model
 from .model_config import DeepseekV3_2Config
 
 deepseekV3_2_arch = SupportedArchitecture(
-    name="DeepseekV3_2ForCausalLM_Legacy",
+    name="DeepseekV3_2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V3.2",

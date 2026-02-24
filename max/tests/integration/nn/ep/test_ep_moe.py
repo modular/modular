@@ -27,9 +27,9 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.legacy.moe import MoE, MoEGate
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.moe import MoE, MoEGate
+from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from test_common.graph_utils import is_b100_b200

@@ -20,7 +20,7 @@ All operations are no-ops that return immediately.
 from __future__ import annotations
 
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
 class NullConnector:

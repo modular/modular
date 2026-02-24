@@ -100,7 +100,7 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_config_pure.py",
-        "test_use_legacy_module.py",
+        "test_prefer_module_v3.py",
     ],
     data = [
         "//max/tests/integration/Inputs:inputs",

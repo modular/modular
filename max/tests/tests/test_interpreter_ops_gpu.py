@@ -21,15 +21,15 @@ from typing import Any
 
 import pytest
 import torch
-from max import _realization_context as rc
-from max import functional as F
-from max import random as max_random
 from max._interpreter import MOInterpreter
-from max._realization_context import set_seed
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental import random as max_random
+from max.experimental import realization_context as rc
+from max.experimental.realization_context import set_seed
+from max.experimental.tensor import Tensor, realization_context
 from max.graph import DeviceRef, Graph, TensorType
-from max.tensor import Tensor, realization_context
 
 # Mapping from MAX DType to torch dtype
 DTYPE_TO_TORCH = {

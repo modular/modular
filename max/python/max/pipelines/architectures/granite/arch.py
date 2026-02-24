@@ -37,6 +37,7 @@ granite_arch = SupportedArchitecture(
         "bfloat16": ["paged"],
     },
     pipeline_model=Llama3Model,
+    multi_gpu_supported=False,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     rope_type="normal",

@@ -231,12 +231,12 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    use_legacy_module: bool = Field(
-        default=True,
+    prefer_module_v3: bool = Field(
+        default=False,
         description=(
-            "Whether to prefer the legacy ModuleV2 architecture (default=True for backward "
-            "compatibility). When True, tries the ModuleV2 architecture first and falls back "
-            "to ModuleV3. When False, tries ModuleV3 first and falls back to ModuleV2."
+            "Whether to prefer the ModuleV3 architecture (default=False for backward "
+            "compatibility). When False, tries the ModuleV2 architecture first and falls back "
+            "to ModuleV3. When True, tries ModuleV3 first and falls back to ModuleV2."
         ),
     )
 
@@ -750,17 +750,17 @@ class PipelineConfig(ConfigFileModel):
         if not self.enable_overlap_scheduler:
             arch = PIPELINE_REGISTRY.retrieve_architecture(
                 huggingface_repo=self.model.huggingface_model_repo,
-                use_legacy_module=self.use_legacy_module,
+                prefer_module_v3=self.prefer_module_v3,
             )
             if (
                 arch is not None
                 and arch.name
                 in (
-                    "LlamaForCausalLM_Legacy",
-                    "DeepseekV2ForCausalLM_Legacy",
-                    "DeepseekV3ForCausalLM_Legacy",
-                    "DeepseekV3_2ForCausalLM_Legacy",
-                    "DeepseekV3ForCausalLMNextN_Legacy",
+                    "LlamaForCausalLM",
+                    "DeepseekV2ForCausalLM",
+                    "DeepseekV3ForCausalLM",
+                    "DeepseekV3_2ForCausalLM",
+                    "DeepseekV3ForCausalLMNextN",
                 )
                 and self.pipeline_role == "prefill_and_decode"
                 and not self.sampling.enable_structured_output
@@ -859,21 +859,21 @@ class PipelineConfig(ConfigFileModel):
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.draft_model.huggingface_model_repo,
-            use_legacy_module=self.use_legacy_module,
+            prefer_module_v3=self.prefer_module_v3,
         )
 
         if not draft_arch:
-            # Check if a non-legacy version exists when legacy lookup failed
-            if self.use_legacy_module:
-                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
+            if not self.prefer_module_v3:
+                v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.draft_model.huggingface_model_repo,
-                    use_legacy_module=False,
+                    prefer_module_v3=True,
                 )
-                if non_legacy_arch:
+                if v3_arch:
                     raise ValueError(
                         f"MAX-optimized architecture found for draft model '{self.draft_model.model_path}', "
-                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
-                        f"Please use the '--no-use-legacy-module' flag to use the new implementation."
+                        f"but only the new Module-based implementation is available (architecture: '{v3_arch.name}'). "
+                        f"Please use the '--prefer-module-v3' flag to use the new implementation."
                     )
             raise ValueError(
                 "MAX-Optimized architecture not found for `draft_model`"
@@ -881,20 +881,20 @@ class PipelineConfig(ConfigFileModel):
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_legacy_module=self.use_legacy_module,
+            prefer_module_v3=self.prefer_module_v3,
         )
         if not target_arch:
-            # Check if a non-legacy version exists when legacy lookup failed
-            if self.use_legacy_module:
-                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
+            if not self.prefer_module_v3:
+                v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.model.huggingface_model_repo,
-                    use_legacy_module=False,
+                    prefer_module_v3=True,
                 )
-                if non_legacy_arch:
+                if v3_arch:
                     raise ValueError(
                         f"MAX-optimized architecture found for target model '{self.model.model_path}', "
-                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
-                        f"Please use the '--no-use-legacy-module' flag to use the new implementation."
+                        f"but only the new Module-based implementation is available (architecture: '{v3_arch.name}'). "
+                        f"Please use the '--prefer-module-v3' flag to use the new implementation."
                     )
             raise ValueError(
                 "MAX-Optimized architecture not found for target model (`model_path`)"
@@ -966,23 +966,23 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=model_config.huggingface_model_repo,
-            use_legacy_module=self.use_legacy_module,
+            prefer_module_v3=self.prefer_module_v3,
         )
 
         # If nothing is provided, we should not update any more params.
         if not arch:
-            # Check if a non-legacy version exists when legacy lookup failed
-            if self.use_legacy_module:
-                non_legacy_arch = PIPELINE_REGISTRY.retrieve_architecture(
+            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
+            if not self.prefer_module_v3:
+                v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=model_config.huggingface_model_repo,
-                    use_legacy_module=False,
+                    prefer_module_v3=True,
                 )
-                if non_legacy_arch:
+                if v3_arch:
                     raise ValueError(
                         f"MAX-optimized architecture found for '{model_config.model_path}', "
-                        f"but only the new Module-based implementation is available (architecture: '{non_legacy_arch.name}'). "
-                        f"Please use the '--no-use-legacy-module' flag to use the new implementation.\n"
-                        f"Example: max serve --model-path {model_config.model_path} --no-use-legacy-module"
+                        f"but only the new Module-based implementation is available (architecture: '{v3_arch.name}'). "
+                        f"Please use the '--prefer-module-v3' flag to use the new implementation.\n"
+                        f"Example: max serve --model-path {model_config.model_path} --prefer-module-v3"
                     )
 
             raise ValueError(
@@ -1139,7 +1139,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_legacy_module=self.use_legacy_module,
+            prefer_module_v3=self.prefer_module_v3,
         )
 
         if arch is None:
@@ -1249,7 +1249,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            use_legacy_module=self.use_legacy_module,
+            prefer_module_v3=self.prefer_module_v3,
         )
 
         if arch is None:

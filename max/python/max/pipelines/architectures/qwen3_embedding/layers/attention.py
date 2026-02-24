@@ -18,12 +18,12 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged_gpu
-from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.kernels import flash_attention_ragged_gpu
+from max.nn.layer import Module
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import RotaryEmbedding
 
 
 class Qwen3AttentionNoCache(Module):

@@ -246,11 +246,11 @@ async def generate_image(args: argparse.Namespace) -> None:
             model_path=args.model,
             device_specs=[DeviceSpec.accelerator()],
         ),
-        use_legacy_module=False,
+        prefer_module_v3=True,
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.model.huggingface_weight_repo,
-        use_legacy_module=config.use_legacy_module,
+        prefer_module_v3=config.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
     assert arch is not None, (

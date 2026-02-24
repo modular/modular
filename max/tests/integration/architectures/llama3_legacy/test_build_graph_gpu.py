@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 from max.driver import load_devices, scan_available_devices
 from max.engine import InferenceSession, Model
 from max.graph.weights import SafetensorWeights
-from max.pipelines.architectures.llama3_legacy.model import (
+from max.pipelines.architectures.llama3.model import (
     Llama3Model,
 )
 from test_common.mocks import DummyPipelineConfig

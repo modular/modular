@@ -19,12 +19,12 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3_legacy import weight_adapters
+from ..llama3 import weight_adapters
 from .model import OlmoModel
 from .model_config import OlmoConfig
 
 olmo_arch = SupportedArchitecture(
-    name="OlmoForCausalLM_Legacy",
+    name="OlmoForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["allenai/OLMo-1B-hf", "allenai/OLMo-1B-0724-hf"],
     default_weights_format=WeightsFormat.gguf,

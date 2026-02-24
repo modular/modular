@@ -15,14 +15,14 @@
 from __future__ import annotations
 
 from max.graph import TensorValue, TensorValueLike, ops
-from max.nn.legacy.identity import Identity
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.transformer import TransformerBlock
+from max.nn.identity import Identity
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import Module
+from max.nn.linear import Linear
+from max.nn.transformer import TransformerBlock
 
-from ..llama3_legacy.llama3 import Llama3
-from ..llama3_legacy.model_config import Llama3Config
+from ..llama3.llama3 import Llama3
+from ..llama3.model_config import Llama3Config
 
 
 class EagleLlama3(Llama3):

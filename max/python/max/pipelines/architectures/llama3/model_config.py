@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Config for Llama3 models (ModuleV3)."""
+"""Config for Llama3 models."""
 
 from __future__ import annotations
 
@@ -20,16 +20,23 @@ from typing import Literal
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.rotary_embedding import (
+from max.nn.float8_config import Float8Config
+from max.nn.kv_cache import KVCacheParams
+from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+    LongRoPERotaryEmbedding,
     LongRoPEScalingParams,
+    RotaryEmbedding,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
+    LoRAConfig,
     PipelineConfig,
+    parse_float8_config,
     upper_bounded_default,
 )
 from max.pipelines.lib.config_enums import supported_encoding_dtype
@@ -37,7 +44,50 @@ from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
-from .layers.rotary_embedding import LongRoPERotaryEmbedding
+
+def create_rope_embedding(
+    hidden_size: int,
+    num_attention_heads: int,
+    rope_theta: float,
+    max_seq_len: int,
+    interleaved_rope_weights: bool,
+    rope_scaling_params: Llama3RopeScalingParams | None,
+    longrope_scaling_params: LongRoPEScalingParams | None,
+    device: DeviceRef,
+) -> RotaryEmbedding:
+    """Create appropriate RoPE embedding based on scaling parameters.
+
+    Args:
+        hidden_size: Model hidden dimension
+        num_attention_heads: Number of attention heads
+        rope_theta: RoPE theta parameter (typically 10000.0)
+        max_seq_len: Maximum sequence length
+        interleaved_rope_weights: Whether to use interleaved RoPE weights
+        rope_scaling_params: Llama3 RoPE scaling parameters (if any)
+        longrope_scaling_params: LongRoPE scaling parameters (if any)
+        device: Device to place tensors on
+
+    Returns:
+        Configured RoPE embedding instance
+    """
+    if longrope_scaling_params is not None:
+        return LongRoPERotaryEmbedding(
+            dim=hidden_size,
+            n_heads=num_attention_heads,
+            theta=rope_theta,
+            max_seq_len=max_seq_len,
+            interleaved=interleaved_rope_weights,
+            scaling_params=longrope_scaling_params,
+        )
+    else:
+        return Llama3RotaryEmbedding(
+            dim=hidden_size,
+            n_heads=num_attention_heads,
+            theta=rope_theta,
+            max_seq_len=max_seq_len,
+            interleaved=interleaved_rope_weights,
+            scaling_params=rope_scaling_params,
+        )
 
 
 @dataclass(kw_only=True)
@@ -55,9 +105,12 @@ class Llama3Config(ArchConfigWithKVCache):
     interleaved_rope_weights: bool
     vocab_size: int
     dtype: DType
+    model_quantization_encoding: QuantizationEncoding | None
+    quantization_config: QuantizationConfig | None
     kv_params: KVCacheParams
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    norm_dtype: DType | None = None
     attention_bias: bool = False
     rms_norm_eps: float | None = None
     tie_word_embeddings: bool = False
@@ -67,10 +120,14 @@ class Llama3Config(ArchConfigWithKVCache):
     embedding_multiplier: float
     residual_multiplier: float
     devices: list[DeviceRef]
-    clip_qkv: float | None = None
+    clip_qkv: float | None
+    float8_config: Float8Config | None = None
+    lora_config: LoRAConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    use_subgraphs: bool = True
+    data_parallel_degree: int = 1
 
     def get_kv_params(self) -> KVCacheParams:
         return self.kv_params
@@ -79,35 +136,29 @@ class Llama3Config(ArchConfigWithKVCache):
         return self.max_seq_len
 
     @staticmethod
-    def get_head_dim(huggingface_config: AutoConfig) -> int:
-        if hasattr(huggingface_config, "head_dim"):
-            return huggingface_config.head_dim
-        else:
-            return (
-                huggingface_config.hidden_size
-                // huggingface_config.num_attention_heads
-            )
-
-    @staticmethod
-    def get_head_dim_from_config(config: Llama3Config) -> int:
-        return config.kv_params.head_dim
-
-    @staticmethod
-    def get_num_layers(huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
-
-    @staticmethod
     def calculate_attention_multiplier(
         huggingface_config: AutoConfig,
     ) -> float:
-        return getattr(
+        """The attention multiplier is a scalar that scales the attention scores.
+        It is used to control the variance of the attention scores.
+
+        This function is used to get the attention multiplier from the
+        huggingface config. If the attention multiplier is not set, it will be
+        calculated as the square root of 1.0 divided by the head dimension.
+        """
+        # Base attention multiplier
+        base_multiplier = getattr(
             huggingface_config,
             "attention_multiplier",
             math.sqrt(
                 1.0 / float(Llama3Config.get_head_dim(huggingface_config))
             ),
         )
+        # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
 
+        return base_multiplier
+
+    # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
     @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,
@@ -125,6 +176,23 @@ class Llama3Config(ArchConfigWithKVCache):
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
+    @staticmethod
+    def get_head_dim(huggingface_config: AutoConfig) -> int:
+        if hasattr(huggingface_config, "head_dim"):
+            return huggingface_config.head_dim
+        else:
+            return (
+                huggingface_config.hidden_size
+                // huggingface_config.num_attention_heads
+            )
+
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        return huggingface_config.num_hidden_layers
+
+    # TODO(zheng): Figure out a scalable abstract method for all MAXModelConfigs.
+    # Also, these should just be class properties since they're already made
+    # unique as a model config.
     @staticmethod
     def calculate_max_seq_len(
         pipeline_config: PipelineConfig,
@@ -153,13 +221,19 @@ class Llama3Config(ArchConfigWithKVCache):
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
+        return cls.initialize_from_config(pipeline_config, huggingface_config)
 
+    @classmethod
+    def initialize_from_config(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> Self:
         kv_cache_config = pipeline_config.model.kv_cache
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
         dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        n_devices = len(pipeline_config.model.device_specs)
 
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
@@ -169,7 +243,7 @@ class Llama3Config(ArchConfigWithKVCache):
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
+            for spec in pipeline_config.model.device_specs[:n_devices]
         ]
 
         embedding_multiplier = getattr(
@@ -183,6 +257,11 @@ class Llama3Config(ArchConfigWithKVCache):
         rope_scaling = huggingface_config.rope_scaling
 
         if rope_scaling is not None:
+            # Since "rope_type" huggingface config is not standardized, we need
+            # to check for both "type" and "rope_type" keys.
+            # TODO: A better solution would be for those family of models to
+            # create their own subclass of MAXModelConfig or Llama3Config, then
+            # parts of it like rope_scaling to account for such differences.
             rope_type = rope_scaling.get("type")
             rope_type_alt = rope_scaling.get("rope_type")
             if rope_type is None and rope_type_alt is None:
@@ -207,24 +286,26 @@ class Llama3Config(ArchConfigWithKVCache):
                 )
                 rope_scaling_params = None
 
-        # Calculate base attention multiplier.
+        # Calculate base attention multiplier
         base_attention_multiplier = Llama3Config.calculate_attention_multiplier(
             huggingface_config
         )
 
-        # Apply LongRoPE attention scaling if needed.
+        # Apply LongRoPE attention scaling if needed
         attention_multiplier = base_attention_multiplier
         if longrope_scaling_params is not None:
-            rope_embedding = LongRoPERotaryEmbedding(
-                dim=huggingface_config.hidden_size,
-                n_heads=huggingface_config.num_attention_heads,
-                theta=huggingface_config.rope_theta,
+            # Create temporary RoPE embedding to get proper attention scale
+            rope_embedding = create_rope_embedding(
+                hidden_size=huggingface_config.hidden_size,
+                num_attention_heads=huggingface_config.num_attention_heads,
+                rope_theta=huggingface_config.rope_theta,
                 max_seq_len=Llama3Config.calculate_max_seq_len(
                     pipeline_config, huggingface_config=huggingface_config
                 ),
-                device=device_refs[0].to_device(),
-                interleaved=interleaved_rope_weights,
-                scaling_params=longrope_scaling_params,
+                interleaved_rope_weights=interleaved_rope_weights,
+                rope_scaling_params=rope_scaling_params,
+                longrope_scaling_params=longrope_scaling_params,
+                device=DeviceRef.CPU(),  # temporary device, not used for scale computation
             )
             attention_multiplier = rope_embedding.compute_scale()
 
@@ -240,6 +321,8 @@ class Llama3Config(ArchConfigWithKVCache):
             interleaved_rope_weights=interleaved_rope_weights,
             vocab_size=huggingface_config.vocab_size,
             dtype=dtype,
+            model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
+            quantization_config=pipeline_config.model._quant,
             max_seq_len=Llama3Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config=huggingface_config
             ),
@@ -255,7 +338,10 @@ class Llama3Config(ArchConfigWithKVCache):
             residual_multiplier=residual_multiplier,
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
+            use_subgraphs=pipeline_config.model.use_subgraphs,
+            lora_config=pipeline_config.lora,
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     def finalize(
@@ -270,7 +356,8 @@ class Llama3Config(ArchConfigWithKVCache):
         """Define parameters that can't be determined just from the pipeline config."""
 
         # Normalize the LLM state dict so downstream introspection sees canonical
-        # Llama-style keys (no "language_model." or "model." prefix).
+        # Llama-style keys (no "language_model." or "model." prefix). This keeps
+        # float8 parsing and feature detection resilient to pack variations.
         def _strip_prefix(s: str, prefix: str) -> str:
             return s.removeprefix(prefix)
 
@@ -292,6 +379,21 @@ class Llama3Config(ArchConfigWithKVCache):
         else:
             normalized_state_dict = dict(state_dict)
 
+        # Parse the float8 config from compressed-tensors or FBGEMM.
+        float8_config = parse_float8_config(
+            huggingface_config, normalized_state_dict, self.dtype
+        )
+
+        # Determine norm_dtype.
+        # Note: due to automatic weight dtype casting, norm dtype is not always
+        # correct. To avoid any issue, only set norm_dtype for float8 models
+        # for now.
+        norm_dtype = None
+        if "layers.0.input_layernorm.weight" in normalized_state_dict:
+            norm_dtype = normalized_state_dict[
+                "layers.0.input_layernorm.weight"
+            ].dtype
+
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
         if "tie_word_embeddings" in huggingface_config:
@@ -310,14 +412,17 @@ class Llama3Config(ArchConfigWithKVCache):
                 rms_norm_eps = huggingface_config.rms_norm_eps
 
         self.norm_method = norm_method
+        self.norm_dtype = norm_dtype
         self.rms_norm_eps = rms_norm_eps
         self.tie_word_embeddings = tie_word_embeddings
+        self.float8_config = float8_config
         self.stacked_mlp = (
             "layers.0.mlp.gate_up_proj.weight" in normalized_state_dict
         )
         self.stacked_qkv = (
             "layers.0.self_attn.qkv_proj.weight" in normalized_state_dict
         )
+
         self.attention_bias = attention_bias
         self.return_logits = return_logits
         self.return_hidden_states = return_hidden_states

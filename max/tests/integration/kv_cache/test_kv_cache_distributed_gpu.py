@@ -21,7 +21,7 @@ from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.connectors.local_connector import LocalConnector
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 

@@ -13,7 +13,7 @@
 # DOC: max/develop/dtypes.mdx
 
 import numpy as np
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create a NumPy array
 np_array = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)

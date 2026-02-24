@@ -25,13 +25,13 @@ from internvl_impl.configuration_intern_vit import (
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights.weights import WeightData
-from max.nn.legacy import ReturnLogits
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.internvl.model_config import (
     InternVLConfig,
     VisionConfig,
 )
-from max.pipelines.architectures.llama3_legacy.model_config import (
+from max.pipelines.architectures.llama3.model_config import (
     Llama3Config,
 )
 

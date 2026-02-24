@@ -219,12 +219,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    use_legacy_module: bool = Field(
-        default=True,
+    prefer_module_v3: bool = Field(
+        default=False,
         description=(
-            "Whether to prefer the legacy ModuleV2 architecture (default=True for backward "
-            "compatibility). When True, tries the ModuleV2 architecture first and falls back "
-            "to ModuleV3. When False, tries ModuleV3 first and falls back to ModuleV2."
+            "Whether to prefer the ModuleV3 architecture (default=False for backward "
+            "compatibility). When False, tries the ModuleV2 architecture first and falls back "
+            "to ModuleV3. When True, tries ModuleV3 first and falls back to ModuleV2."
         ),
     )
 

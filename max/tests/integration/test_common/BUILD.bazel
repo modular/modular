@@ -342,7 +342,7 @@ modular_py_library(
     srcs = ["torch_print_hook.py"],
     imports = [".."],
     deps = [
-        "//max/python/max/nn/legacy/hooks:base_print_hook",
+        "//max/python/max/nn/hooks:base_print_hook",
         requirement("torch"),
     ],
 )

@@ -24,9 +24,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
-from max.nn.legacy.kv_cache.utils import build_max_lengths_tensor
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.utils import build_max_lengths_tensor
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,

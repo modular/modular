@@ -34,8 +34,8 @@ from max.graph import (
     ops,
 )
 from max.interfaces import RequestID, TextGenerationInputs, TokenBuffer
-from max.nn.legacy import KVCacheInputs, kernels
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn import KVCacheInputs, kernels
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     ModelInputs,

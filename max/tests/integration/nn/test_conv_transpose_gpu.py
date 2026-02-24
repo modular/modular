@@ -17,7 +17,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy import ConvTranspose1d, WeightNormConvTranspose1d
+from max.nn import ConvTranspose1d, WeightNormConvTranspose1d
 from test_common.numerics import pytorch_disable_tf32_dtype
 
 ACCURACY_RTOL = 1e-4

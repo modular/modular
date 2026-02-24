@@ -21,7 +21,7 @@ from .model_config import Idefics3Config
 from .tokenizer import Idefics3Tokenizer
 
 idefics3_arch = SupportedArchitecture(
-    name="Idefics3ForConditionalGeneration_Legacy",
+    name="Idefics3ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["HuggingFaceM4/Idefics3-8B-Llama3"],
     default_encoding="bfloat16",

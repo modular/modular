@@ -27,7 +27,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy import Allreduce, Signals
+from max.nn import Allreduce, Signals
 
 
 def test_multi_device_graph_capture_replay() -> None:

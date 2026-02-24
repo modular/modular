@@ -23,7 +23,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     RaggedKVCacheInputs,
 )

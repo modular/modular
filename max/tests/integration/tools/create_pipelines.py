@@ -1060,7 +1060,7 @@ class ImageGenerationOracle(PipelineOracle):
                 model_path=self.model_path,
                 device_specs=device_specs,
             ),
-            use_legacy_module=False,
+            prefer_module_v3=True,
         )
 
         # Step 2: Initialize the tokenizer
@@ -1343,7 +1343,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="allenai/Olmo-3-7B-Instruct",
         config_params={
             "max_length": 32768,
-            "use_legacy_module": False,
+            "prefer_module_v3": True,
         },
         device_encoding_map={
             "gpu": ["bfloat16"],

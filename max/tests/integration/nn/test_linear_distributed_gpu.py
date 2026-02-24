@@ -22,7 +22,7 @@ from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
-from max.nn.legacy import ColumnParallelLinear, Linear, Signals
+from max.nn import ColumnParallelLinear, Linear, Signals
 
 
 def _distribute_value(

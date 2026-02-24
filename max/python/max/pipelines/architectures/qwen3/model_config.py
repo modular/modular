@@ -19,12 +19,12 @@ from dataclasses import dataclass, field
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
-from ..llama3_legacy.model_config import Llama3Config
+from ..llama3.model_config import Llama3Config
 
 
 @dataclass(kw_only=True)

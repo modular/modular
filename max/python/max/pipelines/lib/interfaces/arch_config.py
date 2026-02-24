@@ -34,8 +34,8 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.lib.utils import upper_bounded_default
 from typing_extensions import Self, override
 

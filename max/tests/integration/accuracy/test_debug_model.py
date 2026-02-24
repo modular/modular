@@ -18,7 +18,7 @@ from tempfile import TemporaryDirectory
 
 import max.tests.integration.tools.debugging_utils as dbg
 import transformers
-from max.nn.legacy.layer import Module
+from max.nn.layer import Module
 from max.pipelines.lib.model_config import MAXModelConfig
 
 

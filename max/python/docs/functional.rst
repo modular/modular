@@ -4,8 +4,8 @@
 :type: module
 :lang: python
 
-.. py:currentmodule:: max
+.. py:currentmodule:: max.experimental
 
-.. automodule:: max.functional
+.. automodule:: max.experimental.functional
    :members:
    :undoc-members:

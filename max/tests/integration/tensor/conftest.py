@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 from max.driver import DLPackArray
-from max.tensor import NestedArray, Number, Tensor
+from max.experimental.tensor import NestedArray, Number, Tensor
 
 
 def assert_all_close(

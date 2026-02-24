@@ -27,8 +27,8 @@ from max.driver.buffer import load_max_buffer
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
 from max.entrypoints.cli.entrypoint import configure_cli_logging
-from max.nn.legacy.hooks import PrintHook
-from max.nn.legacy.layer import Module
+from max.nn.hooks import PrintHook
+from max.nn.layer import Module
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,

@@ -34,7 +34,7 @@ from max.interfaces import (
     TextGenerationContext,
     TextGenerationRequest,
 )
-from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext, TextContext
 from transformers import (
     AutoConfig,
@@ -391,16 +391,16 @@ class PipelineRegistry:
     def retrieve_architecture(
         self,
         huggingface_repo: HuggingFaceRepo,
-        use_legacy_module: bool = True,
+        prefer_module_v3: bool = False,
         task: PipelineTask | None = None,
     ) -> SupportedArchitecture | None:
         """Retrieve architecture matching the Hugging Face model config.
 
         Args:
             huggingface_repo: The Hugging Face repository to match against.
-            use_legacy_module: Whether to use legacy Module architecture (default=True).
-                When True, appends "_Legacy" suffix to find legacy graph-based architecture.
-                When False, uses the standard Hugging Face architecture name for new API.
+            prefer_module_v3: Whether to prefer ModuleV3 architecture (default=False).
+                When False, uses the standard Hugging Face architecture name for ModuleV2.
+                When True, appends "_ModuleV3" suffix to find ModuleV3 architecture.
             task: Optional task to disambiguate when multiple architectures share the same name.
                   If not provided and multiple architectures share the same name, the task will
                   be inferred from the Hugging Face Hub's pipeline_tag.
@@ -443,8 +443,8 @@ class PipelineRegistry:
 
         for architecture_name in architecture_names:
             lookup_name = (
-                architecture_name + "_Legacy"
-                if use_legacy_module
+                architecture_name + "_ModuleV3"
+                if prefer_module_v3
                 else architecture_name
             )
 
@@ -484,9 +484,9 @@ class PipelineRegistry:
 
             # Fallback: if only one variant exists, use it
             fallback_name = (
-                architecture_name
-                if use_legacy_module
-                else architecture_name + "_Legacy"
+                architecture_name + "_ModuleV3"
+                if not prefer_module_v3
+                else architecture_name
             )
             if arch := self._resolve_architecture(fallback_name, inferred_task):
                 logger.debug(
@@ -659,7 +659,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                use_legacy_module=pipeline_config.use_legacy_module,
+                prefer_module_v3=pipeline_config.prefer_module_v3,
                 task=task,
             )
 
@@ -730,7 +730,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                use_legacy_module=pipeline_config.use_legacy_module,
+                prefer_module_v3=pipeline_config.prefer_module_v3,
                 task=task,
             )
 
@@ -856,7 +856,7 @@ class PipelineRegistry:
         if pipeline_config.draft_model is not None:
             draft_arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.draft_model.huggingface_weight_repo,
-                use_legacy_module=pipeline_config.use_legacy_module,
+                prefer_module_v3=pipeline_config.prefer_module_v3,
                 task=task,
             )
             if draft_arch is None:
@@ -913,7 +913,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                use_legacy_module=pipeline_config.use_legacy_module,
+                prefer_module_v3=pipeline_config.prefer_module_v3,
                 task=task,
             )
 
@@ -940,7 +940,7 @@ class PipelineRegistry:
         """
         if arch := self.retrieve_architecture(
             huggingface_repo=pipeline_config.model.huggingface_model_repo,
-            use_legacy_module=pipeline_config.use_legacy_module,
+            prefer_module_v3=pipeline_config.prefer_module_v3,
         ):
             return arch.task
 

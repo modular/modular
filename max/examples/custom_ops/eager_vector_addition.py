@@ -13,10 +13,10 @@
 
 from pathlib import Path
 
-from max import functional as F
-from max import random
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental import random
 
 if __name__ == "__main__":
     mojo_kernels = Path(__file__).parent / "kernels"

@@ -25,9 +25,9 @@ Take, for example, the following code:
 
 {/* @sync: _examples/index/eager_simple.py */}
 ```python
-from max import functional as F
+from max.experimental import functional as F
 from max.driver import CPU
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create tensor from Python data
 x = Tensor.constant([1.0, -2.0, 3.0, -4.0, 5.0], device=CPU())
@@ -44,7 +44,7 @@ The expected output is:
 Tensor([1 0 3 0 5], dtype=DType.float32, device=Device(type=cpu,id=0))
 ```
 
-When you run this code, [`Tensor.constant()`](/max/api/python/tensor#max.tensor.Tensor.constant) creates a tensor and [`F.relu()`](/max/api/python/functional#max.functional.relu)
+When you run this code, [`Tensor.constant()`](/max/api/python/tensor#max.experimental.tensor.Tensor.constant) creates a tensor and [`F.relu()`](/max/api/python/functional#max.experimental.functional.relu)
 performs the ReLU activation. The `print(y)` statement triggers execution. MAX compiles
 and runs the operations, then displays the result.
 
@@ -104,7 +104,7 @@ You can perform arithmetic operations using Python operators on tensors:
 
 {/* @sync: _examples/index/arithmetic_ops.py */}
 ```python
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 a = Tensor.constant([1.0, 2.0, 3.0])
 b = Tensor.constant([4.0, 5.0, 6.0])
@@ -120,9 +120,9 @@ For operations beyond basic arithmetic, use the functional API:
 
 {/* @sync: _examples/index/functional_api.py */}
 ```python
-from max import functional as F
+from max.experimental import functional as F
 from max.driver import CPU
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Force CPU execution to avoid GPU compiler issues
 x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], device=CPU())
@@ -135,8 +135,8 @@ print(f"Square root: {y}")
 print(f"Softmax: {z}")
 ```
 
-The [`max.functional`](/max/api/python/functional) module (typically imported as `F`) provides
-operations like [`relu()`](/max/api/python/functional#max.functional.relu), [`softmax()`](/max/api/python/functional#max.functional.softmax), [`sqrt()`](/max/api/python/functional#max.functional.sqrt), and many more.
+The [`max.experimental.functional`](/max/api/python/functional) module (typically imported as `F`) provides
+operations like [`relu()`](/max/api/python/functional#max.experimental.functional.relu), [`softmax()`](/max/api/python/functional#max.experimental.functional.softmax), [`sqrt()`](/max/api/python/functional#max.experimental.functional.sqrt), and many more.
 
 {/* For more information, see [Basic operations](/max/develop/basic-ops). */}
 
@@ -149,10 +149,10 @@ This makes debugging straightforward:
 
 {/* @sync: _examples/index/when_to_use_eager.py */}
 ```python
-from max import functional as F
+from max.experimental import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 
 def debug_forward_pass(x: Tensor) -> Tensor:
@@ -190,11 +190,11 @@ Here's a more realistic example showing a forward pass through a simple model:
 
 {/* @sync: _examples/index/eager_workflow.py */}
 ```python
-from max import functional as F
-from max import random
+from max.experimental import functional as F
+from max.experimental import random
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create input data
 x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32, device=CPU())
@@ -239,7 +239,7 @@ Execution happens automatically when an operation requires concrete values:
 
 - **Printing tensors**: `print(x)` needs real values to display them. MAX
   compiles and executes the graph to produce those values.
-- **Accessing scalar values**: [`x.item()`](/max/api/python/tensor#max.tensor.Tensor.item) must return a concrete Python number
+- **Accessing scalar values**: [`x.item()`](/max/api/python/tensor#max.experimental.tensor.Tensor.item) must return a concrete Python number
   (like `3.14`) rather than a symbolic operation, which triggers execution.
 - **Indexing tensors**: `x[0]` needs to extract the actual value at that
   position.

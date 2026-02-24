@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from max.config import ConfigFileModel
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache.cache_params import (
+from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVCacheStrategy,

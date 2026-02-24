@@ -15,9 +15,9 @@
 
 from __future__ import annotations
 
-from max import functional as F
-from max.nn import Linear, Module
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.nn.module_v3 import Linear, Module
 
 from .activation import activation_function_from_name
 

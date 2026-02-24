@@ -15,16 +15,25 @@
 
 from __future__ import annotations
 
-from max.nn import Module
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.norm import RMSNorm
-from max.tensor import Tensor
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+)
+from max.nn.comm.allreduce import Allreduce
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import Module
+from max.nn.transformer.distributed_transformer import (
+    ShardableCallable,
+    forward_sharded_layers,
+)
 
 from .attention import GptOssAttention
 from .moe import GptOssMoE
 
 
-class GptOssTransformerBlock(Module[..., Tensor]):
+class GptOssTransformerBlock(Module):
     """Stack of Attention, MoE, and RMSNorm layers for GPT OSS.
 
     This is a distributed transformer block that uses a Mixture of Experts (MoE)
@@ -36,43 +45,89 @@ class GptOssTransformerBlock(Module[..., Tensor]):
         self,
         attention: GptOssAttention,
         mlp: GptOssMoE,
-        input_layernorm: RMSNorm,
-        post_attention_layernorm: RMSNorm,
+        input_layernorm: ShardableCallable,
+        post_attention_layernorm: ShardableCallable,
+        devices: list[DeviceRef],
     ) -> None:
         super().__init__()
+
+        # TODO: Figure out a better way to indicate to the type checker that these
+        # are Shardable Modules. (Probably need a protocol called ShardableModule)
         self.self_attn = attention
+        self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
+            len(devices)
+        )
+        self.self_attn_shards = attention.shard(devices)
+
         self.mlp = mlp
+        self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+            len(devices)
+        )
+        self.mlp_shards = mlp.shard(devices)
 
         self.input_layernorm = input_layernorm
-        self.post_attention_layernorm = post_attention_layernorm
+        self.input_layernorm.sharding_strategy = ShardingStrategy.replicate(
+            len(devices)
+        )
+        self.input_layernorm_shards = input_layernorm.shard(devices)
 
-    def forward(
-        self,
-        layer_idx: Tensor,
-        x: Tensor,
-        kv_collection: PagedCacheValues,
-        input_row_offsets: Tensor,
-        **kwargs,
-    ) -> Tensor:
-        residual = x
-        norm_xs = self.input_layernorm(x)
-        attn_out = self.self_attn(
-            norm_xs,
-            kv_collection,
-            input_row_offsets=input_row_offsets,
-            **kwargs,
+        self.post_attention_layernorm = post_attention_layernorm
+        self.post_attention_layernorm.sharding_strategy = (
+            ShardingStrategy.replicate(len(devices))
+        )
+        self.post_attention_layernorm_shards = post_attention_layernorm.shard(
+            devices
         )
 
+        self.devices = devices
+        self.allreduce = Allreduce(num_accelerators=len(devices))
+
+    def __call__(
+        self,
+        layer_idx: TensorValue,
+        xs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+        kv_collections: list[PagedCacheValues],
+        input_row_offsets: list[TensorValue],
+        **kwargs,
+    ) -> list[TensorValue]:
+        residual = xs
+        norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
+        attn_out = [
+            shard(
+                norm_xs[i],
+                kv_collections[i],
+                input_row_offsets=input_row_offsets[i],
+                **kwargs,
+            )
+            for i, shard in enumerate(self.self_attn_shards)
+        ]
+        attn_out = self.allreduce(attn_out, signal_buffers)
+
         # Add residual connection after attention
-        hidden_states = residual + attn_out
+        hidden_states = [
+            residual[i] + attn_out[i] for i in range(len(attn_out))
+        ]
 
         # Apply post-attention layer norm and then MoE
         residual = hidden_states
-        norm_xs = self.post_attention_layernorm(hidden_states)
+        norm_xs = forward_sharded_layers(
+            self.post_attention_layernorm_shards, hidden_states
+        )
 
         # Apply MoE - it returns (output, router_logits)
-        mlp_outputs = self.mlp(norm_xs)
+        mlp_results = [
+            self.mlp_shards[i](norm_xs[i]) for i in range(len(norm_xs))
+        ]
+
+        # Separate outputs and router logits
+        mlp_outputs = [result for result in mlp_results]
+
+        # Allreduce MoE outputs
+        mlp_outputs = self.allreduce(mlp_outputs, signal_buffers)
 
         # Add residual connection
-        hidden_states = residual + mlp_outputs
+        hidden_states = [
+            residual[i] + mlp_outputs[i] for i in range(len(mlp_outputs))
+        ]
         return hidden_states

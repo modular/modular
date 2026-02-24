@@ -1,0 +1,158 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""A Module for a sequence of tensor transformations."""
+
+import functools
+from collections.abc import Iterable
+from typing import Any
+
+from max.experimental.tensor import Tensor
+from typing_extensions import TypeVar
+
+from .module import Module
+
+T = TypeVar("T", bound=Module[..., Any], default=Module[..., Any])
+
+
+class ModuleList(list[T], Module[[Tensor], Tensor]):
+    """A ``Module`` subclass which is locally a list container.
+
+    ``ModuleList`` instances will use the stringified integer index of their
+    submodules as the name of the module for the purposes of
+    qualified paths.
+
+    For example:
+
+    .. code-block:: python
+
+        from max.nn.module_v3 import Linear, Sequential
+
+        model = Sequential(
+            Linear(5, 10),
+            Linear(10, 5),
+        )
+
+        assert dict(model.parameters).keys() == {
+            "0.weight", "0.bias", "1.weight", "1.bias"
+        }
+    """
+
+    @property
+    def children(self) -> Iterable[tuple[str, Module[..., Any]]]:
+        """Iterates over the direct child modules of the ``Module``.
+
+        Yields:
+            ``(name, module)`` pairs, where ``name`` is the attribute name of
+            the child on the module.
+        """
+        for i, child in enumerate(self):
+            yield str(i), child
+
+    def __rich_repr__(self):
+        """Omits the path for children in the repr."""
+        for _, child in self.children:
+            yield child
+
+    # C3 linearization resolves list.__repr__ before Module.__repr__.
+    # This explicitly overrides and tells the class to use Module.__repr__.
+    __repr__ = Module.__repr__
+
+
+class Sequential(ModuleList[T]):
+    """A ``Module`` subclass which holds a sequence of unary modules.
+
+    A unary ``Module`` is one whose ``forward()`` method has the signature::
+
+        def forward(self, x: Tensor) -> Tensor: ...
+
+    ``Sequential`` is itself a unary ``Module``. Its ``forward()`` method
+    computes the result of applying each of its child modules
+    in sequence to its input.
+
+    For example, this will apply a linear transformation up to a dimension
+    of 10, apply a LayerNorm, and then apply a final linear transformation
+    to reduce back to the input dimension of 5:
+
+    .. code-block:: python
+
+        from max.experimental.tensor import Tensor
+        from max.nn.module_v3 import Linear, Sequential
+
+        model = Sequential(
+            Linear(5, 10),
+            Linear(10, 5),
+        )
+
+        result = model(Tensor.ones([5]))
+        assert result.shape == [5]
+    """
+
+    def __init__(self, *modules: T) -> None:
+        """Constructs a sequential from a sequence of modules.
+
+        Following PyTorch, ``Sequential`` takes its inputs as a variadic
+        rather than an iterable. Use the splat operator (``*seq``) to make
+        a ``Sequential`` from an iterable.
+
+        For example:
+
+        .. code-block:: python
+
+            from max.nn.module_v3 import Linear, Sequential
+
+            hidden_dims = [5, 10, 15, 20]
+
+            model = Sequential(*(
+                Linear(in_dim, out_dim) for in_dim, out_dim in
+                zip(hidden_dims, hidden_dims[1:])
+            ))
+
+        Args:
+            modules: The sequence of contained modules in the order
+                of desired application.
+        """
+        super().__init__(modules)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Applies the contained modules in order.
+
+        For example, this code creates a sequence of linear transformations
+        which each increase the dimension of the input by 5.
+
+        The input tensor must have dim 5. The intermediate applications
+        will result in intermediate tensors of dim 10 and 15 respectively,
+        and the final result will have dim 20:
+
+        .. code-block:: python
+
+            from max.experimental.tensor import Tensor
+            from max.nn.module_v3 import Linear, Sequential
+
+            hidden_dims = [5, 10, 15, 20]
+
+            model = Sequential(*(
+                Linear(in_dim, out_dim) for in_dim, out_dim in
+                zip(hidden_dims, hidden_dims[1:])
+            ))
+
+            result = model(Tensor.ones([5]))
+            assert result.shape == [20]
+
+        Args:
+            x: The input tensor.
+
+        Returns:
+            The result of iteratively applying each contained
+            module in sequence.
+        """
+        return functools.reduce(lambda x, f: f(x), self, x)

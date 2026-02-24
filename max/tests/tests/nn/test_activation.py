@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.legacy.activation."""
+"""Tests for max.nn.activation."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from functools import partial
 
 import pytest
 from max.graph import ops
-from max.nn.legacy.activation import activation_function_from_name
+from max.nn.activation import activation_function_from_name
 
 
 @pytest.mark.parametrize(
