@@ -255,6 +255,27 @@ fn bench_string_find_single[
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string rfind single
+# ===-----------------------------------------------------------------------===#
+@parameter
+fn bench_string_rfind_single[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    fn call_fn() unified {read}:
+        # this is to help with instability when measuring small strings
+        for _ in range(10**6 // length):
+            var res = black_box(items).rfind(
+                black_box("Z")
+            )  # something that probably won't be there
+            keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark string find multiple
 # ===-----------------------------------------------------------------------===#
 @parameter
@@ -473,6 +494,9 @@ def main():
             )
             m.bench_function[bench_string_find_multiple[length, fname]](
                 BenchId(String("bench_string_find_multiple", suffix))
+            )
+            m.bench_function[bench_string_rfind_single[length, fname]](
+                BenchId(String("bench_string_rfind_single", suffix))
             )
             m.bench_function[bench_string_is_valid_utf8[length, fname]](
                 BenchId(String("bench_string_is_valid_utf8", suffix))
