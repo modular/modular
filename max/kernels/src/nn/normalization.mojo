@@ -2389,41 +2389,48 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
     var is_valid = idx < cols
 
     with PDL():
-        # Phase 1: Load input ONCE and compute mean square
-        # Cache the input data to avoid re-reading in phase 2
+        # Phase 1: Load input ONCE, compute mean square AND max(|gamma*x|).
+        # Key insight: max(|gamma*x*norm_factor|) = max(|gamma*x|) * norm_factor
+        # since norm_factor is a positive scalar. Computing both sum(x^2) and
+        # max(|gamma*x|) in the load phase allows both reductions to be issued
+        # back-to-back, eliminating the compute gap between the two barriers.
+        var thread_m2 = Scalar[accum_type](0)
+        var thread_abs_max_gamma_x = Scalar[accum_type](0)
+
         if is_valid:
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            thread_m2 = (vec_data**2).reduce_add()
+            # Compute |gamma * x| for max finding (temporary, not stored)
+            thread_abs_max_gamma_x = abs(
+                apply_gamma[simd_width](vec_data, idx)
+            ).reduce_max()
 
-        var thread_m2 = (vec_data**2).reduce_add()
-
-        # Reduce across threads to get row mean square
+        # Both reductions issued back-to-back for potential PDL overlap
         var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
             thread_m2
         )
+        var row_abs_max_gamma_x = block.max[
+            block_size=threads_per_block, broadcast=True
+        ](thread_abs_max_gamma_x)
+
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
         )
 
-        # Phase 2: Compute normalized values and find max using cached data
-        var normalized = SIMD[accum_type, simd_width](0)
-        var thread_max = Scalar[accum_type](0)
+        # Derive max of normalized values: max(|gamma*x|) * norm_factor
+        var row_max = row_abs_max_gamma_x * norm_factor
 
-        if is_valid:
-            normalized = apply_gamma[simd_width](vec_data * norm_factor, idx)
-            thread_max = abs(normalized).reduce_max()
-
-        # Find maximum and compute scale
-        var row_max = block.max[block_size=threads_per_block, broadcast=True](
-            thread_max
-        )
         var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
             out_dtype
         ](row_max, scale_ub)
         if tid == 0:
             scale_buffer[row] = scale_factor
 
-        # Phase 3: Quantize and write (normalized values already in registers)
+        # Phase 2: Normalize (preserving original FP order), quantize, write
         if is_valid:
+            var normalized = apply_gamma[simd_width](
+                vec_data * norm_factor, idx
+            )
             var output_fp8 = fp8_quantize[out_dtype](
                 normalized, scale_factor_recip
             )
@@ -2585,14 +2592,23 @@ fn _rms_norm_fused_fp8_kernel_block[
         return val * gamma_accum
 
     with PDL():
-        # Phase 1: Compute mean square for RMSNorm
+        # Phase 1: Compute mean square AND max(|gamma*x|) in a single pass.
+        # Key insight: max(|gamma*x*norm_factor|) = max(|gamma*x|) * norm_factor
+        # since norm_factor is a positive scalar. This lets us derive both
+        # norm_factor and the FP8 scale from a single pass over the input data.
         var thread_m2 = Scalar[accum_type](0)
+        var thread_abs_max_gamma_x = Scalar[accum_type](0)
 
         for col_offset in range(0, cols, threads_per_block * simd_width):
             var col = col_offset + tid * simd_width
             if col < cols:
                 var vec_data = input_fn[simd_width](row, col).cast[accum_type]()
                 thread_m2 += (vec_data**2).reduce_add()
+                # Compute |gamma * x| to find max for FP8 scaling
+                var gamma_x = apply_gamma[simd_width](vec_data, col)
+                thread_abs_max_gamma_x = max(
+                    thread_abs_max_gamma_x, abs(gamma_x).reduce_max()
+                )
 
         # Reduce across threads to get row mean square
         var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
@@ -2602,23 +2618,13 @@ fn _rms_norm_fused_fp8_kernel_block[
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
         )
 
-        # Phase 2: Find max for dynamic scaling (single pass)
-        var thread_max = Scalar[accum_type](0)
+        # Reduce max(|gamma*x|) across threads, then scale by norm_factor
+        var row_abs_max_gamma_x = block.max[
+            block_size=threads_per_block, broadcast=True
+        ](thread_abs_max_gamma_x)
+        var row_max = row_abs_max_gamma_x * norm_factor
 
-        for col_offset in range(0, cols, threads_per_block * simd_width):
-            var col = col_offset + tid * simd_width
-            if col < cols:
-                var vec_data = input_fn[simd_width](row, col).cast[accum_type]()
-                var normalized = apply_gamma[simd_width](
-                    vec_data * norm_factor, col
-                )
-                thread_max = max(thread_max, abs(normalized).reduce_max())
-
-        # Phase 3: Compute scale factor
-        var row_max = block.max[block_size=threads_per_block, broadcast=True](
-            thread_max
-        )
-
+        # Compute scale factor
         var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
             out_dtype
         ](row_max, scale_ub)
@@ -2627,7 +2633,7 @@ fn _rms_norm_fused_fp8_kernel_block[
         if tid == 0:
             scale_buffer[row] = scale_factor
 
-        # Phase 4: Normalize, quantize and write output
+        # Phase 2: Normalize, quantize and write output
         for col_offset in range(0, cols, threads_per_block * simd_width):
             var col = col_offset + tid * simd_width
             if col < cols:
