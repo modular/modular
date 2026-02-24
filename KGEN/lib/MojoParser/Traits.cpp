@@ -19,9 +19,12 @@
 #include "StabilityMarkers.h"
 #include "StructEmitter.h"
 
+#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/STLExtras.h"
@@ -90,6 +93,57 @@ static bool isInheritedFnOp(FnOp fnOp) {
   return fnOp.getInheritedFrom().has_value() || fnOp.isDefaultedTraitFn();
 }
 
+/// Check method constraints against a conformance constraint for witness table
+/// selection. Following overload selection rules, all candidates must be
+/// definitively satisfied or violated - unprovable constraints trigger errors.
+///
+/// Returns:
+///   - Satisfied: conformance implies all method constraints
+///   - Violated: method constraints contradict the conformance
+///   - Unprovable: constraints cannot be proven or disproven - error case
+static ConstraintResult
+checkMethodConstraintStatus(FnOp method, ConstraintAttr conformanceConstraint,
+                            ASTDecl &structDecl) {
+  ArrayRef<ConstraintAttr> methodConstraints =
+      method.getFuncTypeGenerator().getBody().getMetadata().getConstraints();
+  if (methodConstraints.empty())
+    return ConstraintResult::Satisfied;
+
+  TypedAttr confProp = getCanonicalAttr(conformanceConstraint.getProposition());
+
+  bool hasUnprovable = false;
+  for (ConstraintAttr methodConstraint : methodConstraints) {
+    TypedAttr methodProp = getCanonicalAttr(methodConstraint.getProposition());
+
+    // Skip trivially true method constraints.
+    if (isTriviallyTrueProposition(methodProp))
+      continue;
+
+    // Trivially false method constraint is always violated.
+    if (auto intProp = dyn_cast<IntegerAttr>(methodProp))
+      if (intProp.getValue().isZero())
+        return ConstraintResult::Violated;
+
+    // Unconditional conformance can't prove non-trivial constraints, but
+    // keep scanning for violations before returning Unprovable.
+    if (isTriviallyTrueProposition(confProp)) {
+      hasUnprovable = true;
+      continue;
+    }
+
+    // Check contradiction first (more specific), then implication.
+    if (constraintsContradict(confProp, methodProp))
+      return ConstraintResult::Violated;
+    if (constraintImplies(confProp, methodProp))
+      continue;
+
+    hasUnprovable = true;
+  }
+
+  return hasUnprovable ? ConstraintResult::Unprovable
+                       : ConstraintResult::Satisfied;
+}
+
 // Signature resolves any methods in 'structDecl' with 'name' that were
 // inherited from 'traitDecl'. This will also catch any errors where multiple
 // parent traits define a function of the same signature/name with no override
@@ -99,9 +153,41 @@ static bool isInheritedFnOp(FnOp fnOp) {
 // methods still point to the fn ops in the actual trait. This function takes
 // care of actually creating the fn op in the struct.decl with appropriate
 // signature.
+//
+// Why constraint checking is needed here (not just in later witness selection):
+// This function decides whether to disable the trait's default method stub or
+// create a wrapper for it. If a struct method has a matching signature but
+// incompatible constraints, we must NOT disable the stub, because:
+//
+// Example 1 - Struct method with incompatible constraints:
+//   trait Copyable:
+//     fn __copyinit__(out self, existing: Self, /):
+//       # default implementation
+//
+//   struct Wrapper[T: Movable](Copyable where conforms_to(T, Copyable)):
+//     fn __copyinit__(out self, existing: Self, /)
+//         where not conforms_to(T, Copyable):  # <-- Incompatible!
+//       ...
+//
+// Without constraint checking: We'd see a signature match, disable the stub,
+// and lose the default implementation. Later constraint filtering would reject
+// the struct's method, leaving no valid implementation.
+//
+// With constraint checking: We correctly see the constraints are incompatible,
+// so we keep the stub and create a wrapper for the trait's default.
+//
+// Example 2 - Struct method with compatible constraints:
+//   struct Wrapper[T: Movable](Copyable where conforms_to(T, Copyable)):
+//     fn __copyinit__(out self, existing: Self, /)
+//         where conforms_to(T, Copyable):  # <-- Compatible!
+//       ...
+//
+// The conformance constraint implies the method constraint, so this method
+// is a valid override - we disable the stub.
 static LogicalResult signatureResolveDefaultTraitFnStubs(
     ASTDecl &structDecl, ASTDecl &traitDecl, StringAttr name,
-    ArrayRef<ASTDecl *> candidates, ParameterEvaluator &traitAliasReplacer) {
+    ArrayRef<ASTDecl *> candidates, ParameterEvaluator &traitAliasReplacer,
+    ConstraintAttr conformanceConstraint) {
 
   auto &shared = structDecl.getShared();
 
@@ -166,10 +252,32 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
       // such differences.
       auto [result, _] = ov.filterOverloadSetForValueType(
           wrapperSignature, emitter.getDeclScope(), nullptr);
-      if (result) {
+      if (!result)
+        continue;
+
+      // Check if this method's constraints are valid for the conformance.
+      // Following overload selection rules, we require constraints to be
+      // definitively provable or disproved - unprovable constraints are errors.
+      ConstraintResult status = checkMethodConstraintStatus(
+          possibleImpl, conformanceConstraint, structDecl);
+      switch (status) {
+      case ConstraintResult::Satisfied:
         structDefinesMethod = true;
         break;
+      case ConstraintResult::Violated:
+        // Method constraints contradict conformance - not a valid override.
+        continue;
+      case ConstraintResult::Unprovable:
+        // Cannot prove or disprove - error per overload selection rules.
+        shared.emitError(decl->getLoc())
+            << "method '" << name.str()
+            << "' has constraints that cannot be proven or disproven from "
+               "conformance constraint; all candidates must have provable "
+               "or contradicted constraints";
+        return failure();
       }
+      if (structDefinesMethod)
+        break;
     }
 
     // The struct doesn't provide an override, see if the wrapper fn we're about
@@ -502,8 +610,9 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     // the current trait here. We have to do this before the upcoming signature
     // resolution of all decls with a matching name to avoid cycles between
     // verifyConformance and signature resolution for FnOps.
-    if (failed(signatureResolveDefaultTraitFnStubs(
-            structDecl, traitDecl, name, decls, traitAliasReplacer))) {
+    if (failed(signatureResolveDefaultTraitFnStubs(structDecl, traitDecl, name,
+                                                   decls, traitAliasReplacer,
+                                                   op.getConstraintAttr()))) {
       diag->abandon();
       return failure();
     }
@@ -521,15 +630,76 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, SymbolRefAttr parent,
     auto [traitSignature, bindings] = getTraitFunctionSignature(
         emitter, traitFn, selfType, parent, syntheticNode, traitAliasReplacer);
 
-    // Match against the transformed calling convention if the struct is
-    // register-passable.
-    OverloadSet ov(name, decls, std::move(bindings),
+    // Get the conformance constraint for checking method constraints.
+    ConstraintAttr conformanceConstraint = op.getConstraintAttr();
+
+    // Check each candidate's constraint status. Candidates with provable
+    // constraints are valid, those with disproved constraints are rejected,
+    // and those with unprovable constraints cause an error if any match the
+    // trait signature (since we can't definitively select a witness).
+    SmallVector<ASTDecl *> provableDecls;
+    SmallVector<ASTDecl *> unprovableDecls;
+    for (ASTDecl *decl : decls) {
+      auto fnOp = dyn_cast_or_null<FnOp>(decl->getIfOperation());
+      if (!fnOp) {
+        provableDecls.push_back(decl);
+        continue;
+      }
+
+      ConstraintResult status =
+          checkMethodConstraintStatus(fnOp, conformanceConstraint, structDecl);
+      switch (status) {
+      case ConstraintResult::Satisfied:
+        provableDecls.push_back(decl);
+        break;
+      case ConstraintResult::Violated:
+        // Method constraints contradict conformance - not a valid candidate.
+        break;
+      case ConstraintResult::Unprovable:
+        // Track unprovable candidates - if any match the trait signature,
+        // we must error since we can't definitively select a witness.
+        unprovableDecls.push_back(decl);
+        break;
+      }
+    }
+
+    // Check if there are unprovable candidates whose signature matches the
+    // trait requirement. Following overload selection rules, if ANY candidate
+    // has unprovable constraints and could match the signature, we must error
+    // because we can't rule it out as a potential witness table entry.
+    if (!unprovableDecls.empty()) {
+      ParamBindings unprovableBindings = ParamBindings::getForDeclaredType(
+          emitter.getDeclScope(), selfType, &syntheticNode);
+      OverloadSet unprovableOv(name, unprovableDecls,
+                               std::move(unprovableBindings),
+                               CallSyntax::kMethodCallSynthetic);
+      auto [unprovableResult, _] = unprovableOv.filterOverloadSetForValueType(
+          traitSignature, emitter.getDeclScope(), nullptr);
+      if (unprovableResult) {
+        // An unprovable candidate matches the signature - error.
+        // This follows overload selection rules: we can't prove or disprove
+        // this candidate, so we can't definitively select a witness.
+        for (ASTDecl *unprovableDecl : unprovableDecls) {
+          diag->attachNote(unprovableDecl->getLoc())
+              << "method '" << name.str()
+              << "' has constraints that cannot be proven or disproven from "
+                 "conformance constraint";
+        }
+        diag->attachNote(traitFnDecl->getLoc())
+            << "required by trait method here";
+        return failure();
+      }
+    }
+
+    // Now try to find a match among the provable candidates.
+    OverloadSet ov(name, provableDecls, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic);
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
       return diag->attachNote(traitFnDecl->getLoc());
     };
     auto [result, selectedStructMethod] = ov.filterOverloadSetForValueType(
         traitSignature, emitter.getDeclScope(), emitError);
+
     if (!result)
       return failure();
 
@@ -777,23 +947,91 @@ static TraitType getDeclProvidedTrait(ASTDecl *decl) {
   return providedCanonTrait;
 }
 
-/// Given a decl for a struct or trait type, return true if this type conforms
-/// to the specified trait type.
-bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
+/// Given a decl for a struct or trait type, check if this type conforms to the
+/// specified trait type. If concreteType is provided, it is used to extract
+/// parameter bindings for evaluating conditional trait conformances.
+///
+/// Returns:
+/// - ConformanceResult::Yes if the type definitely conforms
+/// - ConformanceResult::No if the type definitely does not conform
+/// - ConformanceResult::NeedsEvidence if conformance depends on constraints
+///   that cannot be evaluated statically
+ConformanceResult ASTDecl::doesNominalTypeConformTo(TraitType trait,
+                                                    ASTType concreteType) {
   // We only need trait symbol to verify trait conformance, not the resolved
   // witness table.
   if (failed(shared.declResolver->resolveSignature(*this, getLoc())))
-    return false; // Error emitted.
+    return ConformanceResult::No; // Error emitted.
 
   // Collect all the symbols that the type explicitly provides.
   TraitType providedCanonTrait = getDeclProvidedTrait(this);
   if (providedCanonTrait == trait)
-    return true;
+    return ConformanceResult::Yes;
 
-  // Collect all provided symbols, starting with the struct's own conformances
-  SmallVector<SymbolRefAttr> providedSymbols(
-      providedCanonTrait.getSymbols().begin(),
-      providedCanonTrait.getSymbols().end());
+  // Set up parameter evaluator if we have parameter bindings for constraint
+  // evaluation. Uses the parser's evaluation context needed for folding
+  // TypeConformsToTraitAttr.
+  std::optional<ParameterEvaluator> evaluator;
+  ArrayRef<TypedAttr> paramBindings =
+      concreteType ? concreteType.getParamBindings() : ArrayRef<TypedAttr>{};
+  if (!paramBindings.empty()) {
+    if (auto structOp = dyn_cast_or_null<StructDeclOp>(this->getIfOperation()))
+      evaluator.emplace(shared.getParameterEvaluator(structOp.getInputParams(),
+                                                     paramBindings));
+  }
+
+  ArrayRef<SymbolRefAttr> providedSymbolsArr = providedCanonTrait.getSymbols();
+  ArrayRef<ConstraintAttr> constraints = providedCanonTrait.getConstraints();
+
+  // Track symbols that are definitely provided (proven) vs conditionally
+  // provided (unprovable constraint).
+  DenseSet<SymbolRefAttr> provenSymbols;
+  DenseSet<SymbolRefAttr> unprovenSymbols;
+
+  // Collect all provided symbols, starting with the struct's own conformances.
+  // For conditional conformances, track whether constraints are proven or not.
+  if (constraints.empty()) {
+    // No constraints array means all traits are unconditionally provided.
+    provenSymbols.insert(providedSymbolsArr.begin(), providedSymbolsArr.end());
+  } else {
+    for (auto [i, symbol] : llvm::enumerate(providedSymbolsArr)) {
+      ConstraintAttr constraint = constraints[i];
+
+      // If constraint is trivially true, the trait is unconditionally provided.
+      if (isTriviallyTrueConstraint(constraint)) {
+        provenSymbols.insert(symbol);
+        continue;
+      }
+
+      // If we have no evaluator (no param bindings), we can't evaluate
+      // constraints. Mark as unproven.
+      if (!evaluator) {
+        unprovenSymbols.insert(symbol);
+        continue;
+      }
+
+      // Evaluate the constraint with the parameter bindings.
+      TypedAttr prop = constraint.getProposition();
+      prop = evaluator->getReboundAttribute(prop);
+      // Strip any sugar (e.g., sugar_preserved) to get the actual value.
+      prop = getCanonicalAttr(prop);
+
+      // If the constraint folds to a constant, we know the answer.
+      if (auto intValue = dyn_cast<IntegerAttr>(prop)) {
+        if (intValue.getValue().isZero()) {
+          // Constraint is definitely false - trait is not provided.
+          continue;
+        }
+        // Constraint is true - trait is definitely provided.
+        provenSymbols.insert(symbol);
+        continue;
+      }
+
+      // Constraint is unprovable (didn't fold to a constant).
+      unprovenSymbols.insert(symbol);
+    }
+  }
+
   if (auto structOp = dyn_cast_or_null<StructDeclOp>(this->getIfOperation())) {
     llvm::SmallPtrSet<ASTDecl *, 4> uniqueExtensions;
     // Search for extensions in the struct's parent scope.
@@ -828,24 +1066,34 @@ bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
           continue;
         TraitType extCanonicalTrait = extOp.getCanonicalTrait().value();
         for (SymbolRefAttr symbol : extCanonicalTrait.getSymbols()) {
-          providedSymbols.push_back(symbol);
+          // Extension conformances are currently unconditional.
+          provenSymbols.insert(symbol);
         }
       }
     }
   }
 
   // Check the provided symbols against the required symbols by the target
-  // trait. There's no need to canonicalize the required symbols as long as
-  // the provided symbols list is canonical.
-  DenseSet<SymbolRefAttr> requiredSymbols;
-  requiredSymbols.insert(trait.getSymbols().begin(), trait.getSymbols().end());
-  for (SymbolRefAttr symbol : providedSymbols)
-    requiredSymbols.erase(symbol);
+  // trait. Track whether any required symbol relies on unproven constraints.
+  bool hasUnprovenRequired = false;
+  for (SymbolRefAttr required : trait.getSymbols()) {
+    if (provenSymbols.contains(required)) {
+      // Symbol is definitely provided.
+      continue;
+    }
+    if (unprovenSymbols.contains(required)) {
+      // Symbol is conditionally provided but constraint is unproven.
+      hasUnprovenRequired = true;
+      continue;
+    }
+    // Symbol is not provided at all.
+    return ConformanceResult::No;
+  }
 
-  // Simply return true if we find the symbol for the requested trait, this does
-  // not resolve ConformanceOp and raise error immediately but delaying to when
-  // a concrete witness attribute is queried.
-  return requiredSymbols.empty();
+  // All required symbols are present (either proven or unproven).
+  if (hasUnprovenRequired)
+    return ConformanceResult::NeedsEvidence;
+  return ConformanceResult::Yes;
 }
 
 void LIT::sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols) {
@@ -1028,7 +1276,7 @@ FailureOr<TypedAttr> LIT::getUniqueWitnessForTypeIfConforms(SharedState &shared,
                .bindReference({PValue(type)});
   }
 
-  if (!typeDecl->doesNominalTypeConformTo(trait)) {
+  if (type.checkConformance(trait, shared) == ConformanceResult::No) {
     // Does not conform. This is the only non-error case where we return an
     // empty attr.
     return TypedAttr();
@@ -1118,14 +1366,7 @@ PValue IREmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   value.ir = PValue(type); // update value.ir if the type was rebound.
 
   // Check that the struct or super trait implements the trait.
-  ASTDecl *metaTypeDecl = type.getDecl(shared);
-  if (!metaTypeDecl) {
-    emitError(value.expr->getLoc(), "cannot get metatype of ")
-        << type << value.expr->getRange();
-    return {};
-  }
-
-  if (!metaTypeDecl->doesNominalTypeConformTo(trait)) {
+  if (type.checkConformance(trait, shared) == ConformanceResult::No) {
     MojoInflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                             << type << " to trait " << ASTType(trait)
                             << value.expr->getRange();

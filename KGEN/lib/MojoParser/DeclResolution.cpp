@@ -12,6 +12,7 @@
 #include "IREmitter.h"
 #include "KGEN/MOGGPreElab/MOGGPreElabHelpers.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "MojoUtils.h"
 #include "ParserBase.h"
 #include "ParserEvaluationContext.h"
@@ -2610,8 +2611,9 @@ ParseResult DeclResolver::resolveBody(AliasDeclOp op, Lexer &lexer,
 /// of equivalent parent trait decls.
 ///
 /// For struct declarations with parameters already in scope, `traitConstraints`
-/// can be provided to collect emitted constraint expressions from `where`
-/// clauses for conditional conformance.
+/// can be provided to collect constraint expressions for conditional
+/// conformance. Traits with a `where` clause carry the emitted constraint;
+/// traits without carry the trivially-true (unconditional) constraint.
 /// Note: Trait declarations cannot have where clauses on their inheritance
 /// lists - only struct declarations support conditional conformance.
 static ParseResult parseOptionalInheritanceList(
@@ -2651,7 +2653,14 @@ static ParseResult parseOptionalInheritanceList(
 
     // Parse and emit optional where clause for conditional conformance.
     // Parameters must already be in scope in declScope for this to work.
-    ConstraintAttr constraint;
+    // Defaults to the trivially-true (unconditional) constraint with the
+    // trait's source location (for diagnostic accuracy).
+    ConstraintAttr constraint =
+        traitConstraints
+            ? ConstraintAttr::get(
+                  IntegerAttr::get(IntegerType::get(shared.getContext(), 1), 1),
+                  shared.diags.translateLocation(loc))
+            : ConstraintAttr();
     if (traitConstraints && p.consumeIfSoftIdentifier("where")) {
       ExprNode *constraintExpr = nullptr;
       if (p.parseExpression(constraintExpr, declScope.getIndentation()))
@@ -2669,8 +2678,9 @@ static ParseResult parseOptionalInheritanceList(
         constraintEmitter.emitErrorForDynamicValueInParameter(loc);
         return failure();
       }
-      constraint =
-          ConstraintAttr::get(propVal, shared.diags.translateLocation(loc));
+      TypedAttr simplifiedProp = LIT::deShortCircuitCond(propVal);
+      constraint = ConstraintAttr::get(simplifiedProp,
+                                       shared.diags.translateLocation(loc));
     }
 
     // Successively flatten the parent list so we always have all the parents
@@ -2704,8 +2714,7 @@ static ParseResult parseOptionalInheritanceList(
       // loop, because this symbol itself is part of `canonicalParent` too.
       immediateParents.insert(symbol);
 
-      // Store the emitted constraint for this trait symbol.
-      if (traitConstraints && constraint)
+      if (traitConstraints)
         (*traitConstraints)[symbol] = constraint;
     }
     return success();
@@ -2919,7 +2928,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       parsedParams.parseParametersIfPresent(p, ArgListKind::kParamList))
     return failure();
 
-  // Parse parameters first so they're in scope for constraint emission
+  // Type-check parameters first so they're in scope for constraint emission
   // in the inheritance list.
   std::optional<TypeCheckedParamList> paramSignatureOrError =
       TypeCheckedParamList::create(parsedParams, sigDecl);
@@ -3290,7 +3299,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
     if (!trait)
       return false;
-    return structDecl.doesNominalTypeConformTo(trait.bindReference());
+    // Use optimistic conformance check - conditional conformances should still
+    // trigger synthesis of the relevant methods (with matching constraints).
+    return ASTType(structOp.bindReference())
+               .checkConformance(trait.bindReference(), shared) !=
+           ConformanceResult::No;
   };
 
   // If the type lacks a __sp_fn__is_trivial member, synthesize it to
@@ -3352,6 +3365,30 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
               .hasNontrivialDestructor(decl->getLoc(), shared))
         hasNonTrivialDestructor = true;
       structFields.push_back({fieldOp, decl});
+    }
+  }
+
+  // Check for unsupported conditional conformance to RegisterPassable or
+  // TrivialRegisterPassable. These traits affect the type's ABI/convention
+  // which is a per-declaration decision that cannot vary per instantiation.
+  if (TraitType canonTrait = structOp.getCanonicalTrait()) {
+    ArrayRef<ConstraintAttr> traitConstraints = canonTrait.getConstraints();
+    if (!traitConstraints.empty()) {
+      ArrayRef<SymbolRefAttr> traitSymbols = canonTrait.getSymbols();
+      for (size_t i = 0; i < traitSymbols.size(); ++i) {
+        if (isTriviallyTrueConstraint(traitConstraints[i]))
+          continue;
+        StringRef traitName = traitSymbols[i].getLeafReference();
+        if (traitName == "RegisterPassable" ||
+            traitName == "TrivialRegisterPassable") {
+          shared.emitError(traitConstraints[i].getLoc())
+              << "conditional conformance to '" << traitName
+              << "' is not supported; register passability affects the "
+                 "type's ABI and cannot vary per instantiation";
+          structDecl.setErroneous();
+          return failure();
+        }
+      }
     }
   }
 

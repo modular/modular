@@ -256,11 +256,8 @@ static bool canConvertFunctionTypes(FnType actual, FnType expected,
       // argument, as long as that struct conforms to that trait.
       // In other words, here we're handling function conversions with covariant
       // arguments (see TTSMFS).
-      ASTDecl *actualDeclOp = actualValueAstType.getDecl(shared);
-      assert(actualDeclOp);
-      if (!actualDeclOp)
-        return false;
-      if (actualDeclOp->doesNominalTypeConformTo(expectedTraitType))
+      if (actualValueAstType.checkConformance(expectedTraitType, shared) !=
+          ConformanceResult::No)
         continue;
 
       return false;
@@ -1439,7 +1436,8 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
     return {};
 
   // Use a special wrapper decl in the builtins as stubs.
-  ASTDecl *wrapperDecl = shared.getBuiltinStubsMLIRType(loc).getDecl(shared);
+  ASTType wrapperType = shared.getBuiltinStubsMLIRType(loc);
+  ASTDecl *wrapperDecl = wrapperType.getDecl(shared);
   if (!wrapperDecl ||
       !isa_and_nonnull<StructDeclOp>(wrapperDecl->getIfOperation())) {
     shared.emitError(loc, "malformed builtin._stubs.__MLIRType");
@@ -1448,7 +1446,7 @@ static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
 
   // Explicitly check that the wrapper conforms to the trait so that
   // conformances & special functions may be generated.
-  if (!wrapperDecl->doesNominalTypeConformTo(trait)) {
+  if (wrapperType.checkConformance(trait, shared) == ConformanceResult::No) {
     MojoInflightDiag diag =
         shared.emitError(value.expr->getLoc(), "cannot bind MLIR type ")
         << mlirType << " to trait " << ASTType(trait);
@@ -1498,7 +1496,7 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
       result = checkMLIRTypeConformance(shared, loc, trait);
     } else if (sugarIsaAndNonNull<StructMetaMetaType>(fromType.getMetaType()) ||
                sugarIsaAndNonNull<AnyTraitType>(fromType.getMetaType())) {
-      if (ASTDecl *decl = ASTType(fromType).getDecl(shared)) {
+      if (ASTType(fromType).getDecl(shared)) {
         // Check for closure rebindability.
         for (const auto &symbol : trait.getSymbols()) {
           auto &symbolDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
@@ -1512,7 +1510,8 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
           }
         }
 
-        return decl->doesNominalTypeConformTo(trait);
+        return fromType.checkConformance(trait, shared) !=
+               ConformanceResult::No;
       }
     } else {
       // This isn't relevant, e.g. in function pointer to closure case.
@@ -1522,17 +1521,19 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
   }
 
   if (auto anyTrait = sugarDynCast<AnyTraitType>(toType)) {
-    ASTDecl *fromDecl = nullptr;
+    ASTType concreteType;
     // 2 cases, e.g,:
     // 1st, AnyTraitType[Copyable] to AnyTraitType[AnyType].
     // 2nd, Meta[Meta[Int]] to AnyTraitType[Copyable]
-    if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType))
-      fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
-    else if (auto mmType = sugarDynCast<StructMetaMetaType>(fromType))
-      fromDecl = ASTType(mmType.getType()).getDecl(shared);
+    if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType)) {
+      concreteType = ASTType(rvAnyTrait.getTraitType());
+    } else if (auto mmType = sugarDynCast<StructMetaMetaType>(fromType)) {
+      concreteType = ASTType(mmType.getType());
+    }
 
-    if (fromDecl)
-      return fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType());
+    if (concreteType)
+      return concreteType.checkConformance(anyTrait.getTraitType(), shared) !=
+             ConformanceResult::No;
   }
 
   // Not applicable.
@@ -1803,14 +1804,16 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
         return PValue();
       }
 
-      ASTDecl *fromDecl = nullptr;
-      if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType))
-        fromDecl = ASTType(rvAnyTrait.getTraitType()).getDecl(shared);
-      else if (auto mmType = sugarDynCast<StructMetaMetaType>(fromType))
-        fromDecl = ASTType(mmType.getType()).getDecl(shared);
+      ASTType concreteType;
+      if (auto rvAnyTrait = sugarDynCast<AnyTraitType>(fromType)) {
+        concreteType = ASTType(rvAnyTrait.getTraitType());
+      } else if (auto mmType = sugarDynCast<StructMetaMetaType>(fromType)) {
+        concreteType = ASTType(mmType.getType());
+      }
 
-      if (fromDecl &&
-          fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType())) {
+      if (concreteType &&
+          concreteType.checkConformance(anyTrait.getTraitType(), shared) !=
+              ConformanceResult::No) {
         // This is just the trait itself, not a conformance, just upcast.
         return PValue(TypeParamAttr::get(ASTType(typePValue), anyTrait));
       }

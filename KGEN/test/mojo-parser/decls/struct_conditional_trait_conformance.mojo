@@ -16,7 +16,7 @@
 
 
 # ===========================================================================
-# Test 1: Unconditional conformance - struct is always Movable
+# Unconditional conformance - struct is always Movable
 # ===========================================================================
 # The struct should NOT have any constraint in its trait type.
 # CHECK: lit.struct.decl @UnconditionalMovable<T: !Movable>
@@ -30,13 +30,15 @@ struct UnconditionalMovable[T: Movable](Movable):
 
 
 # ===========================================================================
-# Test 2: Single conditional conformance - Copyable only when T is Copyable
+# Single conditional conformance - Copyable only when T is Copyable
 # ===========================================================================
 # Verify the ConformanceOp has the constraint attached:
 # CHECK: lit.struct.decl @ConditionalCopyable<T: !Movable>
 # CHECK: kgen.conformance @"std::builtin::stubs::Copyable"
 # CHECK: } where #kgen.constraint<{{.*}}conforms_to(:!Movable T, ["std::builtin::stubs::Copyable"])
-struct ConditionalCopyable[T: Movable](Copyable where conforms_to(T, Copyable), Movable):
+struct ConditionalCopyable[T: Movable](
+    Copyable where conforms_to(T, Copyable), Movable
+):
     var value: Self.T
 
     fn __init__(out self, var value: Self.T):
@@ -50,7 +52,7 @@ struct ConditionalCopyable[T: Movable](Copyable where conforms_to(T, Copyable), 
 
 
 # ===========================================================================
-# Test 3: Multiple conditional conformances - Copyable and Intable
+# Multiple conditional conformances - Copyable and Intable
 # ===========================================================================
 # Verify ConformanceOps have constraints for both Copyable and Intable:
 # CHECK: lit.struct.decl @MultipleConditionalConformances<T: !Movable>
@@ -76,3 +78,166 @@ struct MultipleConditionalConformances[T: Movable](
 
     fn __int__(self) -> Int where conforms_to(Self.T, Intable):
         return 0
+
+
+# ===========================================================================
+# Disproved candidate with provable alternative - selects provable
+# ===========================================================================
+# When a struct has both:
+# - A method with `where not` that contradicts the conformance (disproved)
+# - A method with matching constraints (provable)
+# The provable candidate is correctly selected with no error.
+#
+# Just verify the struct declaration is generated (no compilation error):
+# CHECK: lit.struct.decl @DisprovedWithProvableAlternative<T: !Movable>
+
+
+trait WhereNotTestTrait:
+    fn where_not_method(self):
+        ...
+
+
+struct DisprovedWithProvableAlternative[T: Movable](
+    WhereNotTestTrait where conforms_to(T, Copyable),
+    Movable,
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.value = take.value^
+
+    # This method is "disproved" - its constraint contradicts the conformance.
+    # The conformance requires T: Copyable, but this method requires NOT that.
+    fn where_not_method(self) where not conforms_to(Self.T, Copyable):
+        pass
+
+    # This method is "provable" - its constraint matches the conformance.
+    # It will be selected as the witness table entry.
+    fn where_not_method(self) where conforms_to(Self.T, Copyable):
+        pass
+
+
+# ===========================================================================
+# Witness selection with matching vs contradicting constraints
+# ===========================================================================
+# This test demonstrates that when selecting a witness for a trait method:
+# - Overloads with provable constraints (matching conformance) are selected
+# - Overloads with disproved constraints (contradicting conformance) are skipped
+#
+# The key is that the constraints must be on the SAME trait as the conformance.
+# Using `where not conforms_to(T, Copyable)` works because it directly
+# contradicts `conforms_to(T, Copyable)`.
+#
+# NOTE: Using UNRELATED traits like `where not conforms_to(T, Intable)` would
+# NOT work - it would be "unprovable" and cause an error.
+#
+# CHECK: lit.struct.decl @WitnessSelectionWithWhereNot<T: !Movable>
+
+trait Greeter:
+    fn greet(self): ...
+
+struct WitnessSelectionWithWhereNot[T: Movable](
+    Greeter where conforms_to(T, Copyable),
+    Movable,
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.value = take.value^
+
+    # Overload 1: Provable - constraint matches the conformance.
+    # This is selected as the witness for the Greeter trait.
+    fn greet(self) where conforms_to(Self.T, Copyable):
+        pass
+
+    # Overload 2: Disproved - constraint directly contradicts the conformance.
+    # The conformance guarantees T: Copyable, so `not conforms_to(T, Copyable)`
+    # is definitively false. This overload is skipped.
+    fn greet(self) where not conforms_to(Self.T, Copyable):
+        pass
+
+
+# ===========================================================================
+# Multiple overloads with stronger conformance constraint
+# ===========================================================================
+# When the conformance has a compound constraint (A and B), we can use
+# `where not B` to filter out an overload because the conformance implies B.
+#
+# Here: conformance is `conforms_to(T, Copyable) and conforms_to(T, Intable)`
+# - Method with `where conforms_to(T, Intable)` → provable (conformance implies it)
+# - Method with `where not conforms_to(T, Intable)` → disproved (conformance implies Intable)
+#
+# CHECK: lit.struct.decl @CompoundConformanceWithWhereNot<T: !Movable>
+
+trait Formatter:
+    fn format(self): ...
+
+struct CompoundConformanceWithWhereNot[T: Movable](
+    Formatter where conforms_to(T, Copyable) and conforms_to(T, Intable),
+    Movable,
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.value = take.value^
+
+    # Overload 1: Provable - conformance implies both Copyable AND Intable,
+    # so it certainly implies just Intable.
+    fn format(self) where conforms_to(Self.T, Intable):
+        pass
+
+    # Overload 2: Disproved - conformance implies Intable, so
+    # `not conforms_to(T, Intable)` contradicts it.
+    fn format(self) where not conforms_to(Self.T, Intable):
+        pass
+
+
+# ===========================================================================
+# Compound method constraint with contradicting part
+# ===========================================================================
+# When a method has `where not X and Y`, and the conformance implies X,
+# the `not X` part contradicts the conformance, making the whole constraint
+# disproved (since AND requires all parts to be true).
+#
+# This is the pattern the reviewer mentioned: users can add extra conditions
+# with `and`, but as long as one part contradicts the conformance, the
+# overload is filtered out.
+#
+# CHECK: lit.struct.decl @CompoundMethodConstraint<T: !Movable>
+
+trait Processor:
+    fn process(self): ...
+
+struct CompoundMethodConstraint[T: Movable](
+    Processor where conforms_to(T, Copyable),
+    Movable,
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+    fn __moveinit__(out self, deinit take: Self):
+        self.value = take.value^
+
+    # Overload 1: Provable - constraint matches the conformance.
+    # This is selected as the witness.
+    fn process(self) where conforms_to(Self.T, Copyable):
+        pass
+
+    # Overload 2: Disproved - the `not conforms_to(T, Copyable)` part
+    # contradicts the conformance. Even though there's an extra
+    # `and conforms_to(T, Intable)` condition, the contradiction on the
+    # first part makes the whole AND false.
+    fn process(self)
+        where not conforms_to(Self.T, Copyable) and conforms_to(Self.T, Intable):
+        pass
