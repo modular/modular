@@ -159,7 +159,7 @@ def collect_precompile_jobs(
 
         encoding = pipeline_def.encoding
         oracle = PIPELINE_ORACLES[pipeline_def.pipeline]
-        model_path: str = oracle.model_path  # type: ignore[attr-defined]
+        model_path = oracle.model_path
 
         dedup_key = (model_path, devices, encoding)
         if dedup_key in seen:

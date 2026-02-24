@@ -125,6 +125,9 @@ class PipelineOracle(ABC):
     necessary to run the model.
     """
 
+    model_path: str
+    """ID of the Hugging Face repository."""
+
     task: PipelineTask = PipelineTask.TEXT_GENERATION
     default_batch_size: int | list[int] | None = None
 
@@ -169,17 +172,10 @@ class PipelineOracle(ABC):
         device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         """Instantiate a vLLM pipeline config."""
-        path = getattr(self, "model_path", None)
-        # We shouldn't hit this; we only have it because using the string
-        # `model_path` is standard practice rather than enforced behavior.
-        if not path:
-            raise ValueError(
-                f"Cannot find `model_path` for {self.__class__.__name__}"
-            )
         # Use tensor parallelism across all GPU devices
         gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
-            model_path=path,
+            model_path=self.model_path,
             trust_remote_code=getattr(self, "trust_remote_code", False),
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
@@ -284,9 +280,6 @@ def _create_vision_max_pipeline(
 class InternVLPipelineOracle(PipelineOracle):
     """Pipeline oracle for InternVL3 architectures."""
 
-    model_path: str
-    """ID of the Hugging Face repository."""
-
     def __init__(self, model_path: str) -> None:
         super().__init__()
         self.model_path = model_path
@@ -371,9 +364,6 @@ class InternVLPipelineOracle(PipelineOracle):
 class Idefics3PipelineOracle(PipelineOracle):
     """Pipeline oracle for Idefics3 architectures."""
 
-    model_path: str
-    """ID of the Hugging Face repository."""
-
     def __init__(self, model_path: str) -> None:
         super().__init__()
         self.model_path = model_path
@@ -456,9 +446,6 @@ class Idefics3PipelineOracle(PipelineOracle):
 
 class Qwen2_5VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen2.5VL architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(self, model_path: str) -> None:
         super().__init__()
@@ -547,9 +534,6 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
 
 class Qwen3VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen3VL architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(
         self,
@@ -1035,9 +1019,6 @@ class LoRAOracle(PipelineOracle):
 
 class ImageGenerationOracle(PipelineOracle):
     """Pipeline oracle for FLUX image generation."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     num_steps: int
     """Number of denoising steps."""
