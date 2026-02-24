@@ -84,6 +84,8 @@ def test_matmul[
         padded_n_k = pack_matmul_b_shape_func[
             a_type,
             a_shape,
+            b_type,
+            b_shape,
             c_type,
             c_shape,
             transpose_b,
@@ -137,12 +139,14 @@ def test_matmul[
     comptime if b_packed:
         if kernel_type_m != 0:
             _pack_b_ndbuffer_impl[
-                a_type, a_shape, c_type, c_shape, transpose_b
+                a_type, a_shape, b_type, b_shape, c_type, c_shape, transpose_b
             ](b, bp, kernel_type_m)
         else:
             pack_b_ndbuffer[
                 a_type,
                 a_shape,
+                b_type,
+                b_shape,
                 c_type,
                 c_shape,
             ](b, bp)

@@ -5603,7 +5603,7 @@ fn _naive_attention[
                 output.runtime_layout.shape.value.canonicalize()
             ),
         ),
-        score.get_immutable(),
+        score,
         NDBuffer[v.dtype, 4, v.origin](
             v.ptr,
             rebind[IndexList[4]](v.runtime_layout.shape.value.canonicalize()),

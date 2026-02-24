@@ -21,14 +21,13 @@ from tensor.managed_tensor_slice import ManagedTensorSlice
 
 @always_inline
 fn managed_tensor_slice_to_ndbuffer[
-    spec: StaticTensorSpec,
-    //,
+    spec: StaticTensorSpec, //
 ](
     tensor: ManagedTensorSlice[static_spec=spec],
     out result: NDBuffer[
         spec.dtype,
         spec.rank,
-        AnyOrigin[mut = not tensor.io_spec.input.value == IO.Input.value],
+        MutAnyOrigin,
         spec.shape,
         spec.strides,
         # alignment2 = spec.alignment,
@@ -38,8 +37,4 @@ fn managed_tensor_slice_to_ndbuffer[
 ):
     comptime assert not tensor.io_spec.input == IO.FusedInput
     var ptr = tensor._ptr.address_space_cast[spec.address_space]()
-    return {
-        ptr.mut_cast[result.mut](),
-        tensor.shape(),
-        tensor._runtime_strides,
-    }
+    return type_of(result)(ptr, tensor.shape(), tensor._runtime_strides)

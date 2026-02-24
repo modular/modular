@@ -349,7 +349,7 @@ fn allreduce_rmsnorm_fp8[
     ngpus: Int,
     //,
 ](
-    input_buffers: InlineArray[NDBuffer[in_dtype, rank, ImmutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[in_dtype, rank, MutAnyOrigin], ngpus],
     output: NDBuffer[mut=True, out_dtype, rank, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Scalar[in_dtype],

@@ -142,7 +142,7 @@ fn load_AB[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     a_smem: LayoutTensorIter[
@@ -758,9 +758,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 ](
     num_active_experts: Int,
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    b_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    b_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
@@ -1173,11 +1173,11 @@ fn grouped_matmul_sm100_persistent[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1246,9 +1246,9 @@ fn _grouped_matmul_sm100_persistent[
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],
-    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
     b_device: LayoutTensor[b_type, b_layout, ...],
-    b_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+    b_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

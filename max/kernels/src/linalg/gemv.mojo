@@ -823,19 +823,18 @@ fn gemv_gpu[
 
 @always_inline
 fn gemv[
-    c_size: DimList,
+    parallelize: Bool,
+    c_size: Dim,
     c_type: DType,
     a_shape: DimList,
     a_type: DType,
-    b_size: DimList,
+    b_size: Dim,
     b_type: DType,
-    //,
-    parallelize: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: NDBuffer[mut=True, c_type, 1, _, c_size],
-    a_buf: NDBuffer[mut=False, a_type, 2, _, a_shape],
-    b_buf: NDBuffer[mut=False, b_type, 1, _, b_size],
+    a_buf: NDBuffer[a_type, 2, _, a_shape],
+    b_buf: NDBuffer[b_type, 1, _, b_size],
 ) raises:
     comptime simd_width = simd_width_of[c_type]()
 

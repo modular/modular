@@ -388,11 +388,7 @@ struct TiledMatmul[
         tile_k: Int,
         n_inner_size: Int,
     ) -> NDBuffer[
-        Self.b_type,
-        3,
-        b_packed_ptr.origin,
-        Self.config.packed_shape,
-        address_space = b_packed_ptr.address_space,
+        Self.b_type, 3, b_packed_ptr.origin, Self.config.packed_shape
     ]:
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
@@ -404,13 +400,7 @@ struct TiledMatmul[
             n_inner_size: Inner dimension size to use for the packed data
                 layout.
         """
-        return NDBuffer[
-            Self.b_type,
-            3,
-            b_packed_ptr.origin,
-            Self.config.packed_shape,
-            address_space = b_packed_ptr.address_space,
-        ](
+        return NDBuffer[Self.b_type, 3, _, Self.config.packed_shape](
             b_packed_ptr,
             DimList(tile_n // n_inner_size, tile_k, n_inner_size),
         )
@@ -518,8 +508,8 @@ fn _matmul_cpu_impl[
 ](
     alg: algorithm,
     c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
     num_threads: Int = -1,
 ) raises:
     comptime if (
@@ -539,12 +529,19 @@ fn _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = NDBuffer[c.type, 1, c.origin](c.data, c.dim[0]())
+        var out = NDBuffer[c.type, 1](c.data, c.dim[0]())
         var lhs = a
-        var rhs = NDBuffer[b.type, 1, b.origin](b.data, b.dim[0]())
-        gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
-            out, lhs, rhs
-        )
+        var rhs = NDBuffer[b.type, 1](b.data, b.dim[0]())
+        gemv[
+            c_size = out.shape.at[0](),
+            c_type = out.type,
+            a_shape = lhs.shape,
+            a_type = lhs.type,
+            b_size = rhs.shape.at[0](),
+            b_type = rhs.type,
+            parallelize=True,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](out, lhs, rhs)
     else:
         # SGEMM calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
         # directed to the special Apple-specific implementations.
@@ -678,8 +675,8 @@ fn matmul[
     single_thread_blocking_override: Bool = False,
 ](
     c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
     kernel_type_m: Int,
     num_threads: Int = -1,
 ) raises:

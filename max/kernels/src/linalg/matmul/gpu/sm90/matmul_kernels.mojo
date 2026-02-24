@@ -1169,8 +1169,8 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[Self.a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[Self.b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[Self.c_type, c_tile_layout, c_desc_layout],
-        a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
-        expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
+        a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+        expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
     ):
         """Grouped matmul variant for MoE (Mixture of Experts) models.

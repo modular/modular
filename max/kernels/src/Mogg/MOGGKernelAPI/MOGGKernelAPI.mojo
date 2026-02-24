@@ -3969,7 +3969,7 @@ struct BatchMatmul:
         var a_buffer = managed_tensor_slice_to_ndbuffer(a)
         var b_buffer = managed_tensor_slice_to_ndbuffer(b)
         return batched_matmul_shape[single_thread_blocking_override=True](
-            a_buffer.make_dims_unknown(), b_buffer.make_dims_unknown()
+            a_buffer, b_buffer
         )
 
 
@@ -7875,10 +7875,8 @@ struct Struct_grouped_matmul_ragged:
             managed_tensor_slice_to_ndbuffer(c),
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(
-                expert_start_indices
-            ).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(expert_ids).make_dims_unknown(),
+            managed_tensor_slice_to_ndbuffer(expert_start_indices),
+            managed_tensor_slice_to_ndbuffer(expert_ids),
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             cuda_ctx,
@@ -8502,12 +8500,14 @@ struct LayoutTransformMatmulKN2KNkni:
         _pack_b_ndbuffer_impl[
             a_type,
             a_shape,
+            b_type,
+            b_shape,
             c_type,
             c_shape,
             transposed=False,
         ](
             managed_tensor_slice_to_ndbuffer(b_input),
-            managed_tensor_slice_to_ndbuffer(output_buffer).make_dims_unknown(),
+            managed_tensor_slice_to_ndbuffer(output_buffer),
             kernel_type_m,
         )
 
@@ -8535,12 +8535,14 @@ struct LayoutTransformMatmulNK2KNkni:
         _pack_b_ndbuffer_impl[
             a_type,
             a_shape,
+            b_type,
+            b_shape,
             c_type,
             c_shape,
             transposed=True,
         ](
             managed_tensor_slice_to_ndbuffer(b_input),
-            managed_tensor_slice_to_ndbuffer(output_buffer).make_dims_unknown(),
+            managed_tensor_slice_to_ndbuffer(output_buffer),
             kernel_type_m,
         )
 
@@ -8566,6 +8568,8 @@ struct PackMatmulBShapeFunc:
         return pack_matmul_b_shape_func[
             a_type,
             a_shape,
+            b_type,
+            b_shape,
             c_type,
             c_shape,
             transpose_in_0,
@@ -9084,7 +9088,13 @@ struct Struct_swishGLU:
         b1: InputTensor[dtype = b0.dtype, rank=2],
         ctx: DeviceContextPtr,
     ) raises:
-        swishGLU[target=target,](
+        swishGLU[
+            a_type = a.static_spec.dtype,
+            a_shape = a.static_spec.shape,
+            b_type = b0.static_spec.dtype,
+            b_shape = b0.static_spec.shape,
+            target=target,
+        ](
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b0),
             managed_tensor_slice_to_ndbuffer(b1),
@@ -9163,13 +9173,11 @@ struct DistributedAllReduceSum:
 
         # Marshal input tensors into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
+            NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
         ](fill={})
 
         comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         # Marshal output tensor
         var out_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -9198,7 +9206,7 @@ struct DistributedAllReduceSum:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             allreduce[ngpus=num_devices, output_lambda=output_lambda](
-                in_bufs, out_buf.make_dims_unknown(), rank_sigs, device_ctx[]
+                in_bufs, out_buf, rank_sigs, device_ctx[]
             )
 
 
@@ -9251,13 +9259,11 @@ struct DistributedReduceScatterSum:
 
         # Marshal input tensors into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
+            NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
         ](fill={})
 
         comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         # Marshal output tensor
         var out_buf = managed_tensor_slice_to_ndbuffer(output)
@@ -9286,7 +9292,7 @@ struct DistributedReduceScatterSum:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             reducescatter[ngpus=num_devices, output_lambda=output_lambda](
-                in_bufs, out_buf.make_dims_unknown(), rank_sigs, device_ctx[]
+                in_bufs, out_buf, rank_sigs, device_ctx[]
             )
 
 
@@ -9333,22 +9339,18 @@ struct DistributedAllGather:
 
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
+            NDBuffer[dtype, rank, MutAnyOrigin], inputs.size
         ](fill={})
 
         comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
         var out_bufs = InlineArray[
             NDBuffer[dtype, rank, MutAnyOrigin], num_devices * num_devices
         ](fill={})
 
         comptime for i in range(num_devices * num_devices):
-            out_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                outputs[i]
-            ).make_dims_unknown()
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(outputs[i])
 
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
@@ -9435,8 +9437,8 @@ struct DistributedBroadcast:
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             broadcast[ngpus=num_devices](
-                in_buf.make_dims_unknown(),
-                out_buf.make_dims_unknown(),
+                in_buf,
+                out_buf,
                 rank_sigs,
                 device_ctx[],
                 root,
@@ -9511,19 +9513,17 @@ struct DistributedMatmulAllReduce:
 
         # Marshal input and output variadic tensors into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[a_type, 2, ImmutAnyOrigin, A_static_shape], num_devices
+            NDBuffer[a_type, 2, MutAnyOrigin, A_static_shape], num_devices
         ](fill={})
         var weight_bufs = InlineArray[
-            NDBuffer[b_type, 2, ImmutAnyOrigin, B_static_shape], num_devices
+            NDBuffer[b_type, 2, MutAnyOrigin, B_static_shape], num_devices
         ](fill={})
 
         comptime for i in range(num_devices):
             in_bufs[i] = rebind[
-                NDBuffer[a_type, 2, ImmutAnyOrigin, A_static_shape]
+                NDBuffer[a_type, 2, MutAnyOrigin, A_static_shape]
             ](managed_tensor_slice_to_ndbuffer(inputs[i]))
-            weight_bufs[i] = rebind[
-                NDBuffer[b_type, 2, ImmutAnyOrigin, B_static_shape]
-            ](managed_tensor_slice_to_ndbuffer(weights[i]))
+            weight_bufs[i] = managed_tensor_slice_to_ndbuffer(weights[i])
 
         var out_bufs = InlineArray[
             NDBuffer[c_type, 2, MutAnyOrigin, C_static_shape], num_devices
@@ -9909,8 +9909,8 @@ struct QuantizeDynamicScaledFloat8:
             group_size_or_per_token,
             num_cols = input.static_spec.shape.get[1](),
         ](
-            managed_tensor_slice_to_ndbuffer(output).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(scales).make_dims_unknown(),
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(scales),
             scale_ub,
             ctx.get_device_context(),
             num_rows=input.dim_size(0),
@@ -9951,8 +9951,8 @@ struct BatchedQuantizeDynamicScaledFloat8:
             group_size_or_per_token=group_size_or_per_token,
             num_cols = input.static_spec.shape.get[2](),
         ](
-            managed_tensor_slice_to_ndbuffer(output).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(scales).make_dims_unknown(),
+            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer(scales),
             scale_ub,
             ctx.get_device_context(),
             num_rows=input.dim_size(1),
@@ -10131,10 +10131,8 @@ struct Struct_lora_sgmv_ragged:
             managed_tensor_slice_to_ndbuffer(c),
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(
-                input_row_offsets
-            ).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(lora_ids).make_dims_unknown(),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(lora_ids),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
             cuda_ctx,
@@ -10171,10 +10169,8 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
             managed_tensor_slice_to_ndbuffer(c),
             managed_tensor_slice_to_ndbuffer(a),
             managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(
-                input_row_offsets
-            ).make_dims_unknown(),
-            managed_tensor_slice_to_ndbuffer(lora_ids).make_dims_unknown(),
+            managed_tensor_slice_to_ndbuffer(input_row_offsets),
+            managed_tensor_slice_to_ndbuffer(lora_ids),
             Int(max_seq_length),
             lora_ids.dim_size[0](),
             cuda_ctx,

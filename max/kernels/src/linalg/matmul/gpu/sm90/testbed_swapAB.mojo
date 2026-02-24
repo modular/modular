@@ -551,10 +551,10 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     var c_normal_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_swapAB_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[mut=False, a_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(), dynamic_a_shape
     )
-    var b_device = NDBuffer[mut=False, b_type, 2, _, static_b_shape](
+    var b_device = NDBuffer[b_type, 2, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(), dynamic_b_shape
     )
     var c_normal_device = NDBuffer[c_type, 2, _, static_c_shape](

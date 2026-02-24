@@ -114,11 +114,11 @@ fn test_vendor[
     )
 
     # Create host NDBuffers for offsets and expert_ids (needed for function calls)
-    var a_offsets_host = NDBuffer[DType.uint32, 1, MutAnyOrigin](
+    var a_offsets_host = NDBuffer[DType.uint32, 1](
         a_offsets_host_ptr,
         num_active_experts + 1,
     )
-    var expert_ids_host = NDBuffer[DType.int32, 1, MutAnyOrigin](
+    var expert_ids_host = NDBuffer[DType.int32, 1](
         expert_ids_host_ptr,
         num_active_experts,
     )
@@ -318,11 +318,11 @@ fn test_negative_lora_id_vendor[
     )
 
     # Create host NDBuffers for offsets and expert_ids (needed for function calls)
-    var a_offsets_host = NDBuffer[DType.uint32, 1, MutAnyOrigin](
+    var a_offsets_host = NDBuffer[DType.uint32, 1](
         a_offsets_host_ptr,
         num_active_experts + 1,
     )
-    var expert_ids_host = NDBuffer[DType.int32, 1, MutAnyOrigin](
+    var expert_ids_host = NDBuffer[DType.int32, 1](
         expert_ids_host_ptr,
         num_active_experts,
     )

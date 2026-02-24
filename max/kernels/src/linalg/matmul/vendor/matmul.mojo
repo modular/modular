@@ -36,8 +36,8 @@ fn matmul[
     config: Optional[MatmulConfig[a_type, b_type, c_type, transpose_b]] = None,
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[mut=False, a_type, 2, _, _],
-    b: NDBuffer[mut=False, b_type, 2, _, _],
+    a: NDBuffer[a_type, 2, _, _],
+    b: NDBuffer[b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
     """This implements the matmul kernel for the Blackwell architecture. Note

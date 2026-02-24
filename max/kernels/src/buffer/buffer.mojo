@@ -312,7 +312,7 @@ struct NDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        other: NDBuffer[mut=True, ...],
+        other: NDBuffer,
         out self: NDBuffer[
             other.dtype,
             other.rank,
@@ -336,20 +336,56 @@ struct NDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        other: NDBuffer,
-        out self: NDBuffer[
-            other.dtype,
-            other.rank,
-            other.origin,
-            other.shape,
-        ],
+        out self,
+        # For functions
+        other: NDBuffer[Self.dtype, Self.rank, ...],
     ):
-        """Rebinds the NDBuffer to one with unknown strides.
+        """Converts NDBuffers between different variants which do not effect
+        the underlying memory representation.
+
+        E.g. this allows implicit conversion between
+
+        `NDBuffer[dtype, rank, DimList(1, 2, 3), DimList(6, 6, 1), alignment=16]`
+          to
+        `NDBuffer[dtype, rank, DimList(1, 2, 3), DimList.create_unknown[rank](), alignment=4]`
 
         Args:
-            other: The source NDBuffer to rebind.
+            other: The other NDBuffer type.
         """
-        return rebind[type_of(self)](other)
+        # It is probably unsafe to convert between address spaces
+        comptime assert (
+            other.address_space == Self.address_space
+        ), "cannot convert between buffer types with different address spaces"
+
+        # We can only downgrade our alignment
+        comptime assert (
+            other.alignment2 >= Self.alignment2
+            and other.alignment2 % Self.alignment2 == 0
+        ), "cannot convert between buffers with incompatible alignments"
+
+        # Exclusivity can only be lost
+        comptime assert (
+            other.exclusive == Self.exclusive or not Self.exclusive
+        ), (
+            "Cannot convert a non-exclusive buffer to an exclusive buffer."
+            " This is caused by passing a non-exclusive NDBuffer to a"
+            " function which requires an exclusive NDBuffer. Consider"
+            " unbinding the exclusive parameter for the function if it does"
+            " not require an exclusive buffer for correctness."
+        )
+
+        # We can lose information about shape/stride, but not gain information
+        comptime unknown_dim_list = DimList.create_unknown[Self.rank]()
+        comptime assert (
+            other.shape == Self.shape or Self.shape == unknown_dim_list
+        ), "cannot convert between buffers with incompatible shapes"
+        comptime assert (
+            other.strides == Self.strides or Self.strides == unknown_dim_list
+        ), "cannot convert between buffers with incompatible strides"
+
+        self.data = rebind[type_of(self.data)](other.data)
+        self.dynamic_shape = other.dynamic_shape
+        self.dynamic_stride = other.dynamic_stride
 
     @always_inline
     fn __init__(

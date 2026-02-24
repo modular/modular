@@ -398,9 +398,9 @@ fn matmul[
     b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
-    c_tensor: LayoutTensor[mut=True, c_type, c_layout, _],
-    a_tensor: LayoutTensor[mut=False, a_type, a_layout, _],
-    b_tensor: LayoutTensor[mut=False, b_type, b_layout, _],
+    c_tensor: LayoutTensor[c_type, c_layout, _],
+    a_tensor: LayoutTensor[a_type, a_layout, _],
+    b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
         LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
@@ -447,9 +447,9 @@ fn matmul[
 ](
     ctx: DeviceContext,
     handle: Handle,
-    c_tensor: LayoutTensor[mut=True, c_type, c_layout, _],
-    a_tensor: LayoutTensor[mut=False, a_type, a_layout, _],
-    b_tensor: LayoutTensor[mut=False, b_type, b_layout, _],
+    c_tensor: LayoutTensor[c_type, c_layout, _],
+    a_tensor: LayoutTensor[a_type, a_layout, _],
+    b_tensor: LayoutTensor[b_type, b_layout, _],
     *,
     a_scales: OptionalReg[
         LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
@@ -536,9 +536,9 @@ fn matmul[
 ](
     ctx: DeviceContext,
     handle: Handle,
-    c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    c: NDBuffer[_, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,

@@ -298,7 +298,7 @@ fn allreduce[
     use_multimem: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[
@@ -371,7 +371,7 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    inputs: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
+    inputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
     outputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus],
     list_of_ctx: List[DeviceContext],
 ) raises:

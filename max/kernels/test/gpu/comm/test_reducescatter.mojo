@@ -122,7 +122,7 @@ fn reducescatter_test[
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create input and output NDBuffers
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](

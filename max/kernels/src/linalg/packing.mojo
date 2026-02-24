@@ -336,11 +336,9 @@ struct PackMatrixCols[
     # Interface function:
     @staticmethod
     fn run(
-        packed_matrix: NDBuffer[
-            Self.dtype, 3, Self.packed_origin, Self.packed_shape
-        ],
+        packed_matrix: NDBuffer[Self.dtype, 3, MutAnyOrigin, Self.packed_shape],
         original_matrix: NDBuffer[
-            Self.dtype, 2, Self.original_origin, Self.original_shape
+            Self.dtype, 2, MutAnyOrigin, Self.original_shape
         ],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
@@ -553,7 +551,7 @@ fn _pack_matmul_b_shape_func_impl[
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
 ](
-    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape], kernel_type_m: Int = 0
+    b_input: NDBuffer[b_type, 2, _, b_shape], kernel_type_m: Int = 0
 ) -> IndexList[2]:
     """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
     argument.
@@ -611,16 +609,15 @@ fn _pack_matmul_b_shape_func_impl[
 @register_internal("pack_matmul_b_shape_func")
 @always_inline
 fn pack_matmul_b_shape_func[
-    b_type: DType,
-    b_shape: DimList,
-    //,
     a_type: DType,
     a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
     transpose_in_0: Bool,
     single_thread_blocking_override: Bool,
-](b_input: NDBuffer[mut=False, b_type, 2, _, b_shape]) -> IndexList[2]:
+](b_input: NDBuffer[b_type, 2, _, b_shape]) -> IndexList[2]:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
@@ -756,17 +753,19 @@ fn pack_b[
 
 @always_inline
 fn _pack_b_ndbuffer_impl[
-    b_type: DType,
-    b_shape: DimList,
+    b_mut: Bool,
     //,
     a_type: DType,
     a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
     transposed: Bool,
+    b_origin: Origin[mut=b_mut],
     output_origin: MutOrigin,
 ](
-    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
+    b_input: NDBuffer[b_type, 2, b_origin, b_shape],
     output_buffer: NDBuffer[b_type, 2, output_origin],
     kernel_type_m: Int,
 ) raises:
@@ -836,16 +835,18 @@ fn _pack_b_ndbuffer_impl[
 
 @register_internal("layout_transform_KN_to_KNkni")
 fn pack_b_ndbuffer[
-    b_type: DType,
-    b_shape: DimList,
+    b_mut: Bool,
     //,
     a_type: DType,
     a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
+    b_origin: Origin[mut=b_mut],
     output_origin: MutOrigin,
 ](
-    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
+    b_input: NDBuffer[b_type, 2, b_origin, b_shape],
     output_buffer: NDBuffer[b_type, 2, output_origin],
 ) raises:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
@@ -856,6 +857,8 @@ fn pack_b_ndbuffer[
     _pack_b_ndbuffer_impl[
         a_type,
         a_shape,
+        b_type,
+        b_shape,
         c_type,
         c_shape,
         transposed=False,
@@ -871,7 +874,7 @@ fn pack_transposed_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](
-    b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
+    b_input: NDBuffer[b_type, 2, _, b_shape],
     output_buffer: NDBuffer[mut=True, b_type, 2],
 ) raises:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
@@ -882,6 +885,8 @@ fn pack_transposed_b_ndbuffer[
     _pack_b_ndbuffer_impl[
         a_type,
         a_shape,
+        b_type,
+        b_shape,
         c_type,
         c_shape,
         transposed=True,
@@ -958,7 +963,7 @@ struct BTileGenerator[
         global_offset: GemmShape,
         tile_dim_nk: IndexList[2],
         valid_data_dim_nk: IndexList[2],
-    ) -> NDBuffer[Self.b_type, 3, ImmutAnyOrigin, Self.config.packed_shape]:
+    ) -> NDBuffer[Self.b_type, 3, MutAnyOrigin, Self.config.packed_shape]:
         """Get a packed matrix (B) tile.
 
         Args:
@@ -1007,7 +1012,7 @@ struct BTileGenerator[
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
-            return packed_b.get_immutable()
+            return packed_b
         elif (not Self.transpose_b) and (not Self.b_packed):
             PackMatrixCols[
                 Self.shape,
@@ -1065,11 +1070,11 @@ struct BTileGenerator[
                 + (tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2),
                 tile_shape_pack,
             )
-            return b_tile_view.as_any_origin()
+            return b_tile_view
 
         else:
             debug_assert(
                 False, "unreachable, b_packed not supported with transpose_b"
             )
 
-        return packed_b.get_immutable()
+        return packed_b

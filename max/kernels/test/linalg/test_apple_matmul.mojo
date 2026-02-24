@@ -105,8 +105,8 @@ def test_matmul[
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
     c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    a: NDBuffer[mut=False, a_type, 2, _, a_shape],
-    b: NDBuffer[mut=False, b_type, 2, _, b_shape],
+    a: NDBuffer[a_type, 2, _, a_shape],
+    b: NDBuffer[b_type, 2, _, b_shape],
     bp: NDBuffer[mut=True, b_type, 2, _, DimList.create_unknown[2]()],
     m: Int,
     n: Int,
@@ -125,6 +125,8 @@ def test_matmul[
                 _pack_b_ndbuffer_impl[
                     a_type,
                     a_shape,
+                    b_type,
+                    b_shape,
                     c_type,
                     c_shape,
                     transpose_b,
@@ -133,6 +135,8 @@ def test_matmul[
                 pack_b_ndbuffer[
                     a_type,
                     a_shape,
+                    b_type,
+                    b_shape,
                     c_type,
                     c_shape,
                 ](b, bp)
@@ -141,6 +145,8 @@ def test_matmul[
                 _pack_b_ndbuffer_impl[
                     a_type,
                     a_shape,
+                    b_type,
+                    b_shape,
                     c_type,
                     c_shape,
                     transpose_b,
@@ -264,6 +270,8 @@ def test_matmul[
         padded_n_k = pack_matmul_b_shape_func[
             a_type,
             a_shape,
+            b_type,
+            b_shape,
             c_type,
             c_shape,
             transpose_b,

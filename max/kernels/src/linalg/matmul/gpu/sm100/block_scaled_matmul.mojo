@@ -1725,8 +1725,8 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_tensor: LayoutTensor[c_type, c_layout, ...],
     a_tensor: LayoutTensor[a_type, a_layout, ...],
     b_tensor: LayoutTensor[b_type, b_layout, ...],
-    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
+    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
@@ -2105,8 +2105,8 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_tensor: LayoutTensor[c_type, c_layout, ...],
     a_tensor: LayoutTensor[a_type, a_layout, ...],
     b_tensor: LayoutTensor[b_type, b_layout, ...],
-    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
-    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
+    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
+    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:

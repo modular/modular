@@ -101,7 +101,7 @@ fn quantize_dynamic_scaled_fp4fp8[
     ctx: DeviceContext,
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
     scales: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    input: LayoutTensor[in_dtype, input_layout, ImmutAnyOrigin],
+    input: LayoutTensor[in_dtype, input_layout, MutAnyOrigin],
     num_cols: Int,
     num_cols_padded: Int,
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
@@ -195,7 +195,7 @@ fn quantize_dynamic_scaled_fp4fp8_kernel[
 ](
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
     scales: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    input: LayoutTensor[in_dtype, input_layout, ImmutAnyOrigin],
+    input: LayoutTensor[in_dtype, input_layout, MutAnyOrigin],
     num_cols: Int,
     num_cols_padded: Int,
     tensor_sf: Float32,
@@ -347,9 +347,7 @@ fn block_scales_interleave_fp4[
     num_max_threads: Int = 1024,
 ](
     ctx: DeviceContext,
-    input_scales: LayoutTensor[
-        scales_dtype, input_scales_layout, ImmutAnyOrigin
-    ],
+    input_scales: LayoutTensor[scales_dtype, input_scales_layout, MutAnyOrigin],
     output_scales: LayoutTensor[
         scales_dtype, output_scales_layout, MutAnyOrigin
     ],
@@ -402,9 +400,7 @@ fn block_scales_interleave_fp4_kernel[
     SF_VECTOR_SIZE: Int = 16,
     num_max_threads: Int = 1024,
 ](
-    input_scales: LayoutTensor[
-        scales_dtype, input_scales_layout, ImmutAnyOrigin
-    ],
+    input_scales: LayoutTensor[scales_dtype, input_scales_layout, MutAnyOrigin],
     output_scales: LayoutTensor[
         scales_dtype, output_scales_layout, MutAnyOrigin
     ],
@@ -677,7 +673,7 @@ fn quantize_dynamic_block_scaled[
 ](
     output_device: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin, _],
     scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
-    input_device: NDBuffer[in_dtype, 2, ImmutAnyOrigin, _],
+    input_device: NDBuffer[in_dtype, 2, MutAnyOrigin, _],
     tensor_sf: Float32,  # tensor-wise scale factor
     ctx: DeviceContext,
 ) raises:
@@ -766,7 +762,7 @@ fn block_scales_interleave[
     target: StaticString = "cpu",
 ](
     output_scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
-    input_scales_device: NDBuffer[scales_dtype, 2, ImmutAnyOrigin, _],
+    input_scales_device: NDBuffer[scales_dtype, 2, MutAnyOrigin, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert (
@@ -1059,7 +1055,7 @@ fn quantize_dynamic_scaled_fp4_async[
     ctx: DeviceContext,
     output_tensor: LayoutTensor[output_dtype, output_layout, MutAnyOrigin],
     scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    input_tensor: LayoutTensor[input_dtype, input_layout, ImmutAnyOrigin],
+    input_tensor: LayoutTensor[input_dtype, input_layout, MutAnyOrigin],
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
     comptime assert (
@@ -1214,10 +1210,10 @@ fn block_scaled_matmul[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
-    a_device: NDBuffer[a_type, 2, ImmutAnyOrigin, _],
-    b_device: NDBuffer[b_type, 2, ImmutAnyOrigin, _],
-    a_scales_device: NDBuffer[scales_dtype, 5, ImmutAnyOrigin, _],
-    b_scales_device: NDBuffer[scales_dtype, 5, ImmutAnyOrigin, _],
+    a_device: NDBuffer[a_type, 2, MutAnyOrigin, _],
+    b_device: NDBuffer[b_type, 2, MutAnyOrigin, _],
+    a_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
+    b_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:

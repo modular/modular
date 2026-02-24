@@ -249,8 +249,8 @@ fn apple_gemv[
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[mut=False, _, 2, _, _],
-    b: NDBuffer[mut=False, _, 2, _, _],
+    a: NDBuffer[_, 2, _, _],
+    b: NDBuffer[_, 2, _, _],
 ) raises:
     # Recall:
     # if b_packed=True, this will be called AFTER pack shape and actual packing
@@ -266,13 +266,13 @@ fn apple_gemv[
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
         transposed_b_ptr = alloc[Scalar[b.type]](b.num_elements())
-        transposed_b = NDBuffer[b.type, 2, MutAnyOrigin](
-            transposed_b_ptr, transposed_b_shape
-        )
+        transposed_b = NDBuffer[b.type, 2](transposed_b_ptr, transposed_b_shape)
 
         pack_b_ndbuffer[
             a.type,
             a.shape,
+            b.type,
+            b.shape,
             c.type,
             c.shape,
         ](b, transposed_b)

@@ -52,7 +52,7 @@ fn _create_host_buffer[
     dtype, rank, MutAnyOrigin, shape
 ]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
-    return NDBuffer[dtype, rank, MutAnyOrigin, shape](
+    return NDBuffer[dtype, rank, _, shape](
         storage_ptr, dynamic_shape=dynamic_shape
     )
 

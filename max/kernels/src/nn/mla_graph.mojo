@@ -569,8 +569,8 @@ fn mla_prefill_branch_fp8[
     quantize_dynamic_scaled_fp8[
         input_fn, k_scale_granularity, k_latent.static_shape[1]
     ](
-        fp8_k_latent._to_ndbuffer().make_dims_unknown(),
-        fp8_k_latent_scale._to_ndbuffer().make_dims_unknown(),
+        fp8_k_latent._to_ndbuffer(),
+        fp8_k_latent_scale._to_ndbuffer(),
         1200.0,
         ctx,
         Int(k_latent.dim[0]()),
@@ -737,8 +737,8 @@ fn quantize_and_bmm_fp8_helper[
         group_size_or_per_token=k_scale_granularity,
         num_cols=K,
     ](
-        fp8_a._to_ndbuffer().make_dims_unknown(),
-        fp8_a_scale._to_ndbuffer().make_dims_unknown(),
+        fp8_a._to_ndbuffer(),
+        fp8_a_scale._to_ndbuffer(),
         1200.0,
         ctx,
         num_rows=m,

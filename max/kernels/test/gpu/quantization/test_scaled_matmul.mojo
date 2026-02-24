@@ -141,21 +141,13 @@ fn test_matmul_dynamic_scaled_fp8[
         return DimList(shape.at[1](), 1)
 
     var a_ndbuffer = NDBuffer[
-        in_dtype,
-        2,
-        ImmutAnyOrigin,
-        static_a_shape,
-        stride_from_shape[static_a_shape](),
+        in_dtype, 2, _, static_a_shape, stride_from_shape[static_a_shape]()
     ](
         a_device.unsafe_ptr(),
         DimList(m, k),
     )
     var b_ndbuffer = NDBuffer[
-        in_dtype,
-        2,
-        ImmutAnyOrigin,
-        static_b_shape,
-        stride_from_shape[static_b_shape](),
+        in_dtype, 2, _, static_b_shape, stride_from_shape[static_b_shape]()
     ](
         b_device.unsafe_ptr(),
         DimList(n, k) if transpose_b else DimList(k, n),
