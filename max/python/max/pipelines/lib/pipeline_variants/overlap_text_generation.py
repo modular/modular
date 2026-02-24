@@ -59,6 +59,7 @@ For example:
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -461,6 +462,8 @@ class OverlapTextGenerationPipeline(
         """
         return self._prev_batch is not None
 
+    # Warmup inputs use runtime construction with explicit max-cache-length LUT
+    # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
     def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
         capture_contexts = [
@@ -479,7 +482,9 @@ class OverlapTextGenerationPipeline(
             capture_contexts, replica_idx=0, num_steps=1
         ):
             kv_cache_inputs = self._kv_manager.runtime_inputs(
-                [capture_contexts], num_steps=1
+                [capture_contexts],
+                num_steps=1,
+                max_cache_length=self._pipeline_model.max_seq_len,
             )
             with Tracer("prepare_initial_token_inputs"):
                 model_inputs = (
@@ -519,10 +524,32 @@ class OverlapTextGenerationPipeline(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
     ) -> ModelOutputs:
         """Runs the forward pass for the provided inputs and returns the ModelOutputs."""
-        # Prepare the batch.
-        kv_cache_inputs = self._kv_manager.runtime_inputs(
-            inputs.batches, num_steps=1
+        runner = self._graph_capture_runner
+        use_graph_capture_replay = (
+            runner is not None
+            and bool(inputs)
+            and inputs.batch_type == BatchType.TG
         )
+        debug_verify_replay_enabled = (
+            use_graph_capture_replay
+            and self._pipeline_config.debug_verify_replay
+        )
+        debug_verify_model_inputs: ModelInputs | None = None
+
+        # Prepare the batch.
+        # Replay uses LUT buffers sized by max cache length so copied inputs
+        # match captured graph buffer shapes.
+        if use_graph_capture_replay:
+            kv_cache_inputs = self._kv_manager.runtime_inputs(
+                inputs.batches,
+                num_steps=1,
+                max_cache_length=self._pipeline_model.max_seq_len,
+            )
+        else:
+            kv_cache_inputs = self._kv_manager.runtime_inputs(
+                inputs.batches,
+                num_steps=1,
+            )
 
         with Tracer("prepare_initial_token_inputs"):
             model_inputs = self._pipeline_model.prepare_initial_token_inputs(
@@ -532,10 +559,29 @@ class OverlapTextGenerationPipeline(
                 ),
             )
 
+        if debug_verify_replay_enabled:
+            # Reuse non-KV buffers from replay inputs and only swap the
+            # runtime-shaped KV inputs used for debug verification.
+            debug_verify_model_inputs = copy.copy(model_inputs)
+            debug_verify_model_inputs.update(
+                kv_cache_inputs=KVCacheInputsSequence(
+                    kv_cache_inputs=self._kv_manager.runtime_inputs(
+                        inputs.batches, num_steps=1
+                    )
+                )
+            )
+
         if not isinstance(model_inputs, _HasRaggedTokens):
             raise RuntimeError(
                 "OverlapTextGenerationPipeline requires model inputs with a "
                 "Buffer `tokens` field."
+            )
+        if debug_verify_model_inputs is not None and not isinstance(
+            debug_verify_model_inputs, _HasRaggedTokens
+        ):
+            raise RuntimeError(
+                "OverlapTextGenerationPipeline requires debug-verify model "
+                "inputs with a Buffer `tokens` field."
             )
         ragged_input_tokens = model_inputs.tokens
         if self._prev_batch is not None:
@@ -549,20 +595,18 @@ class OverlapTextGenerationPipeline(
                 )
             # Overwrite the ragged input tokens with the new ones.
             model_inputs.tokens = new_ragged_input_tokens
+            if debug_verify_model_inputs is not None:
+                debug_verify_model_inputs.tokens = new_ragged_input_tokens
 
         # Execute the model and get next tokens.
         try:
             with Tracer("pipeline_model.execute"):
-                if (
-                    (runner := self._graph_capture_runner)
-                    and inputs
-                    and inputs.batch_type == BatchType.TG
-                ):
+                if use_graph_capture_replay:
+                    assert runner is not None
                     return runner.replay(
                         model_inputs=model_inputs,
-                        debug_verify_replay=(
-                            self._pipeline_config.debug_verify_replay
-                        ),
+                        debug_verify_replay=debug_verify_replay_enabled,
+                        debug_verify_model_inputs=debug_verify_model_inputs,
                     )
 
                 return self._pipeline_model.execute(model_inputs=model_inputs)

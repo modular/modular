@@ -39,6 +39,7 @@ class DummyModel:
         self.input_devices = [CPU()]
         self.capture_calls: list[tuple[int, list[Buffer]]] = []
         self.replay_calls: list[tuple[int, list[Buffer]]] = []
+        self.debug_verify_replay_calls: list[tuple[int, list[Buffer]]] = []
 
     def capture(self, graph_key: int, *buffers: Buffer) -> list[Buffer]:
         self.capture_calls.append((graph_key, list(buffers)))
@@ -46,6 +47,9 @@ class DummyModel:
 
     def replay(self, graph_key: int, *buffers: Buffer) -> None:
         self.replay_calls.append((graph_key, list(buffers)))
+
+    def debug_verify_replay(self, graph_key: int, *buffers: Buffer) -> None:
+        self.debug_verify_replay_calls.append((graph_key, list(buffers)))
 
 
 class CapturePipelineModel(MockPipelineModel):
@@ -138,3 +142,97 @@ def test_pipeline_model_replay_miss_raises() -> None:
 
     assert not model.model.capture_calls
     assert not model.model.replay_calls
+
+
+@mock_huggingface_config
+def test_pipeline_model_debug_verify_uses_runtime_inputs() -> None:
+    pipeline_config = DummyPipelineConfig(
+        model_path="test/model",
+        quantization_encoding=MagicMock(),
+        max_batch_size=1,
+        max_length=128,
+    )
+    pipeline_config.device_graph_capture = True
+    session = MagicMock()
+    model = CapturePipelineModel(
+        pipeline_config=pipeline_config,
+        session=session,
+        devices=[CPU()],
+        kv_cache_config=MagicMock(),
+        weights=MagicMock(),
+        adapter=None,
+        return_logits=MagicMock(),
+    )
+
+    replay_inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
+    debug_inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
+    runner = ServeGraphCaptureRunner(
+        model=cast(Model, model.model),
+        warmup_model_inputs=MagicMock(),
+        execute_model=model.execute,
+        max_batch_size=1,
+    )
+
+    trace_inputs = replay_inputs.buffers
+    runner.graph_entries[1] = (
+        trace_inputs,
+        ModelOutputs(*model.model.capture(1, *trace_inputs)),
+    )
+
+    runner.replay(
+        model_inputs=replay_inputs,
+        debug_verify_replay=True,
+        debug_verify_model_inputs=debug_inputs,
+    )
+
+    assert model.model.debug_verify_replay_calls
+    _, verified_buffers = model.model.debug_verify_replay_calls[-1]
+    assert verified_buffers == list(debug_inputs.buffers)
+
+
+@mock_huggingface_config
+def test_pipeline_model_debug_verify_rejects_mismatched_graph_keys() -> None:
+    pipeline_config = DummyPipelineConfig(
+        model_path="test/model",
+        quantization_encoding=MagicMock(),
+        max_batch_size=1,
+        max_length=128,
+    )
+    pipeline_config.device_graph_capture = True
+    session = MagicMock()
+    model = CapturePipelineModel(
+        pipeline_config=pipeline_config,
+        session=session,
+        devices=[CPU()],
+        kv_cache_config=MagicMock(),
+        weights=MagicMock(),
+        adapter=None,
+        return_logits=MagicMock(),
+    )
+
+    replay_inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
+    debug_inputs = MockModelInputs(active_batch_size=2, eos_prob=0.0)
+    runner = ServeGraphCaptureRunner(
+        model=cast(Model, model.model),
+        warmup_model_inputs=MagicMock(),
+        execute_model=model.execute,
+        max_batch_size=1,
+    )
+
+    trace_inputs = replay_inputs.buffers
+    runner.graph_entries[1] = (
+        trace_inputs,
+        ModelOutputs(*model.model.capture(1, *trace_inputs)),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"debug_verify_model_inputs must map to the same graph key",
+    ):
+        runner.replay(
+            model_inputs=replay_inputs,
+            debug_verify_replay=True,
+            debug_verify_model_inputs=debug_inputs,
+        )
+
+    assert not model.model.debug_verify_replay_calls

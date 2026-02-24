@@ -240,3 +240,41 @@ async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
     kv_manager.alloc(long_context, replica_idx=0, num_steps=1)
     second_inputs = kv_manager.runtime_inputs([[long_context]])[0]
     assert tuple(second_inputs.lookup_table.shape) == (1, 2)
+
+
+@pytest.mark.asyncio
+async def test_runtime_inputs_lookup_table_uses_explicit_max_cache_length() -> (
+    None
+):
+    device = CPU()
+    total_num_pages = 8
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=1,
+        head_dim=16,
+        num_layers=10,
+        cache_strategy="paged",
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+    )
+
+    kv_manager = PagedKVCacheManager(
+        params=params,
+        session=InferenceSession(devices=[device]),
+        total_num_pages=total_num_pages,
+        max_batch_size=128,
+    )
+
+    context = create_text_context(np.zeros(1, dtype=np.int64))
+    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.alloc(context, replica_idx=0, num_steps=1)
+
+    runtime_inputs = kv_manager.runtime_inputs([[context]])[0]
+    assert tuple(runtime_inputs.lookup_table.shape) == (1, 1)
+
+    explicit_inputs = kv_manager.runtime_inputs(
+        [[context]],
+        max_cache_length=1024,
+        num_steps=1,
+    )[0]
+    assert tuple(explicit_inputs.lookup_table.shape) == (1, total_num_pages)

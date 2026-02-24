@@ -104,8 +104,15 @@ class ServeGraphCaptureRunner:
         *,
         model_inputs: ModelInputs,
         debug_verify_replay: bool = False,
+        debug_verify_model_inputs: ModelInputs | None = None,
     ) -> ModelOutputs:
-        """Replays a captured graph entry for a replay-safe decode batch."""
+        """Replays a captured graph entry for a replay-safe decode batch.
+
+        ``model_inputs`` are copied into captured replay buffers and used for
+        replay. When ``debug_verify_replay`` is enabled, callers may provide
+        ``debug_verify_model_inputs`` to verify eager traces against a
+        different (but graph-key-equivalent) input shape.
+        """
         input_buffers = model_inputs.buffers
         graph_key = _graph_key(model_inputs)
         try:
@@ -122,7 +129,14 @@ class ServeGraphCaptureRunner:
             dst_value.inplace_copy_from(src_value)
 
         if debug_verify_replay:
-            self._model.debug_verify_replay(graph_key, *captured_inputs)
+            verify_inputs = debug_verify_model_inputs or model_inputs
+            verify_graph_key = _graph_key(verify_inputs)
+            if verify_graph_key != graph_key:
+                raise ValueError(
+                    "debug_verify_model_inputs must map to the same graph key "
+                    f"as replay inputs: {verify_graph_key} != {graph_key}."
+                )
+            self._model.debug_verify_replay(graph_key, *verify_inputs.buffers)
 
         self._model.replay(graph_key, *captured_inputs)
         return outputs

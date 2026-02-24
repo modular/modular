@@ -193,6 +193,8 @@ class PagedKVCacheManager:
         self,
         batches: Sequence[Sequence[TextGenerationContext]],
         num_steps: int = 1,
+        *,
+        max_cache_length: int | None = None,
     ) -> list[RaggedKVCacheInputs]:
         """Gets the graph inputs for per-replica batches of requests.
 
@@ -202,10 +204,18 @@ class PagedKVCacheManager:
         Args:
             batches: Per-replica batches of requests
             num_steps: Number of steps to run for
+            max_cache_length: Optional explicit max cache length to size LUT
+                views. If not provided, uses request-derived runtime length.
         """
         ret_list: list[RaggedKVCacheInputs] = []
         for replica, ctxs in zip(self._replica_managers, batches, strict=True):
-            ret_list.extend(replica.runtime_inputs(ctxs, num_steps))
+            ret_list.extend(
+                replica.runtime_inputs(
+                    ctxs,
+                    num_steps,
+                    max_cache_length=max_cache_length,
+                )
+            )
         return ret_list
 
     def release(self, request_id: RequestID, replica_idx: int) -> None:

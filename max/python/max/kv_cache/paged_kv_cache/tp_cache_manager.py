@@ -314,16 +314,24 @@ class _TPPagedKVCacheManager:
 
     @traced
     def runtime_inputs(
-        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
+        self,
+        batch: Sequence[TextGenerationContext],
+        num_steps: int = 1,
+        *,
+        max_cache_length: int | None = None,
     ) -> Sequence[RaggedKVCacheInputs]:
-        """Gets the graph inputs for a batch of requests.
-
-        This method will raise a RuntimeError if any request has insufficient blocks
-        already allocated to it to run for the given number of steps.
+        """Gets runtime inputs for a batch of requests.
 
         Args:
-            batch: Batch of requests.
-            num_steps: Number of steps to run for.
+            batch: Batch of request contexts.
+            num_steps: Number of decode steps for the fetch.
+            max_cache_length: Optional explicit max cache length to size LUT
+                views. If not provided, uses request-derived runtime length.
+
+        Raises:
+            ValueError: If a request in ``batch`` is missing allocated blocks,
+                if ``batch`` exceeds preallocated runtime capacity, or if
+                ``max_cache_length`` implies a LUT shape that is invalid.
         """
         # Wait for any pending connector operations (H2D loads from host cache).
         self.connector.sync()
@@ -340,12 +348,30 @@ class _TPPagedKVCacheManager:
             seq_len = len(ctx.tokens) + num_steps - 1
             max_seq_len = max(max_seq_len, seq_len)
 
-        max_total_num_pages = ceildiv(max_seq_len, self.page_size)
+        required_num_pages = ceildiv(max_seq_len, self.page_size)
+        if max_cache_length is None:
+            lut_num_pages = required_num_pages
+        else:
+            if max_cache_length < 1:
+                raise ValueError("max_cache_length must be positive")
+            lut_num_pages = ceildiv(max_cache_length, self.page_size)
+            if lut_num_pages < required_num_pages:
+                raise ValueError(
+                    "capture max_cache_length cannot be smaller than the "
+                    "request-required runtime cache length: "
+                    f"{max_cache_length} < {max_seq_len}."
+                )
+
         batch_size = len(batch)
         if batch_size > self._max_batch_size:
             raise ValueError(
                 "Runtime batch size exceeds preallocated KV runtime "
                 f"buffer capacity: {batch_size} > {self._max_batch_size}."
+            )
+        if lut_num_pages > self.total_num_pages:
+            raise ValueError(
+                "Runtime LUT view exceeds allocated page capacity: "
+                f"{lut_num_pages} > {self.total_num_pages}."
             )
 
         # Allocate pinned host staging each invocation so async H2D submissions
@@ -353,13 +379,13 @@ class _TPPagedKVCacheManager:
         device0 = self.devices[0]
         pinned = not device0.is_host
 
-        # Runtime lookup-table shape is [batch_size, max_total_num_pages]:
+        # Runtime lookup-table shape is [batch_size, lut_num_pages]:
         # rows map to request slots in the current batch and columns map to
         # per-request page slots.
         # [0, total_num_pages) are the valid block ids and total_num_pages
         # denotes an unassigned block.
         lut_table_host = Buffer(
-            shape=(batch_size, max_total_num_pages),
+            shape=(batch_size, lut_num_pages),
             dtype=DType.uint32,
             device=device0,
             pinned=pinned,
@@ -382,7 +408,7 @@ class _TPPagedKVCacheManager:
             _contiguous_prefix_2d(
                 buffer,
                 rows=batch_size,
-                cols=max_total_num_pages,
+                cols=lut_num_pages,
             )
             for buffer in runtime_inputs.lut_table_by_device
         ]

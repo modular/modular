@@ -152,6 +152,7 @@ class FakePipelineConfig(ConfigFileModel):
     sampling: FakeSamplingConfig
     execute_empty_batches: bool = False
     enable_overlap_scheduler: bool = False
+    debug_verify_replay: bool = False
     max_batch_size: int = 999
 
     def configure_session(self, *args: Any, **kwargs: Any) -> None:

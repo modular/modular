@@ -42,9 +42,8 @@ def get_blocks_from_kv_tuple(kv_tuple: RaggedKVCacheInputs) -> list[list[int]]:
     return kv_tuple[2].to_numpy().tolist()
 
 
-# Runtime lookup tables are preallocated to `total_num_pages` columns.
-# Unused columns are padded with sentinel `total_num_pages`, so tests should
-# compare only assigned block ids.
+# Runtime lookup tables are padded with sentinel `total_num_pages` in any
+# unused columns, so tests should compare only assigned block ids.
 def assigned_blocks(kv_tuple: RaggedKVCacheInputs) -> list[list[int]]:
     total_num_pages = kv_tuple.lookup_table.shape[1]
     return [
