@@ -803,6 +803,10 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             ):
                 mla_prefill_metadata_i = mla_prefill_metadata[i]
             else:
+                assert (
+                    mla_prefill_metadata is None
+                    or len(mla_prefill_metadata) == 0
+                )
                 mla_prefill_metadata_i = None
 
             outs.append(
