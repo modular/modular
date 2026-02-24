@@ -171,16 +171,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    custom_architectures: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Custom architecture implementations to register. Each input can "
-            "either be a raw module name or an import path followed by a colon "
-            "and the module name. Each module must expose an ARCHITECTURES list "
-            "of architectures to register."
-        ),
-    )
-
     zmq_endpoint_base: str = Field(
         default_factory=generate_zmq_ipc_path,
         description=(
@@ -627,7 +617,7 @@ class PipelineConfig(ConfigFileModel):
 
     def _import_custom_architectures(self) -> None:
         """Imports custom model modules and adds them to the registry."""
-        for module_spec in self.custom_architectures:
+        for module_spec in self.runtime.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
                 raise ValueError(
