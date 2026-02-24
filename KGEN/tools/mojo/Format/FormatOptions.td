@@ -28,3 +28,8 @@ def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<1>;
 def quiet : Flag<["--"], "quiet">, Group<DiagnosticOptionGroup>,
   Index<0>, HelpText<"Disables non-error messages.">;
 def : Flag<["-"], "q">, Group<DiagnosticOptionGroup>, Index<0>, Alias<quiet>;
+
+def print_cache_dir : Flag<["--"], "print-cache-dir">,
+  Group<DiagnosticOptionGroup>, Index<1>,
+  Flags<[HelpHidden]>,
+  HelpText<"Print the cache directory path and exit.">;

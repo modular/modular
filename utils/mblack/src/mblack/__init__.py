@@ -39,7 +39,13 @@ from mypy_extensions import mypyc_attr
 from pathspec import PathSpec
 from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
 
-from mblack.cache import Cache, get_cache_info, read_cache, write_cache
+from mblack.cache import (
+    CACHE_DIR,
+    Cache,
+    get_cache_info,
+    read_cache,
+    write_cache,
+)
 from mblack.comments import normalize_fmt_off
 from mblack.const import (
     DEFAULT_EXCLUDES,
@@ -207,6 +213,17 @@ def validate_regex(
         raise click.BadParameter(
             f"Not a valid regular expression: {e}"
         ) from None
+
+
+def print_cache_dir_callback(
+    ctx: click.Context,
+    param: click.Parameter,
+    value: bool,
+) -> None:
+    if not value or ctx.resilient_parsing:
+        return
+    click.echo(CACHE_DIR)
+    ctx.exit()
 
 
 @click.command(
@@ -414,6 +431,14 @@ def validate_regex(
         f" {'yes' if COMPILED else 'no'})\nPython"
         f" ({platform.python_implementation()}) {platform.python_version()}"
     ),
+)
+@click.option(
+    "--print-cache-dir",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=print_cache_dir_callback,
+    help="Print the cache directory path and exit.",
 )
 @click.argument(
     "src",
