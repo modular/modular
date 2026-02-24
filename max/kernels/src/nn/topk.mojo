@@ -816,12 +816,13 @@ fn _topk_stage1_old[
     ]()
 
     with PDL():
-        # Pack the topk_vals and topk_idxs into shared memory
+        # Find local max per thread using registers, then store once in shmem
         var block_offset = block_lane * block_size
         var stride = block_size * UInt(num_blocks_per_input)
-        topk_sram[tid] = TopK_2[T, largest]()
+        var local_max = TopK_2[T, largest]()
         for i in range(tid + block_offset, num_elements, stride):
-            topk_sram[tid].insert(_in_buffer[i], i)
+            local_max.insert(_in_buffer[i], i)
+        topk_sram[tid] = local_max
         barrier()
         var k_batch = max_k
         if K:
@@ -933,30 +934,17 @@ fn _topk_stage1[
     if k_batch > num_elements:
         k_batch = num_elements
 
-    # Allocate shared memory for the values and indices
-    var topk_sram = external_memory[
-        TopK_2[T, largest],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[TopK_2[T, largest]](),
-    ]()
-
     with PDL():
         # Prepare for K iterations to find the local top-K elements
         for k in range(k_batch):
-            topk_sram[tid] = TopK_2[T, largest]()
-
-            # Pack the topk_vals and topk_idxs into shared memory
+            # Find local max per thread using registers (no shared memory needed)
+            var local_max = TopK_2[T, largest]()
             for i in range(tid + block_offset, num_elements, stride):
                 var val = _in_buffer_tmp[i]
-                topk_sram[tid].insert(val, i)
-
-            barrier()
-
-            # Initialize each thread with its own TopK_2 value and index
-            var partial = topk_sram[tid]
+                local_max.insert(val, i)
 
             # Perform block-level reduction to find the maximum TopK_2
-            var total = _block_reduce_topk[T, largest](partial)
+            var total = _block_reduce_topk[T, largest](local_max)
 
             if tid == 0:
                 # Store the local top-K values and indices in global memory
@@ -985,7 +973,8 @@ fn _topk_stage1[
 
 @always_inline("nodebug")
 fn _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
-    # Get dynamic shared memory size for stage 1
+    # Get dynamic shared memory size for stage 1 (old implementation only).
+    # The new _topk_stage1 uses register-based local max and needs 0 dynamic shmem.
     return block_size * size_of[TopK_2[dtype]]()
 
 
@@ -1361,7 +1350,7 @@ fn _topk_gpu[
             device_local_topk_idxs.to_device_buffer(ctx),
             grid_dim=grid_dim_stage1,
             block_dim=block_dim_stage1,
-            shared_mem_bytes=shared_mem_bytes_1,
+            shared_mem_bytes=0,
             attributes=pdl_launch_attributes(),
         )
         _ = input_buf_tmp^
