@@ -92,18 +92,25 @@ fn broadcast_multimem_kernel[
 
     # Only root GPU performs the multicast store
     if my_rank == root:
+        comptime alignment = align_of[SIMD[dtype, simd_width]]()
+
         # Get multicast output pointer
         var out_ptr = output_buffer.data.address_space_cast[
             AddressSpace.GLOBAL
         ]()
 
+        # Use raw pointer with invariant loads for better codegen.
+        var in_ptr = input_buffer.data.address_space_cast[
+            _target_address_space
+        ]()
+
         # Grid-strided loop to cover all elements (vectorized)
         for idx in range(global_tid, num_simd_vectors, stride):
             var elem_idx = idx * simd_width
-            # Load from input buffer
-            var data = input_buffer.load[width=simd_width](
-                input_buffer.get_nd_index(elem_idx)
-            )
+            # Load from input buffer with invariant hint
+            var data = in_ptr.load[
+                width=simd_width, alignment=alignment, invariant=True
+            ](elem_idx)
             # Store to multicast address - all GPUs receive this write
             multimem_st[
                 dtype,
@@ -123,9 +130,9 @@ fn broadcast_multimem_kernel[
         # Spread tail chunks across threads
         if global_tid < num_tail_chunks:
             var tail_elem_idx = tail_start + global_tid * min_mm_width
-            var data = input_buffer.load[width=min_mm_width](
-                input_buffer.get_nd_index(tail_elem_idx)
-            )
+            var data = in_ptr.load[
+                width=min_mm_width, invariant=True
+            ](tail_elem_idx)
             multimem_st[
                 scope = Scope.GPU,
                 consistency = Consistency.RELAXED,
@@ -141,9 +148,9 @@ fn broadcast_multimem_kernel[
                 and num_elements >= min_mm_width
             ):
                 var overlap_idx = num_elements - min_mm_width
-                var data = input_buffer.load[width=min_mm_width](
-                    input_buffer.get_nd_index(overlap_idx)
-                )
+                var data = in_ptr.load[
+                    width=min_mm_width, invariant=True
+                ](overlap_idx)
                 multimem_st[
                     scope = Scope.GPU,
                     consistency = Consistency.RELAXED,
