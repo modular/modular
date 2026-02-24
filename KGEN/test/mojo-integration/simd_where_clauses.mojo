@@ -242,6 +242,16 @@ fn simd_where_clause_int_abs[
     return 0
 
 
+@always_inline("builtin")
+fn simd_where_clause_int_pow2[x: Int]() -> Int where x.is_power_of_two():
+    return 1
+
+
+@always_inline("builtin")
+fn simd_where_clause_int_pow2[x: Int]() -> Int where not x.is_power_of_two():
+    return 0
+
+
 # CHECK-LABEL: lit.fn @"use_them
 fn use_them():
     # CHECK: lit.alias.decl *"x`": !Int = <{0}>
@@ -336,3 +346,8 @@ fn use_them():
     comptime abs0 = simd_where_clause_int_abs[-7]()
     # CHECK: lit.alias.decl *"abs1`{{.*}}": !Int = <{0}>
     comptime abs1 = simd_where_clause_int_abs[-6]()
+
+    # CHECK: lit.alias.decl *"pow20`{{.*}}": !Int = <{1}>
+    comptime pow20 = simd_where_clause_int_pow2[64]()
+    # CHECK: lit.alias.decl *"pow21`{{.*}}": !Int = <{0}>
+    comptime pow21 = simd_where_clause_int_pow2[63]()
