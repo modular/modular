@@ -24,5 +24,5 @@ def main():
     var x = 42
 
     var p = UnsafePointer(to=x).address_space_cast[AddressSpace(2)]()
-    # CHECK: value passed to 'p' cannot be converted from 'UnsafePointer[Int, origin_of(x), address_space=AddressSpace(2)]' to 'UnsafePointer[Int, origin_of(x), address_space=AddressSpace(1)]'
+    # CHECK: value passed to 'p' cannot be converted from 'UnsafePointer[Int, origin_of(x), address_space=AddressSpace(2)]' to 'UnsafePointer[T, p.origin, address_space=AddressSpace(1)]'
     test_cannot_cast_between_different_address_spaces(p)

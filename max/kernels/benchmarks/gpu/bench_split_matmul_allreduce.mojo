@@ -145,10 +145,10 @@ fn bench_matmul_all_reduce[
     comptime B_static_shape = DimList(n.dim, k.dim)
     comptime C_static_shape = DimList(m.dim, n.dim)
     var As = InlineArray[
-        NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape], ngpus
+        NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape], ngpus
     ](fill={})
     var Bs = InlineArray[
-        NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape], ngpus
+        NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape], ngpus
     ](fill={})
     var Cs = InlineArray[
         NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape], ngpus
@@ -159,10 +159,10 @@ fn bench_matmul_all_reduce[
 
     # Setup the kernel NDBuffers
     comptime for i in range(ngpus):
-        As[i] = NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape](
+        As[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape](
             A_list[i].unsafe_ptr(), DimList(m.value, k.value)
         )
-        Bs[i] = NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape](
+        Bs[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape](
             B_list[i].unsafe_ptr(), DimList(n.value, k.value)
         )
         Cs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](

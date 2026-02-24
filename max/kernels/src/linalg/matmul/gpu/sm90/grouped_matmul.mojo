@@ -92,11 +92,11 @@ fn grouped_matmul_sm90[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

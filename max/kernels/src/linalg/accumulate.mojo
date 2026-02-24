@@ -76,7 +76,10 @@ struct _Accumulator[
     fn __init__(
         out self,
         other_storage: NDBuffer[
-            Self.dtype, 1, _, Self.num_rows * Self.num_cols * Self.simd_width
+            Self.dtype,
+            1,
+            MutAnyOrigin,
+            Self.num_rows * Self.num_cols * Self.simd_width,
         ],
     ):
         comptime assert (
