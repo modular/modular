@@ -402,7 +402,7 @@ struct TestSuite(Movable):
         self.location = location.or_else(call_location())
         self.skip_list = {}
         self.allow_list = None  # None means no allow list specified.
-        self.cli_args = cli_args.or_else(List[StaticString](argv()))
+        self.cli_args = cli_args^.or_else(List[StaticString](argv()))
 
     fn _register_tests[test_funcs: Tuple, /](mut self) raises:
         """Internal function to prevent all registrations from being inlined."""

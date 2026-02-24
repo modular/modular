@@ -84,13 +84,14 @@ struct EmptyOptionalError[T: AnyType](
 
 struct Optional[T: Movable](
     Boolable,
+    Copyable where conforms_to(T, Copyable),
     Defaultable,
-    ImplicitlyCopyable,
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     Iterable,
     Iterator,
-    Representable,
-    Stringable,
-    Writable,
+    Representable where conforms_to(T, Representable),
+    Stringable where conforms_to(T, Stringable),
+    Writable where conforms_to(T, Writable),
 ):
     """A type modeling a value which may or may not be present.
 
@@ -416,37 +417,23 @@ struct Optional[T: Movable](
             raise EmptyOptionalError[Self.T]()
         return self.unsafe_value()
 
-    fn __str__(self: Self) -> String:
+    fn __str__(self: Self) -> String where conforms_to(Self.T, Stringable):
         """Return the string representation of the value of the `Optional`.
 
         Returns:
             A string representation of the `Optional`.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Stringable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Stringable",
-        ]()
-
         if self:
             return trait_downcast[Stringable](self.value()).__str__()
         else:
             return "None"
 
-    fn __repr__(self: Self) -> String:
+    fn __repr__(self: Self) -> String where conforms_to(Self.T, Representable):
         """Returns the verbose string representation of the `Optional`.
 
         Returns:
             A verbose string representation of the `Optional`.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Representable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Representable",
-        ]()
-
         var output = String()
         output.write("Optional(", self, ")")
         return output^
@@ -481,7 +468,9 @@ struct Optional[T: Movable](
         else:
             writer.write_string("None")
 
-    fn write_to(self: Self, mut writer: Some[Writer]):
+    fn write_to(
+        self: Self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this `Optional` to a `Writer`.
 
         Args:
@@ -489,7 +478,9 @@ struct Optional[T: Movable](
         """
         self._write_to[is_repr=False](writer)
 
-    fn write_repr_to(self: Self, mut writer: Some[Writer]):
+    fn write_repr_to(
+        self: Self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write this `Optional`'s representation to a `Writer`.
 
         Args:
