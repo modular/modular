@@ -55,8 +55,8 @@ fn matmul[
     target: StaticString = "cpu",
 ](
     c: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
-    a: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
-    b: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
+    a: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
+    b: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     ctx: Optional[DeviceContext],
 ) raises:
     return matmul[
@@ -125,8 +125,8 @@ fn matmul[
     target: StaticString = "cpu",
 ](
     c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    a: NDBuffer[mut=False, _, 2, _, _],
+    b: NDBuffer[mut=False, _, 2, _, _],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     var cuda_ctx = Optional[DeviceContext]() if is_cpu[
@@ -161,8 +161,8 @@ fn matmul[
     target: StaticString = "cpu",
 ](
     c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    a: NDBuffer[mut=False, _, 2, _, _],
+    b: NDBuffer[mut=False, _, 2, _, _],
     ctx: Optional[DeviceContext],
 ) raises:
     comptime assert is_valid_target[target](), "unsupported target"

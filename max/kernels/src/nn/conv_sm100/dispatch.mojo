@@ -208,6 +208,12 @@ fn dispatch_sm100_conv2d[
             input_type, filter_type, output_type
         ].default_bf16_1sm()
 
-        conv2d_fprop[config=config](out_nd, act_nd, filter_nd, problem, ctx)
+        conv2d_fprop[config=config](
+            out_nd.make_dims_unknown(),
+            act_nd.make_dims_unknown(),
+            filter_nd.make_dims_unknown(),
+            problem,
+            ctx,
+        )
 
         _ = filter_buf^

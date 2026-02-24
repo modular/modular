@@ -590,7 +590,7 @@ fn _allreduce_p2p[
     use_multimem: Bool = False,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
     ],
     out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -713,7 +713,7 @@ fn allreduce[
     use_multimem: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],

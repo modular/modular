@@ -165,9 +165,9 @@ fn bench_reducescatter[
         )
 
     # Create input and output NDBuffers
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[dtype, rank, ImmutAnyOrigin], num_buffers
+    ](fill={})
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )

@@ -748,7 +748,7 @@ fn load_AB[
     iter_idx: UInt,
     elect_one_cta: Bool,
     scheduler: TileScheduler,
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
 ):
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -1071,7 +1071,7 @@ fn promote_accumulators[
     is_lower_frag_required: Bool,
     num_output_warps: Int,
 ](
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     b_scales_n: Int,
     a_scales_smem_iter: LayoutTensorIter[
         a_scales_type,
@@ -1102,7 +1102,7 @@ fn promote_accumulators[
     stage_stride_cols: UInt,
     k_iter: UInt,
     problem_shape: StaticTuple[Int32, 3],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
     scheduler: TileScheduler,
 ):
     comptime BM = block_tile_shape[0]
@@ -1418,10 +1418,10 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_layout, a_scales_desc_layout
     ],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutAnyOrigin],
+    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, ImmutAnyOrigin],
     num_iters: UInt,
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
 ):
     comptime num_output_warps = 4
@@ -1964,12 +1964,16 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, ...],
-    a: LayoutTensor[a_type, a_layout, ...],
-    b: LayoutTensor[b_type, b_layout, ...],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, ...],
-    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin, ...],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin, ...],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ImmutAnyOrigin, ...],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin, ...],
+    a_offsets: LayoutTensor[
+        a_offsets_type, a_offsets_layout, ImmutAnyOrigin, ...
+    ],
+    expert_ids: LayoutTensor[
+        expert_ids_type, expert_ids_layout, ImmutAnyOrigin, ...
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -2215,12 +2219,12 @@ fn grouped_matmul_dynamic_scaled_fp8[
     target: StaticString = "cpu",
 ](
     c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, _],
-    b: NDBuffer[b_type, 3, MutAnyOrigin, _],
-    a_scales: NDBuffer[a_scales_type, 2, MutAnyOrigin, _],
-    b_scales: NDBuffer[b_scales_type, 3, MutAnyOrigin, _],
-    a_offsets: NDBuffer[a_offsets_type, 1, MutAnyOrigin, _],
-    expert_ids: NDBuffer[expert_ids_type, 1, MutAnyOrigin, _],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, _],
+    b: NDBuffer[b_type, 3, ImmutAnyOrigin, _],
+    a_scales: NDBuffer[a_scales_type, 2, ImmutAnyOrigin, _],
+    b_scales: NDBuffer[b_scales_type, 3, ImmutAnyOrigin, _],
+    a_offsets: NDBuffer[a_offsets_type, 1, ImmutAnyOrigin, _],
+    expert_ids: NDBuffer[expert_ids_type, 1, ImmutAnyOrigin, _],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,

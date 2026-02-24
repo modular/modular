@@ -83,8 +83,8 @@ fn matmul_dispatch_sm100[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert a_type == b_type, "a_type and b_type must be the same"
@@ -2024,8 +2024,8 @@ fn _vendor_blas_matmul_sm100[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime K = a.shape.get[1]()

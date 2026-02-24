@@ -459,8 +459,8 @@ fn batched_matmul[
     target: StaticString = "cpu",
 ](
     c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
-    a_buf: NDBuffer[a_type, rank, _, _, _],
-    b_buf: NDBuffer[b_type, rank, _, _, _],
+    a_buf: NDBuffer[mut=False, a_type, rank, _, _, _],
+    b_buf: NDBuffer[mut=False, b_type, rank, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -496,7 +496,11 @@ fn batched_matmul[
                 b_type,
                 c_type,
                 elementwise_epilogue_fn,
-            ](c_buf, a_buf, b_buf)
+            ](
+                c_buf.make_dims_unknown(),
+                a_buf.make_dims_unknown(),
+                b_buf.make_dims_unknown(),
+            )
 
         batched_matmul[
             transpose_b=transpose_b,
@@ -1067,7 +1071,11 @@ fn batched_matmul[
             transpose_b=transpose_b,
             elementwise_epilogue_fn=elementwise_epilogue_fn,
             saturated_vnni=saturated_vnni,
-        ](c_buf, a_buf, b_buf)
+        ](
+            c_buf.make_dims_unknown(),
+            a_buf.make_dims_unknown(),
+            b_buf.make_dims_unknown(),
+        )
     else:
         comptime assert (
             saturated_vnni == False

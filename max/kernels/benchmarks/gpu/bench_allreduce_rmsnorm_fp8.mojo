@@ -62,7 +62,7 @@ fn _repoint_input_bufs[
     num_rows: Int,
     num_cols: Int,
 ](
-    mut in_bufs: InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus],
+    mut in_bufs: InlineArray[NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     iteration: Int,
 ):
@@ -82,7 +82,7 @@ fn _verify_results[
 ](
     list_of_ctx: List[DeviceContext],
     signal_buffers: List[DeviceBuffer[DType.uint8]],
-    mut in_bufs: InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus],
+    mut in_bufs: InlineArray[NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus],
     cb_inputs: List[CacheBustingBuffer[in_dtype]],
     ar_out_bufs: InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus],
     ar_out_dev: List[DeviceBuffer[in_dtype]],
@@ -337,7 +337,7 @@ fn bench_allreduce_rmsnorm_fp8[
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
     # NDBuffer views for allreduce.
-    var in_bufs = InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus](
         fill={}
     )
     var ar_out_bufs = InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus](
