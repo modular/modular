@@ -483,6 +483,10 @@ what we publish.
   print(a.__floordiv__(b))
   ```
 
+- Remove `DType.get_dtype[T]()` and `DType.is_scalar[T]()`. These were low-level
+  operations for extracting the `DType` of a `SIMD` in generic code. There are
+  better alternatives available in Mojo today using reflection capabilities.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
