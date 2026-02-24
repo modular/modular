@@ -137,12 +137,12 @@ class MAXGPUConnector(GPUConnectorInterface):
         """
         self._device_tensors = device_tensors
         self._num_layers = params.num_layers
-        self._num_kv_heads = params.n_kv_heads
+        self._num_kv_heads = params.n_kv_heads_per_device
         self._head_dim = params.head_dim
         self._block_size = params.page_size
         self._kv_dtype = _max_dtype_to_torch(params.dtype)
         self._max_dtype = params.dtype
-        self._hidden_dim = params.n_kv_heads * params.head_dim
+        self._hidden_dim = params.n_kv_heads_per_device * params.head_dim
         self._kv_dim = 1 if params.is_mla else 2
         self._session = session
         self._devices = list(devices)
@@ -599,12 +599,13 @@ class LMCacheConnector:
         # kv_shape format: (num_layers, kv_dim, chunk_size, num_kv_heads, head_dim)
         # MLA caches a single fused latent vector (kv_dim=1) instead of
         # separate K and V tensors (kv_dim=2).
+        # Use per-device heads since each TP shard operates independently.
         kv_dim = 1 if self.params.is_mla else 2
         kv_shape = (
             self.params.num_layers,
             kv_dim,
             self._block_size,
-            self.params.n_kv_heads,
+            self.params.n_kv_heads_per_device,
             self.params.head_dim,
         )
 
