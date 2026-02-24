@@ -112,7 +112,6 @@ class DistributedLlama3(DistributedTransformer):
                     if fp8_cfg and (layer_idx in fp8_cfg.mlp_in_float8)
                     else None
                 ),
-                dist_gemm_config=config.dist_gemm_config,
             )
 
             layers.append(
@@ -142,7 +141,6 @@ class DistributedLlama3(DistributedTransformer):
                     attention_norm=create_distributed_norm(),
                     mlp_norm=create_distributed_norm(),
                     devices=config.devices,
-                    distributed_gemm_config=config.dist_gemm_config,
                     # TODO: Support residual_multiplier
                     # residual_multiplier=config.residual_multiplier,
                 )

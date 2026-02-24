@@ -32,7 +32,6 @@ from max.pipelines.architectures.internvl.model_config import (
     VisionConfig,
 )
 from max.pipelines.architectures.llama3_legacy.model_config import (
-    DistributedGemmConfig,
     Llama3Config,
 )
 
@@ -146,7 +145,6 @@ class ConfigLoader:
             devices=[DeviceRef.GPU()],
             clip_qkv=None,
             float8_config=None,
-            dist_gemm_config=DistributedGemmConfig.generate(),
         )
 
     def create_internvl_config(

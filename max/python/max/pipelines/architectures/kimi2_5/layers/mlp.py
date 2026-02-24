@@ -26,7 +26,7 @@ from max.graph.quantization import QuantizationEncoding
 from max.nn.legacy.activation import activation_function_from_name
 from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import DistributedGemmConfig, Linear
+from max.nn.legacy.linear import Linear
 
 
 # TODO: (MODELS-1084) generalize this (non-gated) MLP layer and move it somewhere central
@@ -43,7 +43,6 @@ class MLP2(Module, Shardable):
         has_bias: bool = False,
         activation_function: str = "gelu_tanh",
         float8_config: Float8Config | None = None,
-        dist_gemm_config: DistributedGemmConfig | None = None,
         _is_sharding: bool = False,
     ) -> None:
         """Initializes the MLP2 layer.
@@ -60,7 +59,6 @@ class MLP2(Module, Shardable):
                 - ``gelu_tanh``
 
             float8_config: :obj:`Float8Config` for float8 quantization.
-            dist_gemm_config: :obj:`DistributedGemmConfig` for distributed GEMM configuration.
             _is_sharding: Used internally to disable child layer creation during sharding.
         """
         super().__init__()
@@ -85,7 +83,6 @@ class MLP2(Module, Shardable):
             activation_function
         )
         self.float8_config = float8_config
-        self.dist_gemm_config = dist_gemm_config
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
@@ -103,13 +100,6 @@ class MLP2(Module, Shardable):
         )
         value = self.up_proj(value)
         value = self.activation_function(value)
-        if (
-            not self.quantization_encoding
-            and not self.float8_config
-            and self.dist_gemm_config
-            and self.dist_gemm_config.enable_matmul_allreduce
-        ):
-            return value
         return self.down_proj(value)
 
     @property
@@ -171,7 +161,6 @@ class MLP2(Module, Shardable):
                 has_bias=self.has_bias,
                 activation_function=self._activation_function_name,
                 float8_config=self.float8_config,
-                dist_gemm_config=self.dist_gemm_config,
                 _is_sharding=True,
             )
             sharded.down_proj = down_proj

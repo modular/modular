@@ -24,7 +24,6 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.linear import DistributedGemmConfig
 from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -124,7 +123,6 @@ class Llama3Config(ArchConfigWithKVCache):
     clip_qkv: float | None
     float8_config: Float8Config | None = None
     lora_config: LoRAConfig | None = None
-    dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
@@ -341,13 +339,6 @@ class Llama3Config(ArchConfigWithKVCache):
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             use_subgraphs=pipeline_config.model.use_subgraphs,
-            # Force-disable matmul-allreduce overlap for llama FP8.
-            # TODO: GEX-2388: Figure out the issue and re-enable this.
-            dist_gemm_config=DistributedGemmConfig(
-                enable_matmul_allreduce=False
-            )
-            if dtype.is_float8()
-            else DistributedGemmConfig.generate(),
             lora_config=pipeline_config.lora,
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
@@ -425,17 +416,6 @@ class Llama3Config(ArchConfigWithKVCache):
         self.rms_norm_eps = rms_norm_eps
         self.tie_word_embeddings = tie_word_embeddings
         self.float8_config = float8_config
-        # Disable matmul_allreduce when using float8/FP4; the fused kernel
-        # requires a_type == b_type but we have bfloat16 activations and
-        # uint8/float8 weights.
-        if (
-            float8_config is not None
-            and float8_config.is_nvfp4
-            and self.dist_gemm_config is not None
-        ):
-            self.dist_gemm_config = DistributedGemmConfig(
-                enable_matmul_allreduce=False
-            )
         self.stacked_mlp = (
             "layers.0.mlp.gate_up_proj.weight" in normalized_state_dict
         )

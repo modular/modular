@@ -29,7 +29,6 @@ from max.graph import (
     Value,
     ops,
 )
-from max.graph.ops.allreduce import matmul_allreduce
 from max.nn.legacy.comm.allreduce import Allreduce
 
 from ..embedding import VocabParallelEmbedding
@@ -38,7 +37,7 @@ from ..kv_cache import (
     PagedCacheValues,
 )
 from ..layer import LayerList, Module, Shardable
-from ..linear import ColumnParallelLinear, DistributedGemmConfig
+from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding
 from .transformer import ReturnHiddenStates, ReturnLogits
 
@@ -237,7 +236,6 @@ class DistributedTransformerBlock(Module):
         attention_norm: ShardableCallable,
         mlp_norm: ShardableCallable,
         devices: list[DeviceRef],
-        distributed_gemm_config: DistributedGemmConfig | None = None,
     ) -> None:
         super().__init__()
 
@@ -263,7 +261,6 @@ class DistributedTransformerBlock(Module):
 
         self.devices = devices
 
-        self.distributed_gemm_config = distributed_gemm_config
         self.allreduce = Allreduce(num_accelerators=len(devices))
 
     def __call__(
@@ -311,20 +308,7 @@ class DistributedTransformerBlock(Module):
         )
         mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
-        if (
-            self.distributed_gemm_config is None
-            or not self.distributed_gemm_config.enable_matmul_allreduce
-        ):
-            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
-        else:
-            # Special matmul + allreduce split version
-            # extract the sharded weights from the last linear layers
-            weights = [layer.down_proj.weight for layer in self.mlp_shards]  # type: ignore[attr-defined]
-            mlp_outs = matmul_allreduce(
-                mlp_outs,
-                weights,
-                signal_buffers,
-            )
+        mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 

@@ -30,7 +30,7 @@ from max.graph import (
     TensorValue,
     Value,
 )
-from max.nn.legacy import Allreduce, DistributedGemmConfig, Signals
+from max.nn.legacy import Allreduce, Signals
 from max.pipelines.architectures.kimi2_5.layers.mlp import MLP2
 from test_common.graph_utils import are_all_buffer_values_sequence
 from transformers.activations import GELUTanh
@@ -108,14 +108,12 @@ def _create_mlp(
     dtype: DType,
     device: DeviceRef,
     has_bias: bool = False,
-    dist_gemm_config: DistributedGemmConfig | None = None,
 ) -> MLP2:
     return MLP2(
         dim=DIM,
         dtype=dtype,
         device=device,
         has_bias=has_bias,
-        dist_gemm_config=dist_gemm_config,
     )
 
 
@@ -137,7 +135,6 @@ def _build_and_run(
     dtype: DType,
     has_bias: bool = False,
     n_gpus: int = 0,
-    dist_gemm_config: DistributedGemmConfig | None = None,
     sharding_strategy: ShardingStrategy | None = None,
 ) -> list[Buffer]:
     """Build a MAX graph with the Kimi2.5 MLP2, execute it, and return outputs."""
@@ -146,7 +143,7 @@ def _build_and_run(
     )
     device_refs = [DeviceRef.from_device(d) for d in devices]
 
-    mlp = _create_mlp(dtype, device_refs[0], has_bias, dist_gemm_config)
+    mlp = _create_mlp(dtype, device_refs[0], has_bias)
 
     mlp_shards: list[MLP2] | None = None
     mlp_allreduce: Allreduce | None = None
@@ -218,7 +215,6 @@ def _run_accuracy_test(
     n_gpus: int,
     sharding_strategy: ShardingStrategy | None,
     has_bias: bool = False,
-    dist_gemm_config: DistributedGemmConfig | None = None,
 ) -> None:
     """Shared driver: create weights/input, run MAX + torch, assert close."""
     state_dict = _create_weights(TORCH_DTYPE, has_bias)
@@ -233,7 +229,6 @@ def _run_accuracy_test(
         MAX_DTYPE,
         has_bias=has_bias,
         n_gpus=n_gpus,
-        dist_gemm_config=dist_gemm_config,
         sharding_strategy=sharding_strategy,
     )
 
@@ -246,29 +241,7 @@ def _run_accuracy_test(
 @pytest.mark.parametrize("has_bias", [False, True], ids=["no_bias", "bias"])
 def test_mlp(has_bias: bool) -> None:
     """Test MLP2 E2E on single GPU (model is served on GPU)."""
-    _run_accuracy_test(1, None, has_bias, None)
-
-
-@pytest.mark.parametrize("has_bias", [False, True], ids=["no_bias", "bias"])
-def test_mlp_with_matmul_allreduce(has_bias: bool) -> None:
-    """Test early-return branch when dist_gemm_config.enable_matmul_allreduce is True.
-
-    The MLP2 skips down_proj, so the output shape is [SEQ_LEN, FEED_FORWARD_LENGTH].
-    """
-    state_dict = _create_weights(TORCH_DTYPE, has_bias)
-    x = _generate_tensor((SEQ_LEN, HIDDEN_DIM), TORCH_DTYPE, seed=SEED_INPUT)
-
-    max_output = _build_and_run(
-        state_dict,
-        x,
-        MAX_DTYPE,
-        has_bias=has_bias,
-        n_gpus=0,
-        dist_gemm_config=DistributedGemmConfig(enable_matmul_allreduce=True),
-    )
-
-    result = torch.from_dlpack(max_output[0])
-    assert result.shape == (SEQ_LEN, FEED_FORWARD_LENGTH)
+    _run_accuracy_test(1, None, has_bias)
 
 
 def test_sharding_strategy_default_is_none() -> None:

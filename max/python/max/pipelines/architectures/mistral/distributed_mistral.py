@@ -80,7 +80,6 @@ class DistributedMistral(DistributedTransformer):
                 ),
                 attention_norm=distributed_norm(),
                 mlp_norm=distributed_norm(),
-                distributed_gemm_config=None,
             )
             for i in range(config.num_hidden_layers)
         ]
