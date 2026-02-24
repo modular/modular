@@ -15,6 +15,7 @@ from collections import BitSet
 
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 from testing import TestSuite
+from test_utils import check_write_to
 
 
 def test_bitset_init():
@@ -191,6 +192,19 @@ def test_bitset_str_repr():
     assert_false(
         "16, " in str_rep, msg="String representation should not contain bit 16"
     )
+
+
+def test_write_to():
+    var bitset = BitSet[16]()
+
+    check_write_to(bitset, expected="{}", is_repr=False)
+    check_write_to(bitset, expected="BitSet[16]({})", is_repr=True)
+
+    bitset.set(1)
+    bitset.set(5)
+
+    check_write_to(bitset, expected="{1, 5}", is_repr=False)
+    check_write_to(bitset, expected="BitSet[16]({1, 5})", is_repr=True)
 
 
 def test_bitset_edge_cases():
