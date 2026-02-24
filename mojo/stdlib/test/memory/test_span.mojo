@@ -192,6 +192,36 @@ def test_fill():
         assert_equal(s[i], 2)
 
 
+def test_fill_simd():
+    # Test SIMD fill overload for various DTypes and lengths
+    # UInt8 (1 byte) — exercises the Byte-width path
+    var bytes: List[UInt8] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    Span(bytes).fill(UInt8(7))
+    for i in range(len(bytes)):
+        assert_equal(bytes[i], UInt8(7))
+
+    # UInt32 — exercises wider SIMD paths
+    var words: List[UInt32] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    Span(words).fill(UInt32(42))
+    for i in range(len(words)):
+        assert_equal(words[i], UInt32(42))
+
+    # Non-multiple-of-SIMD-width length (tail handling)
+    var odd: List[Float32] = [0, 0, 0, 0, 0]
+    Span(odd).fill(Float32(1.5))
+    for i in range(len(odd)):
+        assert_equal(odd[i], Float32(1.5))
+
+    # Single element
+    var one: List[Int32] = [0]
+    Span(one).fill(Int32(99))
+    assert_equal(one[0], Int32(99))
+
+    # Empty span — no crash
+    var empty: List[UInt8] = []
+    Span(empty).fill(UInt8(1))
+
+
 def test_ref():
     var l: InlineArray[Int, 3] = [1, 2, 3]
     var s = Span[Int](array=l)

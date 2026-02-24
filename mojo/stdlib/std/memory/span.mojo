@@ -614,6 +614,33 @@ struct Span[
         for ref element in self:
             rebind[_T](element) = value.copy()
 
+    fn fill[
+        dtype: DType, _origin: MutOrigin, //
+    ](self: Span[Scalar[dtype], _origin], value: Scalar[dtype]):
+        """Fill the span with `value` using vectorized SIMD stores.
+
+        Parameters:
+            dtype: The DType of the scalar elements.
+            _origin: The inferred mutable origin of the data within the Span.
+
+        Args:
+            value: The scalar value to broadcast and store across the span.
+        """
+        comptime widths = (256, 128, 64, 32, 16, 8, 4)
+        var ptr = self.unsafe_ptr()
+        var length = len(self)
+        var processed = 0
+
+        comptime for i in range(len(widths)):
+            comptime w = widths[i]
+            comptime if simd_width_of[dtype]() >= w:
+                for _ in range((length - processed) // w):
+                    (ptr + processed).store(SIMD[dtype, w](value))
+                    processed += w
+
+        for i in range(length - processed):
+            ptr[processed + i] = value
+
     @always_inline
     fn unsafe_swap_elements[
         U: Movable
