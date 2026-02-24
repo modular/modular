@@ -806,10 +806,12 @@ fn _concat_gpu_elementwise[
                     comptime func = epilogue_fn.value()
                     func[dtype, _rank, simd_width](
                         out_index,
-                        input.load[width=1](in_coord),
+                        input.load[width=simd_width](in_coord),
                     )
                 else:
-                    output.store(out_coord, input.load[width=1](in_coord))
+                    output.store[width=simd_width](
+                        out_coord, input.load[width=simd_width](in_coord)
+                    )
                 return
 
             in_index[axis] -= input_shape[axis]
@@ -819,9 +821,17 @@ fn _concat_gpu_elementwise[
     # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
-    elementwise[per_output_elem, 1, target="gpu"](
-        coord_to_index_list(output.layout.shape_coord()), ctx
-    )
+    # When axis != rank-1, the SIMD group spans the innermost (non-concat)
+    # dimension, so all elements belong to the same input and we can safely
+    # use vectorized loads/stores (float4 = 128-bit transactions).
+    comptime if axis != output.rank - 1:
+        elementwise[per_output_elem, 4, target="gpu"](
+            coord_to_index_list(output.layout.shape_coord()), ctx
+        )
+    else:
+        elementwise[per_output_elem, 1, target="gpu"](
+            coord_to_index_list(output.layout.shape_coord()), ctx
+        )
 
 
 @always_inline
