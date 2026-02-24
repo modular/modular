@@ -3038,8 +3038,7 @@ Special thanks to our community contributors:
   [MAX AI kernels source](https://github.com/modular/modular/tree/main/max/kernels).
 
 - Mojo is now available on [Godbolt.org](https://godbolt.org), which is also
-  known as the "Compiler Explorer". See <https://mojo.godbo.lt/z/EshWcoqe7> for
-  an example.
+  known as the "Compiler Explorer".
 
 ### Language enhancements {#25-4-language-enhancements}
 
