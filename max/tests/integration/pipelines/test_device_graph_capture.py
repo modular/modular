@@ -71,7 +71,7 @@ def test_pipeline_model_capture_replay() -> None:
         max_batch_size=1,
         max_length=128,
     )
-    pipeline_config.device_graph_capture = True
+    pipeline_config.runtime.device_graph_capture = True
     session = MagicMock()
     model = CapturePipelineModel(
         pipeline_config=pipeline_config,
@@ -115,7 +115,7 @@ def test_pipeline_model_replay_miss_raises() -> None:
         max_batch_size=4,
         max_length=128,
     )
-    pipeline_config.device_graph_capture = True
+    pipeline_config.runtime.device_graph_capture = True
     session = MagicMock()
     model = CapturePipelineModel(
         pipeline_config=pipeline_config,
@@ -154,7 +154,7 @@ def test_pipeline_model_debug_verify_uses_runtime_inputs() -> None:
         max_batch_size=1,
         max_length=128,
     )
-    pipeline_config.device_graph_capture = True
+    pipeline_config.runtime.device_graph_capture = True
     session = MagicMock()
     model = CapturePipelineModel(
         pipeline_config=pipeline_config,
@@ -201,7 +201,7 @@ def test_pipeline_model_debug_verify_rejects_mismatched_graph_keys() -> None:
         max_batch_size=1,
         max_length=128,
     )
-    pipeline_config.device_graph_capture = True
+    pipeline_config.runtime.device_graph_capture = True
     session = MagicMock()
     model = CapturePipelineModel(
         pipeline_config=pipeline_config,

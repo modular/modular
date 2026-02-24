@@ -205,7 +205,7 @@ class ModelWorker:
                 pipeline = model_factory()
 
             with Tracer("graph_capture_warmup"):
-                if pipeline_config.device_graph_capture:
+                if pipeline_config.runtime.device_graph_capture:
                     if not isinstance(pipeline, SupportsGraphCaptureWarmup):
                         raise ValueError(
                             "device_graph_capture is enabled but the pipeline "

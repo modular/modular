@@ -194,11 +194,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    device_graph_capture: bool = Field(
-        default=False,
-        description="Enable device graph capture/replay for graph execution.",
-    )
-
     debug_verify_replay: bool = Field(
         default=False,
         description=(
@@ -815,7 +810,7 @@ class PipelineConfig(ConfigFileModel):
                 )
 
     def _validate_and_resolve_device_graph_capture(self) -> None:
-        if not self.device_graph_capture:
+        if not self.runtime.device_graph_capture:
             return
 
         # TODO(GENAI-363): Support device graph capture warmup with data
@@ -1304,7 +1299,10 @@ class PipelineConfig(ConfigFileModel):
             if memory_str
             else []
             + [
-                ("device_graph_capture", self.device_graph_capture),
+                (
+                    "device_graph_capture",
+                    self.runtime.device_graph_capture,
+                ),
             ]
         )
 
