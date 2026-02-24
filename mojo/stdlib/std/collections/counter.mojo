@@ -295,6 +295,12 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
                 writer.write(", ")
         writer.write("})")
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        writer.write("Counter(")
+        trait_downcast[Writable](self._data).write_repr_to(writer)
+        writer.write(")")
+
     # ===------------------------------------------------------------------=== #
     # Comparison operators
     # ===------------------------------------------------------------------=== #
