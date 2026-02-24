@@ -53,19 +53,16 @@ one-stop-shop entry point to all documentation relevant to the Mojo compiler.
 by the Graph Compiler so that it has knowledge of the dialects used by the
 Mojo compiler.
 
+## High-Level Walkthrough
+
+- [Walkthrough Doc](MojoCompilerWalkthrough.md)
+- [Dec 2025 Onsite Walkthrough Live](https://drive.google.com/file/d/1NAh7RpJDXbWMlapHPZce8CAVSgv8D_oX/view?usp=drive_link)
+
 ## Compiler Manual
 
 - [Mojo Design](./manual/MojoNotes.md)
 - [Rationale](./manual/Rationale.md)
 
 ## Detailed Documentation
-
-See these breakout docs:
-
-- [Generative Kernel Compiler Design Overview](DesignOverview.md)
-- [Generative Kernel Compiler Task List](TaskList.md)
-- [Design Rationale](Rationale.md) for details.
-
-For more on Mojo see:
 
 - [Mojo🔥 Notes](MojoNotes.md)
