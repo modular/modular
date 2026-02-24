@@ -143,6 +143,7 @@ MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/std mojo main.mojo
 - Implement `Writable` for formatting — not deprecated `Stringable` or `Representable`
 - `write_to` signature: `fn write_to(self, mut writer: Some[Writer])` — not `[W: Writer]`
 - Use `writer.write_string("literal")` for string literals, not `writer.write("literal")`
+- `write_to` and `write_repr_to` must **not allocate** — avoid calling `repr()`, `String()`, or any function that creates a heap-allocated string inside the method body; write directly to the writer instead
 - Use `FormatStruct` from `format._utils` for `write_repr_to` on structured types
 - `write_repr_to` on enum-like types: include the type name (e.g. `writer.write("MyEnum.", self)`)
 - Enum-style `write_to`: always add `else: writer.write_string("<<unknown>>")` fallback
