@@ -541,7 +541,12 @@ class OverlapTextGenerationPipeline(
                     and inputs
                     and inputs.batch_type == BatchType.TG
                 ):
-                    return runner.replay(model_inputs=model_inputs)
+                    return runner.replay(
+                        model_inputs=model_inputs,
+                        debug_verify_replay=(
+                            self._pipeline_config.debug_verify_replay
+                        ),
+                    )
 
                 return self._pipeline_model.execute(model_inputs=model_inputs)
         except Exception:

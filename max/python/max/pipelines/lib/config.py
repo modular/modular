@@ -199,6 +199,14 @@ class PipelineConfig(ConfigFileModel):
         description="Enable device graph capture/replay for graph execution.",
     )
 
+    debug_verify_replay: bool = Field(
+        default=False,
+        description=(
+            "When device_graph_capture is enabled, execute eager launch-trace "
+            "verification before replay. Intended for debugging only."
+        ),
+    )
+
     force: bool = Field(
         default=False,
         description=(

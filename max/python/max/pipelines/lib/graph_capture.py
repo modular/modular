@@ -99,7 +99,12 @@ class ServeGraphCaptureRunner:
             self._max_batch_size,
         )
 
-    def replay(self, *, model_inputs: ModelInputs) -> ModelOutputs:
+    def replay(
+        self,
+        *,
+        model_inputs: ModelInputs,
+        debug_verify_replay: bool = False,
+    ) -> ModelOutputs:
         """Replays a captured graph entry for a replay-safe decode batch."""
         input_buffers = model_inputs.buffers
         graph_key = _graph_key(model_inputs)
@@ -115,6 +120,9 @@ class ServeGraphCaptureRunner:
             input_buffers, captured_inputs, strict=True
         ):
             dst_value.inplace_copy_from(src_value)
+
+        if debug_verify_replay:
+            self._model.debug_verify_replay(graph_key, *captured_inputs)
 
         self._model.replay(graph_key, *captured_inputs)
         return outputs
