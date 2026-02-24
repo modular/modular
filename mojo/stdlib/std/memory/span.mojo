@@ -30,6 +30,8 @@ from sys.info import simd_width_of
 
 from algorithm import vectorize
 from builtin.device_passable import DevicePassable
+from format._utils import FormatStruct, Named
+from reflection.type_info import _unqualified_type_name
 from compile import get_type_name
 
 
@@ -125,7 +127,8 @@ struct Span[
     ImplicitlyCopyable,
     Iterable,
     Sized,
-    TrivialRegisterPassable,
+    Writable,
+    TrivialRegisterType,
 ):
     """A non-owning view of contiguous data.
 
@@ -427,6 +430,18 @@ struct Span[
             `repr(my_span)` will be enough.
         """
         return self.__str__()
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr representation of the `Span`.
+
+        This uses `FormatStruct` to produce a concise, non-reflective repr
+        that includes the mutability and element type as type parameters and
+        reports the runtime length as the single field.
+        """
+        FormatStruct(writer, "Span").params(
+            Named("mut", Self.mut),
+            _unqualified_type_name[Self.T](),
+        ).fields(len(self))
 
     # ===------------------------------------------------------------------===#
     # Methods
