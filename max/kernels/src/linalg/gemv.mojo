@@ -417,6 +417,7 @@ fn gevm_kernel[
     b_type: DType,
     *,
     tile_size: Int,
+    check_k_bounds: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
     pdl_level: PDLLevel = PDLLevel(),
@@ -449,6 +450,9 @@ fn gevm_kernel[
     # Every block computes warp size length of output values
     for i in range(ceildiv(k, warps_per_block)):
         var row = i * warps_per_block + warp_id
+        comptime if check_k_bounds:
+            if row >= k:
+                continue
         var lhs = a[row]
         var rhs = b[row * n + col]
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
@@ -807,6 +811,34 @@ fn gemv_gpu[
 
     elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
         kernel_func = GEMVAlgorithm.GEVM_KERNEL
+
+    elif m == 1 and n % WARP_SIZE == 0:
+        # K is not aligned to WARP_SIZE; use GEVM_KERNEL with bounds checking.
+        comptime WARPS_PER_BLOCK_LOCAL = 1024 // WARP_SIZE
+        comptime kernel = gevm_kernel[
+            c.type,
+            a.type,
+            b.type,
+            tile_size = WARP_SIZE * WARPS_PER_BLOCK_LOCAL,
+            check_k_bounds=True,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            pdl_level=pdl_level,
+        ]
+        var c_tensor = from_ndbuffer_row_major(c)
+        var a_tensor = from_ndbuffer_row_major(a)
+        var b_tensor = from_ndbuffer_row_major(b)
+        ctx.enqueue_function[kernel, kernel](
+            c_tensor.to_device_buffer(ctx),
+            a_tensor.to_device_buffer(ctx),
+            b_tensor.to_device_buffer(ctx),
+            m,
+            n,
+            k,
+            grid_dim=ceildiv(n, WARPS_PER_BLOCK_LOCAL),
+            block_dim=WARP_SIZE * WARPS_PER_BLOCK_LOCAL,
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+        return
 
     else:
         kernel_func = GEMVAlgorithm.MATMUL_NAIVE
