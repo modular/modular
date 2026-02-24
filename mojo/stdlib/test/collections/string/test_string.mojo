@@ -1795,5 +1795,15 @@ def test_append_codepoint() raises:
     assert_equal(s.byte_length(), 8)
 
 
+def test_zfill():
+    assert_equal(String("42").zfill(5), "00042")
+    assert_equal(String("42").zfill(2), "42")
+    assert_equal(String("-42").zfill(5), "-0042")
+    assert_equal(String("+42").zfill(5), "+0042")
+    assert_equal(String("").zfill(3), "000")
+    assert_equal(String("hello").zfill(8), "000hello")
+    assert_equal(String("hello").zfill(3), "hello")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

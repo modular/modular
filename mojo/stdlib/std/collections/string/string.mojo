@@ -1974,6 +1974,31 @@ struct String(
         """
         return StringSlice(self).ascii_center(width, fillchar)
 
+    fn zfill(self, width: Int) -> String:
+        """Pads the string on the left with zeros to fill a field of the given
+        width.
+
+        If the string starts with a sign character (`+` or `-`), the zeros are
+        inserted after the sign. If the string is already at least as wide as
+        `width`, it is returned unchanged.
+
+        Args:
+            width: The total width (in bytes) of the resulting string.
+
+        Returns:
+            A zero-padded string of (byte) length `width`, or the original
+            string if it is already at least as wide.
+
+        Examples:
+
+        ```mojo
+        print(String("42").zfill(5))   # "00042"
+        print(String("-42").zfill(5))  # "-0042"
+        print(String("+42").zfill(5))  # "+0042"
+        ```
+        """
+        return StringSlice(self).zfill(width)
+
     fn resize(mut self, length: Int, fill_byte: UInt8 = 0):
         """Resize the string to a new length. Panics if new_len does not
         lie on a codepoint boundary or if fill_byte is non-ascii (>=128).

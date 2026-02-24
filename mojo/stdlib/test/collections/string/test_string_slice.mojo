@@ -952,6 +952,22 @@ def test_ascii_center() raises:
     assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
 
 
+def test_zfill():
+    # Basic zero padding
+    assert_equal(StringSlice("42").zfill(5), "00042")
+    assert_equal(StringSlice("42").zfill(2), "42")
+    assert_equal(StringSlice("42").zfill(1), "42")
+    # Sign handling
+    assert_equal(StringSlice("-42").zfill(5), "-0042")
+    assert_equal(StringSlice("+42").zfill(5), "+0042")
+    # Edge cases
+    assert_equal(StringSlice("").zfill(3), "000")
+    assert_equal(StringSlice("hello").zfill(8), "000hello")
+    assert_equal(StringSlice("hello").zfill(3), "hello")
+    # Sign at exact width
+    assert_equal(StringSlice("-42").zfill(3), "-42")
+
+
 def test_count() raises:
     var str = StringSlice("Hello world")
 
