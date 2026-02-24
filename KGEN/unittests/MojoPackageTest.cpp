@@ -115,3 +115,128 @@ TEST(MojoPackageTest, testRoundtripWithLabelAlignment) {
   // Check that the MLIR buffer has the right magic bytes at the beginning.
   EXPECT_EQ(mlirBuffer.getBuffer().substr(0, 4), "ML\xEFR");
 }
+
+TEST(MojoPackageTest, testReadErrors) {
+  auto getTestBuffer =
+      [](llvm::StringRef str) -> std::unique_ptr<llvm::MemoryBuffer> {
+    auto buffer =
+        llvm::MemoryBuffer::getMemBuffer(str, /*BufferName=*/"test.mojopkg");
+    EXPECT_TRUE(buffer);
+    return buffer;
+  };
+
+  { // Invalid header, no magic bytes
+    auto buffer = getTestBuffer("M00G");
+
+    EXPECT_FALSE(M::KGEN::isMojoPackage(*buffer));
+    auto Err = M::KGEN::readBinaryPackageHeader(*buffer);
+    EXPECT_TRUE(Err.isError());
+    EXPECT_STREQ(Err.getError(), "invalid magic bytes");
+
+    auto BuffAndHeaderOrErr =
+        M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
+    EXPECT_TRUE(BuffAndHeaderOrErr.isError());
+    EXPECT_STREQ(BuffAndHeaderOrErr.getError(),
+                 "invalid Mojo package 'test.mojopkg': invalid magic bytes");
+  }
+
+  { // Invalid header, too small
+    auto buffer = getTestBuffer("MPKG0");
+
+    EXPECT_TRUE(M::KGEN::isMojoPackage(*buffer));
+    auto Err = M::KGEN::readBinaryPackageHeader(*buffer);
+    EXPECT_TRUE(Err.isError());
+    EXPECT_STREQ(Err.getError(), "invalid header size");
+
+    auto BuffAndHeaderOrErr =
+        M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
+    EXPECT_TRUE(BuffAndHeaderOrErr.isError());
+    EXPECT_STREQ(BuffAndHeaderOrErr.getError(),
+                 "invalid Mojo package 'test.mojopkg': invalid header size");
+  }
+
+  { // Invalid header, too small to contain versioning information
+    auto buffer = getTestBuffer("MPKG1000");
+    auto BuffAndHeaderOrErr =
+        M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
+    EXPECT_TRUE(BuffAndHeaderOrErr.isError());
+    EXPECT_STREQ(
+        BuffAndHeaderOrErr.getError(),
+        "invalid Mojo package 'test.mojopkg': read past end of buffer");
+  }
+
+  { // Invalid header, too small to contain versioning information
+    auto buffer = getTestBuffer(StringRef("MPKG1000"
+                                          "\x28\x10\x01\x00"
+                                          "-dev\x00",
+                                          16));
+    auto BuffAndHeaderOrErr =
+        M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
+    EXPECT_TRUE(BuffAndHeaderOrErr.isError());
+    EXPECT_STREQ(
+        BuffAndHeaderOrErr.getError(),
+        "invalid Mojo package 'test.mojopkg': invalid version encoding");
+  }
+
+  { // Invalid header, contains both versions but no checksum
+    auto buffer = getTestBuffer(StringRef("MPKG1000"
+                                          "\x28\x10\x01\x00"
+                                          "-dev\x00"
+                                          "\x29\x11\x00\x01"
+                                          "-label\x00",
+                                          28));
+    auto BuffAndHeaderOrErr =
+        M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
+    EXPECT_TRUE(BuffAndHeaderOrErr.isError());
+    EXPECT_STREQ(
+        BuffAndHeaderOrErr.getError(),
+        "invalid Mojo package 'test.mojopkg': invalid checksum encoding");
+  }
+
+  { // Invalid header, contains both versions and a checksum but is not aligned
+    // to 8 bytes
+    auto buffer = getTestBuffer(StringRef("MPKG1000"
+                                          "\x28\x10\x01\x00"
+                                          "-dev\x00"
+                                          "\x29\x11\x00\x01"
+                                          "-label\x00"
+                                          "c\x00",
+                                          30));
+    auto BuffAndHeaderOrErr =
+        M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
+    EXPECT_TRUE(BuffAndHeaderOrErr.isError());
+    EXPECT_STREQ(BuffAndHeaderOrErr.getError(),
+                 "invalid Mojo package 'test.mojopkg': invalid header size");
+  }
+
+  { // Valid header, though no MLIR buffer
+    auto buffer = getTestBuffer(StringRef("MPKG1000"
+                                          "\x28\x10\x01\x00"
+                                          "-dev\x00"
+                                          "\x29\x11\x00\x01"
+                                          "-label\x00"
+                                          "c\x00"
+                                          "x\x00",
+                                          32));
+    auto BuffAndHeaderOrErr =
+        M::KGEN::getMLIRBufferAndHeaderFromPackage(*buffer);
+    EXPECT_FALSE(BuffAndHeaderOrErr.isError());
+
+    auto [header, mlirBuffer] = *BuffAndHeaderOrErr;
+
+    EXPECT_EQ(header.mojoVersion.major, 40);
+    EXPECT_EQ(header.mojoVersion.minor, 16);
+    EXPECT_EQ(header.mojoVersion.patch, 1);
+    EXPECT_STREQ(header.mojoVersion.label.c_str(), "-dev");
+
+    EXPECT_EQ(header.modularVersion.major, 41);
+    EXPECT_EQ(header.modularVersion.minor, 17);
+    EXPECT_EQ(header.modularVersion.patch, 256);
+    EXPECT_STREQ(header.modularVersion.label.c_str(), "-label");
+
+    EXPECT_STREQ(header.mlirChecksum.c_str(), "c");
+
+    // There's no MLIR buffer after the package header
+    EXPECT_EQ(0, mlirBuffer.getBufferSize());
+  }
+}
