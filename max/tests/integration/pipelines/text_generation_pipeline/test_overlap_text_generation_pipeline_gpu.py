@@ -34,8 +34,8 @@ from max.graph import (
     ops,
 )
 from max.interfaces import RequestID, TextGenerationInputs, TokenBuffer
-from max.kv_cache import PagedKVCacheManager
 from max.nn.legacy import KVCacheInputs, kernels
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     ModelInputs,
@@ -43,6 +43,7 @@ from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     PipelineConfig,
     PipelineModel,
+    PipelineModelWithKVCache,
     SupportedEncoding,
 )
 from max.pipelines.lib.pipeline_variants import overlap_text_generation
@@ -151,6 +152,7 @@ class FakePipelineConfig(ConfigFileModel):
     sampling: FakeSamplingConfig
     execute_empty_batches: bool = False
     enable_overlap_scheduler: bool = False
+    max_batch_size: int = 999
 
     def configure_session(self, *args: Any, **kwargs: Any) -> None:
         pass
@@ -236,13 +238,15 @@ def build_graph(device_ref: DeviceRef) -> Model:
     return model
 
 
-class FakePipelineModel:
+class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
     def __init__(
         self, pipeline_config: FakePipelineConfig, *args: Any, **kwargs: Any
     ) -> None:
-        self.kv_manager = MagicMock(spec=PagedKVCacheManager)
+        self.kv_params = MagicMock(spec=KVCacheParams)
         self.enable_overlap_scheduler = pipeline_config.enable_overlap_scheduler
         self.device = Accelerator()
+        self.kv_cache_config = MagicMock()
+        self.max_seq_len = 9999
         print(f"Building graph for device {self.device}")
         t0 = time.time()
         self.model = build_graph(device_ref=DeviceRef.from_device(self.device))
@@ -254,7 +258,7 @@ class FakePipelineModel:
         replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
-    ) -> FakeModelInputs:
+    ) -> ModelInputs:
         del kv_cache_inputs, return_n_logits  # Unused args
 
         assert len(replica_batches) == 1, "DP must be 1"
@@ -306,7 +310,8 @@ class FakePipelineModel:
             arange=arange.to(self.device),
         )
 
-    def execute(self, model_inputs: FakeModelInputs) -> ModelOutputs:
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        assert isinstance(model_inputs, FakeModelInputs)
         if not self.enable_overlap_scheduler:
             Accelerator().synchronize()
 
@@ -323,6 +328,11 @@ class FakePipelineModel:
         return ModelOutputs(logits=logits)
 
 
+# Delete all abstract methods so python doesn't complain about unimplemented
+# abstract methods (this is extremely cursed)
+FakePipelineModel.__abstractmethods__ = frozenset()
+
+
 def create_context(
     isl: int = 64, osl: int = 64, offset: int = 0
 ) -> TextContext:
@@ -333,11 +343,16 @@ def create_context(
     )
 
 
-def monkeypatch_weight_loading(monkeypatch: pytest.MonkeyPatch) -> None:
-    for func in ["get_weight_paths", "load_weights", "weights_format"]:
-        monkeypatch.setattr(
-            overlap_text_generation, func, MagicMock(return_value=None)
-        )
+def monkeypatch_weight_and_kvcache_loading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for func in [
+        "get_weight_paths",
+        "load_weights",
+        "weights_format",
+        "load_kv_manager",
+    ]:
+        monkeypatch.setattr(overlap_text_generation, func, MagicMock())
 
 
 def create_overlap_pipeline(
@@ -413,7 +428,7 @@ def test_overlap_execution(
     enable_overlap_scheduler: bool,
     expected_duration: float,
 ) -> None:
-    monkeypatch_weight_loading(monkeypatch)
+    monkeypatch_weight_and_kvcache_loading(monkeypatch)
     prime_host_buffer_cache()
 
     pipeline = create_overlap_pipeline(

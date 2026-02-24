@@ -47,11 +47,10 @@ from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from max.profiler import Tracer
 from transformers import AutoConfig
@@ -131,8 +130,7 @@ class Qwen3VLInputs(ModelInputs):
 
 class Qwen3VLModel(
     AlwaysSignalBuffersMixin,
-    PipelineModel[Qwen3VLTextAndVisionContext],
-    KVCacheMixin,
+    PipelineModelWithKVCache[Qwen3VLTextAndVisionContext],
 ):
     """A Qwen3VL pipeline model for multimodal text generation."""
 
@@ -176,6 +174,19 @@ class Qwen3VLModel(
 
         self.vision_model, self.language_model = self.load_model(session)
         self._parallel_ops = ParallelArrayOps(max_workers=24)
+
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        del pipeline_config, huggingface_config  # Unused.
+
+        # FIXME GEX-3248: This is a workaround for a MemoryManager fragmentation
+        # issue. In #77700 we swapped the order of model weight loading and kv
+        # cache loading. This affected memory fragmentation and led to CUDA OOM
+        # when running `br smoke-test -- qwen/qwen3-vl-30b-a3b-instruct` on 1xB200.
+        # We reduce the kv cache size slightly to avoid this.
+        return 2 * 1024 * 1024 * 1024  # 2 GiB
 
     # TODO: Seems like a common pattern. Implement in a base class?
     @staticmethod

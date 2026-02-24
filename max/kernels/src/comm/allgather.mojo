@@ -48,7 +48,7 @@ fn _allgather_naive[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -156,7 +156,7 @@ fn _allgather_p2p[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -228,7 +228,7 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -289,7 +289,7 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],

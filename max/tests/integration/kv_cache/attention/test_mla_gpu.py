@@ -115,7 +115,7 @@ def test_mla_prefill_plan() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch])[0]
 
     results = model.execute(input_row_offsets.to(device0), *kv_inputs)
 
@@ -251,7 +251,7 @@ def test_mla_decompress_k_cache() -> None:
     input_row_offsets[batch_size] = running_sum
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
+        kv_manager.runtime_inputs([batch])[0]
     )
 
     new_blocks = torch.randn(size=blocks.shape, dtype=torch.float32)

@@ -41,6 +41,10 @@ from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .memory_estimation import MemoryEstimator, to_human_readable_bytes
 from .model_config import MAXModelConfig
+from .pipeline_runtime_config import (
+    DEFAULT_MAX_BATCH_INPUT_TOKENS,
+    PipelineRuntimeConfig,
+)
 from .profiling_config import ProfilingConfig
 from .registry import (
     PIPELINE_REGISTRY,
@@ -51,9 +55,6 @@ from .sampling import SamplingConfig
 from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
-
-# Default max batch input tokens for chunked prefill and memory estimation.
-DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
 
 
 class PipelineConfig(ConfigFileModel):
@@ -170,44 +171,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    pool_embeddings: bool = Field(
-        default=True, description="Whether to pool embedding outputs."
-    )
-
-    use_experimental_kernels: str = Field(
-        default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
-        description=(
-            "Enables using experimental mojo kernels with max serve. The "
-            "kernels could be unstable or incorrect."
-        ),
-    )
-
-    use_vendor_blas: str = Field(
-        default=os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false"),
-        description=(
-            "Enables using vendor BLAS libraries (cublas/hipblas/etc) with max "
-            "serve. Currently, this just replaces matmul calls."
-        ),
-    )
-
-    pdl_level: str = Field(
-        default=os.environ.get("PDL_LEVEL", "0"),
-        description=(
-            "Level of overlap of kernel launch via programmatic dependent grid "
-            "control."
-        ),
-    )
-
-    custom_architectures: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Custom architecture implementations to register. Each input can "
-            "either be a raw module name or an import path followed by a colon "
-            "and the module name. Each module must expose an ARCHITECTURES list "
-            "of architectures to register."
-        ),
-    )
-
     zmq_endpoint_base: str = Field(
         default_factory=generate_zmq_ipc_path,
         description=(
@@ -234,6 +197,14 @@ class PipelineConfig(ConfigFileModel):
     device_graph_capture: bool = Field(
         default=False,
         description="Enable device graph capture/replay for graph execution.",
+    )
+
+    debug_verify_replay: bool = Field(
+        default=False,
+        description=(
+            "When device_graph_capture is enabled, execute eager launch-trace "
+            "verification before replay. Intended for debugging only."
+        ),
     )
 
     force: bool = Field(
@@ -305,6 +276,11 @@ class PipelineConfig(ConfigFileModel):
         default=None, description="The SpeculativeConfig."
     )
 
+    runtime: PipelineRuntimeConfig = Field(
+        default_factory=PipelineRuntimeConfig,
+        description="Model-agnostic runtime settings for pipeline execution.",
+    )
+
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -317,9 +293,9 @@ class PipelineConfig(ConfigFileModel):
     def configure_session(self, session: InferenceSession) -> None:
         """Configure an InferenceSession with standard pipeline settings."""
         session.gpu_profiling(self.profiling.gpu_profiling)
-        session._use_experimental_kernels(self.use_experimental_kernels)
-        session._use_vendor_blas(self.use_vendor_blas)
-        session._pdl_level(self.pdl_level)
+        session._use_experimental_kernels(self.runtime.use_experimental_kernels)
+        session._use_vendor_blas(self.runtime.use_vendor_blas)
+        session._pdl_level(self.runtime.pdl_level)
 
     @staticmethod
     def _extract_kwargs_for_config(
@@ -446,6 +422,9 @@ class PipelineConfig(ConfigFileModel):
         # TODO(zheng): Make this more efficient by using MaxConfig instance
         # instead of hardcoding the config names.
         config_mappings = [
+            # NOTE: runtime must come before model so that its
+            # fields are consumed before the model config is built.
+            "runtime",
             # NOTE: model must come before sampling so that
             # SamplingConfig can use generation_config from the model
             "model",
@@ -646,7 +625,7 @@ class PipelineConfig(ConfigFileModel):
 
     def _import_custom_architectures(self) -> None:
         """Imports custom model modules and adds them to the registry."""
-        for module_spec in self.custom_architectures:
+        for module_spec in self.runtime.custom_architectures:
             module_parts = module_spec.split(":")
             if len(module_parts) > 2:
                 raise ValueError(
@@ -692,6 +671,7 @@ class PipelineConfig(ConfigFileModel):
 
         config_objects = [
             ("PipelineConfig", self),
+            ("PipelineRuntimeConfig", self.runtime),
             ("MAXModelConfig", self.model),
             ("SamplingConfig", self.sampling),
             ("KVCacheConfig", self.model.kv_cache),

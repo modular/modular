@@ -2566,10 +2566,9 @@ struct RolePipeline[
         Parameters:
             sub_stage_idx: Sub-stage index (0 to producer_sub_stages-1).
         """
-        constrained[
-            sub_stage_idx < Self.producer_sub_stages,
-            "sub_stage_idx out of range",
-        ]()
+        comptime assert (
+            sub_stage_idx < Self.producer_sub_stages
+        ), "sub_stage_idx out of range"
         return (
             self.producer_mbar_base
             + self.state.index() * UInt32(Self.producer_sub_stages)
@@ -2583,10 +2582,9 @@ struct RolePipeline[
         Parameters:
             sub_stage_idx: Sub-stage index (0 to consumer_sub_stages-1).
         """
-        constrained[
-            sub_stage_idx < Self.consumer_sub_stages,
-            "sub_stage_idx out of range",
-        ]()
+        comptime assert (
+            sub_stage_idx < Self.consumer_sub_stages
+        ), "sub_stage_idx out of range"
         return (
             self.consumer_mbar_base
             + self.state.index() * UInt32(Self.consumer_sub_stages)
@@ -3046,7 +3044,9 @@ struct FA4MiscMBars[
     @always_inline("nodebug")
     fn get_v_mbars(self) -> MBarType:
         """Returns base pointer for V pipeline barriers (MHA only)."""
-        constrained[Self.separate_kv, "Use get_kv_mbars for unified pipeline"]()
+        comptime assert (
+            Self.separate_kv
+        ), "Use get_kv_mbars for unified pipeline"
         return self.mbar_base + Self.V_offset
 
     @always_inline("nodebug")

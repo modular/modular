@@ -98,6 +98,10 @@ class MAXModelConfig(MAXModelConfigBase):
         ),
     )
 
+    pool_embeddings: bool = Field(
+        default=True, description="Whether to pool embedding outputs."
+    )
+
     max_length: int | None = Field(
         default=None,
         description=(

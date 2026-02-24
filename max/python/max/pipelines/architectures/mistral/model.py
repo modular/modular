@@ -42,11 +42,10 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.profiler import traced
@@ -76,7 +75,7 @@ class MistralInputs(ModelInputs):
     return_n_logits: Buffer
 
 
-class MistralModel(PipelineModel[TextContext], KVCacheMixin):
+class MistralModel(PipelineModelWithKVCache[TextContext]):
     model: Model
     """Compiled and initialized model ready for inference."""
 

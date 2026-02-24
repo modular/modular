@@ -38,11 +38,10 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.pipelines.lib.log_probabilities import (
@@ -76,7 +75,7 @@ class DeepseekV2Inputs(ModelInputs):
     return_n_logits: Buffer = field(kw_only=True)
 
 
-class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
+class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,

@@ -115,7 +115,7 @@ def test_unsafe_get_ref():
 
 def test_copy():
     var u1 = UnsafeUnion[Int32, Float32](Int32(42))
-    var u2 = u1  # Copy via __copyinit__
+    var u2 = u1  # Copy via copy ctor
     assert_equal(u2.unsafe_get[Int32](), 42)
 
     # Modify original, copy should be unchanged
@@ -126,7 +126,7 @@ def test_copy():
 
 def test_move():
     var u1 = UnsafeUnion[Int32, Float32](Int32(42))
-    var u2 = u1^  # Move via __moveinit__
+    var u2 = u1^  # Move via move constructor
     assert_equal(u2.unsafe_get[Int32](), 42)
 
 

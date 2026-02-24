@@ -601,7 +601,7 @@ fn uninit_move_n[
         behavior.
     """
 
-    comptime if T.__moveinit__is_trivial:
+    comptime if T.__move_ctor_is_trivial:
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:
@@ -663,7 +663,7 @@ fn uninit_copy_n[
         behavior.
     """
 
-    comptime if T.__copyinit__is_trivial:
+    comptime if T.__copy_ctor_is_trivial:
         comptime if overlapping:
             memmove(dest=dest, src=src, count=count)
         else:

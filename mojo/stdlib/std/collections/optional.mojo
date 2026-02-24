@@ -104,6 +104,18 @@ struct Optional[T: Movable](
     Currently T is required to be a `Copyable` so we can implement
     copy/move for Optional and allow it to be used in collections itself.
 
+    ## Layout
+
+    The layout of `Optional` is not guaranteed and may change at any time.
+    The implementation may apply niche optimizations (for example, storing the
+    `None` sentinel inside spare bits of `T`) that alter the resulting layout.
+    Do not rely on `size_of[Optional[T]]()` or `align_of[Optional[T]]()` being
+    stable across compiler versions. The only guarantee is that the size and
+    alignment will be at least as large as those of `T` itself.
+
+    If you need to inspect the current size or alignment, use `size_of` and
+    `align_of`, but treat the results as non-stable implementation details.
+
     Examples:
 
     ```mojo

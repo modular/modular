@@ -210,7 +210,6 @@ class Qwen3Config(Llama3Config):
             devices=base_config.devices,
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
-            dist_gemm_config=base_config.dist_gemm_config,
             # MoE parameters
             num_experts=num_experts,
             num_experts_per_tok=num_experts_per_tok,

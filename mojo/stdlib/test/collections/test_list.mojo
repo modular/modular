@@ -532,7 +532,7 @@ def test_list_extend_non_trivial():
     # Tests three things:
     #   - extend() for non-plain-old-data types
     #   - extend() with mixed-length self and other lists
-    #   - extend() using optimal number of __moveinit__() calls
+    #   - extend() using optimal number of move constructor calls
 
     # Preallocate with enough capacity to avoid reallocation making the
     # move count checks below flaky.
@@ -569,7 +569,7 @@ def test_list_extend_trivial_copy_nontrivial_move():
 
     v1.extend(v2^)
 
-    # `extend()` should call __moveinit__, not perform even a trivially copy.
+    # `extend()` should call move constructor, not perform any copies.
     assert_equal(v1[0].move_count, 2)
 
 
@@ -638,7 +638,7 @@ def test_no_extra_copies_with_sugared_set_by_field():
     assert_equal(0, list[0][1].counter.copy_count)
 
 
-# Ensure correct behavior of __copyinit__
+# Ensure correct behavior of copy ctor
 # as reported in GH issue 27875 internally and
 # https://github.com/modular/modular/issues/1493
 def test_list_copy_constructor():
@@ -794,7 +794,7 @@ def test_list_realloc_trivial_copy_nontrivial_move():
 
     lst.reserve(10)
 
-    # Reallocating the list should call __moveinit__(), not perform a copy.
+    # Reallocating the list should call move constructor, not perform any copies.
     assert_equal(lst[0].move_count, 2)
 
 

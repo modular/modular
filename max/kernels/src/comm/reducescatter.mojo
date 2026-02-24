@@ -126,7 +126,7 @@ struct ReduceScatterConfig[
         num_elements: Int,
         threads_per_gpu: Int,
     ):
-        constrained[Self.ngpus > 1, "ngpus must be greater than 1"]()
+        comptime assert Self.ngpus > 1, "ngpus must be greater than 1"
         self.stride = threads_per_gpu * Self.simd_width
         # --- Data Partitioning ---
         # Data are divided as evenly as possible amongst ngpus.
@@ -288,7 +288,7 @@ fn _reducescatter_p2p[
     use_multimem: Bool = False,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -379,7 +379,7 @@ fn reducescatter[
     use_multimem: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from math import align_up, erf, exp, rsqrt, log, sin, sqrt, tanh
+from math import erf, exp, rsqrt, log, sin, sqrt, tanh
 from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
 from sys.intrinsics import strided_load
 
@@ -22,7 +22,7 @@ from buffer import NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200
-from internal_utils import arg_parse, parse_shape
+from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
 from memory import LegacyUnsafePointer
 
@@ -127,47 +127,38 @@ fn run_elementwise[
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 
-    # Choose a size larger than the two times the L2 cache
-    # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
-    var stride = align_up(N, pack_size)
-    var N_cache = (
-        align_up(128 * 1024 * 1024, stride * size_of[dtype]())
-        // size_of[dtype]()
-    )
+    # Cache busting buffers: sized to exceed 2x GPU cache.
+    var cb_in = CacheBustingBuffer[dtype](N, pack_size, ctx)
+    var cb_out = CacheBustingBuffer[dtype](N, pack_size, ctx)
 
     var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        N_cache, alignment=align
+        cb_in.alloc_size(), alignment=align
     )
     var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        N_cache, alignment=align
+        cb_out.alloc_size(), alignment=align
     )
 
     var in_host = NDBuffer[dtype, rank](in_host_ptr, dims)
     var out_host = NDBuffer[dtype, rank](out_host_ptr, dims)
 
-    for i in range(N_cache):
+    for i in range(cb_in.alloc_size()):
         in_host_ptr[i] = Scalar[dtype](i)
 
-    var in_buffer = ctx.enqueue_create_buffer[dtype](N_cache)
-    var out_buffer = ctx.enqueue_create_buffer[dtype](N_cache)
-
-    ctx.enqueue_copy(in_buffer, in_host.data)
+    ctx.enqueue_copy(cb_in.device_buffer(), in_host.data)
 
     @parameter
-    @__copy_capture(stride, N_cache)
+    @__copy_capture(cb_in, cb_out)
     @always_inline
     fn bench_func(mut b: Bencher):
         @parameter
-        @__copy_capture(N, stride)
+        @__copy_capture(N)
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            # cycle through chunks of N_cache to ensure the tensor is not in the cache each iteration
-            var offset = (iteration * stride) % N_cache
             var in_tensor = NDBuffer[dtype, rank](
-                in_buffer.unsafe_ptr() + offset, dims
+                cb_in.offset_ptr(iteration), dims
             )
             var out_tensor = NDBuffer[dtype, rank](
-                out_buffer.unsafe_ptr() + offset, dims
+                cb_out.offset_ptr(iteration), dims
             )
 
             @always_inline
@@ -224,10 +215,10 @@ fn run_elementwise[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy(out_host.data, out_buffer)
+    ctx.enqueue_copy(out_host.data, cb_out.device_buffer())
 
-    _ = in_buffer
-    _ = out_buffer
+    _ = cb_in
+    _ = cb_out
     in_host_ptr.free()
     out_host_ptr.free()
 

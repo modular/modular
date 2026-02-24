@@ -128,7 +128,7 @@ def test_step() -> None:
             kv_manager.alloc(
                 ctx, replica_idx=i % data_parallel_degree, num_steps=1
             )
-        kv_manager.get_runtime_inputs(batches_by_replica)
+        kv_manager.runtime_inputs(batches_by_replica)
         for ctx in batch:
             ctx.update(42)
         kv_manager.step(batches_by_replica)
@@ -145,11 +145,11 @@ def test_step() -> None:
             )
 
 
-def test_get_runtime_inputs_requires_per_replica_batches() -> None:
+def test_runtime_inputs_requires_per_replica_batches() -> None:
     kv_manager = _create_kv_manager(data_parallel_degree=2, num_devices=2)
 
     with pytest.raises(ValueError):
-        kv_manager.get_runtime_inputs([[]])
+        kv_manager.runtime_inputs([[]])
 
 
 @dataclass
@@ -178,7 +178,7 @@ def test_increment_cache_lengths() -> None:
         batch.append(context)
         batches_by_replica[replica_idx].append(context)
 
-    kv_cache_inputs = kv_manager.get_runtime_inputs(batches_by_replica)
+    kv_cache_inputs = kv_manager.runtime_inputs(batches_by_replica)
 
     # Check that the cache lengths are initialized to 0.
     assert len(kv_cache_inputs) == 2

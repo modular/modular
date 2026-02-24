@@ -135,7 +135,7 @@ def test_kv_cache_radd_basic() -> None:
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch])[0]
 
     a_np = np.ones(
         (a_length, kv_params.n_kv_heads * kv_params.head_dim * 2),

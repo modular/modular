@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from math import align_up, ceildiv
+from math import ceildiv
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
 
 from benchmark import (
@@ -34,7 +34,7 @@ from gpu.host import (
     DeviceMulticastBuffer,
     get_gpu_target,
 )
-from internal_utils import arg_parse, human_readable_size
+from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
 
 from testing import assert_true
 
@@ -99,10 +99,8 @@ fn bench_broadcast[
     var length = num_bytes // size_of[dtype]()
 
     comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
-    var stride = align_up(length, simd_size)
-    comptime m512 = 512 * 1024 * 1024
-    var cache_elems = (
-        align_up(m512, stride * size_of[dtype]()) // size_of[dtype]()
+    var cb_in = CacheBustingBuffer[dtype](
+        length, simd_size, list_of_ctx[root], cache_busting
     )
 
     # Create output device buffers for all GPUs
@@ -168,14 +166,13 @@ fn bench_broadcast[
             )
 
     # Create and initialize host buffer for root with position-based values
-    var host_buffer = alloc[Scalar[dtype]](cache_elems)
-    for i in range(cache_elems // stride):
+    var host_buffer = alloc[Scalar[dtype]](cb_in.alloc_size())
+    for i in range(cb_in.alloc_size() // cb_in.stride):
         for j in range(length):
-            host_buffer[i * stride + j] = _input_value[dtype](root, j)
+            host_buffer[i * cb_in.stride + j] = _input_value[dtype](root, j)
 
-    # Create input buffer on root GPU and copy from host
-    var in_buf_dev = list_of_ctx[root].enqueue_create_buffer[dtype](cache_elems)
-    list_of_ctx[root].enqueue_copy(in_buf_dev, host_buffer)
+    # Copy host data to input buffer on root GPU
+    list_of_ctx[root].enqueue_copy(cb_in.device_buffer(), host_buffer)
 
     # Create NDBuffer wrappers for outputs
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
@@ -218,14 +215,8 @@ fn bench_broadcast[
         @parameter
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            # Offset the input buffer if cache_busting
-            var offset = 0
-
-            comptime if cache_busting:
-                offset = (cache_iter * stride) % cache_elems
-
             var in_buf_offset = NDBuffer[dtype, rank, MutAnyOrigin](
-                in_buf_dev.unsafe_ptr() + offset,
+                cb_in.offset_ptr(cache_iter),
                 DimList(length),
             )
 
@@ -280,7 +271,7 @@ fn bench_broadcast[
 
     # Create input buffer for verification (no cache offset)
     var in_buf_verify = NDBuffer[dtype, rank, MutAnyOrigin](
-        in_buf_dev.unsafe_ptr(),
+        cb_in.unsafe_ptr(),
         DimList(length),
     )
 
@@ -313,7 +304,7 @@ fn bench_broadcast[
     # Cleanup
     host_buffer.free()
     _ = signal_buffers^
-    _ = in_buf_dev^
+    _ = cb_in^
 
 
 def main():

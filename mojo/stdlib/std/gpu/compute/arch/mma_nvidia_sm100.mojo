@@ -747,26 +747,21 @@ struct UMMAInsDescriptor[
         )
         comptime available_scale_types = (DType.float8_e8m0fnu,)
 
-        constrained[
-            d_type in available_d_types,
-            String("Invalid d data type for UMMA instruction: ", d_type),
-        ]()
+        comptime assert d_type in available_d_types, String(
+            "Invalid d data type for UMMA instruction: ", d_type
+        )
 
-        constrained[
+        comptime assert (
             a_type in available_operand_types
-            and b_type in available_operand_types,
-            String(
-                "Currently only support E4M3 and E5M2 for UMMA kind: ",
-                Self.mma_kind,
-            ),
-        ]()
+            and b_type in available_operand_types
+        ), String(
+            "Currently only support E4M3 and E5M2 for UMMA kind: ",
+            Self.mma_kind,
+        )
 
-        constrained[
-            scale_type in available_scale_types,
-            String(
-                "Invalid scale data type for UMMA instruction: ", scale_type
-            ),
-        ]()
+        comptime assert scale_type in available_scale_types, String(
+            "Invalid scale data type for UMMA instruction: ", scale_type
+        )
 
         comptime a_type_bit = Self._insert_bit[7](
             0x0, UInt32(1) if a_type == DType.float8_e5m2 else UInt32(0)
@@ -807,26 +802,18 @@ struct UMMAInsDescriptor[
             DType.float8_e8m0fnu,
         )
 
-        constrained[
-            d_type in available_d_types,
-            String("Invalid d data type for UMMA instruction: ", d_type),
-        ]()
+        comptime assert d_type in available_d_types, String(
+            "Invalid d data type for UMMA instruction: ", d_type
+        )
 
-        constrained[
+        comptime assert (
             a_type in available_operand_types
-            and b_type in available_operand_types,
-            String(
-                "Currently only support E2M1 for UMMA kind: ",
-                Self.mma_kind,
-            ),
-        ]()
+            and b_type in available_operand_types
+        ), String("Currently only support E2M1 for UMMA kind: ", Self.mma_kind)
 
-        constrained[
-            scale_type in available_scale_types,
-            String(
-                "Invalid scale data type for UMMA instruction: ", scale_type
-            ),
-        ]()
+        comptime assert scale_type in available_scale_types, String(
+            "Invalid scale data type for UMMA instruction: ", scale_type
+        )
 
         comptime a_type_bit = Self._insert_bit[7](0x0, 1)
 
@@ -899,9 +886,9 @@ struct UMMAInsDescriptor[
                 | transpose_bit
             )
         else:
-            constrained[
-                False, String("Unsupported UMMA kind: ", Self.mma_kind)
-            ]()
+            comptime assert False, String(
+                "Unsupported UMMA kind: ", Self.mma_kind
+            )
             return Self(0x0)
 
     @staticmethod
@@ -965,9 +952,9 @@ struct UMMAInsDescriptor[
                 | transpose_bit
             )
         else:
-            constrained[
-                False, String("Unsupported UMMA kind: ", Self.mma_kind)
-            ]()
+            comptime assert False, String(
+                "Unsupported UMMA kind: ", Self.mma_kind
+            )
             return Self(0x0)
 
     @staticmethod
@@ -1437,14 +1424,13 @@ fn mma[
         sfb_tmem: The address of the block scale factor B in the tensor memory.
         c_scale: Scale factor for the C matrix, 0 or 1.
     """
-    constrained[
-        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
-    ]()
+    comptime assert (
+        _has_blackwell_tcgen05()
+    ), "tcgen05.mma not supported on this GPU"
 
-    constrained[
-        kind == UMMAKind.KIND_MXF8F6F4 or kind == UMMAKind.KIND_MXF4NVF4,
-        "Only MXF8F6F4 or MXF4NVF4 MMA kind supports block scale factors",
-    ]()
+    comptime assert (
+        kind == UMMAKind.KIND_MXF8F6F4 or kind == UMMAKind.KIND_MXF4NVF4
+    ), "Only MXF8F6F4 or MXF4NVF4 MMA kind supports block scale factors"
 
     @always_inline
     fn _get_scale_vector_size[kind: UMMAKind]() -> String:

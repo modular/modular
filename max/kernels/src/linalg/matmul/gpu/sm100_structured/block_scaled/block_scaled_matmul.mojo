@@ -130,7 +130,7 @@ fn _to_batched_3d(
     The input must be rank 2. Shape types (static/dynamic) are preserved.
     """
     comptime L = type_of(tensor).LayoutType
-    constrained[L.rank == 2, "expected rank-2 TileTensor"]()
+    comptime assert L.rank == 2, "expected rank-2 TileTensor"
     return tensor.reshape(
         row_major(
             Coord(

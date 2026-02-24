@@ -108,7 +108,7 @@ fn broadcast_impl[
     ],
     input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
     # using `prev` because otherwise computing `next_input_axis_stride` requires
-    # dim[axis+1](), which requires more `constrained` to keep in bound
+    # dim[axis+1](), which requires more `comptime assert` to keep in bound
     input_prev_axis_stride: Int,
     output_prev_axis_stride: Int,
     input_offset: Int,

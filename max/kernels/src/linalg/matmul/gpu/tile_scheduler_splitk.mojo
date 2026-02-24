@@ -46,23 +46,20 @@ fn _check_scheduler_constraints[
 ]():
     comptime num_k_iters = ceildiv(prob_shape_nk[1], tile_shape[2])
 
-    constrained[
-        reduction_mode == ReductionMode.Deterministic,
-        "Currently SplitK only supports Deterministic reduction",
-    ]()
+    comptime assert (
+        reduction_mode == ReductionMode.Deterministic
+    ), "Currently SplitK only supports Deterministic reduction"
 
-    constrained[
-        splits <= UInt32(H100.sm_count),
-        "splits must be less than or equal to the number of SMs",
-    ]()
+    comptime assert splits <= UInt32(
+        H100.sm_count
+    ), "splits must be less than or equal to the number of SMs"
 
-    constrained[
-        splits <= UInt32(num_k_iters),
-        "splits must be less than or equal to the number of output tiles",
-    ]()
-    constrained[
-        (UInt32(num_k_iters) % splits) == 0, "BK must be divisible by splits"
-    ]()
+    comptime assert splits <= UInt32(
+        num_k_iters
+    ), "splits must be less than or equal to the number of output tiles"
+    comptime assert (
+        UInt32(num_k_iters) % splits
+    ) == 0, "BK must be divisible by splits"
 
 
 @fieldwise_init
@@ -447,10 +444,9 @@ struct SplitKTileScheduler[
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
     ) -> Int:
-        constrained[
-            accum_type == DType.float32,
-            "Only support float32 accumulator type",
-        ]()
+        comptime assert (
+            accum_type == DType.float32
+        ), "Only support float32 accumulator type"
 
         var num_output_tiles = Self.get_num_tiles(
             problem_shape, dyn_tile_shape, dyn_cluster_shape
@@ -664,10 +660,9 @@ struct SplitKTileScheduler[
         comptime BM = workspace_layout.shape[1].value()
         comptime BN = workspace_layout.shape[2].value()
 
-        constrained[
-            accum_type == DType.float32,
-            "Only support float32 accumulator type",
-        ]()
+        comptime assert (
+            accum_type == DType.float32
+        ), "Only support float32 accumulator type"
 
         comptime num_mma = c_reg_tile.layout.shape[0].value()
         comptime c_frag_size = c_reg_tile.layout.shape[1].value()
@@ -712,10 +707,9 @@ struct SplitKTileScheduler[
         comptime BM = workspace_layout.shape[1].value()
         comptime BN = workspace_layout.shape[2].value()
 
-        constrained[
-            accum_type == DType.float32,
-            "Only support float32 accumulator type",
-        ]()
+        comptime assert (
+            accum_type == DType.float32
+        ), "Only support float32 accumulator type"
 
         comptime num_mma = c_reg_tile.layout.shape[0].value()
         comptime c_frag_size = c_reg_tile.layout.shape[1].value()

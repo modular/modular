@@ -16,6 +16,9 @@ import math
 from max import functional as F
 from max.dtype import DType
 from max.nn import Linear, Module
+from max.pipelines.architectures.common_layers.activation import (
+    activation_function_from_name,
+)
 from max.tensor import Tensor
 
 
@@ -205,12 +208,8 @@ class TimestepEmbedding(Module[..., Tensor]):
             )
         else:
             self.cond_proj = None
-        if act_fn == "silu" or act_fn == "swish":
-            self.act_fn = F.silu
-        elif act_fn == "gelu":
-            self.act_fn = F.gelu
-        else:
-            raise ValueError(f"Invalid activation function: {act_fn}")
+
+        self.act_fn = activation_function_from_name(act_fn)
 
         if out_dim is not None:
             time_embed_dim_out = out_dim
@@ -225,12 +224,8 @@ class TimestepEmbedding(Module[..., Tensor]):
 
         if post_act_fn is None:
             self.post_act_fn = None
-        elif post_act_fn == "silu" or post_act_fn == "swish":
-            self.post_act_fn = F.silu
-        elif post_act_fn == "gelu":
-            self.post_act_fn = F.gelu
         else:
-            raise ValueError(f"Invalid post activation function: {post_act_fn}")
+            self.post_act_fn = activation_function_from_name(post_act_fn)
 
     def forward(
         self, sample: Tensor, condition: Tensor | None = None
@@ -282,12 +277,7 @@ class PixArtAlphaTextProjection(Module[[Tensor], Tensor]):
             out_features = hidden_size
         self.linear_1 = Linear(in_features, hidden_size, bias=True)
         self.linear_2 = Linear(hidden_size, out_features, bias=True)
-        if act_fn == "gelu_tanh":
-            self.act_fn = lambda x: F.gelu(x, approximate="tanh")
-        elif act_fn == "silu":
-            self.act_fn = F.silu
-        else:
-            raise ValueError(f"Invalid activation function: {act_fn}")
+        self.act_fn = activation_function_from_name(act_fn)
 
     def forward(self, caption: Tensor) -> Tensor:
         """Project caption embeddings.

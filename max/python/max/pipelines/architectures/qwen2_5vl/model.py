@@ -47,11 +47,10 @@ from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
@@ -130,7 +129,7 @@ class Qwen2_5VLInputs(ModelInputs):
 
 
 class Qwen2_5VLModel(
-    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextAndVisionContext]
 ):
     """A Qwen2.5VL pipeline model for multimodal text generation."""
 
