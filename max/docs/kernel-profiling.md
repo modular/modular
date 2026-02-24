@@ -5,7 +5,7 @@ NVIDIA hardware.
 
 Here's a screengrab of a sample profile opened in Nsight Compute:
 
-![NSYS Screenshot](../images/nsys.png)
+![NSYS Screenshot](images/nsys.png)
 
 ## Installation
 
