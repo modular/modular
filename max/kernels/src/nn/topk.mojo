@@ -1602,10 +1602,18 @@ fn topk_gpu[
         internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
         internal_out_vals = reshape(out_vals, internal_out_vals_shape)
 
-    # Calculate the number of blocks per input
-    var num_blocks_per_input_ = min(
-        ceildiv(N, block_size_), 8
-    ) if not num_blocks_per_input else num_blocks_per_input.value()
+    # Calculate the number of blocks per input.
+    # Target enough total blocks (batch_size * num_blocks_per_input) to
+    # saturate the GPU's SMs. 128 is a good target for modern GPUs.
+    var num_blocks_per_input_: Int
+    if num_blocks_per_input:
+        num_blocks_per_input_ = num_blocks_per_input.value()
+    else:
+        comptime target_total_blocks = 128
+        num_blocks_per_input_ = min(
+            ceildiv(N, block_size_),
+            max(ceildiv(target_total_blocks, internal_bs), 1),
+        )
 
     # Define shape for the kernel's internal cache buffers
     var internal_cache_shape = IndexList[2](
