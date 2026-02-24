@@ -260,12 +260,16 @@ class DeviceEvent:
         event.synchronize()
     """
 
-    def __init__(self, device: Device) -> None:
+    def __init__(self, device: Device, enable_timing: bool = False) -> None:
         """
         Creates an event for synchronization on the specified device.
 
         Args:
             device (Device): The device on which to create the event.
+            enable_timing (bool): If True, enable GPU timing on this event.
+                Events created with ``enable_timing=True`` can be used with
+                :meth:`elapsed_time` to measure GPU execution time.
+                Defaults to False.
 
         Raises:
             ValueError: If event creation failed.
@@ -276,6 +280,7 @@ class DeviceEvent:
 
             device = driver.Accelerator()
             event = driver.DeviceEvent(device)
+            timed_event = driver.DeviceEvent(device, enable_timing=True)
         """
 
     def synchronize(self) -> None:
@@ -294,6 +299,42 @@ class DeviceEvent:
             bool: True if the event is complete, otherwise false.
         Raises:
           ValueError: If querying the event status returned an error
+        """
+
+    def elapsed_time(self, end_event: DeviceEvent) -> float:
+        """
+        Returns the elapsed GPU time in milliseconds between this event
+        and ``end_event``.
+
+        Both events must have been created with ``enable_timing=True``
+        and recorded on a stream before calling this method. The end
+        event must be synchronized before calling this method.
+
+        Args:
+            end_event (DeviceEvent): The ending event.
+
+        Returns:
+            float: Elapsed time in milliseconds.
+
+        Raises:
+            RuntimeError: If either event was not created with timing
+                enabled, or if the events have not been recorded.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            start = driver.DeviceEvent(device, enable_timing=True)
+            end = driver.DeviceEvent(device, enable_timing=True)
+
+            stream = device.default_stream
+            stream.record_event(start)
+            # ... GPU work ...
+            stream.record_event(end)
+            end.synchronize()
+
+            elapsed_ms = start.elapsed_time(end)
         """
 
     def __str__(self) -> str: ...

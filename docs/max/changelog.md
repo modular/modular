@@ -55,6 +55,10 @@ what we publish.
 
 #### Python API {#26-2-max-python}
 
+- `DeviceEvent` now accepts an `enable_timing=True` parameter to enable GPU
+  event timing. Use `start.elapsed_time(end)` to measure elapsed GPU time in
+  milliseconds between two timing-enabled events.
+
 - Keep a global MLIR context active and drop per-graph context plumbing so
   algebraic dims and graph/custom op construction work without an explicit
   context manager. Threadpool-backed MAX paths now scope worker-thread MLIR

@@ -80,3 +80,29 @@ class TestEventRecording:
         event2.synchronize()
         assert event1.is_ready()
         assert event2.is_ready()
+
+    def test_elapsed_time_with_compute(
+        self, device: driver.Accelerator, model: Any
+    ) -> None:
+        """Test elapsed_time around actual GPU compute returns positive time."""
+        width = 1024 * 1024
+        a_buf = Buffer(DType.int32, [width], device=device, pinned=True)
+        a_buf.to_numpy().fill(1)
+        b_buf = Buffer(DType.int32, [width], device=device, pinned=True)
+        b_buf.to_numpy().fill(2)
+
+        a_dev = a_buf.to(device)
+        b_dev = b_buf.to(device)
+
+        start = driver.DeviceEvent(device, enable_timing=True)
+        end = driver.DeviceEvent(device, enable_timing=True)
+
+        stream = device.default_stream
+        stream.record_event(start)
+        model.execute(a_dev, b_dev)
+        stream.record_event(end)
+        end.synchronize()
+
+        elapsed = start.elapsed_time(end)
+        assert isinstance(elapsed, float)
+        assert elapsed > 0.0, f"Expected positive elapsed time, got {elapsed}"
