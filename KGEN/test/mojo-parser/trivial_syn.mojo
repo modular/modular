@@ -42,27 +42,24 @@ struct C[X: ImplicitlyCopyable, Y: ImplicitlyCopyable](
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Copyable" {
     # CHECK-NEXT:      kgen.witness "__init__{{.*}}(*, "copy":{{.*}}"
     # CHECK-NEXT:      kgen.witness "copy{{.*}}"
-    # CHECK-NEXT:      kgen.witness "__copy_ctor_is_trivial" : !Bool = cond(
-    # CHECK-SAME:      #kgen.get_witness<:[[X_TYPE]] X, "std::builtin::stubs::Copyable", "__copy_ctor_is_trivial">,
-    # CHECK-SAME:        #kgen.get_witness<:[[Y_TYPE]] Y, "std::builtin::stubs::Copyable", "__copy_ctor_is_trivial">,
-    # CHECK-SAME:        #kgen.get_witness<:[[X_TYPE]] X, "std::builtin::stubs::Copyable", "__copy_ctor_is_trivial">)
+    # CHECK-NEXT:      kgen.witness "__copy_ctor_is_trivial" : !Bool =
+    # CHECK-SAME:     {_mlir_value: i1 = and(#lit.struct.extract<:!Bool #kgen.get_witness<:[[X_TYPE]] X, "{{.*}}::Copyable", "__copy_ctor_is_trivial">, "_mlir_value">,
+    # CHECK-SAME:                            #lit.struct.extract<:!Bool #kgen.get_witness<:[[Y_TYPE]] Y, "{{.*}}::Copyable", "__copy_ctor_is_trivial">, "_mlir_value">)}
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyCopyable" {
     # CHECK-NEXT:   }
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::ImplicitlyDestructible" {
     # CHECK-NEXT:    kgen.witness "__del__{{.*}}"
-    # CHECK-NEXT:    kgen.witness "__del__is_trivial" : !Bool = cond(
-    # CHECK-SAME:      #kgen.get_witness<:[[X_TYPE]] X, "std::builtin::stubs::ImplicitlyDestructible", "__del__is_trivial">,
-    # CHECK-SAME:        #kgen.get_witness<:[[Y_TYPE]] Y, "std::builtin::stubs::ImplicitlyDestructible", "__del__is_trivial">,
-    # CHECK-SAME:        #kgen.get_witness<:[[X_TYPE]] X, "std::builtin::stubs::ImplicitlyDestructible", "__del__is_trivial">)
+    # CHECK-NEXT:    kgen.witness "__del__is_trivial" : !Bool =
+    # CHECK-SAME:     {_mlir_value: i1 = and(#lit.struct.extract<:!Bool #kgen.get_witness<:[[X_TYPE]] X, "{{.*}}::ImplicitlyDestructible", "__del__is_trivial">, "_mlir_value">,
+    # CHECK-SAME:                            #lit.struct.extract<:!Bool #kgen.get_witness<:[[Y_TYPE]] Y, "{{.*}}::ImplicitlyDestructible", "__del__is_trivial">, "_mlir_value">)}
 
     # CHECK-LABEL:  kgen.conformance @"{{.*}}::Movable" {
     # CHECK-NEXT:    kgen.witness "__init__{{.*}}(*, "take":{{.*}}"
-    # CHECK-NEXT:    kgen.witness "__move_ctor_is_trivial" : !Bool = cond(
-    # CHECK-SAME:      #kgen.get_witness<:[[X_TYPE]] X, "std::builtin::stubs::Movable", "__move_ctor_is_trivial">,
-    # CHECK-SAME:        #kgen.get_witness<:[[Y_TYPE]] Y, "std::builtin::stubs::Movable", "__move_ctor_is_trivial">,
-    # CHECK-SAME:        #kgen.get_witness<:[[X_TYPE]] X, "std::builtin::stubs::Movable", "__move_ctor_is_trivial">)
+    # CHECK-NEXT:    kgen.witness "__move_ctor_is_trivial" : !Bool =
+    # CHECK-SAME:     {_mlir_value: i1 = and(#lit.struct.extract<:!Bool #kgen.get_witness<:[[X_TYPE]] X, "{{.*}}::Movable", "__move_ctor_is_trivial">, "_mlir_value">,
+    # CHECK-SAME:                            #lit.struct.extract<:!Bool #kgen.get_witness<:[[Y_TYPE]] Y, "{{.*}}::Movable", "__move_ctor_is_trivial">, "_mlir_value">)}
 
 
 # CHECK-LABEL: lit.struct.decl @StructMLIRTypeOnly
@@ -101,3 +98,12 @@ struct Wrapper(Copyable):
     # CHECK-DAG: lit.alias.decl __del__is_trivial: !Bool = <{:i1 0}>
     # CHECK-DAG: lit.alias.decl __move_ctor_is_trivial: !Bool = <{:i1 0}>
     # CHECK-DAG: lit.alias.decl __copy_ctor_is_trivial: !Bool = <{:i1 0}>
+
+
+# CHECK-LABEL: lit.struct.decl @TrivialFieldGen
+# CHECK: lit.alias.decl __del__is_trivial: !Bool = <#kgen.get_witness<:!Movable T, "{{.*}}::ImplicitlyDestructible", "__del__is_trivial">>
+# CHECK: lit.alias.decl __move_ctor_is_trivial: !Bool = <#kgen.get_witness<:!Movable T, "{{.*}}::Movable", "__move_ctor_is_trivial">>
+struct TrivialFieldGen[T: Movable](Movable):
+    var z: Self.T
+    var y: Int
+    var q: Self.T

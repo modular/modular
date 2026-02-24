@@ -986,13 +986,41 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     }
   }
 
+  // When forming a&b&a we can just treat subsequent uses of 'a' as true.
+  SmallPtrSet<Attribute, 4> seenExprs;
+  auto getI1Constant = [&](CValue value) -> std::optional<bool> {
+    SyntheticNode node(structDecl.getLoc());
+    PValue i1 =
+        emitter.emitI1({value, node}, EC_OperatorOperandValue).getIfPValue();
+    if (IntegerAttr asIntAttr = sugarDynCastIfPresent<IntegerAttr>(i1.get()))
+      return asIntAttr.getValue().isOne();
+    // No need to double check the same value. This crushes sugar bloat.
+    if (!seenExprs.insert(i1.get()).second)
+      return true;
+    return {};
+  };
+
   // This emits an "and" as a PValue expression, maintaining the type of lhs/rhs
   // (which are Bool) instead of turning them into i1.
-  auto emitAnd = [this, &emitter](PValue lhs, PValue rhs) {
-    SyntheticNode synthNode(structDecl.getLoc());
-    PValue lhsI1Val =
-        emitter.emitI1({lhs, synthNode}, EC_OperatorOperandValue).getIfPValue();
-    return ParamOperatorAttr::get(POC::Cond, {lhsI1Val, rhs, lhs});
+  auto emitAnd = [&](CValue lhs, CValue rhs) -> CValue {
+    SyntheticNode node(structDecl.getLoc());
+    // Short circuit obvious cases to avoid piling up sugar.
+    if (std::optional<bool> lhsI1 = getI1Constant(lhs)) {
+      if (*lhsI1)
+        return rhs;
+      return lhs;
+    }
+    if (std::optional<bool> rhsI1 = getI1Constant(rhs)) {
+      if (*rhsI1)
+        return lhs;
+      return rhs;
+    }
+
+    ValueDest dest(EC_OperatorOperandValue);
+    return emitter.emitNamedMethodCall(
+        "__and__",
+        CallOperands(CallSyntax::kOperator, &node, {{lhs, node}, {rhs, node}}),
+        dest);
   };
 
   ASTDecl *traitDecl = shared.lookupBuiltinTrait(
@@ -1001,7 +1029,7 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
       StringAttr::get(getContext(), Twine(baseName) + "is_trivial");
   auto witnessSymbolName = getFlattenedSymbolName(traitDecl->getSymbolRef());
 
-  TypedAttr ret = emitBoolAttr(BoolAttr::get(emitter.getContext(), true));
+  CValue ret = emitBoolAttr(BoolAttr::get(emitter.getContext(), true));
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     // TODO: Add a nicer accessor.
     auto fieldEntries = structDecl.lookupInCurrentScope(fieldOp.getNameAttr());
@@ -1023,5 +1051,6 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     ret = emitAnd(ret, fieldIsTrivial);
   }
 
-  return ret;
+  assert(ret.getIfPValue() && "expected a Bool constant");
+  return ret.getIfPValue();
 }
