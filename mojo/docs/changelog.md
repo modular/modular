@@ -206,6 +206,10 @@ what we publish.
 
 ### Library changes
 
+- `String` and `StringSlice` now have a `zfill()` method, matching Python's
+  string API. It pads the string on the left with zeros, placing zeros after a
+  leading `+` or `-` sign character.
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 
