@@ -202,14 +202,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    force: bool = Field(
-        default=False,
-        description=(
-            "Skip validation of user provided flags against the architecture's "
-            "required arguments."
-        ),
-    )
-
     kvcache_ce_watermark: float = Field(
         default=0.95,
         description=(
@@ -743,7 +735,7 @@ class PipelineConfig(ConfigFileModel):
     def _validate_and_resolve_overlap_scheduler(self) -> None:
         self._validate_and_resolve_device_graph_capture()
 
-        if self.force:
+        if self.runtime.force:
             return
 
         # Automatically enable overlap scheduling for select architectures.
@@ -947,7 +939,7 @@ class PipelineConfig(ConfigFileModel):
                 "structured outputs not currently supported with speculative decoding enabled"
             )
 
-        if self.model.kv_cache.enable_prefix_caching and not self.force:
+        if self.model.kv_cache.enable_prefix_caching and not self.runtime.force:
             logging.warning(
                 "Prefix caching is not supported with speculative decoding. "
                 "Overriding user setting to False. Pass --force to bypass this "
@@ -991,7 +983,7 @@ class PipelineConfig(ConfigFileModel):
             )
 
         # Validate required arguments
-        if not self.force:
+        if not self.runtime.force:
             self._validate_required_arguments_against_architecture(arch)
 
         # Validate that model supports empty batches, if being requested.
@@ -1586,7 +1578,7 @@ class AudioGenerationConfig(PipelineConfig):
 
     @override
     def _validate_and_resolve_overlap_scheduler(self) -> None:
-        if self.force:
+        if self.runtime.force:
             return
 
         if self.enable_overlap_scheduler:
