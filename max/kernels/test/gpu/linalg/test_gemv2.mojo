@@ -18,10 +18,14 @@ from random import random_si64
 import linalg.matmul.vendor.blas as vendor_blas
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, get_gpu_target
+from gpu.host.info import B200
+from internal_utils import assert_almost_equal
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from linalg.gemv import gemv_blackwell_split_k
 from linalg.matmul.gpu import _matmul_gpu
 from memory import LegacyUnsafePointer
+from sys.info import simd_width_of
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -253,6 +257,139 @@ fn test[
     _ = c_device_ref_buffer^
 
 
+fn test_blackwell_split_k[
+    in_type: DType,
+    out_type: DType,
+    N: Int,
+    K: Int,
+](ctx: DeviceContext) raises:
+    comptime m = 1
+    comptime simd_width = simd_width_of[in_type, target = get_gpu_target()]()
+
+    print(
+        "blackwell_split_k:",
+        m,
+        "x",
+        N,
+        "x",
+        K,
+        in_type,
+        "->",
+        out_type,
+    )
+
+    # A is (1, K) row-major, B is (N, K) row-major (transposed weight)
+    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
+    comptime b_layout = Layout.row_major(N, K)
+    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+
+    # Host allocations
+    var a_host_ptr = UnsafePointer[Scalar[in_type]].alloc(m * K)
+    var b_host_ptr = UnsafePointer[Scalar[in_type]].alloc(N * K)
+    var c_host_ptr = UnsafePointer[Scalar[out_type]].alloc(m * N)
+    var c_host_ref_ptr = UnsafePointer[Scalar[out_type]].alloc(m * N)
+
+    comptime rand_min = -100
+    comptime rand_max = 100
+
+    for i in range(m * K):
+        a_host_ptr[i] = random_si64(rand_min, rand_max).cast[in_type]()
+
+    for i in range(N * K):
+        b_host_ptr[i] = random_si64(rand_min, rand_max).cast[in_type]()
+
+    for i in range(m * N):
+        c_host_ptr[i] = 0
+        c_host_ref_ptr[i] = 0
+
+    # Device allocations
+    var a_device_buffer = ctx.enqueue_create_buffer[in_type](m * K)
+    var b_device_buffer = ctx.enqueue_create_buffer[in_type](N * K)
+    var c_device_buffer = ctx.enqueue_create_buffer[out_type](m * N)
+    var c_device_ref_buffer = ctx.enqueue_create_buffer[out_type](m * N)
+
+    ctx.enqueue_copy(a_device_buffer, a_host_ptr)
+    ctx.enqueue_copy(b_device_buffer, b_host_ptr)
+    ctx.enqueue_copy(c_device_buffer, c_host_ptr)
+
+    # Create LayoutTensors for our kernel
+    var a_tensor = LayoutTensor[in_type, a_layout](
+        a_device_buffer.unsafe_ptr(),
+        RuntimeLayout[a_layout].row_major(IndexList[2](m, K)),
+    )
+    var b_tensor = LayoutTensor[in_type, b_layout](
+        b_device_buffer.unsafe_ptr(),
+        RuntimeLayout[b_layout].row_major(IndexList[2](N, K)),
+    )
+    var c_tensor = LayoutTensor[out_type, c_layout](
+        c_device_buffer.unsafe_ptr(),
+        RuntimeLayout[c_layout].row_major(IndexList[2](m, N)),
+    )
+
+    gemv_blackwell_split_k[
+        out_type,
+        in_type,
+        in_type,
+        c_layout,
+        a_layout,
+        b_layout,
+        simd_width=simd_width,
+        static_N=N,
+    ](c_tensor, a_tensor, b_tensor, N, K, ctx)
+
+    ctx.synchronize()
+    ctx.enqueue_copy(c_host_ptr, c_device_buffer)
+
+    # Reference via vendor BLAS
+    comptime static_a_shape = DimList(Dim(), K)
+    comptime static_b_shape = DimList(N, K)
+    comptime static_c_shape = DimList(Dim(), N)
+
+    var a_nd = NDBuffer[in_type, 2, _, static_a_shape](
+        a_device_buffer.unsafe_ptr(),
+        DimList(m, K),
+    )
+    var b_nd = NDBuffer[in_type, 2, _, static_b_shape](
+        b_device_buffer.unsafe_ptr(),
+        DimList(N, K),
+    )
+    var c_ref_nd = NDBuffer[out_type, 2, _, static_c_shape](
+        c_device_ref_buffer.unsafe_ptr(),
+        DimList(m, N),
+    )
+
+    vendor_blas.matmul(
+        ctx,
+        c_ref_nd,
+        a_nd,
+        b_nd,
+        c_row_major=True,
+        transpose_b=True,
+    )
+
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref_buffer)
+    ctx.synchronize()
+
+    assert_almost_equal(
+        c_host_ptr,
+        c_host_ref_ptr,
+        m * N,
+        atol=0.0001,
+        rtol=1e-2,
+    )
+    print("PASS")
+
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device_buffer^
+    _ = b_device_buffer^
+    _ = c_device_buffer^
+    _ = c_device_ref_buffer^
+
+
 def main():
     var bench = Bench()
 
@@ -333,5 +470,41 @@ def main():
             N = Int(4096),
             K = Int(4095),
         ](bench, ctx, 1, 4096, 4095)
+
+        # Blackwell split-k tests (B200 only)
+        comptime is_b200 = ctx.default_device_info == B200
+
+        @parameter
+        if is_b200:
+
+            @parameter
+            for shape in [
+                (4096, 4096),
+                (2048, 16384),
+                (4096, 16384),
+                (6656, 16384),
+                (13312, 16384),
+                (2304, 16384),
+                (4608, 16384),
+                (16384, 2048),
+                (16384, 4096),
+                (16384, 6656),
+                (16384, 13312),
+            ]:
+                # FP8 -> bfloat16
+                test_blackwell_split_k[
+                    DType.float8_e4m3fn,
+                    DType.bfloat16,
+                    N = shape[0],
+                    K = shape[1],
+                ](ctx)
+
+                # bfloat16 -> bfloat16
+                test_blackwell_split_k[
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    N = shape[0],
+                    K = shape[1],
+                ](ctx)
 
     bench.dump_report()

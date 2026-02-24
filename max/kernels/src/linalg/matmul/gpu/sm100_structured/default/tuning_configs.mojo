@@ -1538,3 +1538,41 @@ fn _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
     ]
 
     return materialize[config_list]()
+
+
+# ===----------------------------------------------------------------------=== #
+# GEMV SM100 configs (M=1, transpose_b=True)
+# ===----------------------------------------------------------------------=== #
+
+
+struct TuningConfigGEMV_SM100(TrivialRegisterPassable, TuningConfig):
+    var N: Int
+    var K: Int
+    var num_threads: Int
+    var tile_n: Int
+
+    fn __init__(
+        out self,
+        N: Int,
+        K: Int,
+        num_threads: Int = 128,
+        tile_n: Int = 4,
+    ):
+        self.N = N
+        self.K = K
+        self.num_threads = num_threads
+        self.tile_n = tile_n
+
+    fn __str__(self) -> String:
+        return String("gemv config: n:", self.N, "/k:", self.K)
+
+
+fn _get_tuning_list_gemv_sm100() -> List[TuningConfigGEMV_SM100]:
+    return [
+        TuningConfigGEMV_SM100(N=2048, K=16384, num_threads=256, tile_n=4),
+        TuningConfigGEMV_SM100(N=4096, K=16384, num_threads=256, tile_n=4),
+        TuningConfigGEMV_SM100(N=6656, K=16384, num_threads=256, tile_n=4),
+        TuningConfigGEMV_SM100(N=13312, K=16384, num_threads=256, tile_n=4),
+        TuningConfigGEMV_SM100(N=2304, K=16384, num_threads=256, tile_n=4),
+        TuningConfigGEMV_SM100(N=4608, K=16384, num_threads=256, tile_n=4),
+    ]
