@@ -21,6 +21,7 @@ from layout.tma_async import (
     create_split_tma,
     RaggedTMA3DTile,
 )
+from math import ceildiv
 
 from utils import Index, IndexList
 
@@ -31,8 +32,9 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     """This serves as the trait to support arguments to our MHA kernel."""
 
     comptime dtype: DType
+    comptime scale_dtype: DType
     comptime page_size: Int
-    comptime quantization_enabled: Bool
+    comptime quantization_enabled: Bool = False
     comptime quantization_granularity: Int
 
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
@@ -46,6 +48,28 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         head_idx: UInt32,
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
+        ...
+
+    @always_inline
+    fn scales_block_paged_ptr(
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        ...
+
+    @always_inline
+    fn load_scale[
+        width: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int,
+    ) -> SIMD[Self.scale_dtype, width]:
         ...
 
     @always_inline
@@ -120,6 +144,7 @@ struct KVCacheMHAOperand[
     """
 
     comptime dtype = Self.cache_t.dtype
+    comptime scale_dtype = Self.cache_t.scale_dtype
     comptime page_size = Self.cache_t.page_size_
     comptime quantization_enabled = Self.cache_t.quantization_enabled
     comptime quantization_granularity = Self.cache_t.quantization_granularity
@@ -149,6 +174,32 @@ struct KVCacheMHAOperand[
     ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         return self.cache.block_paged_ptr[tile_size](
             Int(batch_idx), Int(start_tok_idx), Int(head_idx), Int(head_dim_idx)
+        )
+
+    @always_inline
+    fn scales_block_paged_ptr(
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        return self.cache.scales_block_paged_ptr(
+            batch_idx, start_tok_idx, head_idx, head_dim_idx
+        )
+
+    @always_inline
+    fn load_scale[
+        width: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int,
+    ) -> SIMD[Self.scale_dtype, width]:
+        return self.cache.load_scale[width=width](
+            batch_idx, head_idx, start_tok_idx, head_dim_idx
         )
 
     @always_inline
@@ -228,17 +279,32 @@ struct KVCacheMHAOperand[
         )
 
 
-struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
-    MHAOperand, TrivialRegisterPassable
-):
+struct LayoutTensorMHAOperand[
+    dtype_: DType,
+    layout: Layout,
+    scale_dtype_: DType = DType.float32,
+    scale_layout: Layout = Layout(),
+](MHAOperand, TrivialRegisterPassable):
     """An implementation for LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
+    comptime scale_dtype = Self.scale_dtype_
     comptime page_size = 0
-    comptime quantization_enabled = False
-    comptime quantization_granularity = 0
-    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
+    comptime layout_rank = Self.layout.rank()
+    comptime scale_rank = Self.scale_layout.rank()
+    comptime layout_dim: Int = Self.layout.shape[Self.layout_rank - 1].value()
+    comptime scale_dim: Int = Self.scale_layout.shape[
+        Self.scale_rank - 1
+    ].value()
+    comptime quantization_granularity: Int = ceildiv(
+        Self.layout_dim, Self.scale_dim
+    )
+    comptime quantization_enabled: Bool = Self.scale_layout.rank() != 0
 
+    var buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin]
+    var scale_buffer: LayoutTensor[
+        Self.scale_dtype, Self.scale_layout, MutAnyOrigin
+    ]
     comptime device_type: AnyType = Self
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
@@ -253,6 +319,19 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
         buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
     ):
         self.buffer = buffer
+        self.scale_buffer = LayoutTensor[
+            Self.scale_dtype, Self.scale_layout, MutAnyOrigin
+        ](UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]())
+
+    fn __init__(
+        out self,
+        buffer: LayoutTensor[Self.dtype, Self.layout, MutAnyOrigin],
+        scale_buffer: LayoutTensor[
+            Self.scale_dtype, Self.scale_layout, MutAnyOrigin
+        ],
+    ):
+        self.buffer = buffer
+        self.scale_buffer = scale_buffer
 
     @always_inline
     fn block_paged_ptr[
@@ -273,6 +352,43 @@ struct LayoutTensorMHAOperand[dtype_: DType, layout: Layout](
             )
         )
         return ret_ptr
+
+    @always_inline
+    fn scales_block_paged_ptr(
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        var ret_ptr = self.scale_buffer.ptr + self.scale_buffer._offset(
+            IndexList[self.scale_layout.rank()](
+                Int(batch_idx),
+                Int(start_tok_idx),
+                Int(head_idx),
+                Int(head_dim_idx // Self.quantization_granularity),
+            )
+        )
+        return ret_ptr
+
+    @always_inline
+    fn load_scale[
+        width: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int,
+    ) -> SIMD[Self.scale_dtype, width]:
+        return self.scale_buffer.load[width=width](
+            Index(
+                Int(batch_idx),
+                Int(start_tok_idx),
+                Int(head_idx),
+                Int(head_dim_idx // Self.quantization_granularity),
+            )
+        )
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
@@ -361,8 +477,8 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
     """An implementation for ragged LayoutTensor arguments to MHA kernels."""
 
     comptime dtype = Self.dtype_
+    comptime scale_dtype = DType.invalid
     comptime page_size = 0
-    comptime quantization_enabled = False
     comptime quantization_granularity = 0
     var buffer: LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
     var cache_row_offsets: LayoutTensor[
@@ -415,6 +531,28 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
             )
         )
         return ret_ptr
+
+    @always_inline
+    fn scales_block_paged_ptr(
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+
+    @always_inline
+    fn load_scale[
+        width: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int,
+    ) -> SIMD[Self.scale_dtype, width]:
+        return SIMD[Self.scale_dtype, width](0)
 
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
