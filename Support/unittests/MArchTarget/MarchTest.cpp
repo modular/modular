@@ -23,17 +23,20 @@ TEST(ArchTarget, GetFeatures) {
 
   MLIRContext ctx{MLIRContext::Threading::DISABLED};
   ctx.loadDialect<MDialect>();
-  auto targetInfo = M::getMArchFeatures(&ctx, "x86_64-unknown-linux-gnu",
-                                        "skylake-avx512", "generic", "");
+  auto targetInfo =
+      M::getMArchFeatures(&ctx, "x86_64-unknown-linux-gnu", "skylake-avx512",
+                          "generic", "", "", llvm::Reloc::Static);
   ASSERT_FALSE(targetInfo.isError()) << targetInfo.getError();
+  EXPECT_EQ(targetInfo->getRelocationModel(), llvm::Reloc::Static);
 
   targetInfo = M::getMArchFeatures(&ctx, "x86_64-apple-macosx11.0", "x86-64",
-                                   "apple", "");
+                                   "apple", "", "", llvm::Reloc::PIC_);
   ASSERT_FALSE(targetInfo.isError()) << targetInfo.getError();
   EXPECT_EQ(targetInfo->getArch(), "x86-64");
+  EXPECT_EQ(targetInfo->getRelocationModel(), llvm::Reloc::PIC_);
 
   targetInfo = M::getMArchFeatures(&ctx, "arm64-apple-macosx11.0", "arm64",
-                                   "apple-m1", "");
+                                   "apple-m1", "", "", llvm::Reloc::PIC_);
   ASSERT_FALSE(targetInfo.isError()) << targetInfo.getError();
   EXPECT_EQ(targetInfo->getArch(), "apple-m1");
 }

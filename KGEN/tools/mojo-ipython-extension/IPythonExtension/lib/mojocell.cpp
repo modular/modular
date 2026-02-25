@@ -370,8 +370,9 @@ static int build(llvm::StringRef code, llvm::StringRef inputName) {
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllAsmPrinters();
 
-  auto targetOr = getTargetInfoFor(&mlirCtx, options.targetTriple,
-                                   options.targetCpu, options.targetFeatures);
+  ErrorOr<TargetInfoAttr> targetOr = getTargetInfoFor(
+      &mlirCtx, options.targetTriple, options.targetCpu, options.targetFeatures,
+      /*mtune=*/"", options.targetAccelerator, options.relocModel);
   if (targetOr.isError())
     exit(101);
   TargetInfoAttr target = targetOr.takeValue();

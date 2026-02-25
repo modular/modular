@@ -539,15 +539,17 @@ ErrorOrSuccess M::parseTargetOptions(
   ErrorOr<TargetInfoAttr> targetOr = nullptr;
   if (!mArch.empty() || !mCpu.empty()) {
     // Use `-march` to determine the feature set.
-    targetOr = getMArchFeatures(&ctx, compilationOptions.targetTriple, mArch,
-                                mCpu, mTune);
+    targetOr = getMArchFeatures(
+        &ctx, compilationOptions.targetTriple, mArch, mCpu, mTune,
+        compilationOptions.targetAccelerator, compilationOptions.relocModel);
   } else {
     // Use the full triple, specific CPU, and manually specified features to
     // get the target info.
     targetOr = getTargetInfoFor(
         &ctx, compilationOptions.targetTriple, compilationOptions.targetCpu,
         compilationOptions.targetFeatures, /*tuneCpu=*/"",
-        /*acceleratorArch=*/compilationOptions.targetAccelerator);
+        /*acceleratorArch=*/compilationOptions.targetAccelerator,
+        compilationOptions.relocModel);
   }
   if (targetOr.isError())
     return targetOr.takeError();

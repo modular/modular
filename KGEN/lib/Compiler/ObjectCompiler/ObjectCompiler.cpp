@@ -1265,6 +1265,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                      << ", enableLLVMPerFunctionSplitting="
                      << options.enableLLVMPerFunctionSplitting
                      << ", emitAssembly=" << emitAssembly
+                     << ", relocModel=" << options.relocModel
                      << ", verboseOutput=" << options.verboseOutput << ')';
 
   AsyncRT::AnyAsyncValueRef output = cachedTransform(
