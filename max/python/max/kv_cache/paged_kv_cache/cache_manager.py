@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the :class:`PagedKVCacheManager` for managing paged KV cache with data and tensor parallelism."""
+
 from __future__ import annotations
 
 import dataclasses

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Builds computation graphs for incrementing cache lengths in ragged tensor operations."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

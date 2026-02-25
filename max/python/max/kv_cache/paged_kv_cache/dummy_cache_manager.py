@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides a no-op :class:`DummyKVCache` implementation for testing when KV caching is disabled."""
+
 from __future__ import annotations
 
 from typing import Any

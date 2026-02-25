@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines a central registry mapping KV cache strategies to their manager implementations."""
+
 from __future__ import annotations
 
 import logging
