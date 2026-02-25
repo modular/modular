@@ -57,9 +57,11 @@ class MoEQuantized(MoE):
         assert self.float8_config.input_scale.block_size is not None
         return self.float8_config.input_scale.block_size[1]
 
-    def _with_shared_expert(self, values: list[_T], shared: _T) -> list[_T]:
+    def _with_shared_expert(
+        self, values: list[_T], shared: _T | None
+    ) -> list[_T]:
         """Prepends shared expert value if fused shared expert is enabled."""
-        if self._fused_shared_expert:
+        if self._fused_shared_expert and shared is not None:
             assert self.has_shared_experts
             return [shared] + values
         return values
@@ -89,9 +91,12 @@ class MoEQuantized(MoE):
     def _collect_scale_2(self, proj_name: str) -> TensorValue:
         """Stacks per-expert secondary scales for NVFP4 kernels."""
         scales = [getattr(e, proj_name).weight_scale_2 for e in self.experts]
-        scales = self._with_shared_expert(
-            scales, getattr(self.shared_experts, proj_name).weight_scale_2
+        shared_scale = (
+            getattr(self.shared_experts, proj_name).weight_scale_2
+            if self.has_shared_experts
+            else None
         )
+        scales = self._with_shared_expert(scales, shared_scale)
         return ops.stack(scales, axis=0)
 
     def _collect_input_scale(
@@ -100,9 +105,12 @@ class MoEQuantized(MoE):
         """Stacks per-expert input scales for NVFP4 kernels."""
         expert_collect = self._all_experts if collect_all else self.experts
         scales = [getattr(e, proj_name).input_scale for e in expert_collect]
-        scales = self._with_shared_expert(
-            scales, getattr(self.shared_experts, proj_name).input_scale
+        shared_scale = (
+            getattr(self.shared_experts, proj_name).input_scale
+            if self.has_shared_experts
+            else None
         )
+        scales = self._with_shared_expert(scales, shared_scale)
         return ops.stack(scales, axis=0)
 
     @property
@@ -117,12 +125,18 @@ class MoEQuantized(MoE):
 
         gate_scales = [e.gate_proj.weight_scale for e in self.experts]
         up_scales = [e.up_proj.weight_scale for e in self.experts]
-        gate_scales = self._with_shared_expert(
-            gate_scales, self.shared_experts.gate_proj.weight_scale
+        gate_shared = (
+            self.shared_experts.gate_proj.weight_scale
+            if self.has_shared_experts
+            else None
         )
-        up_scales = self._with_shared_expert(
-            up_scales, self.shared_experts.up_proj.weight_scale
+        up_shared = (
+            self.shared_experts.up_proj.weight_scale
+            if self.has_shared_experts
+            else None
         )
+        gate_scales = self._with_shared_expert(gate_scales, gate_shared)
+        up_scales = self._with_shared_expert(up_scales, up_shared)
 
         # Interleave gate and up scales: [g0, u0, g1, u1, ...]
         interleaved = [
@@ -145,9 +159,12 @@ class MoEQuantized(MoE):
     def down_proj_scales(self) -> TensorValue:
         """Returns stacked down-projection weight scales."""
         scales = [e.down_proj.weight_scale for e in self.experts]
-        scales = self._with_shared_expert(
-            scales, self.shared_experts.down_proj.weight_scale
+        down_shared = (
+            self.shared_experts.down_proj.weight_scale
+            if self.has_shared_experts
+            else None
         )
+        scales = self._with_shared_expert(scales, down_shared)
 
         if self.shard_devices:
             devices = [DeviceRef.CPU()] * len(self.shard_devices)

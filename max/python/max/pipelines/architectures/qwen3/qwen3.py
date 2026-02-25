@@ -35,7 +35,7 @@ from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import MoE
+from max.nn.moe import MoE, MoEQuantized
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer.distributed_transformer import (
@@ -79,6 +79,8 @@ class Qwen3TransformerBlock(Module):
             devices=config.devices,
             scale=config.attention_multiplier,
             has_bias=config.attention_bias,
+            norm_dtype=config.norm_dtype or config.dtype,
+            float8_config=config.float8_config,
         )
         self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
             num_devices
@@ -125,7 +127,8 @@ class Qwen3TransformerBlock(Module):
         )
 
         if use_moe:
-            return MoE(
+            moe_cls = MoEQuantized if config.float8_config is not None else MoE
+            return moe_cls(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
                 num_experts=config.num_experts,

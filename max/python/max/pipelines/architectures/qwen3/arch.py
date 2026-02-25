@@ -33,6 +33,7 @@ qwen3_arch = SupportedArchitecture(
     supported_encodings={
         "bfloat16": ["paged"],
         "float32": ["paged"],
+        "float8_e4m3fn": ["paged"],
     },
     pipeline_model=Qwen3Model,
     tokenizer=TextTokenizer,
@@ -50,12 +51,16 @@ qwen3_arch = SupportedArchitecture(
 qwen3_moe_arch = SupportedArchitecture(
     name="Qwen3MoeForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["Qwen/Qwen3-30B-A3B-Instruct"],
+    example_repo_ids=[
+        "Qwen/Qwen3-30B-A3B-Instruct",
+        "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+    ],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16": ["paged"],
         "float32": ["paged"],
+        "float8_e4m3fn": ["paged"],
     },
     pipeline_model=Qwen3Model,
     tokenizer=TextTokenizer,

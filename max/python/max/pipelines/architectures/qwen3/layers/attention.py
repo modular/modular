@@ -19,13 +19,16 @@ import math
 from collections.abc import Callable, Iterable
 
 from max.dtype import DType
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import _compute_shard_range
+from max.nn.float8_config import Float8Config
 from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
+    fused_qkv_ragged_matmul_scaled_float8,
+    quantize_dynamic_scaled_float8,
     rms_norm_key_cache,
 )
 from max.nn.kv_cache import (
@@ -65,6 +68,8 @@ class Qwen3Attention(Module, Shardable):
         scale: float | None = None,
         has_bias: bool = False,
         qk_norm_eps: float = 1e-6,
+        norm_dtype: DType | None = None,
+        float8_config: Float8Config | None = None,
     ) -> None:
         """Initializes the attention layer.
 
@@ -75,12 +80,15 @@ class Qwen3Attention(Module, Shardable):
             hidden_size: The dimension of the hidden states.
             kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
             layer_idx: The layer number associated with this Attention block.
-            dtype: DType of the attention inputs and weights.
+            dtype: DType of the attention inputs and weights (e.g. for linear projections).
             devices: Device to place the weights and run the computation.
             linear_cls: Linear class to use for the projection layers.
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
+            norm_dtype: DType for Q/K RMSNorm weights. If None, uses dtype. Use a
+                non-FP8 type (e.g. bfloat16) for FP8 models where norms are not quantized.
+            float8_config: Optional FP8 config for dynamic quantized QKV matmul.
         """
 
         super().__init__()
@@ -93,6 +101,8 @@ class Qwen3Attention(Module, Shardable):
         self.devices = devices
         self.hidden_size = hidden_size
         self.dtype = dtype
+        self.norm_dtype = norm_dtype if norm_dtype is not None else dtype
+        self.float8_config = float8_config
         self.linear_cls = linear_cls
         self.scale = (
             scale
@@ -111,13 +121,13 @@ class Qwen3Attention(Module, Shardable):
         # Per-head RMSNorm for Q and K (Qwen3-specific)
         self.q_norm = RMSNorm(
             self.kv_params.head_dim,
-            dtype=dtype,
+            dtype=self.norm_dtype,
             eps=self.qk_norm_eps,
             multiply_before_cast=False,
         )
         self.k_norm = RMSNorm(
             self.kv_params.head_dim,
-            dtype=dtype,
+            dtype=self.norm_dtype,
             eps=self.qk_norm_eps,
             multiply_before_cast=False,
         )
@@ -174,6 +184,26 @@ class Qwen3Attention(Module, Shardable):
         return ops.concat(
             (self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)
         ).to(self.devices[0])
+
+    def _qkv_weight_scale(self) -> TensorValue:
+        """Concatenated QKV weight scales for FP8 (q_scale, k_scale, v_scale)."""
+        assert self.float8_config is not None
+        assert self.q_proj.weight_scale is not None
+        assert self.k_proj.weight_scale is not None
+        assert self.v_proj.weight_scale is not None
+        q_scale_w = self.q_proj.weight_scale
+        k_scale_w = self.k_proj.weight_scale
+        v_scale_w = self.v_proj.weight_scale
+        q_scale: TensorValue | Weight = (
+            q_scale_w.reshape((1,)) if len(q_scale_w.shape) == 0 else q_scale_w
+        )
+        k_scale: TensorValue | Weight = (
+            k_scale_w.reshape((1,)) if len(k_scale_w.shape) == 0 else k_scale_w
+        )
+        v_scale: TensorValue | Weight = (
+            v_scale_w.reshape((1,)) if len(v_scale_w.shape) == 0 else v_scale_w
+        )
+        return ops.concat((q_scale, k_scale, v_scale))
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -301,6 +331,8 @@ class Qwen3Attention(Module, Shardable):
                 scale=self.scale,
                 has_bias=self.has_bias,
                 qk_norm_eps=self.qk_norm_eps,
+                norm_dtype=self.norm_dtype,
+                float8_config=self.float8_config,
             )
 
             # Replace the projection layers with sharded versions
@@ -338,19 +370,45 @@ class Qwen3Attention(Module, Shardable):
             Output hidden states of shape [total_seq_len, hidden_size].
         """
         total_seq_len = x.shape[0]
-
-        # Call into fused qkv ragged matmul
         wqkv = self.wqkv
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=wqkv,
-            bias=self.wqkv_bias,
-            input_row_offsets=input_row_offsets,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            n_heads=self.n_heads,
-        )
+
+        # FP8 path: dynamic quantize input then fused scaled matmul (BF16 input + FP8 weights).
+        # Scale tensors are cast to float32 in the weight adapter; FP8 kernels require float32.
+        if (
+            self.float8_config is not None
+            and self.q_proj.weight.dtype.is_float8()
+        ):
+            weight_scale = self._qkv_weight_scale()
+            x_fp8, x_scales = quantize_dynamic_scaled_float8(
+                x,
+                self.float8_config.input_scale,
+                self.float8_config.weight_scale,
+                scales_type=weight_scale.dtype,
+            )
+            xq = fused_qkv_ragged_matmul_scaled_float8(
+                self.kv_params,
+                input=x_fp8,
+                input_row_offsets=input_row_offsets,
+                wqkv=wqkv,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+                input_scale=x_scales.to(x.device),
+                weight_scale=weight_scale.to(x.device),
+                bias=self.wqkv_bias,
+                float8_config=self.float8_config,
+            )
+        else:
+            xq = fused_qkv_ragged_matmul(
+                self.kv_params,
+                input=x,
+                wqkv=wqkv,
+                bias=self.wqkv_bias,
+                input_row_offsets=input_row_offsets,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+            )
 
         # Apply QK norm to query and key states before RoPE (Qwen3-specific)
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
