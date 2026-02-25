@@ -13,7 +13,7 @@
 
 """Three-tier KV cache connector: GPU <-> CPU (pinned) <-> Disk.
 
-Composes the CPU tier (pinned host ``Buffer`` + ``BlockCopyEngine``) with a
+Composes the CPU tier (pinned host ``Buffer`` + ``BlockOffloadEngine``) with a
 ``DiskTier`` that provides flat-file persistence. Write-through policy ensures
 every block saved to CPU is also written to disk asynchronously, so CPU
 eviction is always safe and disk coverage is maximised for warm restarts.
@@ -26,17 +26,17 @@ from collections.abc import Sequence
 from concurrent.futures import Future, wait
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Device
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
 )
 
-from ..paged_kv_cache.block_copy_engine import BlockCopyEngine
+from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
 from ..paged_kv_cache.block_pool import BlockPool
 from ..paged_kv_cache.block_utils import KVCacheBlock
 from .disk_tier import DiskTier
@@ -58,8 +58,7 @@ class TieredConnector:
         self,
         params: KVCacheParams,
         devices: Sequence[Device],
-        device_tensors: list[Buffer],
-        device_scale_tensors: list[Buffer] | None,
+        device_buffer: KVCacheBuffer,
         total_num_host_blocks: int,
         disk_cache_dir: str,
         max_disk_size_gb: float,
@@ -79,54 +78,10 @@ class TieredConnector:
         shape_per_block = params.shape_per_block
         dtype = params.dtype
 
-        # -- CPU tier: pinned host tensors (same as LocalConnector) --
-        self._host_tensors: list[Buffer] = []
-        self._host_scale_tensors: list[Buffer] | None = None
-        if (
-            params.quantized_kv_cache
-            and params.kvcache_quant_config is not None
-        ):
-            self._host_scale_tensors = []
-
-        for device in devices:
-            if device.is_host:
-                raise ValueError(
-                    "Host device detected. Paging to host is not supported "
-                    "when executing on CPU."
-                )
-            self._host_tensors.append(
-                Buffer(
-                    shape=[total_num_host_blocks, *shape_per_block],
-                    dtype=dtype,
-                    device=device,
-                    pinned=True,
-                )
-            )
-            if self._host_scale_tensors is not None:
-                assert params.kvcache_quant_config is not None
-                self._host_scale_tensors.append(
-                    Buffer(
-                        shape=[
-                            total_num_host_blocks,
-                            *params.shape_per_scale_block,
-                        ],
-                        dtype=params.kvcache_quant_config.scale_dtype,
-                        device=device,
-                        pinned=True,
-                    )
-                )
-
-        self._block_copy_engine = BlockCopyEngine(
-            block_size=self._block_size,
-            num_device_blocks=(
-                device_tensors[0].shape[0] if device_tensors else 0
-            ),
-            device_tensors=device_tensors,
-            num_host_blocks=total_num_host_blocks,
-            host_tensors=self._host_tensors,
-            device_scale_tensors=device_scale_tensors,
-            host_scale_tensors=self._host_scale_tensors,
+        self._block_copy_engine = BlockOffloadEngine(
+            total_num_host_blocks, device_buffer
         )
+        self._host_buffer = self._block_copy_engine.host_buffer
 
         self._host_block_pool = BlockPool(
             MemoryTier.MEMORY_TIER_CPU,
@@ -138,7 +93,7 @@ class TieredConnector:
         # -- Disk tier --
 
         block_nbytes = int(np.prod(shape_per_block) * dtype.size_in_bytes)
-        has_scales = self._host_scale_tensors is not None
+        has_scales = device_buffer.scales is not None
         scale_block_nbytes = 0
         if has_scales and params.kvcache_quant_config is not None:
             scale_block_nbytes = int(
@@ -193,11 +148,6 @@ class TieredConnector:
         return "TieredConnector"
 
     @property
-    def host_scale_tensors(self) -> list[Buffer] | None:
-        """Get the host scale tensors for FP8 quantization swapping."""
-        return self._host_scale_tensors
-
-    @property
     def num_host_blocks(self) -> int:
         """Get the total number of host blocks."""
         return self._total_num_host_blocks
@@ -246,14 +196,14 @@ class TieredConnector:
                 # Use uint8 view to avoid bfloat16 numpy incompatibility
                 dest = [
                     ht.view(DType.uint8).to_numpy()[host_block.bid]
-                    for ht in self._host_tensors
+                    for ht in self._host_buffer.values
                 ]
                 scale_dest = (
                     [
                         st.view(DType.uint8).to_numpy()[host_block.bid]
-                        for st in self._host_scale_tensors
+                        for st in self._host_buffer.scales
                     ]
-                    if self._host_scale_tensors
+                    if self._host_buffer.scales is not None
                     else None
                 )
                 future = self._disk_tier.read_block_async(
@@ -361,23 +311,18 @@ class TieredConnector:
 
         # 2. Submit new writes with numpy.
         for bid, block_hash, host_block in self._pending_disk_writes:
-            if self._disk_tier.contains(block_hash):
-                # Already on disk — release the block immediately.
-                self._host_block_pool.free_block(host_block)
-                continue
-
             # Zero-copy: pass numpy view directly. Safe because
             # ref_cnt=1 prevents the block from being evicted.
             src = [
                 ht.view(DType.uint8).to_numpy()[bid]
-                for ht in self._host_tensors
+                for ht in self._host_buffer.values
             ]
             scale_src = (
                 [
                     st.view(DType.uint8).to_numpy()[bid]
-                    for st in self._host_scale_tensors
+                    for st in self._host_buffer.scales
                 ]
-                if self._host_scale_tensors
+                if self._host_buffer.scales is not None
                 else None
             )
             future = self._disk_tier.write_block_async(

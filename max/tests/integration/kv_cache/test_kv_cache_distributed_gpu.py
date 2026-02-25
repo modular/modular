@@ -123,7 +123,6 @@ async def test_swapping_to_host_multi_gpu(
         # Evictions should be scheduled on auxiliary stream (via connector)
         connector = replica_manager.connector
         assert isinstance(connector, LocalConnector)
-        assert connector._block_copy_engine.supports_multistream()
 
     def gen_prompt(length: int) -> np.ndarray:
         # returns a binary sequence of length `length`

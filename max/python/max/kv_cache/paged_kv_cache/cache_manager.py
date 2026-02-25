@@ -22,10 +22,10 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-from max.driver import Buffer, Device
+from max.driver import Device
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, RaggedKVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -104,20 +104,19 @@ class PagedKVCacheManager:
         )
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
-        dp_1_params = params.copy_as_dp_1()
         for replica_idx, devices in enumerate(self.devices_per_replica):
-            replica_params = dp_1_params
+            replica_params = params.copy_as_dp_1(replica_idx=replica_idx)
             # Give each replica its own disk cache subdirectory to avoid
             # file collisions, double disk-usage accounting, and metadata
             # corruption when DP > 1.
             if (
                 self.num_replicas > 1
-                and dp_1_params.disk_offload_dir is not None
+                and replica_params.disk_offload_dir is not None
             ):
                 replica_params = dataclasses.replace(
-                    dp_1_params,
+                    replica_params,
                     disk_offload_dir=os.path.join(
-                        dp_1_params.disk_offload_dir,
+                        replica_params.disk_offload_dir,
                         f"replica_{replica_idx}",
                     ),
                 )
@@ -337,6 +336,6 @@ class PagedKVCacheManager:
         """Returns number of used host pages for the replica."""
         return self._replica_managers[replica_idx].num_used_host_pages
 
-    def get_device_tensors(self, replica_idx: int) -> list[Buffer]:
-        """Returns device tensors for the replica."""
-        return self._replica_managers[replica_idx].device_tensors
+    def get_device_buffer(self, replica_idx: int) -> KVCacheBuffer:
+        """Returns device buffer for the replica."""
+        return self._replica_managers[replica_idx].device_buffer

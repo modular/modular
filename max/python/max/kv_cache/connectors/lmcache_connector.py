@@ -76,7 +76,7 @@ from max.graph import BufferType, Graph, TensorType, Type
 from max.graph.type import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kernels import lmcache_offload, lmcache_onload
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
@@ -121,7 +121,7 @@ class MAXGPUConnector(GPUConnectorInterface):
     def __init__(
         self,
         params: KVCacheParams,
-        device_tensors: list[Buffer],
+        device_buffer: KVCacheBuffer,
         devices: Sequence[Device],
         total_num_blocks: int,
         session: InferenceSession | None = None,
@@ -130,12 +130,12 @@ class MAXGPUConnector(GPUConnectorInterface):
 
         Args:
             params: KV cache parameters containing model configuration.
-            device_tensors: List of KV cache Buffers, one per TP shard.
-            devices: Devices for the KV cache tensors.
+            device_buffer: Device buffer for KV cache (owned by manager).
+            devices: Devices for the KV cache buffers.
             total_num_blocks: Total number of blocks in the paged cache.
             session: Inference session for loading kernels.
         """
-        self._device_tensors = device_tensors
+        self._device_buffer = device_buffer
         self._num_layers = params.num_layers
         self._num_kv_heads = params.n_kv_heads_per_device
         self._head_dim = params.head_dim
@@ -383,7 +383,7 @@ class MAXGPUConnector(GPUConnectorInterface):
                 "Pass session to LMCacheConnector constructor."
             )
 
-        device_tensor = self._device_tensors[self._current_tp_idx]
+        device_buffer = self._device_buffer.values[self._current_tp_idx]
         model = self._offload_models[self._current_tp_idx]
 
         # TODO: SERVOPT-1026
@@ -391,7 +391,7 @@ class MAXGPUConnector(GPUConnectorInterface):
         # LMCache uses pinned memory tensors, but Buffer.from_dlpack
         # doesn't support pinned CPU tensors, so clone to unpin first.
         cpu_tensor = memory_obj.tensor.cpu().contiguous().clone()
-        output_buffer = Buffer.from_dlpack(cpu_tensor).to(device_tensor.device)
+        output_buffer = Buffer.from_dlpack(cpu_tensor).to(device_buffer.device)
 
         # slot_mapping is already on GPU (int64), use from_dlpack directly
         slot_mapping_buffer = Buffer.from_dlpack(slot_mapping)
@@ -406,7 +406,7 @@ class MAXGPUConnector(GPUConnectorInterface):
 
         model.execute(
             output_buffer,
-            device_tensor,
+            device_buffer,
             slot_mapping_buffer,
             start_buffer,
             end_buffer,
@@ -442,14 +442,14 @@ class MAXGPUConnector(GPUConnectorInterface):
                 "Pass session to LMCacheConnector constructor."
             )
 
-        device_tensor = self._device_tensors[self._current_tp_idx]
+        device_buffer = self._device_buffer.values[self._current_tp_idx]
         model = self._onload_models[self._current_tp_idx]
 
         # TODO: SERVOPT-1026
         # Create input buffer from the memory object tensor.
         # LMCache uses pinned memory tensors — clone to unpin for from_dlpack.
         cpu_tensor = memory_obj.tensor.cpu().contiguous().clone()
-        input_buffer = Buffer.from_dlpack(cpu_tensor).to(device_tensor.device)
+        input_buffer = Buffer.from_dlpack(cpu_tensor).to(device_buffer.device)
 
         # slot_mapping is already on GPU (int64), use from_dlpack directly
         slot_mapping_buffer = Buffer.from_dlpack(slot_mapping)
@@ -463,7 +463,7 @@ class MAXGPUConnector(GPUConnectorInterface):
         )
 
         model.execute(
-            device_tensor,
+            device_buffer,
             input_buffer,
             slot_mapping_buffer,
             start_buffer,
@@ -527,8 +527,7 @@ class LMCacheConnector:
         self,
         params: KVCacheParams,
         devices: Sequence[Device],
-        device_tensors: list[Buffer],
-        device_scale_tensors: list[Buffer] | None,
+        device_buffer: KVCacheBuffer,
         total_num_blocks: int,
         session: InferenceSession | None = None,
     ) -> None:
@@ -537,8 +536,7 @@ class LMCacheConnector:
         Args:
             params: KV cache parameters containing configuration.
             devices: List of devices for tensor parallelism.
-            device_tensors: Device tensors for KV cache (owned by manager).
-            device_scale_tensors: Device scale tensors for FP8, or None.
+            device_buffer: Device buffer for KV cache (owned by manager).
             total_num_blocks: Total number of device blocks.
             session: Optional inference session for loading kernels.
 
@@ -554,8 +552,7 @@ class LMCacheConnector:
             )
 
         self._devices = list(devices)
-        self._device_tensors = device_tensors
-        self._device_scale_tensors = device_scale_tensors
+        self._device_buffer = device_buffer
         self._block_size = params.page_size
         self._total_num_blocks = total_num_blocks
         self.params = params
@@ -564,7 +561,7 @@ class LMCacheConnector:
 
         self._gpu_connector = MAXGPUConnector(
             params=params,
-            device_tensors=device_tensors,
+            device_buffer=device_buffer,
             devices=devices,
             total_num_blocks=total_num_blocks,
             session=session,

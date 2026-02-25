@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from .cache_params import (
+    KVCacheBuffer,
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -34,6 +35,7 @@ from .metrics import KVCacheMetrics
 from .utils import build_max_lengths_tensor
 
 __all__ = [
+    "KVCacheBuffer",
     "KVCacheInputs",
     "KVCacheInputsSequence",
     "KVCacheMetrics",
