@@ -26,10 +26,13 @@ namespace {
 /// threads.
 class SingleThreadWorkQueue : public WorkQueue {
 public:
-  SingleThreadWorkQueue(CompactRuntimePtr runtimePtr)
-      : outerRuntime(CompactRuntimePtr::getCurrentRuntime()) {
-    // Associate this thread with the given runtime, possibly overwriting
-    // any existing runtime association.
+  SingleThreadWorkQueue(CompactRuntimePtr runtimePtr) {
+    // Nested runtimes are not supported: the creating thread must not already
+    // be associated with another runtime.
+    assert(!CompactRuntimePtr::getCurrentRuntime() &&
+           "creating a single-thread work queue from a thread already "
+           "associated with an outer runtime");
+    // Associate this thread with the given runtime.
     CompactRuntimePtr::setCurrentRuntime(runtimePtr);
   }
 
@@ -40,8 +43,8 @@ public:
     // and destroyed without ever being included in a runtime.
     assert(!workItems.dequeue());
 
-    // Restore the association of this thread with the outer runtime, if any.
-    CompactRuntimePtr::setCurrentRuntime(outerRuntime);
+    // Clear the association of this thread with the runtime.
+    CompactRuntimePtr::setCurrentRuntime({});
   }
 
   void addTask(WorkItem &&workItem, int taskId = -1) override {
@@ -73,8 +76,6 @@ private:
 
   /// Pending work items.
   ConcurrentQueue<WorkItem> workItems;
-  /// The outer runtime, if any, for the thread using this work queue.
-  CompactRuntimePtr outerRuntime;
 };
 } // namespace
 
