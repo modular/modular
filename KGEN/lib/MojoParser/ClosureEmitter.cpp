@@ -558,9 +558,33 @@ buildSymbol(FnOp impl, ParamDeclAttr implType,
   return symbolConstant;
 }
 
+static SymbolConstantAttr
+buildSymbolWithBindings(FnOp impl, ParamDeclAttr implType,
+                        std::optional<ParamDeclAttr> originSetParam,
+                        ArrayRef<TypedAttr> fnLevelBindings) {
+  MLIRContext *ctx = impl.getContext();
+  SymbolRefAttr implSymbol = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(impl.getOperation()));
+
+  // Build symbol by binding struct level parameters.
+  SmallVector<TypedAttr> params;
+  params.push_back(ParamDeclRefAttr::get(implType));
+  if (originSetParam)
+    params.push_back(ParamDeclRefAttr::get(*originSetParam));
+  llvm::append_range(params, fnLevelBindings);
+  FuncTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
+  FuncTypeGeneratorType specializedSigGen = baseSigGen.getSpecializedGenerator(
+      fnLevelBindings, /*evaluationContext=*/nullptr, impl.getLoc());
+
+  SymbolConstantAttr symbolConstant =
+      SymbolConstantAttr::get(ctx, implSymbol, params, specializedSigGen);
+  return symbolConstant;
+}
+
 std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
 ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
-                                          bool synthetic) {
+                                          bool synthetic,
+                                          StringAttr customName) {
   StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
   ImplicitLocOpBuilder b(structDeclOp.getLoc(), structDeclOp);
   b.setInsertionPointToEnd(&structDeclOp.getFields().front());
@@ -591,11 +615,12 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
         return replacer.replace(original);
       }));
   Type result = replacer.replace(wrapperSignature.getResults().front());
+  StringAttr funcName = customName ? customName : traitFnOp.getSourceNameAttr();
   auto [op, decl] = synthesizeFunction(
-      structDecl, traitFnOp.getSourceNameAttr(), parameters,
-      wrapperSignature.getParamListAttrs(), argumentTypes,
-      wrapperSignature.getArgConventions(), wrapperSignature.getArgListAttrs(),
-      result, traitFnOp.getSpecialFunctionKind(), structDecl.getLoc(), b,
+      structDecl, funcName, parameters, wrapperSignature.getParamListAttrs(),
+      argumentTypes, wrapperSignature.getArgConventions(),
+      wrapperSignature.getArgListAttrs(), result,
+      traitFnOp.getSpecialFunctionKind(), structDecl.getLoc(), b,
       wrapperSignature.getFnEffects().setUnified(false).setRegisterPassable(
           false),
       "", synthetic, traitFnOp.getInlineLevel());
@@ -2764,45 +2789,34 @@ static void addConformanceTable(
   structDeclOp.setCanonicalTrait(traitType);
 }
 
-static void addConformanceTable(ASTDecl &structDecl,
-                                ClosureEmitter::ClosureParent closureParent,
-                                TypedAttr newWitness, StringRef name,
-                                ASTDecl &fileModule) {
-  SmallVector<std::pair<StringRef, TypedAttr>> witnesses({{name, newWitness}});
-  addConformanceTable(structDecl, closureParent, witnesses, fileModule);
-}
-
-using AliasSubstitution = std::pair<StringAttr, TypedAttr>;
-using AliasSubstitutions = SmallVector<AliasSubstitution>;
-
 /// If an alias is already bound, verify the new
 /// value is consistent with the existing binding. Returns false if
 /// inconsistent.
 static bool tryRecordSubstitution(AliasSubstitutions &substitutions,
-                                  StringAttr aliasName, TypedAttr newValue) {
-  for (const auto &[name, existing] : substitutions) {
-    if (name == aliasName) {
-      Type existingType = existing.getType();
-      Type newType = newValue.getType();
-      if (auto existingParam = dyn_cast<TypeParamAttr>(existing))
-        existingType = existingParam.getTypeValue();
-      if (auto newParam = dyn_cast<TypeParamAttr>(newValue))
-        newType = newParam.getTypeValue();
-      return isEqualCanon(existingType, newType);
-    }
+                                  StringAttr aliasName, TypedAttr newValue,
+                                  size_t index = -1) {
+  if (!newValue)
+    return false;
+  auto it = substitutions.find(aliasName);
+  if (it != substitutions.end()) {
+    Type existingType = it->second.aliasValue.getType();
+    Type newType = newValue.getType();
+    if (auto existingParam = dyn_cast<TypeParamAttr>(it->second.aliasValue))
+      existingType = existingParam.getTypeValue();
+    if (auto newParam = dyn_cast<TypeParamAttr>(newValue))
+      newType = newParam.getTypeValue();
+    return isEqualCanon(existingType, newType);
   }
-  substitutions.emplace_back(aliasName, newValue);
+  substitutions[aliasName] = AdapteeValue{newValue, index};
   return true;
 }
 
-/// Check if a concrete type can satisfy a trait alias constraint from
-/// GetWitnessAttr.
+/// Check if a concrete type can satisfy a trait alias constraint.
 static bool canTypeConformToAliasConstraint(Type actualType,
-                                            GetWitnessAttr expectedGetWitness,
+                                            Type constraintType,
+                                            StringAttr aliasName,
                                             SharedState &shared,
                                             AliasSubstitutions &substitutions) {
-  Type constraintType = expectedGetWitness.getType();
-  StringAttr aliasName = expectedGetWitness.getWitnessName();
 
   // If the constraint is a trait type, check conformance
   if (auto traitType = sugarDynCast<TraitType>(constraintType)) {
@@ -2821,14 +2835,48 @@ static bool canTypeConformToAliasConstraint(Type actualType,
   return tryRecordSubstitution(substitutions, aliasName, typeValue);
 }
 
+namespace M::KGEN::LIT {
+
+struct AuxiliaryParameters {
+  size_t startingIndex;
+  SmallVector<ParamDeclAttr> traitAuxiliaryParameters;
+  SmallVector<TypedAttr> structAliases;
+  SmallVector<StringAttr> traitAliases;
+
+  ParamDeclAttr getAdaptorAuxiliaryParameter(ParamIndexRefAttr indexRef) {
+    return get<ParamDeclAttr>(indexRef, traitAuxiliaryParameters);
+  }
+  StringAttr getTraitAliasName(ParamIndexRefAttr indexRef) {
+    return get<StringAttr>(indexRef, traitAliases);
+  }
+  TypedAttr getAliasRef(ParamIndexRefAttr indexRef) {
+    return get<TypedAttr>(indexRef, structAliases);
+  }
+
+private:
+  template <typename Result>
+  Result get(ParamIndexRefAttr indexRef, SmallVector<Result> &container) {
+    if (indexRef.getDepth() != 0)
+      return Result{};
+    if (indexRef.getIndex() < startingIndex)
+      return Result{};
+    size_t auxIdx = indexRef.getIndex() - startingIndex;
+    if (auxIdx >= container.size())
+      return Result{};
+    return container[auxIdx];
+  }
+};
+
+} // namespace M::KGEN::LIT
+
+namespace {
+
 /// Check if an actual argument type matches an expected argument type, handling
-/// GetWitnessAttr references.
+/// auxiliary parameter references.
 static bool canArgTypeMatchTraitArgType(Type actualType, Type expectedType,
+                                        AuxiliaryParameters &ctx,
                                         SharedState &shared,
                                         AliasSubstitutions &substitutions) {
-  if (isEqualCanon(actualType, expectedType))
-    return true;
-
   // unwrap references
   if (auto actualRef = dyn_cast<RefType>(actualType)) {
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
@@ -2836,51 +2884,66 @@ static bool canArgTypeMatchTraitArgType(Type actualType, Type expectedType,
           !expectedRef.getOriginType().isMutableKnown(true))
         return false;
       return canArgTypeMatchTraitArgType(actualRef.getElementType(),
-                                         expectedRef.getElementType(), shared,
-                                         substitutions);
+                                         expectedRef.getElementType(), ctx,
+                                         shared, substitutions);
     }
   }
 
   auto expectedParamType = dyn_cast<ParamType>(expectedType);
-  // if the expected type is not a parameter then we require an exact match.
-  // Reject.
   if (!expectedParamType)
-    return false;
+    return isEqualCanon(actualType, expectedType);
 
   TypedAttr expectedParam = expectedParamType.getParam();
-  auto expectedGetWitness = sugarDynCast<GetWitnessAttr>(expectedParam);
-  // If the expected is not a getWitness then it is referencing a call parameter
-  // in which case the actual must have been an exact match.
-  if (!expectedGetWitness)
+  auto expectedIndexRef = sugarDynCast<ParamIndexRefAttr>(expectedParam);
+  // If the expected is not a ParamIndexRefAttr then it is referencing a call
+  // parameter in which case the actual must have been an exact match.
+  if (!expectedIndexRef)
+    return isEqualCanon(actualType, expectedType);
+
+  // Check if this is an auxiliary parameter (alias reference).
+  ParamDeclAttr auxiliaryParameter =
+      ctx.getAdaptorAuxiliaryParameter(expectedIndexRef);
+  if (!auxiliaryParameter)
+    return isEqualCanon(actualType, expectedType);
+
+  Type constraintType = auxiliaryParameter.getType();
+  // Use the trait's alias name (e.g., "R") not the auxiliary param name ("_R")
+  StringAttr traitAliasName = ctx.getTraitAliasName(expectedIndexRef);
+  if (!traitAliasName)
     return false;
 
   auto actualParamType = dyn_cast<ParamType>(actualType);
+  // Record a concrete type.
   if (!actualParamType)
-    return canTypeConformToAliasConstraint(actualType, expectedGetWitness,
-                                           shared, substitutions);
+    return canTypeConformToAliasConstraint(
+        actualType, constraintType, traitAliasName, shared, substitutions);
 
   TypedAttr actualParam = actualParamType.getParam();
-  auto actualGetWitness = sugarDynCast<GetWitnessAttr>(actualParam);
-  // the actual is a parameter but the expected is a GetWitness. This implies
-  // the actual is referencing a call parameter. reject.
-  if (!actualGetWitness)
+  auto actualIndexRef = sugarDynCast<ParamIndexRefAttr>(actualParam);
+  if (!actualIndexRef)
     return false;
-
-  StringAttr aliasName = expectedGetWitness.getWitnessName();
-  Type expectedConstraint = expectedGetWitness.getType();
-  Type actualConstraint = actualGetWitness.getType();
-
-  if (isEqualCanon(actualConstraint, expectedConstraint))
-    return tryRecordSubstitution(substitutions, aliasName, actualParam);
+  Type actualConstraint = actualIndexRef.getType();
+  TypedAttr aliasRef = ctx.getAliasRef(actualIndexRef);
+  size_t index = actualIndexRef.getIndex();
+  assert(aliasRef &&
+         "If expected references an auxiliary parameter and actual is "
+         "non-concrete, actual must also reference an auxiliary parameter");
+  // Record which adaptor parameter index supplies the trait alias value.
+  // This index lets us recover the argument bound to the target auxiliary
+  // parameter.
+  if (isEqualCanon(actualConstraint, constraintType))
+    return tryRecordSubstitution(substitutions, traitAliasName, aliasRef,
+                                 index);
 
   // If both are trait types, check conformance.
   if (auto actualTrait = sugarDynCast<TraitType>(actualConstraint)) {
-    if (auto expectedTrait = sugarDynCast<TraitType>(expectedConstraint)) {
+    if (auto expectedTrait = sugarDynCast<TraitType>(constraintType)) {
       if (ASTType(actualTrait).checkConformance(expectedTrait, shared) ==
           ConformanceResult::No)
         return false;
-      TypedAttr upcastValue = UpcastAttr::get(expectedTrait, actualParam);
-      return tryRecordSubstitution(substitutions, aliasName, upcastValue);
+      TypedAttr upcastValue = UpcastAttr::get(expectedTrait, aliasRef);
+      return tryRecordSubstitution(substitutions, traitAliasName, upcastValue,
+                                   index);
     }
   }
   return false;
@@ -2888,9 +2951,11 @@ static bool canArgTypeMatchTraitArgType(Type actualType, Type expectedType,
 
 /// Check if a struct's __call__ signature can implement a closure trait's
 /// __call__ signature.
-static LogicalResult canStructSignatureImplementTrait(
-    FnTypeGeneratorType structSig, FnTypeGeneratorType traitSig,
-    SharedState &shared, AliasSubstitutions &outSubstitutions) {
+static LogicalResult
+canStructSignatureImplementTrait(FnTypeGeneratorType structSig,
+                                 FnTypeGeneratorType traitSig,
+                                 AuxiliaryParameters &ctx, SharedState &shared,
+                                 AliasSubstitutions &outSubstitutions) {
   if (structSig.hasMemoryOnlyResult() != traitSig.hasMemoryOnlyResult())
     return failure();
 
@@ -2902,14 +2967,14 @@ static LogicalResult canStructSignatureImplementTrait(
 
   // Check each argument type
   for (auto [structArg, traitArg] : llvm::zip(structArgs, traitArgs)) {
-    if (!canArgTypeMatchTraitArgType(structArg, traitArg, shared,
+    if (!canArgTypeMatchTraitArgType(structArg, traitArg, ctx, shared,
                                      outSubstitutions))
       return failure();
   }
 
   // Check result types
   if (!canArgTypeMatchTraitArgType(structSig.getUserResultType(),
-                                   traitSig.getUserResultType(), shared,
+                                   traitSig.getUserResultType(), ctx, shared,
                                    outSubstitutions))
     return failure();
 
@@ -2918,6 +2983,119 @@ static LogicalResult canStructSignatureImplementTrait(
     return failure();
 
   return success();
+}
+
+} // namespace
+
+bool AdapteeValue::isConcrete() const {
+  if (auto typeValue = dyn_cast<KGEN::TypeParamAttr>(aliasValue)) {
+    if (isa<StructType>(typeValue.getMlirType()))
+      return true;
+  }
+  return false;
+}
+
+void ClosureEmitter::buildCallAdaptorAndAddWitness(
+    StructDeclOp structDeclOp, ASTDecl &structDecl, TraitDeclOp traitDeclOp,
+    FnOp traitCallFn, FnOp structCallFn, const AuxiliaryParameters &auxCtx,
+    const AliasSubstitutions &aliasSubstitutions) {
+  SharedState &shared = structDecl.getShared();
+  MLIRContext *ctx = shared.getContext();
+  // The struct wrapper always has an impl parameter and may also have an
+  // origin_set parameter (for non top-level wrappers).
+  ArrayRef<ParamDeclAttr> structParams = structDeclOp.getInputParams();
+  assert(!structParams.empty() && "closure wrapper should have impl param");
+  std::optional<ParamDeclAttr> originSetParam =
+      structParams.size() > 1 ? std::optional<ParamDeclAttr>(structParams[1])
+                              : std::nullopt;
+
+  SymbolRefAttr traitSymbol = getFullyResolvedSymbolRef(
+      cast<mlir::SymbolOpInterface>(traitDeclOp.getOperation()));
+  StringAttr adaptorNameAttr =
+      StringAttr::get(ctx, "__call__$" + getFlattenedSymbolName(traitSymbol));
+  auto [adaptorFnOp, adaptorParams, adaptorResult] =
+      pushBackTraitFunctionImpl(traitCallFn, structDecl, true, adaptorNameAttr);
+  // Bind the impl call symbol using the struct's alias substitutions
+  // Ignore concrete types and record do not bind adaptor parameters that map to
+  // other adaptor parameters.
+  SmallVector<TypedAttr> fnLevelParams;
+  DenseMap<StringAttr, TypedAttr> auxiliaryToConcrete;
+  for (auto nonAuxiliary :
+       adaptorFnOp.getInputParams()
+           .drop_back(
+               adaptorFnOp.getFuncTypeGenerator().getNumImplicitOriginDecls())
+           .take_front(auxCtx.startingIndex))
+    fnLevelParams.push_back(ParamDeclRefAttr::get(nonAuxiliary));
+  for (auto [aliasName, auxiliaryParameter] :
+       llvm::zip(auxCtx.traitAliases, auxCtx.traitAuxiliaryParameters)) {
+    auto it = aliasSubstitutions.find(aliasName);
+    if (it != aliasSubstitutions.end()) {
+      TypedAttr auxiliaryValue = it->second.aliasValue;
+      if (!it->second.isConcrete()) {
+        unsigned aliasIndex = it->second.index;
+        if (aliasIndex < fnLevelParams.size()) {
+          auxiliaryToConcrete[auxiliaryParameter.getName()] =
+              fnLevelParams[aliasIndex];
+          continue;
+        }
+        TypedAttr ref = ParamDeclRefAttr::get(auxiliaryParameter);
+        if (auto upcast = dyn_cast<UpcastAttr>(auxiliaryValue)) {
+          ref = DowncastAttr::get(upcast.getInputTypeValue().getType(), ref);
+          auxiliaryToConcrete[auxiliaryParameter.getName()] = ref;
+        }
+        fnLevelParams.push_back(ref);
+      } else {
+        auxiliaryToConcrete[auxiliaryParameter.getName()] = auxiliaryValue;
+      }
+    }
+  }
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](ParamDeclRefAttr ref) -> TypedAttr {
+    auto ptr = auxiliaryToConcrete.find(ref.getName());
+    if (ptr == auxiliaryToConcrete.end())
+      return ref;
+    return ptr->second;
+  });
+  // Populate the adaptor body: rebind arguments and call original
+  ImplicitLocOpBuilder b(adaptorFnOp.getLoc(), adaptorFnOp);
+  b.setInsertionPointToEnd(&adaptorFnOp.getBodyRegion().front());
+  SmallVector<Value> callOperands;
+  SmallVector<TypedAttr> origins;
+  Block &adaptorBlock = adaptorFnOp.getBodyRegion().front();
+  for (auto [i, arg] : llvm::enumerate(adaptorBlock.getArguments())) {
+    Type targetType = replacer.replace(arg.getType());
+    if (targetType != arg.getType())
+      callOperands.push_back(RebindOp::create(b, targetType, arg));
+    else
+      callOperands.push_back(arg);
+    if (auto refType = dyn_cast<RefType>(targetType))
+      origins.push_back(refType.getOrigin());
+  }
+
+  auto symbol = buildSymbolWithBindings(structCallFn, structParams[0],
+                                        originSetParam, fnLevelParams);
+  auto symbolSigGen = cast<FnTypeGeneratorType>(symbol.getType());
+  auto callOp = LIT::CallOp::create(b, symbolSigGen.getResultType(), symbol,
+                                    origins, callOperands);
+  Value result = callOp.getResult(0);
+  Type resultType = cast<FnTypeGeneratorType>(symbol.getType()).getResultType();
+  if (resultType != adaptorResult)
+    result = RebindOp::create(b, adaptorResult, result);
+  IREmitter::emitNormalReturn(b, result);
+
+  // Build the witness using the adaptor function
+  SymbolConstantAttr adaptorSymbol =
+      buildSymbol(adaptorFnOp, structParams[0], originSetParam);
+  SmallVector<std::pair<StringRef, TypedAttr>> witnesses;
+  witnesses.emplace_back(traitCallFn.getSymNameAttr(), adaptorSymbol);
+  for (auto &[aliasName, aliasValue] : aliasSubstitutions)
+    witnesses.emplace_back(aliasName.getValue(), aliasValue.aliasValue);
+
+  ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
+  addConformanceTable(structDecl,
+                      ClosureEmitter::ClosureParent(traitDeclOp, traitCallFn,
+                                                    ClosureMethod::CALL),
+                      witnesses, fileModule);
 }
 
 LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
@@ -2971,11 +3149,21 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   if (newWitness) {
     if (rebind) {
       ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
+      // Build witnesses including alias mappings.
+      SmallVector<std::pair<StringRef, TypedAttr>> witnesses;
+      witnesses.emplace_back(callFunction.getSymNameAttr(), newWitness.get());
+      auto traitAliases = traitDeclOp.getFields().getOps<AliasDeclOp>();
+      auto structAliases = structDeclOp.getFields().getOps<AliasDeclOp>();
+      for (auto [traitAlias, structAlias] :
+           llvm::zip(traitAliases, structAliases)) {
+        StringRef aliasName = traitAlias.getParamDecl().getName().getValue();
+        TypedAttr aliasValue = *structAlias.getValue();
+        witnesses.emplace_back(aliasName, aliasValue);
+      }
       addConformanceTable(structDecl,
                           ClosureEmitter::ClosureParent(
                               traitDeclOp, callFunction, ClosureMethod::CALL),
-                          newWitness.get(), callFunction.getSymNameAttr(),
-                          fileModule);
+                          witnesses, fileModule);
     }
 
     return success();
@@ -2986,6 +3174,28 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   if (callDecls.empty())
     return failure();
 
+  auto traitAliasRange = traitDeclOp.getFields().getOps<AliasDeclOp>();
+  size_t originCount = traitSignature.getNumImplicitOriginDecls();
+  size_t traitAliasCount =
+      std::distance(traitAliasRange.begin(), traitAliasRange.end());
+  SmallVector<ParamDeclAttr> auxiliaryParams;
+  for (ParamDeclAttr auxiliaryParam :
+       callFunction.getInputParams()
+           .take_back(traitAliasCount + originCount)
+           .take_front(traitAliasCount))
+    auxiliaryParams.push_back(auxiliaryParam);
+  unsigned startingIndex =
+      callFunction.getInputParams().size() - (traitAliasCount + originCount);
+  SmallVector<TypedAttr> structAliasOps;
+  for (AliasDeclOp aliasOp : structDeclOp.getFields().getOps<AliasDeclOp>())
+    structAliasOps.push_back(*aliasOp.getValue());
+  SmallVector<StringAttr> traitAliasOps;
+  for (AliasDeclOp aliasOp : traitAliasRange)
+    traitAliasOps.push_back(aliasOp.getParamDecl().getName());
+
+  AuxiliaryParameters auxCtx{startingIndex, std::move(auxiliaryParams),
+                             std::move(structAliasOps),
+                             std::move(traitAliasOps)};
   for (ASTDecl *callDecl : callDecls) {
     auto structCallFn = dyn_cast_or_null<FnOp>(callDecl->getIfOperation());
     if (!structCallFn)
@@ -2997,34 +3207,12 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
     AliasSubstitutions aliasSubstitutions;
     FnTypeGeneratorType structCallSig = structCallFn.getFuncTypeGenerator();
     if (succeeded(canStructSignatureImplementTrait(
-            structCallSig, traitSignature, shared, aliasSubstitutions))) {
-      if (rebind) {
-        // The struct wrapper has impl and origin_set as its first two params
-        ArrayRef<ParamDeclAttr> structParams = structDeclOp.getInputParams();
-        assert(structParams.size() >= 2 &&
-               "closure wrapper should have impl and origin_set params");
-        SymbolConstantAttr witnessAttr =
-            buildSymbol(structCallFn, structParams[0], structParams[1]);
-
-        // Build witnesses list: __call__ method + alias substitutions.
-        // For __call__, create a rebind to match the trait's expected
-        // signature. This is needed when the struct's method returns a
-        // different alias than what the trait expects (e.g., struct returns
-        // Self.T but trait expects Self.X where X = T).
-        TypedAttr callWitness =
-            ParamOperatorAttr::getRebind(witnessAttr, traitSignature);
-
-        SmallVector<std::pair<StringRef, TypedAttr>> witnesses;
-        witnesses.emplace_back(callFunction.getSymNameAttr(), callWitness);
-        for (auto &[aliasName, aliasValue] : aliasSubstitutions)
-          witnesses.emplace_back(aliasName.getValue(), aliasValue);
-
-        ASTDecl &fileModule = *structDecl.getNearestDeclOfType<FileModuleOp>();
-        addConformanceTable(structDecl,
-                            ClosureEmitter::ClosureParent(
-                                traitDeclOp, callFunction, ClosureMethod::CALL),
-                            witnesses, fileModule);
-      }
+            structCallSig, traitSignature, auxCtx, shared,
+            aliasSubstitutions))) {
+      if (rebind)
+        buildCallAdaptorAndAddWitness(structDeclOp, structDecl, traitDeclOp,
+                                      callFunction, structCallFn, auxCtx,
+                                      aliasSubstitutions);
       return success();
     }
   }
