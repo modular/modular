@@ -72,6 +72,7 @@ def _apply_flux2_qk_rope(
         F.reshape(key_out, [batch_size, seq_len, num_heads, head_dim]),
     )
 
+
 @module_dataclass
 class Flux2SwiGLU(Module[[Tensor], Tensor]):
     def forward(self, x: Tensor) -> Tensor:
