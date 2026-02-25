@@ -206,6 +206,8 @@ what we publish.
 
 ### Library changes
 
+- `InlineArray` now supports `for` loop iteration.
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 
