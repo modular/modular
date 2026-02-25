@@ -266,9 +266,6 @@ fn allreduce_test[
     # Cleanup
     for i in range(ngpus):
         host_buffers[i].free()
-    _ = signal_buffers^
-    _ = in_bufs_list^
-    _ = out_bufs_list^
 
 
 fn _get_test_str[

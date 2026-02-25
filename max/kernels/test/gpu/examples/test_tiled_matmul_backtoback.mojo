@@ -746,10 +746,6 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
                 mat_d_tensor[m, n],
                 host_d_ref[m, n],
             )
-    _ = mat_a^
-    _ = mat_b^
-    _ = mat_c^
-    _ = mat_d^
 
 
 def main():

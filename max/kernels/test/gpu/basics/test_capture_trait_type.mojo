@@ -14,6 +14,7 @@
 from gpu import thread_idx
 from gpu.host import DeviceContext
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 from utils import IndexList
 
 
@@ -49,33 +50,20 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
 
 def trait_repro(ctx: DeviceContext):
     comptime size = 5
-    var stack = InlineArray[Float32, size](uninitialized=True)
-    var host_buf = LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
-        stack,
+    var managed_buf = ManagedLayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
+        ctx,
     )
+    var host_buf = managed_buf.tensor[update=False]()
     for i in range(size):
         host_buf[i] = Float32(i)
 
-    var device_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    with device_buf.map_to_host() as mapped:
-        for i in range(size):
-            mapped[i] = host_buf[i][0]
-    var device_nd = LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
-        device_buf,
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
-    )
-    var thing = ImplT(device_nd)
+    var thing = ImplT(managed_buf.device_tensor())
     trait_repro_sub(thing, ctx, size)
-    with device_buf.map_to_host() as mapped:
-        for i in range(size):
-            host_buf[i] = mapped[i]
-    ctx.synchronize()
+    host_buf = managed_buf.tensor()
 
     for i in range(size):
         print(host_buf[i])
-
-    _ = device_buf^
 
 
 def main():
