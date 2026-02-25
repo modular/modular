@@ -40,6 +40,7 @@ def register_all_models() -> None:
     from .deepseekV3_nextn import deepseekV3_nextn_arch
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
+    from .exaone_modulev3 import exaone_modulev3_arch
     from .flux1 import flux1_arch
     from .flux2 import flux2_arch
     from .gemma3 import gemma3_arch
@@ -70,6 +71,7 @@ def register_all_models() -> None:
 
     architectures = [
         exaone_arch,
+        exaone_modulev3_arch,
         deepseekV2_arch,
         deepseekV3_arch,
         deepseekV3_2_arch,

@@ -679,6 +679,7 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
 class Llama3Model(LlamaModelBase):
     """Llama 3 pipeline model implementation."""
 
+    config_class: type[Llama3Config] = Llama3Config
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     """Normalization layer."""
 
