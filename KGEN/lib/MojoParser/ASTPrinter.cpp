@@ -448,16 +448,22 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     printOperands(bindParams.getParamValues(), ", ", "[", "]");
     return;
   }
-  if (auto genAttr = dyn_cast<GeneratorAttr>(param)) {
-    os << "comptime";
+
+  auto printGeneratorAttr = [&](GeneratorAttr genAttr) {
     TypedAttr reboundBody =
         printGeneratorInterface(os, genAttr.getInputParamTypes(),
                                 dyn_cast<PogListAttr>(genAttr.getMetadata()),
                                 diagShared, genAttr.getBody());
     os << ' ';
     printParam(os, reboundBody, diagShared);
+  };
+
+  if (auto genAttr = dyn_cast<GeneratorAttr>(param)) {
+    os << "comptime";
+    printGeneratorAttr(genAttr);
     return;
   }
+
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
     printSymbol(os, symbolCst.getSymbol(), diagShared, /*isFunc=*/true);
     if (!symbolCst.getParamValues().empty())
@@ -676,6 +682,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     os << '.' << extractAttr.getField().getValue();
     return;
   }
+
   if (auto variadicCst = dyn_cast<VariadicAttr>(param)) {
     // VariadicAttr appears in a pack list, so it doesn't need extra []'s
     // around it.
@@ -684,6 +691,48 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     });
     return;
   }
+
+  if (auto vaReduce = dyn_cast<VariadicReduceAttr>(param)) {
+    os << "#" << vaReduce.name << "(";
+    printParam(os, vaReduce.getVariadic(), diagShared);
+    os << ", base=";
+    printParam(os, vaReduce.getBase(), diagShared);
+    os << ", reducer=";
+    printGeneratorAttr(cast<GeneratorAttr>(vaReduce.getGenerator()));
+    os << ")";
+    return;
+  }
+
+  if (auto vaConcat = dyn_cast<VariadicConcatAttr>(param)) {
+    os << "#" << vaConcat.name << "(";
+    printParam(os, vaConcat.getVariadics(), diagShared);
+    os << ")";
+    return;
+  }
+
+  if (auto vaZip = dyn_cast<VariadicZipAttr>(param)) {
+    os << "#" << vaZip.name << "(";
+    printParam(os, vaZip.getVariadics(), diagShared);
+    os << ")";
+    return;
+  }
+
+  if (auto vaSplat = dyn_cast<VariadicSplatAttr>(param)) {
+    os << "#" << vaSplat.name << "(";
+    printParam(os, vaSplat.getElement(), diagShared);
+    os << ", ";
+    printParam(os, vaSplat.getCount(), diagShared);
+    os << ")";
+    return;
+  }
+
+  if (auto vaSize = dyn_cast<VariadicSizeAttr>(param)) {
+    os << "len(";
+    printParam(os, vaSize.getVariadic(), diagShared);
+    os << ")";
+    return;
+  }
+
   if (auto memAttr = dyn_cast<StoreToMemAttr>(param))
     return printParam(os, memAttr.getValue(), diagShared);
 
@@ -912,6 +961,7 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     if (diagShared)
       return prettyPrintParamName(declRef, /*elideOriginOf=*/false, *diagShared,
                                   os);
+
     // Escape any weird characters in the parameter name that might have
     // been introduced with backticks.
     return printAsMojoStringLiteral(declRef.getName(), os);
