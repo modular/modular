@@ -438,6 +438,11 @@ what we publish.
     types based on a compile-time boolean condition. It is the type-level
     equivalent of the ternary conditional expression `Then if If else Else`.
 
+- `reflection/traits` has been added, providing compile-time meta functions
+  (`AllWritable`, `AllMovable`, `AllCopyable`, `AllImplicitlyCopyable`,
+  `AllDefaultable`, `AllEquatable`) that evaluate to `True` if all types in a
+  variadic type list conform to the corresponding trait.
+
 - `UnsafeMaybeUninit` has been renamed as such, and it's methods have had their
   names updated to reflect the `init` name. It also now exposes a `zeroed()` method
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
