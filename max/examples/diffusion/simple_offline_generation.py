@@ -421,16 +421,13 @@ async def generate_image(args: argparse.Namespace) -> None:
         for i in range(args.num_warmups):
             print(f"Running warmup {i + 1} of {args.num_warmups}")
             pipeline.execute(inputs_warmup)
-        with profile_execute(
-            pipeline, patch_concat=True, patch_tensor_ops=True
-        ) as prof:
+        with profile_execute(pipeline) as prof:
             for i in range(args.num_profile_iterations):
                 print(
                     f"Running inference {i + 1} of {args.num_profile_iterations}"
                 )
                 outputs = pipeline.execute(inputs)
-        print(f"Method timings:\n{prof.report(unit='ms')}")
-        print(f"Module timings:\n{prof.report_modules(unit='ms')}")
+        prof.report(unit="ms")
     else:
         outputs = pipeline.execute(inputs)
 
