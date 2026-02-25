@@ -417,6 +417,7 @@ fn reducescatter[
         Error: If P2P access is not available between GPUs.
         Error: If input buffer size is not a multiple of SIMD width.
     """
+    comptime assert ngpus >= 2, "reducescatter requires at least 2 GPUs"
 
     # Return early if the input buffer is empty
     var num_elements = input_buffers[0].num_elements()

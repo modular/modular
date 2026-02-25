@@ -391,6 +391,8 @@ fn allreduce_rmsnorm_fp8[
         The start barrier of the NEXT allreduce call protects the
         input buffers that are read by remote GPUs.
     """
+    comptime assert ngpus >= 2, "allreduce_rmsnorm_fp8 requires at least 2 GPUs"
+
     if not is_p2p_enabled():
         raise Error("allreduce_rmsnorm_fp8 requires P2P access between GPUs")
 

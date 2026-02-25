@@ -142,6 +142,7 @@ fn scatter[
     All GPUs must call this function.
     """
     comptime tp_size = ceildiv(ngpus, dp_size)
+    comptime assert ngpus >= 2, "scatter requires at least 2 GPUs"
     comptime assert ngpus >= dp_size, "ngpus must be >= dp_size"
 
     if not is_p2p_enabled():
