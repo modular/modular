@@ -249,6 +249,12 @@ fn test_unreachable_after_throwonly() raises:
     # expected-warning @+1 {{unreachable code after function that never returns}}
     var x = 4+5
 
+
+fn test_unreachable_after_comptime_assert_false():
+    comptime assert False
+    # expected-warning @+1 {{unreachable code after compile-time assertion failure}}
+    return
+
 ##===----------------------------------------------------------------------===##
 # Complex aggregates
 ##===----------------------------------------------------------------------===##

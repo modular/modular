@@ -603,6 +603,19 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       continue;
     }
 
+    // A kgen.param.assert with a statically false condition means the
+    // assertion will fail at elaboration time; all code after it is dead.
+    if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
+      if (auto cond = dyn_cast<IntegerAttr>(assertOp.getCond());
+          cond && cond.getValue().isZero()) {
+        auto b =
+            handleSemanticTerminatorOp(op, "compile-time assertion failure");
+        UnreachableOp::create(b, op.getLoc(), /*isAfterUnreachableCall=*/true);
+        return;
+      }
+      continue;
+    }
+
     // Most ops don't have regions and are just fallthrough.
     // TODO: Add support for noreturn calls.
     if (!op.getNumRegions())
