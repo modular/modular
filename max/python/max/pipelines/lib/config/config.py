@@ -97,17 +97,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    min_batch_size_tg: int | None = Field(
-        default=None,
-        description=(
-            "Soft floor on the decode batch size. If the TG batch size is "
-            "larger, the scheduler continues TG batches; if it falls below, the "
-            "scheduler prioritizes CE. This is not a strict minimum. By "
-            "default, this is max_queue_size_tg. Experimental for the TTS "
-            "scheduler."
-        ),
-    )
-
     ep_size: int = Field(
         default=1,
         description=(
