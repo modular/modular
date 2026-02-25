@@ -1474,16 +1474,32 @@ fn maximum[
 
     comptime for w in range(width):
         res[w] = max_ftz(
-            rebind[Float32](x[2 * w]), rebind[Float32](x[2 * w + 1])
+            rebind[Float32](x[3 * w]),
+            rebind[Float32](x[3 * w + 1]),
+            rebind[Float32](x[3 * w + 2]),
         )
-
-    # unroll (using SIMD) to break up dependency chain
-    comptime for i in range(1, BN // (2 * width)):
+    # max idx = 3 * (width-1) + 2 = 3*width - 1
+    comptime remaining_iters = BN - 3 * width
+    comptime num_iters = remaining_iters // (2 * width)
+    comptime for i in range(num_iters):
+        comptime col = i * 2 * width + 3 * width
         comptime for w in range(width):
-            comptime j = i * 2 * width + 2 * w
             res[w] = max_ftz(
-                res[w], rebind[Float32](x[j]), rebind[Float32](x[j + 1])
+                res[w],
+                rebind[Float32](x[col + 2 * w]),
+                rebind[Float32](x[col + 2 * w + 1]),
             )
+
+    comptime remainder_base = 3 * width + 2 * width * num_iters
+    comptime end_iters = (BN - remainder_base) // 2
+    comptime for w in range(end_iters):
+        res[w] = max_ftz(
+            res[w],
+            rebind[Float32](x[remainder_base + 2 * w]),
+            rebind[Float32](x[remainder_base + 2 * w + 1]),
+        )
+    comptime if (BN - remainder_base) % 2 == 1:
+        res[end_iters] = max_ftz(res[end_iters], x[BN - 1])
 
 
 @always_inline
