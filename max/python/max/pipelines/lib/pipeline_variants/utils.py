@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides utility functions for computing allowed generation steps in pipeline variants."""
+
 from __future__ import annotations
 
 import logging

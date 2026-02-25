@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Builds computation graphs for log probabilities over batched input sequences."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

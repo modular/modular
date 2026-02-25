@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines pipeline-specific exceptions for input validation errors."""
+
 from __future__ import annotations
 
 

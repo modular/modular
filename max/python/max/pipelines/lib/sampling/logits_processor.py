@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides functions for applying logits processors to model output batches before sampling."""
+
 from __future__ import annotations
 
 from max.driver import CPU, Buffer
