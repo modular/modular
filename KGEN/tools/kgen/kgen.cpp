@@ -26,6 +26,7 @@
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/MArchTarget.h"
+#include "Support/MDialect/MAttrs.h"
 #include "Support/Process.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Parser/Parser.h"
@@ -273,6 +274,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                    "', expected a positive integer number");
     }
     options.largeDataThreshold = value;
+  }
+
+  if (!clOptions.relocationModel.empty()) {
+    ErrorOr<llvm::Reloc::Model> model =
+        M::symbolizeRelocationModel(clOptions.relocationModel);
+    if (model.isError())
+      return model.takeError();
+
+    options.relocModel = *model;
   }
 
   if (!clOptions.loopUnrollingWarnThreshold.empty()) {

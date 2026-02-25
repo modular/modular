@@ -1086,15 +1086,17 @@ StringLiteral M::stringifyRelocationModel(llvm::Reloc::Model model) {
   llvm_unreachable("invalid relocation model");
 }
 
-std::optional<llvm::Reloc::Model> M::symbolizeRelocationModel(StringRef str) {
-  return llvm::StringSwitch<std::optional<llvm::Reloc::Model>>(str)
+ErrorOr<llvm::Reloc::Model> M::symbolizeRelocationModel(StringRef str) {
+  return llvm::StringSwitch<ErrorOr<llvm::Reloc::Model>>(str)
       .Case("static", llvm::Reloc::Static)
       .Case("pic", llvm::Reloc::PIC_)
       .Case("dynamic-no-pic", llvm::Reloc::DynamicNoPIC)
       .Case("ropi", llvm::Reloc::ROPI)
       .Case("rwpi", llvm::Reloc::RWPI)
       .Case("ropi-rwpi", llvm::Reloc::ROPI_RWPI)
-      .Default(std::nullopt);
+      .Default(Error("invalid relocation-model '" + str +
+                     "', expected one of: `static`, `pic`, `dynamic-no-pic`, "
+                     "`ropi`, `rwpi`, or `ropi-rwpi`"));
 }
 
 TargetInfoAttr M::getTargetInfo(ModuleOp module) {
@@ -1206,8 +1208,8 @@ struct FieldParser<llvm::Reloc::Model> {
     if (failed(p.parseString(&str)))
       return failure();
 
-    std::optional<llvm::Reloc::Model> model = symbolizeRelocationModel(str);
-    if (!model)
+    ErrorOr<llvm::Reloc::Model> model = symbolizeRelocationModel(str);
+    if (model.isError())
       return failure();
     return *model;
   }

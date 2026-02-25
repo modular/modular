@@ -70,8 +70,8 @@ static LogicalResult parseRelocModel(DialectBytecodeReader &reader,
   if (failed(reader.readString(modelStr)))
     return failure();
 
-  std::optional<llvm::Reloc::Model> result = symbolizeRelocationModel(modelStr);
-  if (!result)
+  ErrorOr<llvm::Reloc::Model> result = symbolizeRelocationModel(modelStr);
+  if (result.isError())
     return failure();
 
   model = *result;
