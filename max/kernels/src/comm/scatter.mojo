@@ -48,7 +48,7 @@ from .sync import (
     MAX_GPUS,
     Signal,
     _multi_gpu_barrier,
-    can_enable_p2p,
+    is_p2p_enabled,
 )
 
 # --- Pull kernel: each GPU reads its own chunk from root ---
@@ -144,7 +144,7 @@ fn scatter[
     comptime tp_size = ceildiv(ngpus, dp_size)
     comptime assert ngpus >= dp_size, "ngpus must be >= dp_size"
 
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         raise Error("Scatter currently requires P2P access between GPUs")
 
     # Extract raw pointers and sizes from NDBuffers for the kernel.

@@ -40,7 +40,7 @@ from testing import assert_true
 
 from comm import Signal, MAX_GPUS
 from comm.scatter import scatter
-from comm.sync import can_enable_p2p
+from comm.sync import enable_p2p
 
 comptime rank = 1
 comptime dtype = DType.uint32
@@ -220,7 +220,7 @@ def main():
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
-    if not can_enable_p2p():
+    if not enable_p2p():
         print("P2P not enabled, skipping test.")
         return
 
