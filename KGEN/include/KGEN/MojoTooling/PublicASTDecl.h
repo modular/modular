@@ -355,6 +355,12 @@ public:
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
 
+  /// Set the constraints of this decl.
+  void setConstraints(StringRef cnstr) { constraints = cnstr; }
+
+  /// Get constraints of this declaration as string. It might be empty.
+  StringRef getConstraints() const { return constraints; }
+
   /// The output of the generation is defined in the following schema:
   ///
   ///  {
@@ -365,6 +371,7 @@ public:
   ///    "path": string,
   ///    "passingKind": string,
   ///    "defaultValue": string?
+  ///    "constraints": string?
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
@@ -383,6 +390,7 @@ public:
 private:
   std::string type;
   TypeMetadata typeMetadata;
+  std::string constraints;
   SmallVector<TypeMetadata, kTypicalTraitCompositionSize> traitMetadata;
   KGEN::LIT::PassingKind passingKind;
   KGEN::LIT::VariadicKind variadicKind;
@@ -681,6 +689,7 @@ private:
 
   SmallVector<PublicArgumentDecl, kTypicalArgumentCount> args;
   SmallVector<PublicParameterDecl, kTypicalParameterCount> parameters;
+  std::string fnConstraints;
   // TODO: Convert this to MojoASTTypeRef.
   std::optional<std::string> returnType;
 

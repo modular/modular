@@ -31,8 +31,6 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-namespace M {
-
 /// Parses compound trait types like "Representable & Copyable & Movable" into
 /// individual components. Returns a vector of individual trait names, or a
 /// single-element vector for non-compound types.
@@ -85,7 +83,26 @@ static bool shouldExcludeParameterFromDocs(PassingKind passingKind,
   return false;
 }
 
-} // namespace M
+/// Converts a set of constraint attributes to its string representation.
+/// If an evaluator is provided, the constraint's proposition is rebound before
+/// printing.
+static std::string constraintsToString(ArrayRef<ConstraintAttr> constraints,
+                                       ParameterEvaluator *evaluator,
+                                       SharedState &shared) {
+  std::string result;
+  if (constraints.empty())
+    return result;
+  llvm::raw_string_ostream os(result);
+  for (const ConstraintAttr &c : constraints) {
+    TypedAttr proposition = c.getProposition();
+    proposition = LIT::stripStructExtractFromBool(proposition);
+    if (evaluator)
+      proposition = evaluator->getReboundAttribute(proposition);
+    os << " where ";
+    ASTType::printParam(os, proposition, &shared);
+  }
+  return result;
+}
 
 /// Two spaces that are forcefully added to markdown lines that can be used for
 /// indentation.
@@ -549,12 +566,14 @@ static void printArgOrParameterSignature(
 
 /// Populate a list of PublicParameterDecls from a list of parameter types and
 /// metadata.
-static ParameterEvaluator populatePublicParameterDecls(
-    SharedState &shared, ArrayRef<Type> paramTypes, PogListAttr paramListAttr,
-    SmallVectorImpl<PublicParameterDecl> &parameters,
-    const MojoASTDeclRef *parentDeclContext = nullptr) {
+static ParameterEvaluator
+populatePublicParameterDecls(SharedState &shared, ArrayRef<Type> paramTypes,
+                             PogListAttr paramListAttr,
+                             SmallVectorImpl<PublicParameterDecl> &parameters,
+                             MojoASTDeclRef *parentDeclContext = nullptr) {
   // Update param / arg types with decl refs instead of index refs.
   ParameterEvaluator evaluator;
+  ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
   // Grab the types of the parameters to the struct.
   for (auto [idx, paramType] : llvm::enumerate(paramTypes)) {
     TypedAttr defaultValue;
@@ -563,8 +582,7 @@ static ParameterEvaluator populatePublicParameterDecls(
           cast<TypedAttr>(evaluator.getReboundAttribute(defaultAttr));
     }
     PassingKind passingKind = paramListAttr.getPassingKind(idx);
-    StringRef paramName =
-        demangleParameterName(paramListAttr.getName(idx), /*forUser*/ true);
+    StringRef paramName = paramListAttr.getName(idx);
     VariadicKind variadicKind = paramListAttr.getVariadicKind(idx);
     Type reboundType = evaluator.getReboundType(paramType);
 
@@ -588,6 +606,14 @@ static ParameterEvaluator populatePublicParameterDecls(
     parameters.push_back(PublicParameterDecl(paramName, typeString, astType,
                                              shared, passingKind, variadicKind,
                                              defaultValue, parentDeclContext));
+    if (const ArrayRef<ConstraintAttr> constraints = pogs[idx].getConstraints();
+        !constraints.empty()) {
+      DeclResolver::DeclScopeChanger scope(
+          parentDeclContext && *parentDeclContext ? &**parentDeclContext
+                                                  : nullptr);
+      parameters.back().setConstraints(
+          constraintsToString(constraints, &evaluator, shared));
+    }
   }
   return evaluator;
 }
@@ -734,6 +760,8 @@ PublicParameterDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
   dumpIdentifierWithType(os, getName(), type, variadicKind);
+  if (!constraints.empty())
+    os << constraints;
   if (defaultValue)
     os << " = " << getDefaultValueString(defaultValue, ctx.getSharedState());
   return buff;
@@ -799,6 +827,8 @@ llvm::json::Object PublicParameterDecl::toJSON(MojoParserContext &ctx) const {
   if (defaultValue)
     object["default"] =
         getDefaultValueString(defaultValue, ctx.getSharedState());
+  if (!constraints.empty())
+    object["constraints"] = constraints;
   return object;
 }
 
@@ -1201,6 +1231,9 @@ std::string PublicFunctionDecl::getSignature(
     *returnOffset = signature.size();
   if (returnType && !hasOutArgument)
     signatureOS << " -> " << *returnType;
+  if (!fnConstraints.empty())
+    signatureOS << fnConstraints;
+
   return signatureOS.str();
 }
 
@@ -1282,6 +1315,10 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   ArrayRef<Type> sigTypes = signature.getArguments();
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
   ArrayRef<Type> paramTypes = signature.getInputParamTypes();
+  ArrayRef<ConstraintAttr> sigConstraints =
+      signature.getFnMetadata().getConstraints();
+  ArrayRef<PogMetadataAttr> paramMetaAttribs =
+      signature.getMetadata().getPogs();
 
   // If this is a method, grab the expected "Self" type.
   std::optional<ASTType> selfType;
@@ -1325,6 +1362,20 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
         generateTypeString(shared, reboundType, variadicKind, selfType),
         MojoASTTypeRef(reboundType), shared, passingKind, variadicKind,
         defaultValue, &declRef));
+    if (const ArrayRef<ConstraintAttr> constraints =
+            paramMetaAttribs[parIdx].getConstraints();
+        !constraints.empty()) {
+      DeclResolver::DeclScopeChanger scope(declRef ? &*declRef : nullptr);
+      std::string constrString =
+          constraintsToString(constraints, &evaluator, shared);
+      parameters.back().setConstraints(constrString);
+    }
+  }
+
+  // evaluate constraints
+  if (!sigConstraints.empty()) {
+    DeclResolver::DeclScopeChanger scope(declRef ? &*declRef : nullptr);
+    fnConstraints = constraintsToString(sigConstraints, &evaluator, shared);
   }
 
   // Grab the types of the arguments to the function.

@@ -1,0 +1,265 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+"""Tests for where clause (constraints) documentation generation."""
+
+# RUN: mojo doc %s | FileCheck %s
+
+# Check that no diagnostics are output:
+# RUN: mojo doc %s 2>&1 | FileCheck %s --allow-empty --check-prefix CHECK-DIAG
+# CHECK-DIAG-NOT: warning
+
+##===----------------------------------------------------------------------===##
+# Helper predicates for constraint testing
+##===----------------------------------------------------------------------===##
+
+
+fn is_positive(x: Int) -> Bool:
+    return x > 0
+
+
+fn is_even(x: Int) -> Bool:
+    return x % 2 == 0
+
+
+fn complex_pred(a: Int, b: Int) -> Bool:
+    return a + b > 0
+
+
+##===----------------------------------------------------------------------===##
+# Function-level where clauses
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_single_where_clause",
+# CHECK: "signature": "fn_with_single_where_clause[N: Int]() where is_positive(N)"
+fn fn_with_single_where_clause[N: Int]() where is_positive(N):
+    """Function with a single where clause constraint.
+
+    Parameters:
+        N: A positive integer parameter.
+    """
+    pass
+
+
+# Note: Compound 'and' constraints are rendered using conditional form due to
+# internal representation.
+# CHECK-LABEL: "name": "fn_with_compound_where_clause",
+# CHECK: "signature": "fn_with_compound_where_clause[N: Int, M: Int]() where
+fn fn_with_compound_where_clause[
+    N: Int, M: Int
+]() where is_positive(N) and is_even(M):
+    """Function with compound where clause using 'and'.
+
+    Parameters:
+        N: A positive integer parameter.
+        M: An even integer parameter.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_where_and_args",
+# CHECK: "signature": "fn_with_where_and_args[N: Int](value: Int) where is_positive(N)"
+fn fn_with_where_and_args[N: Int](value: Int) where is_positive(N):
+    """Function with where clause and regular arguments.
+
+    Parameters:
+        N: A positive integer parameter.
+
+    Args:
+        value: An integer value.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_where_and_return",
+# CHECK: "signature": "fn_with_where_and_return[N: Int]() -> Int where is_positive(N)"
+fn fn_with_where_and_return[N: Int]() -> Int where is_positive(N):
+    """Function with where clause and return type.
+
+    Parameters:
+        N: A positive integer parameter.
+
+    Returns:
+        An integer value.
+    """
+    return N
+
+
+##===----------------------------------------------------------------------===##
+# Parameter-level constraints (inline where clauses)
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_parameter_constraint",
+# CHECK: "constraints": " where is_positive(N)"
+# CHECK: "name": "N",
+# CHECK: "signature": "fn_with_parameter_constraint[N: Int where is_positive(N)]()"
+fn fn_with_parameter_constraint[N: Int where is_positive(N)]():
+    """Function with parameter-level constraint.
+
+    Parameters:
+        N: A positive integer parameter with inline constraint.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_multiple_param_constraints",
+# CHECK: "constraints": " where is_positive(A)"
+# CHECK: "name": "A",
+# CHECK: "constraints": " where is_even(B)"
+# CHECK: "name": "B",
+# CHECK: "signature": "fn_with_multiple_param_constraints[A: Int where is_positive(A), B: Int where is_even(B)]()"
+fn fn_with_multiple_param_constraints[
+    A: Int where is_positive(A), B: Int where is_even(B)
+]():
+    """Function with multiple parameter-level constraints.
+
+    Parameters:
+        A: A positive integer.
+        B: An even integer.
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
+# Complex constraint expressions
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_multi_param_pred",
+# CHECK: "signature": "fn_with_multi_param_pred[A: Int, B: Int]() where complex_pred(A, B)"
+fn fn_with_multi_param_pred[A: Int, B: Int]() where complex_pred(A, B):
+    """Function with a constraint that uses multiple parameters.
+
+    Parameters:
+        A: First integer.
+        B: Second integer.
+    """
+    pass
+
+
+# Note: 'or' constraints are rendered using conditional form due to internal
+# representation.
+# CHECK-LABEL: "name": "fn_with_or_constraint",
+# CHECK: "signature": "fn_with_or_constraint[N: Int]() where
+fn fn_with_or_constraint[N: Int]() where is_positive(N) or is_even(N):
+    """Function with an 'or' constraint.
+
+    Parameters:
+        N: An integer that is either positive or even.
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
+# Default values with constraints
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_default_and_constraint",
+# CHECK: "default": "10",
+# CHECK: "name": "N",
+# CHECK: "signature": "fn_with_default_and_constraint[N: Int = 10]() where is_positive(N)"
+fn fn_with_default_and_constraint[N: Int = 10]() where is_positive(N):
+    """Function with default parameter value and where clause.
+
+    Parameters:
+        N: A positive integer with default value 10.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_default_and_param_constraint",
+# CHECK: "constraints": " where is_even(M)"
+# CHECK: "default": "4",
+# CHECK: "name": "M",
+# CHECK: "signature": "fn_with_default_and_param_constraint[M: Int where is_even(M) = 4]()"
+fn fn_with_default_and_param_constraint[M: Int where is_even(M) = 4]():
+    """Function with default value and parameter-level constraint.
+
+    Parameters:
+        M: An even integer with default value 4.
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
+# Combined function and parameter constraints
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_both_constraint_types",
+# CHECK: "constraints": " where is_positive(X)"
+# CHECK: "name": "X",
+# CHECK: "signature": "fn_with_both_constraint_types[X: Int where is_positive(X), Y: Int]() where
+fn fn_with_both_constraint_types[
+    X: Int where is_positive(X), Y: Int
+]() where is_even(Y):
+    """Function with both parameter-level and function-level constraints.
+
+    Parameters:
+        X: A positive integer (parameter-level constraint).
+        Y: An even integer (function-level constraint).
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
+# Struct with method-level constraints
+# Note: In JSON output, struct fields are alphabetical, so 'functions' comes
+# before 'name' and 'signature'.
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "structs":
+# CHECK: "functions":
+# CHECK: "name": "method_with_where",
+# CHECK: "signature": "method_with_where[M: Int](self) where is_positive(M)"
+# CHECK: "name": "method_with_param_constraint",
+# CHECK: "constraints": " where is_even(K)"
+# CHECK: "signature": "method_with_param_constraint[K: Int where is_even(K)](self)"
+# CHECK: "name": "MethodConstraints"
+# CHECK: "signature": "struct MethodConstraints"
+@fieldwise_init
+struct MethodConstraints:
+    """A struct to test method-level constraints."""
+
+    fn method_with_where[M: Int](self) where is_positive(M):
+        """Method with a where clause.
+
+        Parameters:
+            M: A positive integer parameter.
+        """
+        pass
+
+    fn method_with_param_constraint[K: Int where is_even(K)](self):
+        """Method with parameter-level constraint.
+
+        Parameters:
+            K: An even integer parameter.
+        """
+        pass
+
+
+##===----------------------------------------------------------------------===##
+# Struct with parameter constraints
+##===----------------------------------------------------------------------===##
+
+
+# CHECK: "name": "StructWithParamConstraint",
+# CHECK: "constraints": " where is_positive(N)"
+# CHECK: "name": "N",
+# CHECK: "signature": "struct StructWithParamConstraint[N: Int where is_positive(N)]"
+@fieldwise_init
+struct StructWithParamConstraint[N: Int where is_positive(N)]:
+    """A struct with a parameter-level constraint.
+
+    Parameters:
+        N: A positive integer with inline constraint.
+    """
+
+    pass
