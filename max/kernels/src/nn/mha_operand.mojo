@@ -376,11 +376,6 @@ struct KVCacheScalesMHAOperand[
     ) raises:
         """TMA not supported for KVCacheScalesMHAOperand."""
         comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
-        # Forward to the underlying cache's implementation to satisfy out param
-        # This code is unreachable due to comptime assert above
-        tma = rebind[type_of(tma)](
-            self.cache.create_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
-        )
 
     @always_inline
     fn create_ragged_tma_tile[
@@ -401,11 +396,6 @@ struct KVCacheScalesMHAOperand[
     ) raises:
         """TMA not supported for KVCacheScalesMHAOperand."""
         comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
-        # Forward to the underlying cache's implementation to satisfy out param
-        # This code is unreachable due to comptime assert above
-        tma = rebind[type_of(tma)](
-            self.cache.create_ragged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
-        )
 
     @always_inline
     fn scales_raw_ptr(
