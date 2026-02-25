@@ -170,12 +170,6 @@ def test_kernel_1[
                 )
         print("TEST PASSED")
 
-    _ = a^
-    _ = b^
-    _ = c^
-    _ = c_ref^
-    _ = b_vendor^
-
 
 def main():
     with DeviceContext() as ctx:

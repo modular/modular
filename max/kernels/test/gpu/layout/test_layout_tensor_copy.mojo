@@ -104,7 +104,6 @@ fn test_async_copy[
     ctx.synchronize()
 
     print(input.tensor())
-    _ = input^
 
 
 def run_async_copy_tests(ctx: DeviceContext):
@@ -247,9 +246,6 @@ fn test_swizzle_copy[
     ctx.synchronize()
     print(b_tensor.tensor())
 
-    _ = a_tensor^
-    _ = b_tensor^
-
 
 def run_swizzle_copy_tests(ctx: DeviceContext):
     # CHECK: === test_swizzle_copy
@@ -389,9 +385,6 @@ fn test_partial_copy_dram_to_sram_async[
 
     print(output.tensor())
 
-    _ = input^
-    _ = output^
-
 
 def run_partial_copy_dram_to_sram_async_tests(ctx: DeviceContext):
     # CHECK: === test_partial_copy_dram_to_sram_async
@@ -496,9 +489,6 @@ fn test_copy_dram_to_sram[
     ctx.synchronize()
 
     print(output.tensor())
-
-    _ = input^
-    _ = output^
 
 
 def run_copy_dram_to_sram_tests(ctx: DeviceContext):
@@ -619,8 +609,6 @@ fn test_copy_sram_to_dram[
     ctx.synchronize()
 
     print(input.tensor().tile[M - skew_M, N](0, 0))
-
-    _ = input^
 
 
 def run_copy_sram_to_dram_tests(ctx: DeviceContext):
@@ -780,8 +768,6 @@ fn test_copy_local_to_local[
 
     print(output.tensor())
 
-    _ = output^
-
 
 def run_copy_local_to_local_tests(ctx: DeviceContext):
     # CHECK: === test_copy_local_to_local
@@ -921,9 +907,6 @@ fn test_copy_dram_to_local[
     ctx.synchronize()
 
     print(output.tensor())
-
-    _ = input^
-    _ = output^
 
 
 def run_copy_dram_to_local_tests(ctx: DeviceContext):
@@ -1066,8 +1049,6 @@ fn test_copy_local_to_sram[
     ctx.synchronize()
 
     print(output.tensor())
-
-    _ = output^
 
 
 def run_copy_local_to_sram_tests_float32_simd_size_12(ctx: DeviceContext):

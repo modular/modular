@@ -180,9 +180,6 @@ def test_load_and_mma_and_multiply_operands[
     )
     ctx.synchronize()
 
-    _ = lhs^
-    _ = rhs^
-
 
 def test_write_res_operand[
     dst_dtype: DType, dtype: DType, shape: IndexList[3]
@@ -202,8 +199,6 @@ def test_write_res_operand[
     ctx.synchronize()
 
     print(dst.tensor())
-
-    _ = dst^
 
 
 fn mma_load_and_print_operands_kernel_ldmatrix[
@@ -344,5 +339,3 @@ def test_load_operands_ldmatrix[
         block_dim=(WARP_SIZE),
     )
     ctx.synchronize()
-    _ = lhs^
-    _ = rhs^

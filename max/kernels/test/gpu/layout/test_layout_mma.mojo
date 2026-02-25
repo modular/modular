@@ -159,13 +159,6 @@ fn test_layout_mma[
                     print(i, out_val, out_ref)
             testing.assert_true(isclose(out_val, out_ref, rtol=rtol))
 
-    _ = mat_a^
-    _ = mat_b^
-    _ = mat_c^
-    _ = mat_a_n^
-    _ = mat_b_n^
-    _ = mat_c_n^
-
 
 def main():
     with DeviceContext() as ctx:

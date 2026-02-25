@@ -132,9 +132,6 @@ fn test_dynamic_async_copy[
 
     print(output.tensor())
 
-    _ = input^
-    _ = output^
-
 
 def run_dynamic_async_copy_tests(ctx: DeviceContext):
     # CHECK: === test_dynamic_async_copy
@@ -260,9 +257,6 @@ fn test_swizzle_copy[
     ctx.synchronize()
     print(b_tensor.tensor())
 
-    _ = a_tensor^
-    _ = b_tensor^
-
 
 def run_swizzle_copy_tests(ctx: DeviceContext):
     # CHECK: === test_swizzle_copy
@@ -376,8 +370,6 @@ fn test_masked_async_copy[
     ctx.synchronize()
 
     print(input.tensor())
-
-    _ = input^
 
 
 def run_masked_async_copy_tests(ctx: DeviceContext):
@@ -502,8 +494,6 @@ fn test_masked_copy[
 
     print(input.tensor())
 
-    _ = input^
-
 
 def run_masked_copy_tests(ctx: DeviceContext):
     # CHECK: === test_masked_copy
@@ -621,9 +611,6 @@ fn test_masked_copy_dram_to_local[
     ctx.synchronize()
 
     print(output.tensor())
-
-    _ = input^
-    _ = output^
 
 
 def run_copy_dram_to_local_tests(ctx: DeviceContext):
