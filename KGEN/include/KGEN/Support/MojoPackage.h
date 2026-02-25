@@ -55,6 +55,10 @@ struct MojoPackageVersion final {
       result += label;
     return result;
   }
+
+  operator bool() const {
+    return major != 0 || minor != 0 || patch != 0 || !label.empty();
+  }
 };
 
 /// Represents the header section of a Mojo package file, coming before the MLIR
@@ -95,7 +99,8 @@ bool isCompatiblePackage(const MojoPackageHeader &header);
 /// Returns whether the Mojo package (represented by its header) is compatible
 /// with the current compiler, and returns a message explaining any cause of
 /// incompatibility.
-ErrorOrSuccess checkCompatiblePackage(const MojoPackageHeader &header);
+ErrorOrSuccess checkCompatiblePackage(const MojoPackageHeader &header,
+                                      StringRef packageName = "");
 
 /// Compares two (package) versions and returns how 'other' compares to the
 /// 'base' with a human-readable message on inequality. Optionally takes
