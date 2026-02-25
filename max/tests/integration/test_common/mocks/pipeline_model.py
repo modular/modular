@@ -14,7 +14,7 @@
 
 from collections.abc import Sequence
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import Mock
 
 import numpy as np
 from max.driver import CPU, Buffer, Device
@@ -22,11 +22,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -35,7 +31,7 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -77,7 +73,7 @@ class MockModelInputs(ModelInputs):
         )
 
 
-class MockPipelineModel(PipelineModel):
+class MockPipelineModel(PipelineModelWithKVCache):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -105,7 +101,7 @@ class MockPipelineModel(PipelineModel):
 
         # This is required to smuggle these parameters in.
         self.max_length = pipeline_config.model.max_length
-        self.kv_manager = MagicMock(spec=PagedKVCacheManager)
+        self.kv_params = Mock(spec=KVCacheParams)
 
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.

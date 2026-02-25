@@ -249,7 +249,7 @@ struct ExternalCubinVecAdd:
         rhs: InputTensor[dtype = output.dtype, rank = output.rank],
         ctx: DeviceContextPtr,
     ):
-        constrained[target == "gpu"]()
+        comptime assert target == "gpu"
         gpu_ctx = ctx.get_device_context()
 
         with open(getenv("CUBIN_PATH"), "r") as file:

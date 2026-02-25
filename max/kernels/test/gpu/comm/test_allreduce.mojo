@@ -122,9 +122,9 @@ fn allreduce_test[
             list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[dtype, rank, ImmutAnyOrigin], num_buffers
+    ](fill={})
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
@@ -408,9 +408,9 @@ fn run_allreduce_sweep[use_multimem: Bool]() raises:
 
         # Some checks for raggedness
         comptime simd_width = simd_width_of[dtype, get_gpu_target()]()
-        constrained[
-            length % simd_width == 0, "Length must be multiple of simd_width"
-        ]()
+        comptime assert (
+            length % simd_width == 0
+        ), "Length must be multiple of simd_width"
 
         print(
             _get_test_str[dtype, use_multimem, use_custom_epilogue](

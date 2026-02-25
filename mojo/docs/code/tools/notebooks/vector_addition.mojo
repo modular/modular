@@ -33,10 +33,7 @@ fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
 
 def main():
     # Ensure a supported GPU (NVIDIA or AMD) is available
-    constrained[
-        has_accelerator(),
-        "This example requires a supported GPU",
-    ]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Create GPU device context
     var ctx = DeviceContext()

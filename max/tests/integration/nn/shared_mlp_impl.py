@@ -34,8 +34,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.graph.ops.allreduce import matmul_allreduce
-from max.nn.legacy import MLP, Allreduce, DistributedGemmConfig, Module, Signals
+from max.nn.legacy import MLP, Allreduce, Module, Signals
 from test_common.graph_utils import are_all_buffer_values_sequence
 
 DTYPE = DType.float32
@@ -150,7 +149,6 @@ def mlp_output(
     has_bias: bool = False,
     bias: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     use_subgraphs: bool = True,
-    enable_matmul_allreduce: bool = False,
 ) -> Sequence[Buffer]:
     # Initialize the device-contexts
     devices: list[Device] = (
@@ -184,9 +182,6 @@ def mlp_output(
         devices=devices_refs,
         activation_function=activation_function,
         has_bias=has_bias,
-        dist_gemm_config=DistributedGemmConfig(enable_matmul_allreduce)
-        if n_gpus > 1
-        else None,
     )
 
     if n_gpus > 1:
@@ -231,13 +226,7 @@ def mlp_output(
                 )
             ]
 
-            if enable_matmul_allreduce:
-                weights = [layer.down_proj.weight for layer in mlp_shards]
-                graph_output = matmul_allreduce(
-                    mlp_outputs, weights, graph_signal_buffers
-                )
-            else:
-                graph_output = mlp_allreduce(mlp_outputs, graph_signal_buffers)
+            graph_output = mlp_allreduce(mlp_outputs, graph_signal_buffers)
 
         if isinstance(graph_output, list):
             graph.output(*graph_output)
@@ -269,7 +258,6 @@ def compare_mlp_outputs(
     has_bias: bool = False,
     use_subgraphs: bool = True,
     seq_len: int = 1,
-    enable_matmul_allreduce: bool = False,
 ) -> None:
     if n_gpus > accelerator_count():
         pytest.skip(f"Not enough GPUs to run test with {n_gpus} GPUs.")
@@ -309,7 +297,6 @@ def compare_mlp_outputs(
             has_bias=has_bias,
             bias=(gate_proj_b, down_proj_b, up_proj_b),
             use_subgraphs=use_subgraphs,
-            enable_matmul_allreduce=enable_matmul_allreduce,
         )
     else:
         max_output = mlp_output(
@@ -321,7 +308,6 @@ def compare_mlp_outputs(
             dtype,
             n_gpus=n_gpus,
             use_subgraphs=use_subgraphs,
-            enable_matmul_allreduce=enable_matmul_allreduce,
         )
 
     if has_bias:

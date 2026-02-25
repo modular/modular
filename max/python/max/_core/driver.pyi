@@ -240,6 +240,66 @@ class CPU(Device):
             CPU: A new CPU device object.
         """
 
+class DeviceEvent:
+    """
+    Provides access to an event object.
+
+    An event can be used to wait for the GPU execution to reach a certain
+    point on the given stream.
+
+    .. code-block:: python
+
+        from max import driver
+        # Create a default accelerator device
+        device = driver.Accelerator()
+        # Create an event on the device
+        event = driver.DeviceEvent(device)
+        # Record an event on the device (default stream)
+        device.default_stream.record_event(event)
+        # Wait for execution on the default stream to reach the event
+        event.synchronize()
+    """
+
+    def __init__(self, device: Device) -> None:
+        """
+        Creates an event for synchronization on the specified device.
+
+        Args:
+            device (Device): The device on which to create the event.
+
+        Raises:
+            ValueError: If event creation failed.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            event = driver.DeviceEvent(device)
+        """
+
+    def synchronize(self) -> None:
+        """
+        Ensures all operations on this stream complete before returning.
+
+        Raises:
+            ValueError: If any enqueued operations had an internal error.
+        """
+
+    def is_ready(self) -> bool:
+        """
+        Returns whether this event is ready.
+
+        Returns:
+            bool: True if the event is complete, otherwise false.
+        Raises:
+          ValueError: If querying the event status returned an error
+        """
+
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+    def __eq__(self, arg: object, /) -> bool: ...
+
 class DeviceStream:
     """
     Provides access to a stream of execution on a device.
@@ -275,6 +335,31 @@ class DeviceStream:
 
         Raises:
             ValueError: If any enqueued operations had an internal error.
+        """
+
+    @overload
+    def record_event(self) -> DeviceEvent:
+        """
+        Records an event on this stream.
+
+        Returns:
+            DeviceEvent: A new event that will be signaled when all operations
+                submitted to this stream before this call have completed.
+
+        Raises:
+            ValueError: If recording the event failed.
+        """
+
+    @overload
+    def record_event(self, event: DeviceEvent) -> None:
+        """
+        Records an existing event on this stream.
+
+        Args:
+            event (DeviceEvent): The event to record on this stream.
+
+        Raises:
+            ValueError: If recording the event failed.
         """
 
     @overload

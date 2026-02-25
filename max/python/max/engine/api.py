@@ -142,8 +142,18 @@ def _Model_signature(self: Model) -> Signature:
     return Signature(parameters=parameters)
 
 
-def _Model_capture(self: Model, *inputs: Buffer) -> list[Buffer]:
-    """Capture execution into a device graph keyed by input shapes/dtypes.
+def _normalize_graph_key(graph_key: int) -> int:
+    if isinstance(graph_key, bool) or not isinstance(graph_key, int):
+        raise TypeError("graph_key must be an int.")
+    if graph_key < 0 or graph_key > 2**64 - 1:
+        raise ValueError("graph_key must be in range [0, 2^64 - 1].")
+    return graph_key
+
+
+def _Model_capture(
+    self: Model, graph_key: int, *inputs: Buffer
+) -> list[Buffer]:
+    """Capture execution into a device graph for caller-provided key.
 
     Capture is best-effort and model-dependent. If the model issues
     capture-unsafe operations (for example, host-device synchronization),
@@ -151,15 +161,21 @@ def _Model_capture(self: Model, *inputs: Buffer) -> list[Buffer]:
     """
     if not inputs:
         raise ValueError("Model.capture requires input buffers.")
-    return self._capture(list(inputs))
+    normalized_key = _normalize_graph_key(graph_key)
+    return self._capture(normalized_key, list(inputs))
 
 
-def _Model_replay(self: Model, *inputs: Buffer) -> None:
-    """Replay the captured device graph for these inputs."""
-    self._replay(list(inputs))
+def _Model_replay(self: Model, graph_key: int, *inputs: Buffer) -> None:
+    """Replay the captured device graph for a caller-provided key."""
+    if not inputs:
+        raise ValueError("Model.replay requires input buffers.")
+    normalized_key = _normalize_graph_key(graph_key)
+    self._replay(normalized_key, list(inputs))
 
 
-def _Model_debug_verify_replay(self: Model, *inputs: Buffer) -> None:
+def _Model_debug_verify_replay(
+    self: Model, graph_key: int, *inputs: Buffer
+) -> None:
     """Execute eagerly and verify the launch trace matches the captured graph.
 
     This method validates that graph capture correctly represents eager
@@ -168,22 +184,26 @@ def _Model_debug_verify_replay(self: Model, *inputs: Buffer) -> None:
 
     Args:
         self: The model to debug/verify
+        graph_key: Caller-provided key identifying the captured graph.
         inputs: Input buffers matching the captured input signature (same
             shapes and dtypes used during capture).
 
     Raises:
+        TypeError: If ``graph_key`` is not an integer.
+        ValueError: If ``graph_key`` is out of uint64 range.
         ValueError: If no input buffers are provided.
-        RuntimeError: If no graph has been captured for this input configuration.
+        RuntimeError: If no graph has been captured for ``graph_key``.
         RuntimeError: If the eager execution trace doesn't match the captured graph.
 
     Example:
-        >>> model.capture(input_tensor)
-        >>> model.debug_verify_replay(input_tensor)  # Validates capture
-        >>> model.replay(input_tensor)  # Safe to use optimized replay
+        >>> model.capture(1, input_tensor)
+        >>> model.debug_verify_replay(1, input_tensor)  # Validates capture
+        >>> model.replay(1, input_tensor)  # Safe to use optimized replay
     """
     if not inputs:
         raise ValueError("Model.debug_verify_replay requires input buffers.")
-    self._debug_verify_replay(list(inputs))
+    normalized_key = _normalize_graph_key(graph_key)
+    self._debug_verify_replay(normalized_key, list(inputs))
 
 
 Model.execute = _Model_execute  # type: ignore[method-assign]

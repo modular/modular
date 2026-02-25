@@ -92,7 +92,7 @@ fn test_fused_allreduce_rmsnorm_fp8[
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
-    var in_bufs = InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus](
         fill={}
     )
     for i in range(ngpus):

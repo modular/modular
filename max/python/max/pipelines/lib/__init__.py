@@ -46,10 +46,10 @@ from .hf_utils import (
 )
 from .interfaces import (
     AlwaysSignalBuffersMixin,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
+    PipelineModelWithKVCache,
 )
 from .kv_cache_config import KVCacheConfig
 from .lora import LoRAManager
@@ -99,7 +99,6 @@ __all__ = [
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
-    "KVCacheMixin",
     "LoRAConfig",
     "LoRAManager",
     "LoRARequestProcessor",
@@ -112,6 +111,7 @@ __all__ = [
     "OverlapTextGenerationPipeline",
     "PipelineConfig",
     "PipelineModel",
+    "PipelineModelWithKVCache",
     "PipelineRole",
     "PipelineRuntimeConfig",
     "PixelGenerationPipeline",

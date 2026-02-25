@@ -723,14 +723,12 @@ class LMCacheConnector:
         self,
         ctx: TextGenerationContext,
         target_block_ids: list[int],
-        device_tensors: list[Buffer],
     ) -> list[int]:
         """Load data from LMCache into device blocks.
 
         Args:
             ctx: The request context.
             target_block_ids: Device block IDs to load data into.
-            device_tensors: Device KV cache tensors to copy into.
 
         Returns:
             List of block hashes for the loaded blocks.
@@ -919,22 +917,6 @@ class LMCacheConnector:
         Note: Host blocks are managed by LMCache internally.
         """
         return 0
-
-    @property
-    def host_tensors(self) -> list[Buffer] | None:
-        """Host tensors.
-
-        Note: LMCache manages host storage internally.
-        """
-        return None
-
-    @property
-    def host_scale_tensors(self) -> list[Buffer] | None:
-        """Host scale tensors.
-
-        Note: LMCache manages host storage internally.
-        """
-        return None
 
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache.

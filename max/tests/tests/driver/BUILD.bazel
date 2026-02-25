@@ -9,7 +9,10 @@ package(default_visibility = [
 
 modular_py_test(
     name = "tests",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = ["test_device_event.py"],
+    ),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -24,6 +27,7 @@ modular_py_test(
     srcs = [
         "accelerator_tests/test_buffer.py",
         "accelerator_tests/test_device.py",
+        "test_device_event.py",
     ],
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

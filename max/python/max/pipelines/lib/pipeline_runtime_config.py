@@ -235,7 +235,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description="Whether to defer resolving the pipeline config.",
     )
 
-    _config_file_section_name: str = PrivateAttr(default="runtime_config")
+    _config_file_section_name: str = PrivateAttr(default="runtime")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""

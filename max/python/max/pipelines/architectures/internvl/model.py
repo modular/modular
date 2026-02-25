@@ -44,11 +44,10 @@ from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers.models.auto.configuration_auto import AutoConfig
 
@@ -185,7 +184,7 @@ def assert_image_embeddings_invariant(
 
 
 class InternVLModel(
-    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextAndVisionContext]
 ):
     """An InternVL pipeline model for multimodal text generation."""
 

@@ -41,7 +41,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
     """Protocol for pipelines that support text generation."""
 
     @property
-    def kv_managers(self) -> list[PagedKVCacheManager]:
+    def kv_manager(self) -> PagedKVCacheManager:
         """Returns the KV cache managers for this pipeline."""
         ...
 
@@ -106,30 +106,19 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             context = await self.tokenizer.new_context(prompt)
             context_batch.append(context)
 
-        kv_managers = self.kv_managers
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
 
         # Create inputs to the model. If data parallelism is enabled, group them
         # by replica.
         batches: list[list[TextGenerationContextType]] = []
         batch_to_replica_idx: dict[RequestID, int] = {}
-        if data_parallel_degree > 1 and len(kv_managers) > 1:
-            # We don't support speculative decoding when data parallelism is
-            # enabled, because the KV cache managers might place the same
-            # context on different devices/replicas.
-            raise ValueError(
-                "Having multiple KV managers (e.g. when using"
-                " speculative decoding) is not supported when data "
-                "parallelism is enabled."
-            )
         batches = [[] for _ in range(data_parallel_degree)]
         for i, context in enumerate(context_batch):
             req_id = context.request_id
             # Use whatever replica the main models KVCache recommends.
             replica_idx = i % data_parallel_degree
-            # Claim the slot for all kv_managers (eg: main + draft model)
-            for kv_manager in self.kv_managers:
-                kv_manager.claim(req_id, replica_idx=replica_idx)
+            # Claim the slot for the KV cache manager
+            self.kv_manager.claim(req_id, replica_idx=replica_idx)
             batches[replica_idx].append(context)
             batch_to_replica_idx[req_id] = replica_idx
 
@@ -147,14 +136,11 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             while done < len(context_batch):
                 for replica_batch in batches:
                     for ctx in replica_batch:
-                        for kv_manager in self.kv_managers:
-                            kv_manager.alloc(
-                                ctx,
-                                replica_idx=batch_to_replica_idx[
-                                    ctx.request_id
-                                ],
-                                num_steps=num_steps,
-                            )
+                        self.kv_manager.alloc(
+                            ctx,
+                            replica_idx=batch_to_replica_idx[ctx.request_id],
+                            num_steps=num_steps,
+                        )
                 step_outputs = self.execute(inputs)
 
                 # Filter out all responses for requests that are already released.
@@ -186,10 +172,9 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                                 f"{request_id}"
                             )
 
-                        for kv_manager in self.kv_managers:
-                            kv_manager.release(
-                                request_id, replica_idx=replica_idx
-                            )
+                        self.kv_manager.release(
+                            request_id, replica_idx=replica_idx
+                        )
 
                 if outputs:
                     yield outputs
@@ -205,10 +190,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             # Release remaining requests if the generation was interrupted.
             for batch in batches:
                 for context in batch:
-                    for kv_manager in self.kv_managers:
-                        kv_manager.release(
-                            context.request_id,
-                            replica_idx=batch_to_replica_idx[
-                                context.request_id
-                            ],
-                        )
+                    self.kv_manager.release(
+                        context.request_id,
+                        replica_idx=batch_to_replica_idx[context.request_id],
+                    )

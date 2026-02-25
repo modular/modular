@@ -153,7 +153,7 @@ def test_kv_cache_ragged_attention(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
+        kv_manager.runtime_inputs([batch])[0]
     )
 
     @modular_graph_test(

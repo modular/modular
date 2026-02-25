@@ -209,6 +209,38 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "precompile_pipelines",
+    testonly = True,
+    srcs = ["precompile_pipelines.py"],
+    imports = ["."],
+    main = "precompile_pipelines.py",
+    tags = ["no-pydeps"],
+    deps = [
+        ":create_pipelines",
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:config",
+        "//max/tests/integration/accuracy:verify_pipelines",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_precompile_pipelines_cpu",
+    size = "large",
+    srcs = ["test_precompile_pipelines_cpu.py"],
+    imports = ["."],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/tests/integration/accuracy:verify_pipelines",
+        "//max/tests/integration/tools:precompile_pipelines",
+    ],
+)
+
+modular_py_binary(
     name = "compare_tensors",
     testonly = True,
     srcs = ["compare_tensors.py"],

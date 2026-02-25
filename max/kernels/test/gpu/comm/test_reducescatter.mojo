@@ -57,8 +57,8 @@ fn reducescatter_test[
     Each GPU receives 1/ngpus of the reduced data in its output partition.
     When use_custom_epilogue is True, tests with a negating epilogue.
     """
-    constrained[ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"]()
-    constrained[rank == 1, "this test code currently assumes rank 1"]()
+    comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     print(
         String(
@@ -122,7 +122,7 @@ fn reducescatter_test[
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create input and output NDBuffers
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
         fill={}
     )
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
