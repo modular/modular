@@ -97,14 +97,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    max_queue_size_tg: int | None = Field(
-        default=None,
-        description=(
-            "Maximum number of requests in decode queue. By default, this is "
-            "max_batch_size."
-        ),
-    )
-
     min_batch_size_tg: int | None = Field(
         default=None,
         description=(
