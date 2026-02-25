@@ -26,7 +26,13 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device, DLPackArray
+from max.driver import (
+    CPU,
+    Buffer,
+    Device,
+    DLPackArray,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.graph.buffer_utils import cast_dlpack_to, cast_tensor_to
 from max.graph.quantization import QuantizationEncoding
@@ -393,7 +399,14 @@ class LoRAModel:
 
         Called after _combine_qkv_weights() so that all weights (including
         the concatenated QKV weights) are cast in one place.
+
+        In virtual device mode (warm-cache/cross-compilation), casting is skipped
+        since weights won't be used for inference - only compilation matters.
         """
+        # Skip casting in virtual device mode since weights aren't needed
+        if is_virtual_device_mode():
+            return
+
         for data in self._lora_A.values():
             if isinstance(data.data, np.ndarray):
                 weight_tensor = Buffer.from_numpy(data.data)
@@ -668,9 +681,11 @@ class LoRAModel:
                 self._lora_B[key] = data
 
             elif LoRAType.BIAS.value in key:
-                data.data = cast_dlpack_to(
-                    data.data, data.dtype, base_dtype, CPU()
-                )
+                # Skip casting in virtual device mode (warm-cache)
+                if not is_virtual_device_mode():
+                    data.data = cast_dlpack_to(
+                        data.data, data.dtype, base_dtype, CPU()
+                    )
                 self._lora_bias[key] = data
 
             else:
