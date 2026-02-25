@@ -30,7 +30,7 @@ comptime blksize_t = Int32
 
 
 @fieldwise_init
-struct _c_stat(Copyable, Defaultable, Stringable, Writable):
+struct _c_stat(Copyable, Defaultable, Writable):
     var st_dev: dev_t
     """ID of device containing file."""
     var st_mode: mode_t
@@ -111,6 +111,7 @@ struct _c_stat(Copyable, Defaultable, Stringable, Writable):
         )
         # fmt: on
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

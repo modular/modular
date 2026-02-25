@@ -537,9 +537,7 @@ struct Dict[
     Copyable,
     Defaultable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A container that stores key-value pairs.
@@ -1030,6 +1028,7 @@ struct Dict[
         """
         return len(self).__bool__()
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns a string representation of a `Dict`.
@@ -1042,6 +1041,7 @@ struct Dict[
         return output^
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of a `Dict`.
 

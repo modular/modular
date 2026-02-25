@@ -26,7 +26,6 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     Defaultable,
     Floatable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -119,6 +118,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
     # Conversion Operators
     # ===------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the float as a string.

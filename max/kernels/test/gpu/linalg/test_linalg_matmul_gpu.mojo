@@ -81,24 +81,20 @@ fn _get_test_name[
 ) -> String:
     return String(
         "test-case(",
-        dtype.__str__(),
+        dtype,
         ") : ",
-        shape_c_dim[0].__str__(),
+        shape_c_dim[0],
         (
             "_dynamic"
             + " x "
-            + shape_b_dim[1]
-            .__str__() if shape_c.at[0]()
-            .is_dynamic() else " x "
-            + shape_b_dim[1].__str__()
+            + String(shape_b_dim[1]) if shape_c.at[0]().is_dynamic() else " x "
+            + String(shape_b_dim[1])
         ),
         (
             "_dynamic"
             + " x "
-            + shape_a_dim[1]
-            .__str__() if shape_b.at[1]()
-            .is_dynamic() else " x "
-            + shape_a_dim[1].__str__()
+            + String(shape_a_dim[1]) if shape_b.at[1]().is_dynamic() else " x "
+            + String(shape_a_dim[1])
         ),
         "_dynamic" if shape_a.at[1]().is_dynamic() else "",
         ", ... ",

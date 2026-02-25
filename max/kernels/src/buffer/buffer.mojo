@@ -1306,7 +1306,7 @@ struct NDBuffer[
         Raises:
             If the operation fails.
         """
-        with open(path.__str__(), "w") as f:
+        with open(String(path), "w") as f:
             var ptr = self.data.bitcast[UInt8]()
             f._write(ptr, self.bytecount())
 

@@ -41,7 +41,7 @@ from ._macos import _stat as _stat_macos
 # ===----------------------------------------------------------------------=== #
 
 
-struct stat_result(Copyable, Stringable, Writable):
+struct stat_result(Copyable, Writable):
     """Object whose fields correspond  to the members of the stat structure."""
 
     var st_mode: Int
@@ -170,6 +170,7 @@ struct stat_result(Copyable, Stringable, Writable):
         writer.write(", st_flags=", self.st_flags)
         writer.write(")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Constructs a string representation of stat_result.
@@ -179,6 +180,7 @@ struct stat_result(Copyable, Stringable, Writable):
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Constructs a representation of stat_result.
 

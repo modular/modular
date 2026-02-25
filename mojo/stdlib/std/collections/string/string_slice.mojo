@@ -472,9 +472,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     IntableRaising,
     KeyElement,
     PathLike,
-    Representable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -737,6 +735,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert this StringSlice to a String.
@@ -755,6 +754,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         memcpy(dest=result.unsafe_ptr_mut(), src=self.unsafe_ptr(), count=len)
         return result^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of this string slice.
 
@@ -883,7 +883,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
           The file system path representation as a string.
         """
-        return self.__str__()
+        return String(self)
 
     @always_inline
     fn __getitem__(self, span: ContiguousSlice) -> Self:

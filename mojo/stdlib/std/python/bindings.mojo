@@ -193,7 +193,9 @@ fn _tp_dealloc_wrapper[T: ImplicitlyDestructible](py_self: PyObjectPtr):
     cpython.PyObject_Free(py_self.bitcast[NoneType]())
 
 
-fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
+fn _tp_repr_wrapper[
+    T: ImplicitlyDestructible
+](py_self: PyObjectPtr) -> PyObjectPtr:
     """Python-compatible wrapper for generating string representation of a
     `PyMojoObject`.
 
@@ -202,7 +204,7 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
     and returns the result as a Python string object.
 
     Parameters:
-        T: The wrapped Mojo type that must be `Representable`.
+        T: The wrapped Mojo type that must be `Writable`.
 
     Args:
         py_self: Pointer to the Python object to get representation for.
@@ -215,9 +217,17 @@ fn _tp_repr_wrapper[T: Representable](py_self: PyObjectPtr) -> PyObjectPtr:
 
     ref self = py_self.bitcast[PyMojoObject[T]]()[]
 
-    var repr_str: String
+    var repr_str = String()
     if self.is_initialized:
-        repr_str = repr(self.mojo_value)
+        comptime if conforms_to(T, Writable):
+            trait_downcast[Writable](self.mojo_value).write_repr_to(repr_str)
+        elif conforms_to(T, Representable):
+            repr_str = trait_downcast[Representable](self.mojo_value).__repr__()
+        else:
+            comptime assert False, (
+                "_tp_repr_wrapper requires conformance to either Writable or"
+                " Representable"
+            )
     else:
         repr_str = String("<uninitialized ", get_type_name[T](), ">")
 
@@ -326,7 +336,7 @@ struct PythonModuleBuilder:
     # ===-------------------------------------------------------------------===#
 
     fn add_type[
-        T: Representable
+        T: ImplicitlyDestructible
     ](mut self, type_name: StaticString) -> ref[
         self.type_builders
     ] PythonTypeBuilder:
@@ -539,7 +549,9 @@ struct PythonTypeBuilder(Copyable):
         self.methods = []
 
     @staticmethod
-    fn bind[T: Representable](type_name: StaticString) -> PythonTypeBuilder:
+    fn bind[
+        T: ImplicitlyDestructible
+    ](type_name: StaticString) -> PythonTypeBuilder:
         """Construct a new builder for a Python type that binds a Mojo type.
 
         Parameters:

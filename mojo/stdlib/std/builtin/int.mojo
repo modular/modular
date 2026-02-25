@@ -184,9 +184,7 @@ struct Int(
     IntervalElement,
     KeyElement,
     Powable,
-    Representable,
     Roundable,
-    Stringable,
     TrivialRegisterPassable,
     Truncable,
     Writable,
@@ -1038,6 +1036,7 @@ struct Int(
 
         writer.write(self)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the integer as a string.
@@ -1048,6 +1047,7 @@ struct Int(
 
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Get the integer as a string. Returns the same `String` as `__str__`.

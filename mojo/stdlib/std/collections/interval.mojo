@@ -75,9 +75,7 @@ struct Interval[T: IntervalElement](
     Boolable,
     Equatable,
     ImplicitlyCopyable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A half-open interval [start, end) that represents a range of values.
@@ -282,6 +280,7 @@ struct Interval[T: IntervalElement](
         """
         writer.write("(", self.start, ", ", self.end, ")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of this interval.
 
@@ -290,6 +289,7 @@ struct Interval[T: IntervalElement](
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a string representation of this interval suitable for
         debugging.
@@ -303,7 +303,7 @@ struct Interval[T: IntervalElement](
 struct _IntervalNode[
     T: IntervalElement,
     U: Copyable & Stringable & Comparable,
-](ImplicitlyCopyable, Stringable, Writable):
+](ImplicitlyCopyable, Writable):
     """A node containing an interval and associated data.
 
     Parameters:
@@ -419,6 +419,7 @@ struct _IntervalNode[
         writer.write(self.interval, "=", String(self.data))
         # writer.write(str(self.data))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of this interval node.
 
@@ -428,6 +429,7 @@ struct _IntervalNode[
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a string representation of this interval node suitable for
         debugging.

@@ -381,10 +381,8 @@ struct SIMD[dtype: DType, size: Int](
     Indexer,
     Intable,
     Powable,
-    Representable,
     Roundable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Truncable,
     Writable,
@@ -1874,6 +1872,7 @@ struct SIMD[dtype: DType, size: Int](
         comptime assert Self.size == 1, "expected a scalar type"
         return self._refine[new_size=1]().cast[DType.float64]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the SIMD as a string.
@@ -1884,6 +1883,7 @@ struct SIMD[dtype: DType, size: Int](
 
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Get the representation of the SIMD value e.g. "SIMD[DType.int8, 2](1, 2)".

@@ -281,26 +281,6 @@ def test_lower_upper():
     assert_equal("Hello".upper(), "HELLO")
 
 
-def test_repr():
-    # Usual cases
-    assert_equal(StringLiteral.__repr__("hello"), "'hello'")
-
-    # Escape cases
-    assert_equal(StringLiteral.__repr__("\0"), r"'\x00'")
-    assert_equal(StringLiteral.__repr__("\x06"), r"'\x06'")
-    assert_equal(StringLiteral.__repr__("\x09"), r"'\t'")
-    assert_equal(StringLiteral.__repr__("\n"), r"'\n'")
-    assert_equal(StringLiteral.__repr__("\x0d"), r"'\r'")
-    assert_equal(StringLiteral.__repr__("\x0e"), r"'\x0e'")
-    assert_equal(StringLiteral.__repr__("\x1f"), r"'\x1f'")
-    assert_equal(StringLiteral.__repr__(" "), "' '")
-    assert_equal(StringLiteral.__repr__("'"), r"'\''")
-    assert_equal(StringLiteral.__repr__("A"), "'A'")
-    assert_equal(StringLiteral.__repr__("\\"), r"'\\'")
-    assert_equal(StringLiteral.__repr__("~"), "'~'")
-    assert_equal(StringLiteral.__repr__("\x7f"), r"'\x7f'")
-
-
 def test_strip():
     assert_equal("".strip(), "")
     assert_equal("  ".strip(), "")

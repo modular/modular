@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn repeat[MsgType: Stringable, //, count: Int](msg: MsgType):
+fn repeat[MsgType: Writable, //, count: Int](msg: MsgType):
     @parameter
     for i in range(count):
-        print(String(msg))
+        print(msg)
 
 
 def main():

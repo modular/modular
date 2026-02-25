@@ -40,9 +40,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(
-    Comparable, ImplicitlyCopyable, Intable, Movable, Stringable, Writable
-):
+struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -293,6 +291,7 @@ struct Codepoint(
         """
         return Int(self._scalar_value)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Formats this `Codepoint` as a single-character string.
@@ -312,7 +311,10 @@ struct Codepoint(
         Args:
             w: The object to write to.
         """
-        w.write(self.__str__())
+        var char_len = self.utf8_byte_length()
+        var result = String(unsafe_uninit_length=char_len)
+        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
+        w.write_string(result)
 
     # ===-------------------------------------------------------------------===#
     # Methods

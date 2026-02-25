@@ -96,7 +96,6 @@ struct Path(
     ImplicitlyCopyable,
     KeyElement,
     PathLike,
-    Stringable,
     Writable,
 ):
     """The Path object."""
@@ -175,6 +174,7 @@ struct Path(
             self.path += DIR_SEPARATOR
             self.path += suffix
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the path.
@@ -212,6 +212,7 @@ struct Path(
         """
         return self.path
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a printable representation of the path.
 

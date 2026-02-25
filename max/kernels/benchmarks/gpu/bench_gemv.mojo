@@ -45,11 +45,11 @@ fn _get_run_name[
         "->",
         out_dtype,
         ") : ",
-        shape_c_dim[0].__str__(),
+        shape_c_dim[0],
         ",",
-        shape_c_dim[1].__str__(),
+        shape_c_dim[1],
         ",",
-        shape_a_dim[1].__str__(),
+        shape_a_dim[1],
     )
 
 

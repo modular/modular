@@ -31,7 +31,7 @@ from ._macos import _getpw_macos
 
 
 @fieldwise_init
-struct Passwd(Copyable, Stringable, Writable):
+struct Passwd(Copyable, Writable):
     """Represents user account information retrieved from the user password
     database related to a user ID."""
 
@@ -65,6 +65,7 @@ struct Passwd(Copyable, Stringable, Writable):
         writer.write("', pw_shell='", self.pw_shell)
         writer.write("')")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets the Passwd struct as a string.
@@ -74,6 +75,7 @@ struct Passwd(Copyable, Stringable, Writable):
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Gets the Passwd struct as a string.

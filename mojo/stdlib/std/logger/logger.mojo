@@ -63,7 +63,6 @@ comptime DEFAULT_LEVEL = Level._from_str(
 struct Level(
     Comparable,
     ImplicitlyCopyable,
-    Stringable,
     Writable,
 ):
     """Represents logging severity levels.
@@ -188,6 +187,7 @@ struct Level(
         elif self == Self.CRITICAL:
             writer.write("CRITICAL")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of this level.
@@ -198,6 +198,7 @@ struct Level(
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns the detailed string representation of this level.

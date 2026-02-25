@@ -39,7 +39,7 @@ comptime ComplexFloat64 = ComplexScalar[DType.float64]
 
 
 struct ComplexSIMD[dtype: DType, size: Int](
-    Equatable, Stringable, TrivialRegisterPassable, Writable, _Expable
+    Equatable, TrivialRegisterPassable, Writable, _Expable
 ):
     """Represents a complex SIMD value.
 
@@ -108,6 +108,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the complex as a string.

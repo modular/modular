@@ -365,6 +365,11 @@ what we publish.
   - `Variant`
   - `Optional`
 
+- The `stdlib` is beginning to remove support for the `Stringable` and `Representable`
+  traits in favor of the unified `Writable` trait. Most stdlib types have had their
+  conformance to `Stringable` and `Representable` removed and the associated `__str__()`
+  and `__repr__()` methods have been deprecated.
+
 - The `testing` module now provides `assert_equal` and `assert_not_equal`
   overloads for `Tuple`, enabling direct tuple-to-tuple comparisons in tests
   instead of element-by-element assertions. Element types must conform to

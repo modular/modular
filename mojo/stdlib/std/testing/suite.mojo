@@ -204,7 +204,7 @@ struct TestReport(Copyable, Writable):
     @staticmethod
     fn _format_error(e: Error) -> String:
         var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
-        return e.__str__().replace("\n", replacement)
+        return String(e).replace("\n", replacement)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Write the formatted test report to the writer.

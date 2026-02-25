@@ -1112,21 +1112,6 @@ def test_deque_iter_bounds():
     _test_deque_iter_bounds(reversed(deque), len(deque))
 
 
-fn test_str_and_repr() raises:
-    q = Deque(1, 2, 3)
-
-    assert_equal(q.__str__(), "[1, 2, 3]")
-    assert_equal(q.__repr__(), "Deque[Int]([Int(1), Int(2), Int(3)])")
-
-    s = Deque[String]("a", "b", "c")
-
-    assert_equal(s.__str__(), "[a, b, c]")
-    assert_equal(
-        s.__repr__(),
-        "Deque[String](['a', 'b', 'c'])",
-    )
-
-
 def test_deque_literal():
     var q: Deque[Int] = [1, 2, 3]
     assert_equal(3, len(q))

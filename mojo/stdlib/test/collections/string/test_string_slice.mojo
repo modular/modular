@@ -417,11 +417,6 @@ comptime REPR_MAPPINGS = [
 ]
 
 
-def test_slice_repr():
-    for item in materialize[REPR_MAPPINGS]():
-        assert_equal(StringSlice.__repr__(item[0]), item[1])
-
-
 def test_slice_write_repr_to():
     for item in materialize[REPR_MAPPINGS]():
         var string = String()

@@ -21,8 +21,6 @@ from format._utils import FormatStruct, Named
 struct Slice(
     Equatable,
     ImplicitlyCopyable,
-    Representable,
-    Stringable,
     Writable,
 ):
     """Represents a slice expression.
@@ -87,6 +85,7 @@ struct Slice(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets the string representation of the span.
@@ -98,6 +97,7 @@ struct Slice(
         self.write_to(output)
         return output^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Gets the string representation of the span.

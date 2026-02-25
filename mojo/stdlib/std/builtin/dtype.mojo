@@ -32,8 +32,6 @@ struct DType(
     Hashable,
     ImplicitlyCopyable,
     KeyElement,
-    Representable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -386,6 +384,7 @@ struct DType(
         else:
             return DType.invalid
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets the name of the DType.
@@ -478,6 +477,7 @@ struct DType(
         """
         writer.write("DType.", self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __repr__(self) -> String:
         """Gets the representation of the DType e.g. `"DType.float32"`.

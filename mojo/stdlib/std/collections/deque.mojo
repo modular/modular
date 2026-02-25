@@ -35,9 +35,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """Implements a double-ended queue.
@@ -450,6 +448,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             fmt.TypeNames[Self.ElementType](),
         ).fields[FieldsFn=write_fields]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of a `Deque`.
@@ -461,6 +460,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self.write_to(output)
         return output^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns a string representation of a `Deque`.

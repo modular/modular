@@ -171,7 +171,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     Hashable,
     ImplicitlyCopyable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -660,6 +659,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
         writer.write(")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the tuple as a string.

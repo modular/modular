@@ -186,7 +186,6 @@ struct UnsafePointer[
     DevicePassable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -906,6 +905,7 @@ struct UnsafePointer[
         """
         return self._as_legacy().__int__()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets a string representation of the pointer.
@@ -913,7 +913,7 @@ struct UnsafePointer[
         Returns:
             The string representation of the pointer.
         """
-        return self._as_legacy().__str__()
+        return String.write(self)
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):

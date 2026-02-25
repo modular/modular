@@ -33,7 +33,7 @@ from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
 
 @fieldwise_init
-struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
+struct BenchMetric(ImplicitlyCopyable, Writable):
     """Defines a benchmark throughput metric."""
 
     var code: Int
@@ -64,6 +64,7 @@ struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
     ]
     """Default set of benchmark metrics."""
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Gets a string representation of this metric.
 
@@ -216,7 +217,7 @@ struct ThroughputMeasure(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct Format(ImplicitlyCopyable, Stringable, Writable):
+struct Format(ImplicitlyCopyable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -255,6 +256,7 @@ struct Format(ImplicitlyCopyable, Stringable, Writable):
             )
             abort(String("Invalid format option: ", value, valid_formats))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns the string representation of the format.
 
@@ -520,7 +522,7 @@ struct Mode(ImplicitlyCopyable):
         return self.value == other.value
 
 
-struct Bench(Stringable, Writable):
+struct Bench(Writable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 
@@ -1059,6 +1061,7 @@ struct Bench(Stringable, Writable):
             return ""
         return pad_str * (width - len(string))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of the benchmark results.
 
