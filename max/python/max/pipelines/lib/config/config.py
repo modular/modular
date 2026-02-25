@@ -124,14 +124,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    ce_delay_ms: float = Field(
-        default=0.0,
-        description=(
-            "Duration of scheduler sleep prior to starting a prefill batch. "
-            "Experimental for the TTS scheduler."
-        ),
-    )
-
     enable_prioritize_first_decode: bool = Field(
         default=False,
         description=(
