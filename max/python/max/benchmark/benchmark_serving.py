@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import copy
 import hashlib
 import json
 import logging
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
 
 from max.benchmark.benchmark_shared.config import (
     Backend,
+    BenchmarkTask,
     ServingBenchmarkConfig,
     parse_benchmark_args,
 )
@@ -70,10 +72,12 @@ from max.benchmark.benchmark_shared.datasets import (
     SampledRequest,
     ShareGPTBenchmarkDataset,
     SonnetBenchmarkDataset,
+    SyntheticPixelBenchmarkDataset,
     VisionArenaBenchmarkDataset,
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
+    PixelGenerationSampledRequest,
     RequestSamples,
     Samples,
 )
@@ -82,6 +86,7 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
 )
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
+    PixelGenerationBenchmarkMetrics,
     StandardPercentileMetrics,
     ThroughputMetrics,
 )
@@ -249,6 +254,46 @@ async def get_request(
         await asyncio.sleep(interval)
 
 
+def build_request_extra_body(
+    base_extra_body: dict[str, Any] | None,
+    request: SampledRequest,
+) -> dict[str, Any]:
+    """Build request-scoped extra body by merging per-request pixel options."""
+    merged: dict[str, Any] = (
+        copy.deepcopy(base_extra_body) if base_extra_body else {}
+    )
+
+    if not isinstance(request, PixelGenerationSampledRequest):
+        return merged
+    if request.image_options is None:
+        return merged
+
+    provider_options = merged.get("provider_options")
+    if not isinstance(provider_options, dict):
+        provider_options = {}
+        merged["provider_options"] = provider_options
+
+    image_options = provider_options.get("image")
+    if not isinstance(image_options, dict):
+        image_options = {}
+        provider_options["image"] = image_options
+
+    if request.image_options.width is not None:
+        image_options["width"] = request.image_options.width
+    if request.image_options.height is not None:
+        image_options["height"] = request.image_options.height
+    if request.image_options.steps is not None:
+        image_options["steps"] = request.image_options.steps
+    if request.image_options.guidance_scale is not None:
+        image_options["guidance_scale"] = request.image_options.guidance_scale
+    if request.image_options.negative_prompt is not None:
+        image_options["negative_prompt"] = request.image_options.negative_prompt
+    if request.image_options.seed is not None:
+        merged["seed"] = request.image_options.seed
+
+    return merged
+
+
 def print_section(title: str, char: str = "-") -> None:
     """Helper function to print a section with formatted header."""
     print("{s:{c}^{n}}".format(s=title, n=50, c=char))
@@ -305,6 +350,77 @@ def print_input_prompts(samples: Samples) -> None:
         print(elide_data_uris_in_string(str(prompt_info)))
 
 
+def _warn_on_request_failures(
+    outputs: Sequence[RequestFuncOutput],
+    completed: int,
+    failures: int,
+    failed_responses: Sequence[RequestFuncOutput],
+) -> None:
+    if len(outputs) == 0:
+        warnings.warn(
+            "No responses were received from the server.", stacklevel=2
+        )
+
+    if failures != 0:
+        warnings.warn(
+            (
+                "Some requests failed. The responses returned are displayed "
+                "below. Please check server logs for more information."
+            ),
+            stacklevel=2,
+        )
+        for failed_response in failed_responses:
+            logger.error(f"Failed :: {failed_response}")
+
+    if completed == 0:
+        warnings.warn(
+            (
+                "All requests failed. This is likely due to a misconfiguration "
+                "on the benchmark arguments."
+            ),
+            stacklevel=2,
+        )
+
+
+def _aggregate_gpu_stats(
+    collect_gpu_stats: bool,
+    gpu_metrics: list[dict[str, GPUStats]] | None,
+) -> tuple[list[float], list[float], list[float]]:
+    peak_gpu_memory_mib: list[float] = []
+    available_gpu_memory_mib: list[float] = []
+    gpu_utilization: list[float] = []
+
+    if not collect_gpu_stats or not gpu_metrics:
+        return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
+
+    # Simplification: We assume that whatever devices are available at the
+    # start of benchmarking stays the same throughout the run. If someone is
+    # hotplugging GPUs during a benchmark this may not be true.
+    all_devices = list(gpu_metrics[0].keys())
+    if not all_devices:
+        logger.warning("No GPUs found, so there are no GPU stats to report")
+        return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
+
+    bytes_per_mib = 1024 * 1024
+    for device_name in all_devices:
+        peak_gpu_memory_mib.append(
+            max(snapshot[device_name].memory.used_bytes for snapshot in gpu_metrics)
+            / bytes_per_mib
+        )
+        available_gpu_memory_mib.append(
+            min(snapshot[device_name].memory.free_bytes for snapshot in gpu_metrics)
+            / bytes_per_mib
+        )
+        gpu_utilization.append(
+            statistics.mean(
+                snapshot[device_name].utilization.gpu_usage_percent
+                for snapshot in gpu_metrics
+            )
+        )
+
+    return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
+
+
 def calculate_metrics(
     outputs: list[RequestFuncOutput],
     dur_s: float,
@@ -324,7 +440,7 @@ def calculate_metrics(
     max_output = 0
     max_total = 0
     failures = 0
-    failed_responses = []
+    failed_responses: list[RequestFuncOutput] = []
     itls: list[float] = []
     tpots: list[float] = []
     ttfts: list[float] = []
@@ -378,65 +494,20 @@ def calculate_metrics(
             failures = failures + 1
             failed_responses.append(outputs[i])
 
-    if len(outputs) == 0:
-        warnings.warn(
-            "No responses were received from the server.", stacklevel=2
-        )
-
-    if failures != 0:
-        warnings.warn(
-            (
-                "Some requests failed. The responses returned are displayed "
-                "below. Please check server logs for more information."
-            ),
-            stacklevel=2,
-        )
-        for f in failed_responses:
-            logger.error(f"Failed :: {f}")
-
-    if completed == 0:
-        warnings.warn(
-            (
-                "All requests failed. This is likely due to a misconfiguration "
-                "on the benchmark arguments."
-            ),
-            stacklevel=2,
-        )
-
-    peak_gpu_memory_mib = []
-    available_gpu_memory_mib = []
-    gpu_utilization = []
-    if collect_gpu_stats and gpu_metrics:
-        # Simplification: We assume that whatever devices are available at the
-        # start of benchmarking stays the same throughout the run.  If someone
-        # is hotplugging GPUs during a benchmark this may not be true, but that
-        # doesn't seem likely.
-        all_devices = list(gpu_metrics[0].keys())
-        if not all_devices:
-            logger.warning("No GPUs found, so there are no GPU stats to report")
-
-        BYTES_PER_MIB = 1024 * 1024
-        for device_name in all_devices:
-            peak_gpu_memory_mib.append(
-                max(
-                    snapshot[device_name].memory.used_bytes
-                    for snapshot in gpu_metrics
-                )
-                / BYTES_PER_MIB
-            )
-            available_gpu_memory_mib.append(
-                min(
-                    snapshot[device_name].memory.free_bytes
-                    for snapshot in gpu_metrics
-                )
-                / BYTES_PER_MIB
-            )
-            gpu_utilization.append(
-                statistics.mean(
-                    snapshot[device_name].utilization.gpu_usage_percent
-                    for snapshot in gpu_metrics
-                )
-            )
+    _warn_on_request_failures(
+        outputs=outputs,
+        completed=completed,
+        failures=failures,
+        failed_responses=failed_responses,
+    )
+    (
+        peak_gpu_memory_mib,
+        available_gpu_memory_mib,
+        gpu_utilization,
+    ) = _aggregate_gpu_stats(
+        collect_gpu_stats=collect_gpu_stats,
+        gpu_metrics=gpu_metrics,
+    )
 
     metrics = BenchmarkMetrics(
         completed=completed,
@@ -486,6 +557,65 @@ def calculate_metrics(
         metrics.tpot_ms._metrics.mean = sum(itls) / decode_tokens * 1000.0
 
     return metrics, actual_output_lens
+
+
+def calculate_pixel_generation_metrics(
+    outputs: list[RequestFuncOutput],
+    dur_s: float,
+    gpu_metrics: list[dict[str, GPUStats]] | None,
+    cpu_metrics: dict[str, Any],
+    max_concurrency: int | None,
+    collect_gpu_stats: bool,
+    server_metrics: ParsedMetrics | None = None,
+) -> PixelGenerationBenchmarkMetrics:
+    completed = 0
+    failures = 0
+    latencies: list[float] = []
+    total_generated_outputs = 0
+    failed_responses: list[RequestFuncOutput] = []
+
+    for output in outputs:
+        if output.cancelled:
+            continue
+        if output.success:
+            completed += 1
+            latencies.append(output.latency)
+            total_generated_outputs += output.num_generated_outputs
+        else:
+            failures += 1
+            failed_responses.append(output)
+
+    _warn_on_request_failures(
+        outputs=outputs,
+        completed=completed,
+        failures=failures,
+        failed_responses=failed_responses,
+    )
+    (
+        peak_gpu_memory_mib,
+        available_gpu_memory_mib,
+        gpu_utilization,
+    ) = _aggregate_gpu_stats(
+        collect_gpu_stats=collect_gpu_stats,
+        gpu_metrics=gpu_metrics,
+    )
+
+    return PixelGenerationBenchmarkMetrics(
+        completed=completed,
+        failures=failures,
+        max_concurrency=max_concurrency or len(outputs),
+        request_throughput=completed / dur_s,
+        total_generated_outputs=total_generated_outputs,
+        latency_ms=StandardPercentileMetrics(
+            latencies or [float("nan")], scale_factor=1000.0, unit="ms"
+        ),
+        peak_gpu_memory_mib=peak_gpu_memory_mib,
+        available_gpu_memory_mib=available_gpu_memory_mib,
+        gpu_utilization=gpu_utilization,
+        cpu_utilization_user=cpu_metrics.get("user_percent"),
+        cpu_utilization_system=cpu_metrics.get("system_percent"),
+        server_metrics=server_metrics,
+    )
 
 
 async def chat_session_driver(
@@ -606,6 +736,7 @@ async def run_single_turn_benchmark(
     top_p: float | None,
     top_k: int | None,
     lora_manager: LoRABenchmarkManager | None,
+    extra_body: dict[str, Any] | None = None,
 ) -> list[RequestFuncOutput]:
     """Run single-turn benchmark scenario."""
     if timing_data is None:
@@ -646,6 +777,10 @@ async def run_single_turn_benchmark(
         if lora_manager:
             lora_id = lora_manager.get_lora_for_request(request_idx)
 
+        request_extra_body = build_request_extra_body(
+            base_extra_body=extra_body,
+            request=request,
+        )
         request_func_input = RequestFuncInput(
             model=model_id if lora_id is None else lora_id,
             session_id=None,
@@ -658,6 +793,7 @@ async def run_single_turn_benchmark(
             prompt_len=request.prompt_len,
             max_tokens=max_tokens,
             ignore_eos=ignore_eos,
+            extra_body=request_extra_body,
         )
         tasks.append(
             asyncio.create_task(limited_request_func(request_func_input))
@@ -847,10 +983,11 @@ async def run_single_test_prompt(
 
 async def benchmark(
     backend: Backend,
+    benchmark_task: BenchmarkTask,
     api_url: str,
     base_url: str,
     model_id: str,
-    tokenizer: PreTrainedTokenizerBase,
+    tokenizer: PreTrainedTokenizerBase | None,
     samples: Samples,
     request_rate: float,
     burstiness: float,
@@ -873,9 +1010,10 @@ async def benchmark(
     ignore_first_turn_stats: bool,
     timing_data: dict[str, list[float]] | None,
     lora_manager: LoRABenchmarkManager | None,
+    extra_body: dict[str, Any] | None = None,
     trace_path: str | None = None,
     trace_session: str | None = None,
-) -> tuple[dict[str, Any], BenchmarkMetrics]:
+) -> tuple[dict[str, Any], BenchmarkMetrics | PixelGenerationBenchmarkMetrics]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
             "--ignore-first-turn-stats and --skip-first-n-requests both set."
@@ -1015,6 +1153,7 @@ async def benchmark(
                     top_p=top_p,
                     top_k=top_k,
                     lora_manager=lora_manager,
+                    extra_body=extra_body,
                 )
             else:
                 # multi-turn chat scenario
@@ -1051,16 +1190,32 @@ async def benchmark(
                 stop_trace(trace_session)
 
     if print_inputs_and_outputs:
-        print("Generated output text:")
-        for req_id, output in enumerate(outputs):
-            output_len = compute_output_len(tokenizer, output)
-            print(
-                {
-                    "req_id": req_id,
-                    "output_len": output_len,
-                    "output": output.generated_text,
-                }
-            )
+        if benchmark_task == BenchmarkTask.text_generation:
+            assert tokenizer is not None
+            print("Generated output text:")
+            for req_id, output in enumerate(outputs):
+                output_len = compute_output_len(tokenizer, output)
+                print(
+                    {
+                        "req_id": req_id,
+                        "output_len": output_len,
+                        "output": output.generated_text,
+                    }
+                )
+        elif benchmark_task == BenchmarkTask.text_to_image:
+            print("Generated pixel generation outputs:")
+            for req_id, output in enumerate(outputs):
+                print(
+                    {
+                        "req_id": req_id,
+                        "num_generated_outputs": output.num_generated_outputs,
+                        "latency_s": output.latency,
+                        "success": output.success,
+                        "error": output.error,
+                    }
+                )
+        else:
+            raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
     if lora_manager:
         await lora_manager.benchmark_unloading(
@@ -1100,6 +1255,124 @@ async def benchmark(
                 )
         except Exception as e:
             logger.warning(f"Failed to collect server metrics: {e}")
+
+    if benchmark_task == BenchmarkTask.text_to_image:
+        metrics = calculate_pixel_generation_metrics(
+            outputs=outputs,
+            dur_s=benchmark_duration,
+            gpu_metrics=gpu_metrics,
+            cpu_metrics=cpu_metrics,
+            max_concurrency=max_concurrency,
+            collect_gpu_stats=collect_gpu_stats,
+            server_metrics=server_metrics,
+        )
+
+        print_section(title=" Serving Benchmark Result ", char="=")
+        print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
+        print("{:<40} {:<10}".format("Failed requests:", metrics.failures))
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Benchmark duration (s):", benchmark_duration
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Request throughput (req/s):", metrics.request_throughput
+            )
+        )
+        print(metrics.latency_ms.format_with_prefix("latency", unit="ms"))
+        print(
+            "{:<40} {:<10}".format(
+                "Total generated outputs:", metrics.total_generated_outputs
+            )
+        )
+        if collect_gpu_stats and metrics.peak_gpu_memory_mib:
+            print_section(title="GPU Statistics")
+            for gpu_id in range(len(metrics.peak_gpu_memory_mib)):
+                print(
+                    "{:<40} {:<10.2f}".format(
+                        f"GPU {gpu_id} peak memory (MiB):",
+                        metrics.peak_gpu_memory_mib[gpu_id],
+                    )
+                )
+                print(
+                    "{:<40} {:<10.2f}".format(
+                        f"GPU {gpu_id} available memory (MiB):",
+                        metrics.available_gpu_memory_mib[gpu_id],
+                    )
+                )
+                print(
+                    "{:<40} {:<10.2f}".format(
+                        f"GPU {gpu_id} utilization (%):",
+                        metrics.gpu_utilization[gpu_id],
+                    )
+                )
+        if collect_cpu_stats:
+            print_section(title="CPU Statistics")
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "CPU utilization user (%):",
+                    metrics.cpu_utilization_user or 0.0,
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "CPU utilization system (%):",
+                    metrics.cpu_utilization_system or 0.0,
+                )
+            )
+        print("=" * 50)
+
+        if metrics.server_metrics:
+            print_server_metrics(metrics.server_metrics)
+
+        result = {
+            "duration": benchmark_duration,
+            "completed": metrics.completed,
+            "failures": metrics.failures,
+            "max_concurrency": metrics.max_concurrency,
+            "request_throughput": metrics.request_throughput,
+            "total_generated_outputs": metrics.total_generated_outputs,
+            "mean_latency_ms": metrics.latency_ms.mean,
+            "median_latency_ms": metrics.latency_ms.median,
+            "std_latency_ms": metrics.latency_ms.std,
+            "p90_latency_ms": metrics.latency_ms.p90,
+            "p95_latency_ms": metrics.latency_ms.p95,
+            "p99_latency_ms": metrics.latency_ms.p99,
+            "latencies": [output.latency for output in outputs],
+            "num_generated_outputs": [
+                output.num_generated_outputs for output in outputs
+            ],
+            "errors": [output.error for output in outputs],
+            "peak_gpu_memory_mib": metrics.peak_gpu_memory_mib,
+            "available_gpu_memory_mib": metrics.available_gpu_memory_mib,
+            "gpu_utilization": metrics.gpu_utilization,
+        }
+
+        if lora_manager:
+            result["lora_metrics"] = {
+                "total_loads": lora_manager.metrics.total_loads,
+                "total_unloads": lora_manager.metrics.total_unloads,
+                "load_times_ms": lora_manager.metrics.load_times_ms,
+                "unload_times_ms": lora_manager.metrics.unload_times_ms,
+            }
+
+        if metrics.server_metrics:
+            result["server_metrics"] = {
+                "counters": metrics.server_metrics.counters,
+                "gauges": metrics.server_metrics.gauges,
+                "histograms": {
+                    name: {
+                        "buckets": hist.buckets,
+                        "sum": hist.sum,
+                        "count": hist.count,
+                        "mean": hist.mean,
+                    }
+                    for name, hist in metrics.server_metrics.histograms.items()
+                },
+            }
+
+        return result, metrics
 
     metrics, actual_output_lens = calculate_metrics(
         outputs=outputs,
@@ -1394,6 +1667,32 @@ async def benchmark(
     return result, metrics
 
 
+def validate_task_and_endpoint(
+    benchmark_task: BenchmarkTask, endpoint: str
+) -> None:
+    valid_endpoints = {
+        "/v1/completions",
+        "/v1/chat/completions",
+        "/v2/models/ensemble/generate_stream",
+        "/v1/responses",
+    }
+    if endpoint not in valid_endpoints:
+        raise ValueError(f"Unknown endpoint: {endpoint}")
+
+    if benchmark_task == BenchmarkTask.text_generation:
+        if endpoint == "/v1/responses":
+            raise ValueError(
+                "--benchmark-task text-generation does not support "
+                "--endpoint /v1/responses"
+            )
+    elif benchmark_task == BenchmarkTask.text_to_image:
+        if endpoint != "/v1/responses":
+            raise ValueError(
+                "--benchmark-task text-to-image requires "
+                "--endpoint /v1/responses"
+            )
+
+
 def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
@@ -1412,13 +1711,9 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         raise ValueError("--model is required when running benchmark")
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
+    benchmark_task = BenchmarkTask(args.benchmark_task)
 
-    if args.endpoint not in [
-        "/v1/completions",
-        "/v1/chat/completions",
-        "/v2/models/ensemble/generate_stream",
-    ]:
-        raise ValueError(f"Unknown endpoint: {args.endpoint}")
+    validate_task_and_endpoint(benchmark_task, args.endpoint)
     chat = args.endpoint == "/v1/chat/completions"
 
     if args.base_url is not None:
@@ -1428,64 +1723,75 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
 
     api_url = f"{base_url}{args.endpoint}"
 
-    logger.info(f"getting tokenizer. api url: {api_url}")
-    tokenizer = get_tokenizer(
-        tokenizer_id,
-        args.model_max_length,
-        trust_remote_code=args.trust_remote_code,
-    )
-
-    benchmark_dataset = BenchmarkDataset.from_flags(
-        dataset_name=args.dataset_name,
-        dataset_path=args.dataset_path,
-    )
-
-    if (
-        args.num_chat_sessions
-        and not benchmark_dataset.has_multiturn_chat_support
-    ):
-        raise ValueError(
-            f"Multiturn chat is not supported for dataset {benchmark_dataset}"
+    if benchmark_task == BenchmarkTask.text_generation:
+        logger.info(f"getting tokenizer. api url: {api_url}")
+        tokenizer = get_tokenizer(
+            tokenizer_id,
+            args.model_max_length,
+            trust_remote_code=args.trust_remote_code,
         )
 
-    logger.info("sampling requests")
-
-    # Build output_lengths array
-    if args.num_prompts is not None:
-        num_requests = args.num_prompts
-    elif args.num_chat_sessions is not None:
-        num_requests = args.num_chat_sessions
-    else:
-        raise ValueError(
-            "Please specify either '--num-prompts' or '--num-chat-sessions'."
+        benchmark_dataset = BenchmarkDataset.from_flags(
+            dataset_name=args.dataset_name,
+            dataset_path=args.dataset_path,
         )
 
-    # NOTE: args.output_lengths is a path to a YAML file, while output_lengths
-    # is a list of ints.
-    if args.output_lengths is None:
-        output_lengths = None
-    elif os.path.exists(args.output_lengths):
-        with open(args.output_lengths) as f:
-            output_lengths = yaml.safe_load(f)["output_lengths"]
-    else:
-        output_lengths = [int(args.output_lengths)] * num_requests
-
-    # We should not be using / accessing args.output_lengths from here on out.
-
-    samples: Samples
-    if isinstance(benchmark_dataset, CodeDebugBenchmarkDataset):
-        # code_debug is a long-context dataset based on InfiniteBench
-        if args.num_chat_sessions:
-            if output_lengths is not None:
-                raise NotImplementedError(
-                    "TODO: Add support for fixed output lengths with multi-turn"
-                    " code-debug"
-                )
-            samples = benchmark_dataset.gen_twoturn_longcontext_requests(
-                num_chat_sessions=args.num_chat_sessions,
-                tokenizer=tokenizer,
+        if (
+            args.num_chat_sessions
+            and not benchmark_dataset.has_multiturn_chat_support
+        ):
+            raise ValueError(
+                f"Multiturn chat is not supported for dataset {benchmark_dataset}"
             )
+
+        logger.info("sampling requests")
+
+        # Build output_lengths array
+        if args.num_prompts is not None:
+            num_requests = args.num_prompts
+        elif args.num_chat_sessions is not None:
+            num_requests = args.num_chat_sessions
         else:
+            raise ValueError(
+                "Please specify either '--num-prompts' or '--num-chat-sessions'."
+            )
+
+        # NOTE: args.output_lengths is a path to a YAML file, while output_lengths
+        # is a list of ints.
+        if args.output_lengths is None:
+            output_lengths = None
+        elif os.path.exists(args.output_lengths):
+            with open(args.output_lengths) as f:
+                output_lengths = yaml.safe_load(f)["output_lengths"]
+        else:
+            output_lengths = [int(args.output_lengths)] * num_requests
+
+        # We should not be using / accessing args.output_lengths from here on out.
+        if isinstance(benchmark_dataset, CodeDebugBenchmarkDataset):
+            # code_debug is a long-context dataset based on InfiniteBench
+            if args.num_chat_sessions:
+                if output_lengths is not None:
+                    raise NotImplementedError(
+                        "TODO: Add support for fixed output lengths with multi-turn"
+                        " code-debug"
+                    )
+                samples = benchmark_dataset.gen_twoturn_longcontext_requests(
+                    num_chat_sessions=args.num_chat_sessions,
+                    tokenizer=tokenizer,
+                )
+            else:
+                assert args.num_prompts is not None
+                samples = benchmark_dataset.sample_requests(
+                    num_requests=args.num_prompts,
+                    tokenizer=tokenizer,
+                    output_lengths=output_lengths,
+                    shuffle=(
+                        output_lengths is None
+                        and not args.record_output_lengths
+                    ),
+                )
+
+        elif isinstance(benchmark_dataset, ShareGPTBenchmarkDataset):
             assert args.num_prompts is not None
             samples = benchmark_dataset.sample_requests(
                 num_requests=args.num_prompts,
@@ -1496,123 +1802,149 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                 ),
             )
 
-    elif isinstance(benchmark_dataset, ShareGPTBenchmarkDataset):
-        assert args.num_prompts is not None
-        samples = benchmark_dataset.sample_requests(
-            num_requests=args.num_prompts,
-            tokenizer=tokenizer,
-            output_lengths=output_lengths,
-            shuffle=(output_lengths is None and not args.record_output_lengths),
-        )
-
-    elif isinstance(benchmark_dataset, SonnetBenchmarkDataset):
-        # For sonnet, formatting depends on the endpoint
-        apply_chat_template = chat
-        # Sample sonnet requests with common parameters
-        assert args.num_prompts is not None
-        samples = benchmark_dataset.sample_requests(
-            num_requests=args.num_prompts,
-            tokenizer=tokenizer,
-            output_lengths=output_lengths,
-            input_len=args.sonnet_input_len,
-            prefix_len=args.sonnet_prefix_len,
-            apply_chat_template=apply_chat_template,
-        )
-
-    elif isinstance(benchmark_dataset, VisionArenaBenchmarkDataset):
-        assert args.num_prompts is not None
-        samples = benchmark_dataset.sample_requests(
-            num_requests=args.num_prompts,
-            tokenizer=tokenizer,
-            output_lengths=output_lengths,
-        )
-    elif isinstance(benchmark_dataset, ArxivSummarizationBenchmarkDataset):
-        if output_lengths:
-            ValueError(
-                "Arxiv summarization dataset does not support --output-lengths."
-                " Please use --max-output-len"
-            )
-        assert args.num_prompts is not None
-        samples = benchmark_dataset.sample_requests(
-            num_requests=args.num_prompts,
-            tokenizer=tokenizer,
-            shuffle=not args.record_output_lengths,
-            input_len=args.arxiv_summarization_input_len,
-            max_output_len=args.max_output_len,
-        )
-    elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
-        random_state = np.random.default_rng(args.seed)
-        if args.num_chat_sessions:
-            samples = benchmark_dataset.gen_multiturn_random_requests(
-                input_len=args.random_input_len,
-                output_len=args.random_output_len,
-                num_chat_sessions=args.num_chat_sessions,
-                num_turns=args.random_num_turns,
-                coefficient_of_variation=args.random_coefficient_of_variation,
-                tokenizer=tokenizer,
-                sys_prompt_ratio=args.random_sys_prompt_ratio,
-                max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                distribution_type=args.random_distribution_type,
-                first_turn_ratio=args.random_first_turn_ratio,
-                random_state=random_state,
-            )
-        else:
+        elif isinstance(benchmark_dataset, SonnetBenchmarkDataset):
+            # For sonnet, formatting depends on the endpoint
+            apply_chat_template = chat
+            # Sample sonnet requests with common parameters
             assert args.num_prompts is not None
             samples = benchmark_dataset.sample_requests(
                 num_requests=args.num_prompts,
                 tokenizer=tokenizer,
-                input_len=args.random_input_len,
-                output_len=args.random_output_len,
-                coefficient_of_variation=args.random_coefficient_of_variation,
-                sys_prompt_ratio=args.random_sys_prompt_ratio,
-                max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
-                distribution_type=args.random_distribution_type,
-                image_size=args.random_image_size,
-                image_count=args.random_image_count,
-                random_state=random_state,
+                output_lengths=output_lengths,
+                input_len=args.sonnet_input_len,
+                prefix_len=args.sonnet_prefix_len,
+                apply_chat_template=apply_chat_template,
             )
-    elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
-        assert args.num_prompts is not None
-        samples = benchmark_dataset.sample_requests(
-            num_requests=args.num_prompts,
-            tokenizer=tokenizer,
-            output_lengths=output_lengths,
-            shuffle=(output_lengths is None and not args.record_output_lengths),
-        )
-    elif isinstance(benchmark_dataset, ObfuscatedConversationsBenchmarkDataset):
-        if output_lengths is None:
-            output_scale = (
-                args.obfuscated_conversations_average_output_len
-                * args.obfuscated_conversations_coefficient_of_variation
+
+        elif isinstance(benchmark_dataset, VisionArenaBenchmarkDataset):
+            assert args.num_prompts is not None
+            samples = benchmark_dataset.sample_requests(
+                num_requests=args.num_prompts,
+                tokenizer=tokenizer,
+                output_lengths=output_lengths,
             )
-            output_lengths = np.random.normal(
-                loc=args.obfuscated_conversations_average_output_len,
-                scale=output_scale,
-                size=num_requests,
-            ).tolist()
-            output_lengths = np.round(output_lengths).astype(int).tolist()
-            output_lengths = [
-                max(output_len, 1) for output_len in output_lengths
-            ]
-        assert args.num_prompts is not None
-        samples = benchmark_dataset.sample_requests(
-            num_requests=args.num_prompts,
-            tokenizer=tokenizer,
-            output_lengths=output_lengths,
-            shuffle=args.obfuscated_conversations_shuffle,
-            seed=args.seed,
+        elif isinstance(benchmark_dataset, ArxivSummarizationBenchmarkDataset):
+            if output_lengths:
+                ValueError(
+                    "Arxiv summarization dataset does not support --output-lengths."
+                    " Please use --max-output-len"
+                )
+            assert args.num_prompts is not None
+            samples = benchmark_dataset.sample_requests(
+                num_requests=args.num_prompts,
+                tokenizer=tokenizer,
+                shuffle=not args.record_output_lengths,
+                input_len=args.arxiv_summarization_input_len,
+                max_output_len=args.max_output_len,
+            )
+        elif isinstance(benchmark_dataset, RandomBenchmarkDataset):
+            random_state = np.random.default_rng(args.seed)
+            if args.num_chat_sessions:
+                samples = benchmark_dataset.gen_multiturn_random_requests(
+                    input_len=args.random_input_len,
+                    output_len=args.random_output_len,
+                    num_chat_sessions=args.num_chat_sessions,
+                    num_turns=args.random_num_turns,
+                    coefficient_of_variation=args.random_coefficient_of_variation,
+                    tokenizer=tokenizer,
+                    sys_prompt_ratio=args.random_sys_prompt_ratio,
+                    max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                    distribution_type=args.random_distribution_type,
+                    first_turn_ratio=args.random_first_turn_ratio,
+                    random_state=random_state,
+                )
+            else:
+                assert args.num_prompts is not None
+                samples = benchmark_dataset.sample_requests(
+                    num_requests=args.num_prompts,
+                    tokenizer=tokenizer,
+                    input_len=args.random_input_len,
+                    output_len=args.random_output_len,
+                    coefficient_of_variation=args.random_coefficient_of_variation,
+                    sys_prompt_ratio=args.random_sys_prompt_ratio,
+                    max_num_unique_sys_prompt=args.random_max_num_unique_sys_prompt,
+                    distribution_type=args.random_distribution_type,
+                    image_size=args.random_image_size,
+                    image_count=args.random_image_count,
+                    random_state=random_state,
+                )
+        elif isinstance(benchmark_dataset, AxolotlBenchmarkDataset):
+            assert args.num_prompts is not None
+            samples = benchmark_dataset.sample_requests(
+                num_requests=args.num_prompts,
+                tokenizer=tokenizer,
+                output_lengths=output_lengths,
+                shuffle=(
+                    output_lengths is None and not args.record_output_lengths
+                ),
+            )
+        elif isinstance(
+            benchmark_dataset, ObfuscatedConversationsBenchmarkDataset
+        ):
+            if output_lengths is None:
+                output_scale = (
+                    args.obfuscated_conversations_average_output_len
+                    * args.obfuscated_conversations_coefficient_of_variation
+                )
+                output_lengths = np.random.normal(
+                    loc=args.obfuscated_conversations_average_output_len,
+                    scale=output_scale,
+                    size=num_requests,
+                ).tolist()
+                output_lengths = np.round(output_lengths).astype(int).tolist()
+                output_lengths = [
+                    max(output_len, 1) for output_len in output_lengths
+                ]
+            assert args.num_prompts is not None
+            samples = benchmark_dataset.sample_requests(
+                num_requests=args.num_prompts,
+                tokenizer=tokenizer,
+                output_lengths=output_lengths,
+                shuffle=args.obfuscated_conversations_shuffle,
+                seed=args.seed,
+            )
+        elif isinstance(benchmark_dataset, BatchJobBenchmarkDataset):
+            assert args.num_prompts is not None
+            samples = benchmark_dataset.sample_requests(
+                num_requests=args.num_prompts,
+                tokenizer=tokenizer,
+                output_lengths=output_lengths,
+                shuffle=(
+                    output_lengths is None and not args.record_output_lengths
+                ),
+                image_dir=args.batch_job_image_dir,
+            )
+        else:
+            raise ValueError(
+                f"Unknown / unsupported dataset: {benchmark_dataset}"
+            )
+    elif benchmark_task == BenchmarkTask.text_to_image:
+        tokenizer = None
+        if args.num_prompts is None:
+            raise ValueError(
+                "Please specify '--num-prompts' for text-to-image benchmarks."
+            )
+        benchmark_dataset = BenchmarkDataset.from_flags(
+            dataset_name=args.dataset_name,
+            dataset_path=args.dataset_path,
         )
-    elif isinstance(benchmark_dataset, BatchJobBenchmarkDataset):
-        assert args.num_prompts is not None
+        if not isinstance(benchmark_dataset, SyntheticPixelBenchmarkDataset):
+            raise ValueError(
+                "text-to-image currently supports only --dataset-name synthetic-pixel"
+            )
+        logger.info("sampling requests")
         samples = benchmark_dataset.sample_requests(
             num_requests=args.num_prompts,
-            tokenizer=tokenizer,
-            output_lengths=output_lengths,
-            shuffle=(output_lengths is None and not args.record_output_lengths),
-            image_dir=args.batch_job_image_dir,
+            tokenizer=None,
+            image_width=args.image_width,
+            image_height=args.image_height,
+            image_steps=args.image_steps,
+            image_guidance_scale=args.image_guidance_scale,
+            image_negative_prompt=args.image_negative_prompt,
+            image_seed=args.image_seed,
         )
     else:
-        raise ValueError(f"Unknown / unsupported dataset: {benchmark_dataset}")
+        raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
     if args.print_inputs_and_outputs:
         print_input_prompts(samples)
@@ -1669,11 +2001,26 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
         logger.info(f"Tracing enabled, output: {trace_path}")
 
+    image_extra_body: dict[str, Any] | None = None
+    if benchmark_task == BenchmarkTask.text_to_image:
+        image_options: dict[str, Any] = {
+            "width": args.image_width,
+            "height": args.image_height,
+            "steps": args.image_steps,
+            "guidance_scale": args.image_guidance_scale,
+        }
+        if args.image_negative_prompt is not None:
+            image_options["negative_prompt"] = args.image_negative_prompt
+        image_extra_body = {"provider_options": {"image": image_options}}
+        if args.image_seed is not None:
+            image_extra_body["seed"] = args.image_seed
+
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
     benchmark_result, benchmark_metrics = asyncio.run(
         benchmark(
             backend=backend,
+            benchmark_task=benchmark_task,
             api_url=api_url,
             base_url=base_url,
             model_id=model_id,
@@ -1700,6 +2047,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             ignore_first_turn_stats=args.ignore_first_turn_stats,
             timing_data=None,
             lora_manager=lora_manager,
+            extra_body=image_extra_body,
             trace_path=trace_path,
             trace_session=args.trace_session,
         )
@@ -1722,6 +2070,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         current_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         result_json["date"] = current_dt
         result_json["backend"] = backend
+        result_json["benchmark_task"] = benchmark_task.value
         result_json["model_id"] = model_id
         result_json["tokenizer_id"] = tokenizer_id
         result_json["num_prompts"] = benchmark_result["completed"]
@@ -1777,7 +2126,10 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             json.dump(result_json, outfile)
 
     # Save output lengths if requested
-    if args.record_output_lengths:
+    if (
+        args.record_output_lengths
+        and benchmark_task == BenchmarkTask.text_generation
+    ):
         # Save relevant input args for context
         args_to_save = (
             "backend",
@@ -1799,6 +2151,10 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
         with open(args.record_output_lengths, "w") as f:
             yaml.dump(output_lens_dict, f)
+    elif args.record_output_lengths:
+        logger.warning(
+            "--record-output-lengths is only supported for text-generation"
+        )
 
     logger.info("finished benchmark run: Success.")
 
