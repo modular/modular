@@ -14,9 +14,6 @@
 from collections import OptionalReg, Set
 from math import rsqrt
 from memory import memcpy
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import random_ui64, seed
 
 from gpu.host import DeviceContext
@@ -25,6 +22,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
@@ -73,20 +71,16 @@ def execute_ragged_flash_attention[
 
     # Define layouts
     comptime input_row_offsets_layout = Layout(UNKNOWN_VALUE)
+    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
+    comptime valid_lengths_layout = Layout(UNKNOWN_VALUE)
+    comptime lookup_table_layout = Layout(UNKNOWN_VALUE)
     comptime q_ragged_static_layout = Layout.row_major(
         UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
     )
     comptime q_padded_static_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
     )
-    comptime kv_block_static_layout = Layout.row_major(
-        UNKNOWN_VALUE,
-        2,
-        UNKNOWN_VALUE,
-        UNKNOWN_VALUE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
-    )
+    comptime kv_block_static_layout = Layout.row_major[6]()
 
     var total_length = 0
     var max_context_length = 0
@@ -98,33 +92,41 @@ def execute_ragged_flash_attention[
         max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
 
-    # Create device buffers
-    var input_row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size + 1
+    # Create managed tensors for offset and length metadata.
+    var input_row_offsets = ManagedLayoutTensor[
+        DType.uint32, input_row_offsets_layout
+    ](
+        RuntimeLayout[input_row_offsets_layout].row_major(
+            Index(batch_size + 1)
+        ),
+        ctx,
     )
-    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
+    var cache_lengths_managed = ManagedLayoutTensor[
+        DType.uint32, cache_lengths_layout
+    ](
+        RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
+        ctx,
     )
-    var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
+    var valid_lengths_managed = ManagedLayoutTensor[
+        DType.uint32, valid_lengths_layout
+    ](
+        RuntimeLayout[valid_lengths_layout].row_major(Index(batch_size)),
+        ctx,
     )
 
     # Initialize row offsets and lengths
-    var input_row_offsets_host_ptr = UnsafePointer[UInt32].alloc(batch_size + 1)
+    var input_row_offsets_host = input_row_offsets.tensor[update=False]()
     var running_total = 0
     for i in range(batch_size):
-        input_row_offsets_host_ptr[i] = UInt32(running_total)
+        input_row_offsets_host[i] = UInt32(running_total)
         running_total += valid_lengths[i]
-    input_row_offsets_host_ptr[batch_size] = UInt32(running_total)
-    ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_host_ptr)
+    input_row_offsets_host[batch_size] = UInt32(running_total)
 
-    with cache_lengths_device.map_to_host() as cache_lengths_host:
-        for i in range(batch_size):
-            cache_lengths_host[i] = UInt32(cache_lengths[i])
-
-    with valid_lengths_device.map_to_host() as valid_lengths_host:
-        for i in range(batch_size):
-            valid_lengths_host[i] = UInt32(valid_lengths[i])
+    var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
+    var valid_lengths_host = valid_lengths_managed.tensor[update=False]()
+    for i in range(batch_size):
+        cache_lengths_host[i] = UInt32(cache_lengths[i])
+        valid_lengths_host[i] = UInt32(valid_lengths[i])
 
     # Create q tensors
     var q_ragged_shape = IndexList[3](
@@ -141,50 +143,35 @@ def execute_ragged_flash_attention[
         q_padded_static_layout
     ].row_major(q_padded_shape)
 
-    var q_ragged_device = ctx.enqueue_create_buffer[dtype](
-        q_ragged_shape.flattened_length()
+    var q_ragged = ManagedLayoutTensor[dtype, q_ragged_static_layout](
+        q_ragged_runtime_layout, ctx
     )
-    var q_padded_device = ctx.enqueue_create_buffer[dtype](
-        q_padded_shape.flattened_length()
+    var q_padded = ManagedLayoutTensor[dtype, q_padded_static_layout](
+        q_padded_runtime_layout, ctx
     )
 
     # Initialize q_ragged with random data
-    with q_ragged_device.map_to_host() as q_ragged_host:
-        var q_ragged_tensor = LayoutTensor[dtype, q_ragged_static_layout](
-            q_ragged_host, q_ragged_runtime_layout
+    var q_ragged_host = q_ragged.tensor()
+    random(q_ragged_host)
+
+    # Also initialize q_padded by copying from q_ragged
+    var q_padded_host = q_padded.tensor()
+    # copy over the ragged values to the padded tensor.
+    # Don't worry about padded values, we won't read them.
+    for bs in range(batch_size):
+        unpadded_seq_len = valid_lengths[bs]
+        ragged_start_idx = Int(input_row_offsets_host[bs])
+        padded_ptr = q_padded_host.ptr + (
+            bs * max_prompt_length * num_q_heads * Int(kv_params.head_size)
         )
-        random(q_ragged_tensor)
-
-        # Also initialize q_padded by copying from q_ragged
-        with q_padded_device.map_to_host() as q_padded_host:
-            var q_padded_tensor = LayoutTensor[dtype, q_padded_static_layout](
-                q_padded_host, q_padded_runtime_layout
-            )
-            # copy over the ragged values to the padded tensor.
-            # Don't worry about padded values, we won't read them.
-            for bs in range(batch_size):
-                unpadded_seq_len = valid_lengths[bs]
-                ragged_start_idx = Int(input_row_offsets_host_ptr[bs])
-                padded_ptr = q_padded_tensor.ptr + (
-                    bs
-                    * max_prompt_length
-                    * num_q_heads
-                    * Int(kv_params.head_size)
-                )
-                ragged_ptr = q_ragged_tensor.ptr + (
-                    ragged_start_idx * num_q_heads * Int(kv_params.head_size)
-                )
-                memcpy(
-                    dest=padded_ptr,
-                    src=ragged_ptr,
-                    count=unpadded_seq_len
-                    * num_q_heads
-                    * Int(kv_params.head_size),
-                )
-
-    # Free the host pointer after use
-    ctx.synchronize()
-    input_row_offsets_host_ptr.free()
+        ragged_ptr = q_ragged_host.ptr + (
+            ragged_start_idx * num_q_heads * Int(kv_params.head_size)
+        )
+        memcpy(
+            dest=padded_ptr,
+            src=ragged_ptr,
+            count=unpadded_seq_len * num_q_heads * Int(kv_params.head_size),
+        )
 
     # Create output tensors
     var ref_output_shape = IndexList[4](
@@ -193,8 +180,8 @@ def execute_ragged_flash_attention[
     var ref_output_runtime_layout = RuntimeLayout[
         q_padded_static_layout
     ].row_major(ref_output_shape)
-    var ref_output_device = ctx.enqueue_create_buffer[dtype](
-        ref_output_shape.flattened_length()
+    var ref_output = ManagedLayoutTensor[dtype, q_padded_static_layout](
+        ref_output_runtime_layout, ctx
     )
 
     var test_output_shape = IndexList[3](
@@ -203,8 +190,8 @@ def execute_ragged_flash_attention[
     var test_output_runtime_layout = RuntimeLayout[
         q_ragged_static_layout
     ].row_major(test_output_shape)
-    var test_output_device = ctx.enqueue_create_buffer[dtype](
-        test_output_shape.flattened_length()
+    var test_output = ManagedLayoutTensor[dtype, q_ragged_static_layout](
+        test_output_runtime_layout, ctx
     )
 
     # Initialize kv_block with random data using regular host memory
@@ -222,82 +209,44 @@ def execute_ragged_flash_attention[
         kv_block_static_layout
     ].row_major(kv_block_shape)
 
-    var kv_block_device = ctx.enqueue_create_buffer[dtype](
-        kv_block_shape.flattened_length()
+    var kv_block = ManagedLayoutTensor[dtype, kv_block_static_layout](
+        kv_block_runtime_layout, ctx
     )
-
-    var kv_block_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_block_shape.flattened_length()
-    )
-    var kv_block_host_tensor = LayoutTensor[dtype, kv_block_static_layout](
-        kv_block_host_ptr, kv_block_runtime_layout
-    )
+    var kv_block_host_tensor = kv_block.tensor()
     random(kv_block_host_tensor)
-    ctx.enqueue_copy(kv_block_device, kv_block_host_ptr)
-    ctx.synchronize()
-    kv_block_host_ptr.free()
 
     # Create lookup table
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
+    var lookup_table_managed = ManagedLayoutTensor[
+        DType.uint32, lookup_table_layout
+    ](
+        RuntimeLayout[lookup_table_layout].row_major(Index(batch_size)),
+        ctx,
     )
 
     # Initialize lookup table with random block indices
-    with lookup_table_device.map_to_host() as lookup_table_host:
-        var block_idx_set = Set[Int]()
-        var idx = 0
-        while idx < batch_size:
-            var randval = Int(random_ui64(0, num_blocks - 1))
-            if randval in block_idx_set:
-                continue
-            block_idx_set.add(randval)
-            lookup_table_host[idx] = UInt32(randval)
-            idx += 1
+    var lookup_table_host = lookup_table_managed.tensor[update=False]()
+    var block_idx_set = Set[Int]()
+    var idx = 0
+    while idx < batch_size:
+        var randval = Int(random_ui64(0, num_blocks - 1))
+        if randval in block_idx_set:
+            continue
+        block_idx_set.add(randval)
+        lookup_table_host[idx] = UInt32(randval)
+        idx += 1
 
     # Create layout tensors for GPU operations
-    var input_row_offsets_runtime_layout = RuntimeLayout[
-        input_row_offsets_layout
-    ].row_major(Index(batch_size + 1))
+    var input_row_offsets_tensor = input_row_offsets.device_tensor()
+    var valid_lengths_tensor = valid_lengths_managed.device_tensor()
 
-    var input_row_offsets_tensor = LayoutTensor[
-        DType.uint32, input_row_offsets_layout
-    ](input_row_offsets_device, input_row_offsets_runtime_layout)
+    var cache_lengths_tensor = cache_lengths_managed.device_tensor()
 
-    var valid_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        valid_lengths_device,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size)
-        ),
-    )
+    var lookup_table_tensor = lookup_table_managed.device_tensor()
 
-    var cache_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-    ](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
-    )
-
-    var lookup_table_tensor = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-    ](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
-    )
-
-    var kv_block_tensor = LayoutTensor[dtype, kv_block_static_layout](
-        kv_block_device, kv_block_runtime_layout
-    )
+    var kv_block_tensor = kv_block.device_tensor()
 
     var kv_collection_device = CollectionType(
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-            kv_block_tensor.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_tensor.runtime_layout.shape.value,
-                kv_block_tensor.runtime_layout.stride.value,
-            ),
-        ),
+        kv_block_tensor,
         cache_lengths_tensor,
         lookup_table_tensor,
         UInt32(max_prompt_length),
@@ -308,12 +257,19 @@ def execute_ragged_flash_attention[
 
     # Create sink weights
     var sink_weights_shape = IndexList[1](num_q_heads)
-    var sink_weights_device = ctx.enqueue_create_buffer[dtype](num_q_heads)
+    var sink_weights = ManagedLayoutTensor[
+        dtype, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            sink_weights_shape
+        ),
+        ctx,
+    )
 
     # Initialize sink weights with varying negative values
-    with sink_weights_device.map_to_host() as sink_weights_host:
-        for h in range(num_q_heads):
-            sink_weights_host[h] = Scalar[dtype](-2.0 - 0.5 * Float64(h))
+    var sink_weights_host = sink_weights.tensor[update=False]()
+    for h in range(num_q_heads):
+        sink_weights_host[h] = Scalar[dtype](-2.0 - 0.5 * Float64(h))
 
     var sink_weights_device_tensor: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -323,24 +279,14 @@ def execute_ragged_flash_attention[
         sink_weights_device_tensor = LayoutTensor[
             dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
         ](
-            sink_weights_device,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                sink_weights_shape
-            ),
+            sink_weights.device_tensor().ptr,
+            sink_weights.device_tensor().runtime_layout,
         )
 
-    var q_ragged_tensor = LayoutTensor[dtype, q_ragged_static_layout](
-        q_ragged_device, q_ragged_runtime_layout
-    )
-    var q_padded_tensor = LayoutTensor[dtype, q_padded_static_layout](
-        q_padded_device, q_padded_runtime_layout
-    )
-    var test_output_tensor = LayoutTensor[dtype, q_ragged_static_layout](
-        test_output_device, test_output_runtime_layout
-    )
-    var ref_output_tensor = LayoutTensor[dtype, q_padded_static_layout](
-        ref_output_device, ref_output_runtime_layout
-    )
+    var q_ragged_tensor = q_ragged.device_tensor()
+    var q_padded_tensor = q_padded.device_tensor()
+    var test_output_tensor = test_output.device_tensor()
+    var ref_output_tensor = ref_output.device_tensor()
 
     # ragged execution with sink weights
     flash_attention[ragged=True, sink=sink](
@@ -355,8 +301,6 @@ def execute_ragged_flash_attention[
         ctx,
         sink_weights=sink_weights_device_tensor,
     )
-    ctx.synchronize()
-
     # padded execution
     flash_attention[sink=sink, naive_kernel=True](
         ref_output_tensor,
@@ -370,65 +314,43 @@ def execute_ragged_flash_attention[
         ctx,
         sink_weights=sink_weights_device_tensor,
     )
-
-    ctx.synchronize()
-
     # Verify results
-    with test_output_device.map_to_host() as test_out_host:
-        with ref_output_device.map_to_host() as ref_out_host:
-            with input_row_offsets_device.map_to_host() as row_offsets_host:
-                var test_out_tensor = LayoutTensor[
-                    dtype, q_ragged_static_layout
-                ](test_out_host, test_output_runtime_layout)
-                var ref_out_tensor = LayoutTensor[
-                    dtype, q_padded_static_layout
-                ](ref_out_host, ref_output_runtime_layout)
+    row_offsets_tensor = input_row_offsets.tensor()
+    var test_out_tensor = test_output.tensor()
+    var ref_out_tensor = ref_output.tensor()
 
-                for bs in range(batch_size):
-                    prompt_len = valid_lengths[bs]
-                    ragged_offset = Int(row_offsets_host[bs])
-                    for s in range(prompt_len):
-                        for h in range(num_q_heads):
-                            for hd in range(kv_params.head_size):
-                                var ref_val = ref_out_tensor[bs, s, h, Int(hd)]
-                                var test_val = test_out_tensor[
-                                    ragged_offset + s, h, Int(hd)
-                                ]
-                                try:
-                                    # amd uses more aggressive split-k partitioning
-                                    var rtol_bf16 = (
-                                        2e-2 if has_amd_gpu_accelerator() else 1e-2
-                                    )
-                                    assert_almost_equal(
-                                        ref_val,
-                                        test_val,
-                                        rtol=rtol_bf16 if dtype
-                                        == DType.bfloat16 else 1e-4,
-                                        atol=5e-3,  # numerical instability between naive and optimized kernels
-                                    )
-                                except e:
-                                    print(
-                                        "MISMATCH:",
-                                        bs,
-                                        s,
-                                        h,
-                                        hd,
-                                        ref_val,
-                                        test_val,
-                                    )
-                                    raise e^
-
-    # Explicitly free device buffers to return memory to the buffer cache
-    _ = input_row_offsets_device^
-    _ = cache_lengths_device^
-    _ = valid_lengths_device^
-    _ = q_ragged_device^
-    _ = q_padded_device^
-    _ = ref_output_device^
-    _ = test_output_device^
-    _ = kv_block_device^
-    _ = lookup_table_device^
-    _ = sink_weights_device^
+    for bs in range(batch_size):
+        prompt_len = valid_lengths[bs]
+        ragged_offset = Int(row_offsets_tensor[bs])
+        for s in range(prompt_len):
+            for h in range(num_q_heads):
+                for hd in range(kv_params.head_size):
+                    var ref_val = ref_out_tensor[bs, s, h, Int(hd)]
+                    var test_val = test_out_tensor[
+                        ragged_offset + s, h, Int(hd)
+                    ]
+                    try:
+                        # amd uses more aggressive split-k partitioning
+                        var rtol_bf16 = (
+                            2e-2 if has_amd_gpu_accelerator() else 1e-2
+                        )
+                        assert_almost_equal(
+                            ref_val,
+                            test_val,
+                            rtol=rtol_bf16 if dtype == DType.bfloat16 else 1e-4,
+                            atol=5e-3,  # numerical instability between naive and optimized kernels
+                        )
+                    except e:
+                        print(
+                            "MISMATCH:",
+                            bs,
+                            s,
+                            h,
+                            hd,
+                            ref_val,
+                            test_val,
+                        )
+                        raise e^
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
