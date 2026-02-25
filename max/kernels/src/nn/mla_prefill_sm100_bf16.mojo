@@ -135,35 +135,26 @@ struct MLAPositionSummary(TrivialRegisterPassable):
 
     @staticmethod
     @always_inline
-    fn get_start_pos[
+    fn get_num_keys_and_start_pos[
         KRopeType: MHAOperand,
         //,
         _ndbuffer_mha_operand: Bool,
-    ](k_rope_lut: KRopeType, seq_info: SeqInfo) -> UInt32:
-        # For causal masking with num_keys != seq_len, start_pos is the offset
-        # such that query position p attends to keys 0..(start_pos + p).
-        # start_pos = num_keys - seq_len
+    ](k_rope_lut: KRopeType, seq_info: SeqInfo) -> Tuple[UInt32, UInt32]:
         comptime if _ndbuffer_mha_operand:
-            var cache_len = warp.broadcast(
-                k_rope_lut.cache_length(Int(seq_info.prompt_idx))
-            )
-            var seq_len = warp.broadcast(seq_info.seq_len)
-            return UInt32(cache_len) - seq_len
-        else:
-            return UInt32(
+            num_keys = UInt32(
                 warp.broadcast(
                     k_rope_lut.cache_length(Int(seq_info.prompt_idx))
                 )
             )
-
-    @staticmethod
-    @always_inline
-    fn get_num_keys[
-        KVLUTType: MHAOperand,
-    ](kv_lut: KVLUTType, seq_info: SeqInfo) -> UInt32:
-        return UInt32(
-            warp.broadcast(kv_lut.cache_length(Int(seq_info.prompt_idx)))
-        )
+            start_pos = UInt32(num_keys - warp.broadcast(seq_info.seq_len))
+        else:
+            start_pos = UInt32(
+                warp.broadcast(
+                    k_rope_lut.cache_length(Int(seq_info.prompt_idx))
+                )
+            )
+            num_keys = start_pos + warp.broadcast(seq_info.seq_len)
+        return {num_keys, start_pos}
 
     @staticmethod
     @always_inline
@@ -173,19 +164,13 @@ struct MLAPositionSummary(TrivialRegisterPassable):
     @staticmethod
     @always_inline
     fn create[
-        KVLUTType: MHAOperand,
         KRopeType: MHAOperand,
         //,
         _ndbuffer_mha_operand: Bool,
-    ](
-        kv_lut: KVLUTType,
-        k_rope_lut: KRopeType,
-        seq_info: SeqInfo,
-    ) -> MLAPositionSummary:
-        start_pos = Self.get_start_pos[
+    ](k_rope_lut: KRopeType, seq_info: SeqInfo,) -> MLAPositionSummary:
+        num_keys, start_pos = Self.get_num_keys_and_start_pos[
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](k_rope_lut, seq_info)
-        num_keys = Self.get_num_keys(kv_lut, seq_info)
         score_row = Self.get_score_row(seq_info, start_pos)
         return {num_keys, score_row}
 
@@ -605,7 +590,7 @@ struct SM100MLA[
 
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             Self.softmax(
                 ptr_tmem_addr[0],
@@ -634,7 +619,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
             Self.correction(
                 ptr_tmem_addr[0],
                 misc_mbars,
@@ -653,7 +638,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             Self.load(
                 misc_mbars,
@@ -685,7 +670,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
             Self.mma(
                 ptr_tmem_addr[0],
                 misc_mbars,

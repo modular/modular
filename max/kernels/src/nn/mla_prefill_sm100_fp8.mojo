@@ -634,7 +634,7 @@ struct SM100MLA[
 
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             Self.softmax(
                 ptr_tmem_addr[0],
@@ -663,7 +663,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
             Self.correction(
                 ptr_tmem_addr[0],
                 misc_mbars,
@@ -682,7 +682,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             Self.load(
                 misc_mbars,
@@ -715,7 +715,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
             Self.mma(
                 ptr_tmem_addr[0],
                 misc_mbars,
@@ -737,7 +737,7 @@ struct SM100MLA[
 
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             var iter_count: UInt32 = (
                 mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
