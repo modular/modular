@@ -124,15 +124,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    enable_prioritize_first_decode: bool = Field(
-        default=False,
-        description=(
-            "When enabled, the scheduler always runs a TG batch immediately "
-            "after a CE batch with the same requests. This may reduce "
-            "time-to-first-chunk latency. Experimental for the TTS scheduler."
-        ),
-    )
-
     enable_chunked_prefill: bool = Field(
         default=True,
         description=(
