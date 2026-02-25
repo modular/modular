@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from queue import Queue
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -49,7 +49,7 @@ class Flux2ModelInputs(PixelModelInputs):
     - num_inference_steps: 50
     - num_images_per_prompt: 1
     - input_image: None (optional input image for image-to-image generation)
-    - mask: None (optional boolean mask over padded prompt tokens)
+    - mask: boolean mask over padded prompt tokens
     """
 
     width: int = 1024
@@ -63,7 +63,9 @@ class Flux2ModelInputs(PixelModelInputs):
     This field is used for Flux2 image-to-image generation where an input image
     is provided as a condition for the generation process.
     """
-    mask: npt.NDArray[np.bool_] | None = None
+    mask: npt.NDArray[np.bool_] = field(
+        default_factory=lambda: np.array([], dtype=np.bool_)
+    )
 
 
 @dataclass
@@ -98,6 +100,9 @@ class Flux2Pipeline(DiffusionPipeline):
         "text_encoder": Mistral3TextEncoderModel,
         "transformer": Flux2TransformerModel,
     }
+
+    # hidden-state layer indices of the text encoder to use for prompt embedding.
+    prompt_embedding_hidden_states_layers: tuple[int, ...] = (10, 20, 30)
 
     def init_remaining_components(self) -> None:
         """Initialize derived attributes that depend on loaded components."""
@@ -150,7 +155,7 @@ class Flux2Pipeline(DiffusionPipeline):
                 device=DeviceRef.CPU(),
             )
         ]
-        for _ in range(3):
+        for _ in self.prompt_embedding_hidden_states_layers:
             input_types.append(
                 TensorType(
                     self.text_encoder.config.dtype,
@@ -354,9 +359,8 @@ class Flux2Pipeline(DiffusionPipeline):
     def prepare_prompt_embeddings(
         self,
         tokens: TokenBuffer,
-        mask: npt.NDArray[np.bool_] | None = None,
+        mask: npt.NDArray[np.bool_],
         num_images_per_prompt: int = 1,
-        hidden_states_layers: list[int] | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Create prompt embeddings and text position IDs for the transformer.
 
@@ -366,33 +370,27 @@ class Flux2Pipeline(DiffusionPipeline):
 
         Args:
             tokens: TokenBuffer produced by tokenization / chat templating.
-            mask: Optional boolean mask over `tokens.array` where True indicates
-                a non-padding token. If None, all tokens are treated as valid.
+            mask: Boolean mask over `tokens.array` where True indicates
+                a non-padding token.
             num_images_per_prompt: Number of image generations per prompt.
-            hidden_states_layers: Optional indices of hidden-state layers to use.
 
         Returns:
             A tuple of:
                 - prompt_embeds: Tensor of shape (B', S, L*D)
                 - text_ids: Tensor[int64] of shape (B', S, 4)
         """
-        layers = hidden_states_layers or [10, 20, 30]
         token_ids = np.asarray(tokens.array, dtype=np.int64)
         if token_ids.ndim != 1:
             raise ValueError(
                 f"Flux2 expects 1D tokens, got shape {token_ids.shape}."
             )
         padded_seq_len = int(token_ids.shape[0])
-        if mask is not None:
-            if mask.shape[0] != padded_seq_len:
-                raise ValueError(
-                    "Prompt mask length must match token length. "
-                    f"Got mask={mask.shape[0]}, tokens={padded_seq_len}."
-                )
-            valid_tokens = token_ids[mask]
-        else:
-            mask = np.ones(padded_seq_len, dtype=np.bool_)
-            valid_tokens = token_ids
+        if mask.shape[0] != padded_seq_len:
+            raise ValueError(
+                "Prompt mask length must match token length. "
+                f"Got mask={mask.shape[0]}, tokens={padded_seq_len}."
+            )
+        valid_tokens = token_ids[mask]
 
         valid_seq_len = int(valid_tokens.shape[0])
         if valid_seq_len > padded_seq_len:
@@ -405,7 +403,10 @@ class Flux2Pipeline(DiffusionPipeline):
             valid_tokens, dtype=DType.int64, device=self.text_encoder.devices[0]
         )
         hidden_states_all = self.text_encoder(text_input_ids)
-        hidden_states_selected = [hidden_states_all[i] for i in layers]
+        hidden_states_selected = [
+            hidden_states_all[i]
+            for i in self.prompt_embedding_hidden_states_layers
+        ]
         mask_tensor = Tensor.from_dlpack(mask)
         prompt_embeds = self._prepare_prompt_embeddings(
             mask_tensor, *hidden_states_selected
