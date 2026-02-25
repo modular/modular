@@ -249,6 +249,7 @@ def test_replay_with_external_allocations() -> None:
     input_buf = Buffer.from_dlpack(input_tensor)
 
     results = model.capture(graph_key, input_buf)
+    model.replay(graph_key, input_buf)
 
     external_buffers = []
     for _ in range(10):
@@ -266,6 +267,9 @@ def test_replay_with_external_allocations() -> None:
         )
     accelerator.synchronize()
 
+    del model
+    accelerator.synchronize()
+
     del external_buffers
     accelerator.synchronize()
 
@@ -274,9 +278,6 @@ def test_replay_with_external_allocations() -> None:
 
     del input_tensor
     del input_buf
-    accelerator.synchronize()
-
-    del model
     accelerator.synchronize()
 
 
