@@ -1245,3 +1245,23 @@ lit.fn @weird_fallthroughs<parambool: i1>(%runbool: i1) -> i1 {
   }
   lit.end_fn
 }
+
+// kgen.param.assert with a statically false condition means the assertion
+// fails at elaboration time; all code after it is dead.
+
+// CHECK-LABEL: lit.fn @dead_code_after_param_assert_false
+lit.fn @dead_code_after_param_assert_false<cond: i1>() -> !kgen.none {
+  // A true assert is not a terminator.
+  // CHECK: kgen.param.assert <1>
+  kgen.param.assert <1>, "this always passes"
+
+  // A false assert causes everything after it to be dead.
+  // CHECK-NEXT: kgen.param.assert <0>
+  // CHECK-NEXT: kgen.unreachable
+  kgen.param.assert <0>, "this always fails"
+
+  // expected-warning @+1 {{unreachable code after compile-time assertion failure}}
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_fn
+}

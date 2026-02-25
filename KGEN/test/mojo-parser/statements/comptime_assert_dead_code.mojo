@@ -1,0 +1,40 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# Tests that a statically-false 'comptime assert' marks subsequent code as dead.
+#
+# RUN: %parse-mojo-isolated %s | kgen-opt -lower-semantic-cf -check-lifetimes | FileCheck %s
+
+##===----------------------------------------------------------------------===##
+# Exhaustive comptime if/elif/else where the else branch contains a parse-time
+# false comptime assert.
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: lit.fn @"exhaustive_comptime_if
+fn exhaustive_comptime_if[x: Int]() -> Int:
+    comptime if x > 0:
+        return 1
+    elif x == 0:
+        return 0
+    else:
+        comptime assert False
+        # CHECK: kgen.param.assert <0>
+        # CHECK-NEXT: kgen.unreachable
+
+
+##===----------------------------------------------------------------------===##
+# Straight-line code where a false comptime assert appears partway through the
+# function. Everything after the assert is dead.
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: lit.fn @"dead_code_after_assert
+fn dead_code_after_assert(mut x: Int) -> Int:
+    x = 7
+    comptime assert False
+    # CHECK: kgen.param.assert <0>
+    # CHECK-NEXT: kgen.unreachable
