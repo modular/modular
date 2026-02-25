@@ -15,16 +15,63 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/NativeFormatting.h"
+#include "llvm/Support/Process.h"
 
 using namespace M;
 using namespace KGEN;
 
 /// Returns whether the Mojo package (represented by its header) is compatible
 /// with the current compiler.
-ErrorOrSuccess
-M::KGEN::checkCompatiblePackage(const MojoPackageHeader &header) {
-  // TODO: Enable compatibility checking
-  return success();
+ErrorOrSuccess M::KGEN::checkCompatiblePackage(const MojoPackageHeader &header,
+                                               StringRef packageName) {
+  // Check whether the MLIR checksums match. If they do, assume the package is
+  // okay.
+  if (header.mlirChecksum == M::getMojoMlirDialectChecksum())
+    return success();
+
+  // We have a mismatch. Since MLIR checksums aren't meaningful to users, prefer
+  // to return an error containing version information as a proxy.
+  MojoPackageVersion currentVer = M::getModularVersion();
+
+  std::string errMsg = "Mojo package is incompatible with the current version "
+                       "of the Mojo compiler";
+
+  // The most common case (for end users) is that both the package and compiler
+  // have version information. Report that.
+  if (currentVer && header.modularVersion) {
+    std::string packageVerStr = ". Package";
+    if (!packageName.empty())
+      packageVerStr += (Twine(" '") + packageName + "'").str();
+    packageVerStr += " version";
+
+    if (auto err = checkVersion(header.modularVersion, currentVer,
+                                packageVerStr, "compiler version")) {
+      return Error(errMsg + err.getError());
+    }
+
+    // Otherwise the versions are the same but the MLIR checksums don't match -
+    // this is unlikely.
+    return Error(
+        errMsg + packageVerStr + " " + header.modularVersion.toString() +
+        " matches the compiler version, but has incompatible MLIR bytecode");
+  }
+
+  // Otherwise one or both of the package and compiler are missing version
+  // information, so was either built using, or is, an internal compiler build.
+
+  if (currentVer) {
+    errMsg += " (" + currentVer.toString() + "). Package";
+    if (!packageName.empty())
+      errMsg += (Twine(" '") + packageName + "'").str();
+    return Error(errMsg + " is missing version information");
+  }
+
+  errMsg += ". Package";
+  if (!packageName.empty())
+    errMsg += (Twine(" '") + packageName + "'").str();
+  return Error(errMsg + " was built with version " +
+               header.modularVersion.toString() +
+               " but the compiler is missing version information");
 }
 
 ErrorOrSuccess M::KGEN::checkVersion(const MojoPackageVersion &base,
@@ -218,10 +265,16 @@ M::KGEN::getMLIRBufferFromPackage(llvm::MemoryBufferRef buffer,
   if (mlirBufferAndHeaderOrErr.isError())
     return mlirBufferAndHeaderOrErr.takeError();
   auto &[header, mlirBuffer] = *mlirBufferAndHeaderOrErr;
-  if (!ignoreIncompatiblePackageErrs)
-    if (auto err = KGEN::checkCompatiblePackage(header))
-      return Error("invalid Mojo package '" + buffer.getBufferIdentifier() +
-                   "': " + err.takeError().get());
+  if (llvm::sys::Process::GetEnv("MOJO_VALIDATE_MOJOPKG") &&
+      !ignoreIncompatiblePackageErrs) {
+    if (auto err = KGEN::checkCompatiblePackage(header,
+                                                buffer.getBufferIdentifier())) {
+      return Error(
+          std::string(err.getError()) +
+          ". To proceed, recreate the package with `mojo package`, or use "
+          "the version of the compiler it was created with.");
+    }
+  }
   return mlirBuffer;
 }
 

@@ -240,3 +240,140 @@ TEST(MojoPackageTest, testReadErrors) {
     EXPECT_EQ(0, mlirBuffer.getBufferSize());
   }
 }
+
+TEST(MojoPackageTest, testPackageValidationErrorNoPackageVer) {
+  M::KGEN::MojoPackageVersion mojoVer{0, 0, 0};
+  // Use a version guaranteed to be older than any non-zero version
+  M::KGEN::MojoPackageVersion modularVer{0, 0, 0};
+  // As a hexadecimal sha256 string, the checksum should never contain the
+  // character 'x'.
+  const char *mlirChecksum = "xxxx";
+  // Note we're constructing an artificial header here so the size is
+  // irrelevant.
+  M::KGEN::MojoPackageHeader header{mojoVer, modularVer, mlirChecksum,
+                                    /*version=*/1, /*headerSize=*/0};
+
+  {
+    auto Err = M::KGEN::checkCompatiblePackage(header);
+
+    EXPECT_TRUE(Err.isError());
+
+    // Check the specific expected error based on whether this build has version
+    // information.
+    StringRef errStr = Err.getError();
+    if (M::KGEN::MojoPackageVersion currentVer = M::getModularVersion()) {
+      EXPECT_STREQ(
+          errStr.data(),
+          (Twine("Mojo package is incompatible with the current version "
+                 "of the Mojo compiler (") +
+           currentVer.toString() + "). Package is missing version information")
+              .str()
+              .c_str());
+    } else {
+      EXPECT_STREQ(errStr.data(),
+                   "Mojo package is incompatible with the current version "
+                   "of the Mojo compiler. Package was built with version "
+                   "0.0.0 but the compiler is missing version information");
+    }
+  }
+
+  // Test again with a non-empty package name
+  {
+    auto Err =
+        M::KGEN::checkCompatiblePackage(header, "/path/to/mypackage.mojopkg");
+
+    EXPECT_TRUE(Err.isError());
+
+    // Check the specific expected error based on whether this build has version
+    // information.
+    StringRef errStr = Err.getError();
+    if (M::KGEN::MojoPackageVersion currentVer = M::getModularVersion()) {
+      EXPECT_STREQ(
+          errStr.data(),
+          (Twine("Mojo package is incompatible with the current version "
+                 "of the Mojo compiler (") +
+           currentVer.toString() +
+           "). Package '/path/to/mypackage.mojopkg' is missing version "
+           "information")
+              .str()
+              .c_str());
+    } else {
+      EXPECT_STREQ(errStr.data(),
+                   "Mojo package is incompatible with the current version "
+                   "of the Mojo compiler. Package '/path/to/mypackage.mojopkg' "
+                   "was built with version 0.0.0 but the compiler is missing "
+                   "version information");
+    }
+  }
+}
+
+TEST(MojoPackageTest, testPackageValidationErrorPackageVer) {
+  M::KGEN::MojoPackageVersion mojoVer{0, 0, 0};
+  // Use a version guaranteed to be older than any non-zero version
+  M::KGEN::MojoPackageVersion modularVer{0, 0, 1};
+  modularVer.label = "-test";
+  // As a hexadecimal sha256 string, the checksum should never contain the
+  // character 'x'.
+  const char *mlirChecksum = "xxxx";
+  // Note we're constructing an artificial header here so the size is
+  // irrelevant.
+  M::KGEN::MojoPackageHeader header{mojoVer, modularVer, mlirChecksum,
+                                    /*version=*/1, /*headerSize=*/0};
+
+  {
+    auto Err = M::KGEN::checkCompatiblePackage(header);
+
+    EXPECT_TRUE(Err.isError());
+
+    // Check the specific expected error based on whether this build has version
+    // information.
+    StringRef errStr = Err.getError();
+    // Note this is assuming that the current version of the compiler is set,
+    // it's newer than 0.0.1.
+    if (M::KGEN::MojoPackageVersion currentVer = M::getModularVersion()) {
+      EXPECT_STREQ(
+          errStr.data(),
+          (Twine("Mojo package is incompatible with the current version "
+                 "of the Mojo compiler. Package version 0.0.1-test is older "
+                 "than compiler version ") +
+           currentVer.toString())
+              .str()
+              .c_str());
+    } else {
+      EXPECT_STREQ(
+          errStr.data(),
+          "Mojo package is incompatible with the current version "
+          "of the Mojo compiler. Package was built with version "
+          "0.0.1-test but the compiler is missing version information");
+    }
+  }
+
+  // Test again with a non-empty package name
+  {
+    auto Err = M::KGEN::checkCompatiblePackage(header, "test.mojopkg");
+
+    EXPECT_TRUE(Err.isError());
+
+    // Check the specific expected error based on whether this build has version
+    // information.
+    StringRef errStr = Err.getError();
+    // Note this is assuming that the current version of the compiler is set,
+    // it's newer than 0.0.1.
+    if (M::KGEN::MojoPackageVersion currentVer = M::getModularVersion()) {
+      EXPECT_STREQ(
+          errStr.data(),
+          (Twine("Mojo package is incompatible with the current version "
+                 "of the Mojo compiler. Package 'test.mojopkg' version "
+                 "0.0.1-test is older than compiler version ") +
+           currentVer.toString())
+              .str()
+              .c_str());
+    } else {
+      EXPECT_STREQ(
+          errStr.data(),
+          "Mojo package is incompatible with the current version of the Mojo "
+          "compiler. Package 'test.mojopkg' was built with version 0.0.1-test "
+          "but the compiler is missing version information");
+    }
+  }
+}
