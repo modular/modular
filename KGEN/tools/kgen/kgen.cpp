@@ -379,8 +379,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
             "the same time as -march or -mcpu"));
 
       // Use `-march` to determine the feature set.
-      targetOr = getMArchFeatures(ctx, clOptions.targetTriple, clOptions.march,
-                                  clOptions.mcpu, clOptions.mtune);
+      targetOr = getMArchFeatures(
+          ctx, clOptions.targetTriple, clOptions.march, clOptions.mcpu,
+          clOptions.mtune, clOptions.targetAccelerator, options.relocModel);
     } else {
       if (clOptions.targetTriple != llvm::sys::getDefaultTargetTriple()) {
         if (clOptions.targetCpu == llvm::sys::getHostCPUName())
@@ -403,7 +404,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       // get the target info.
       targetOr =
           getTargetInfoFor(ctx, clOptions.targetTriple, clOptions.targetCpu,
-                           clOptions.targetFeatures);
+                           clOptions.targetFeatures, clOptions.mtune,
+                           options.targetAccelerator, options.relocModel);
     }
 
     if (targetOr.isError())

@@ -39,10 +39,10 @@ ErrorOr<std::unique_ptr<llvm::TargetMachine>> getTargetMachineForHost(
 ///
 /// TODO: Split into separate MLIR-dependent library. All other functions
 /// depend only on LLVMTarget and (unfortunately) clang.
-ErrorOr<TargetInfoAttr> getMArchFeatures(MLIRContext *ctx,
-                                         StringRef targetTriple,
-                                         StringRef march, StringRef mcpu,
-                                         StringRef mtune);
+ErrorOr<TargetInfoAttr>
+getMArchFeatures(MLIRContext *ctx, StringRef targetTriple, StringRef march,
+                 StringRef mcpu, StringRef mtune, StringRef accleratorArch,
+                 llvm::Reloc::Model relocModel);
 
 } // namespace M
 
