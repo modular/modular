@@ -9249,18 +9249,21 @@ struct DistributedReduceScatterSum:
         # only need enough signal_buffer space for Signal struct
         _check_signal_buffer_size(signal_buffers[0].size(), 0)
 
-        # Marshal input tensors into the expected format.
-        var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
-        ](fill={})
+        # Marshal input tensors into TileTensors
+        comptime InputTileType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_bufs = InlineArray[InputTileType, inputs.size](
+            uninitialized=True
+        )
 
         comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
+            in_bufs[i] = rebind[InputTileType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
 
-        # Marshal output tensor
-        var out_buf = managed_tensor_slice_to_ndbuffer(output)
+        # Marshal output tensor into TileTensor
+        var out_buf = output.to_tile_tensor[DType.int64]()
 
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
@@ -9274,19 +9277,23 @@ struct DistributedReduceScatterSum:
         @parameter
         fn output_lambda[
             _dtype: DType,
-            _rank: Int,
             _width: Int,
             *,
             _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
+            coords.flat_rank == out_buf.flat_rank
+        ):
             output._lambda_store[width=_width, element_alignment=_alignment](
-                rebind[IndexList[rank]](coords),
+                rebind[IndexList[rank]](coord_to_index_list(coords)),
                 rebind[SIMD[dtype, _width]](val),
             )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
             reducescatter[ngpus=num_devices, output_lambda=output_lambda](
-                in_bufs, out_buf.make_dims_unknown(), rank_sigs, device_ctx[]
+                in_bufs,
+                out_buf.make_dynamic[DType.int64](),
+                rank_sigs,
+                device_ctx[],
             )
 
 

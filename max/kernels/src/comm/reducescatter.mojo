@@ -16,7 +16,9 @@
 from collections import InlineArray
 from collections.optional import Optional
 
-from buffer import NDBuffer
+from layout._tile_tensor import TileTensor
+from layout._layout import TensorLayout
+from layout._coord import Coord
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,
@@ -28,7 +30,6 @@ from gpu.primitives.grid_controls import (
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from gpu.primitives.grid_controls import PDLLevel
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
 from utils import IndexList, StaticTuple
@@ -53,8 +54,8 @@ from .sync import (
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 
 comptime elementwise_epilogue_type = fn[
-    dtype: DType, rank: Int, width: Int, *, alignment: Int
-](IndexList[rank], SIMD[dtype, size=width]) capturing -> None
+    dtype: DType, width: Int, *, alignment: Int
+](Coord, SIMD[dtype, size=width]) capturing -> None
 
 
 @always_inline
@@ -156,7 +157,6 @@ struct ReduceScatterConfig[
 @always_inline
 fn _reduce_scatter_impl[
     dtype: DType,
-    rank: Int,
     simd_width: Int,
     alignment: Int,
     accum_type: DType,
@@ -170,7 +170,7 @@ fn _reduce_scatter_impl[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
+    out_buf: TileTensor[mut=True, dtype, ...],
     my_rank: Int,
     config: ReduceScatterConfig[
         dtype, ngpus, simd_width, alignment, accum_type
@@ -195,7 +195,7 @@ fn _reduce_scatter_impl[
 
         # Apply epilogue and store result.
         output_lambda[width = config.simd_width, alignment = config.alignment](
-            out_buf.get_nd_index(idx - config.rank_start(my_rank)),
+            out_buf.layout.idx2crd(idx - config.rank_start(my_rank)),
             reduced_result,
         )
 
@@ -205,7 +205,7 @@ fn _reduce_scatter_impl[
 )
 fn _reducescatter_kernel[
     dtype: DType,
-    rank: Int,
+    out_layout: TensorLayout,
     ngpus: Int,
     *,
     BLOCK_SIZE: Int,
@@ -217,7 +217,7 @@ fn _reducescatter_kernel[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
-    out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
+    out_buf: TileTensor[dtype, out_layout, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     num_elements: Int,
     my_rank: Int,
@@ -229,7 +229,7 @@ fn _reducescatter_kernel[
 
     Parameters:
         dtype: Data dtype of tensor elements.
-        rank: Number of dimensions in tensors.
+        out_layout: Layout of the output TileTensor
         ngpus: Number of GPUs participating.
         BLOCK_SIZE: Number of threads per block.
         output_lambda: Elementwise epilogue function to apply to reduced values.
@@ -280,17 +280,19 @@ fn _reducescatter_kernel[
 @always_inline
 fn _reducescatter_p2p[
     dtype: DType,
-    rank: Int,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
     *,
     output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
     use_multimem: Bool = False,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
     ],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    output_buffer: TileTensor[mut=True, dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
@@ -303,8 +305,9 @@ fn _reducescatter_p2p[
 
     Parameters:
         dtype: Data dtype of tensor elements.
-        rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
         output_lambda: Elementwise epilogue function to apply to reduced values.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: Whether multimem optimization is enabled.
@@ -318,7 +321,7 @@ fn _reducescatter_p2p[
     """
 
     comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
-    var num_elements = list_of_in_bufs[0].num_elements()
+    var num_elements = list_of_in_bufs[0].numel()
 
     # TODO(KERN-2337): generalize this check, ensure the *last-axis* % simd_width = 0
     if num_elements % simd_width != 0:
@@ -334,7 +337,7 @@ fn _reducescatter_p2p[
     ](uninitialized=True)
 
     comptime for i in range(num_buffers):
-        list_of_in_ptrs[i] = list_of_in_bufs[i].data
+        list_of_in_ptrs[i] = list_of_in_bufs[i].ptr
 
     # Block size configuration
     comptime BLOCK_SIZE = 256
@@ -348,7 +351,7 @@ fn _reducescatter_p2p[
     # Define the reduce-scatter kernel
     comptime kernel = _reducescatter_kernel[
         dtype,
-        rank,
+        output_buffer.LayoutType,
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
         output_lambda=output_lambda,
@@ -371,17 +374,19 @@ fn _reducescatter_p2p[
 @parameter
 fn reducescatter[
     dtype: DType,
-    rank: Int,
     ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
     output_lambda: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
+        TileTensor[dtype, in_layout, in_origin],
+        1 if use_multimem else ngpus,
     ],
-    output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
+    output_buffer: TileTensor[mut=True, dtype, ...],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
@@ -395,18 +400,19 @@ fn reducescatter[
 
     Parameters:
         dtype: Data dtype of tensor elements.
-        rank: Number of dimensions in tensors.
         ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
         output_lambda: Optional elementwise epilogue function. If not provided,
             reduced values are stored directly to output_buffer.
         pdl_level: Control PDL behavior for the kernel.
         use_multimem: If True, use multimem optimization (reserved for future use).
 
     Args:
-        input_buffers: Input buffers from all GPUs (peer access required).
+        input_buffers: Input TileTensors from all GPUs (peer access required).
             When use_multimem is False (default), expects ngpus buffers.
             When use_multimem is True, expects a single buffer.
-        output_buffer: Output buffer for THIS GPU's partition of reduced data.
+        output_buffer: Output TileTensor for THIS GPU's partition of reduced data.
             Size should be approximately 1/ngpus of the input size.
         rank_sigs: Signal pointers for synchronization between GPUs.
         ctx: Device context for THIS GPU.
@@ -420,7 +426,7 @@ fn reducescatter[
     comptime assert ngpus >= 2, "reducescatter requires at least 2 GPUs"
 
     # Return early if the input buffer is empty
-    var num_elements = input_buffers[0].num_elements()
+    var num_elements = input_buffers[0].numel()
     if num_elements == 0:
         return
 
@@ -438,13 +444,14 @@ fn reducescatter[
     @__copy_capture(output_buffer)
     fn default_output_lambda[
         _dtype: DType,
-        _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
+        coords.flat_rank == output_buffer.flat_rank
+    ):
         output_buffer.store[width=_width, alignment=_alignment](
-            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, _width]](val)
+            coords, val.cast[dtype]()
         )
 
     comptime actual_output_lambda = default_output_lambda if not output_lambda else output_lambda.value()
@@ -452,7 +459,6 @@ fn reducescatter[
     # Launch the reduce-scatter kernel via P2P
     _reducescatter_p2p[
         dtype,
-        rank,
         ngpus,
         output_lambda=actual_output_lambda,
         pdl_level=pdl_level,

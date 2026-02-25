@@ -1670,6 +1670,34 @@ struct TileTensor[
         """
         return {self.ptr.as_immutable(), self.layout}
 
+    comptime AddressSpaceCastType[address_space: AddressSpace] = TileTensor[
+        dtype = Self.dtype,
+        origin = Self.origin,
+        LayoutType = Self.LayoutType,
+        address_space=address_space,
+        linear_idx_type = Self.linear_idx_type,
+    ]
+    """Type alias for address-space-cast result tensors.
+
+    Parameters:
+        address_space: The address_space for the result tensor.
+    """
+
+    @always_inline
+    fn address_space_cast[
+        target_address_space: AddressSpace
+    ](self,) -> Self.AddressSpaceCastType[target_address_space]:
+        """
+        Return a version of this tensor cast to a new address_space.
+
+        Returns:
+            A `TileTensor` covering the same elements, in a different address_space.
+        """
+        return {
+            self.ptr.address_space_cast[target_address_space](),
+            self.layout,
+        }
+
     @always_inline
     fn to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
         """Convert the tensor to a `DeviceBuffer`.

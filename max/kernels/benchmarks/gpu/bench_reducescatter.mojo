@@ -22,10 +22,11 @@ from benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from comm.sync import enable_p2p
 from comm.reducescatter import reducescatter, ReduceScatterConfig
+from layout._tile_tensor import TileTensor
+from layout._layout import row_major
+from layout._coord import Idx
 from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (
@@ -164,20 +165,27 @@ fn bench_reducescatter[
             signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
         )
 
-    # Create input and output NDBuffers
-    var in_bufs = InlineArray[
-        NDBuffer[dtype, rank, ImmutAnyOrigin], num_buffers
-    ](fill={})
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
-        fill={}
+    # Create input and output TileTensors
+    comptime OutputTileType = type_of(
+        TileTensor(
+            out_bufs_list[0].unsafe_ptr(), row_major(Idx(output_lengths[0]))
+        )
     )
 
+    comptime InputTileType = type_of(
+        TileTensor(
+            cb_inputs[0].unsafe_ptr(), row_major(Idx(input_length))
+        ).as_immut()
+    )
+    var in_bufs = InlineArray[InputTileType, num_buffers](uninitialized=True)
+    var out_bufs = InlineArray[OutputTileType, ngpus](uninitialized=True)
+
     for i in range(ngpus):
-        in_bufs[i if not use_multimem else 0] = NDBuffer[dtype, rank](
-            cb_inputs[i].unsafe_ptr(), DimList(input_length)
+        in_bufs[i if not use_multimem else 0] = InputTileType(
+            cb_inputs[i].unsafe_ptr(), row_major(Idx(input_length))
         )
-        out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
+        out_bufs[i] = OutputTileType(
+            out_bufs_list[i].unsafe_ptr(), row_major(Idx(output_lengths[i]))
         )
         list_of_ctx[i].synchronize()
 
@@ -188,12 +196,12 @@ fn bench_reducescatter[
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             comptime for i in range(ngpus):
-                in_bufs[i] = NDBuffer[dtype, rank](
+                in_bufs[i] = InputTileType(
                     cb_inputs[i].offset_ptr(cache_iter),
-                    DimList(input_length),
+                    row_major(Idx(input_length)),
                 )
 
-            reducescatter[ngpus=ngpus, use_multimem=use_multimem](
+            reducescatter[dtype=dtype, ngpus=ngpus, use_multimem=use_multimem](
                 in_bufs,
                 out_bufs[ctx_idx],
                 rank_sigs,

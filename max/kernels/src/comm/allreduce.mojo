@@ -96,6 +96,9 @@ from math import ceildiv
 from sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
+from layout._tile_tensor import TileTensor
+from layout._layout import row_major
+from layout._coord import Coord, Idx
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -422,24 +425,27 @@ fn _allreduce_2stage_kernel[
 
     # TODO(KERN-2273): Remove this once temporary buffers removed
     # Output lambda for reduce-scatter: write to scratch buffer
-    var tmp_buff = NDBuffer[dtype, 1, MutAnyOrigin](
-        tmp_out,
-        rs_config.rank_part(my_rank),
+    var tmp_buff = TileTensor[mut=True, dtype](
+        tmp_out, row_major(Idx(rs_config.rank_part(my_rank)))
     )
 
     @always_inline
     @parameter
-    @__copy_capture(tmp_out)
+    @__copy_capture(tmp_buff)
     fn rs_output_lambda[
         _dtype: DType,
-        _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-        tmp_out.address_space_cast[_target_address_space]().store[
-            alignment=_alignment
-        ](coords[0], val.cast[dtype]())
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
+        coords.flat_rank == tmp_buff.flat_rank
+    ):
+        tmp_buff.address_space_cast[_target_address_space]().store[
+            width=_width, alignment=_alignment
+        ](
+            coords,
+            val.cast[dtype](),
+        )
 
     _reduce_scatter_impl[
         ngpus, output_lambda=rs_output_lambda, use_multimem=use_multimem
@@ -459,10 +465,8 @@ fn _allreduce_2stage_kernel[
     comptime alignment = rs_config.alignment
 
     # Ragged handling:
-    # When there are ragged elements (rs_config.remainder > 0), GPU-0 has the
-    # largest partition and GPU-(ngpus - 1) has the smallest partition
-    # (at most 1 SIMD vector smaller). When remainder == 0, all GPUs have
-    # equal partition sizes.
+    # GPU-0 is guaranteed to have largest partition
+    # GPU-ngpus-1 has smallest partition (only 1 simd vector smaller)
 
     # Main loop - only process unragged elements (no bounds check)
     for idx in range(
