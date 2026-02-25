@@ -15,7 +15,12 @@ import os
 from pathlib import Path
 
 import pytest
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
 from transformers import (
     AutoTokenizer,
     PreTrainedTokenizer,
@@ -54,10 +59,13 @@ def enable_prefix_caching(request: pytest.FixtureRequest) -> bool:
 
 @pytest.fixture
 def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
+    runtime = PipelineRuntimeConfig.model_construct(
+        zmq_endpoint_base=DEFAULT_ZMQ_ENDPOINT_BASE,
+    )
     pipeline_config = PipelineConfig.model_construct(
         # scheduler-required surface
         max_batch_size=1,
-        zmq_endpoint_base=DEFAULT_ZMQ_ENDPOINT_BASE,
+        runtime=runtime,
     )
 
     kv_cache_config = KVCacheConfig.model_construct(

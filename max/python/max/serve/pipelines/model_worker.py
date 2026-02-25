@@ -241,7 +241,7 @@ class ModelWorker:
             # Get the reset prefix cache backend.
             reset_prefix_cache_backend, kv_cache = (
                 get_reset_prefix_cache_backend(
-                    pipeline, pipeline_config.zmq_endpoint_base
+                    pipeline, pipeline_config.runtime.zmq_endpoint_base
                 )
             )
 

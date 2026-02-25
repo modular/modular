@@ -40,7 +40,6 @@ from max.pipelines.lib.registry import (
     get_pipeline_for_task,
 )
 from max.pipelines.lib.sampling import SamplingConfig
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import (
     ConfigDict,
     Field,
@@ -127,15 +126,6 @@ class PipelineConfig(ConfigFileModel):
         description=(
             "The target number of un-encoded tokens to include in each batch. "
             "This value is used for chunked prefill and memory estimation."
-        ),
-    )
-
-    zmq_endpoint_base: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description=(
-            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
-            "endpoints across MAX Serve instances on the same host. Example: "
-            'lora_request_zmq_endpoint = f"{zmq_endpoint_base}-lora_request".'
         ),
     )
 
