@@ -404,11 +404,17 @@ def _aggregate_gpu_stats(
     bytes_per_mib = 1024 * 1024
     for device_name in all_devices:
         peak_gpu_memory_mib.append(
-            max(snapshot[device_name].memory.used_bytes for snapshot in gpu_metrics)
+            max(
+                snapshot[device_name].memory.used_bytes
+                for snapshot in gpu_metrics
+            )
             / bytes_per_mib
         )
         available_gpu_memory_mib.append(
-            min(snapshot[device_name].memory.free_bytes for snapshot in gpu_metrics)
+            min(
+                snapshot[device_name].memory.free_bytes
+                for snapshot in gpu_metrics
+            )
             / bytes_per_mib
         )
         gpu_utilization.append(
@@ -1257,7 +1263,7 @@ async def benchmark(
             logger.warning(f"Failed to collect server metrics: {e}")
 
     if benchmark_task == BenchmarkTask.text_to_image:
-        metrics = calculate_pixel_generation_metrics(
+        pixel_metrics = calculate_pixel_generation_metrics(
             outputs=outputs,
             dur_s=benchmark_duration,
             gpu_metrics=gpu_metrics,
@@ -1268,8 +1274,14 @@ async def benchmark(
         )
 
         print_section(title=" Serving Benchmark Result ", char="=")
-        print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
-        print("{:<40} {:<10}".format("Failed requests:", metrics.failures))
+        print(
+            "{:<40} {:<10}".format(
+                "Successful requests:", pixel_metrics.completed
+            )
+        )
+        print(
+            "{:<40} {:<10}".format("Failed requests:", pixel_metrics.failures)
+        )
         print(
             "{:<40} {:<10.2f}".format(
                 "Benchmark duration (s):", benchmark_duration
@@ -1277,34 +1289,36 @@ async def benchmark(
         )
         print(
             "{:<40} {:<10.2f}".format(
-                "Request throughput (req/s):", metrics.request_throughput
+                "Request throughput (req/s):",
+                pixel_metrics.request_throughput,
             )
         )
-        print(metrics.latency_ms.format_with_prefix("latency", unit="ms"))
+        print(pixel_metrics.latency_ms.format_with_prefix("latency", unit="ms"))
         print(
             "{:<40} {:<10}".format(
-                "Total generated outputs:", metrics.total_generated_outputs
+                "Total generated outputs:",
+                pixel_metrics.total_generated_outputs,
             )
         )
-        if collect_gpu_stats and metrics.peak_gpu_memory_mib:
+        if collect_gpu_stats and pixel_metrics.peak_gpu_memory_mib:
             print_section(title="GPU Statistics")
-            for gpu_id in range(len(metrics.peak_gpu_memory_mib)):
+            for gpu_id in range(len(pixel_metrics.peak_gpu_memory_mib)):
                 print(
                     "{:<40} {:<10.2f}".format(
                         f"GPU {gpu_id} peak memory (MiB):",
-                        metrics.peak_gpu_memory_mib[gpu_id],
+                        pixel_metrics.peak_gpu_memory_mib[gpu_id],
                     )
                 )
                 print(
                     "{:<40} {:<10.2f}".format(
                         f"GPU {gpu_id} available memory (MiB):",
-                        metrics.available_gpu_memory_mib[gpu_id],
+                        pixel_metrics.available_gpu_memory_mib[gpu_id],
                     )
                 )
                 print(
                     "{:<40} {:<10.2f}".format(
                         f"GPU {gpu_id} utilization (%):",
-                        metrics.gpu_utilization[gpu_id],
+                        pixel_metrics.gpu_utilization[gpu_id],
                     )
                 )
         if collect_cpu_stats:
@@ -1312,41 +1326,41 @@ async def benchmark(
             print(
                 "{:<40} {:<10.2f}".format(
                     "CPU utilization user (%):",
-                    metrics.cpu_utilization_user or 0.0,
+                    pixel_metrics.cpu_utilization_user or 0.0,
                 )
             )
             print(
                 "{:<40} {:<10.2f}".format(
                     "CPU utilization system (%):",
-                    metrics.cpu_utilization_system or 0.0,
+                    pixel_metrics.cpu_utilization_system or 0.0,
                 )
             )
         print("=" * 50)
 
-        if metrics.server_metrics:
-            print_server_metrics(metrics.server_metrics)
+        if pixel_metrics.server_metrics:
+            print_server_metrics(pixel_metrics.server_metrics)
 
         result = {
             "duration": benchmark_duration,
-            "completed": metrics.completed,
-            "failures": metrics.failures,
-            "max_concurrency": metrics.max_concurrency,
-            "request_throughput": metrics.request_throughput,
-            "total_generated_outputs": metrics.total_generated_outputs,
-            "mean_latency_ms": metrics.latency_ms.mean,
-            "median_latency_ms": metrics.latency_ms.median,
-            "std_latency_ms": metrics.latency_ms.std,
-            "p90_latency_ms": metrics.latency_ms.p90,
-            "p95_latency_ms": metrics.latency_ms.p95,
-            "p99_latency_ms": metrics.latency_ms.p99,
+            "completed": pixel_metrics.completed,
+            "failures": pixel_metrics.failures,
+            "max_concurrency": pixel_metrics.max_concurrency,
+            "request_throughput": pixel_metrics.request_throughput,
+            "total_generated_outputs": pixel_metrics.total_generated_outputs,
+            "mean_latency_ms": pixel_metrics.latency_ms.mean,
+            "median_latency_ms": pixel_metrics.latency_ms.median,
+            "std_latency_ms": pixel_metrics.latency_ms.std,
+            "p90_latency_ms": pixel_metrics.latency_ms.p90,
+            "p95_latency_ms": pixel_metrics.latency_ms.p95,
+            "p99_latency_ms": pixel_metrics.latency_ms.p99,
             "latencies": [output.latency for output in outputs],
             "num_generated_outputs": [
                 output.num_generated_outputs for output in outputs
             ],
             "errors": [output.error for output in outputs],
-            "peak_gpu_memory_mib": metrics.peak_gpu_memory_mib,
-            "available_gpu_memory_mib": metrics.available_gpu_memory_mib,
-            "gpu_utilization": metrics.gpu_utilization,
+            "peak_gpu_memory_mib": pixel_metrics.peak_gpu_memory_mib,
+            "available_gpu_memory_mib": pixel_metrics.available_gpu_memory_mib,
+            "gpu_utilization": pixel_metrics.gpu_utilization,
         }
 
         if lora_manager:
@@ -1357,10 +1371,10 @@ async def benchmark(
                 "unload_times_ms": lora_manager.metrics.unload_times_ms,
             }
 
-        if metrics.server_metrics:
+        if pixel_metrics.server_metrics:
             result["server_metrics"] = {
-                "counters": metrics.server_metrics.counters,
-                "gauges": metrics.server_metrics.gauges,
+                "counters": pixel_metrics.server_metrics.counters,
+                "gauges": pixel_metrics.server_metrics.gauges,
                 "histograms": {
                     name: {
                         "buckets": hist.buckets,
@@ -1368,13 +1382,13 @@ async def benchmark(
                         "count": hist.count,
                         "mean": hist.mean,
                     }
-                    for name, hist in metrics.server_metrics.histograms.items()
+                    for name, hist in pixel_metrics.server_metrics.histograms.items()
                 },
             }
 
-        return result, metrics
+        return result, pixel_metrics
 
-    metrics, actual_output_lens = calculate_metrics(
+    text_metrics, actual_output_lens = calculate_metrics(
         outputs=outputs,
         dur_s=benchmark_duration,
         tokenizer=tokenizer,
@@ -1395,14 +1409,20 @@ async def benchmark(
         )
 
     print_section(title=" Serving Benchmark Result ", char="=")
-    print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
-    print("{:<40} {:<10}".format("Failed requests:", metrics.failures))
+    print(
+        "{:<40} {:<10}".format("Successful requests:", text_metrics.completed)
+    )
+    print("{:<40} {:<10}".format("Failed requests:", text_metrics.failures))
     print(
         "{:<40} {:<10.2f}".format("Benchmark duration (s):", benchmark_duration)
     )
-    print("{:<40} {:<10}".format("Total input tokens:", metrics.total_input))
     print(
-        "{:<40} {:<10}".format("Total generated tokens:", metrics.total_output)
+        "{:<40} {:<10}".format("Total input tokens:", text_metrics.total_input)
+    )
+    print(
+        "{:<40} {:<10}".format(
+            "Total generated tokens:", text_metrics.total_output
+        )
     )
     # We found that response chunks can be empty in content and the token number
     # can be different with the re-tokenization in one pass or chunk-by-chunk.
@@ -1412,7 +1432,7 @@ async def benchmark(
     print(
         "{:<40} {:<10}".format(
             "Total nonempty serving response chunks:",
-            metrics.nonempty_response_chunks,
+            text_metrics.nonempty_response_chunks,
         )
     )
     offline_benchmark = math.isinf(request_rate) and max_concurrency is None
@@ -1424,70 +1444,72 @@ async def benchmark(
     )
     print(
         "{:<40} {:<10.5f}".format(
-            "Request throughput (req/s):", metrics.request_throughput
+            "Request throughput (req/s):", text_metrics.request_throughput
         )
     )
     print_section(title="Client Experience Metrics")
-    print("{:<40} {:<10}".format("Max Concurrency:", metrics.max_concurrency))
     print(
-        metrics.input_throughput.format_with_prefix(
+        "{:<40} {:<10}".format("Max Concurrency:", text_metrics.max_concurrency)
+    )
+    print(
+        text_metrics.input_throughput.format_with_prefix(
             prefix="input token throughput", unit="tok/s"
         )
     )
     print(
-        metrics.output_throughput.format_with_prefix(
+        text_metrics.output_throughput.format_with_prefix(
             prefix="output token throughput", unit="tok/s"
         )
     )
     print_section(title="Time to First Token")
-    print(metrics.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
+    print(text_metrics.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
     print_section(title="Time per Output Token (excl. 1st token)")
-    print(metrics.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
+    print(text_metrics.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
     print_section(title="Inter-token Latency")
-    print(metrics.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
+    print(text_metrics.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
     print_section(title="Per-Request E2E Latency")
     print(
-        metrics.latency_ms.format_with_prefix(
+        text_metrics.latency_ms.format_with_prefix(
             prefix="Request Latency", unit="ms"
         )
     )
     print_section(title="Token Stats")
-    print("{:<40} {:<10}".format("Max input tokens:", metrics.max_input))
-    print("{:<40} {:<10}".format("Max output tokens:", metrics.max_output))
-    print("{:<40} {:<10}".format("Max total tokens:", metrics.max_total))
+    print("{:<40} {:<10}".format("Max input tokens:", text_metrics.max_input))
+    print("{:<40} {:<10}".format("Max output tokens:", text_metrics.max_output))
+    print("{:<40} {:<10}".format("Max total tokens:", text_metrics.max_total))
     if collect_gpu_stats:
-        for i in range(len(metrics.gpu_utilization)):
+        for i in range(len(text_metrics.gpu_utilization)):
             print_section(title=f"GPU Stats {i}")
             print(
                 "{:<40} {:<10.2f}".format(
-                    "GPU Utilization (%):", metrics.gpu_utilization[i]
+                    "GPU Utilization (%):", text_metrics.gpu_utilization[i]
                 )
             )
             print(
                 "{:<40} {:<10.2f}".format(
                     "Peak GPU Memory Used (MiB):",
-                    metrics.peak_gpu_memory_mib[i],
+                    text_metrics.peak_gpu_memory_mib[i],
                 )
             )
             print(
                 "{:<40} {:<10.2f}".format(
                     "GPU Memory Available (MiB):",
-                    metrics.available_gpu_memory_mib[i],
+                    text_metrics.available_gpu_memory_mib[i],
                 )
             )
 
-    if collect_cpu_stats and metrics.cpu_utilization_user is not None:
+    if collect_cpu_stats and text_metrics.cpu_utilization_user is not None:
         print_section(title="CPU Stats")
         print(
             "{:<40} {:<10.2f}".format(
                 "CPU User Utilization (%):",
-                metrics.cpu_utilization_user or 0.0,
+                text_metrics.cpu_utilization_user or 0.0,
             )
         )
         print(
             "{:<40} {:<10.2f}".format(
                 "CPU System Utilization (%):",
-                metrics.cpu_utilization_system or 0.0,
+                text_metrics.cpu_utilization_system or 0.0,
             )
         )
 
@@ -1576,62 +1598,62 @@ async def benchmark(
         print("=" * 50)
 
     # Print server-side metrics if available
-    if metrics.server_metrics:
-        print_server_metrics(metrics.server_metrics)
+    if text_metrics.server_metrics:
+        print_server_metrics(text_metrics.server_metrics)
 
     result = {
         "duration": benchmark_duration,
-        "completed": metrics.completed,
-        "failures": metrics.failures,
-        "max_concurrency": metrics.max_concurrency,
-        "total_input_tokens": metrics.total_input,
-        "total_output_tokens": metrics.total_output,
-        "request_throughput": metrics.request_throughput,
-        "mean_input_throughput": metrics.input_throughput.mean,
-        "std_input_throughput": metrics.input_throughput.std,
-        "median_input_throughput": metrics.input_throughput.median,
-        "p90_input_throughput": metrics.input_throughput.p90,
-        "p95_input_throughput": metrics.input_throughput.p95,
-        "p99_input_throughput": metrics.input_throughput.p99,
-        "mean_output_throughput": metrics.output_throughput.mean,
-        "std_output_throughput": metrics.output_throughput.std,
-        "median_output_throughput": metrics.output_throughput.median,
-        "p90_output_throughput": metrics.output_throughput.p90,
-        "p95_output_throughput": metrics.output_throughput.p95,
-        "p99_output_throughput": metrics.output_throughput.p99,
-        "mean_ttft_ms": metrics.ttft_ms.mean,
-        "median_ttft_ms": metrics.ttft_ms.median,
-        "std_ttft_ms": metrics.ttft_ms.std,
-        "p90_ttft_ms": metrics.ttft_ms.p90,
-        "p95_ttft_ms": metrics.ttft_ms.p95,
-        "p99_ttft_ms": metrics.ttft_ms.p99,
-        "mean_tpot_ms": metrics.tpot_ms.mean,
-        "median_tpot_ms": metrics.tpot_ms.median,
-        "std_tpot_ms": metrics.tpot_ms.std,
-        "p90_tpot_ms": metrics.tpot_ms.p90,
-        "p95_tpot_ms": metrics.tpot_ms.p95,
-        "p99_tpot_ms": metrics.tpot_ms.p99,
-        "mean_itl_ms": metrics.itl_ms.mean,
-        "median_itl_ms": metrics.itl_ms.median,
-        "std_itl_ms": metrics.itl_ms.std,
-        "p90_itl_ms": metrics.itl_ms.p90,
-        "p95_itl_ms": metrics.itl_ms.p95,
-        "p99_itl_ms": metrics.itl_ms.p99,
-        "mean_latency_ms": metrics.latency_ms.mean,
-        "median_latency_ms": metrics.latency_ms.median,
-        "std_latency_ms": metrics.latency_ms.std,
-        "p90_latency_ms": metrics.latency_ms.p90,
-        "p95_latency_ms": metrics.latency_ms.p95,
-        "p99_latency_ms": metrics.latency_ms.p99,
+        "completed": text_metrics.completed,
+        "failures": text_metrics.failures,
+        "max_concurrency": text_metrics.max_concurrency,
+        "total_input_tokens": text_metrics.total_input,
+        "total_output_tokens": text_metrics.total_output,
+        "request_throughput": text_metrics.request_throughput,
+        "mean_input_throughput": text_metrics.input_throughput.mean,
+        "std_input_throughput": text_metrics.input_throughput.std,
+        "median_input_throughput": text_metrics.input_throughput.median,
+        "p90_input_throughput": text_metrics.input_throughput.p90,
+        "p95_input_throughput": text_metrics.input_throughput.p95,
+        "p99_input_throughput": text_metrics.input_throughput.p99,
+        "mean_output_throughput": text_metrics.output_throughput.mean,
+        "std_output_throughput": text_metrics.output_throughput.std,
+        "median_output_throughput": text_metrics.output_throughput.median,
+        "p90_output_throughput": text_metrics.output_throughput.p90,
+        "p95_output_throughput": text_metrics.output_throughput.p95,
+        "p99_output_throughput": text_metrics.output_throughput.p99,
+        "mean_ttft_ms": text_metrics.ttft_ms.mean,
+        "median_ttft_ms": text_metrics.ttft_ms.median,
+        "std_ttft_ms": text_metrics.ttft_ms.std,
+        "p90_ttft_ms": text_metrics.ttft_ms.p90,
+        "p95_ttft_ms": text_metrics.ttft_ms.p95,
+        "p99_ttft_ms": text_metrics.ttft_ms.p99,
+        "mean_tpot_ms": text_metrics.tpot_ms.mean,
+        "median_tpot_ms": text_metrics.tpot_ms.median,
+        "std_tpot_ms": text_metrics.tpot_ms.std,
+        "p90_tpot_ms": text_metrics.tpot_ms.p90,
+        "p95_tpot_ms": text_metrics.tpot_ms.p95,
+        "p99_tpot_ms": text_metrics.tpot_ms.p99,
+        "mean_itl_ms": text_metrics.itl_ms.mean,
+        "median_itl_ms": text_metrics.itl_ms.median,
+        "std_itl_ms": text_metrics.itl_ms.std,
+        "p90_itl_ms": text_metrics.itl_ms.p90,
+        "p95_itl_ms": text_metrics.itl_ms.p95,
+        "p99_itl_ms": text_metrics.itl_ms.p99,
+        "mean_latency_ms": text_metrics.latency_ms.mean,
+        "median_latency_ms": text_metrics.latency_ms.median,
+        "std_latency_ms": text_metrics.latency_ms.std,
+        "p90_latency_ms": text_metrics.latency_ms.p90,
+        "p95_latency_ms": text_metrics.latency_ms.p95,
+        "p99_latency_ms": text_metrics.latency_ms.p99,
         "input_lens": [output.prompt_len for output in outputs],
         "output_lens": actual_output_lens,
         "ttfts": [output.ttft for output in outputs],
         "itls": [output.itl for output in outputs],
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
-        "peak_gpu_memory_mib": metrics.peak_gpu_memory_mib,
-        "available_gpu_memory_mib": metrics.available_gpu_memory_mib,
-        "gpu_utilization": metrics.gpu_utilization,
+        "peak_gpu_memory_mib": text_metrics.peak_gpu_memory_mib,
+        "available_gpu_memory_mib": text_metrics.available_gpu_memory_mib,
+        "gpu_utilization": text_metrics.gpu_utilization,
     }
 
     # Add LoRA metrics to result if available
@@ -1644,10 +1666,10 @@ async def benchmark(
         }
 
     # Add server-side metrics to result if available
-    if metrics.server_metrics:
+    if text_metrics.server_metrics:
         result["server_metrics"] = {
-            "counters": metrics.server_metrics.counters,
-            "gauges": metrics.server_metrics.gauges,
+            "counters": text_metrics.server_metrics.counters,
+            "gauges": text_metrics.server_metrics.gauges,
             "histograms": {
                 name: {
                     "buckets": hist.buckets,
@@ -1655,16 +1677,16 @@ async def benchmark(
                     "count": hist.count,
                     "mean": hist.mean,
                 }
-                for name, hist in metrics.server_metrics.histograms.items()
+                for name, hist in text_metrics.server_metrics.histograms.items()
             },
             # Convenience fields for prefill/decode breakdown
-            "prefill_batch_execution_time_ms": metrics.mean_prefill_batch_time_ms,
-            "prefill_batch_count": metrics.prefill_batch_count,
-            "decode_batch_execution_time_ms": metrics.mean_decode_batch_time_ms,
-            "decode_batch_count": metrics.decode_batch_count,
+            "prefill_batch_execution_time_ms": text_metrics.mean_prefill_batch_time_ms,
+            "prefill_batch_count": text_metrics.prefill_batch_count,
+            "decode_batch_execution_time_ms": text_metrics.mean_decode_batch_time_ms,
+            "decode_batch_count": text_metrics.decode_batch_count,
         }
 
-    return result, metrics
+    return result, text_metrics
 
 
 def validate_task_and_endpoint(
@@ -1722,6 +1744,8 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         base_url = f"http://{args.host}:{args.port}"
 
     api_url = f"{base_url}{args.endpoint}"
+    tokenizer: PreTrainedTokenizerBase | None
+    samples: Samples
 
     if benchmark_task == BenchmarkTask.text_generation:
         logger.info(f"getting tokenizer. api url: {api_url}")
