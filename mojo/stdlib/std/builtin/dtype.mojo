@@ -855,7 +855,6 @@ fn _integral_type_of[dtype: DType]() -> DType:
 
     comptime if dtype.is_integral():
         return dtype
-
     elif dtype.is_float8():
         return DType.int8
     elif dtype.is_half_float():
@@ -864,8 +863,10 @@ fn _integral_type_of[dtype: DType]() -> DType:
         return DType.int32
     elif dtype == DType.float64:
         return DType.int64
-
-    return dtype.invalid
+    else:
+        comptime assert False, "unexpected dtype in _integral_type_of"
+        # TODO(MOCO-3340): Remove dummy return value.
+        return DType.int64
 
 
 # ===-------------------------------------------------------------------===#
@@ -882,7 +883,6 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
         return dtype
     elif dtype.is_integral():
         return _uint_type_of_width[bit_width_of[dtype]()]()
-
     elif dtype.is_float8():
         return DType.uint8
     elif dtype.is_half_float():
@@ -891,8 +891,10 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
         return DType.uint32
     elif dtype == DType.float64:
         return DType.uint64
-
-    return dtype.invalid
+    else:
+        comptime assert False, "unexpected dtype in _unsigned_integral_type_of"
+        # TODO(MOCO-3340): Remove dummy return value.
+        return DType.uint64
 
 
 # ===-------------------------------------------------------------------===#
