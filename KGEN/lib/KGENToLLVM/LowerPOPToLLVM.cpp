@@ -2328,6 +2328,11 @@ public:
   LogicalResult
   matchAndRewrite(AtomicRMWOp op, AtomicRMWOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
+    // AIR intrinsics are only supported for Metal
+    TargetInfoAttr target = getTypeConverter()->getTarget();
+    assert(!isMetalTriple(target.getTriple()) &&
+           "Lowering of atomic operation on Apple GPU requires use of AIR "
+           "intrinsic");
     KGENDType dtype = *cast<SIMDType>(op.getType()).getResolvedDType();
     rewriter.replaceOpWithNewOp<LLVM::AtomicRMWOp>(
         op, getAtomicBinOp(dtype, adaptor.getBinOp()), adaptor.getPtr(),
@@ -3018,6 +3023,131 @@ struct ConvertPOPCastToAIR : public ConvertSymbolOpToAIR<CastOp> {
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPCastToAIR
+//===----------------------------------------------------------------------===//
+
+class ConvertPOPAtomicRMWToAIR : public ConvertSymbolOpToAIR<AtomicRMWOp> {
+public:
+  using BaseT = ConvertSymbolOpToAIR<AtomicRMWOp>;
+  using BaseT::BaseT;
+  using BaseT::createAIRFunction;
+  using BaseT::mangleType;
+
+  LogicalResult
+  matchAndRewrite(AtomicRMWOp op, AtomicRMWOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // AIR intrinsics are only supported for Metal
+    SmallVector<Type> types;
+    if (failed(getTypeConverter()->convertTypes(op->getResultTypes(), types)))
+      return failure();
+    TargetInfoAttr target = getTypeConverter()->getTarget();
+
+    auto module = op->getParentOfType<mlir::ModuleOp>();
+    if (!module)
+      return failure();
+
+    SmallVector<Value> operands = {
+        adaptor.getPtr(),
+        adaptor.getVal(),
+    };
+    KGENDType dtype = *cast<SIMDType>(op.getType()).getResolvedDType();
+
+    //  TODO: bool has to be zexted
+    if (dtype.getWidthInBits(target) < 32) {
+      return op.emitError(
+          "Atomic operation is not supported for this type on Apple GPU");
+    }
+    const std::string opStr = getOpStr(op.getBinOp());
+    if (opStr.empty()) {
+      return op.emitError("atomic operation ")
+             << op.getBinOp() << " is not supported on Apple GPU";
+    }
+
+    switch (op.getOrdering()) {
+    case AtomicOrdering::NOT_ATOMIC:
+    case AtomicOrdering::UNORDERED:
+    case AtomicOrdering::MONOTONIC:
+    case AtomicOrdering::RELEASE:
+      // These orderings can be represented via `release`
+      break;
+    case AtomicOrdering::ACQUIRE:
+      return op.emitError(
+          "Apple GPU does not supports `acquire` atomic ordering");
+    case AtomicOrdering::ACQUIRE_RELEASE:
+      return op.emitError(
+          "Apple GPU does not supports `acquire_release` atomic ordering");
+    case AtomicOrdering::SEQUENTIALLY_CONSISTENT:
+      return op.emitError(
+          "Apple GPU does not supports `seq_cst` atomic ordering");
+    }
+
+    std::string funcName = "air.atomic.global";
+
+    // Helper function to generate AIR-specific mangling of the type that has
+    // special prefix
+    //  's' - signed integer
+    //  'u' - unsigned integer
+    //  'f' - floating point
+    auto mangleType = [&](Type type, KGENDType dtype) -> std::string {
+      if (dtype.isIntLike()) {
+        return (dtype.isSInt() || dtype.isIndex() ? "s." : "u.") +
+               BaseT::mangleType(type);
+      }
+      // Unlike air.convert, atomics don't have `f.` prefix in mangled name.
+      return BaseT::mangleType(type);
+    };
+
+    funcName += '.' + opStr + '.' + mangleType(types[0], dtype);
+
+    Value zeroInt = LLVM::ConstantOp::create(
+        rewriter, op.getLoc(),
+        rewriter.getIntegerAttr(rewriter.getI32Type(), 0));
+    Value twoInt = LLVM::ConstantOp::create(
+        rewriter, op.getLoc(),
+        rewriter.getIntegerAttr(rewriter.getI32Type(), 2));
+    Value trueVal = LLVM::ConstantOp::create(
+        rewriter, op.getLoc(),
+        rewriter.getIntegerAttr(rewriter.getI1Type(), 1));
+    operands.push_back(zeroInt);
+    operands.push_back(twoInt);
+    operands.push_back(trueVal);
+
+    AIRIntrinsicName airFunctionName(funcName, /*requiresMangling=*/false);
+    LLVM::LLVMFuncOp func = createAIRFunction(rewriter, module, op.getLoc(),
+                                              airFunctionName, operands, types);
+
+    // Replace the intrinsic call with a regular function call
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, func, operands);
+    return success();
+  }
+
+private:
+  std::string getOpStr(AtomicBinOp binOp) const {
+    switch (binOp) {
+    case AtomicBinOp::XCHG:
+      return "xchg";
+    case AtomicBinOp::ADD:
+      return "add";
+    case AtomicBinOp::SUB:
+      return "sub";
+    case AtomicBinOp::AND:
+      return "and";
+    case AtomicBinOp::NAND:
+      return ""; // Not supported directly
+    case AtomicBinOp::OR:
+      return "or";
+    case AtomicBinOp::XOR:
+      return "xor";
+    case AtomicBinOp::MAX:
+      return "max";
+    case AtomicBinOp::MIN:
+      return "min";
+    }
+    llvm_unreachable("unknown atomic ordering");
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertPOPPointerBitcast
 //===----------------------------------------------------------------------===//
 
@@ -3412,7 +3542,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   });
 
   // These POP operations will be lowered to AIR intrinsics.
-  target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp>(
+  target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp, POP::AtomicRMWOp>(
       [&](Operation *op) { return isMetalTriple(targetInfo.getTriple()); });
 
   // `pop.cast` can safely be lowered to LLVM instruction only for some special
@@ -3922,7 +4052,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   });
 
   // These POP operations will be lowered to AIR intrinsics.
-  target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp>(
+  target.addDynamicallyLegalOp<POP::MaxOp, POP::MinOp, POP::AtomicRMWOp>(
       [&](Operation *op) { return !isMetalTriple(targetInfo.getTriple()); });
 
   // `pop.cast` can safely be lowered to LLVM instruction only for some special
@@ -3938,8 +4068,8 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
                   ConvertExternPointerSymbol, ConvertPOPAlignedAlloc,
                   ConvertPOPAlignedFree, ConvertPOPNoAliasPointerCast,
                   ConvertPOPCallToAIRIntrinsic, ConvertPOPMinToAIR,
-                  ConvertPOPMaxToAIR, ConvertPOPCastToAIR>(typeConverter,
-                                                           symtab);
+                  ConvertPOPMaxToAIR, ConvertPOPCastToAIR,
+                  ConvertPOPAtomicRMWToAIR>(typeConverter, symtab);
 
   // Convert global constants.
   DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> constants;
