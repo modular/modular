@@ -79,6 +79,7 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier targetAccelerator;
   llvm::opt::OptSpecifier mcmodel;
   llvm::opt::OptSpecifier largeDataThreshold;
+  llvm::opt::OptSpecifier relocationModel;
 
   // Parser options
   llvm::opt::OptSpecifier diagnoseMissingDocStrings;
@@ -182,7 +183,8 @@ ErrorOrSuccess parseTargetOptions(
     llvm::opt::OptSpecifier mtuneId,
     llvm::opt::OptSpecifier targetAcceleratorId,
     llvm::opt::OptSpecifier mcmodelId,
-    llvm::opt::OptSpecifier largeDataThresholdId);
+    llvm::opt::OptSpecifier largeDataThresholdId,
+    llvm::opt::OptSpecifier relocationModelId = {});
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module

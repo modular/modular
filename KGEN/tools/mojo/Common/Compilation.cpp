@@ -122,7 +122,7 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           result.target, optionIDs.targetTriple, optionIDs.targetCpu,
           optionIDs.targetFeatures, optionIDs.march, optionIDs.mcpu,
           optionIDs.mtune, optionIDs.targetAccelerator, optionIDs.mcmodel,
-          optionIDs.largeDataThreshold))
+          optionIDs.largeDataThreshold, optionIDs.relocationModel))
     return err.takeError();
 
   // Parse stability options.
@@ -401,7 +401,8 @@ ErrorOrSuccess M::parseTargetOptions(
     llvm::opt::OptSpecifier mtuneId,
     llvm::opt::OptSpecifier targetAcceleratorId,
     llvm::opt::OptSpecifier mcmodelId,
-    llvm::opt::OptSpecifier largeDataThresholdId) {
+    llvm::opt::OptSpecifier largeDataThresholdId,
+    llvm::opt::OptSpecifier relocationModelId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
@@ -512,6 +513,19 @@ ErrorOrSuccess M::parseTargetOptions(
                    "', expected a positive integer number");
     }
     compilationOptions.largeDataThreshold = value;
+  }
+
+  StringRef relocationModel = args.getLastArgValue(relocationModelId);
+  if (args.hasMultipleArgs(relocationModelId))
+    return Error("too many specified relocation models, expected exactly one");
+  if (!relocationModel.empty()) {
+    auto model = M::symbolizeRelocationModel(relocationModel);
+    if (!model)
+      return Error("invalid relocation-model '" + relocationModel +
+                   "', expected one of: `static`, `pic`, `dynamic-no-pic`, "
+                   "`ropi`, `rwpi`, or `ropi-rwpi`");
+
+    compilationOptions.relocModel = *model;
   }
 
   // Initialize targets first - we rely on this for getTargetInfo as well as for
