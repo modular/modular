@@ -21,9 +21,7 @@ from .attention_with_rope import (
 from .interfaces import DistributedAttentionImpl
 from .mask_config import (
     AttentionMaskVariant,
-    MHAMaskConfig,
     MHAMaskVariant,
-    PositionalEncodingVariant,
 )
 from .multi_latent_attention import (
     LatentAttentionWithRope,
@@ -39,10 +37,8 @@ __all__ = [
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "LatentAttentionWithRope",
-    "MHAMaskConfig",
     "MHAMaskVariant",
     "MultiheadAttention",
-    "PositionalEncodingVariant",
     "RaggedAttention",
     "TensorParallelAttentionWithRope",
     "TensorParallelLatentAttentionWithRope",
