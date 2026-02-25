@@ -9,15 +9,15 @@ fn simple_fn(x: Int):
     print(x)  # simple_fn stop
 
 
-fn parametrized_fn[T: Stringable](x: T):
-    print(String(x))  # parametrized_fn stop
+fn parametrized_fn[T: Writable](x: T):
+    print(String.write(x))  # parametrized_fn stop
 
 
 @fieldwise_init
-struct Struct[T1: Stringable]:
-    fn parametrized_method[T2: Stringable](self, x: Self.T1, y: T2):
-        print(String(x))  # parametrized_method stop
-        print(String(y))
+struct Struct[T1: Writable]:
+    fn parametrized_method[T2: Writable](self, x: Self.T1, y: T2):
+        print(String.write(x))  # parametrized_method stop
+        print(String.write(y))
 
 
 fn main():
