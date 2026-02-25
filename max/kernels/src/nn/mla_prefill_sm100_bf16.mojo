@@ -457,6 +457,7 @@ struct SM100MLA[
             Int32(Self.config.num_threads)
         )
     )
+    @__llvm_metadata(`nvvm.minctasm`=Int(1))
     fn mla_prefill_kernel[
         KRopeType: MHAOperand
     ](
