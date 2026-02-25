@@ -22,7 +22,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device
+from max.driver import CPU, Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 
 
@@ -169,13 +169,11 @@ class ParallelArrayOps:
             if self._accelerator is None:
                 return Buffer.from_numpy(first.copy())
             else:
-                out_max = Buffer(
+                out_max: Buffer = DevicePinnedBuffer(
                     shape=first.shape,
                     dtype=DType.from_numpy(first.dtype),
                     device=self._accelerator,
-                    pinned=True,
                 )
-                out_max.disable_auto_sync()
                 np.copyto(out_max.to_numpy(), first)
                 return out_max
 
@@ -233,14 +231,18 @@ class ParallelArrayOps:
         else:
             device = CPU()
             pinned = False
-        out_max = Buffer(
-            shape=out_shape,
-            dtype=max_dtype,
-            device=device,
-            pinned=pinned,
-        )
         if pinned:
-            out_max.disable_auto_sync()
+            out_max = DevicePinnedBuffer(
+                shape=out_shape,
+                dtype=max_dtype,
+                device=device,
+            )
+        else:
+            out_max = Buffer(
+                shape=out_shape,
+                dtype=max_dtype,
+                device=device,
+            )
 
         # This will alias the underlying memory.
         # It should NOT copy the memory to another buffer.

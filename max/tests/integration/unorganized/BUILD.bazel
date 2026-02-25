@@ -23,7 +23,6 @@ modular_py_test(
         "test_bfloat16_utils.py",
         "test_context.py",
         "test_cumsum.py",
-        "test_disable_auto_sync.py",
         "test_dtype.py",
         "test_engine.py",
         "test_explicit_device.py",

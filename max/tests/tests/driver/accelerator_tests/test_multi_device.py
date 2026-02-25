@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import numpy as np
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import CPU, Accelerator, Buffer, DevicePinnedBuffer
 from max.dtype import DType
 
 
@@ -74,11 +74,10 @@ def _test_pinned_device_copy(
     cpu_device = CPU()
 
     # Create pinned memory on specified GPU
-    pinned_cpu_tensor = Buffer(
+    pinned_cpu_tensor = DevicePinnedBuffer(
         dtype=DType.int8,
         shape=(tensor_size,),
         device=gpus[pinned_gpu_id],
-        pinned=True,
     )
 
     # Fill with pattern_before

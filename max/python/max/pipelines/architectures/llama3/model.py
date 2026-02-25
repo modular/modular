@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Value
@@ -277,25 +277,33 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
         buffer_key = (batch_size, total_seq_len)
         buffers = self._execution_input_buffers.get(buffer_key)
         if buffers is None:
-            host_tokens = Buffer(
-                shape=(total_seq_len,),
-                dtype=DType.int64,
-                device=device0,
-                pinned=pinned,
-            )
-
+            host_tokens: Buffer
             if pinned:
-                host_tokens.disable_auto_sync()
+                host_tokens = DevicePinnedBuffer(
+                    dtype=DType.int64,
+                    shape=(total_seq_len,),
+                    device=device0,
+                )
+            else:
+                host_tokens = Buffer(
+                    shape=(total_seq_len,),
+                    dtype=DType.int64,
+                    device=device0,
+                )
 
-            host_row_offsets = Buffer(
-                shape=(batch_size + 1,),
-                dtype=DType.uint32,
-                device=device0,
-                pinned=pinned,
-            )
-
+            host_row_offsets: Buffer
             if pinned:
-                host_row_offsets.disable_auto_sync()
+                host_row_offsets = DevicePinnedBuffer(
+                    dtype=DType.uint32,
+                    shape=(batch_size + 1,),
+                    device=device0,
+                )
+            else:
+                host_row_offsets = Buffer(
+                    shape=(batch_size + 1,),
+                    dtype=DType.uint32,
+                    device=device0,
+                )
 
             device_tokens = host_tokens.to(device0)
             device_row_offsets = host_row_offsets.to(device0)

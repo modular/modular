@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import CPU, Accelerator, Buffer, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -35,7 +35,7 @@ def test_add_one_cpu_with_pinned_input() -> None:
     session = InferenceSession(devices=[cpu, acc])
     model = session.load(graph)
 
-    a = Buffer(shape=(4,), dtype=DType.float32, device=acc, pinned=True)
+    a = DevicePinnedBuffer(shape=(4,), dtype=DType.float32, device=acc)
     a.to_numpy().fill(42)
 
     (actual,) = model.execute(a)
@@ -61,7 +61,7 @@ def test_add_one_gpu_with_pinned_input_raises() -> None:
     session = InferenceSession(devices=[cpu, acc])
     model = session.load(graph)
 
-    a = Buffer(shape=(4,), dtype=DType.float32, device=acc, pinned=True)
+    a = DevicePinnedBuffer(shape=(4,), dtype=DType.float32, device=acc)
     a.to_numpy().fill(42)
 
     with pytest.raises(

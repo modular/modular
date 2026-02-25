@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.interfaces import RequestID, TextGenerationContext
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
@@ -87,24 +87,22 @@ class LocalConnector:
                 )
             # Pinned memory for efficient H2D/D2H transfers
             self._host_tensors.append(
-                Buffer(
+                DevicePinnedBuffer(
                     shape=[total_num_host_blocks, *shape_per_block],
                     dtype=dtype,
                     device=device,
-                    pinned=True,
                 )
             )
             if self._host_scale_tensors is not None:
                 assert params.kvcache_quant_config is not None
                 self._host_scale_tensors.append(
-                    Buffer(
+                    DevicePinnedBuffer(
                         shape=[
                             total_num_host_blocks,
                             *params.shape_per_scale_block,
                         ],
                         dtype=params.kvcache_quant_config.scale_dtype,
                         device=device,
-                        pinned=True,
                     )
                 )
 

@@ -19,7 +19,7 @@ import logging
 from collections.abc import Sequence
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
@@ -377,30 +377,34 @@ class _TPPagedKVCacheManager:
         # Allocate pinned host staging each invocation so async H2D submissions
         # do not race with subsequent host writes to reused staging buffers.
         device0 = self.devices[0]
-        pinned = not device0.is_host
 
         # Runtime lookup-table shape is [batch_size, lut_num_pages]:
         # rows map to request slots in the current batch and columns map to
         # per-request page slots.
         # [0, total_num_pages) are the valid block ids and total_num_pages
         # denotes an unassigned block.
-        lut_table_host = Buffer(
-            shape=(batch_size, lut_num_pages),
-            dtype=DType.uint32,
-            device=device0,
-            pinned=pinned,
-        )
-
-        cache_lengths_host = Buffer(
-            shape=(batch_size,),
-            dtype=DType.uint32,
-            device=device0,
-            pinned=pinned,
-        )
-
-        if pinned:
-            lut_table_host.disable_auto_sync()
-            cache_lengths_host.disable_auto_sync()
+        if device0.is_host:
+            lut_table_host: Buffer = Buffer(
+                shape=(batch_size, lut_num_pages),
+                dtype=DType.uint32,
+                device=device0,
+            )
+            cache_lengths_host: Buffer = Buffer(
+                shape=(batch_size,),
+                dtype=DType.uint32,
+                device=device0,
+            )
+        else:
+            lut_table_host = DevicePinnedBuffer(
+                shape=(batch_size, lut_num_pages),
+                dtype=DType.uint32,
+                device=device0,
+            )
+            cache_lengths_host = DevicePinnedBuffer(
+                shape=(batch_size,),
+                dtype=DType.uint32,
+                device=device0,
+            )
 
         runtime_inputs = self._persistent_kv_device_input_buffers
         # Take a contiguous view of the LUT buffer, which is written to below.

@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from max.driver import Buffer, is_virtual_device_mode
+from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
@@ -636,31 +636,42 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         context_batch = flatten2d(replica_batches)
         # Create tokens
+        tokens: Buffer
+        pinned_input_row_offsets: Buffer
         if len(context_batch) == 0:
-            tokens = Buffer(
-                shape=[0], dtype=DType.int64, device=device0, pinned=pinned
-            )
             if pinned:
-                tokens.disable_auto_sync()
+                tokens = DevicePinnedBuffer(
+                    shape=[0], dtype=DType.int64, device=device0
+                )
+            else:
+                tokens = Buffer(shape=[0], dtype=DType.int64, device=device0)
             host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
 
-            pinned_input_row_offsets = Buffer.zeros(
-                shape=[1], dtype=DType.uint32, device=device0, pinned=pinned
-            )
             if pinned:
-                pinned_input_row_offsets.disable_auto_sync()
+                pinned_input_row_offsets = DevicePinnedBuffer.zeros(
+                    shape=[1], dtype=DType.uint32, device=device0
+                )
+            else:
+                pinned_input_row_offsets = Buffer.zeros(
+                    shape=[1], dtype=DType.uint32, device=device0
+                )
             device_input_row_offsets = pinned_input_row_offsets.to(device0)
         else:
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
             num_tokens = sum(ctx.tokens.active_length for ctx in context_batch)
-            tokens_host = Buffer(
-                shape=(num_tokens,),
-                dtype=DType.int64,
-                device=device0,
-                pinned=pinned,
-            )
+            tokens_host: Buffer
             if pinned:
-                tokens_host.disable_auto_sync()
+                tokens_host = DevicePinnedBuffer(
+                    shape=(num_tokens,),
+                    dtype=DType.int64,
+                    device=device0,
+                )
+            else:
+                tokens_host = Buffer(
+                    shape=(num_tokens,),
+                    dtype=DType.int64,
+                    device=device0,
+                )
             np.concatenate(
                 [ctx.tokens.active for ctx in context_batch],
                 out=tokens_host.to_numpy(),
@@ -684,14 +695,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
             host_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
 
-            pinned_input_row_offsets = Buffer(
-                shape=(len(context_batch) + 1,),
-                dtype=DType.uint32,
-                device=device0,
-                pinned=pinned,
-            )
             if pinned:
-                pinned_input_row_offsets.disable_auto_sync()
+                pinned_input_row_offsets = DevicePinnedBuffer(
+                    shape=(len(context_batch) + 1,),
+                    dtype=DType.uint32,
+                    device=device0,
+                )
+            else:
+                pinned_input_row_offsets = Buffer(
+                    shape=(len(context_batch) + 1,),
+                    dtype=DType.uint32,
+                    device=device0,
+                )
             pinned_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
             device_input_row_offsets = pinned_input_row_offsets.to(device0)
 
