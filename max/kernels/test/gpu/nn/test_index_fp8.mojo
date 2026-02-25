@@ -86,7 +86,7 @@ fn test_index_fp8[
     ctx.enqueue_copy(input_row_offsets_device_ptr, input_row_offsets)
     ctx.enqueue_copy(cache_row_offsets_device_ptr, cache_row_offsets)
 
-    # ragged intputs
+    # Ragged Q tensor: [total_seq_len, num_heads, depth]
     comptime q_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
     var q_device = LayoutTensor[DType.float8_e4m3fn, q_layout](
         q_device_ptr.unsafe_ptr(),

@@ -50,29 +50,33 @@ fn fp8_index_kernel[
     output_layout: Layout,
     q_layout: Layout,
     qs_layout: Layout,
-    k_layout: Layout,
-    ks_layout: Layout,
-    k_type: MHAOperand,
+    k_operand_type: MHAOperand,
+    ks_operand_type: MHAOperand,
     block_tile_shape: InlineArray[Int, 2],
+    valid_length_layout: Layout,
+    num_heads: Int,
+    depth: Int,
+    # When False: num_keys = cache_length + seq_len (cache_length excludes new tokens).
+    # When True: num_keys = cache_length (cache_length already includes new tokens).
+    _is_cache_length_accurate: Bool = False,
 ](
     output: LayoutTensor[DType.float32, output_layout, MutAnyOrigin],
-    # [bs x seq_len, num_heads, depth]
+    # [total_seq_len, num_heads, depth]
     q: LayoutTensor[dtype, q_layout, MutAnyOrigin],
-    # [bs x seq_len, num_heads]
+    # [total_seq_len, num_heads]
     q_s: LayoutTensor[DType.float32, qs_layout, MutAnyOrigin],
-    # [bs x num_keys, 1, depth]
-    k: LayoutTensor[dtype, k_layout, MutAnyOrigin],
-    k_s: LayoutTensor[DType.float32, ks_layout, MutAnyOrigin],
-    k_lut: k_type,
+    # MHAOperand for K values
+    k_operand: k_operand_type,
+    # MHAOperand for K scales
+    ks_operand: ks_operand_type,
     valid_length: LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        DType.uint32, valid_length_layout, ImmutAnyOrigin
     ],
 ):
+    comptime assert valid_length_layout.rank() == 1, "valid_length must be 1D"
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
 
-    comptime num_heads = q_layout.shape[1].value()
-    comptime depth = q_layout.shape[2].value()
     comptime thread_dim_x = 16
     comptime thread_dim_y = 8
 
@@ -85,11 +89,15 @@ fn fp8_index_kernel[
 
     var start_of_seq = valid_length[batch_idx][0]
     var end_of_seq = valid_length[batch_idx + 1][0]
-    var num_keys = k_lut.cache_length(Int(batch_idx))
-
     var seq_len = end_of_seq - start_of_seq
 
-    if seq_offset >= UInt(seq_len) and key_offset >= UInt(num_keys):
+    var num_keys = k_operand.cache_length(Int(batch_idx))
+
+    @parameter
+    if not _is_cache_length_accurate:
+        num_keys += Int(seq_len)
+
+    if seq_offset >= UInt(seq_len) or key_offset >= UInt(num_keys):
         return
 
     ref smem_ptr = external_memory[
@@ -114,12 +122,10 @@ fn fp8_index_kernel[
         address_space = AddressSpace.SHARED,
     ](k_smem.unsafe_ptr())
 
-    var k_row_offset = k_lut.row_idx(UInt32(Int(batch_idx)), UInt32(key_offset))
+    var k_smem_ptr = k_smem.unsafe_ptr()
 
     var q_ptr = q.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0, 0))
     var q_s_ptr = q_s.ptr_at_offset(Index(start_of_seq + UInt32(seq_offset), 0))
-    var k_ptr = k.ptr_at_offset(Index(k_row_offset, 0, 0))
-    var k_s_ptr = k_s.ptr_at_offset(Index(k_row_offset))
     var o_ptr = output.ptr_at_offset(
         Index(start_of_seq + UInt32(seq_offset), UInt32(key_offset))
     )
@@ -130,14 +136,6 @@ fn fp8_index_kernel[
 
     comptime QSTileType = LayoutTensor[
         DType.float32, Layout.row_major(1, num_heads), MutAnyOrigin
-    ]
-
-    comptime KTileType = LayoutTensor[
-        dtype, Layout.row_major(BM, depth), MutAnyOrigin, masked=True
-    ]
-
-    comptime KSTileType = LayoutTensor[
-        DType.float32, Layout.row_major(BM, 1), MutAnyOrigin, masked=True
     ]
 
     comptime LogitsType = LayoutTensor[
@@ -168,17 +166,8 @@ fn fp8_index_kernel[
         address_space = AddressSpace.SHARED,
     ]
 
-    var k_gmem_runtime_layout = RuntimeLayout[KTileType.layout].row_major(
-        Index(num_keys, depth)
-    )
-    var ks_runtime_layout = RuntimeLayout[KSTileType.layout].row_major(
-        Index(num_keys, 1)
-    )
-
     var q_tile = QTileType(q_ptr)
     var q_s_tile = QSTileType(q_s_ptr)
-    var k_tile = KTileType(k_ptr, k_gmem_runtime_layout)
-    var k_s_tile = KSTileType(k_s_ptr, ks_runtime_layout)
     var logits = LogitsType.stack_allocation()
     var q_s_reg_tile = QSRegTileType.stack_allocation()
     var logits_sum = LogitsSumType.stack_allocation()
@@ -201,30 +190,42 @@ fn fp8_index_kernel[
     )
 
     for i in range(BM // BN):
-        if Int(key_offset) + i * Int(BN) >= num_keys:
+        var current_key_offset = Int(key_offset) + i * Int(BN)
+        if current_key_offset >= num_keys:
             break
 
-        var k_gmem_tile = k_tile.tile[BN, depth](i, 0)
-
-        copy_dram_to_sram[
-            thread_layout = Layout.row_major(16, 8),
-            thread_scope = ThreadScope.BLOCK,
-            block_dim_count=2,
-        ](
-            k_smem_tile.vectorize[1, simd_width](),
-            k_gmem_tile.vectorize[1, simd_width](),
-        )
+        # Load K tile via MHAOperand
+        for k_row in range(BN):
+            if current_key_offset + k_row >= num_keys:
+                # Zero-fill OOB rows
+                for d_idx in range(depth):
+                    if Int(tid) == k_row % 128:
+                        k_smem_ptr[k_row * depth + d_idx] = Scalar[dtype](0)
+            else:
+                var k_ptr = k_operand.block_paged_ptr[1](
+                    UInt32(batch_idx),
+                    UInt32(current_key_offset + k_row),
+                    UInt32(0),  # head_idx = 0 for MLA (single head for K)
+                    UInt32(0),
+                )
+                for d_idx in range(depth):
+                    if Int(tid) == k_row % 128:
+                        k_smem_ptr[k_row * depth + d_idx] = k_ptr[d_idx].cast[
+                            dtype
+                        ]()
 
         barrier()
 
-        var k_s_gmem_tile = k_s_tile.tile[BN, 1](i, 0)
-        var k_s_frag = k_s_gmem_tile.distribute[Layout.row_major(BN, 1)](tid)
-
-        # each threads gets one value from k_s
-        if Int(key_offset) + i * Int(BN) + Int(tid) < num_keys:
-            k_s_reg = k_s_frag[0, 0][0]
-        else:
-            k_s_reg = 0.0
+        # Load K scales for current tile
+        var k_s_reg: Float32 = 0.0
+        if current_key_offset + Int(tid) < num_keys:
+            var ks_ptr = ks_operand.block_paged_ptr[1](
+                UInt32(batch_idx),
+                UInt32(current_key_offset + Int(tid)),
+                UInt32(0),
+                UInt32(0),
+            )
+            k_s_reg = ks_ptr[0].cast[DType.float32]()
 
         q_smem_frag = q_smem_tile.tile[num_heads // thread_dim_y, depth](
             Int(thread_idx.y), 0
@@ -258,8 +259,8 @@ fn fp8_index_kernel[
 
         barrier()
 
-        if Int(key_offset) + i * Int(BN) + Int(tid) < num_keys:
-            # calculate row sum of logits
+        if current_key_offset + Int(tid) < num_keys:
+            # Sum logits across heads
             var row_sum: Float32 = 0.0
 
             for col_idx in range(thread_dim_y):
@@ -306,8 +307,10 @@ fn fp8_index[
     max_num_keys: Int,
     ctx: DeviceContext,
 ) raises:
+    # Create RaggedMHAOperand wrappers for K and K_s
+    # These allow accessing ragged data via cache_row_offsets indirection
     var k_operand = RaggedMHAOperand(
-        LayoutTensor[k.dtype, k.layout, MutAnyOrigin](
+        LayoutTensor[k.dtype, k.layout, ImmutAnyOrigin](
             k.ptr,
             RuntimeLayout[k.layout].row_major(
                 k.runtime_layout.shape.value.canonicalize()
@@ -316,7 +319,28 @@ fn fp8_index[
         LayoutTensor[
             cache_row_offsets.dtype,
             cache_row_offsets.layout,
-            MutAnyOrigin,
+            ImmutAnyOrigin,
+        ](
+            cache_row_offsets.ptr,
+            RuntimeLayout[cache_row_offsets.layout].row_major(
+                cache_row_offsets.runtime_layout.shape.value.canonicalize()
+            ),
+        ),
+    )
+
+    # K_s is 1D [total_keys], reshape to 3D [total_keys, 1, 1] for MHAOperand interface
+    comptime ks_3d_layout = Layout.row_major(UNKNOWN_VALUE, 1, 1)
+    var ks_operand = RaggedMHAOperand(
+        LayoutTensor[k_s.dtype, ks_3d_layout, ImmutAnyOrigin](
+            k_s.ptr,
+            RuntimeLayout[ks_3d_layout].row_major(
+                Index(k_s.runtime_layout.shape.value[0], 1, 1)
+            ),
+        ),
+        LayoutTensor[
+            cache_row_offsets.dtype,
+            cache_row_offsets.layout,
+            ImmutAnyOrigin,
         ](
             cache_row_offsets.ptr,
             RuntimeLayout[cache_row_offsets.layout].row_major(
@@ -326,30 +350,33 @@ fn fp8_index[
     )
 
     comptime block_tile_shape: InlineArray[Int, 2] = [512, 128]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime smem_use = size_of[IndexSmemStorage[dtype, num_heads, depth, BN]]()
+    comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
+
+    # RaggedMHAOperand.cache_length() returns full key length directly,
+    # so _is_cache_length_accurate=True skips adding seq_len in the kernel.
     comptime kernel = fp8_index_kernel[
         dtype,
         output_layout,
         q.layout,
         qs_layout,
-        k.layout,
-        ks_layout,
         type_of(k_operand),
+        type_of(ks_operand),
         block_tile_shape,
+        type_of(valid_length).layout,
+        num_heads,
+        depth,
+        _is_cache_length_accurate=True,
     ]
-
-    comptime BM = block_tile_shape[0]
-    comptime BN = block_tile_shape[1]
-    comptime smem_use = size_of[IndexSmemStorage[dtype, num_heads, depth, BN]]()
-
-    comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
 
     ctx.enqueue_function[kernel, kernel](
         output,
         q,
         q_s,
-        k,
-        k_s,
         k_operand,
+        ks_operand,
         valid_length,
         grid_dim=(
             batch_size,

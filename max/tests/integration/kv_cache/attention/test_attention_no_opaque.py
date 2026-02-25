@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 import numpy as np
@@ -66,7 +66,7 @@ def build_and_execute_graph(
     device: Device,
     attention_fn: AttentionFn,
     model: Module,
-    kv_inputs: PagedKVCacheTensorsNoOpaque,
+    kv_inputs: Sequence[Buffer],
     kv_input_symbols: NestedIterableDataclass,
 ) -> npt.NDArray[np.floating[Any]]:
     device_ref = DeviceRef.from_device(device)
@@ -191,9 +191,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
-    kv_inputs = PagedKVCacheTensorsNoOpaque(
-        *kv_manager.runtime_inputs([batch])[0]
-    )
+    kv_inputs = list(kv_manager.runtime_inputs([batch])[0])
     kv_input_symbols = kv_params.get_symbolic_inputs()[0]
 
     def reference_attention_fn(

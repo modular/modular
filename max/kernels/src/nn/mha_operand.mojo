@@ -279,6 +279,143 @@ struct KVCacheMHAOperand[
         )
 
 
+struct KVCacheScalesMHAOperand[
+    cache_t: KVCacheT,
+](MHAOperand, TrivialRegisterPassable):
+    """An MHAOperand that accesses the scales field of a KVCache.
+
+    This is useful for MLA attention where k_s (per-token scales) are stored
+    in the scales field of the k cache with quantization_granularity = head_size.
+    The scales have shape [num_blocks, page_size, num_heads, head_dim_granularity].
+    """
+
+    comptime dtype = Self.cache_t.scale_dtype
+    comptime scale_dtype = DType.invalid
+    comptime page_size = Self.cache_t.page_size_
+    comptime quantization_enabled = Self.cache_t.quantization_enabled
+    comptime quantization_granularity = Self.cache_t.quantization_granularity
+    var cache: Self.cache_t
+
+    comptime device_type: AnyType = Self
+
+    fn _to_device_type(self, target: MutOpaquePointer[_]):
+        target.bitcast[Self.device_type]()[] = self
+
+    @staticmethod
+    fn get_type_name() -> String:
+        return "KVCacheScalesMHAOperand"
+
+    fn __init__(out self, cache: Self.cache_t):
+        self.cache = cache
+
+    @always_inline
+    fn block_paged_ptr[
+        tile_size: Int
+    ](
+        self,
+        batch_idx: UInt32,
+        start_tok_idx: UInt32,
+        head_idx: UInt32,
+        head_dim_idx: UInt32 = 0,
+    ) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
+        # Forward to scales_block_paged_ptr instead of block_paged_ptr
+        return self.cache.scales_block_paged_ptr(
+            Int(batch_idx), Int(start_tok_idx), Int(head_idx), Int(head_dim_idx)
+        )
+
+    @always_inline
+    fn scales_block_paged_ptr(
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+
+    @always_inline
+    fn load_scale[
+        width: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int,
+    ) -> SIMD[Self.scale_dtype, width]:
+        return SIMD[Self.scale_dtype, width](0)
+
+    @always_inline
+    fn cache_length(self, batch_idx: Int) -> Int:
+        return self.cache.cache_length(batch_idx)
+
+    @always_inline
+    fn max_context_length(self) -> UInt32:
+        return self.cache.max_context_length()
+
+    @always_inline
+    fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+        """Returns the row idx when viewing the memory as a matrix."""
+        return self.cache.row_idx(batch_idx, start_tok_idx)
+
+    @always_inline
+    fn create_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        depth: Int,
+        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: SplitLastDimTMATensorTile[
+            Self.dtype,
+            IndexList[3](BN, 1, BK),
+            swizzle_mode,
+        ],
+    ) raises:
+        """TMA not supported for KVCacheScalesMHAOperand."""
+        comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
+        # Forward to the underlying cache's implementation to satisfy out param
+        # This code is unreachable due to comptime assert above
+        tma = rebind[type_of(tma)](
+            self.cache.create_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
+        )
+
+    @always_inline
+    fn create_ragged_tma_tile[
+        swizzle_mode: TensorMapSwizzle,
+        *,
+        BN: Int,
+        depth: Int,
+        BK: Int = padded_depth[Self.dtype, swizzle_mode, depth](),
+    ](
+        self,
+        ctx: DeviceContext,
+        out tma: RaggedTMA3DTile[
+            Self.dtype,
+            swizzle_mode,
+            BM=BN,
+            BN=BK,
+        ],
+    ) raises:
+        """TMA not supported for KVCacheScalesMHAOperand."""
+        comptime assert False, "TMA not supported for KVCacheScalesMHAOperand"
+        # Forward to the underlying cache's implementation to satisfy out param
+        # This code is unreachable due to comptime assert above
+        tma = rebind[type_of(tma)](
+            self.cache.create_ragged_tma_tile[swizzle_mode, BN=BN, BK=BK](ctx)
+        )
+
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
+        """Returns a null pointer. KVCacheScalesMHAOperand already points to the
+        scales pointer."""
+        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin]()
+
+
 struct LayoutTensorMHAOperand[
     dtype_: DType,
     layout: Layout,

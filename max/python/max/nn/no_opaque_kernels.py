@@ -29,6 +29,7 @@ class PagedKVCacheTensorsNoOpaque:
     cache_lengths: TensorValue
     lookup_table: TensorValue
     max_lengths: TensorValue
+    kv_scales: BufferValue | None = None
 
     def __iter__(self) -> Iterator[TensorValue]:
         for field in fields(self):

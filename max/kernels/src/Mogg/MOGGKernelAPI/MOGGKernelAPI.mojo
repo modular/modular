@@ -176,6 +176,7 @@ from nn.kv_cache import (
     generic_fused_qkv_matmul_kv_cache_bshd_paged,
     generic_get_continuous_cache,
     generic_get_paged_cache,
+    generic_get_paged_cache_with_scales,
     print_kv_cache_cont_batch_generic_cpu,
     print_kv_cache_cont_batch_generic_gpu,
     print_kv_cache_paged_generic_cpu,
@@ -216,6 +217,7 @@ from nn.mla_graph import (
     mla_prefill_decode_graph_fp8,
     mla_prefill_decode_graph_bf16,
 )
+from nn.mla_index_fp8 import mla_indexer_ragged_float8_paged
 from nn.moe import moe_create_indices, router_group_limited
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
@@ -5155,6 +5157,146 @@ struct IRFFT:
             output.to_tile_tensor[DType.int64](),
             n,
             buffer_size_mb,
+            ctx.get_device_context(),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.mla.indexer.ragged.float8.paged")
+struct MLAIndexerRaggedFloat8Paged:
+    @staticmethod
+    fn execute[
+        *,
+        num_heads: Int,
+        depth: Int,
+        k: Int,
+        quantization_granularity: Int,
+        mask_str: StaticString,
+    ](
+        output_indices: OutputTensor[dtype = DType.int32, rank=2],
+        q: InputTensor[dtype = DType.float8_e4m3fn, rank=3],
+        qs: InputTensor[dtype = DType.float32, rank=2],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        k_blocks: MutableInputTensor[dtype = DType.float8_e4m3fn, rank=6],
+        k_cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+        k_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+        k_max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+        k_scales: MutableInputTensor[dtype = DType.float32, rank=6],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """Compute FP8 attention scores and return top-k key indices per token.
+
+        This kernel is designed for Multi-head Latent Attention (MLA) architectures.
+        It computes FP8 matmul between queries and cached keys (with scales), applies
+        masking, and returns the indices of the top-k highest-scoring keys per token.
+        Scores are aggregated (summed) across all attention heads.
+
+        Parameters:
+            num_heads: Number of query attention heads (must be 128).
+            depth: Head dimension (must be 128).
+            k: Number of top indices to return per token.
+            quantization_granularity: Quantization granularity for the K cache.
+            mask_str: Mask type - either MaskName.NULL (no mask) or MaskName.CAUSAL.
+
+        Args:
+            output_indices: Output tensor [total_seq_len, top_k] containing
+                top-k key indices per token. Invalid positions (where there are
+                fewer than top_k valid keys) are filled with -1.
+            q: Query tensor [total_seq_len, num_heads, depth] in FP8.
+            qs: Query scales [total_seq_len, num_heads] in float32.
+            input_row_offsets: Ragged row offsets [batch_size + 1] for queries.
+            k_blocks: Paged K cache blocks [num_blocks, 1, num_layers, page_size,
+                num_heads, head_size] in FP8.
+            k_cache_lengths: Cache lengths [batch_size] - number of cached tokens
+                per sequence.
+            k_lookup_table: Page lookup table [batch_size, pages_per_seq] mapping
+                sequence pages to block indices.
+            k_max_lengths: Max lengths tensor [1, 2] containing [max_seq_len,
+                max_cache_len].
+            k_scales: K scale blocks matching k_blocks shape with scale values.
+            layer_idx: Layer index for retrieving the correct cache layer.
+            ctx: Device context for GPU execution.
+        """
+        # Extract cache parameters from block shapes
+        comptime page_size = k_blocks.static_spec.shape.get[3]()
+        comptime head_dim = k_blocks.static_spec.shape.get[5]()
+        comptime k_num_heads = k_blocks.static_spec.shape.get[4]()
+        comptime is_mla = k_blocks.static_spec.shape.get[1]() == 1
+        comptime kv_params = KVCacheStaticParams(
+            UInt(k_num_heads), UInt(head_dim), is_mla
+        )
+        comptime assert quantization_granularity >= depth, (
+            "quantization_granularity must be >= depth for MLA (one scale per"
+            " token per head)"
+        )
+
+        # K cache with scales (k_s values are stored in k_collection.scales)
+        var k_collection = generic_get_paged_cache_with_scales[
+            DType.float8_e4m3fn,
+            DType.float32,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            LayoutTensor[
+                DType.float8_e4m3fn, Layout.row_major[6](), MutAnyOrigin
+            ](
+                k_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    k_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+                k_cache_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                    k_cache_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                k_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    k_lookup_table.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                k_max_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    k_max_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+                k_scales.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    k_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+        )
+
+        # Use layouts from tensor specs
+        comptime q_layout = q.static_spec.to_layout()
+        comptime qs_layout = qs.static_spec.to_layout()
+        comptime output_layout = output_indices.static_spec.to_layout()
+
+        mla_indexer_ragged_float8_paged[
+            DType.float8_e4m3fn,
+            q_layout,
+            qs_layout,
+            output_layout,
+            type_of(k_collection),
+            num_heads,
+            depth,
+            k,
+            mask_str,
+        ](
+            output_indices.to_layout_tensor(),
+            q.to_layout_tensor(),
+            qs.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            k_collection,
+            layer_idx,
             ctx.get_device_context(),
         )
 
