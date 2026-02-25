@@ -23,7 +23,7 @@ from sys import env_get_bool, size_of
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
-from layout import Layout as LegacyLayout, LayoutTensor
+from layout import Layout as LegacyLayout
 from layout._tile_tensor import TileTensor
 from ..structured_kernels.tile_types import create_tma_tile, lt_to_tt
 

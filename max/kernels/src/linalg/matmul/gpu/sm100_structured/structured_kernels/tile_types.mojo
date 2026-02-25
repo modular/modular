@@ -34,7 +34,6 @@ from sys import size_of
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import LayoutTensor
 from layout import Layout as LegacyLayout, UNKNOWN_VALUE
 from layout.int_tuple import IntTuple
 from layout.tma_async import (
