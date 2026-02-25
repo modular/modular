@@ -102,7 +102,7 @@ class TokenGenerationSchedulerConfig:
             max_seq_len=pipeline_config.model.max_length,
             max_batch_total_tokens=pipeline_config.max_batch_total_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+            enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             kvcache_ce_watermark=pipeline_config.runtime.kvcache_ce_watermark,
         )

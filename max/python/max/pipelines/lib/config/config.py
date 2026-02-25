@@ -113,14 +113,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    enable_in_flight_batching: bool = Field(
-        default=False,
-        description=(
-            "When enabled, prioritizes token generation by batching it with "
-            "context encoding requests."
-        ),
-    )
-
     max_num_steps: int = Field(
         default=-1,
         description=(
@@ -1158,7 +1150,10 @@ class PipelineConfig(ConfigFileModel):
             ("max_batch_size", self.max_batch_size),
             ("chunked_prefill", self.enable_chunked_prefill),
             ("max_batch_input_tokens", self.max_batch_input_tokens),
-            ("in_flight_batching", self.enable_in_flight_batching),
+            (
+                "in_flight_batching",
+                self.runtime.enable_in_flight_batching,
+            ),
         ]
 
         logger.info("")

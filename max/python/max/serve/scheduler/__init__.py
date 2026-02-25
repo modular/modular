@@ -157,7 +157,7 @@ def load_scheduler(
             max_seq_len=pipeline_config.model.max_length,
             target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+            enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
             max_queue_size_tg=pipeline_config.runtime.max_queue_size_tg,
             min_batch_size_tg=pipeline_config.runtime.min_batch_size_tg,
             ce_delay_ms=pipeline_config.runtime.ce_delay_ms,
