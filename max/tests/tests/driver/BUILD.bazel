@@ -11,7 +11,10 @@ modular_py_test(
     name = "tests",
     srcs = glob(
         ["*.py"],
-        exclude = ["test_device_event.py"],
+        exclude = [
+            "test_device_event.py",
+            "test_buffer_device_pinned.py",
+        ],
     ),
     deps = [
         "//max/python/max/driver",
@@ -27,6 +30,7 @@ modular_py_test(
     srcs = [
         "accelerator_tests/test_buffer.py",
         "accelerator_tests/test_device.py",
+        "test_buffer_device_pinned.py",
         "test_device_event.py",
     ],
     gpu_constraints = ["//:has_gpu"] + select({
