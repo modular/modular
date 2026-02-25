@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
+import torch
+
 
 @dataclass
 class Stat:
@@ -67,10 +69,12 @@ class _TimedFn:
         self._on_time: Callable[[float], None] = on_time
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        torch.cuda.synchronize()
         t0: float = perf_counter()
         try:
             return self._fn(*args, **kwargs)
         finally:
+            torch.cuda.synchronize()
             self._on_time(perf_counter() - t0)
 
 
@@ -94,10 +98,12 @@ class _TimedCallableProxy:
         )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        torch.cuda.synchronize()
         t0: float = perf_counter()
         try:
             return self._obj(*args, **kwargs)
         finally:
+            torch.cuda.synchronize()
             self._on_time_call(perf_counter() - t0)
 
     def __getattr__(self, name: str) -> Any:
@@ -113,7 +119,7 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
 
     This profiler provides:
       - method-level labels in `stats`
-      - module-level labels in `module_stats`
+      - module-level labels in `component_stats`
 
     It guarantees component-level timings by replacing `pipeline.<component>`
     attributes with proxies during the context.
@@ -125,16 +131,14 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         *,
         enabled: bool = True,
         patch_tensor_ops: bool = False,
-        patch_concat: bool = False,
+        is_diffusers: bool = False,
     ) -> None:
         self._obj: Any = pipeline_or_wrapper
         self._enabled: bool = enabled
         self._patch_tensor_ops: bool = patch_tensor_ops
-        self._patch_concat: bool = patch_concat
-
+        self._is_diffusers: bool = is_diffusers
         self.stats: dict[str, Stat] = {}
-        self.module_stats: dict[str, Stat] = {}
-
+        self.component_stats: dict[str, Stat] = {}
         self._patcher: _Patcher = _Patcher()
         self._model: Any | None = None
         self._pipeline_module_label: str = "pipeline/unknown"
@@ -147,41 +151,10 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         target: Any = self._model if self._model is not None else self._obj
         self._pipeline_module_label = f"pipeline/{type(target).__name__}"
 
-        self._wrap_if_exists(
-            target,
-            "execute",
-            "E2E execute",
-            self._pipeline_module_label,
-        )
-        self._wrap_if_exists(
-            target,
-            "_prepare_prompt_embeddings",
-            "prompt/prepare_embeddings",
-            self._pipeline_module_label,
-        )
-        self._wrap_if_exists(
-            target,
-            "_decode_latents",
-            "decode/decode_latents",
-            self._pipeline_module_label,
-        )
-        self._wrap_if_exists(
-            target,
-            "_scheduler_step",
-            "loop/scheduler_step",
-            self._pipeline_module_label,
-        )
-        self._wrap_if_exists(
-            target, "_to_numpy", "decode/to_numpy", self._pipeline_module_label
-        )
-
-        self._wrap_components_via_proxy(target)
-
+        self._wrap_methods(target)
+        self._wrap_components(target)
         if self._patch_tensor_ops:
-            self._patch_tensor_ops_global()
-
-        if self._patch_concat:
-            self._patch_concat_global()
+            self._wrap_tensor_ops()
 
         return self
 
@@ -191,16 +164,22 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
         self._patcher.restore()
         return None
 
-    def report_modules(self, *, unit: str = "ms") -> str:
-        """Render a module-level timing table."""
+    def report(self, unit: str = "ms") -> None:
+        print("==================== PROFILING REPORT ====================")
+        print(f"Component Timings:\n{self.report_components(unit=unit)}\n")
+        print(f"Method Timings:\n{self.report_methods(unit=unit)}")
+        print("==================== PROFILING REPORT ====================")
+
+    def report_components(self, *, unit: str = "ms") -> str:
+        """Render a component-level timing table."""
         mul: float = 1000.0 if unit == "ms" else 1.0
         items: list[tuple[str, Stat]] = sorted(
-            self.module_stats.items(),
+            self.component_stats.items(),
             key=lambda kv: kv[1].total_s,
             reverse=True,
         )
         lines: list[str] = [
-            f"{'module':<30} {'calls':>7} {'total':>12} {'avg':>12} ({unit})"
+            f"{'components':<30} {'calls':>7} {'total':>12} {'avg':>12} ({unit})"
         ]
         for name, st in items:
             lines.append(
@@ -208,14 +187,14 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
             )
         return "\n".join(lines)
 
-    def report(self, *, unit: str = "ms") -> str:
+    def report_methods(self, *, unit: str = "ms") -> str:
         """Render a method-level timing table."""
         mul: float = 1000.0 if unit == "ms" else 1.0
         items: list[tuple[str, Stat]] = sorted(
             self.stats.items(), key=lambda kv: kv[1].total_s, reverse=True
         )
         lines: list[str] = [
-            f"{'section':<30} {'calls':>7} {'total':>12} {'avg':>12} ({unit})"
+            f"{'methods':<30} {'calls':>7} {'total':>12} {'avg':>12} ({unit})"
         ]
         for name, st in items:
             lines.append(
@@ -247,42 +226,93 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
     def _accum(self, label: str, dt_s: float) -> None:
         self.stats.setdefault(label, Stat()).add(dt_s)
 
-    def _accum_module(self, label: str, dt_s: float) -> None:
-        self.module_stats.setdefault(label, Stat()).add(dt_s)
+    def _accum_component(self, label: str, dt_s: float) -> None:
+        self.component_stats.setdefault(label, Stat()).add(dt_s)
 
-    def _wrap_if_exists(
-        self, obj: Any, method_name: str, label: str, module_label: str
+    def _wrap_methods(self, target: Any) -> None:
+        """Wrap key pipeline methods when present on the target object."""
+        method_specs: tuple[tuple[str, str], ...]
+        if not self._is_diffusers:
+            method_specs = (
+                ("execute", "E2E execute"),
+                ("prepare_prompt_embeddings", "prepare_embeddings"),
+                ("decode_latents", "decode_latents"),
+                ("prepare_scheduler", "prepare_scheduler"),
+                ("scheduler_step", "scheduler_step"),
+                ("preprocess_latents", "preprocess_latents"),
+                ("prepare_image_latents", "prepare_image_latents"),
+            )
+        else:
+            method_specs = (
+                ("__call__", "E2E execute"),
+                ("encode_prompt", "encode_prompt"),
+                ("prepare_latents", "prepare_latents"),
+                ("retrieve_timesteps", "retrieve_timesteps"),
+                ("_unpack_latents_with_ids", "_unpack_latents_with_ids"),
+                ("_unpatchify_latents", "_unpatchify_latents"),
+                ("scheduler.step", "scheduler.step"),
+                ("image_processor.postprocess", "image_processor.postprocess"),
+            )
+        for method_name, label in method_specs:
+            self._wrap_method_if_exists(target, method_name, label)
+
+    def _wrap_method_if_exists(
+        self, obj: Any, method_name: str, label: str
     ) -> None:
         """Wrap `obj.method_name` and aggregate into method and module buckets."""
-        if not hasattr(obj, method_name):
+        patch_target: Any = obj
+        target_method_name: str = method_name
+        if "." in method_name:
+            patch_target = self._resolve_attr_path(obj, method_name)
+            if patch_target is None:
+                return
+            target_method_name = method_name.split(".")[-1]
+        elif method_name == "__call__":
+            # __call__ is resolved on the class, so patch there for correctness.
+            patch_target = type(obj)
+        if not hasattr(patch_target, target_method_name):
             return
-        original: Any = getattr(obj, method_name)
+        original: Any = getattr(patch_target, target_method_name)
         if not callable(original):
             return
         if getattr(original, "__is_execute_profiler_wrapper__", False):
             return
 
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            torch.cuda.synchronize()
             t0: float = perf_counter()
             try:
                 return original(*args, **kwargs)
             finally:
+                torch.cuda.synchronize()
                 dt: float = perf_counter() - t0
                 self._accum(label, dt)
-                self._accum_module(module_label, dt)
 
         wrapper.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
         wrapper.__wrapped__ = original  # type: ignore[attr-defined]
 
         try:
-            self._patcher.patch(obj, method_name, wrapper)
+            self._patcher.patch(patch_target, target_method_name, wrapper)
         except (AttributeError, TypeError):
             pass
 
-    def _wrap_components_via_proxy(self, target: Any) -> None:
-        """Replace `target.<component>` with a proxy.
+    def _resolve_attr_path(self, obj: Any, path: str) -> Any | None:
+        """Resolve a dotted attribute path (e.g. 'scheduler.step') on obj."""
+        current: Any = obj
+        for part in path.split(".")[:-1]:
+            if not hasattr(current, part):
+                return None
+            current = getattr(current, part)
+            if current is None:
+                return None
+        return current
 
-        For the VAE, also time `.encode()` and `.decode()` calls explicitly.
+    def _wrap_components(self, target: Any) -> None:
+        """Wrap component execution without disrupting pipeline semantics.
+
+        For torch modules, wrap `forward` on the instance. For other components,
+        replace the attribute with a proxy. For the VAE, also time `.encode()`
+        and `.decode()` calls explicitly.
         """
         comps: Any = getattr(target, "components", {}) or {}
         if not isinstance(comps, dict):
@@ -290,6 +320,8 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
 
         for name in comps:
             if not hasattr(target, name):
+                continue
+            if "scheduler" in name or "tokenizer" in name:
                 continue
             comp: Any = getattr(target, name)
             if comp is None:
@@ -299,13 +331,24 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
 
             def make_on_time(lab: str) -> Callable[[float], None]:
                 def on_time(dt: float) -> None:
-                    self._accum(lab, dt)
-                    self._accum_module(lab, dt)
+                    self._accum_component(lab, dt)
 
                 return on_time
 
-            timed_methods: dict[str, Callable[[float], None]] = {}
+            if self._is_diffusers:
+                self._wrap_component_method_if_exists(
+                    comp, "forward", base_label
+                )
+                if name == "vae":
+                    self._wrap_component_method_if_exists(
+                        comp, "encode", "component/vae.encode"
+                    )
+                    self._wrap_component_method_if_exists(
+                        comp, "decode", "component/vae.decode"
+                    )
+                continue
 
+            timed_methods: dict[str, Callable[[float], None]] = {}
             if name == "vae":
                 timed_methods["encode"] = make_on_time("component/vae.encode")
                 timed_methods["decode"] = make_on_time("component/vae.decode")
@@ -321,7 +364,37 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
             except (AttributeError, TypeError):
                 continue
 
-    def _patch_tensor_ops_global(self) -> None:
+    def _wrap_component_method_if_exists(
+        self, obj: Any, method_name: str, label: str
+    ) -> None:
+        """Wrap `obj.method_name` and aggregate into component buckets."""
+        if not hasattr(obj, method_name):
+            return
+        original: Any = getattr(obj, method_name)
+        if not callable(original):
+            return
+        if getattr(original, "__is_execute_profiler_wrapper__", False):
+            return
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            torch.cuda.synchronize()
+            t0: float = perf_counter()
+            try:
+                return original(*args, **kwargs)
+            finally:
+                torch.cuda.synchronize()
+                dt: float = perf_counter() - t0
+                self._accum_component(label, dt)
+
+        wrapper.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
+        wrapper.__wrapped__ = original  # type: ignore[attr-defined]
+
+        try:
+            self._patcher.patch(obj, method_name, wrapper)
+        except (AttributeError, TypeError):
+            pass
+
+    def _wrap_tensor_ops(self) -> None:
         """Patch Tensor conversion/movement ops (process-wide while active)."""
         try:
             from max.tensor import Tensor
@@ -333,13 +406,14 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
             if not getattr(orig_from, "__is_execute_profiler_wrapper__", False):
 
                 def from_dlpack_wrapped(*args: Any, **kwargs: Any) -> Any:
+                    torch.cuda.synchronize()
                     t0: float = perf_counter()
                     try:
                         return orig_from(*args, **kwargs)
                     finally:
+                        torch.cuda.synchronize()
                         dt: float = perf_counter() - t0
                         self._accum("tensor/from_dlpack", dt)
-                        self._accum_module("tensor/ops", dt)
 
                 from_dlpack_wrapped.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
                 from_dlpack_wrapped.__wrapped__ = orig_from  # type: ignore[attr-defined]
@@ -360,13 +434,14 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                     o: Callable[..., Any], meth_label: str
                 ) -> Callable[..., Any]:
                     def wrapped(self_: Any, *args: Any, **kwargs: Any) -> Any:
+                        torch.cuda.synchronize()
                         t0: float = perf_counter()
                         try:
                             return o(self_, *args, **kwargs)
                         finally:
+                            torch.cuda.synchronize()
                             dt: float = perf_counter() - t0
                             self._accum(meth_label, dt)
-                            self._accum_module("tensor/ops", dt)
 
                     wrapped.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
                     wrapped.__wrapped__ = o  # type: ignore[attr-defined]
@@ -378,46 +453,18 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
                 except (AttributeError, TypeError):
                     pass
 
-    def _patch_concat_global(self) -> None:
-        """Patch max.functional.concat (process-wide while active)."""
-        try:
-            from max import functional as F
-        except Exception:
-            return
-
-        if hasattr(F, "concat") and callable(F.concat):
-            orig_concat: Any = F.concat
-            if getattr(orig_concat, "__is_execute_profiler_wrapper__", False):
-                return
-
-            def concat_wrapped(*args: Any, **kwargs: Any) -> Any:
-                t0: float = perf_counter()
-                try:
-                    return orig_concat(*args, **kwargs)
-                finally:
-                    dt: float = perf_counter() - t0
-                    self._accum("func/concat", dt)
-                    self._accum_module("func/ops", dt)
-
-            concat_wrapped.__is_execute_profiler_wrapper__ = True  # type: ignore[attr-defined]
-            concat_wrapped.__wrapped__ = orig_concat  # type: ignore[attr-defined]
-            try:
-                self._patcher.patch(F, "concat", concat_wrapped)
-            except (AttributeError, TypeError):
-                pass
-
 
 def profile_execute(
     pipeline_or_wrapper: Any,
     *,
     enabled: bool = True,
     patch_tensor_ops: bool = False,
-    patch_concat: bool = False,
+    is_diffusers: bool = False,
 ) -> ExecuteProfiler:
     """Create a profiler for a diffusion pipeline or a wrapper pipeline."""
     return ExecuteProfiler(
         pipeline_or_wrapper,
         enabled=enabled,
         patch_tensor_ops=patch_tensor_ops,
-        patch_concat=patch_concat,
+        is_diffusers=is_diffusers,
     )
