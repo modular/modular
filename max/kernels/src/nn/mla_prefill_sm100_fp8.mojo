@@ -1164,7 +1164,7 @@ struct SM100MLA[
             comptime for i in range(batch_size // 2, batch_size):
                 vs[i] = exp2(vs[i] - row_max)
 
-            BatchTileType(p_tmem).store(
+            BatchTileType(p_tmem).store_async(
                 LocalTensor[
                     Self.accum_type, row_major[batch_size * exp_simd]()
                 ](s.ptr, row_major[batch_size * exp_simd]())
@@ -1180,7 +1180,7 @@ struct SM100MLA[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                BatchTileType(p_tmem + UInt32(tmem_offset)).store(
+                BatchTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[batch_size * exp_simd]()
                     ](s.ptr + el_offset, row_major[batch_size * exp_simd]())
@@ -1196,7 +1196,7 @@ struct SM100MLA[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                RemainderTileType(p_tmem + UInt32(tmem_offset)).store(
+                RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[remainder * exp_simd]()
                     ](s.ptr + el_offset, row_major[remainder * exp_simd]())

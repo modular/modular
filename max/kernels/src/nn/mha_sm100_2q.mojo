@@ -438,22 +438,6 @@ struct TMemTile[
         ]()
 
     @always_inline
-    fn store[
-        *, num_threads: Int
-    ](
-        self,
-        src: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_type_size = Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        self.store_async[num_threads=num_threads](src)
-        tcgen05_store_wait()
-        named_barrier[Int32(num_threads)]()
-
-    @always_inline
     fn load_async_with_st_matrix_layout[
         *, num_threads: Int
     ](
@@ -594,13 +578,6 @@ struct TMemTile[
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
 
         break_into_powers_of_two[func=store_fn, N = Self.BN, max_value=128]()
-
-    @always_inline
-    fn store[
-        src_type: DType
-    ](self, src: LocalTensor[src_type, row_major[Self.BN]()]):
-        self.store_async(src)
-        tcgen05_store_wait()
 
 
 struct SM100TensorAccumulatorSS[
@@ -3988,7 +3965,7 @@ struct SM100MHA2Q[
                 else:
                     vs[i] = rebind[vs.ElementType](exp2(diff))
 
-            BatchTileType(p_tmem).store(
+            BatchTileType(p_tmem).store_async(
                 LocalTensor[
                     Self.accum_type, row_major[batch_size * exp_simd]()
                 ](s.ptr, row_major[batch_size * exp_simd]())
@@ -4022,7 +3999,7 @@ struct SM100MHA2Q[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                BatchTileType(p_tmem + UInt32(tmem_offset)).store(
+                BatchTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[batch_size * exp_simd]()
                     ](s.ptr + el_offset, row_major[batch_size * exp_simd]())
@@ -4043,7 +4020,7 @@ struct SM100MHA2Q[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                RemainderTileType(p_tmem + UInt32(tmem_offset)).store(
+                RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[remainder * exp_simd]()
                     ](s.ptr + el_offset, row_major[remainder * exp_simd]())
