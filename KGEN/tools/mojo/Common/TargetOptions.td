@@ -52,26 +52,31 @@ defm large_data_threshold: CommandOptionHidden<["--", "-"], "large-data-threshol
   TargetOptionGroup, Index<9>, MetaVarName<"LDT">,
   HelpText<"Choose large data threshold for x86_64 medium code model.">>;
 
+defm relocation_model: CommandOptionHidden<["--", "-"], "relocation-model",
+  TargetOptionGroup, Index<10>, MetaVarName<"MODEL">,
+  HelpText<"Sets the relocation model. Supported values: `static`, `pic` "
+           "(default), `dynamic-no-pic`, `ropi`, `rwpi`, `ropi-rwpi`.">>;
+
 //===----------------------------------------------------------------------===//
 // Print Target Information Options
 //===----------------------------------------------------------------------===//
 
 def print_effective_target : Flag<["--"], "print-effective-target">,
-  Group<TargetOptionGroup>, Index<10>,
+  Group<TargetOptionGroup>, Index<11>,
   HelpText<"Print the effective target configuration after absorbing all "
            "command-line flags and exit.">;
 
 def print_supported_targets : Flag<["--"], "print-supported-targets">,
-  Group<TargetOptionGroup>, Index<11>,
+  Group<TargetOptionGroup>, Index<12>,
   HelpText<"Print all available target names and exit.">;
 
 def print_supported_cpus : Flag<["--"], "print-supported-cpus">,
-  Group<TargetOptionGroup>, Index<12>,
+  Group<TargetOptionGroup>, Index<13>,
   HelpText<"Print valid CPU names for the specified target and exit. "
            "Requires --target-triple.">;
 
 def print_supported_accelerators : Flag<["--"], "print-supported-accelerators">,
-  Group<TargetOptionGroup>, Index<13>,
+  Group<TargetOptionGroup>, Index<14>,
   HelpText<"Print all supported GPU and accelerator architectures and exit.">;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
