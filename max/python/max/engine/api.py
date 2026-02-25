@@ -390,6 +390,9 @@ class InferenceSession:
         if use_old_top_k_kernel := os.getenv("USE_OLD_TOP_K_KERNEL"):
             self.use_old_top_k_kernel(use_old_top_k_kernel)
 
+        if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
+            self.use_fi_topk_kernel(use_fi_topk)
+
     def __repr__(self) -> str:
         if self.num_threads:
             return f"<modular engine InferenceSession(num_threads={self.num_threads})>"
@@ -671,6 +674,18 @@ class InferenceSession:
             return
 
         self._set_mojo_define("USE_OLD_TOP_K_KERNEL", 1)
+
+    def use_fi_topk_kernel(self, mode: str) -> None:
+        """Enables the fused-inference top-k kernel.
+
+        Args:
+            mode: String to enable/disable. Accepts "false", "off", "no", "0"
+                to disable, any other value to enable.
+        """
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("USE_FI_TOPK_KERNEL", 1)
 
     def _use_experimental_kernels(self, mode: str) -> None:
         """Enables experimental kernels."""

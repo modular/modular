@@ -24,7 +24,7 @@ from layout._coord import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
 
-from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
+from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
@@ -35,7 +35,11 @@ from sys.info import size_of
 fn bench_topk_batched[
     dtype: DType, out_idx_type: DType, rank: Int
 ](
-    ctx: DeviceContext, mut m: Bench, test_case: TestCase, fill_fn_name: String
+    ctx: DeviceContext,
+    mut m: Bench,
+    test_case: TestCase,
+    fill_fn_name: String,
+    top_p: Float32 = 1.0,
 ) raises:
     # Fetch arguments
 
@@ -126,11 +130,22 @@ fn bench_topk_batched[
     )
 
     ctx.enqueue_copy(K_dev_buffer, K_host_ptr)
+
+    # Top-p buffer.
+    var top_p_dev_buffer = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var top_p_host_ptr = alloc[Float32](batch_size)
+    for i in range(batch_size):
+        top_p_host_ptr[i] = top_p
+    ctx.enqueue_copy(top_p_dev_buffer, top_p_host_ptr)
+    var top_p_tt = TileTensor(
+        top_p_dev_buffer.unsafe_ptr(), row_major(Idx(batch_size))
+    )
+
     ctx.synchronize()
 
     @parameter
     @always_inline
-    @__copy_capture(K_dev_buffer)
+    @__copy_capture(K_dev_buffer, top_p_dev_buffer)
     fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
@@ -148,6 +163,7 @@ fn bench_topk_batched[
                 .as_immut(),
                 block_size=block_size,
                 num_blocks_per_input=num_blocks_per_input,
+                top_p=top_p_tt.as_any_origin().as_immut(),
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -209,6 +225,7 @@ fn bench_topk_batched[
     topk_vals_ptr.free()
     topk_idxs_ptr.free()
     K_host_ptr.free()
+    top_p_host_ptr.free()
 
     # Consume device buffers
     _ = device_in_buffer^
@@ -217,6 +234,7 @@ fn bench_topk_batched[
     _ = device_local_topk_vals_buffer^
     _ = device_local_topk_idxs_buffer^
     _ = K_dev_buffer^
+    _ = top_p_dev_buffer^
 
 
 fn bench_topk_multi_rank[
@@ -386,6 +404,110 @@ fn bench_topk_multi_rank[
     _ = K_dev_buffer^
 
 
+fn bench_topk_fi[
+    dtype: DType,
+    out_idx_type: DType,
+](
+    ctx: DeviceContext,
+    mut m: Bench,
+    test_case: TestCase,
+    fill_fn_name: String,
+    top_p: Float32 = 1.0,
+    temperature: Float32 = 1.0,
+) raises:
+    var batch_size = test_case.batch_size
+    var N = test_case.N
+    var K = test_case.K
+
+    var in_size = batch_size * N
+
+    var in_buffer_ptr = alloc[Scalar[dtype]](in_size)
+    var in_buffer = TileTensor(
+        in_buffer_ptr,
+        row_major((Idx(batch_size), Idx(N))),
+    )
+    fill_buffer[2, dtype](in_buffer, fill_fn_name)
+
+    # Device buffers.
+    var device_in_buffer = ctx.enqueue_create_buffer[dtype](in_size)
+    var device_out_idxs_buffer = ctx.enqueue_create_buffer[out_idx_type](
+        batch_size
+    )
+    var device_temp_buffer = ctx.enqueue_create_buffer[DType.float32](
+        batch_size
+    )
+
+    var device_in = TileTensor(
+        device_in_buffer.unsafe_ptr(), row_major((Idx(batch_size), Idx(N)))
+    )
+    var device_out_idxs = TileTensor(
+        device_out_idxs_buffer.unsafe_ptr(),
+        row_major((Idx(batch_size), Idx(1))),
+    )
+    var temp_tt = TileTensor(
+        device_temp_buffer.unsafe_ptr(), row_major(Idx(batch_size))
+    )
+
+    ctx.enqueue_copy(device_in_buffer, in_buffer_ptr)
+
+    # Fill temperature = 1.0 on device.
+    var temp_host_ptr = alloc[Float32](batch_size)
+    for i in range(batch_size):
+        temp_host_ptr[i] = temperature
+    ctx.enqueue_copy(device_temp_buffer, temp_host_ptr)
+
+    # Create a 1-element seed buffer on device.
+    var seed_device_buffer = ctx.enqueue_create_buffer[DType.uint64](1)
+    var seed_host_ptr = alloc[UInt64](1)
+    seed_host_ptr[0] = UInt64(42)
+    ctx.enqueue_copy(seed_device_buffer, seed_host_ptr)
+    ctx.synchronize()
+    var seed_tt = TileTensor(seed_device_buffer.unsafe_ptr(), row_major(Idx(1)))
+
+    @parameter
+    @always_inline
+    fn bench_func(mut b: Bencher):
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            _topk_topp_sampling_fi[dtype, out_idx_type](
+                ctx,
+                K,
+                top_p,
+                device_in,
+                device_out_idxs,
+                temperature=temp_tt.as_any_origin().as_immut(),
+                rng_seed=seed_tt.as_any_origin().as_immut(),
+            )
+
+        b.iter_custom[kernel_launch](ctx)
+
+    var kernel_name = String(
+        "bench-topk-fi",
+        "/N=",
+        N,
+        "/K=",
+        K,
+        "/batch_size=",
+        batch_size,
+        "/top_p=",
+        top_p,
+    )
+
+    var num_bytes = device_in.numel() * size_of[dtype]()
+    m.bench_function[bench_func](
+        BenchId(kernel_name),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
+    )
+
+    # Cleanup.
+    in_buffer_ptr.free()
+    temp_host_ptr.free()
+    _ = device_in_buffer^
+    _ = device_out_idxs_buffer^
+    _ = device_temp_buffer^
+
+
 fn fill_random[
     rank: Int, dtype: DType
 ](mut buffer: TileTensor[mut=True, dtype, ...]):
@@ -454,6 +576,7 @@ fn main() raises:
     comptime out_idx_type = env_get_dtype["out_idx_type", DType.int]()
     comptime sampling = env_get_bool["sampling", False]()
     comptime largest = env_get_bool["largest", True]()
+    comptime use_fi = env_get_bool["USE_FI_TOPK_KERNEL", False]()
 
     var m = Bench()
     with DeviceContext() as ctx:
@@ -464,11 +587,13 @@ fn main() raises:
             batch_size=batch_size,
             num_blocks_per_input=num_blocks_per_input,
         )
-        bench_topk_batched[dtype, out_idx_type, rank](
-            ctx, m, test_case, fill_fn_name
-        )
 
-        # TODO: enable the following in another benchmark.
-        # bench_topk_multi_rank[dtype, rank, out_idx_type](ctx, m, IndexList[rank](1, 1024), test_case, fill_fn_name)
+        @parameter
+        if use_fi:
+            bench_topk_fi[dtype, out_idx_type](ctx, m, test_case, fill_fn_name)
+        else:
+            bench_topk_batched[dtype, out_idx_type, rank](
+                ctx, m, test_case, fill_fn_name
+            )
 
     m.dump_report()
