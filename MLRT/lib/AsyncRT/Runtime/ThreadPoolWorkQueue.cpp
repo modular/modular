@@ -863,9 +863,6 @@ private:
   // reference to this structure.
   SharedThreadState sharedState;
 
-  /// The outer runtime, if any, for the thread using this work queue.
-  CompactRuntimePtr outerRuntime;
-
   /// The lock-free queue of pending tasks available for any worker.
   /// It may become full.
   MoodyCamel::ConcurrentQueue<WorkItem> taskList;
@@ -891,7 +888,6 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName)
     : numWorkers(cpuIDs.size()),
       sharedState(runtimePtr, mainWillDonate, numWorkers),
-      outerRuntime(CompactRuntimePtr::getCurrentRuntime()),
       taskList(taskListCapacity), poolName(poolName) {
   assert(numWorkers <= kMaxWorkers && "too many workers for bitvec width");
 
@@ -912,8 +908,12 @@ ThreadPoolWorkQueue::ThreadPoolWorkQueue(
         cpuIDs[workerID], threadBusyWaitTime, this->poolName);
 
   if (mainWillDonate) {
-    // Associate this thread with the given runtime, possibly overwriting
-    // any existing runtime association.
+    // Nested runtimes are not supported: the creating thread must not already
+    // be associated with another runtime when donating to this work queue.
+    assert(!CompactRuntimePtr::getCurrentRuntime() &&
+           "creating a work queue with mainWillDonate from a thread already "
+           "associated with an outer runtime");
+    // Associate this thread with the given runtime.
     CompactRuntimePtr::setCurrentRuntime(runtimePtr);
   }
 }
@@ -933,8 +933,8 @@ ThreadPoolWorkQueue::~ThreadPoolWorkQueue() {
          "destroying ThreadPoolWorkQueue with pending work items");
 
   if (sharedState.mainWillDonate) {
-    // Restore the association of this thread with the outer runtime, if any.
-    CompactRuntimePtr::setCurrentRuntime(outerRuntime);
+    // Clear the association of this thread with the runtime.
+    CompactRuntimePtr::setCurrentRuntime({});
   }
 
   // Destroy all the threads datastructures.
