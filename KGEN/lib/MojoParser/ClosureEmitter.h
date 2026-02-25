@@ -21,6 +21,13 @@
 namespace M::KGEN::LIT {
 class TypeCheckedFnSignature;
 class TypeCheckedParamList;
+struct AuxiliaryParameters;
+struct AdapteeValue {
+  bool isConcrete() const;
+  TypedAttr aliasValue;
+  size_t index;
+};
+using AliasSubstitutions = llvm::MapVector<mlir::StringAttr, AdapteeValue>;
 
 /// Top level types are the types of the Closure Wrapper function pointer
 /// fields.
@@ -152,6 +159,14 @@ private:
   LogicalResult checkStructCompatibility(ASTType structType, ASTDecl *traitDecl,
                                          bool emitRebind);
 
+  /// Synthesize an adaptor function that rebinds the closure wrapper's
+  /// __call__ from auxiliary parameters to trait aliases, then add the
+  /// conformance witness table.
+  void buildCallAdaptorAndAddWitness(
+      StructDeclOp structDeclOp, ASTDecl &structDecl, TraitDeclOp traitDeclOp,
+      FnOp traitCallFn, FnOp structCallFn, const AuxiliaryParameters &auxCtx,
+      const AliasSubstitutions &aliasSubstitutions);
+
 public:
   /// If the wrapper conforms to a trait that is compatible with the desired
   /// trait, emit a rebind. For example, suppose we have a parameter P with a
@@ -229,7 +244,7 @@ private:
   /// parameters instead of indices.
   std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
   pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
-                            bool synthetic = true);
+                            bool synthetic = true, StringAttr customName = {});
   /// Given the wrapper struct, add to the conformance table to enable the
   /// closure to be used with kernel functions
   void addConformanceToDevicePassable(ASTDecl &structDecl,

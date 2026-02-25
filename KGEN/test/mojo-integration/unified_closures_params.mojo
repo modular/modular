@@ -92,14 +92,13 @@ fn definesCapturingParamClosure[
         return something
 
     # COM: check that concrete types can conform to traits with aliases
-    # TODO: Re-enable after lazy conformance is added
-    # fn closureConcreteImpl() unified {var} -> Cartesian:
-    #     return Cartesian(one, one)
+    fn closureConcreteImpl() unified {var} -> Cartesian:
+        return Cartesian(one, one)
 
     useDefinesCapturingParamClosure[X, type_of(closureImpl)](closureImpl)
-    # useDefinesCapturingParamClosure[Cartesian, type_of(closureConcreteImpl)](
-    #     closureConcreteImpl
-    # )
+    useDefinesCapturingParamClosure[Cartesian, type_of(closureConcreteImpl)](
+        closureConcreteImpl
+    )
 
 
 fn usesParamRefClosure[
@@ -137,8 +136,7 @@ def main():
 
     # COM: Test rebinds to traits with captures.
     # CHECK: { 1 , 4 }
-    # TODO: Re-enable in follow up
-    # CHECK-NOT: { 1 , 1 }
+    # CHECK: { 1 , 1 }
     definesCapturingParamClosure(Cartesian(one, four), one)
 
     # COM: Test param ref matching: both trait and impl use param types.
