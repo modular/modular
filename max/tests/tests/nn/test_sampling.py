@@ -20,7 +20,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.sampling import MinPSampler
+from max.nn.sampling import MinPSampler
 
 
 # NOTE THAT ONLY RANK 2 TENSORS

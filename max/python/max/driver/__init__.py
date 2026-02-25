@@ -13,6 +13,8 @@
 
 from max._core import __version__
 from max._core.driver import (
+    DeviceEvent,
+    enable_all_peer_access,
     get_virtual_device_api,
     get_virtual_device_count,
     get_virtual_device_target_arch,
@@ -49,6 +51,7 @@ __all__ = [
     "Buffer",
     "DLPackArray",
     "Device",
+    "DeviceEvent",
     "DeviceSpec",
     "DeviceStream",
     "accelerator_api",
@@ -57,6 +60,7 @@ __all__ = [
     "calculate_virtual_device_count",
     "calculate_virtual_device_count_from_cli",
     "devices_exist",
+    "enable_all_peer_access",
     "get_virtual_device_api",
     "get_virtual_device_count",
     "get_virtual_device_target_arch",

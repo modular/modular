@@ -26,7 +26,7 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy import Signals
+from max.nn import Signals
 from max.pipelines.architectures.internvl.internvl import InternVLVisionModel
 from max.pipelines.architectures.internvl.model_config import InternVLConfig
 from max.pipelines.architectures.internvl.tokenizer import (

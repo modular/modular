@@ -43,9 +43,9 @@ from max.interfaces.pipeline import (
     PipelineInputsType,
     PipelineOutputType,
 )
-from max.nn.legacy.layer.layer import Module, recursive_named_layers
-from max.nn.legacy.lora import SupportsLoRA
-from max.pipelines.lib.config import LoRAConfig
+from max.nn.layer.layer import Module, recursive_named_layers
+from max.nn.lora import SupportsLoRA
+from max.pipelines.lib.config.lora_config import LoRAConfig
 
 from .hf_utils import HuggingFaceRepo
 from .lora_request_processor import LoRARequestProcessor

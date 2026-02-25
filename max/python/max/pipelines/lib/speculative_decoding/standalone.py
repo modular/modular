@@ -22,7 +22,7 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
@@ -58,6 +58,10 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_draft_offsets: Buffer | None = None,
     ) -> tuple[ModelInputs, int]:
         """Prepares batch inputs and KV cache for draft or target model."""
+        kv_manager = (
+            self._draft_kv_manager if is_draft else self._target_kv_manager
+        )
+
         # Claim cache rows
         # Build request_id -> replica_idx mapping from replica_batches
         request_to_replica: dict[RequestID, int] = {}
@@ -71,20 +75,16 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 model, model.huggingface_config, num_steps, context, is_draft
             )
             replica_idx = request_to_replica.get(context.request_id, 0)
-            if not model.kv_manager.contains(
+            if not kv_manager.contains(
                 context.request_id, replica_idx=replica_idx
             ):
-                model.kv_manager.claim(
-                    context.request_id, replica_idx=replica_idx
-                )
+                kv_manager.claim(context.request_id, replica_idx=replica_idx)
             self._draft_replica_idx[context.request_id] = replica_idx
 
         for ctx in batch:
             r_idx = self._draft_replica_idx.get(ctx.request_id, 0)
-            model.kv_manager.alloc(ctx, replica_idx=r_idx, num_steps=num_steps)
-        kv_cache_inputs = model.kv_manager.get_runtime_inputs(
-            [batch], num_steps
-        )
+            kv_manager.alloc(ctx, replica_idx=r_idx, num_steps=num_steps)
+        kv_cache_inputs = kv_manager.runtime_inputs([batch], num_steps)
         if is_draft:
             return (
                 model.prepare_initial_token_inputs(
@@ -187,7 +187,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
             ), "increment_cache_lengths instantiates and passes this as a list"
             curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                self._draft_model.kv_manager.increment_cache_lengths(
+                self._draft_kv_manager.increment_cache_lengths(
                     curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
@@ -334,7 +334,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         res = self.build_response(context_batch=context_batch)
 
         # Maybe commit blocks into prefix cache
-        self._target_model.kv_manager.step([context_batch])
-        self._draft_model.kv_manager.step([context_batch])
+        self._target_kv_manager.step([context_batch])
+        self._draft_kv_manager.step([context_batch])
 
         return res

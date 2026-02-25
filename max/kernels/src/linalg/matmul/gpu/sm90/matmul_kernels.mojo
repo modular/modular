@@ -995,7 +995,7 @@ struct HopperMatmulSM90Kernel[
         comptime num_k_iters = K // Self.BK
 
         # FIXME: this seems to trip some logits tests
-        # constrained[(K % Self.BK) == 0, "K must be divisible by BK"]()
+        # comptime assert (K % Self.BK) == 0, "K must be divisible by BK"
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
@@ -1169,8 +1169,8 @@ struct HopperMatmulSM90Kernel[
         a_tma_op: TMATensorTile[Self.a_type, a_tile_layout, a_desc_layout],
         b_tma_op: TMATensorTile[Self.b_type, b_tile_layout, b_desc_layout],
         c_tma_op: TMATensorTile[Self.c_type, c_tile_layout, c_desc_layout],
-        a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
-        expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+        a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
+        expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
     ):
         """Grouped matmul variant for MoE (Mixture of Experts) models.
@@ -1182,7 +1182,7 @@ struct HopperMatmulSM90Kernel[
         comptime num_k_iters = K // Self.BK
 
         # FIXME: this seems to trip some logits tests
-        # constrained[(K % Self.BK) == 0, "K must be divisible by BK"]()
+        # comptime assert (K % Self.BK) == 0, "K must be divisible by BK"
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
@@ -1471,14 +1471,13 @@ struct HopperMatmulSM90Kernel[
             c_reg_tile: Current accumulation from tensor cores.
             final_c_reg_tile: Higher-precision accumulator (updated in place).
         """
-        constrained[
-            c_reg_tile.dtype in (DType.float32, DType.float16),
-            "Only support fp32 and fp16 data type in CUDA Core promotion",
-        ]()
-        constrained[
-            len(c_reg_tile.layout) == 2,
-            "Only support 2D layout in CUDA Core promotion",
-        ]()
+        comptime assert c_reg_tile.dtype in (
+            DType.float32,
+            DType.float16,
+        ), "Only support fp32 and fp16 data type in CUDA Core promotion"
+        comptime assert (
+            len(c_reg_tile.layout) == 2
+        ), "Only support 2D layout in CUDA Core promotion"
 
         comptime num_mma = c_reg_tile.layout.shape[0].value()
         comptime c_frag_size = c_reg_tile.layout.shape[1].value()

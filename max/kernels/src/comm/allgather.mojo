@@ -39,7 +39,7 @@ from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from utils import StaticTuple
 
-from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
+from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 
 
 @always_inline
@@ -48,7 +48,7 @@ fn _allgather_naive[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -156,7 +156,7 @@ fn _allgather_p2p[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -228,7 +228,7 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -273,7 +273,7 @@ fn allgather[
     var max_num_blocks = _max_num_blocks.or_else(216)
 
     # Check P2P availability.
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         return _allgather_naive(input_buffers, output_buffers, ctxs)
     else:
         return _allgather_p2p(
@@ -289,7 +289,7 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],

@@ -120,10 +120,9 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
                 raise Error("Failed to read bytes.")
             return UInt(read)
         else:
-            constrained[
-                False,
-                "`read_bytes()` is not yet implemented for unknown platform.",
-            ]()
+            comptime assert (
+                False
+            ), "`read_bytes()` is not yet implemented for unknown platform."
             abort()
 
     fn isatty(self) -> Bool:

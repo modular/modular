@@ -20,11 +20,12 @@ from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
-from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
+    PipelineRuntimeConfig,
     SupportedEncoding,
 )
 from transformers import AutoConfig
@@ -83,9 +84,12 @@ class DummyPipelineConfig(PipelineConfig):
         # Seed `self` with a real (but unvalidated) PipelineConfig instance, so
         # we keep pydantic-internal state consistent while still avoiding full
         # validation / resolution.
+        runtime = PipelineRuntimeConfig.model_construct(
+            pdl_level=pdl_level,
+        )
         base = PipelineConfig.model_construct(
             max_batch_size=max_batch_size,
-            pdl_level=pdl_level,
+            runtime=runtime,
         )
         self.__dict__.update(base.__dict__)
         for attr in (

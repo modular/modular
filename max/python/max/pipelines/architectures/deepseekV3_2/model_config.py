@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from max.graph import DeviceRef
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 from max.pipelines.lib import PipelineConfig
-from max.pipelines.lib.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from typing_extensions import Self, override
 
 

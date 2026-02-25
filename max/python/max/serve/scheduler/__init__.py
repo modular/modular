@@ -142,7 +142,6 @@ def load_scheduler(
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "kv_manager")
         kv_cache = pipeline.kv_manager
-        assert isinstance(kv_cache, PagedKVCacheManager)
 
         assert pipeline_config.ce_delay_ms is not None
         assert pipeline_config.enable_prioritize_first_decode is not None

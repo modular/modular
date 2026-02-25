@@ -16,7 +16,7 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.norm.rms_norm import RMSNorm
 
 
 class Gemma3RMSNorm(RMSNorm):

@@ -427,9 +427,9 @@ struct Process:
 
             return Process(child_pid=pid)
         else:
-            constrained[
-                False, "Unknown platform process execution not implemented"
-            ]()
+            comptime assert (
+                False
+            ), "Unknown platform process execution not implemented"
             abort[prefix="ERROR:"](
                 "Unknown platform process execution not implemented"
             )

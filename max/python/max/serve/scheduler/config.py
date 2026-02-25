@@ -104,5 +104,5 @@ class TokenGenerationSchedulerConfig:
             enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            kvcache_ce_watermark=pipeline_config.kvcache_ce_watermark,
+            kvcache_ce_watermark=pipeline_config.runtime.kvcache_ce_watermark,
         )

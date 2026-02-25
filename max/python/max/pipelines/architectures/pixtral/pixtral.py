@@ -13,13 +13,13 @@
 
 from __future__ import annotations
 
-from max.nn.legacy.attention import AttentionWithRope
-from max.nn.legacy.conv import Conv2d
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.linear import MLP, Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
-from max.nn.legacy.transformer import TransformerBlock
+from max.nn.attention import AttentionWithRope
+from max.nn.conv import Conv2d
+from max.nn.embedding import Embedding
+from max.nn.linear import MLP, Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.transformer import TransformerBlock
 
 from .llava.llava import LlavaConditionalGeneration
 from .llava.llava_decoder import Transformer

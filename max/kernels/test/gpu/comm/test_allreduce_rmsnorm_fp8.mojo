@@ -20,7 +20,7 @@ from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import allreduce
 from comm.allreduce_rmsnorm_fp8 import allreduce_rmsnorm_fp8
-from comm.sync import can_enable_p2p
+from comm.sync import is_p2p_enabled
 from gpu.host import DeviceBuffer, DeviceContext
 from layout._coord import Coord
 from layout._layout import row_major
@@ -92,7 +92,7 @@ fn test_fused_allreduce_rmsnorm_fp8[
         list_of_ctx[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
 
-    var in_bufs = InlineArray[NDBuffer[in_dtype, 2, MutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus](
         fill={}
     )
     for i in range(ngpus):
@@ -341,7 +341,7 @@ def main():
     var num_devices = DeviceContext.number_of_devices()
     assert_true(num_devices >= 2, "need at least 2 GPUs")
 
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         print("P2P not enabled, skipping test.")
         return
 

@@ -16,8 +16,8 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
-from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import Linear
+from max.nn.layer import Module
+from max.nn.linear import Linear
 
 from .attention_utils import rotate_half
 

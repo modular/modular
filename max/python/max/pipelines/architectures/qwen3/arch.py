@@ -19,13 +19,13 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3_legacy import weight_adapters
+from ..llama3 import weight_adapters
 from .model import Qwen3Model
 from .model_config import Qwen3Config
 from .weight_adapters import convert_qwen3_moe_state_dict
 
 qwen3_arch = SupportedArchitecture(
-    name="Qwen3ForCausalLM_Legacy",
+    name="Qwen3ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen3-8B", "Qwen/Qwen3-30B-A3B"],
     default_weights_format=WeightsFormat.safetensors,
@@ -48,7 +48,7 @@ qwen3_arch = SupportedArchitecture(
 # Qwen3MoE architecture - uses the same model and config as Qwen3,
 # but with MoE-specific weight adapter to handle expert weight stacking
 qwen3_moe_arch = SupportedArchitecture(
-    name="Qwen3MoeForCausalLM_Legacy",
+    name="Qwen3MoeForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen3-30B-A3B-Instruct"],
     default_weights_format=WeightsFormat.safetensors,

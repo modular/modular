@@ -19,9 +19,8 @@ All operations are no-ops that return immediately.
 
 from __future__ import annotations
 
-from max.driver import Buffer
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.metrics import KVCacheMetrics
 
 
 class NullConnector:
@@ -42,7 +41,6 @@ class NullConnector:
         self,
         ctx: TextGenerationContext,
         target_block_ids: list[int],
-        device_tensors: list[Buffer],
     ) -> list[int]:
         return []
 
@@ -76,14 +74,6 @@ class NullConnector:
     @property
     def num_used_host_blocks(self) -> int:
         return 0
-
-    @property
-    def host_tensors(self) -> list[Buffer] | None:
-        return None
-
-    @property
-    def host_scale_tensors(self) -> list[Buffer] | None:
-        return None
 
     def reset_prefix_cache(self) -> None:
         pass

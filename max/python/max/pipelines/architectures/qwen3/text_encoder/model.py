@@ -21,8 +21,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from max import functional as F
 from max.driver import Device
+from max.experimental import functional as F
 from max.graph.weights import Weights
 from max.pipelines.architectures.llama3.weight_adapters import (
     LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,

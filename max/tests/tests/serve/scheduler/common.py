@@ -33,7 +33,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
@@ -213,7 +213,7 @@ class FakeTokenGeneratorPipeline(
                 self.kv_manager.alloc(
                     ctx, replica_idx=replica_idx, num_steps=num_steps
                 )
-        self.kv_manager.get_runtime_inputs(inputs.batches, num_steps=num_steps)
+        self.kv_manager.runtime_inputs(inputs.batches, num_steps=num_steps)
 
         # Generate the responses
         responses = {}

@@ -29,7 +29,7 @@ from transformers import AutoConfig
 from ..hf_utils import download_weight_files
 
 if TYPE_CHECKING:
-    from ..model_config import MAXModelConfig
+    from ..config.model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
 

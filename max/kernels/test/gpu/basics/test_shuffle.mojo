@@ -354,6 +354,158 @@ fn test_warp_reduce_fp16_packed(ctx: DeviceContext) raises:
     _warp_reduce_launch_helper[DType.float16, 2](ctx)
 
 
+fn _warp_sum_launch_helper[
+    dtype: DType,
+](ctx: DeviceContext) raises:
+    comptime block_size = WARP_SIZE
+    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(block_size)
+    for i in range(block_size):
+        host_ptr[i] = Scalar[dtype](i)
+
+    @parameter
+    fn do_warp_sum(val: SIMD[dtype, 1]) -> SIMD[dtype, 1]:
+        return warp.sum(val)
+
+    _kernel_launch_helper[dtype, 1, do_warp_sum](
+        host_ptr, block_size, block_size, ctx
+    )
+
+    # All lanes should have the full warp sum
+    for i in range(block_size):
+        assert_equal(
+            host_ptr[i],
+            Scalar[dtype](WARP_SIZE * (WARP_SIZE - 1) // 2),
+        )
+
+    host_ptr.free()
+
+
+fn test_warp_sum(ctx: DeviceContext) raises:
+    _warp_sum_launch_helper[DType.float32](ctx)
+    _warp_sum_launch_helper[DType.bfloat16](ctx)
+    _warp_sum_launch_helper[DType.float16](ctx)
+    comptime if has_amd_gpu_accelerator():
+        _warp_sum_launch_helper[DType.float64](ctx)
+
+
+fn _lane_group_sum_broadcast_stride1_helper[
+    dtype: DType,
+    simd_width: Int,
+    num_lanes: Int,
+](ctx: DeviceContext) raises:
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size * simd_width
+
+    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    for i in range(buffer_size):
+        host_ptr[i] = Scalar[dtype](i // simd_width)
+
+    @parameter
+    fn do_reduce(
+        val: SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width]:
+        return warp.lane_group_sum_and_broadcast[num_lanes=num_lanes, stride=1](
+            val
+        )
+
+    _kernel_launch_helper[dtype, simd_width, do_reduce](
+        host_ptr, buffer_size, block_size, ctx
+    )
+
+    # For stride=1, thread t's group = {(t & ~(num_lanes-1)) + k : k in
+    # 0..num_lanes-1}. Group sum = num_lanes*group_base +
+    # num_lanes*(num_lanes-1)/2. All threads in group get broadcast result.
+    for t in range(block_size):
+        var group_base = Int(t) & ~(num_lanes - 1)
+        var expected = Scalar[dtype](
+            num_lanes * group_base + num_lanes * (num_lanes - 1) // 2
+        )
+        for i in range(simd_width):
+            assert_equal(host_ptr[t * simd_width + i], expected)
+
+    host_ptr.free()
+
+
+fn test_lane_group_sum_and_broadcast_stride1(ctx: DeviceContext) raises:
+    # Full warp
+    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, WARP_SIZE](ctx)
+    # Sub-warp sizes
+    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 2](ctx)
+    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 4](ctx)
+    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 8](ctx)
+    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 16](ctx)
+    _lane_group_sum_broadcast_stride1_helper[DType.float32, 1, 32](ctx)
+    # 64-bit (NVIDIA shuffle doesn't support float64)
+    comptime if has_amd_gpu_accelerator():
+        _lane_group_sum_broadcast_stride1_helper[DType.float64, 1, 4](ctx)
+        _lane_group_sum_broadcast_stride1_helper[DType.float64, 1, WARP_SIZE](
+            ctx
+        )
+
+
+fn test_lane_group_sum_and_broadcast_stride1_half(
+    ctx: DeviceContext,
+) raises:
+    _lane_group_sum_broadcast_stride1_helper[DType.bfloat16, 1, 4](ctx)
+    _lane_group_sum_broadcast_stride1_helper[DType.float16, 1, 4](ctx)
+    _lane_group_sum_broadcast_stride1_helper[DType.bfloat16, 2, 4](ctx)
+    _lane_group_sum_broadcast_stride1_helper[DType.float16, 2, 4](ctx)
+
+
+fn _lane_group_max_broadcast_stride1_helper[
+    dtype: DType,
+    simd_width: Int,
+    num_lanes: Int,
+](ctx: DeviceContext) raises:
+    comptime block_size = WARP_SIZE
+    comptime buffer_size = block_size * simd_width
+
+    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    for i in range(buffer_size):
+        host_ptr[i] = Scalar[dtype](i // simd_width)
+
+    @parameter
+    fn do_reduce(
+        val: SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width]:
+        return warp.lane_group_max_and_broadcast[num_lanes=num_lanes, stride=1](
+            val
+        )
+
+    _kernel_launch_helper[dtype, simd_width, do_reduce](
+        host_ptr, buffer_size, block_size, ctx
+    )
+
+    # For stride=1, thread t's group max = group_base + num_lanes - 1
+    for t in range(block_size):
+        var group_base = Int(t) & ~(num_lanes - 1)
+        var expected = Scalar[dtype](group_base + num_lanes - 1)
+        for i in range(simd_width):
+            assert_equal(host_ptr[t * simd_width + i], expected)
+
+    host_ptr.free()
+
+
+fn test_lane_group_max_and_broadcast(ctx: DeviceContext) raises:
+    # Full warp
+    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, WARP_SIZE](ctx)
+    # Sub-warp sizes
+    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 2](ctx)
+    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 4](ctx)
+    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 8](ctx)
+    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 16](ctx)
+    _lane_group_max_broadcast_stride1_helper[DType.float32, 1, 32](ctx)
+    # Half precision
+    _lane_group_max_broadcast_stride1_helper[DType.bfloat16, 1, 4](ctx)
+    _lane_group_max_broadcast_stride1_helper[DType.float16, 1, 4](ctx)
+    # 64-bit (NVIDIA shuffle doesn't support float64)
+    comptime if has_amd_gpu_accelerator():
+        _lane_group_max_broadcast_stride1_helper[DType.float64, 1, 4](ctx)
+        _lane_group_max_broadcast_stride1_helper[DType.float64, 1, WARP_SIZE](
+            ctx
+        )
+
+
 fn _lane_group_reduce_launch_helper[
     dtype: DType,
     simd_width: Int,
@@ -468,6 +620,10 @@ def main():
         test_warp_reduce_bf16_packed(ctx)
         test_warp_reduce_fp16(ctx)
         test_warp_reduce_fp16_packed(ctx)
+        test_warp_sum(ctx)
+        test_lane_group_sum_and_broadcast_stride1(ctx)
+        test_lane_group_sum_and_broadcast_stride1_half(ctx)
+        test_lane_group_max_and_broadcast(ctx)
         test_lane_group_reduce_fp32(ctx)
         test_lane_group_reduce_bf16(ctx)
         test_lane_group_reduce_bf16_packed(ctx)

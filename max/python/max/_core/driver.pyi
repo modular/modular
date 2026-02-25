@@ -240,6 +240,107 @@ class CPU(Device):
             CPU: A new CPU device object.
         """
 
+class DeviceEvent:
+    """
+    Provides access to an event object.
+
+    An event can be used to wait for the GPU execution to reach a certain
+    point on the given stream.
+
+    .. code-block:: python
+
+        from max import driver
+        # Create a default accelerator device
+        device = driver.Accelerator()
+        # Create an event on the device
+        event = driver.DeviceEvent(device)
+        # Record an event on the device (default stream)
+        device.default_stream.record_event(event)
+        # Wait for execution on the default stream to reach the event
+        event.synchronize()
+    """
+
+    def __init__(self, device: Device, enable_timing: bool = False) -> None:
+        """
+        Creates an event for synchronization on the specified device.
+
+        Args:
+            device (Device): The device on which to create the event.
+            enable_timing (bool): If True, enable GPU timing on this event.
+                Events created with ``enable_timing=True`` can be used with
+                :meth:`elapsed_time` to measure GPU execution time.
+                Defaults to False.
+
+        Raises:
+            ValueError: If event creation failed.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            event = driver.DeviceEvent(device)
+            timed_event = driver.DeviceEvent(device, enable_timing=True)
+        """
+
+    def synchronize(self) -> None:
+        """
+        Ensures all operations on this stream complete before returning.
+
+        Raises:
+            ValueError: If any enqueued operations had an internal error.
+        """
+
+    def is_ready(self) -> bool:
+        """
+        Returns whether this event is ready.
+
+        Returns:
+            bool: True if the event is complete, otherwise false.
+        Raises:
+          ValueError: If querying the event status returned an error
+        """
+
+    def elapsed_time(self, end_event: DeviceEvent) -> float:
+        """
+        Returns the elapsed GPU time in milliseconds between this event
+        and ``end_event``.
+
+        Both events must have been created with ``enable_timing=True``
+        and recorded on a stream before calling this method. The end
+        event must be synchronized before calling this method.
+
+        Args:
+            end_event (DeviceEvent): The ending event.
+
+        Returns:
+            float: Elapsed time in milliseconds.
+
+        Raises:
+            RuntimeError: If either event was not created with timing
+                enabled, or if the events have not been recorded.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.Accelerator()
+            start = driver.DeviceEvent(device, enable_timing=True)
+            end = driver.DeviceEvent(device, enable_timing=True)
+
+            stream = device.default_stream
+            stream.record_event(start)
+            # ... GPU work ...
+            stream.record_event(end)
+            end.synchronize()
+
+            elapsed_ms = start.elapsed_time(end)
+        """
+
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
+    def __eq__(self, arg: object, /) -> bool: ...
+
 class DeviceStream:
     """
     Provides access to a stream of execution on a device.
@@ -275,6 +376,31 @@ class DeviceStream:
 
         Raises:
             ValueError: If any enqueued operations had an internal error.
+        """
+
+    @overload
+    def record_event(self) -> DeviceEvent:
+        """
+        Records an event on this stream.
+
+        Returns:
+            DeviceEvent: A new event that will be signaled when all operations
+                submitted to this stream before this call have completed.
+
+        Raises:
+            ValueError: If recording the event failed.
+        """
+
+    @overload
+    def record_event(self, event: DeviceEvent) -> None:
+        """
+        Records an existing event on this stream.
+
+        Args:
+            event (DeviceEvent): The event to record on this stream.
+
+        Raises:
+            ValueError: If recording the event failed.
         """
 
     @overload
@@ -337,6 +463,19 @@ def is_virtual_device_mode() -> bool:
 
     Returns:
         bool: True if virtual device mode is enabled (count > 0), False otherwise.
+    """
+
+def enable_all_peer_access() -> None:
+    """
+    Enables peer-to-peer memory access between all available GPU pairs.
+
+    This must be called before any collective operations (allreduce,
+    broadcast, etc.) that require direct GPU-to-GPU memory access.
+    It is safe to call multiple times; the underlying runtime caches
+    the result after the first successful enablement.
+
+    Raises:
+        RuntimeError: If P2P access cannot be enabled between any GPU pair.
     """
 
 def set_virtual_device_api(api: str) -> None:

@@ -77,34 +77,9 @@ modular_py_library(
     ],
 )
 
-modular_py_library(
+alias(
     name = "tensor",
-    srcs = [
-        "_passes.py",
-        "_realization_context.py",
-        "_support.py",
-        "_tensor_repr.py",
-        "functional.py",
-        "random.py",
-        "tensor.py",
-    ],
-    # engine is used via engine.api.InferenceSession in _realization_context.py
-    # interpreter is used via lazy import in _realization_context.py
-    ignore_extra_deps = [
-        "//max/python/max/engine",
-        ":interpreter",
-    ],
-    deps = [
-        ":_core",
-        ":_mlir_context",
-        ":interpreter",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        requirement("rich"),
-        requirement("typing-extensions"),
-    ],
+    actual = "//max/python/max/experimental",
 )
 
 modular_py_library(

@@ -20,8 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import kv_cache_ragged_2m_iadd
-from max.nn.legacy.kv_cache import (
+from max.nn.kernels import kv_cache_ragged_2m_iadd
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
@@ -210,7 +210,7 @@ def run_kv_cache_2m_iadd(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
 
     compiled.execute(
         to_max_tensor(kv_lora_output, device),

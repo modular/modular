@@ -20,23 +20,23 @@ from collections.abc import Callable, Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
-from max.nn.legacy.kernels import (
+from max.nn.attention import MHAMaskVariant
+from max.nn.attention.attention_with_rope import _compute_shard_range
+from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
     uses_opaque,
 )
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.layer import Module, Shardable
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import RotaryEmbedding
 
 
 class Qwen3Attention(Module, Shardable):

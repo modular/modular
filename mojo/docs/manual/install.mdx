@@ -6,7 +6,7 @@ description: You can install Mojo using pixi, uv, conda, pip, or other Python/Co
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsNoGPU } from '@site/docs/max/requirements';
+import { requirementsNoGPU } from '../../requirements';
 
 You can install Mojo as a Python or Conda package. This page shows you how to
 install using `pixi`, `uv`, `pip`, and `conda`, but you can use other tools.
@@ -541,7 +541,7 @@ version of Ubuntu (see our requirements for Linux).
 
 ### GPU compatibility
 
-import GpuRequirements from '@site/docs/mojo/_includes/gpu-requirements.mdx';
+import GpuRequirements from '../_includes/gpu-requirements.mdx';
 
 Mojo supports both CPUs and GPUs, so you don't need a GPU to program with Mojo.
 But if you do want to program for GPUs with Mojo, we recommend the following

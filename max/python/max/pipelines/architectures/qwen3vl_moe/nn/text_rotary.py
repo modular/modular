@@ -23,7 +23,7 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
-from max.nn.legacy.rotary_embedding import (
+from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )

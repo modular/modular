@@ -181,10 +181,9 @@ struct TileWriter[
     @always_inline
     fn __init__(out self, c_tma_op: Self.TmaOpPtr):
         """Initialize with pointer to TMA descriptor."""
-        constrained[
-            Self.stage_stride_cols > 0,
-            "stage_stride_cols must be positive",
-        ]()
+        comptime assert (
+            Self.stage_stride_cols > 0
+        ), "stage_stride_cols must be positive"
         self.c_tma_op = c_tma_op
 
     # ========== Public Write Methods ==========
@@ -448,10 +447,9 @@ struct TileWriter[
                 or not Self.elementwise_compute_lambda_fn
             ):
                 comptime expected_size = SMEMWriter.Config.fragment_size * Self.rep
-                constrained[
-                    Self.rep_frag_size == expected_size,
-                    "Fragment sizes must match",
-                ]()
+                comptime assert (
+                    Self.rep_frag_size == expected_size
+                ), "Fragment sizes must match"
                 smem_writer.write_fragments[Self.rep](
                     rebind[SIMD[Self.c_type, expected_size]](
                         upper_frag_casted.cast[Self.c_type]()
@@ -1131,10 +1129,9 @@ struct TileWriter[
                 or not Self.elementwise_compute_lambda_fn
             ):
                 comptime expected_size = SMEMWriter.Config.fragment_size * Self.rep
-                constrained[
-                    Self.rep_frag_size == expected_size,
-                    "Fragment sizes must match",
-                ]()
+                comptime assert (
+                    Self.rep_frag_size == expected_size
+                ), "Fragment sizes must match"
                 smem_writer.write_fragments[Self.rep](
                     rebind[SIMD[Self.c_type, expected_size]](
                         upper_frag_casted.cast[Self.c_type]()

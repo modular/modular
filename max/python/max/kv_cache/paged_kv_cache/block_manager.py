@@ -34,7 +34,7 @@ from max.interfaces import (
     VLMTextGenerationContext,
 )
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -293,7 +293,7 @@ class BlockManager:
             device_block_ids.append(device_block.bid)
 
         # Load from host cache via connector - returns the block hashes.
-        loaded_hashes = self.connector.load(ctx, device_block_ids, [])
+        loaded_hashes = self.connector.load(ctx, device_block_ids)
 
         # Commit the device blocks into the device prefix cache.
         for device_block, block_hash in zip(blocks, loaded_hashes, strict=True):

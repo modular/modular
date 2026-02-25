@@ -15,7 +15,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.pipelines.architectures.llama3_legacy import weight_adapters
+from max.pipelines.architectures.llama3 import weight_adapters
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,

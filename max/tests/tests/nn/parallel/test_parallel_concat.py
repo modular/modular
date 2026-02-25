@@ -13,7 +13,7 @@
 import numpy as np
 import pytest
 from max.driver import Accelerator, Device
-from max.nn.legacy.parallel import ParallelArrayOps
+from max.nn.parallel import ParallelArrayOps
 from numpy.testing import assert_equal
 
 
