@@ -62,7 +62,7 @@ static LogicalResult verifyOperation(Operation *op, TargetInfoAttr target) {
     return op->emitError("heap deallocation is not supported on GPU");
 
   if (isMetalTriple(target.getTriple())) {
-    if (isa<POP::AtomicRMWOp, POP::AtomicCmpXchgOp>(op)) {
+    if (isa<POP::AtomicCmpXchgOp>(op)) {
       // TODO: remove after MOCO-2423 is fixed
       return op->emitError(
           "atomic operations are not yet implemented on Apple GPU");
