@@ -9,10 +9,15 @@ managers (pixi, uv, pip, and conda).
 Import and use the component in your MDX files:
 
 ```python
-import InstallModular from '@site/docs/_includes/install-modular.mdx';
+import InstallModular from '../_includes/install-modular.mdx';
 
 <InstallModular folder="my-project" extraLibraries={["torch", "transformers"]} />
 ```
+
+> [!CAUTION]
+> You must use a relative path in the import statement so the page always
+> uses the appropriate version of the included file based on the current docs
+> version (from within the Docusaurus `versioned_docs/` path)
 
 ## Properties
 
