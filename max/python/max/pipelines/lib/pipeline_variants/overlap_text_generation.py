@@ -719,7 +719,7 @@ class OverlapTextGenerationPipeline(
             # Run the entire forward pass and output processing if the batch has
             # at least one request.
             curr_batch = self._run_forward_and_sample_logits(inputs)
-        elif self.pipeline_config.execute_empty_batches:
+        elif self.pipeline_config.runtime.execute_empty_batches:
             # If the batch is empty and execute_empty_batches is True, we will
             # only run the forward pass to ensure that the barrier point is reached
             # for EP + DP. We skip all output processing.

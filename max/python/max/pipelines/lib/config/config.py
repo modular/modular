@@ -183,11 +183,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    execute_empty_batches: bool = Field(
-        default=False,
-        description="Whether the scheduler should execute empty batches.",
-    )
-
     max_batch_total_tokens: int | None = Field(
         default=None,
         description=(
@@ -980,7 +975,10 @@ class PipelineConfig(ConfigFileModel):
             self._validate_required_arguments_against_architecture(arch)
 
         # Validate that model supports empty batches, if being requested.
-        if self.execute_empty_batches and not arch.supports_empty_batches:
+        if (
+            self.runtime.execute_empty_batches
+            and not arch.supports_empty_batches
+        ):
             raise ValueError(
                 f"Architecture '{arch.name}' does not support empty batches. "
                 "Please set `execute_empty_batches` to False."

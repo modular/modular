@@ -147,10 +147,15 @@ class FakeModelConfig(ConfigFileModel):
     enable_echo: bool = False
 
 
+class FakeRuntimeConfig(ConfigFileModel):
+    execute_empty_batches: bool = False
+
+
 class FakePipelineConfig(ConfigFileModel):
     model: FakeModelConfig
     sampling: FakeSamplingConfig
-    execute_empty_batches: bool = False
+    runtime: FakeRuntimeConfig = FakeRuntimeConfig()
+    enable_echo: bool = False
     enable_overlap_scheduler: bool = False
     debug_verify_replay: bool = False
     max_batch_size: int = 999
