@@ -186,7 +186,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         # Remember how many elements we have.
         self._tail = args_length
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a deep copy of the given deque.
 
         Args:

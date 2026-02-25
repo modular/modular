@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from functools import partial
@@ -39,6 +38,7 @@ from max.nn.legacy.float8_config import (
 from max.nn.legacy.float8_ops import matmul_float4, matmul_float8
 from max.support.math import ceildiv
 
+from .activation import activation_function_from_name
 from .clamp import clamp
 from .layer import Module, Shardable
 
@@ -732,41 +732,6 @@ class GPTQLinear(Linear):
         return res
 
 
-_ACTIVATION_FUNCTIONS = {
-    "silu": ops.silu,
-    "gelu": ops.gelu,
-    "gelu_tanh": partial(ops.gelu, approximate="tanh"),
-    "relu": ops.relu,
-    "tanh": ops.tanh,
-    "sigmoid": ops.sigmoid,
-}
-
-
-@dataclass
-class DistributedGemmConfig:
-    """Configure how distributed GEMM is executed.
-
-    Configuration for distributed General Matrix Multiply operations.
-    """
-
-    enable_matmul_allreduce: bool
-    """If ``True``, use the matmul + all_reduce kernel."""
-
-    @staticmethod
-    def generate() -> DistributedGemmConfig | None:
-        """Returns the default :obj:`DistributedGemmConfig`.
-
-        Returns:
-            A :obj:`DistributedGemmConfig` instance with default settings.
-        """
-        opts_env = os.getenv("LLAMA_ENABLE_DIST_GEMM_KERNELS")
-        if opts_env is None:
-            return DistributedGemmConfig(True)
-
-        enable_matmul_allreduce = bool(opts_env)
-        return DistributedGemmConfig(enable_matmul_allreduce)
-
-
 class MLP(Module, Shardable):
     """Simple multi-layer perceptron composed of three :obj:`Linear` layers.
 
@@ -784,7 +749,6 @@ class MLP(Module, Shardable):
         has_bias: bool = False,
         activation_function: str = "silu",
         float8_config: Float8Config | None = None,
-        dist_gemm_config: DistributedGemmConfig | None = None,
         is_sharding: bool = False,
     ) -> None:
         """Initializes the MLP layer.
@@ -808,13 +772,11 @@ class MLP(Module, Shardable):
                 - ``sigmoid``
 
             float8_config: :obj:`Float8Config` for float8 quantization.
-            dist_gemm_config: :obj:`DistributedGemmConfig` for distributed GEMM configuration.
             is_sharding: Disable child layer creation during sharding.
         """
         super().__init__()
         self.devices = devices
         self.num_devices = len(devices)
-        self.dist_gemm_config = dist_gemm_config
         self.hidden_dim = hidden_dim
         self.feed_forward_length = feed_forward_length
 
@@ -849,9 +811,10 @@ class MLP(Module, Shardable):
 
         self.quantization_encoding = quantization_encoding
         self.float8_config = float8_config
-        assert activation_function in _ACTIVATION_FUNCTIONS
         self._activation_function_name = activation_function
-        self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
+        self.activation_function = activation_function_from_name(
+            activation_function
+        )
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
@@ -904,14 +867,7 @@ class MLP(Module, Shardable):
             )
 
             hidden = self.activation_function(gate_out) * up_out
-            # If we overlap GEMM / AllReduce, the last linear layer is skipped.
-            if (
-                self.dist_gemm_config is None
-                or not self.dist_gemm_config.enable_matmul_allreduce
-            ):
-                return self.down_proj(hidden)
-            else:
-                return hidden
+            return self.down_proj(hidden)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -980,7 +936,6 @@ class MLP(Module, Shardable):
                 has_bias=self.gate_proj.bias is not None,
                 activation_function=self._activation_function_name,
                 float8_config=self.float8_config,
-                dist_gemm_config=self.dist_gemm_config,
                 is_sharding=True,
             )
 

@@ -35,11 +35,10 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -68,7 +67,7 @@ class Olmo3Inputs(ModelInputs):
     """Number of logits to return."""
 
 
-class Olmo3Model(PipelineModel[TextContext], KVCacheMixin):
+class Olmo3Model(PipelineModelWithKVCache[TextContext]):
     """An Olmo3 pipeline model for text generation.
 
     This class integrates the Olmo3 architecture with the MAX Engine pipeline
@@ -219,7 +218,7 @@ class Olmo3Model(PipelineModel[TextContext], KVCacheMixin):
             return_logits=self.return_logits,
         )
         with F.lazy():
-            nn_model = Olmo3(model_config, self.kv_manager)
+            nn_model = Olmo3(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 
         kv_inputs = self.kv_params.get_symbolic_inputs()

@@ -450,10 +450,9 @@ fn _matmul_gpu[
         comptime if elementwise_compute_lambda_fn:
             comptime compute_lambda = elementwise_compute_lambda_fn.value()
             var output = compute_lambda(coords, val)
-            constrained[
-                output.dtype == c.type,
-                "compute epilogue lambda output and c type mismatch",
-            ]()
+            comptime assert (
+                output.dtype == c.type
+            ), "compute epilogue lambda output and c type mismatch"
             c.store[alignment = alignment * size_of[c.type]()](
                 coords, rebind[SIMD[c.type, _width]](output)
             )

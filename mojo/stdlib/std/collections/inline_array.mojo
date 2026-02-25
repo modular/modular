@@ -99,8 +99,8 @@ struct InlineArray[ElementType: Copyable, size: Int](
     comptime __del__is_trivial: Bool = downcast[
         Self.ElementType, ImplicitlyDestructible
     ].__del__is_trivial
-    comptime __copyinit__is_trivial: Bool = Self.ElementType.__copyinit__is_trivial
-    comptime __moveinit__is_trivial: Bool = Self.ElementType.__moveinit__is_trivial
+    comptime __copy_ctor_is_trivial: Bool = Self.ElementType.__copy_ctor_is_trivial
+    comptime __move_ctor_is_trivial: Bool = Self.ElementType.__move_ctor_is_trivial
 
     # Fields
     comptime type = __mlir_type[
@@ -147,14 +147,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """This constructor will always cause a compile time error if used.
         It is used to steer users away from uninitialized memory.
         """
-        constrained[
-            False,
-            (
-                "Initialize with either a variadic list of arguments, a default"
-                " fill element or pass the keyword argument"
-                " 'uninitialized=True'."
-            ),
-        ]()
+        comptime assert False, (
+            "Initialize with either a variadic list of arguments, a default"
+            " fill element or pass the keyword argument"
+            " 'uninitialized=True'."
+        )
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
@@ -334,7 +331,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         # FIXME: Why doesn't consume_elements work here?
         storage^._anihilate()
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy constructs the array from another array.
 
         Args:
@@ -348,7 +345,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         ```
         """
 
-        comptime if Self.ElementType.__copyinit__is_trivial:
+        comptime if Self.ElementType.__copy_ctor_is_trivial:
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
@@ -356,7 +353,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
                 var ptr = self.unsafe_ptr() + idx
                 ptr.init_pointee_copy(copy.unsafe_get(idx))
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Move constructs the array from another array.
 
         Args:
@@ -366,7 +363,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Moves the elements from the source array into this array.
         """
 
-        comptime if Self.ElementType.__moveinit__is_trivial:
+        comptime if Self.ElementType.__move_ctor_is_trivial:
             self._array = take._array
         else:
             self = Self(uninitialized=True)

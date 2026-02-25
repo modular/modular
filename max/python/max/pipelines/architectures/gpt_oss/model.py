@@ -35,11 +35,10 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -68,7 +67,7 @@ class GptOssInputs(ModelInputs):
     """Number of logits to return."""
 
 
-class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
+class GptOssModel(PipelineModelWithKVCache[TextContext]):
     """A GPT OSS pipeline model for text generation.
 
     This class integrates the GPT OSS architecture with the MAX Engine pipeline
@@ -221,7 +220,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             return_logits=self.return_logits,
         )
         with F.lazy():
-            nn_model = GptOss(model_config, self.kv_manager)
+            nn_model = GptOss(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 
         kv_inputs = self.kv_params.get_symbolic_inputs()

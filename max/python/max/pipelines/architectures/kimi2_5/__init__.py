@@ -11,17 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from functools import partial
 
-from max import functional as F
+"""Kimi 2.5 pipeline architecture."""
 
-ACT2FN = {
-    "silu": F.silu,
-    "gelu": F.gelu,
-    "gelu_tanh": partial(F.gelu, approximate="tanh"),
-    "gelu_quick": partial(F.gelu, approximate="quick"),
-    "quick_gelu": partial(F.gelu, approximate="quick"),
-    "relu": F.relu,
-    "tanh": F.tanh,
-    "sigmoid": F.sigmoid,
-}
+__all__ = []

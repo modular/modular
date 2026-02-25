@@ -24,7 +24,7 @@ from contextlib import (
     asynccontextmanager,
 )
 from multiprocessing.synchronize import Event
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import uvloop
 from max.driver import Buffer, Device
@@ -103,8 +103,9 @@ def get_reset_prefix_cache_backend(
     Returns:
         The paged KV cache manager if available, None otherwise.
     """
-    if hasattr(pipeline, "kv_managers"):
-        kv_manager = cast(Any, pipeline).kv_managers[-1]
+
+    if hasattr(pipeline, "kv_manager"):
+        kv_manager = pipeline.kv_manager
         if isinstance(kv_manager, PagedKVCacheManager) and not isinstance(
             kv_manager, DummyKVCache
         ):

@@ -2228,15 +2228,14 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 comptime GRID_DIM_X = H100.sm_count
                 comptime GRID_DIM_Y = 1
 
-                constrained[
+                comptime assert (
                     SCHEDULE_TYPE != MatmulSchedule.DS_SCHEDULER
                     or (
                         CLUSTER_DIM_X == 1
                         and CLUSTER_DIM_Y == 1
                         and (not PARTITIONED_MULTICAST)
-                    ),
-                    "Deepseek scheduler dose not support multicasting",
-                ]()
+                    )
+                ), "Deepseek scheduler dose not support multicasting"
 
                 comptime SMALL_SHAPE_H100_BF16_TUNING_CONFIG_NON_SPLITK = MatmulConfig[
                     a_type,

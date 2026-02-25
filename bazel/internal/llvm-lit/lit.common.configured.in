@@ -1,4 +1,5 @@
 # Used internally by lit
+config.target_triple = "@TARGET_TRIPLE@"
 config.llvm_tools_dir = "../+llvm_configure+llvm-project/llvm"
 
 config.llvm_use_sanitizer = "@LLVM_USE_SANITIZER@"

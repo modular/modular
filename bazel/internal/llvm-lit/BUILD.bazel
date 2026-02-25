@@ -41,6 +41,10 @@ expand_template(
     }) | select({
         "//:modular_config_production": {"@ENABLE_ASSERTIONS@": "False"},
         "//conditions:default": {"@ENABLE_ASSERTIONS@": "True"},
+    }) | select({
+        "//:linux_aarch64": {"@TARGET_TRIPLE@": "aarch64-unknown-linux-gnu"},
+        "//:linux_x86_64": {"@TARGET_TRIPLE@": "x86_64-unknown-linux-gnu"},
+        "@platforms//os:macos": {"@TARGET_TRIPLE@": "arm64-apple-macosx"},
     }),
     template = "lit.common.configured.in",
 )

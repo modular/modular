@@ -243,7 +243,7 @@ struct MatmulConfig[
         num_clc_pipeline_stages: Int = 2,
         extra_smem_per_stage: Int = 0,
     ):
-        constrained[Self.a_type == Self.b_type]()
+        comptime assert Self.a_type == Self.b_type
 
         self.cta_group = cta_group
         self.mma_shape = mma_shape
@@ -345,7 +345,7 @@ fn choose_config[
     c_type: DType,
     transpose_b: Bool = True,
 ](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
-    constrained[a_type == b_type, "a_type and b_type must be the same"]()
+    comptime assert a_type == b_type, "a_type and b_type must be the same"
 
     comptime num_SMs = B200.sm_count
     # Nvidia mma instruction process 32B in K.
@@ -550,7 +550,7 @@ struct BlockScaledMatmulConfig[
         num_clc_pipeline_stages: Int = 2,
         c_swizzle_for_AB_swapped: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     ):
-        constrained[Self.a_type == Self.b_type]()
+        comptime assert Self.a_type == Self.b_type
 
         self.cta_group = cta_group
         self.mma_shape = mma_shape

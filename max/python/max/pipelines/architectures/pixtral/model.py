@@ -40,11 +40,10 @@ from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.profiler import traced
@@ -79,7 +78,7 @@ class PixtralInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     """The overall interface to the Pixtral model."""
 
     model: Model

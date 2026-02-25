@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from functools import partial
 
 from max.dtype import DType
 from max.graph import (
@@ -22,17 +21,12 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
     TensorValueLike,
-    ops,
 )
 from max.graph.quantization import QuantizationEncoding
+from max.nn.legacy.activation import activation_function_from_name
 from max.nn.legacy.float8_config import Float8Config
 from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import DistributedGemmConfig, Linear
-
-# TODO: (MODELS-1084) add additional activation function options to match nn.legacy.linear
-_ACTIVATION_FUNCTIONS = {
-    "gelu_tanh": partial(ops.gelu, approximate="tanh"),
-}
+from max.nn.legacy.linear import Linear
 
 
 # TODO: (MODELS-1084) generalize this (non-gated) MLP layer and move it somewhere central
@@ -49,7 +43,6 @@ class MLP2(Module, Shardable):
         has_bias: bool = False,
         activation_function: str = "gelu_tanh",
         float8_config: Float8Config | None = None,
-        dist_gemm_config: DistributedGemmConfig | None = None,
         _is_sharding: bool = False,
     ) -> None:
         """Initializes the MLP2 layer.
@@ -66,13 +59,8 @@ class MLP2(Module, Shardable):
                 - ``gelu_tanh``
 
             float8_config: :obj:`Float8Config` for float8 quantization.
-            dist_gemm_config: :obj:`DistributedGemmConfig` for distributed GEMM configuration.
             _is_sharding: Used internally to disable child layer creation during sharding.
         """
-        assert activation_function in _ACTIVATION_FUNCTIONS, (
-            f"Unsupported activation function ({activation_function})"
-        )
-
         super().__init__()
 
         if not _is_sharding:
@@ -91,9 +79,10 @@ class MLP2(Module, Shardable):
         self.quantization_encoding = quantization_encoding
         self.has_bias = has_bias
         self._activation_function_name = activation_function
-        self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
+        self.activation_function = activation_function_from_name(
+            activation_function
+        )
         self.float8_config = float8_config
-        self.dist_gemm_config = dist_gemm_config
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
@@ -111,13 +100,6 @@ class MLP2(Module, Shardable):
         )
         value = self.up_proj(value)
         value = self.activation_function(value)
-        if (
-            not self.quantization_encoding
-            and not self.float8_config
-            and self.dist_gemm_config
-            and self.dist_gemm_config.enable_matmul_allreduce
-        ):
-            return value
         return self.down_proj(value)
 
     @property
@@ -179,7 +161,6 @@ class MLP2(Module, Shardable):
                 has_bias=self.has_bias,
                 activation_function=self._activation_function_name,
                 float8_config=self.float8_config,
-                dist_gemm_config=self.dist_gemm_config,
                 _is_sharding=True,
             )
             sharded.down_proj = down_proj

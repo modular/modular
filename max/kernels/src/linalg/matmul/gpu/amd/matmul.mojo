@@ -294,8 +294,8 @@ fn gemm_kernel_amd[
         b: Input matrix B (must be transposed).
     """
     # Validate input constraints
-    constrained[transpose_b, "Transpose b must be true"]()
-    constrained[a_type == b_type, "a and b must have same type"]()
+    comptime assert transpose_b, "Transpose b must be true"
+    comptime assert a_type == b_type, "a and b must have same type"
 
     # Type and shape aliases
     comptime accum_type = get_accum_type[a_type]()
@@ -339,19 +339,19 @@ fn gemm_kernel_amd[
     var M = a.dim[0]()
 
     comptime N = b.shape[0]() if transpose_b else b.shape[1]()
-    constrained[N != UNKNOWN_VALUE, "N should be known at compile time"]()
+    comptime assert N != UNKNOWN_VALUE, "N should be known at compile time"
 
     var K = b.dim[1 if transpose_b else 0]()
 
     comptime stride = b.stride[0]() if transpose_b else b.stride[1]()
-    constrained[
-        stride != UNKNOWN_VALUE, "stride should be known at compile time"
-    ]()
+    comptime assert (
+        stride != UNKNOWN_VALUE
+    ), "stride should be known at compile time"
 
     comptime c_stride = c.stride[0]()
-    constrained[
-        c_stride != UNKNOWN_VALUE, "c_stride should be known at compile time"
-    ]()
+    comptime assert (
+        c_stride != UNKNOWN_VALUE
+    ), "c_stride should be known at compile time"
 
     # Thread and warp indices
     var warp_id = Int(warp_id())
@@ -685,10 +685,9 @@ fn gemm_kernel_amd[
         MMA_M, MMA_N // c_frag_size
     )
 
-    constrained[
-        c_warp_tile.layout.all_dims_known(),
-        "c_warp_tile layout must be fully static",
-    ]()
+    comptime assert (
+        c_warp_tile.layout.all_dims_known()
+    ), "c_warp_tile layout must be fully static"
 
     comptime if Bool(elementwise_lambda_fn) or (N % BN != 0):
         # 3D view on the output register fragments, see FIXME note on out_reg_layout
@@ -798,10 +797,9 @@ fn write_output_fragments[
 
             comptime if elementwise_lambda_fn:
                 # Apply custom elementwise operation to each output element
-                constrained[
-                    elementwise_lambda_fn is not None,
-                    "elementwise_lambda_fn is not valid",
-                ]()
+                comptime assert (
+                    elementwise_lambda_fn is not None
+                ), "elementwise_lambda_fn is not valid"
                 comptime epilogue_fn = elementwise_lambda_fn.value()
 
                 # Compute global coordinates

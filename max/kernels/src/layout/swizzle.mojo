@@ -610,7 +610,7 @@ struct ComposedLayout[
         self.layout_b = layout_b^
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy constructor for ComposedLayout.
 
         Args:

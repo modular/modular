@@ -493,14 +493,11 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             elif T.is_value and U.is_value:
                 result += self[i].value() * other[i].value()
             else:
-                constrained[
-                    False,
-                    String(
-                        "Element ",
-                        i,
-                        " of Coord must both be a tuple or both be a value",
-                    ),
-                ]()
+                comptime assert False, String(
+                    "Element ",
+                    i,
+                    " of Coord must both be a tuple or both be a value",
+                )
 
         return result
 
@@ -530,15 +527,12 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
                 if self[i].value() != other[i].value():
                     return False
             else:
-                constrained[
-                    False,
-                    String(
-                        "Element ",
-                        i,
-                        " of Coord must both be a tuple or both be",
-                        " a value",
-                    ),
-                ]()
+                comptime assert False, String(
+                    "Element ",
+                    i,
+                    " of Coord must both be a tuple or both be",
+                    " a value",
+                )
 
         return True
 

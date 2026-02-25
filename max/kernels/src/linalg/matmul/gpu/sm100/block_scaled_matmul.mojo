@@ -552,7 +552,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
     # We should remove this once GEX-2630 is fixed.
@@ -1725,8 +1725,8 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_tensor: LayoutTensor[c_type, c_layout, ...],
     a_tensor: LayoutTensor[a_type, a_layout, ...],
     b_tensor: LayoutTensor[b_type, b_layout, ...],
-    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
-    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
+    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
+    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
@@ -2105,8 +2105,8 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_tensor: LayoutTensor[c_type, c_layout, ...],
     a_tensor: LayoutTensor[a_type, a_layout, ...],
     b_tensor: LayoutTensor[b_type, b_layout, ...],
-    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
-    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
+    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
+    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
