@@ -205,16 +205,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    kvcache_ce_watermark: float = Field(
-        default=0.95,
-        description=(
-            "Projected cache usage threshold for scheduling CE requests, "
-            "considering current and incoming requests. CE is scheduled if "
-            "either projected usage stays below this threshold or no active "
-            "requests exist. Higher values can cause more preemptions."
-        ),
-    )
-
     enable_overlap_scheduler: bool = Field(
         default=False,
         description=(
