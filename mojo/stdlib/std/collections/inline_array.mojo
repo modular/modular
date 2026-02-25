@@ -48,6 +48,53 @@ from memory import UnsafeMaybeUninit
 # ===-----------------------------------------------------------------------===#
 
 
+struct _InlineArrayIter[
+    mut: Bool,
+    //,
+    ElementType: Copyable,
+    size: Int,
+    origin: Origin[mut=mut],
+](ImplicitlyCopyable, Iterable, Iterator):
+    """Iterator for InlineArray.
+
+    Parameters:
+        mut: Whether the reference to the array is mutable.
+        ElementType: The type of the elements in the array.
+        size: The compile-time size of the array.
+        origin: The origin of the InlineArray.
+    """
+
+    comptime Element = Self.ElementType
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var index: Int
+    var src: Pointer[InlineArray[Self.ElementType, Self.size], Self.origin]
+
+    fn __init__(
+        out self,
+        index: Int,
+        src: Pointer[InlineArray[Self.ElementType, Self.size], Self.origin],
+    ):
+        self.index = index
+        self.src = src
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> ref[Self.origin] Self.ElementType:
+        if self.index >= Self.size:
+            raise StopIteration()
+        var i = self.index
+        self.index += 1
+        return self.src[].unsafe_get(i)
+
+
 fn _inline_array_construction_checks[size: Int]():
     """Checks if the properties in `InlineArray` are valid.
 
@@ -65,6 +112,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     Copyable,
     Defaultable,
     DevicePassable,
+    Iterable,
     Representable,
     Sized,
     Stringable,
@@ -468,6 +516,29 @@ struct InlineArray[ElementType: Copyable, size: Int](
     # ===------------------------------------------------------------------=== #
     # Trait implementations
     # ===------------------------------------------------------------------=== #
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = _InlineArrayIter[
+        Self.ElementType, Self.size, iterable_origin
+    ]
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        """Iterate over elements of the array, returning references.
+
+        Returns:
+            An iterator of references to the array elements.
+
+        Examples:
+
+        ```mojo
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
+        for x in arr:
+            print(x)
+        ```
+        """
+        return _InlineArrayIter(index=0, src=Pointer(to=self))
 
     @always_inline
     fn __len__(self) -> Int:

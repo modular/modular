@@ -412,5 +412,26 @@ def test_inline_array_copy_and_move_llvm_ir():
     _test(copy_info.asm)
 
 
+def test_iter():
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var result = List[Int]()
+    for x in arr:
+        result.append(x)
+    assert_equal(result[0], 1)
+    assert_equal(result[1], 2)
+    assert_equal(result[2], 3)
+    assert_equal(len(result), 3)
+
+
+
+def test_iter_mutates():
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    for ref x in arr:
+        x += 10
+    assert_equal(arr[0], 11)
+    assert_equal(arr[1], 12)
+    assert_equal(arr[2], 13)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
