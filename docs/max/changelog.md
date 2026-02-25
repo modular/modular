@@ -108,9 +108,6 @@ what we publish.
 
 ### MAX kernels {#26-2-max-kernels}
 
-- Added Blackwell optimized GEMV kernels that take advantage of BF16
-  SIMD and 256-bit vectorized loads.
-
 <!-- Please place Layout/LayoutTensor changes under "Library changes" in the
      **Mojo changelog**, since the layout package is packaged with and
      documented alongside Mojo. -->

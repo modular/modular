@@ -57,10 +57,7 @@ from .tuning_configs import (
     _get_tuning_list_sm100_fp8,
     TuningConfigSM100,
     _get_tuning_list_sm100_bf16,
-    TuningConfigGEMV_SM100,
-    _get_tuning_list_gemv_sm100,
 )
-from .....gemv import gemv_blackwell_split_k
 
 comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
@@ -135,60 +132,6 @@ fn matmul_dispatch_sm100[
             config=config,
             register_based_epilogue=register_based_epilogue,
         ](c_tensor, a_tensor, b_tensor, ctx)
-
-    # GEMV Blackwell split-k dispatch for tuned M=1 shapes.
-    comptime if a_type == DType.float8_e4m3fn and transpose_b:
-        if m == 1:
-            comptime gemv_configs = Table(
-                _get_tuning_list_gemv_sm100(), "gemv_sm100"
-            )
-
-            @parameter
-            @always_inline
-            fn gemv_nk_rule(x: TuningConfigGEMV_SM100) -> Bool:
-                return x.N == static_N and x.K == static_K
-
-            comptime gemv_matches = gemv_configs.find[gemv_nk_rule]()
-
-            comptime if len(gemv_matches) > 0:
-                comptime entry = gemv_matches[0]
-                comptime simd_width = simd_width_of[
-                    a_type, target = get_gpu_target()
-                ]()
-
-                var temp_c = from_ndbuffer_row_major(c)
-                var temp_a = from_ndbuffer_row_major(a)
-                var temp_b = from_ndbuffer_row_major(b)
-
-                var c_tensor = rebind[
-                    LayoutTensor[c_type, temp_c.layout, MutAnyOrigin]
-                ](temp_c)
-
-                var a_tensor = rebind[
-                    LayoutTensor[a_type, temp_a.layout, ImmutAnyOrigin]
-                ](temp_a)
-
-                var b_tensor = rebind[
-                    LayoutTensor[b_type, temp_b.layout, ImmutAnyOrigin]
-                ](temp_b)
-
-                logger.info("------ Executing GEMV Blackwell split-k ------")
-
-                gemv_blackwell_split_k[
-                    c_tensor.dtype,
-                    a_tensor.dtype,
-                    b_tensor.dtype,
-                    c_tensor.layout,
-                    a_tensor.layout,
-                    b_tensor.layout,
-                    simd_width=simd_width,
-                    static_N=static_N,
-                    num_threads = entry.num_threads,
-                    tile_n = entry.tile_n,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
-                    pdl_level=pdl_level,
-                ](c_tensor, a_tensor, b_tensor, static_N, static_K, ctx)
-                return
 
     comptime if _vendor_blas_fallback_disabled():
         comptime if (

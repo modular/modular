@@ -53,7 +53,7 @@ from layout import (
 )
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from logger import Logger
-from memory import LegacyUnsafePointer, bitcast, stack_allocation
+from memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -279,7 +279,8 @@ fn gemv_split_k[
     """GEMV with tiling in K dimension.
     Assuming the B (weight) matrix is transposed i.e. row major N x K, this kernel
     implements a vector (1 x K) times a matrix (N x K).
-    This kernel is intended and used only for the M = 1 (row-vector) case.
+    The impl can actually handle M > 1 but it's only optimal for tiny M. We use
+    it for M = 1 only.
     """
     # tile_m represents how many rows each thread will process of the output activation matrix
     # tile_n represents how many rows each thread will process of the weight matrix.
@@ -296,7 +297,7 @@ fn gemv_split_k[
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
-    # these are the partial accumulations for each thread this a matrix of values
+    # these are the partial accumlations for each thread this a matrix of values
     # since each thread will process a tile_m x tile_n partials of the output vector
     var acc = (
         LayoutTensor[
@@ -324,7 +325,7 @@ fn gemv_split_k[
 
         comptime for i in range(tile_n):
             # Here we load data @ thread_idx.x from the weight matrix
-            # and store it into tile_w. We skip this if the current
+            # and store it into tile_w. We skip this if if the current
             # row we are reading from (i + tile_id_n) is greater than the number
             # of rows in the weight matrix.
             comptime if check_bounds:
@@ -406,204 +407,6 @@ fn gemv_split_k[
         launch_dependent_grids()
 
 
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
-)
-fn gemv_blackwell_split_k_kernel[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
-    simd_width: Int,
-    tile_n: Int,
-    num_threads: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    s_type: DType = get_accum_type[c_type](),
-    check_bounds: Bool = True,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    output: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    act: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    weight: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
-    n: Int,
-    k: Int,
-):
-    """GEMV with tiling in K dimension.
-    Assuming the B (weight) matrix is transposed i.e. row major N x K, this kernel
-    implements a vector (1 x K) times a matrix (N x K).
-    This kernel is intended and used only for the M = 1 (row-vector) case.
-    """
-    # tile_n represents how many rows each thread will process of the weight matrix.
-    # Nvidia vectorized load is 16B.
-    comptime tile_k = simd_width * num_threads
-    # which rows of the activation matrix each thread will process
-
-    var tile_id_n = Int(block_idx.y) * tile_n
-    var tid = Int(thread_idx.x)
-    var tile_w = LayoutTensor[
-        b_type,
-        Layout.row_major(tile_n, simd_width),
-        MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ].stack_allocation()
-    # these are the partial accumulations for each thread this a vector of values
-    var acc = (
-        LayoutTensor[
-            s_type,
-            Layout.row_major(1, tile_n),
-            MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
-
-    var output_idx = tile_id_n
-    var iteration = 0
-    comptime WeightVecType = SIMD[b_type, simd_width]
-
-    comptime if pdl_level > PDLLevel.OFF:
-        wait_on_dependent_grids()
-
-    # Each thread sums local data in K.
-    for _ in range(tid * simd_width, k, tile_k):
-        var weight_tile = weight.tile[tile_n, tile_k](
-            Int(block_idx.y), iteration
-        )
-        var act_tile = act.tile[1, tile_k](Int(block_idx.x), iteration)
-
-        comptime for i in range(tile_n):
-            # Here we load data @ thread_idx.x from the weight matrix
-            # and store it into tile_w. We skip this if the current
-            # row we are reading from (i + tile_id_n) is greater than the number
-            # of rows in the weight matrix.
-            comptime if check_bounds:
-                if i + tile_id_n >= n:
-                    continue
-
-            var b_vec = weight_tile.vectorize[1, simd_width]()[i, thread_idx.x]
-
-            tile_w.store[simd_width](i, 0, rebind[WeightVecType](b_vec))
-
-        # Here we load data @ thread_idx.x from the activation matrix
-        # and store it into tile_a.
-        var act_vec = act_tile.vectorize[1, simd_width]()[0, thread_idx.x]
-
-        # Now we multiply tile_a by tile_w and store the partials
-        # in acc
-        comptime if a_type.is_float8() and b_type.is_float8():
-            # FP8 paired processing optimization.
-            #
-            # The only NVIDIA instruction for FP8->f16 conversion is
-            # cvt.rn.f16x2.e4m3x2, which converts a PAIR of FP8 bytes
-            # into a packed f16x2. There is no scalar variant.
-            #
-            # The scalar loop (else branch) extracts individual bytes
-            # via prmt.b32, zero-pads each to 16 bits, and feeds
-            # cvt.rn.f16x2.e4m3x2 a [byte, 0x00] pair — wasting half
-            # the output. This produces ~5.5 instructions/element and
-            # 160+ prmt instructions for simd_width=32.
-            #
-            # Instead, we bitcast SIMD[float8, 32] -> SIMD[uint16, 16].
-            # Each uint16 holds two adjacent FP8 bytes as a natural
-            # pair. Indexing by uint16 generates mov.b32 {lo, hi}
-            # (free register decomposition) instead of prmt. Casting
-            # the pair to float16 emits cvt.rn.f16x2.e4m3x2 with BOTH
-            # outputs valid. Multiplying as SIMD[float16, 2] emits
-            # mul.f16x2 (2 multiplies in 1 instruction).
-            #
-            # PTX generated per pair:
-            #   cvt.rn.f16x2.e4m3x2 %r, %rs;  // act pair -> f16x2
-            #   cvt.rn.f16x2.e4m3x2 %r, %rs;  // wgt pair -> f16x2
-            #   mul.f16x2           %r, %r, %r; // 2 multiplies
-            #   mov.b32 {lo, hi}, %r;           // split product
-            #   cvt.f32.f16 / add.rn.f32.f16    // accumulate in f32
-            #
-            # Result: ~3 instr/element (vs ~5.5), zero prmt, ~35%
-            # fewer registers, activation f16x2 values reused across
-            # weight rows.
-            comptime half_width = simd_width // 2
-            var act_u16 = bitcast[DType.uint16, half_width](act_vec)
-
-            comptime for j in range(tile_n):
-                var weight_vec = tile_w.vectorize[1, simd_width]()[j, 0]
-                var local_accum = rebind[Scalar[s_type]](acc[0, j])
-                var wgt_u16 = bitcast[DType.uint16, half_width](weight_vec)
-
-                comptime for l in range(half_width):
-                    var act_f16 = bitcast[a_type, 2](act_u16[l]).cast[
-                        DType.float16
-                    ]()
-                    var wgt_f16 = bitcast[b_type, 2](wgt_u16[l]).cast[
-                        DType.float16
-                    ]()
-                    var prod = act_f16 * wgt_f16
-                    # Accumulate in f32 to avoid f16 overflow (16 products
-                    # of FP8 values can exceed f16 max of 65504).
-                    local_accum += prod.cast[s_type]().reduce_add()
-
-                acc.store(0, j, local_accum)
-        else:
-            comptime for j in range(tile_n):
-                var weight_vec = tile_w.vectorize[1, simd_width]()[j, 0]
-                var local_accum = rebind[Scalar[s_type]](acc[0, j])
-
-                comptime for l in range(simd_width):
-                    local_accum += (
-                        act_vec[l].cast[s_type]() * weight_vec[l].cast[s_type]()
-                    )
-
-                acc.store(0, j, local_accum)
-
-        iteration += 1
-
-    # Warps are arranged along K.
-    comptime k_warp_num = num_threads // WARP_SIZE
-    var warp_id = Int(warp_id())
-    var lane_id = lane_id()
-
-    var shmem = LayoutTensor[
-        s_type,
-        Layout.row_major(1, tile_n * k_warp_num),
-        MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation()
-
-    # Each warp sums across its threads and stages results in shared memory.
-    # Shared memory data is row major (num_warps, tile_n) stored in 1D.
-    comptime for ni in range(tile_n):
-        var val = warp.sum(acc[0, ni])
-        if lane_id == 0:
-            shmem[0, ni * k_warp_num + warp_id] = val
-
-    barrier()
-    # Sum across warps' results in shared memory then output.
-    # TODO: should be able to vectorize and maybe use larger tile_n.
-    for ii in range(tid, tile_n, num_threads):
-        var val = Scalar[s_type]()
-        comptime ValType = type_of(val)
-
-        comptime for jj in range(k_warp_num):
-            val += rebind[ValType](shmem[0, ii * k_warp_num + jj])
-
-        var idx = ii + output_idx
-
-        comptime if check_bounds:
-            if idx >= n:
-                continue
-
-        comptime if elementwise_lambda_fn:
-            comptime elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](Index(0, idx), val.cast[c_type]())
-        else:
-            output[0, idx] = val.cast[c_type]()
-
-    comptime if pdl_level > PDLLevel.OFF:
-        launch_dependent_grids()
-
-
 # Row Vector-Matrix multiplication
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_size))
@@ -666,59 +469,6 @@ fn gevm_kernel[
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
-
-
-@always_inline
-fn gemv_blackwell_split_k[
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
-    simd_width: Int,
-    static_N: Int,
-    num_threads: Int = 128,
-    tile_n: Int = 4,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    c_tensor: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a_tensor: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b_tensor: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
-    n: Int,
-    k: Int,
-    ctx: DeviceContext,
-) raises:
-    comptime assert num_threads % 32 == 0, "num_threads must be divisible by 32"
-    logger.info("Executing: GEMV Blackwell split k kernel")
-    comptime check_bounds = static_N % tile_n != 0
-
-    comptime kernel = gemv_blackwell_split_k_kernel[
-        c_type,
-        a_type,
-        b_type,
-        c_layout,
-        a_layout,
-        b_layout,
-        simd_width = simd_width * 2,
-        tile_n=tile_n,
-        num_threads=num_threads,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        check_bounds=check_bounds,
-        pdl_level=pdl_level,
-    ]
-
-    ctx.enqueue_function[kernel, kernel](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        n,
-        k,
-        grid_dim=(1, ceildiv(n, tile_n)),
-        block_dim=num_threads,
-        attributes=pdl_launch_attributes(pdl_level),
-    )
 
 
 @always_inline
