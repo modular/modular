@@ -127,6 +127,8 @@ public:
 
   std::string largeDataThreshold;
 
+  std::string relocationModel;
+
   std::string loopUnrollingWarnThreshold;
 
   int elaborationErrorLimit{20};
@@ -415,6 +417,13 @@ private:
       "large-data-threshold",
       cl::desc("Choose large data threshold for x86_64 medium code model."),
       llvm::cl::location(options.largeDataThreshold),
+      llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
+
+  M::cl::MOpt<std::string, true> relocationModel{
+      "relocation-model",
+      cl::desc("Sets the relocation model. Supported values: `static`, `pic` "
+               "(default), `dynamic-no-pic`, `ropi`, `rwpi`, `ropi-rwpi`."),
+      llvm::cl::location(options.relocationModel),
       llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
 
   M::cl::MOpt<std::string, true> loopUnrollingWarnThreshold{

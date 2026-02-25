@@ -338,7 +338,7 @@ SmallVector<float> getFloatBlob(FloatArrayElementsAttr floatElemsAttr);
 StringLiteral stringifyRelocationModel(llvm::Reloc::Model model);
 /// If the given string maps to one used to represent an `llvm::Reloc::Model`,
 /// returns that model. Otherwise, returns null.
-std::optional<llvm::Reloc::Model> symbolizeRelocationModel(StringRef str);
+ErrorOr<llvm::Reloc::Model> symbolizeRelocationModel(StringRef str);
 
 /// Look for a target info specification inside the provided module. Returns
 /// null if there is not one.

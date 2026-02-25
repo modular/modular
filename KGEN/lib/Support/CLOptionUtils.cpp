@@ -28,4 +28,5 @@ void M::registerCommandFlags() {
   options["mcpu"]->removeArgument();
   options["mattr"]->removeArgument();
   options["large-data-threshold"]->removeArgument();
+  options["relocation-model"]->removeArgument();
 }

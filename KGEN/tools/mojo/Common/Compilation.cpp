@@ -518,12 +518,12 @@ ErrorOrSuccess M::parseTargetOptions(
   StringRef relocationModel = args.getLastArgValue(relocationModelId);
   if (args.hasMultipleArgs(relocationModelId))
     return Error("too many specified relocation models, expected exactly one");
+
   if (!relocationModel.empty()) {
-    auto model = M::symbolizeRelocationModel(relocationModel);
-    if (!model)
-      return Error("invalid relocation-model '" + relocationModel +
-                   "', expected one of: `static`, `pic`, `dynamic-no-pic`, "
-                   "`ropi`, `rwpi`, or `ropi-rwpi`");
+    ErrorOr<llvm::Reloc::Model> model =
+        M::symbolizeRelocationModel(relocationModel);
+    if (model.isError())
+      return model.takeError();
 
     compilationOptions.relocModel = *model;
   }
