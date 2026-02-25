@@ -83,6 +83,7 @@ class Llama3Inputs(ModelInputs):
 class Llama3Model(PipelineModelWithKVCache[TextContext]):
     """Llama3 pipeline model using the ModuleV3 API."""
 
+    config_class: type[Llama3Config] = Llama3Config
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
 
@@ -170,7 +171,7 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
-        model_config = Llama3Config.initialize(self.pipeline_config)
+        model_config = self.config_class.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,

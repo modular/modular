@@ -90,7 +90,11 @@ class Llama3TextModel(
                 RMSNorm, config.hidden_size, eps=config.rms_norm_eps
             )
         else:
-            create_norm = functools.partial(LayerNorm, config.hidden_size)
+            create_norm = functools.partial(
+                LayerNorm,
+                config.hidden_size,
+                elementwise_affine=config.norm_elementwise_affine,
+            )
 
         self.embed_tokens = Embedding(
             config.vocab_size,
