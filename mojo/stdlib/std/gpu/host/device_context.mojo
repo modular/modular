@@ -2022,7 +2022,6 @@ struct DeviceFunction[
                     env_val,
                     "'",
                 )
-                return False, val
 
         elif val.isa[Bool]():
             return val.unsafe_get[Bool](), val

@@ -204,6 +204,9 @@ what we publish.
 - `comptime assert` no longer errors on always false conditions. The assertion
   will only trigger if its parent scope is concretized.
 
+- A statically False `comptime assert` now ends a scope. Any code following it
+  in the same scope is now a warning, and can be removed.
+
 ### Library changes
 
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.

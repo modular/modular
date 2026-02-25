@@ -566,7 +566,6 @@ struct RaggedMHAOperand[dtype_: DType, layout: Layout, cache_layout: Layout](
         comptime assert (
             False
         ), "For RaggedMHAOperand, max_context_length is not implemented."
-        return 0
 
     @always_inline
     fn row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:

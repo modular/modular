@@ -296,7 +296,6 @@ fn tcgen05_ld[
         ]()
     else:
         comptime assert False, "width must be a power of 2 in the range [1, 128]."
-        abort()
     # fmt: on
 
 

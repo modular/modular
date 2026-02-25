@@ -123,7 +123,6 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
         comptime assert False, "ComptimeInt is not a tuple type"
-        return rebind[Coord[*Self.VariadicType]](self)
 
 
 struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
@@ -177,7 +176,6 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
         comptime assert False, "RuntimeInt is not a tuple type"
-        return rebind[Coord[*Self.VariadicType]](self)
 
 
 fn Idx(value: Int) -> RuntimeInt[DType.int]:
@@ -415,7 +413,6 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     @always_inline("nodebug")
     fn value(self) -> Int:
         comptime assert False, "Coord is not a value type"
-        abort()
 
     @always_inline("nodebug")
     fn inner_product(self, t: IntTuple) -> Int:
@@ -1195,7 +1192,6 @@ fn _get_flattened_helper[
 
     comptime if i >= Coord[*element_types].__len__():
         comptime assert False, "flat_idx out of bounds"
-        abort()
 
     comptime T = element_types[i]
 

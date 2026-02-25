@@ -123,7 +123,6 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             comptime assert (
                 False
             ), "`read_bytes()` is not yet implemented for unknown platform."
-            abort()
 
     fn isatty(self) -> Bool:
         """Checks whether a file descriptor refers to a terminal.

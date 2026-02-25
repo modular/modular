@@ -243,8 +243,6 @@ fn _get_f16_mma_shape[
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
-            abort("MMA shape not supported.")
-
     else:
         _constrained_mma_m[
             mma_m,
@@ -275,8 +273,6 @@ fn _get_f16_mma_shape[
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
-
-            abort("MMA shape not supported.")
 
 
 @always_inline
@@ -324,8 +320,6 @@ fn _get_tf32_mma_shape[
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
-
-            abort("MMA shape not supported.")
     else:
         _constrained_mma_m[
             mma_m,
@@ -356,8 +350,6 @@ fn _get_tf32_mma_shape[
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
-
-            abort("MMA shape not supported.")
 
 
 @always_inline
@@ -407,8 +399,6 @@ fn _get_f8f6f4_mma_shape[
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
-            abort("MMA shape not supported.")
-
     else:
         _constrained_mma_m[
             mma_m,
@@ -439,8 +429,6 @@ fn _get_f8f6f4_mma_shape[
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
-
-            return IndexList[3, element_type = DType.uint32](0, 0, 0)
 
 
 @always_inline
@@ -480,8 +468,6 @@ fn _get_mxf8f6f4_mma_shape[
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
-            abort("MMA shape not supported.")
-
     else:
         _constrained_mma_m[
             mma_m,
@@ -512,8 +498,6 @@ fn _get_mxf8f6f4_mma_shape[
             return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
         else:
             comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
-
-            return IndexList[3, element_type = DType.uint32](0, 0, 0)
 
 
 struct UMMAInsDescriptor[
@@ -889,7 +873,6 @@ struct UMMAInsDescriptor[
             comptime assert False, String(
                 "Unsupported UMMA kind: ", Self.mma_kind
             )
-            return Self(0x0)
 
     @staticmethod
     fn create[
@@ -955,7 +938,6 @@ struct UMMAInsDescriptor[
             comptime assert False, String(
                 "Unsupported UMMA kind: ", Self.mma_kind
             )
-            return Self(0x0)
 
     @staticmethod
     fn update_desc_with_sf_id[
@@ -1083,7 +1065,6 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
                 comptime assert False, String(
                     "Unsupported swizzle mode: ", mode
                 )
-                return 0
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
@@ -1244,7 +1225,6 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
                 comptime assert False, String(
                     "Unsupported swizzle mode: ", mode
                 )
-                return 0
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 

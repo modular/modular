@@ -222,10 +222,8 @@ fn _tc_reduce_vector[
 
         else:
             comptime assert False, "unsupported simd_width for BF16"
-            return val[0].cast[out_type]()
     else:
         comptime assert False, "unsupported input/output type"
-        return val[0].cast[out_type]()
 
 
 @always_inline

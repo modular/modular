@@ -223,7 +223,6 @@ struct InlineArray[ElementType: Copyable, size: Int](
             " fill element or pass the keyword argument"
             " 'uninitialized=True'."
         )
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
     fn __init__(out self, *, uninitialized: Bool):

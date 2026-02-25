@@ -3228,7 +3228,6 @@ fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
     else:
         # TODO: Change the error message when we allow SSE3
         comptime assert False, "To call _pshuf_or_tbl1() you need sse4 or neon."
-        return {}
 
 
 fn _pshuf(lookup_table: U8x16, indices: U8x16) -> U8x16:
@@ -3298,7 +3297,6 @@ fn _pow[
             result[i] = _powi(base[i], exp[i].cast[DType.int32]())
     else:
         comptime assert False, "unsupported type combination"
-        return {}
 
 
 @always_inline

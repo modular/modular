@@ -430,6 +430,3 @@ struct Process:
             comptime assert (
                 False
             ), "Unknown platform process execution not implemented"
-            abort[prefix="ERROR:"](
-                "Unknown platform process execution not implemented"
-            )

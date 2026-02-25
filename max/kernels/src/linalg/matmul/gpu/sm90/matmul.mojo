@@ -643,7 +643,6 @@ fn _get_c_smem_layout[
             + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
             + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
         )
-        return Layout.row_major(0, 0)
 
 
 fn warp_specialize_gemm_with_multicasting_splitk[

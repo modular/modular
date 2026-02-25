@@ -519,7 +519,6 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
         )
     else:
         comptime assert False, "unsupported float type"
-        return {}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -622,7 +621,6 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
         )
     else:
         comptime assert False, "unsupported float type"
-        return {}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -681,7 +679,6 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
         )
     else:
         comptime assert False, "unsupported float type"
-        return {}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -727,7 +724,6 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
         return Scalar(True)._refine[dtype]()
     else:
         comptime assert False, "max_finite() called on unsupported dtype"
-        return {}
 
 
 # ===----------------------------------------------------------------------=== #
@@ -757,7 +753,6 @@ fn min_finite[dtype: DType]() -> Scalar[dtype]:
         return Scalar(False)._refine[dtype]()
     else:
         comptime assert False, "min_finite() called on unsupported dtype"
-        return {}
 
 
 # ===----------------------------------------------------------------------=== #

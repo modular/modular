@@ -3433,7 +3433,6 @@ fn _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
         return "f64"
     else:
         comptime assert False, "Extend to support additional dtypes."
-        return ""
 
 
 # ===----------------------------------------------------------------------=== #

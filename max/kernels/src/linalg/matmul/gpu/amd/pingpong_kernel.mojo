@@ -405,7 +405,6 @@ fn _load_from_lds[
         comptime assert (
             False
         ), "Unsupported dtype/width combination for _load_from_lds"
-        return SIMD[dtype, width]()
 
 
 @always_inline

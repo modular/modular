@@ -235,7 +235,6 @@ fn normalize(
         return normalize(rebind[BFloat16](value)).cast[result.dtype]()
     else:
         comptime assert False, "unhandled normalize type"
-        return 0
 
 
 @always_inline

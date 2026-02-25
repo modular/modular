@@ -150,7 +150,6 @@ fn _c_long_dtype[unsigned: Bool = False]() -> DType:
         return DType.uint32 if unsigned else DType.int32
     else:
         comptime assert False, "size of C `long` is unknown on this target"
-        abort()
 
 
 fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
@@ -161,7 +160,6 @@ fn _c_long_long_dtype[unsigned: Bool = False]() -> DType:
         return DType.uint64 if unsigned else DType.int64
     else:
         comptime assert False, "size of C `long long` is unknown on this target"
-        abort()
 
 
 # ===-----------------------------------------------------------------------===#
