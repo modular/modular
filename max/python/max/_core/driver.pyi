@@ -930,3 +930,95 @@ class Buffer:
     def _inplace_copy_from(self, src: Buffer) -> None: ...
     def _data_ptr(self) -> int:
         """Gets the memory address of the buffer data. Internal use only."""
+
+class DevicePinnedBuffer(Buffer):
+    """
+    Create a pinned host memory allocation tied to the given device.
+
+    Device-pinned memory allocations can provide faster DMA speeds and allow
+    properly asynchronous copies between the device and the host.
+
+    Since device-pinned buffers can be used for asynchronous copies they
+    don't perform automatic synchronizations in operations like `to_numpy`,
+    so synchronization should be handled manually to ensure GPU tasks writing
+    to the buffer are complete before reading it on the host.
+
+    .. caution::
+      Since this class provides device-pinned memory  it doesn't work on CPU,
+      for regular host memory use the Buffer class.
+
+    .. code-block:: python
+
+        from max.driver import DevicePinnedBuffer, Accelerator
+        from max.dtype import DType
+        import numpy as np
+
+        # Requires GPU device
+        device = Accelerator()
+        buffer = DevicePinnedBuffer(
+            dtype=DType.float32, shape=[1024], device=device
+        )
+
+        # Fill with data and transfer to GPU
+        np_data = buffer.to_numpy()
+        np_data[:] = np.arange(1024, dtype=np.float32)
+        gpu_buffer = buffer.to(device)
+
+    Args:
+        dtype (DType): Data type of buffer elements.
+        shape (Sequence[int]): Tuple of positive, non-zero integers denoting the buffer shape.
+        device (Device): GPU/Accelerator device to associate buffer with. Must not be CPU.
+        stream (DeviceStream, optional): Stream to associate the buffer with.
+
+    Raises:
+        ValueError: If is a CPU device.
+    """
+
+    @overload
+    def __init__(
+        self, dtype: max._core.dtype.DType, shape: Sequence[int], device: Device
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        dtype: max._core.dtype.DType,
+        shape: Sequence[int],
+        stream: DeviceStream,
+    ) -> None: ...
+    def __dlpack__(
+        self, *, stream: int | None = None, **kwargs
+    ) -> types.CapsuleType:
+        """
+        Export device-pinned buffer using DLPack protocol.
+
+        For device-pinned buffer no synchronization is done in DLPack,
+        synchronization should be handled manually.
+
+        Args:
+            stream: Optional stream parameter for DLPack protocol.
+            **kwargs: Additional keyword arguments for DLPack protocol.
+
+        Returns:
+            DLPack capsule for the buffer.
+        """
+
+    @staticmethod
+    def zeros(
+        shape: Sequence[int], dtype: max._core.dtype.DType, device: Device
+    ) -> DevicePinnedBuffer:
+        """
+        Allocates a pinned buffer with all elements initialized to zero.
+
+        Creates a pinned buffer for efficient host-device transfers on GPU/accelerator devices.
+
+        Args:
+            shape: The shape of the buffer.
+            dtype: The data type of the buffer.
+            device: GPU/Accelerator device to associate buffer with. Must not be CPU.
+
+        Returns:
+            DevicePinnedBuffer: A pinned buffer with all elements initialized to zero.
+
+        Raises:
+            ValueError: If is a CPU device.
+        """

@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Buffer as Buffer
+from max._core.driver import DevicePinnedBuffer as DevicePinnedBuffer
 from max.dtype import DType
 
 from .driver import CPU
