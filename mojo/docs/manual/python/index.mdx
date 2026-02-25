@@ -43,11 +43,14 @@ how to use Mojo with Python in a way that works best for your use case.
 
 **To learn more about bridging Python ↔ Mojo, continue reading**:
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
 
-export const docs = [
-    'python-from-mojo',
-    'mojo-from-python',
-]
-
-<MDXListing mdxList={docs} />
+<ListingCards>
+  <ListingCard title="Calling Python from Mojo"
+    url="/mojo/manual/python/python-from-mojo"
+    description="How to import Python modules and use them in Mojo code" />
+  <ListingCard title="Calling Mojo from Python"
+    url="/mojo/manual/python/mojo-from-python"
+    description="How to import Mojo modules and use them in Python code" />
+</ListingCards>

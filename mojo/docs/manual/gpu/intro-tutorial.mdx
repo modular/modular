@@ -947,28 +947,17 @@ covered:
 Now that you understand the basics of GPU programming with Mojo, here are some
 suggested next steps:
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
 
-export const Puzzles = {
-    title: "GPU Puzzles",
-    description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
-    metadata: {
-        permalink: "https://puzzles.modular.com/introduction.html"
-    }
-};
-
-export const Examples = {
-    title: "GPU code examples",
-    description: "Check out some more examples for programming GPUs with Mojo",
-    metadata: {
-        permalink: "https://github.com/modular/modular/tree/main/mojo/examples/gpu-functions"
-    }
-};
-
-export const nextSteps = [
-    '../../layout/layouts',
-    Puzzles,
-    Examples,
-]
-
-<MDXListing mdxList={nextSteps} />
+<ListingCards>
+  <ListingCard title="Introduction to layouts"
+    url="/mojo/manual/layout/layouts"
+    description="Using layouts to describe multidimensional data." />
+  <ListingCard title="GPU Puzzles"
+    url="https://puzzles.modular.com/introduction.html"
+    description="Learn to program GPUs in Mojo by solving increasingly complex challenges" />
+  <ListingCard title="GPU code examples"
+    url="https://github.com/modular/modular/tree/main/mojo/examples/gpu-functions"
+    description="Check out some more examples for programming GPUs with Mojo" />
+</ListingCards>

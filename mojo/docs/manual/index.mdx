@@ -89,23 +89,20 @@ programming](/mojo/manual/gpu/fundamentals).
 
 ## Get started
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
 
-export const Puzzles ={
-  title: "GPU Puzzles",
-  description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
-  metadata: {
-    permalink: "<https://puzzles.modular.com/introduction.html>"
-  }
-};
-
-export const getStarted = [
-    'get-started',
-    'gpu/intro-tutorial',
-    Puzzles,
-]
-
-<MDXListing mdxList={getStarted} />
+<ListingCards>
+  <ListingCard title="Get started with Mojo"
+    url="/mojo/manual/get-started"
+    description="Install Mojo and learn the language basics by building a complete Mojo program" />
+  <ListingCard title="Get started with GPU programming"
+    url="/mojo/manual/gpu/intro-tutorial"
+    description="Learn the basics of GPU programming with Mojo" />
+  <ListingCard title="GPU Puzzles"
+    url="https://puzzles.modular.com/introduction.html"
+    description="Learn to program GPUs in Mojo by solving increasingly complex challenges" />
+</ListingCards>
 
 :::tip
 
@@ -116,26 +113,14 @@ export const getStarted = [
 
 ## More resources
 
-export const Examples ={
-  title: "Code examples",
-  description: "Browse a wide range of Mojo code examples on GitHub",
-  metadata: {
-    permalink: "https://github.com/modular/modular/tree/main/mojo/examples"
-  }
-};
-
-export const Community ={
-  title: "Community",
-  description: "Chat with us and the community in our forum and Discord channels",
-  metadata: {
-    permalink: "https://www.modular.com/community"
-  }
-};
-
-export const resources = [
-    '../lib',
-    Examples,
-    Community,
-]
-
-<MDXListing mdxList={resources} />
+<ListingCards>
+  <ListingCard title="Mojo API reference"
+    url="/mojo/lib"
+    description="Mojo standard library and other references" />
+  <ListingCard title="Code examples"
+    url="https://github.com/modular/modular/tree/main/mojo/examples"
+    description="Browse a wide range of Mojo code examples on GitHub" />
+  <ListingCard title="Community"
+    url="https://www.modular.com/community"
+    description="Chat with us and the community in our forum and Discord channels" />
+</ListingCards>
