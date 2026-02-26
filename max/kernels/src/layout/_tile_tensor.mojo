@@ -514,6 +514,7 @@ struct TileTensor[
     fn load[
         width: Int = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, Self.element_size]](),
+        invariant: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width] where (
         coord.flat_rank == Self.flat_rank
     ):
@@ -525,6 +526,8 @@ struct TileTensor[
         Parameters:
             width: Number of elements to load (default: element_size).
             alignment: Memory alignment for the load.
+            invariant: If True, the compiler may assume the memory won't be
+                modified during the kernel, enabling load hoisting and caching.
 
         Args:
             coord: The coordinates specifying the element's position.
@@ -532,9 +535,9 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
-        return self.ptr.load[width=width, alignment=alignment](
-            self.layout[linear_idx_type = Self.linear_idx_type](coord)
-        )
+        return self.ptr.load[
+            width=width, alignment=alignment, invariant=invariant
+        ](self.layout[linear_idx_type = Self.linear_idx_type](coord))
 
     @always_inline("nodebug")
     fn store[
