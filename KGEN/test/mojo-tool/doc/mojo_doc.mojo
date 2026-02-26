@@ -930,6 +930,23 @@ struct StructWithDefault[a: Int = 1]:
     pass
 
 
+# Test that struct parameters with auto-parameterized types (like Scalar, which
+# expands to SIMD[dtype, 1]) are printed with the full "a.dtype" form rather
+# than just "dtype". This requires the DeclScopeChanger to be active during
+# type generation (not only during constraint generation).
+# CHECK: "name": "StructWithAutoParamScalar",
+# CHECK: "signature": "struct StructWithAutoParamScalar[a: Scalar[a.dtype]]"
+@fieldwise_init
+struct StructWithAutoParamScalar[a: Scalar]:
+    """A struct with an auto-parameterized Scalar parameter.
+
+    Parameters:
+        a: A scalar value whose type induces an implicit dtype parameter.
+    """
+
+    pass
+
+
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "StructWithFnParam",
 # CHECK:  "parameters":

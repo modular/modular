@@ -263,3 +263,44 @@ struct StructWithParamConstraint[N: Int where is_positive(N)]:
     """
 
     pass
+
+
+##===----------------------------------------------------------------------===##
+# Struct with multi-parameter constraints where a later parameter's constraint
+# references an earlier parameter. Verifies that constraint strings and
+# signatures are generated correctly for dependent parameter constraints.
+##===----------------------------------------------------------------------===##
+
+
+# CHECK: "name": "StructWithDependentParamConstraint",
+# CHECK: "constraints": " where is_positive(N)"
+# CHECK: "name": "M",
+# CHECK: "signature": "struct StructWithDependentParamConstraint[N: Int, M: Int where is_positive(N)]"
+@fieldwise_init
+struct StructWithDependentParamConstraint[N: Int, M: Int where is_positive(N)]:
+    """A struct where a later parameter's constraint references an earlier one.
+
+    Parameters:
+        N: An unconstrained integer.
+        M: An integer whose constraint references N.
+    """
+
+    pass
+
+
+# CHECK: "name": "StructWithMultiParamPredConstraint",
+# CHECK: "constraints": " where complex_pred(N, M)"
+# CHECK: "name": "M",
+# CHECK: "signature": "struct StructWithMultiParamPredConstraint[N: Int, M: Int where complex_pred(N, M)]"
+@fieldwise_init
+struct StructWithMultiParamPredConstraint[
+    N: Int, M: Int where complex_pred(N, M)
+]:
+    """A struct where a parameter's constraint uses multiple sibling parameters.
+
+    Parameters:
+        N: First integer parameter.
+        M: Second integer, constrained by a predicate involving both N and M.
+    """
+
+    pass
