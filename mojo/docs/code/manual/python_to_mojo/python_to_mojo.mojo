@@ -180,6 +180,53 @@ fn test_traitbound() raises:
     test_draw(c)  # Works because Circle implements Drawable
 
 
+fn another_raising_function() raises:
+    raise Error("Message")  # Error raised here
+
+
+fn raising_function() raises:
+    another_raising_function()  # Error continues to pass
+
+
+fn handles_errors() raises:  # Raises appears here for testing assertion
+    try:
+        raising_function()  # Error handled in this function
+    except e:
+        assert_true(String(e) == "Message")  # Error message is correct
+
+
+fn test_scoped() raises:
+    from utils import Variant
+
+    comptime StringOrInt = Variant[String, Int]
+    var a: StringOrInt = 1
+    if a.isa[Int]():
+        assert_true(a.unsafe_get[Int]() == 1)
+    a = "string"  # Not an error
+    if a.isa[String]():
+        assert_true(a.unsafe_get[String]() == "string")
+
+
+fn test_mixed_types() raises:
+    from utils import Variant
+
+    comptime MixedType = Variant[Int, Float64, String, Bool]
+    var mixed_list = List[MixedType]()
+    mixed_list.append(MixedType(42))
+    mixed_list.append(MixedType(3.14))
+    mixed_list.append(MixedType("hello"))
+    mixed_list.append(MixedType(True))
+    # for item in mixed_list:
+    #     print(item, end=" ")
+    # print()  # Output: 42 3.14 hello True
+    assert_true(
+        mixed_list[0].unsafe_get[Int]() == 42
+        and isclose(mixed_list[1].unsafe_get[Float64](), 3.14)
+        and mixed_list[2].unsafe_get[String]() == "hello"
+        and mixed_list[3].unsafe_get[Bool]() == True
+    )
+
+
 fn main() raises:
     test_mut()
     test_math()
@@ -192,3 +239,6 @@ fn main() raises:
     # Can't test conversion errors
     test_typebound()
     test_traitbound()
+    handles_errors()
+    test_scoped()
+    test_mixed_types()
