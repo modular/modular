@@ -344,7 +344,7 @@ struct Report(Copyable, Defaultable, Writable):
         writer.write_string(self.as_string())
 
     fn write_repr_to(self, mut writer: Some[Writer]):
-        """Writes the repr of the report to a writer. Same as write_to for Report.
+        """Writes the repr of the report to a writer.
 
         Args:
             writer: The writer to write to.
