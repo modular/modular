@@ -41,67 +41,172 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import rand, Random
 from internal_utils._utils import (
     InitializationType,
+    init_vector_launch,
     ValOrDim,
     dynamic,
     static,
 )
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.fp4_utils import (
-    SF_ATOM_M,
-    SF_ATOM_K,
-    SF_MN_GROUP_SIZE,
-    MXFP8_SF_VECTOR_SIZE,
-    MXFP8_SF_DTYPE,
-)
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
 from utils import IndexList
 
 
-# GPU kernel to initialize MXFP8 scale buffers with random exponents.
-# float8_e8m0fnu: exponent-only format, value = 2^(stored_value - 127).
-# Random exponents 127 + (0,1,2,3) -> scale values of 1, 2, 4, 8.
-# Each thread processes 4 elements for better memory throughput.
-fn _init_mxfp8_scales_gpu[
-    dtype: DType
-](x: UnsafePointer[Scalar[dtype]], len: Int):
-    var tid = global_idx.x
-    var stride = grid_dim.x * block_dim.x
+fn verify_matmul[
+    dtype: DType,
+    static_c_shape: DimList,
+    static_a_shape: DimList,
+    static_b_shape: DimList,
+    *,
+    transpose_b: Bool = False,
+    init_on_gpu: Bool = True,
+](
+    ctx: DeviceContext,
+    dynamic_c_shape: IndexList[2],
+    dynamic_a_shape: IndexList[2],
+    dynamic_b_shape: IndexList[2],
+    init_type: InitializationType,
+) raises:
+    comptime c_type = DType.bfloat16
 
-    @parameter
-    fn apply(values: SIMD[dtype, 4]):
-        comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= UInt(len):
-                    return
-            x[tid] = Scalar[dtype](values[i])
-            tid += stride
+    var c_size = dynamic_c_shape[0] * dynamic_c_shape[1]
+    var a_size = dynamic_a_shape[0] * dynamic_a_shape[1]
+    var b_size = dynamic_b_shape[0] * dynamic_b_shape[1]
 
-    # Generate 4 random exponents per thread for better throughput.
-    # step_uniform returns SIMD[float32, 4] with values in [0, 1).
-    # Multiply by 4 and cast to get values 0, 1, 2, or 3.
-    # Then add 127 to get exponents -> scale values of 1, 2, 4, 8.
-    var rng = Random(offset=UInt64(tid))
-    var rand_floats = rng.step_uniform() * 4
-    var rand_u8 = rand_floats.cast[DType.uint8]() & 3
-    var values = bitcast[dtype, 4](rand_u8 + 127)
-    apply(values)
-
-
-fn _init_mxfp8_scales_launch[
-    dtype: DType, block_dim: Int = 256
-](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext,) raises:
-    var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
-    # using num-threads = 1/4th of length to initialize the array
-
-    comptime kernel = _init_mxfp8_scales_gpu[dtype]
-    context.enqueue_function_experimental[kernel](
-        out_device,
-        length,
-        grid_dim=(num_blocks),
-        block_dim=(block_dim),
+    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_ptr, dynamic_c_shape
     )
+    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_ref_ptr, dynamic_c_shape
+    )
+
+    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(a_size)
+    var a_host = NDBuffer[dtype, 2, _, static_a_shape](
+        a_host_ptr, dynamic_a_shape
+    )
+    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(b_size)
+    var b_host = NDBuffer[dtype, 2, _, static_b_shape](
+        b_host_ptr, dynamic_b_shape
+    )
+
+    var a_device = ctx.enqueue_create_buffer[dtype](a_size)
+    var a_device_nd = NDBuffer[dtype, 2, _, static_a_shape](
+        a_device.unsafe_ptr(), dynamic_a_shape
+    )
+    var b_device = ctx.enqueue_create_buffer[dtype](b_size)
+    var b_device_nd = NDBuffer[dtype, 2, _, static_b_shape](
+        b_device.unsafe_ptr(), dynamic_b_shape
+    )
+    var c_device = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
+        c_device.unsafe_ptr(), dynamic_c_shape
+    )
+    var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
+        c_device_ref.unsafe_ptr(), dynamic_c_shape
+    )
+
+    # Initialize matmul operands
+    comptime if not init_on_gpu:
+        comptime if dtype.is_float8():
+            rand(a_host.data, a_host.num_elements())
+            rand(b_host.data, b_host.num_elements())
+        else:
+            if init_type == InitializationType.zero:
+                a_host.zero()
+                b_host.zero()
+            elif init_type == InitializationType.one:
+                a_host.fill(1)
+                b_host.fill(1)
+            elif init_type == InitializationType.uniform_distribution:
+                rand(a_host.data, a_host.num_elements())
+                rand(b_host.data, b_host.num_elements())
+            elif init_type == InitializationType.arange:
+                for i in range(a_host.num_elements()):
+                    a_host.data[i] = Scalar[dtype](i)
+                for i in range(b_host.num_elements()):
+                    b_host.data[i] = Scalar[dtype](i)
+        # Move operands to the Device
+        ctx.enqueue_copy(a_device, a_host_ptr)
+        ctx.enqueue_copy(b_device, b_host_ptr)
+    else:
+        init_vector_launch[dtype](a_device, a_size, init_type, ctx)
+        init_vector_launch[dtype](b_device, b_size, init_type, ctx)
+
+    vendor_blas.matmul[use_tf32=True](
+        ctx,
+        c_device_ref_nd,
+        a_device_nd,
+        b_device_nd,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
+
+    _matmul_gpu[
+        use_tensor_core=True,
+        transpose_b=transpose_b,
+    ](c_device_nd, a_device_nd, b_device_nd, ctx)
+
+    ctx.synchronize()
+
+    ctx.enqueue_copy(c_host.data, c_device)
+    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
+    ctx.synchronize()
+
+    # Sanity check: verify outputs match expected zero/non-zero state
+    fn is_all_zeros(
+        ptr: UnsafePointer[Scalar[DType.bfloat16]], size: Int
+    ) -> Bool:
+        for i in range(size):
+            if ptr[i] != 0:
+                return False
+        return True
+
+    var c_is_zeros = is_all_zeros(c_host.data, c_size)
+    var c_ref_is_zeros = is_all_zeros(c_host_ref.data, c_size)
+
+    if init_type == InitializationType.zero:
+        if not c_is_zeros:
+            raise "matmul verification failed: kernel output should be all zeros for zero input"
+        if not c_ref_is_zeros:
+            raise "matmul verification failed: vendor BLAS output should be all zeros for zero input"
+    else:
+        if c_is_zeros:
+            raise "matmul verification failed: kernel output is all zeros"
+        if c_ref_is_zeros:
+            raise "matmul verification failed: vendor BLAS output is all zeros"
+
+    # Verify using relative difference measure
+    assert_with_measure[relative_difference](
+        c_host.data,
+        c_host_ref.data,
+        c_size,
+        msg="matmul verification failed (relative_difference)",
+        threshold=0.001,
+    )
+
+    # Verify element-wise with dtype-appropriate tolerances
+    # float8 needs looser tolerances due to reduced precision
+    var rtol: Float64
+    var atol: Float64
+
+    comptime if dtype.is_float8():
+        rtol = 1e-2
+        atol = 1e-2
+    else:
+        rtol, atol = pytorch_like_tolerances_for[DType.bfloat16]()
+
+    assert_almost_equal(
+        c_host.data,
+        c_host_ref.data,
+        c_host.num_elements(),
+        atol=atol,
+        rtol=rtol,
+    )
+    print("\n=== TEST PASSED ===\n")
 
 
 fn _get_run_name[
@@ -113,16 +218,13 @@ fn _get_run_name[
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
-    use_mxfp8_sf: Bool = False,
 ](
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
-    var type_str = String(
-        "(", "mxfp8_sf" if use_mxfp8_sf else String(dtype), ") : "
-    )
+    var type_str = String("(", String(dtype), ") : ")
     # M
     var m_str = String(shape_c_dim[0], "_dynamic")
     # N
@@ -166,7 +268,6 @@ fn bench_matmul[
     transpose_b: Bool = False,
     epilogue: Bool = False,
     register_based_epilogue: Bool = False,
-    use_mxfp8_sf: Bool = False,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -190,76 +291,6 @@ fn bench_matmul[
         get_size(shape_c_dim), simd_size, ctx
     )
     var buffer_c_ref = ctx.enqueue_create_buffer[DType.bfloat16](cb_c.stride)
-
-    # MXFP8 scale buffer allocation
-    comptime scales_type = MXFP8_SF_DTYPE
-
-    # M, N, K dimensions for scales calculation
-    var M = shape_c_dim[0]
-    var N = shape_c_dim[1]
-    var K = shape_a_dim[1]
-
-    # Calculate scale buffer shapes - 5D tensors for MXFP8 format
-    comptime static_a_scales_shape = DimList(
-        ceildiv(shape_a.at[0](), SF_MN_GROUP_SIZE),
-        ceildiv(shape_a.at[1](), MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
-    )
-    comptime static_b_scales_shape = DimList(
-        ceildiv(shape_b.at[0](), SF_MN_GROUP_SIZE),
-        ceildiv(shape_b.at[1](), MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
-    )
-
-    var dynamic_a_scales_shape = DimList(
-        ceildiv(M, SF_MN_GROUP_SIZE),
-        ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
-    )
-    var dynamic_b_scales_shape = DimList(
-        ceildiv(N, SF_MN_GROUP_SIZE),
-        ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
-    )
-
-    var a_scales_size = (
-        ceildiv(M, SF_MN_GROUP_SIZE)
-        * ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)
-        * SF_ATOM_M[0]
-        * SF_ATOM_M[1]
-        * SF_ATOM_K
-    )
-    var b_scales_size = (
-        ceildiv(N, SF_MN_GROUP_SIZE)
-        * ceildiv(K, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K)
-        * SF_ATOM_M[0]
-        * SF_ATOM_M[1]
-        * SF_ATOM_K
-    )
-
-    var buffer_a_scales = ctx.enqueue_create_buffer[scales_type](a_scales_size)
-    var buffer_b_scales = ctx.enqueue_create_buffer[scales_type](b_scales_size)
-
-    # Initialize scales for MXFP8 with random values directly on GPU.
-    # float8_e8m0fnu: exponent-only format, value = 2^(stored_value - 127). Note
-    # that using constant 1 scale factors is not realistic for benchmarking and
-    # does in fact result in artificially high performance, so random scale
-    # factors are more realistic.
-    comptime if use_mxfp8_sf:
-        _init_mxfp8_scales_launch[scales_type](
-            buffer_a_scales, a_scales_size, ctx
-        )
-        _init_mxfp8_scales_launch[scales_type](
-            buffer_b_scales, b_scales_size, ctx
-        )
 
     # Host allocations
     var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cb_a.alloc_size())
@@ -299,57 +330,26 @@ fn bench_matmul[
         cb_b.init_on_device(init_type, ctx)
 
     # Helper to run vendor BLAS matmul - used by both benchmark and verification
-    @parameter
-    @__copy_capture(dynamic_a_scales_shape, dynamic_b_scales_shape)
     fn run_vendor_blas(
         ctx: DeviceContext,
         tensor_a: NDBuffer[dtype, 2, MutAnyOrigin, shape_a],
         tensor_b: NDBuffer[dtype, 2, MutAnyOrigin, shape_b],
         tensor_c: NDBuffer[DType.bfloat16, 2, MutAnyOrigin, shape_c],
     ) raises:
-        comptime if use_mxfp8_sf:
-            var a_scales_nd = NDBuffer[
-                scales_type, 5, MutAnyOrigin, static_a_scales_shape
-            ](buffer_a_scales.unsafe_ptr(), dynamic_a_scales_shape)
-            var b_scales_nd = NDBuffer[
-                scales_type, 5, MutAnyOrigin, static_b_scales_shape
-            ](buffer_b_scales.unsafe_ptr(), dynamic_b_scales_shape)
-
-            var a_tensor = from_ndbuffer_row_major(tensor_a)
-            var b_tensor = from_ndbuffer_row_major(tensor_b)
-            var c_tensor = from_ndbuffer_row_major(tensor_c)
-            var a_scales = from_ndbuffer_row_major(a_scales_nd)
-            var b_scales = from_ndbuffer_row_major(b_scales_nd)
-
-            vendor_blas.matmul[scales_type=scales_type](
-                ctx,
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                a_scales=a_scales.get_immutable(),
-                b_scales=b_scales.get_immutable(),
-                transpose_b=True,
-                c_row_major=True,
-            )
-        else:
-            vendor_blas.matmul[use_tf32=True](
-                ctx,
-                tensor_c,
-                tensor_a,
-                tensor_b,
-                c_row_major=True,
-                transpose_b=transpose_b,
-            )
+        vendor_blas.matmul[use_tf32=True](
+            ctx,
+            tensor_c,
+            tensor_a,
+            tensor_b,
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )
 
     @parameter
     @__copy_capture(
         cb_a,
         cb_b,
         cb_c,
-        a_scales_size,
-        b_scales_size,
-        dynamic_a_scales_shape,
-        dynamic_b_scales_shape,
     )
     @always_inline
     fn bench_func(mut b: Bencher):
@@ -412,7 +412,6 @@ fn bench_matmul[
                 transpose_b=transpose_b,
                 cache_busting=cache_busting,
                 use_vendor_blas=use_vendor_blas,
-                use_mxfp8_sf=use_mxfp8_sf,
             ](shape_c_dim, shape_a_dim, shape_b_dim)
         ),
         # TODO: Pick relevant benchmetric
@@ -424,90 +423,14 @@ fn bench_matmul[
     # (iteration 0 uses offset 0), so we just need to run vendor BLAS once.
     comptime if not use_vendor_blas and not epilogue:
         if verify:
-            # Create tensors at offset 0 for verification
-            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
-                cb_a.unsafe_ptr(), shape_a_dim
-            )
-            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
-                cb_b.unsafe_ptr(), shape_b_dim
-            )
-            var tensor_c_ref = NDBuffer[
-                DType.bfloat16, 2, MutAnyOrigin, shape_c
-            ](buffer_c_ref.unsafe_ptr(), shape_c_dim)
-
-            # Run vendor BLAS to get reference output
-            run_vendor_blas(ctx, tensor_a, tensor_b, tensor_c_ref)
-            ctx.synchronize()
-
-            # Copy results to host for comparison
-            # Create non-owning DeviceBuffers with exact size for the copy
-            var c_size = shape_c_dim[0] * shape_c_dim[1]
-            var c_host = UnsafePointer[Scalar[DType.bfloat16]].alloc(c_size)
-            var c_ref_host = UnsafePointer[Scalar[DType.bfloat16]].alloc(c_size)
-            var c_view = DeviceBuffer[DType.bfloat16](
-                ctx, cb_c.unsafe_ptr(), c_size, owning=False
-            )
-            var c_ref_view = DeviceBuffer[DType.bfloat16](
-                ctx, buffer_c_ref.unsafe_ptr(), c_size, owning=False
-            )
-            ctx.enqueue_copy(c_host, c_view)
-            ctx.enqueue_copy(c_ref_host, c_ref_view)
-            ctx.synchronize()
-
-            # Sanity check: verify outputs match expected zero/non-zero state
-            fn is_all_zeros(
-                ptr: UnsafePointer[Scalar[DType.bfloat16]], size: Int
-            ) -> Bool:
-                for i in range(size):
-                    if ptr[i] != 0:
-                        return False
-                return True
-
-            var c_is_zeros = is_all_zeros(c_host, c_size)
-            var c_ref_is_zeros = is_all_zeros(c_ref_host, c_size)
-
-            if init_type == InitializationType.zero:
-                if not c_is_zeros:
-                    raise "matmul verification failed: kernel output should be all zeros for zero input"
-                if not c_ref_is_zeros:
-                    raise "matmul verification failed: vendor BLAS output should be all zeros for zero input"
-            else:
-                if c_is_zeros:
-                    raise "matmul verification failed: kernel output is all zeros"
-                if c_ref_is_zeros:
-                    raise "matmul verification failed: vendor BLAS output is all zeros"
-
-            # Verify using relative difference measure
-            assert_with_measure[relative_difference](
-                c_host,
-                c_ref_host,
-                c_size,
-                msg="matmul verification failed (relative_difference)",
-                threshold=0.001,
-            )
-
-            # Verify element-wise with dtype-appropriate tolerances
-            # float8 needs looser tolerances due to reduced precision
-            var rtol: Float64
-            var atol: Float64
-
-            comptime if dtype.is_float8():
-                rtol = 1e-2
-                atol = 1e-2
-            else:
-                rtol, atol = pytorch_like_tolerances_for[DType.bfloat16]()
-
-            assert_almost_equal(
-                c_host,
-                c_ref_host,
-                c_size,
-                msg="matmul verification failed",
-                rtol=rtol,
-                atol=atol,
-            )
-
-            c_host.free()
-            c_ref_host.free()
+            verify_matmul[
+                dtype=dtype,
+                static_c_shape=shape_c,
+                static_a_shape=shape_a,
+                static_b_shape=shape_b,
+                transpose_b=transpose_b,
+                init_on_gpu=init_on_gpu,
+            ](ctx, shape_c_dim, shape_a_dim, shape_b_dim, init_type)
 
     # Cleanup host pointers
     a_host_ptr.free()
@@ -518,8 +441,6 @@ fn bench_matmul[
     _ = cb_b^
     _ = cb_c^
     _ = buffer_c_ref^
-    _ = buffer_a_scales^
-    _ = buffer_b_scales^
 
 
 fn create_matmul_bench[
@@ -530,7 +451,6 @@ fn create_matmul_bench[
     use_vendor_blas: Bool,
     epilogue: Bool,
     register_based_epilogue: Bool,
-    use_mxfp8_sf: Bool = False,
 ](
     ctx: DeviceContext,
     mut b: Bench,
@@ -558,7 +478,6 @@ fn create_matmul_bench[
         use_vendor_blas=use_vendor_blas,
         epilogue=epilogue,
         register_based_epilogue=register_based_epilogue,
-        use_mxfp8_sf=use_mxfp8_sf,
     ](
         ctx,
         b,
@@ -571,18 +490,15 @@ fn create_matmul_bench[
 
 
 def main():
-    comptime use_mxfp8_sf = env_get_string["dtype", "bfloat16"]() == "mxfp8_sf"
-    comptime dtype = DType.float8_e4m3fn if use_mxfp8_sf else env_get_dtype[
-        "dtype", DType.bfloat16
-    ]()
+    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
-    var M = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int["K", 1]()
+    var M = Int(arg_parse("M", 128))
+    comptime N = env_get_int["N", 128]()
+    comptime K = env_get_int["K", 128]()
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
-    var verify = arg_parse("verify", False)
+    var verify = arg_parse("verify", True)
     comptime cache_busting = True
     comptime transpose_b = True
     comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
@@ -600,7 +516,6 @@ def main():
             use_vendor_blas=use_vendor_blas,
             epilogue=epilogue,
             register_based_epilogue=register_based_epilogue,
-            use_mxfp8_sf=use_mxfp8_sf,
         ](
             ctx,
             m,
