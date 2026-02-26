@@ -21,6 +21,7 @@ from sys import PrefetchLocality
 
 import math
 from collections.string.string_slice import _get_kgen_string
+from format._utils import FormatStruct
 from sys import is_compile_time
 from sys.info import _is_sm_9x_or_newer, is_gpu
 
@@ -252,7 +253,7 @@ fn scatter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct PrefetchLocality(TrivialRegisterPassable):
+struct PrefetchLocality(TrivialRegisterPassable, Writable):
     """The prefetch locality.
 
     The locality, rw, and cache type correspond to LLVM prefetch intrinsic's
@@ -281,8 +282,33 @@ struct PrefetchLocality(TrivialRegisterPassable):
         """
         self.value = Int32(value)
 
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the prefetch locality to a writer.
 
-struct PrefetchRW(TrivialRegisterPassable):
+        Args:
+            writer: The writer to write to.
+        """
+        if self.value == 0:
+            writer.write_string("NONE")
+        elif self.value == 1:
+            writer.write_string("LOW")
+        elif self.value == 2:
+            writer.write_string("MEDIUM")
+        else:
+            writer.write_string("HIGH")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the representation of the prefetch locality to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        FormatStruct(writer, "PrefetchLocality").fields(self)
+
+
+struct PrefetchRW(TrivialRegisterPassable, Writable):
     """Prefetch read or write."""
 
     var value: Int32
@@ -314,9 +340,30 @@ struct PrefetchRW(TrivialRegisterPassable):
         """
         return self.value == other.value
 
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the prefetch read-write option to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        if self.value == 0:
+            writer.write_string("READ")
+        else:
+            writer.write_string("WRITE")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the representation of the prefetch read-write option to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        FormatStruct(writer, "PrefetchRW").fields(self)
+
 
 # LLVM prefetch cache type
-struct PrefetchCache(TrivialRegisterPassable):
+struct PrefetchCache(TrivialRegisterPassable, Writable):
     """Prefetch cache type."""
 
     var value: Int32
@@ -336,8 +383,29 @@ struct PrefetchCache(TrivialRegisterPassable):
         """
         self.value = Int32(value)
 
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the prefetch cache type to a writer.
 
-struct PrefetchOptions(Defaultable, TrivialRegisterPassable):
+        Args:
+            writer: The writer to write to.
+        """
+        if self.value == 0:
+            writer.write_string("INSTRUCTION")
+        else:
+            writer.write_string("DATA")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the representation of the prefetch cache type to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        FormatStruct(writer, "PrefetchCache").fields(self)
+
+
+struct PrefetchOptions(Defaultable, TrivialRegisterPassable, Writable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -462,6 +530,42 @@ struct PrefetchOptions(Defaultable, TrivialRegisterPassable):
         var updated = self
         updated.cache = PrefetchCache.INSTRUCTION
         return updated
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the prefetch options to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            self.rw.write_to(w)
+            w.write_string(", ")
+            self.locality.write_to(w)
+            w.write_string(", ")
+            self.cache.write_to(w)
+
+        FormatStruct(writer, "PrefetchOptions").fields[FieldsFn=fields]()
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the representation of the prefetch options to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            self.rw.write_repr_to(w)
+            w.write_string(", ")
+            self.locality.write_repr_to(w)
+            w.write_string(", ")
+            self.cache.write_repr_to(w)
+
+        FormatStruct(writer, "PrefetchOptions").fields[FieldsFn=fields]()
 
 
 @always_inline("nodebug")

@@ -19,9 +19,18 @@ from sys import (
     strided_load,
     strided_store,
 )
-from sys.intrinsics import assume, likely, unlikely
+from sys.intrinsics import (
+    PrefetchCache,
+    PrefetchLocality,
+    PrefetchOptions,
+    PrefetchRW,
+    assume,
+    likely,
+    unlikely,
+)
 
 from memory import memset_zero
+from test_utils import check_write_to
 from testing import assert_equal
 from testing import TestSuite
 
@@ -135,6 +144,70 @@ def test_likely_unlikely():
 
 def test_assume():
     assume(True)
+
+
+def test_prefetch_locality_write_to():
+    check_write_to(PrefetchLocality.NONE, expected="NONE", is_repr=False)
+    check_write_to(PrefetchLocality.LOW, expected="LOW", is_repr=False)
+    check_write_to(PrefetchLocality.MEDIUM, expected="MEDIUM", is_repr=False)
+    check_write_to(PrefetchLocality.HIGH, expected="HIGH", is_repr=False)
+
+
+def test_prefetch_rw_write_to():
+    check_write_to(PrefetchRW.READ, expected="READ", is_repr=False)
+    check_write_to(PrefetchRW.WRITE, expected="WRITE", is_repr=False)
+
+
+def test_prefetch_cache_write_to():
+    check_write_to(PrefetchCache.INSTRUCTION, expected="INSTRUCTION", is_repr=False)
+    check_write_to(PrefetchCache.DATA, expected="DATA", is_repr=False)
+
+
+def test_prefetch_options_write_to():
+    check_write_to(
+        PrefetchOptions(),
+        expected="PrefetchOptions(READ, HIGH, DATA)",
+        is_repr=False,
+    )
+    check_write_to(
+        PrefetchOptions().for_write().no_locality().to_instruction_cache(),
+        expected="PrefetchOptions(WRITE, NONE, INSTRUCTION)",
+        is_repr=False,
+    )
+
+
+def test_prefetch_locality_write_repr_to():
+    check_write_to(PrefetchLocality.NONE, expected="PrefetchLocality(NONE)", is_repr=True)
+    check_write_to(PrefetchLocality.LOW, expected="PrefetchLocality(LOW)", is_repr=True)
+    check_write_to(
+        PrefetchLocality.MEDIUM, expected="PrefetchLocality(MEDIUM)", is_repr=True
+    )
+    check_write_to(PrefetchLocality.HIGH, expected="PrefetchLocality(HIGH)", is_repr=True)
+
+
+def test_prefetch_rw_write_repr_to():
+    check_write_to(PrefetchRW.READ, expected="PrefetchRW(READ)", is_repr=True)
+    check_write_to(PrefetchRW.WRITE, expected="PrefetchRW(WRITE)", is_repr=True)
+
+
+def test_prefetch_cache_write_repr_to():
+    check_write_to(
+        PrefetchCache.INSTRUCTION, expected="PrefetchCache(INSTRUCTION)", is_repr=True
+    )
+    check_write_to(PrefetchCache.DATA, expected="PrefetchCache(DATA)", is_repr=True)
+
+
+def test_prefetch_options_write_repr_to():
+    check_write_to(
+        PrefetchOptions(),
+        expected="PrefetchOptions(PrefetchRW(READ), PrefetchLocality(HIGH), PrefetchCache(DATA))",
+        is_repr=True,
+    )
+    check_write_to(
+        PrefetchOptions().for_write().no_locality().to_instruction_cache(),
+        expected="PrefetchOptions(PrefetchRW(WRITE), PrefetchLocality(NONE), PrefetchCache(INSTRUCTION))",
+        is_repr=True,
+    )
 
 
 def main():
