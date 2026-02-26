@@ -17,6 +17,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 import yaml
@@ -25,6 +26,7 @@ from max.dtype import DType
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
+    PipelineConfig,
     ProfilingConfig,
     SamplingConfig,
 )
@@ -261,27 +263,33 @@ class TestProfilingConfigEnv:
         assert config.gpu_profiling == "on"
 
 
-def _make_text_pipeline_config(max_length: int | None) -> SimpleNamespace:
-    return SimpleNamespace(
-        model=SimpleNamespace(
-            max_length=max_length,
-            huggingface_config=SimpleNamespace(eos_token_id=None),
-        )
+def _make_text_pipeline_config(max_length: int | None) -> PipelineConfig:
+    return cast(
+        PipelineConfig,
+        SimpleNamespace(
+            model=SimpleNamespace(
+                max_length=max_length,
+                huggingface_config=SimpleNamespace(eos_token_id=None),
+            )
+        ),
     )
 
 
 def _make_text_and_vision_pipeline_config(
     max_length: int | None,
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        model=SimpleNamespace(
-            max_length=max_length,
-            huggingface_config=SimpleNamespace(
-                eos_token_id=None,
-                image_token_id=151667,
-            ),
-            kv_cache=SimpleNamespace(enable_prefix_caching=False),
-        )
+) -> PipelineConfig:
+    return cast(
+        PipelineConfig,
+        SimpleNamespace(
+            model=SimpleNamespace(
+                max_length=max_length,
+                huggingface_config=SimpleNamespace(
+                    eos_token_id=None,
+                    image_token_id=151667,
+                ),
+                kv_cache=SimpleNamespace(enable_prefix_caching=False),
+            )
+        ),
     )
 
 
