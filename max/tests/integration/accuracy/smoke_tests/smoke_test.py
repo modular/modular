@@ -138,6 +138,45 @@ def get_gpu_name_and_count() -> tuple[str, int]:
             return "N/A", 0
 
 
+VLLM_MAX_MODEL_LEN_CAP = 16384
+
+
+@cache
+def _get_hf_max_model_len(model: str) -> int | None:
+    """Fetch max_position_embeddings from the model's HuggingFace config.json."""
+    revision = _load_hf_repo_lock().get(model)
+    # Use pinned revision if available, otherwise default branch
+    ref = revision or "main"
+    url = f"https://huggingface.co/{model}/resolve/{ref}/config.json"
+    headers = {}
+    hf_token = os.getenv("HF_TOKEN")
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        config = r.json()
+        max_pos = config.get("max_position_embeddings")
+        if max_pos is not None:
+            return int(max_pos)
+        # Some models nest this under text_config (e.g. VLMs)
+        text_config = config.get("text_config", {})
+        max_pos = text_config.get("max_position_embeddings")
+        if max_pos is not None:
+            return int(max_pos)
+    except Exception as e:
+        logger.warning(f"Could not fetch config.json for {model}: {e}")
+    return None
+
+
+def _vllm_max_model_len(model: str) -> int:
+    """Return the --max-model-len value for vLLM, capped to the model's native limit."""
+    native = _get_hf_max_model_len(model)
+    if native is not None:
+        return min(VLLM_MAX_MODEL_LEN_CAP, native)
+    return VLLM_MAX_MODEL_LEN_CAP
+
+
 def server_is_ready() -> bool:
     health_url = "http://127.0.0.1:8000/health"
     try:
@@ -156,7 +195,8 @@ def get_server_cmd(
     sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = f"sglang.launch_server --attention-backend {sglang_backend} --mem-fraction-static 0.8"
     # limit-mm-per-prompt.video is for InternVL3 on B200
-    VLLM = "vllm.entrypoints.openai.api_server --max-model-len 16384 --limit-mm-per-prompt.video 0"
+    max_model_len = _vllm_max_model_len(model)
+    VLLM = f"vllm.entrypoints.openai.api_server --max-model-len {max_model_len} --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
 
     is_huge_model = is_deepseek(model)
