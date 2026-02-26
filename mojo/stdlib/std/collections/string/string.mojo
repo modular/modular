@@ -1883,6 +1883,49 @@ struct String(
         """
         return StringSlice(self).is_ascii_printable()
 
+    fn is_ascii_alpha(self) -> Bool:
+        """Returns True if all characters in the string are ASCII alphabetic
+        and there is at least one character.
+
+        Returns:
+            True if all characters are ASCII letters and the string is
+            non-empty, False otherwise.
+        """
+        return StringSlice(self).is_ascii_alpha()
+
+    fn is_ascii_alnum(self) -> Bool:
+        """Returns True if all characters in the string are ASCII alphanumeric
+        and there is at least one character.
+
+        Returns:
+            True if all characters are ASCII letters or digits and the string
+            is non-empty, False otherwise.
+        """
+        return StringSlice(self).is_ascii_alnum()
+
+    fn capitalize(self) -> String:
+        """Returns a copy of the string with the first character capitalized
+        and the rest lowercased.
+
+        Note that this currently only works with ASCII strings.
+
+        Returns:
+            A new string with the first character in uppercase and the
+            remaining characters in lowercase.
+        """
+        return StringSlice(self).capitalize()
+
+    fn title(self) -> String:
+        """Returns a titlecased copy of the string where words start with an
+        uppercase character and the remaining characters are lowercase.
+
+        Note that this currently only works with ASCII strings.
+
+        Returns:
+            A new string in title case.
+        """
+        return StringSlice(self).title()
+
     fn ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string right justified in a string of specified width.
 

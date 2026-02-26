@@ -2285,6 +2285,82 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 return False
         return True
 
+    fn is_ascii_alpha(self) -> Bool:
+        """Returns True if all characters in the string are ASCII alphabetic
+        and there is at least one character.
+
+        Returns:
+            True if all characters are ASCII letters and the string is
+            non-empty, False otherwise.
+        """
+        if not self:
+            return False
+        for char in self.codepoints():
+            if not (char.is_ascii_upper() or char.is_ascii_lower()):
+                return False
+        return True
+
+    fn is_ascii_alnum(self) -> Bool:
+        """Returns True if all characters in the string are ASCII alphanumeric
+        and there is at least one character.
+
+        Returns:
+            True if all characters are ASCII letters or digits and the string
+            is non-empty, False otherwise.
+        """
+        if not self:
+            return False
+        for char in self.codepoints():
+            if not (
+                char.is_ascii_digit()
+                or char.is_ascii_upper()
+                or char.is_ascii_lower()
+            ):
+                return False
+        return True
+
+    fn capitalize(self) -> String:
+        """Returns a copy of the string with the first character capitalized
+        and the rest lowercased.
+
+        Note that this currently only works with ASCII strings.
+
+        Returns:
+            A new string with the first character in uppercase and the
+            remaining characters in lowercase.
+        """
+        if not self:
+            return String(self)
+        var result = self.lower()
+        var ptr = result.unsafe_ptr_mut()
+        var first = ptr[]
+        if UInt8(ord("a")) <= first <= UInt8(ord("z")):
+            ptr[] = first - 32
+        return result^
+
+    fn title(self) -> String:
+        """Returns a titlecased copy of the string where words start with an
+        uppercase character and the remaining characters are lowercase.
+
+        Note that this currently only works with ASCII strings.
+
+        Returns:
+            A new string in title case.
+        """
+        var result = self.lower()
+        var ptr = result.unsafe_ptr_mut()
+        var length = result.byte_length()
+        var prev_was_cased = False
+        for i in range(length):
+            var c = ptr[i]
+            if UInt8(ord("a")) <= c <= UInt8(ord("z")):
+                if not prev_was_cased:
+                    ptr[i] = c - 32
+                prev_was_cased = True
+            else:
+                prev_was_cased = False
+        return result^
+
     fn isupper(self) -> Bool:
         """Returns True if all cased characters in the string are uppercase and
         there is at least one cased character.
