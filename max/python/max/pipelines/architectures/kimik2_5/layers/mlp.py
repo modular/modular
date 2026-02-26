@@ -71,8 +71,8 @@ class MLP2(Module, Shardable):
                 has_bias=has_bias,
                 float8_config=float8_config,
             )
-            self.down_proj = linear_cls(in_dim=dim[0], out_dim=dim[1], **common)
-            self.up_proj = linear_cls(in_dim=dim[1], out_dim=dim[2], **common)
+            self.up_proj = linear_cls(in_dim=dim[0], out_dim=dim[1], **common)
+            self.down_proj = linear_cls(in_dim=dim[1], out_dim=dim[2], **common)
 
         self.dim = dim
         self.dtype = dtype
