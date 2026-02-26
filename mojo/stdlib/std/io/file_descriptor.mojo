@@ -70,6 +70,8 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         Write a span of bytes to the file.
 
         Handles partial writes by looping until all bytes are written.
+        Aborts the process if the underlying `write(2)` syscall fails
+        (returns a negative value) or returns 0 bytes written.
 
         Args:
             bytes: The byte span to write to this file.
