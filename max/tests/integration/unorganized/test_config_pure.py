@@ -1276,11 +1276,11 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
                     model_path="test/model",
                     device_specs=[DeviceSpec.accelerator()],
                 ),
-                max_num_steps=42,
+                runtime=PipelineRuntimeConfig(max_num_steps=42),
             )
             config._validate_and_resolve_overlap_scheduler()
             assert config.enable_overlap_scheduler is True
-            assert config.max_num_steps == 1
+            assert config.runtime.max_num_steps == 1
 
     # Don't override if the device is CPU
     with patch_retrieve_architecture("LlamaForCausalLM"):

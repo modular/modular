@@ -263,14 +263,14 @@ def _create_vision_max_pipeline(
             else _ModelConfigExtras()
         ),
     )
-    runtime = (
-        PipelineRuntimeConfig(enable_chunked_prefill=enable_chunked_prefill)
-        if enable_chunked_prefill is not None
-        else PipelineRuntimeConfig()
-    )
+    if enable_chunked_prefill is not None:
+        runtime = PipelineRuntimeConfig(
+            max_num_steps=1, enable_chunked_prefill=enable_chunked_prefill
+        )
+    else:
+        runtime = PipelineRuntimeConfig(max_num_steps=1)
     config = pipelines.PipelineConfig(
         model=model,
-        max_num_steps=1,
         runtime=runtime,
     )
     tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -667,7 +667,7 @@ class PixtralPipelineOracle(PipelineOracle):
                 huggingface_model_revision=revision,
                 max_length=self.max_length,
             ),
-            max_num_steps=1,
+            runtime=PipelineRuntimeConfig(max_num_steps=1),
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)

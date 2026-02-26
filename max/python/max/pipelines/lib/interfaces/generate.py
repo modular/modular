@@ -122,7 +122,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             batches[replica_idx].append(context)
             batch_to_replica_idx[req_id] = replica_idx
 
-        num_steps = self.pipeline_config.max_num_steps
+        num_steps = self.pipeline_config.runtime.max_num_steps
         inputs = TextGenerationInputs(
             batches=batches,
             num_steps=num_steps,

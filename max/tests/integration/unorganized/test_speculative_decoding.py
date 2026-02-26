@@ -32,6 +32,7 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -73,7 +74,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 1):  # noqa: ANN201
             num_speculative_tokens=10,
         ),
         max_batch_size=4,
-        max_num_steps=num_steps,
+        runtime=PipelineRuntimeConfig(max_num_steps=num_steps),
     )
     pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
@@ -238,7 +239,7 @@ def test_draft_model_encoding_selection() -> None:
             num_speculative_tokens=10,
         ),
         max_batch_size=4,
-        max_num_steps=1,
+        runtime=PipelineRuntimeConfig(max_num_steps=1),
     )
     pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
@@ -269,7 +270,7 @@ def test_draft_model_encoding_selection() -> None:
             num_speculative_tokens=10,
         ),
         max_batch_size=4,
-        max_num_steps=1,
+        runtime=PipelineRuntimeConfig(max_num_steps=1),
     )
     pipeline_config2.model.kv_cache.cache_strategy = "paged"
     pipeline_config2.model.kv_cache.kv_cache_page_size = 128
@@ -310,7 +311,7 @@ def test_kv_cache_claiming_protocol() -> None:
             num_speculative_tokens=10,
         ),
         max_batch_size=4,
-        max_num_steps=1,
+        runtime=PipelineRuntimeConfig(max_num_steps=1),
     )
     pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
