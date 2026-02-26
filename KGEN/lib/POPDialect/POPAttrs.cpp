@@ -767,6 +767,13 @@ TypedAttr IntLiteralBinAttr::get(MLIRContext *ctx, TypedAttr lhs, TypedAttr rhs,
   case IntLiteralBinKind::Xor:
     result = l ^ r;
     break;
+  case IntLiteralBinKind::Pow:
+    // Exponentiating by a negative amount is not defined for integers.
+    if (r < IPInt(0))
+      result = IPInt(0);
+    else
+      result = l.exponentiate(r);
+    break;
   }
 
   return IntLiteralAttr::get(lAttr.getContext(), IPInt(result));
