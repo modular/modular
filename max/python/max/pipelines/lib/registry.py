@@ -124,7 +124,7 @@ def get_pipeline_for_task(
     ):
         spec_method = pipeline_config.speculative.speculative_method
         assert spec_method is not None
-        if pipeline_config.enable_overlap_scheduler:
+        if pipeline_config.runtime.enable_overlap_scheduler:
             raise ValueError(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
@@ -138,7 +138,7 @@ def get_pipeline_for_task(
             return EAGLESpeculativeDecodingPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
-    elif pipeline_config.enable_overlap_scheduler:
+    elif pipeline_config.runtime.enable_overlap_scheduler:
         role = pipeline_config.pipeline_role
         if (
             task == PipelineTask.TEXT_GENERATION

@@ -129,17 +129,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    enable_overlap_scheduler: bool = Field(
-        default=False,
-        description=(
-            "Whether to enable the overlap scheduler. This feature allows the scheduler "
-            "to run alongside GPU execution. This helps improve GPU utilization. "
-            "This is an experimental feature which may crash and burn. "
-            "This feature will be enabled by default for some selected architectures. "
-            "You can forcibly disable this by setting --no-enable-overlap-scheduler --force."
-        ),
-    )
-
     prefer_module_v3: bool = Field(
         default=False,
         description=(
@@ -656,7 +645,7 @@ class PipelineConfig(ConfigFileModel):
             return
 
         # Automatically enable overlap scheduling for select architectures.
-        if not self.enable_overlap_scheduler:
+        if not self.runtime.enable_overlap_scheduler:
             arch = PIPELINE_REGISTRY.retrieve_architecture(
                 huggingface_repo=self.model.huggingface_model_repo,
                 prefer_module_v3=self.prefer_module_v3,
@@ -678,7 +667,7 @@ class PipelineConfig(ConfigFileModel):
                 and not self.lora
                 and self.model.device_specs[0].device_type != "cpu"
             ):
-                self.enable_overlap_scheduler = True
+                self.runtime.enable_overlap_scheduler = True
                 self.runtime.max_num_steps = 1
                 logger.info(
                     f"Automatically enabling overlap scheduling for {arch.name} with max-num-steps=1. "
@@ -686,7 +675,7 @@ class PipelineConfig(ConfigFileModel):
                 )
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
-        if self.enable_overlap_scheduler:
+        if self.runtime.enable_overlap_scheduler:
             if self.pipeline_role != "prefill_and_decode":
                 raise ValueError(
                     "The Overlap scheduler does not support Disaggregated Inference yet. "
@@ -733,9 +722,9 @@ class PipelineConfig(ConfigFileModel):
             raise ValueError(
                 "device_graph_capture requires max_batch_size to be set."
             )
-        if not self.enable_overlap_scheduler:
+        if not self.runtime.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
-        self.enable_overlap_scheduler = True
+        self.runtime.enable_overlap_scheduler = True
         if self.runtime.max_num_steps != 1:
             logger.info(
                 "Setting max-num-steps=1 for device graph capture with overlap scheduling."
@@ -1504,7 +1493,7 @@ class AudioGenerationConfig(PipelineConfig):
         if self.runtime.force:
             return
 
-        if self.enable_overlap_scheduler:
+        if self.runtime.enable_overlap_scheduler:
             raise ValueError(
                 "The Overlap scheduler does not support Audio Generation. "
                 "Detected AudioGenerationConfig."

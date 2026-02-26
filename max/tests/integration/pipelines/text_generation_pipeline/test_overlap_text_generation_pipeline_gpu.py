@@ -149,6 +149,7 @@ class FakeModelConfig(ConfigFileModel):
 
 class FakeRuntimeConfig(ConfigFileModel):
     execute_empty_batches: bool = False
+    enable_overlap_scheduler: bool = False
 
 
 class FakePipelineConfig(ConfigFileModel):
@@ -156,7 +157,6 @@ class FakePipelineConfig(ConfigFileModel):
     sampling: FakeSamplingConfig
     runtime: FakeRuntimeConfig = FakeRuntimeConfig()
     enable_echo: bool = False
-    enable_overlap_scheduler: bool = False
     debug_verify_replay: bool = False
     max_batch_size: int = 999
 
@@ -249,7 +249,9 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
         self, pipeline_config: FakePipelineConfig, *args: Any, **kwargs: Any
     ) -> None:
         self.kv_params = MagicMock(spec=KVCacheParams)
-        self.enable_overlap_scheduler = pipeline_config.enable_overlap_scheduler
+        self.enable_overlap_scheduler = (
+            pipeline_config.runtime.enable_overlap_scheduler
+        )
         self.device = Accelerator()
         self.kv_cache_config = MagicMock()
         self.max_seq_len = 9999
@@ -365,10 +367,13 @@ def create_overlap_pipeline(
         device_specs=[DeviceSpec(id=0, device_type="gpu")],
         kv_cache=MagicMock(),
     )
+    runtime = FakeRuntimeConfig(
+        enable_overlap_scheduler=enable_overlap_scheduler,
+    )
     pipeline_config = FakePipelineConfig(
         model=model_config,
         sampling=sampling_config,
-        enable_overlap_scheduler=enable_overlap_scheduler,
+        runtime=runtime,
     )
     pipeline = OverlapTextGenerationPipeline(
         pipeline_config=cast(PipelineConfig, pipeline_config),
