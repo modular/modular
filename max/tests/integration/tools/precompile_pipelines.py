@@ -40,6 +40,10 @@ from verify_pipelines import (
 
 logger = logging.getLogger(__name__)
 
+SKIP_MODELS: set[str] = {
+    "huggingfacetb/smollm2-360m-instruct",  # TODO(GEX-3265)
+}
+
 
 @dataclass
 class PrecompileJob:
@@ -161,6 +165,10 @@ def collect_precompile_jobs(
         oracle = PIPELINE_ORACLES[pipeline_def.pipeline]
         model_path = oracle.model_path
 
+        if model_path.casefold() in SKIP_MODELS:
+            logger.info("Skipping %s (in SKIP_MODELS)", model_path)
+            continue
+
         dedup_key = (model_path, devices, encoding)
         if dedup_key in seen:
             continue
@@ -212,9 +220,21 @@ def compile_models_in_parallel(
         futures = {
             executor.submit(run_precompile_inprocess, job): job for job in jobs
         }
+        per_job_timeout = 1200
         for future in as_completed(futures):
             job = futures[future]
-            success, output, elapsed = future.result()
+            try:
+                success, output, elapsed = future.result(
+                    timeout=per_job_timeout
+                )
+            except TimeoutError:
+                success = False
+                output = f"TIMEOUT: job exceeded {per_job_timeout}s limit"
+                elapsed = float(per_job_timeout)
+            except Exception as exc:
+                success = False
+                output = f"WORKER CRASH: {exc}\n{traceback.format_exc()}"
+                elapsed = 0.0
             status = "OK" if success else "FAILED"
             title = f"{status} {job.model_path} ({elapsed:.0f}s)"
             print(f"::group::{title}", flush=True)
