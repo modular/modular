@@ -21,7 +21,7 @@ The `var` statement above does three things:
 - It declares a logical storage location (in this case, a storage location sized
   to hold a `String` struct).
 - It binds the name `greeting` to this logical storage location.
-- It *initializes* the storage space with a newly-created `String` value,
+- It *initializes* the storage space with a newly created `String` value,
   with the text, "Hello World". The new value is *owned by* the variable.
   No other variable can own this value unless we intentionally transfer it.
 
@@ -127,8 +127,7 @@ not compile:
 var user_id: Int = "Sam"
 ```
 
-Explicitly-declared variables follow [lexical scoping](#variable-scopes), unlike
-implicitly-declared variables.
+Explicitly-declared variables have block-level [scope](#variable-scopes).
 
 ## Type annotations
 
@@ -258,10 +257,16 @@ conversion](/mojo/manual/lifecycle/life/#constructors-and-implicit-conversion).
 
 ## Variable scopes
 
-Variables declared with `var` are bound by *lexical scoping*. This
-means that nested code blocks can read and modify variables defined in an
-outer scope. But an outer scope **cannot** read variables defined in an
-inner scope at all.
+Variables in Mojo use *lexical scoping*. A variable's definition is
+determined by where it appears in the source code, not when it executes
+at runtime. The specific scope level depends on how the variable is
+declared.
+
+Nested code can read and modify variables defined in an outer scope.
+An outer scope can't read variables defined in an inner scope.
+
+Variables [explicitly declared](#explicitly-declared-variables) with `var`
+have **block-level** scope.
 
 For example, the `if` code block shown here creates an inner scope where outer
 variables are accessible to read/write, but any new variables do not live
@@ -295,11 +300,11 @@ scope variable hides or "shadows" a variable from an outer scope.)
 The lifetime of the inner `num` ends exactly where the `if` code block ends,
 because that's the scope in which the variable was defined.
 
-This is in contrast to implicitly-declared variables (those without the `var`
-keyword), which use **function-level scoping** (consistent with Python variable
-behavior). That means, when you change the value of an implicitly-declared
-variable inside the `if` block, it actually changes the value for the entire
-function.
+This is in contrast to [implicitly-declared](#implicitly-declared-variables)
+variables (those without the `var` keyword), which use **function-level scoping**
+(consistent with Python variable behavior). That means, when you change the
+value of an implicitly-declared variable inside the `if` block, it actually
+changes the value for the entire function.
 
 For example, here's the same code but *without* the `var` declarations:
 
@@ -320,8 +325,8 @@ def function_scopes():
 ```
 
 Now, the last `print()` function sees the updated `num` value from the inner
-scope, because implicitly-declared variables (Python-style variables) use function-level
-scope (instead of lexical scope).
+scope, because implicitly-declared variables are scoped at the function level,
+as in Python, rather than at the block level.
 
 ## Copying and moving values
 
