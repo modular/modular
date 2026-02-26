@@ -55,16 +55,10 @@ N_IMAGES = 1
 GRID_T, GRID_H, GRID_W = 1, 2, 2
 N_PATCHES = GRID_T * GRID_H * GRID_W
 
-SEED_PROJ_WEIGHT = 42
-SEED_PROJ_BIAS = 43
-SEED_POS_EMB = 44
-SEED_INPUT = 45
+torch.manual_seed(42)
 
 
-def _rand_tensor(
-    shape: tuple[int, ...], dtype: torch.dtype, seed: int
-) -> torch.Tensor:
-    torch.manual_seed(seed)
+def _rand_tensor(shape: tuple[int, ...], dtype: torch.dtype) -> torch.Tensor:
     return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(dtype)
 
 
@@ -74,20 +68,14 @@ def _create_state_dict(
     """State dict keys match Module.raw_state_dict (proj has name='proj' -> proj.proj.*)."""
     state: dict[str, torch.Tensor] = {
         "proj.proj.weight": _rand_tensor(
-            (HIDDEN_SIZE, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE),
-            dtype,
-            SEED_PROJ_WEIGHT,
+            (HIDDEN_SIZE, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE), dtype
         ),
         "pos_emb.weight": _rand_tensor(
-            (INIT_POS_EMB_HEIGHT, INIT_POS_EMB_WIDTH, HIDDEN_SIZE),
-            dtype,
-            SEED_POS_EMB,
+            (INIT_POS_EMB_HEIGHT, INIT_POS_EMB_WIDTH, HIDDEN_SIZE), dtype
         ),
     }
     if has_bias:
-        state["proj.proj.bias"] = _rand_tensor(
-            (HIDDEN_SIZE,), dtype, SEED_PROJ_BIAS
-        )
+        state["proj.proj.bias"] = _rand_tensor((HIDDEN_SIZE,), dtype)
     return state
 
 
@@ -331,11 +319,8 @@ def test_patch_embedding_full_matches_torch() -> None:
     embeddings in the graph (interpolation + time_weight + per-image slicing).
     """
     has_bias = True
-    torch.manual_seed(SEED_INPUT)
     pixel_values = _rand_tensor(
-        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE),
-        TORCH_DTYPE,
-        SEED_INPUT,
+        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE), TORCH_DTYPE
     )
     grid_thws = torch.tensor([[GRID_T, GRID_H, GRID_W]], dtype=torch.int64)
     state_dict = _create_state_dict(TORCH_DTYPE, has_bias)
@@ -357,11 +342,8 @@ def test_patch_embedding_full_matches_torch() -> None:
 def test_patch_embedding_forward_matches_torch_proj() -> None:
     """PatchEmbeddingLayer output matches torch Conv2d projection (pos_emb is no-op)."""
     has_bias = True  # Model uses bias in patch_embed.proj
-    torch.manual_seed(SEED_INPUT)
     pixel_values = _rand_tensor(
-        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE),
-        TORCH_DTYPE,
-        SEED_INPUT,
+        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE), TORCH_DTYPE
     )
     grid_thws = torch.tensor([[GRID_T, GRID_H, GRID_W]], dtype=torch.int64)
 

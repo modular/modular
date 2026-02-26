@@ -18,7 +18,7 @@ import math
 
 import pytest
 import torch
-import torch.nn as nn
+from conftest import TorchMLP2
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -33,53 +33,22 @@ from max.graph import (
 from max.nn import Allreduce, Signals
 from max.pipelines.architectures.kimik2_5.layers.mlp import MLP2
 from test_common.graph_utils import are_all_buffer_values_sequence
-from transformers.activations import GELUTanh
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
 
 HIDDEN_DIM = 1152
-FEED_FORWARD_LENGTH = 4304
-DIM = (FEED_FORWARD_LENGTH, HIDDEN_DIM, FEED_FORWARD_LENGTH)
+MLP_DIM = 4304
+DIM = (HIDDEN_DIM, MLP_DIM, HIDDEN_DIM)
 SEQ_LEN = 16
 
-SEED_UP_WEIGHT = 42
-SEED_DOWN_WEIGHT = 43
-SEED_UP_BIAS = 45
-SEED_DOWN_BIAS = 46
-SEED_INPUT = 44
+torch.manual_seed(42)
 
 
 def _generate_tensor(
-    shape: tuple[int, ...], dtype: torch.dtype, seed: int
+    shape: tuple[int, ...], dtype: torch.dtype
 ) -> torch.Tensor:
-    torch.manual_seed(seed)
     return (torch.randn(shape) * (1.0 / math.sqrt(HIDDEN_DIM))).to(dtype)
-
-
-class TorchMLP2(nn.Module):
-    """PyTorch reference for the MLP2 layer (non-gated MLP with gelu_tanh activation)."""
-
-    def __init__(self, state_dict: dict[str, torch.Tensor]) -> None:
-        super().__init__()
-        up_proj_w = state_dict["up_proj.weight"]
-        down_proj_w = state_dict["down_proj.weight"]
-        up_has_bias = "up_proj.bias" in state_dict
-        down_has_bias = "down_proj.bias" in state_dict
-        self.up_proj = nn.Linear(*up_proj_w.shape, bias=up_has_bias)
-        self.up_proj.weight = nn.Parameter(up_proj_w)
-        self.down_proj = nn.Linear(*down_proj_w.shape, bias=down_has_bias)
-        self.down_proj.weight = nn.Parameter(down_proj_w)
-        if up_has_bias:
-            self.up_proj.bias = nn.Parameter(state_dict["up_proj.bias"])
-        if down_has_bias:
-            self.down_proj.bias = nn.Parameter(state_dict["down_proj.bias"])
-        self.activation = GELUTanh()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.up_proj(x)
-        x = self.activation(x)
-        return self.down_proj(x)
 
 
 def _create_weights(
@@ -87,20 +56,12 @@ def _create_weights(
     has_bias: bool = False,
 ) -> dict[str, torch.Tensor]:
     weights: dict[str, torch.Tensor] = {
-        "up_proj.weight": _generate_tensor(
-            (FEED_FORWARD_LENGTH, HIDDEN_DIM), dtype, seed=SEED_UP_WEIGHT
-        ),
-        "down_proj.weight": _generate_tensor(
-            (HIDDEN_DIM, FEED_FORWARD_LENGTH), dtype, seed=SEED_DOWN_WEIGHT
-        ),
+        "up_proj.weight": _generate_tensor((MLP_DIM, HIDDEN_DIM), dtype),
+        "down_proj.weight": _generate_tensor((HIDDEN_DIM, MLP_DIM), dtype),
     }
     if has_bias:
-        weights["up_proj.bias"] = _generate_tensor(
-            (FEED_FORWARD_LENGTH,), dtype, seed=SEED_UP_BIAS
-        )
-        weights["down_proj.bias"] = _generate_tensor(
-            (HIDDEN_DIM,), dtype, seed=SEED_DOWN_BIAS
-        )
+        weights["up_proj.bias"] = _generate_tensor((MLP_DIM,), dtype)
+        weights["down_proj.bias"] = _generate_tensor((HIDDEN_DIM,), dtype)
     return weights
 
 
@@ -219,9 +180,7 @@ def _run_accuracy_test(
     """Shared driver: create weights/input, run MAX + torch, assert close."""
     state_dict = _create_weights(TORCH_DTYPE, has_bias)
     device = "cuda" if n_gpus > 0 else "cpu"
-    x = _generate_tensor(
-        (SEQ_LEN, HIDDEN_DIM), TORCH_DTYPE, seed=SEED_INPUT
-    ).to(device)
+    x = _generate_tensor((SEQ_LEN, HIDDEN_DIM), TORCH_DTYPE).to(device)
 
     max_output = _build_and_run(
         state_dict,
@@ -232,8 +191,10 @@ def _run_accuracy_test(
         sharding_strategy=sharding_strategy,
     )
 
-    torch_state = {k: v.to(device) for k, v in state_dict.items()}
-    torch_output = TorchMLP2(torch_state)(x).detach()
+    ref = TorchMLP2(DIM, has_bias=has_bias)
+    ref.load_state_dict(state_dict)
+    ref = ref.to(dtype=TORCH_DTYPE, device=device)
+    torch_output = ref(x).detach()
 
     _assert_close(torch_output, max_output)
 

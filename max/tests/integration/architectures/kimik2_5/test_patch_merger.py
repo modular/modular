@@ -41,20 +41,12 @@ INPUT_DIM = MM_HIDDEN_SIZE * N_K
 NUM_PATCHES_A = 64
 NUM_PATCHES_B = 24
 
-SEED_LN_WEIGHT = 50
-SEED_LN_BIAS = 51
-SEED_PROJ0_WEIGHT = 52
-SEED_PROJ0_BIAS = 53
-SEED_PROJ2_WEIGHT = 54
-SEED_PROJ2_BIAS = 55
-SEED_INPUT_A = 56
-SEED_INPUT_B = 57
+torch.manual_seed(42)
 
 
 def _generate_tensor(
-    shape: tuple[int, ...], dtype: torch.dtype, seed: int
+    shape: tuple[int, ...], dtype: torch.dtype
 ) -> torch.Tensor:
-    torch.manual_seed(seed)
     return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(dtype)
 
 
@@ -82,24 +74,12 @@ class TorchPatchMergerMLP(nn.Module):
 
 def _create_weights(dtype: torch.dtype) -> dict[str, torch.Tensor]:
     return {
-        "pre_norm.weight": _generate_tensor(
-            (MM_HIDDEN_SIZE,), dtype, seed=SEED_LN_WEIGHT
-        ),
-        "pre_norm.bias": _generate_tensor(
-            (MM_HIDDEN_SIZE,), dtype, seed=SEED_LN_BIAS
-        ),
-        "proj.0.weight": _generate_tensor(
-            (INPUT_DIM, INPUT_DIM), dtype, seed=SEED_PROJ0_WEIGHT
-        ),
-        "proj.0.bias": _generate_tensor(
-            (INPUT_DIM,), dtype, seed=SEED_PROJ0_BIAS
-        ),
-        "proj.2.weight": _generate_tensor(
-            (HIDDEN_SIZE, INPUT_DIM), dtype, seed=SEED_PROJ2_WEIGHT
-        ),
-        "proj.2.bias": _generate_tensor(
-            (HIDDEN_SIZE,), dtype, seed=SEED_PROJ2_BIAS
-        ),
+        "pre_norm.weight": _generate_tensor((MM_HIDDEN_SIZE,), dtype),
+        "pre_norm.bias": _generate_tensor((MM_HIDDEN_SIZE,), dtype),
+        "proj.0.weight": _generate_tensor((INPUT_DIM, INPUT_DIM), dtype),
+        "proj.0.bias": _generate_tensor((INPUT_DIM,), dtype),
+        "proj.2.weight": _generate_tensor((HIDDEN_SIZE, INPUT_DIM), dtype),
+        "proj.2.bias": _generate_tensor((HIDDEN_SIZE,), dtype),
     }
 
 
@@ -176,12 +156,8 @@ def test_patch_merger_mlp_gpu() -> None:
     state_dict = _create_weights(TORCH_DTYPE)
 
     # Two ragged items with different patch counts: (N_i, N_k, mm_hidden_size)
-    item_a = _generate_tensor(
-        (NUM_PATCHES_A, N_K, MM_HIDDEN_SIZE), TORCH_DTYPE, seed=SEED_INPUT_A
-    )
-    item_b = _generate_tensor(
-        (NUM_PATCHES_B, N_K, MM_HIDDEN_SIZE), TORCH_DTYPE, seed=SEED_INPUT_B
-    )
+    item_a = _generate_tensor((NUM_PATCHES_A, N_K, MM_HIDDEN_SIZE), TORCH_DTYPE)
+    item_b = _generate_tensor((NUM_PATCHES_B, N_K, MM_HIDDEN_SIZE), TORCH_DTYPE)
 
     # Concatenate into a single ragged tensor for MAX.
     x = torch.cat([item_a, item_b], dim=0)
