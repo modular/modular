@@ -1279,7 +1279,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
                 runtime=PipelineRuntimeConfig(max_num_steps=42),
             )
             config._validate_and_resolve_overlap_scheduler()
-            assert config.enable_overlap_scheduler is True
+            assert config.runtime.enable_overlap_scheduler is True
             assert config.runtime.max_num_steps == 1
 
     # Don't override if the device is CPU
@@ -1291,7 +1291,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             ),
         )
         config._validate_and_resolve_overlap_scheduler()
-        assert config.enable_overlap_scheduler is False
+        assert config.runtime.enable_overlap_scheduler is False
 
     # Don't override if structured output is enabled
     with patch_retrieve_architecture("LlamaForCausalLM"):
@@ -1303,7 +1303,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             sampling=SamplingConfig(enable_structured_output=True),
         )
         config._validate_and_resolve_overlap_scheduler()
-        assert config.enable_overlap_scheduler is False
+        assert config.runtime.enable_overlap_scheduler is False
 
     # Don't override if the pipeline role is not PrefillAndDecode
     with patch_retrieve_architecture("LlamaForCausalLM"):
@@ -1315,7 +1315,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             pipeline_role="prefill_only",
         )
         config._validate_and_resolve_overlap_scheduler()
-        assert config.enable_overlap_scheduler is False
+        assert config.runtime.enable_overlap_scheduler is False
 
     # Don't override for other architectures
     with patch_retrieve_architecture("SomeOtherArchitecture"):
@@ -1326,7 +1326,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
             ),
         )
         config._validate_and_resolve_overlap_scheduler()
-        assert config.enable_overlap_scheduler is False
+        assert config.runtime.enable_overlap_scheduler is False
 
 
 @prepare_registry
@@ -1338,10 +1338,10 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             model_path="test/model",
             device_specs=[DeviceSpec.accelerator()],
         ),
-        enable_overlap_scheduler=True,
+        runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     config._validate_and_resolve_overlap_scheduler()
-    assert config.enable_overlap_scheduler is True
+    assert config.runtime.enable_overlap_scheduler is True
 
     # Error out if user tries to enable overlap scheduler on CPU
     config = PipelineConfig(
@@ -1349,7 +1349,7 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             model_path="test/model",
             device_specs=[DeviceSpec.cpu()],
         ),
-        enable_overlap_scheduler=True,
+        runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
@@ -1361,7 +1361,7 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             device_specs=[DeviceSpec.accelerator()],
         ),
         pipeline_role="prefill_only",
-        enable_overlap_scheduler=True,
+        runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
@@ -1374,7 +1374,7 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
         ),
         pipeline_role="prefill_and_decode",
         audio_decoder=Mock(),
-        enable_overlap_scheduler=True,
+        runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
@@ -1386,7 +1386,7 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             device_specs=[DeviceSpec.accelerator()],
         ),
         sampling=SamplingConfig(enable_structured_output=True),
-        enable_overlap_scheduler=True,
+        runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
