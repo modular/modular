@@ -74,7 +74,9 @@ from ..structured_kernels.tile_types import (
     TMATile,
     TmaOpType,
     static_row_major,
+    tma_desc_layout_3d,
 )
+from layout._layout import RowMajorLayout, _IntToComptimeInt
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -512,26 +514,63 @@ struct BlackwellMatmulSM100Kernel[
         Self.config.AB_swapped
     ) else Self.OutputN
 
-    comptime ATileLayout = static_row_major[Self.a_tile_dim0, Self.BK]
-    comptime ADescLayout = static_row_major[
+    # 3D TMA layouts (primary, used by run())
+    comptime ATileLayout = RowMajorLayout[
+        *_IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
+    ]
+    comptime ADescLayout = tma_desc_layout_3d[
+        Self.a_type, 1, Self.a_tile_dim0, Self.config.a_swizzle
+    ]
+    comptime BTileLayout = RowMajorLayout[
+        *_IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
+    ]
+    comptime BDescLayout = tma_desc_layout_3d[
+        Self.b_type, 1, Self.b_tile_dim0, Self.config.b_swizzle
+    ]
+    comptime CTileLayout = RowMajorLayout[
+        *_IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
+    ]
+    comptime CDescLayout = tma_desc_layout_3d[
+        Self.c_type, 1, Self.c_tile_dim0, Self.config.c_swizzle
+    ]
+
+    # 2D TMA layouts (only for run_splitk)
+    comptime ATileLayout_splitk = static_row_major[Self.a_tile_dim0, Self.BK]
+    comptime ADescLayout_splitk = static_row_major[
         Self.a_tile_dim0, Self.a_swizzle_elems
     ]
-    comptime BTileLayout = static_row_major[Self.b_tile_dim0, Self.BK]
-    comptime BDescLayout = static_row_major[
+    comptime BTileLayout_splitk = static_row_major[Self.b_tile_dim0, Self.BK]
+    comptime BDescLayout_splitk = static_row_major[
         Self.b_tile_dim0, Self.b_swizzle_elems
     ]
-    comptime CTileLayout = static_row_major[Self.c_tile_dim0, Self.c_tile_dim1]
-    comptime CDescLayout = static_row_major[
+    comptime CTileLayout_splitk = static_row_major[
+        Self.c_tile_dim0, Self.c_tile_dim1
+    ]
+    comptime CDescLayout_splitk = static_row_major[
         Self.c_tile_dim0, Self.c_swizzle_elems
     ]
 
+    # 3D TMATile types (primary, used by run())
     comptime ATmaTile = TMATile[Self.a_type, Self.ATileLayout, Self.ADescLayout]
     comptime BTmaTile = TMATile[Self.b_type, Self.BTileLayout, Self.BDescLayout]
     comptime CTmaTile = TMATile[Self.c_type, Self.CTileLayout, Self.CDescLayout]
-    # Inner TMATensorTile types for kernel run() (DevicePassable)
     comptime ATmaOp = Self.ATmaTile.InnerType
     comptime BTmaOp = Self.BTmaTile.InnerType
     comptime CTmaOp = Self.CTmaTile.InnerType
+
+    # 2D TMATile types (only for run_splitk)
+    comptime ATmaTile_splitk = TMATile[
+        Self.a_type, Self.ATileLayout_splitk, Self.ADescLayout_splitk
+    ]
+    comptime BTmaTile_splitk = TMATile[
+        Self.b_type, Self.BTileLayout_splitk, Self.BDescLayout_splitk
+    ]
+    comptime CTmaTile_splitk = TMATile[
+        Self.c_type, Self.CTileLayout_splitk, Self.CDescLayout_splitk
+    ]
+    comptime ATmaOp_splitk = Self.ATmaTile_splitk.InnerType
+    comptime BTmaOp_splitk = Self.BTmaTile_splitk.InnerType
+    comptime CTmaOp_splitk = Self.CTmaTile_splitk.InnerType
 
     # TMA load size constants (from desc layout dimensions)
     comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems
@@ -599,6 +638,7 @@ struct BlackwellMatmulSM100Kernel[
     # ========== Output Tile Writer ==========
     # Instance-based TileWriter with explicit config parameters
     # tma_origin, c_type, c_layout, c_desc_layout inferred from constructor arg
+    # batched=True: run() always uses 3D TMA; write_batched for epilogue.
     comptime TileWriterType = TileWriter[
         a_type = Self.a_type,
         accum_type = Self.accum_type,
@@ -615,6 +655,27 @@ struct BlackwellMatmulSM100Kernel[
         num_output_warps = Self.num_output_warps,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
+        batched=True,
+    ]
+
+    # TileWriter for run_splitk (uses 2D TMA, no batch coordinate)
+    comptime TileWriterType_splitk = TileWriter[
+        a_type = Self.a_type,
+        accum_type = Self.accum_type,
+        block_tile_shape = Self.config.block_tile_shape,
+        mma_shape = Self.config.mma_shape,
+        cta_group = Self.cta_group,
+        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
+        c_swizzle = Self.config.c_swizzle,
+        transpose_c = Self.config.AB_swapped,
+        c_smem_dim0 = Self.SmemType.OutputM,
+        c_smem_dim1 = Self.SmemType.OutputN,
+        num_output_stages = Self.SmemType.num_output_stages,
+        stage_stride_cols = Self.stage_stride_cols,
+        num_output_warps = Self.num_output_warps,
+        elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
+        register_based_epilogue = Self.register_based_epilogue,
+        batched=False,
     ]
 
     # ========== Kernel Context Type ==========
@@ -657,9 +718,6 @@ struct BlackwellMatmulSM100Kernel[
     @always_inline
     fn init_barriers(
         ctx: Self.Context,
-        a_tma_op: Self.ATmaOp,
-        b_tma_op: Self.BTmaOp,
-        c_tma_op: Self.CTmaOp,
         input_barriers: Self.SmemType.Pipelines.InputBarriers,
         accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
         clc_throttle: Self.SmemType.Pipelines.ClcThrottleBarriers,
@@ -667,14 +725,10 @@ struct BlackwellMatmulSM100Kernel[
         clc_empty: Self.SmemType.Pipelines.ClcBarriers,
         tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
     ):
-        """Initialize barriers and prefetch TMA descriptors. Called by elect_one_warp && elect_one_thread.
+        """Initialize barriers. TMA descriptor prefetch is done by each kernel
+        entry point before calling this method.
         """
         if ctx.elect_one_warp and ctx.elect_one_thread:
-            # Prefetch TMA descriptors
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-            c_tma_op.prefetch_descriptor()
-
             # Initialize pipeline barriers
             Self.InputTilePipeline.init_barriers(
                 input_barriers.ptr,
@@ -765,6 +819,98 @@ struct BlackwellMatmulSM100Kernel[
     @staticmethod
     @always_inline
     fn load_input_tiles[
+        tiles_origin: MutOrigin,
+        //,
+    ](
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        tiles: InputProducerStage[
+            tiles_origin,
+            Self.TilePayload,
+            Self.SmemType.num_group_pipeline_stages,
+            Self.config.k_group_size,
+        ],
+        peer_cta_coord: Tuple[UInt, UInt, UInt],
+        work_tile_coord: Tuple[UInt, UInt, UInt],
+        a_multicast_mask: UInt16,
+        b_multicast_mask: UInt16,
+        iter_idx: UInt32,
+        elect_one_cta: Bool,
+    ):
+        """Load A and B tiles using 3D TMA.
+
+        Uses async_multicast_load_3d with batch coordinate from work_tile_coord[2].
+        For non-batched calls, batch coord is 0 (grid_dim.z = 1).
+
+        Args:
+            a_tma_op: 3D TMA descriptor for A matrix.
+            b_tma_op: 3D TMA descriptor for B matrix.
+            tiles: ProducerStage context with encapsulated tile access.
+            peer_cta_coord: (rank_n, rank_m, peer_m_rank) for peer CTA slicing.
+            work_tile_coord: (m, n, batch) coordinates.
+            a_multicast_mask: Multicast mask for A tiles.
+            b_multicast_mask: Multicast mask for B tiles.
+            iter_idx: K iteration index (base index for k_group).
+            elect_one_cta: True if this CTA should call expect_bytes.
+        """
+        var peer_rank_n = peer_cta_coord[0]
+        var peer_rank_m = peer_cta_coord[1]
+        var peer_m_rank = peer_cta_coord[2]
+
+        # Global memory coordinates
+        var a_gmem_m_coord = peer_m_rank * UInt(
+            Self.a_tma_rows
+        ) + work_tile_coord[0] * UInt(Self.BM)
+        var b_gmem_n_coord = (
+            peer_rank_m * UInt(Self.b_tma_rows)
+            + peer_rank_n * UInt(Self.BN)
+            + work_tile_coord[1] * UInt(Self.MMA_N)
+        )
+        var batch_coord = work_tile_coord[2]
+
+        if elect_one_sync():
+            # Set expected bytes ONCE for all k_group tiles
+            if elect_one_cta:
+                tiles.expect_bytes(Self.input_expected_bytes)
+
+            # Get barrier for TMA multicast loads
+            var barrier = tiles.barrier()
+
+            comptime for j in range(Self.config.k_group_size):
+                # Get tiles using payload accessor
+                var a_tile, b_tile = tiles.payload().get_tile[
+                    Self.config.k_group_size
+                ](tiles.stage(), j)
+
+                # Peer CTA slice using pointer arithmetic
+                var a_peer_tile = type_of(a_tile)(
+                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.layout,
+                )
+                var b_peer_tile = type_of(b_tile)(
+                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.layout,
+                )
+
+                var k_coord = UInt(iter_idx + UInt32(j)) * UInt(Self.BK)
+
+                # 3D TMA loads with batch coordinate
+                a_tma_op.async_multicast_load_3d[Self.cta_group](
+                    a_peer_tile,
+                    barrier[0],
+                    (k_coord, a_gmem_m_coord, batch_coord),
+                    a_multicast_mask,
+                )
+                b_tma_op.async_multicast_load_3d[Self.cta_group](
+                    b_peer_tile,
+                    barrier[0],
+                    (k_coord, b_gmem_n_coord, batch_coord),
+                    b_multicast_mask,
+                )
+
+    @staticmethod
+    @always_inline
+    fn load_input_tiles_splitk[
         a_tma_origin: ImmutOrigin,
         b_tma_origin: ImmutOrigin,
         tiles_origin: MutOrigin,
@@ -773,15 +919,15 @@ struct BlackwellMatmulSM100Kernel[
         a_loader: TileLoader[
             a_tma_origin,
             Self.a_type,
-            Self.ATileLayout,
-            Self.ADescLayout,
+            Self.ATileLayout_splitk,
+            Self.ADescLayout_splitk,
             cta_group = Self.cta_group,
         ],
         b_loader: TileLoader[
             b_tma_origin,
             Self.b_type,
-            Self.BTileLayout,
-            Self.BDescLayout,
+            Self.BTileLayout_splitk,
+            Self.BDescLayout_splitk,
             cta_group = Self.cta_group,
         ],
         tiles: InputProducerStage[
@@ -796,7 +942,7 @@ struct BlackwellMatmulSM100Kernel[
         peer_cta_coord: Tuple[UInt, UInt, UInt],
         elect_one_cta: Bool,
     ):
-        """Load k_group_size A and B tiles using TMA.
+        """Load k_group_size A and B tiles using 2D TMA (for split-K only).
 
         Orchestrates the tile loading operation including:
         - expect_bytes signaling
@@ -804,8 +950,8 @@ struct BlackwellMatmulSM100Kernel[
         - Peer CTA slicing for 2-SM MMA
 
         Args:
-            a_loader: TileLoader for A matrix.
-            b_loader: TileLoader for B matrix.
+            a_loader: TileLoader for A matrix (2D).
+            b_loader: TileLoader for B matrix (2D).
             tiles: InputProducerStage context with encapsulated tile access.
             iter_idx: K iteration index (base index).
             work_m_coord: M coordinate of the output tile.
@@ -884,7 +1030,12 @@ struct BlackwellMatmulSM100Kernel[
         mnk: StaticTuple[UInt32, 3],
         workspace: Span[UInt64, MutAnyOrigin],
     ):
-        """Main kernel entry point for SM100 matrix multiplication."""
+        """Main kernel entry point for SM100 matrix multiplication.
+
+        Always uses 3D TMA descriptors. For non-batched inputs, batch=1 and
+        batch_coord=0 (from k_start = block_idx.z = 0 when grid_dim.z = 1).
+        For batched inputs, grid_dim.z = batch_size and batch_coord from k_start.
+        """
         Self.validate_constraints()
 
         # Access shared memory via bitcast
@@ -903,12 +1054,13 @@ struct BlackwellMatmulSM100Kernel[
         # Create kernel context with election vars, CTA coords, and masks
         var ctx = Self.Context(smem.pipelines.tmem_addr())
 
-        # Initialize all barriers (only elect_one_warp && elect_one_thread)
+        # Prefetch TMA descriptors and initialize barriers
+        if ctx.elect_one_warp and ctx.elect_one_thread:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+            c_tma_op.prefetch_descriptor()
         Self.init_barriers(
             ctx,
-            a_tma_op,
-            b_tma_op,
-            c_tma_op,
             smem.pipelines.input_barriers(),
             smem.pipelines.accum_barriers(),
             smem.pipelines.clc_throttle(),
@@ -931,22 +1083,6 @@ struct BlackwellMatmulSM100Kernel[
         # Per-warp work iterator - owns work_info, pipeline state, and throttle
         var work_iter = scheduler.work_iterator()
 
-        # Create tile loaders for A and B matrices
-        var a_loader = TileLoader[
-            _,
-            Self.a_type,
-            Self.ATileLayout,
-            Self.ADescLayout,
-            cta_group = Self.cta_group,
-        ](Pointer(to=a_tma_op), ctx.a_multicast_mask)
-        var b_loader = TileLoader[
-            _,
-            Self.b_type,
-            Self.BTileLayout,
-            Self.BDescLayout,
-            cta_group = Self.cta_group,
-        ](Pointer(to=b_tma_op), ctx.b_multicast_mask)
-
         var num_iters: UInt32 = ceildiv(mnk[2], UInt32(Self.BK))
 
         comptime MatmulProfilerType[warp_role: UInt32] = MatmulProfileWarp[
@@ -968,15 +1104,20 @@ struct BlackwellMatmulSM100Kernel[
                             for i in range(
                                 0, num_iters, Self.config.k_group_size
                             ):
-                                with producer.acquire() as tiles:  # waits for consumer
+                                with producer.acquire() as tiles:
                                     Self.load_input_tiles(
-                                        a_loader,
-                                        b_loader,
+                                        a_tma_op,
+                                        b_tma_op,
                                         tiles,
-                                        UInt32(i),
-                                        UInt(current.m),
-                                        UInt(current.n),
                                         ctx.peer_cta_coord,
+                                        (
+                                            UInt(current.m),
+                                            UInt(current.n),
+                                            UInt(current.k_start),
+                                        ),
+                                        ctx.a_multicast_mask,
+                                        ctx.b_multicast_mask,
+                                        UInt32(i),
                                         ctx.elect_one_cta,
                                     )
 
@@ -1065,12 +1206,15 @@ struct BlackwellMatmulSM100Kernel[
                     with work_iter.next() as current:
                         with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
-                                tile_writer.write(
+                                tile_writer.write_batched(
                                     smem.c_tiles(),
                                     output_stage,
-                                    (current.m, current.n),
+                                    (
+                                        current.m,
+                                        current.n,
+                                        current.k_start,
+                                    ),
                                     (mnk[0], mnk[1]),
-                                    ctx.elect_one_warp,
                                 )
 
                     tile_idx += 1
@@ -1084,9 +1228,9 @@ struct BlackwellMatmulSM100Kernel[
     fn run_splitk[
         reduction_layout: TensorLayout,
     ](
-        a_tma_op: Self.ATmaOp,
-        b_tma_op: Self.BTmaOp,
-        c_tma_op: Self.CTmaOp,
+        a_tma_op: Self.ATmaOp_splitk,
+        b_tma_op: Self.BTmaOp_splitk,
+        c_tma_op: Self.CTmaOp_splitk,
         reduction_tensor: TileTensor[
             Self.config.accum_type, reduction_layout, MutAnyOrigin
         ],
@@ -1128,12 +1272,13 @@ struct BlackwellMatmulSM100Kernel[
         # Create kernel context with election vars, CTA coords, and masks
         var ctx = Self.Context(smem.pipelines.tmem_addr())
 
-        # Initialize all barriers (only elect_one_warp && elect_one_thread)
+        # Prefetch TMA descriptors and initialize barriers
+        if ctx.elect_one_warp and ctx.elect_one_thread:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+            c_tma_op.prefetch_descriptor()
         Self.init_barriers(
             ctx,
-            a_tma_op,
-            b_tma_op,
-            c_tma_op,
             smem.pipelines.input_barriers(),
             smem.pipelines.accum_barriers(),
             smem.pipelines.clc_throttle(),
@@ -1181,19 +1326,19 @@ struct BlackwellMatmulSM100Kernel[
         # Per-warp work iterator - owns work_info, pipeline state, and throttle
         var work_iter = scheduler.work_iterator()
 
-        # Create tile loaders for A and B matrices
+        # Create tile loaders for A and B matrices (2D for split-K)
         var a_loader = TileLoader[
             _,
             Self.a_type,
-            Self.ATileLayout,
-            Self.ADescLayout,
+            Self.ATileLayout_splitk,
+            Self.ADescLayout_splitk,
             cta_group = Self.cta_group,
         ](Pointer(to=a_tma_op), ctx.a_multicast_mask)
         var b_loader = TileLoader[
             _,
             Self.b_type,
-            Self.BTileLayout,
-            Self.BDescLayout,
+            Self.BTileLayout_splitk,
+            Self.BDescLayout_splitk,
             cta_group = Self.cta_group,
         ](Pointer(to=b_tma_op), ctx.b_multicast_mask)
 
@@ -1217,7 +1362,7 @@ struct BlackwellMatmulSM100Kernel[
                                 k_start, k_end, Self.config.k_group_size
                             ):
                                 with producer.acquire() as tiles:  # waits for consumer
-                                    Self.load_input_tiles(
+                                    Self.load_input_tiles_splitk(
                                         a_loader,
                                         b_loader,
                                         tiles,
@@ -1295,7 +1440,7 @@ struct BlackwellMatmulSM100Kernel[
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
-            var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
+            var tile_writer = Self.TileWriterType_splitk(Pointer(to=c_tma_op))
 
             with epi_ctx:  # signals TMEM dealloc on exit
                 var tile_idx = 0

@@ -27,6 +27,7 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     lt_to_tt,
 )
@@ -50,6 +51,7 @@ from ....vendor.matmul import matmul as matmul_vendor
 from ...tile_scheduler import RasterOrder
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
+    blackwell_batched_matmul_tma_umma_warp_specialized,
     matmul_sm100_fallback,
 )
 from internal_utils import Table
@@ -2174,3 +2176,40 @@ fn _matmul_dispatch_sm100[
         ](c_tmp, a, b, ctx)
 
         _ = tmp_device_buffer^
+
+
+@always_inline
+fn batched_matmul_dispatch_sm100_bf16[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    transpose_b: Bool,
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Dispatch batched BF16 matmul to SM100 kernel with a default config.
+
+    Uses a reasonable default config (256x256x16 MMA, 2x1x1 cluster, cta_group=2)
+    which works well for a variety of batched matmul shapes.
+    """
+    comptime MMA_K = 16
+    comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+
+    comptime block_tile_shape = Index(128, 128, BK)
+    comptime umma_shape = Index(
+        block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+    )
+    comptime cluster_shape = Index(2, 1, 1)
+    comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        mma_shape=umma_shape,
+        cluster_shape=cluster_shape,
+        block_swizzle_size=0,
+    )
+
+    blackwell_batched_matmul_tma_umma_warp_specialized[
+        transpose_b=transpose_b,
+        config=config,
+    ](c, a, b, ctx)
