@@ -2434,6 +2434,49 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self._justify(width - len(self) >> 1, width, fillchar)
 
+    fn zfill(self, width: Int) -> String:
+        """Pads the string on the left with zeros to fill a field of the given
+        width.
+
+        If the string starts with a sign character (`+` or `-`), the zeros are
+        inserted after the sign. If the string is already at least as wide as
+        `width`, it is returned unchanged.
+
+        Args:
+            width: The total width (in bytes) of the resulting string.
+
+        Returns:
+            A zero-padded string of (byte) length `width`, or the original
+            string if it is already at least as wide.
+
+        Examples:
+
+        ```mojo
+        print(StringSlice("42").zfill(5))   # "00042"
+        print(StringSlice("-42").zfill(5))  # "-0042"
+        print(StringSlice("+42").zfill(5))  # "+0042"
+        ```
+        """
+        var length = len(self)
+        if length >= width:
+            return String(self)
+        var padding = width - length
+        var result = String(capacity=width)
+        if length > 0:
+            var first = self.unsafe_ptr()[]
+            if first == UInt8(ord("+")) or first == UInt8(ord("-")):
+                result += StringSlice(ptr=self.unsafe_ptr(), length=1)
+                for _ in range(padding):
+                    result += "0"
+                result += StringSlice(
+                    ptr=self.unsafe_ptr() + 1, length=length - 1
+                )
+                return result^
+        for _ in range(padding):
+            result += "0"
+        result += self
+        return result^
+
     fn _justify(self, start: Int, width: Int, fillchar: StaticString) -> String:
         """Internal helper function to justify a string with padding.
 
