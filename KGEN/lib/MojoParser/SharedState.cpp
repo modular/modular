@@ -1321,13 +1321,13 @@ ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
 
 ASTDecl *SharedState::getBuiltinCoroutineType(llvm::SMLoc loc) {
   ASTDecl &coroutineModule =
-      importModule("builtin.coroutine", /*currentPackage=*/nullptr, loc);
+      importModule("std.builtin.coroutine", /*currentPackage=*/nullptr, loc);
   return lookupNamedTypeDecl("Coroutine", coroutineModule, loc);
 }
 
 ASTDecl *SharedState::getBuiltinDevicePassableTrait(llvm::SMLoc loc) {
-  ASTDecl &devicePassableModule =
-      importModule("builtin.device_passable", /*currentPackage=*/nullptr, loc);
+  ASTDecl &devicePassableModule = importModule("std.builtin.device_passable",
+                                               /*currentPackage=*/nullptr, loc);
   LookupResult result = lookupAndResolveDecl(
       "DevicePassable", loc, devicePassableModule, /*searchParentScopes=*/true);
   if (result.isErroneous())
@@ -1342,7 +1342,7 @@ ASTDecl *SharedState::getBuiltinDevicePassableTrait(llvm::SMLoc loc) {
 
 ASTDecl *SharedState::getBuiltinRaisingCoroutineType(llvm::SMLoc loc) {
   ASTDecl &coroutineModule =
-      importModule("builtin.coroutine", /*currentPackage=*/nullptr, loc);
+      importModule("std.builtin.coroutine", /*currentPackage=*/nullptr, loc);
   return lookupNamedTypeDecl("RaisingCoroutine", coroutineModule, loc);
 }
 
@@ -1355,13 +1355,13 @@ ASTType SharedState::getStandardCollectionType(llvm::SMLoc loc,
 
 ASTType SharedState::getBuiltinCaptureListType(llvm::SMLoc loc) {
   ASTDecl &closureModule =
-      importModule("builtin._closure", /*currentPackage=*/nullptr, loc);
+      importModule("std.builtin._closure", /*currentPackage=*/nullptr, loc);
   return lookupNamedType("__ParameterClosureCaptureList", closureModule, loc);
 }
 
 ASTType SharedState::getBuiltinStubsMLIRType(llvm::SMLoc loc) {
   ASTDecl &stubsModule =
-      importModule("builtin._stubs", /*currentPackage=*/nullptr, loc);
+      importModule("std.builtin._stubs", /*currentPackage=*/nullptr, loc);
   return lookupNamedType("__MLIRType", stubsModule, loc);
 }
 
@@ -1425,7 +1425,7 @@ void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
     for (StringRef name :
          llvm::make_first_range(preludePackageDecl.getDeclsInScope())) {
       impl->implicitBuiltinImports.emplace_back(
-          StringAttr::get(getContext(), "prelude." + name));
+          StringAttr::get(getContext(), "std.prelude." + name));
     }
   }
 
