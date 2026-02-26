@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Sequence
 
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -47,17 +48,7 @@ class PixelBenchmarkDataset(LocalBenchmarkDataset):
             negative_prompt=image_negative_prompt,
             seed=image_seed,
         )
-        if all(
-            value is None
-            for value in (
-                options.width,
-                options.height,
-                options.steps,
-                options.guidance_scale,
-                options.negative_prompt,
-                options.seed,
-            )
-        ):
+        if all(value is None for value in dataclasses.asdict(options).values()):
             return None
         return options
 
