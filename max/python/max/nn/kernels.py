@@ -59,7 +59,6 @@ _MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
         AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
     ),
 }
-_NO_POSITIONAL_ENCODING_SCORE_MOD_STR = "no_pos"
 
 KEY_CACHE_INDEX = 0
 VALUE_CACHE_INDEX = 1
@@ -75,8 +74,7 @@ def _mha_parameters(
     local_window_size: int | None = None,
 ) -> dict[str, int | str | DType]:
     parameters: dict[str, int | str | DType] = {
-        "mask_str": _mask_str(mask_variant),
-        "score_mod_str": _NO_POSITIONAL_ENCODING_SCORE_MOD_STR,
+        "mask_str": _mask_str(mask_variant)
     }
     if local_window_size is not None:
         parameters["local_window_size"] = local_window_size
