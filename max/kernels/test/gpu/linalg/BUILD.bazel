@@ -301,6 +301,24 @@ _GPU_MEMORY = {
     for src in _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS
 ]
 
+# Explicit rule for PDL race test - needs MODULAR_DISABLE_VENDOR_FALLBACK to avoid cuBLAS fallback
+mojo_test(
+    name = "test_matmul_pdl_race.mojo.test",
+    size = "large",
+    srcs = ["test_matmul_pdl_race.mojo"],
+    env = {
+        "MODULAR_DISABLE_VENDOR_FALLBACK": "1",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
 [
     mojo_test(
         name = src + ".test",
@@ -327,7 +345,7 @@ _GPU_MEMORY = {
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS,
+        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + ["test_matmul_pdl_race.mojo"],
     )
 ]
 
