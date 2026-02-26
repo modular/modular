@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 trait MyInterface:
     fn thing(self):
