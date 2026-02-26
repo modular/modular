@@ -53,7 +53,7 @@ from layout.coord import (
     _DimsToCoordLike,
 )
 from layout._layout import Layout, TensorLayout, row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 from memory import LegacyUnsafePointer, stack_allocation
 from utils.static_tuple import StaticTuple

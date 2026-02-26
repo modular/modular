@@ -13,9 +13,9 @@
 
 from gpu import block_dim, block_idx, thread_idx
 from gpu.host import DeviceContext
-from layout.coord import Coord, Idx
+from layout import Coord, Idx
 from layout._layout import TensorLayout, Layout, row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from utils.index import Index, IndexList
 
 

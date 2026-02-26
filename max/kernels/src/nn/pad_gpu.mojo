@@ -13,9 +13,9 @@
 
 from gpu import block_dim, block_idx, grid_dim, thread_idx
 from gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
-from layout.coord import Coord, Idx
+from layout import Coord, Idx
 from layout._layout import TensorLayout, Layout
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from math import ceildiv
 from sys.info import align_of
 from utils.index import IndexList

@@ -14,7 +14,7 @@
 
 
 from algorithm import elementwise
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList

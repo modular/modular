@@ -16,7 +16,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from nn.pad import pad_constant, pad_reflect, pad_repeat
 from testing import assert_equal
 

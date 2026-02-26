@@ -21,9 +21,9 @@ from bit import next_power_of_two
 from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
-from layout.coord import Coord, Idx
+from layout import Coord, Idx
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from utils.index import IndexList, StaticTuple

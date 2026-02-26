@@ -18,7 +18,7 @@ from gpu import thread_idx
 from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code, get_gpu_target
 from layout._layout import Layout
-from layout.coord import Idx, Coord
+from layout import Idx, Coord
 from layout.int_tuple import IntTuple
 from memory import LegacyUnsafePointer
 

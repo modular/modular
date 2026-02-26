@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from nn.roi_align import roi_align_nhwc
 from testing import *
 

@@ -46,9 +46,9 @@ from gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from sys import inlined_assembly
 from layout import Layout as LegacyLayout, LayoutTensor
 from layout._layout import TensorLayout
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from layout._layout import RowMajorLayout, _IntToComptimeInt
-from layout.coord import ComptimeInt
+from layout import ComptimeInt
 from ..structured_kernels.tile_types import (
     TMATile,
     TmaOpType,

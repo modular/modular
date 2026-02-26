@@ -13,8 +13,8 @@
 
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
-from layout.coord import Coord, Idx, coord_to_index_list
-from layout.tile_tensor import TileTensor
+from layout import Coord, Idx, coord_to_index_list
+from layout import TileTensor
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import IndexList

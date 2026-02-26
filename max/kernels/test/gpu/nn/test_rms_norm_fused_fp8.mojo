@@ -22,9 +22,9 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
-from layout.coord import Coord, Idx
+from layout import Coord, Idx
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from layout.int_tuple import fill_like
 from memory import LegacyUnsafePointer, bitcast
 from runtime.asyncrt import DeviceContextPtr

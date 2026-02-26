@@ -38,7 +38,7 @@ from layout import (
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
 from layout._layout import TensorLayout, row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile

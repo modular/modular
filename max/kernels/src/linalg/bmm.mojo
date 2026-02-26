@@ -35,7 +35,7 @@ from gpu.host.info import A100, is_cpu, is_valid_target
 from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
 from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
 from layout._layout import Layout as TileLayout, row_major, TensorLayout
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from layout.coord import (
     Coord,
     CoordLike,

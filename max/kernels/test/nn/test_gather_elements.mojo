@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from nn.gather_scatter import gather_elements
 from testing import assert_equal
 

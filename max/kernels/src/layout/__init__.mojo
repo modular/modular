@@ -21,8 +21,17 @@ multidimensional data.
 - The [`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) type is a
   high-performance tensor with explicit memory layout via a `Layout`.
 """
+from .coord import (
+    Coord,
+    CoordLike,
+    ComptimeInt,
+    Idx,
+    RuntimeInt,
+    coord_to_index_list,
+)
 from .int_tuple import UNKNOWN_VALUE, IntTuple
 from .layout import Layout, LayoutList, composition, print_layout
 from .layout_tensor import LayoutTensor, stack_allocation_like
 from .runtime_layout import RuntimeLayout
 from .runtime_tuple import RuntimeTuple
+from .tile_tensor import TileTensor, flatten_leading, stack_allocation

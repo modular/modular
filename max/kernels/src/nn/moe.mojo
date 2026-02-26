@@ -32,7 +32,7 @@ from gpu import (
 )
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host.info import is_gpu
-from layout.coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout import Coord, CoordLike, Idx, coord_to_index_list
 from layout._layout import TensorLayout, row_major
 from layout.tile_tensor import TileTensor, stack_allocation as tensor_alloc
 from runtime.asyncrt import DeviceContextPtr

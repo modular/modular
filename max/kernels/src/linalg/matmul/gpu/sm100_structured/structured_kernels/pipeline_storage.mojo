@@ -135,7 +135,7 @@ from .tile_types import (
 
 # Import variadic types for SMemTileArray parameters
 from builtin.variadics import Variadic
-from layout.coord import CoordLike
+from layout import CoordLike
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 
