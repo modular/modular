@@ -152,7 +152,8 @@ dependencies = [
   "zhon",
   "zhconv",
 
-  # Testing video processing for qwen2.5vl
+  # Video processing
+  "av",
   "opencv-python",
 ]
 
