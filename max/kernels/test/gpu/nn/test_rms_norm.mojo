@@ -15,9 +15,8 @@ from math import sqrt
 from random import rand
 
 from gpu.host import DeviceContext
-from layout import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
-from layout import TileTensor
 from nn.normalization import *
 from testing import assert_almost_equal
 

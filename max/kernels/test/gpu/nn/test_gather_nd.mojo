@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceBuffer, DeviceContext
-from layout import Coord
+from layout import Coord, TileTensor
 from layout._layout import row_major
-from layout import TileTensor
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 from testing import assert_equal
 

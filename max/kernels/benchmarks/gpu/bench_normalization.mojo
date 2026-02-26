@@ -17,9 +17,8 @@ from sys import env_get_dtype
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple
-from layout import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout import TileTensor
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
 from utils.index import Index, IndexList

@@ -41,8 +41,7 @@ from gpu.primitives.cluster import (
 from gpu.sync import named_barrier, syncwarp
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout._layout import RowMajorLayout, TensorLayout
-from layout import ComptimeInt, RuntimeInt
-from layout import TileTensor
+from layout import ComptimeInt, RuntimeInt, TileTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from ..structured_kernels.tile_types import (
     GMEMTile,

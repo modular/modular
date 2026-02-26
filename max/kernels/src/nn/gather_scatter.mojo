@@ -21,10 +21,8 @@ from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import tile
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
-from layout import UNKNOWN_VALUE
-from layout import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, UNKNOWN_VALUE, coord_to_index_list
 from layout._layout import row_major
-from layout import TileTensor
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id

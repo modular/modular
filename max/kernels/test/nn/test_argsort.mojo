@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import Idx
+from layout import Idx, TileTensor
 from layout._layout import row_major
-from layout import TileTensor
 from nn.argsort import argsort
 from testing import assert_true
 

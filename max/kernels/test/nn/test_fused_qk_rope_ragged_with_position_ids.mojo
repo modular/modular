@@ -20,10 +20,17 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
-from layout import Coord, Idx
+from layout import (
+    Coord,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import Layout as TileLayout, row_major
-from layout import TileTensor
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (

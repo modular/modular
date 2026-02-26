@@ -13,10 +13,9 @@
 
 
 from gpu.host import DeviceContext, HostBuffer
-from layout import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout._fillers import random
 from layout._layout import row_major
-from layout import TileTensor
 from nn.moe import moe_create_indices
 from random import rand
 from testing import assert_equal

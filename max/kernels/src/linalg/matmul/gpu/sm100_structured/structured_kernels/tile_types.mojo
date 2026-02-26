@@ -34,7 +34,12 @@ from sys import size_of
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout as LegacyLayout, UNKNOWN_VALUE
+from layout import (
+    Layout as LegacyLayout,
+    LayoutTensor,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.int_tuple import IntTuple
 from layout.tma_async import (
     SharedMemBarrier,
@@ -53,7 +58,6 @@ from layout.coord import (
     _DimsToCoordLike,
 )
 from layout._layout import Layout, TensorLayout, row_major
-from layout import TileTensor
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 from memory import LegacyUnsafePointer, stack_allocation
 from utils.static_tuple import StaticTuple
@@ -231,8 +235,6 @@ Parameters:
 """
 
 from layout._layout import TensorLayout
-from layout import LayoutTensor, UNKNOWN_VALUE
-from layout import Layout as LegacyLayout
 
 
 @parameter

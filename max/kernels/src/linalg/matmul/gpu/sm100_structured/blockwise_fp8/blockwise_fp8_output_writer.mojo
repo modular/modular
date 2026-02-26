@@ -29,7 +29,15 @@ from gpu import warp_id as get_warp_id
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.memory import AddressSpace, fence_async_view_proxy
 from gpu.sync import named_barrier
-from layout import Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import row_major
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
@@ -47,8 +55,6 @@ from ..structured_kernels.epilogue_components import (
 )
 from ..structured_kernels.barriers import WarpGroupBarrier
 from layout._layout import TensorLayout
-from layout import Coord, Idx
-from layout import TileTensor
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 

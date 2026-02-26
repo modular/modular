@@ -17,11 +17,16 @@ from random import random_ui64
 
 from gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
-from layout import Idx
 from layout._layout import row_major
-from layout import TileTensor
 from memory import memcpy
 
 from nn.fused_qk_rope import fused_qk_rope_ragged

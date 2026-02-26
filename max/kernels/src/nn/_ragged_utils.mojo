@@ -16,8 +16,7 @@ from sys.info import _current_target, simd_width_of
 from algorithm.functional import elementwise
 from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
-from layout import LayoutTensor
-from layout import TileTensor
+from layout import LayoutTensor, TileTensor
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList

@@ -21,9 +21,8 @@ from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.dim import Dim
 from gpu.memory import external_memory
 from random import Random
-from layout import Coord, CoordLike, Idx
+from layout import Coord, CoordLike, Idx, TileTensor
 from layout._layout import row_major
-from layout import TileTensor
 from memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (

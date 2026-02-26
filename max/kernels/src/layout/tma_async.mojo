@@ -67,8 +67,7 @@ from gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
 )
-from layout import IntTuple, Layout, LayoutTensor
-from layout import TileTensor
+from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.int_tuple import product, to_index_list as int_tuple_to_index_list
 from layout.runtime_tuple import (
     coalesce_nested_tuple,

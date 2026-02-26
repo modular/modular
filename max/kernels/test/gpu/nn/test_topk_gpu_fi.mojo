@@ -16,9 +16,8 @@ from algorithm.reduction import max as reduce_max
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from layout import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout import TileTensor
 from layout._fillers import random
 from math import ceildiv, iota, exp, log
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi

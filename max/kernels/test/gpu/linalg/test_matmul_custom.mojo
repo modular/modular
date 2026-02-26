@@ -18,8 +18,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
 from gpu.host.info import A100
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout import TileTensor
+from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm

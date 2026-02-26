@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import Coord
+from layout import Coord, TileTensor
 from layout._layout import row_major
-from layout import TileTensor
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 
 from utils import IndexList

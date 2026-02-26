@@ -26,8 +26,7 @@ Key characteristics:
 from math import ceildiv
 
 from gpu import block_idx, grid_dim, thread_idx
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout import TileTensor
+from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
 
 from ..structured_kernels.tile_types import GMEMLayout1D
 from memory import UnsafePointer

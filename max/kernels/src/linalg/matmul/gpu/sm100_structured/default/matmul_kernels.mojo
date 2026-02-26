@@ -58,7 +58,7 @@ from gpu.primitives.grid_controls import (
 )
 from gpu.sync import syncwarp
 from gpu.compute.arch.tcgen05 import *
-from layout import Layout as LegacyLayout, LayoutTensor
+from layout import Layout as LegacyLayout, LayoutTensor, TileTensor
 from layout._layout import (
     Layout as _NewLayout,
     TensorLayout,
@@ -68,7 +68,6 @@ from layout._layout import (
 )
 from builtin.variadics import Variadic
 from layout.coord import Coord, Idx, coord
-from layout import TileTensor
 from ..structured_kernels.tile_types import (
     GMEMTile,
     TMATile,

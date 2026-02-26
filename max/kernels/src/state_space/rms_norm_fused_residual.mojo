@@ -28,10 +28,18 @@ from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from gpu.host.info import is_gpu
 from gpu.memory import external_memory
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from layout import IntTuple, Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
-from layout import Coord, CoordLike, Idx
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import Layout as TileLayout, row_major
-from layout import TileTensor
 from random import Random
 from register import register_internal
 from runtime.asyncrt import DeviceContextPtr

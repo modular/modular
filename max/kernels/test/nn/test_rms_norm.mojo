@@ -15,9 +15,8 @@ from math import sqrt
 from sys.info import CompilationTarget
 
 from itertools import product
-from layout import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout import TileTensor
 from nn.normalization import *
 from testing import assert_almost_equal
 

@@ -30,7 +30,7 @@ Usage:
 """
 
 from gpu.memory import AddressSpace
-from layout import Layout as LegacyLayout, LayoutTensor
+from layout import Layout as LegacyLayout, LayoutTensor, TileTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
 from linalg.structuring import SMemTile as LTSMemTile
@@ -41,7 +41,6 @@ from .tile_types import SMemTile2D, TMATile
 # Import variadic types for TileTensor load overload
 from builtin.variadics import Variadic
 from layout._layout import TensorLayout
-from layout import TileTensor
 
 
 struct TileLoaderTMA[

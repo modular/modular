@@ -13,8 +13,7 @@
 
 from buffer import NDBuffer, Dim, DimList
 from layout._layout import Layout, row_major
-from layout import TileTensor
-from layout import ComptimeInt, Idx, Coord, RuntimeInt
+from layout import ComptimeInt, Coord, Idx, RuntimeInt, TileTensor
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle
 from math import ceildiv

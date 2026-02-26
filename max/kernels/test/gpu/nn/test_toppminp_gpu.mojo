@@ -22,10 +22,8 @@ from benchmark import Bench, Bencher, BenchId
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout import Idx
+from layout import Idx, Layout, LayoutTensor, RuntimeLayout, TileTensor
 from layout._layout import row_major
-from layout import TileTensor
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from testing import assert_almost_equal, assert_equal

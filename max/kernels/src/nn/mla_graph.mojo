@@ -28,9 +28,8 @@ from gpu import (
 )
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, CoordLike, Idx, coord_to_index_list
+from layout import Coord, CoordLike, Idx, TileTensor, coord_to_index_list
 from layout._layout import TensorLayout, Layout as TileLayout, row_major
-from layout import TileTensor
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
 from utils.index import StaticTuple

@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from layout import Layout, RuntimeLayout
-from layout import Coord
+from layout import Coord, Layout, RuntimeLayout, TileTensor
 from layout._layout import row_major
 from layout._utils import ManagedLayoutTensor
-from layout import TileTensor
 from nn.slice import sliced_add
 
 from utils import IndexList

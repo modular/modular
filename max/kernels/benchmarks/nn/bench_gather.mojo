@@ -18,8 +18,7 @@ from random import rand, randint
 
 from benchmark import *
 from layout._layout import row_major
-from layout import Coord
-from layout import TileTensor
+from layout import Coord, TileTensor
 from nn.gather_scatter import gather_elements
 
 from utils.index import Index

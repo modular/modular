@@ -67,7 +67,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import UNKNOWN_VALUE, IntTuple
+from layout import IntTuple, TileTensor, UNKNOWN_VALUE
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
 from layout.coord import (
     DynamicCoord,
@@ -78,7 +78,6 @@ from layout.coord import (
     coord_to_index_list,
 )
 from layout._layout import Layout as TileLayout, row_major
-from layout import TileTensor
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,

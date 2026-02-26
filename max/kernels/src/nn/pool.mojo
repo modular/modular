@@ -16,8 +16,7 @@ from sys.info import simd_width_of
 from algorithm import stencil, stencil_gpu
 from gpu.host import DeviceContext
 from gpu.host.info import is_cpu, is_gpu
-from layout import Coord, coord_to_index_list
-from layout import TileTensor
+from layout import Coord, TileTensor, coord_to_index_list
 from runtime.asyncrt import DeviceContextPtr
 
 from utils.index import IndexList

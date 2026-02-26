@@ -23,10 +23,17 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout import Coord, Idx, coord_to_index_list
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+)
 from layout._layout import row_major
-from layout import TileTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
