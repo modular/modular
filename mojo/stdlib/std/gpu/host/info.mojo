@@ -556,6 +556,7 @@ See real-world examples by searching for these functions:
 Each example demonstrates the complete target configuration for that GPU family.
 """
 
+from format._utils import FormatStruct
 from math import ceildiv, floor
 from os import abort
 from sys.info import CompilationTarget, _accelerator_arch, _TargetType
@@ -788,16 +789,16 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
             writer: The writer to output vendor information to.
         """
         if self == Vendor.NO_GPU:
-            writer.write("no_gpu")
+            writer.write_string("no_gpu")
             return
         if self == Vendor.AMD_GPU:
-            writer.write("amd_gpu")
+            writer.write_string("amd_gpu")
             return
         if self == Vendor.APPLE_GPU:
-            writer.write("apple_gpu")
+            writer.write_string("apple_gpu")
             return
         if self == Vendor.NVIDIA_GPU:
-            writer.write("nvidia_gpu")
+            writer.write_string("nvidia_gpu")
             return
 
         abort("unable to format unrecognized `Vendor` value")
@@ -810,6 +811,16 @@ struct Vendor(Equatable, TrivialRegisterPassable, Writable):
             String representation of the vendor.
         """
         return String.write(self)
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the vendor to a writer.
+
+        Args:
+            writer: The writer to output the vendor to.
+        """
+        FormatStruct(writer, "Vendor").fields(self)
+
 
 
 # ===-----------------------------------------------------------------------===#

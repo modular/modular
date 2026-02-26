@@ -26,6 +26,8 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
+from format._utils import FormatStruct
+
 from collections.optional import Optional, OptionalReg
 from collections.string import StaticString
 from collections.string.string_slice import _get_kgen_string, get_static_string
@@ -70,7 +72,7 @@ from ..intrinsics import Scope
 
 
 @fieldwise_init
-struct CacheOperation(Equatable, TrivialRegisterPassable):
+struct CacheOperation(Equatable, TrivialRegisterPassable, Writable):
     """Represents different GPU cache operation policies.
 
     This struct defines various caching behaviors for GPU memory operations,
@@ -186,6 +188,25 @@ struct CacheOperation(Equatable, TrivialRegisterPassable):
 
         return "unknown cache operation"
 
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the cache operation to a writer.
+
+        Args:
+            writer: The writer to output the cache operation to.
+        """
+        writer.write_string(self.mnemonic())
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the cache operation to a writer.
+
+        Args:
+            writer: The writer to output the cache operation to.
+        """
+        FormatStruct(writer, "CacheOperation").fields(self)
+
+
 
 # ===-----------------------------------------------------------------------===#
 # CacheEviction
@@ -193,7 +214,7 @@ struct CacheOperation(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct CacheEviction(Equatable, TrivialRegisterPassable):
+struct CacheEviction(Equatable, TrivialRegisterPassable, Writable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -283,6 +304,25 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
             return "no_allocate"
         return "unknown cache eviction"
 
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the cache eviction policy to a writer.
+
+        Args:
+            writer: The writer to output the cache eviction policy to.
+        """
+        writer.write_string(self.mnemonic())
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the cache eviction policy to a writer.
+
+        Args:
+            writer: The writer to output the cache eviction policy to.
+        """
+        FormatStruct(writer, "CacheEviction").fields(self)
+
+
 
 # ===-----------------------------------------------------------------------===#
 # Fill
@@ -290,7 +330,7 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Fill(Equatable, TrivialRegisterPassable):
+struct Fill(Equatable, TrivialRegisterPassable, Writable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -338,6 +378,32 @@ struct Fill(Equatable, TrivialRegisterPassable):
             return "nan"
         return "unknown fill"
 
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the fill pattern to a writer.
+
+        Args:
+            writer: The writer to output the fill pattern to.
+        """
+        if self == Self.NONE:
+            writer.write_string("none")
+        elif self == Self.ZERO:
+            writer.write_string("zero")
+        elif self == Self.NAN:
+            writer.write_string("nan")
+        else:
+            writer.write_string("unknown fill")
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the fill pattern to a writer.
+
+        Args:
+            writer: The writer to output the fill pattern to.
+        """
+        FormatStruct(writer, "Fill").fields(self)
+
+
 
 # ===-----------------------------------------------------------------------===#
 # Consistency
@@ -345,7 +411,7 @@ struct Fill(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Consistency(Equatable, TrivialRegisterPassable):
+struct Consistency(Equatable, TrivialRegisterPassable, Writable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -399,6 +465,24 @@ struct Consistency(Equatable, TrivialRegisterPassable):
         return String(self.mnemonic())
 
     @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the consistency level to a writer.
+
+        Args:
+            writer: The writer to output the consistency level to.
+        """
+        writer.write_string(self.mnemonic())
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the consistency level to a writer.
+
+        Args:
+            writer: The writer to output the consistency level to.
+        """
+        FormatStruct(writer, "Consistency").fields(self)
+
+    @always_inline
     fn mnemonic(self) -> StaticString:
         """Returns the mnemonic string for the consistency level.
 
@@ -423,7 +507,7 @@ struct Consistency(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct ReduceOp(Equatable, TrivialRegisterPassable):
+struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -493,6 +577,24 @@ struct ReduceOp(Equatable, TrivialRegisterPassable):
             A string describing the reduction operation.
         """
         return String(self.mnemonic())
+
+    @always_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the reduction operation to a writer.
+
+        Args:
+            writer: The writer to output the reduction operation to.
+        """
+        writer.write_string(self.mnemonic())
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the reduction operation to a writer.
+
+        Args:
+            writer: The writer to output the reduction operation to.
+        """
+        FormatStruct(writer, "ReduceOp").fields(self)
 
     @always_inline
     fn mnemonic(self) -> StaticString:

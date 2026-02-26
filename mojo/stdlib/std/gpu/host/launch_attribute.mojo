@@ -29,6 +29,7 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
+from format._utils import FormatStruct
 from sys import size_of
 
 from utils import StaticTuple
@@ -201,6 +202,16 @@ struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
         """
         return writer.write(self._value)
 
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the `LaunchAttributeID` to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        FormatStruct(writer, "LaunchAttributeID").fields(self)
+
+
 
 @fieldwise_init
 struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
@@ -320,10 +331,20 @@ struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
             writer: The writer instance to write the formatted string to.
         """
         if self == Self.NORMAL:
-            return writer.write("NORMAL")
+            return writer.write_string("NORMAL")
         if self == Self.STREAMING:
-            return writer.write("STREAMING")
-        return writer.write("PERSISTING")
+            return writer.write_string("STREAMING")
+        return writer.write_string("PERSISTING")
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the `AccessProperty` to a writer.
+
+        Args:
+            writer: The writer instance to write the formatted string to.
+        """
+        FormatStruct(writer, "AccessProperty").fields(self)
+
 
 
 @fieldwise_init
@@ -498,3 +519,4 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
             ", miss_prop: ",
             self.miss_prop,
         )
+

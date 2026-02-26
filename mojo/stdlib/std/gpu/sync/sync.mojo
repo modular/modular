@@ -23,6 +23,7 @@ The synchronization primitives help coordinate execution between threads within
 thread blocks and warps, and manage memory consistency across different memory spaces.
 """
 
+from format._utils import FormatStruct
 from os import abort
 from os.atomic import Consistency, fence
 from sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
@@ -142,7 +143,7 @@ fn barrier():
 
 
 @fieldwise_init
-struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterPassable):
+struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterPassable, Writable):
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
 
     These masks control which types of instructions can be reordered across a barrier for
@@ -245,6 +246,48 @@ struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterPassable):
             return "TRANS"
         else:
             abort("invalid AMDScheduleBarrierMask value")
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the `AMDScheduleBarrierMask` to a writer.
+
+        Args:
+            writer: The writer to output the mask to.
+        """
+        if self == Self.NONE:
+            writer.write_string("NONE")
+        elif self == Self.ALL_ALU:
+            writer.write_string("ALL_ALU")
+        elif self == Self.VALU:
+            writer.write_string("VALU")
+        elif self == Self.SALU:
+            writer.write_string("SALU")
+        elif self == Self.MFMA:
+            writer.write_string("MFMA")
+        elif self == Self.ALL_VMEM:
+            writer.write_string("ALL_VMEM")
+        elif self == Self.VMEM_READ:
+            writer.write_string("VMEM_READ")
+        elif self == Self.VMEM_WRITE:
+            writer.write_string("VMEM_WRITE")
+        elif self == Self.ALL_DS:
+            writer.write_string("ALL_DS")
+        elif self == Self.DS_READ:
+            writer.write_string("DS_READ")
+        elif self == Self.DS_WRITE:
+            writer.write_string("DS_WRITE")
+        elif self == Self.TRANS:
+            writer.write_string("TRANS")
+        else:
+            abort("invalid AMDScheduleBarrierMask value")
+
+    @always_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the debug representation of the `AMDScheduleBarrierMask` to a writer.
+
+        Args:
+            writer: The writer to output the mask to.
+        """
+        FormatStruct(writer, "AMDScheduleBarrierMask").fields(self)
 
     fn __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.
