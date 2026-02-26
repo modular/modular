@@ -1380,6 +1380,47 @@ struct List[T: Copyable](
                 count += 1
         return count
 
+    fn sort[
+        _T: Copyable & Comparable, //
+    ](mut self: List[_T, ...]):
+        """Sorts the list in-place in ascending order.
+
+        Parameters:
+            _T: The type of the elements in the list. Must implement the
+                traits `Copyable` and `Comparable`.
+
+        Examples:
+
+        ```mojo
+        var numbers = [3, 1, 4, 1, 5]
+        numbers.sort()
+        print(numbers)  # [1, 1, 3, 4, 5]
+        ```
+        """
+        sort(self)
+
+    fn sort[
+        _T: Copyable,
+        //,
+        cmp_fn: fn(_T, _T) capturing[_] -> Bool,
+    ](mut self: List[_T, ...]):
+        """Sorts the list in-place using a custom comparison function.
+
+        Parameters:
+            _T: The type of the elements in the list.
+            cmp_fn: The comparison function that returns True if the first
+                argument should be ordered before the second.
+
+        Examples:
+
+        ```mojo
+        var numbers = [3, 1, 4, 1, 5]
+        numbers.sort[cmp_fn = lambda a, b: a > b]()  # descending
+        print(numbers)  # [5, 4, 3, 1, 1]
+        ```
+        """
+        sort[cmp_fn](self)
+
     fn swap_elements(mut self, elt_idx_1: Int, elt_idx_2: Int):
         """Swaps elements at the specified indexes if they are different.
 

@@ -209,6 +209,9 @@ what we publish.
 
 ### Library changes
 
+- `List` now has a `sort()` method for in-place sorting, with overloads for
+  `Comparable` types and custom comparison functions.
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 
