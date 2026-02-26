@@ -22,6 +22,7 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
+from layout._utils import ManagedLayoutTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from memory import memcpy, legacy_unsafe_pointer
 
@@ -203,7 +204,10 @@ def execute_matmul_k_cache_ragged_scale[
         Int(kv_params.num_heads),
         Int(kv_params.head_size),
     )
-    var kv_block_host_ptr = UnsafePointer[Scalar[dtype]].alloc(kv_block_size)
+    var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
+        RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
+        ctx,
+    )
 
     var cache_lengths_table = CacheLengthsTable.build(
         prompt_lens, cache_sizes, ctx
@@ -216,18 +220,8 @@ def execute_matmul_k_cache_ragged_scale[
         prompt_lens, cache_sizes, max_full_context_length, num_paged_blocks, ctx
     )
 
-    var kv_block_device = ctx.enqueue_create_buffer[dtype](kv_block_size)
-
-    # Create runtime layouts
-    var kv_block_runtime = RuntimeLayout[kv_block_layout].row_major(
-        kv_block_shape
-    )
-
     var kv_collection_device = CollectionType(
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
-            kv_block_device.unsafe_ptr(),
-            kv_block_runtime,
-        ),
+        kv_block.device_tensor(),
         cache_lengths_table.cache_lengths.device_tensor(),
         paged_lut.device_tensor(),
         UInt32(max_seq_length_batch),
@@ -237,10 +231,7 @@ def execute_matmul_k_cache_ragged_scale[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
 
     var kv_collection_host = CollectionType(
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
-            kv_block_host_ptr,
-            kv_block_runtime,
-        ),
+        kv_block.tensor(),
         cache_lengths_table.cache_lengths.host_tensor(),
         paged_lut.host_tensor(),
         UInt32(max_seq_length_batch),
@@ -271,57 +262,37 @@ def execute_matmul_k_cache_ragged_scale[
         RuntimeLayout[weight_layout].row_major(weight_shape),
     )
     random(weight_host)
-
     var weight_device = ctx.enqueue_create_buffer[weight_dtype](weight_size)
     ctx.enqueue_copy(weight_device, weight_host_ptr)
 
     # Initialize scales for blockwise scaling.
     var input_scale_cols = ragged_total_length
-    var input_scale_size = input_scale_rows * input_scale_cols
     var input_scale_shape = IndexList[2](input_scale_rows, input_scale_cols)
-    var weight_scale_size = weight_scale_rows * weight_scale_cols
     var weight_scale_shape = IndexList[2](weight_scale_rows, weight_scale_cols)
 
-    var input_scale_host_ptr = UnsafePointer[Scalar[scale_dtype]].alloc(
-        input_scale_size
-    )
-    var input_scale_host = LayoutTensor[scale_dtype, input_scale_layout](
-        input_scale_host_ptr,
+    var input_scale = ManagedLayoutTensor[scale_dtype, input_scale_layout](
         RuntimeLayout[input_scale_layout].row_major(input_scale_shape),
+        ctx,
     )
-    var weight_scale_host_ptr = UnsafePointer[Scalar[scale_dtype]].alloc(
-        weight_scale_size
+    var input_scale_host = input_scale.tensor[update=False]()
+    var weight_scale = ManagedLayoutTensor[scale_dtype, weight_scale_layout](
+        ctx
     )
-    var weight_scale_host = LayoutTensor[scale_dtype, weight_scale_layout](
-        weight_scale_host_ptr,
-        RuntimeLayout[weight_scale_layout].row_major(weight_scale_shape),
-    )
+    var weight_scale_host = weight_scale.tensor[update=False]()
 
     random(input_scale_host)
     random(weight_scale_host)
-
-    var input_scale_device = ctx.enqueue_create_buffer[scale_dtype](
-        input_scale_size
-    )
-    ctx.enqueue_copy(input_scale_device, input_scale_host_ptr)
-    var weight_scale_device = ctx.enqueue_create_buffer[scale_dtype](
-        weight_scale_size
-    )
-    ctx.enqueue_copy(weight_scale_device, weight_scale_host_ptr)
 
     # Initialize reference output.
     var ref_output_size = ragged_total_length * Int(kv_hidden_size)
     var ref_output_shape = IndexList[2](
         ragged_total_length, Int(kv_hidden_size)
     )
-    var ref_output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        ref_output_size
-    )
-    var ref_output_host = LayoutTensor[dtype, ref_output_layout](
-        ref_output_host_ptr,
+    var ref_output = ManagedLayoutTensor[dtype, ref_output_layout](
         RuntimeLayout[ref_output_layout].row_major(ref_output_shape),
+        ctx,
     )
-    var ref_output_device = ctx.enqueue_create_buffer[dtype](ref_output_size)
+    var ref_output_host = ref_output.tensor[update=False]()
 
     # Create device LayoutTensors for kernel calls
     var hidden_state_ragged_tensor = LayoutTensor[
@@ -347,14 +318,13 @@ def execute_matmul_k_cache_ragged_scale[
     var input_scale_device_tensor = LayoutTensor[
         scale_dtype, input_scale_layout, MutAnyOrigin
     ](
-        input_scale_device.unsafe_ptr(),
-        RuntimeLayout[input_scale_layout].row_major(input_scale_shape),
+        input_scale.device_tensor().ptr,
+        input_scale.device_tensor().runtime_layout,
     )
     var weight_scale_device_tensor = LayoutTensor[
         scale_dtype, weight_scale_layout, MutAnyOrigin
     ](
-        weight_scale_device.unsafe_ptr(),
-        RuntimeLayout[weight_scale_layout].row_major(weight_scale_shape),
+        weight_scale.device_tensor().ptr,
     )
 
     # Execute test with scaled implementation.
@@ -372,48 +342,9 @@ def execute_matmul_k_cache_ragged_scale[
     )
 
     # Execute reference using naive blockwise scaled matmul.
-    # Create weight_ref buffer and copy weight data
-    var weight_ref_host_ptr = UnsafePointer[Scalar[weight_dtype]].alloc(
-        weight_size
-    )
-    var weight_ref_device = ctx.enqueue_create_buffer[weight_dtype](weight_size)
-
-    ctx.enqueue_copy(weight_ref_host_ptr, weight_device)
-    ctx.synchronize()
-    ctx.enqueue_copy(weight_ref_device, weight_ref_host_ptr)
-
-    # Create scale tensors for reference computation
-    var ref_input_scale_host_ptr = UnsafePointer[Scalar[scale_dtype]].alloc(
-        input_scale_size
-    )
-    var ref_weight_scale_host_ptr = UnsafePointer[Scalar[scale_dtype]].alloc(
-        weight_scale_size
-    )
-
-    # Fill with the same scale values
-    for i in range(input_scale_rows):
-        for j in range(input_scale_cols):
-            ref_input_scale_host_ptr[
-                i * input_scale_cols + j
-            ] = input_scale_host_ptr[i * input_scale_cols + j]
-    for i in range(weight_scale_rows):
-        for j in range(weight_scale_cols):
-            ref_weight_scale_host_ptr[
-                i * weight_scale_cols + j
-            ] = weight_scale_host_ptr[i * weight_scale_cols + j]
-
-    var ref_input_scale_device = ctx.enqueue_create_buffer[scale_dtype](
-        input_scale_size
-    )
-    ctx.enqueue_copy(ref_input_scale_device, ref_input_scale_host_ptr)
-    var ref_weight_scale_device = ctx.enqueue_create_buffer[scale_dtype](
-        weight_scale_size
-    )
-    ctx.enqueue_copy(ref_weight_scale_device, ref_weight_scale_host_ptr)
-
     # Create NDBuffers for naive_blockwise_scaled_fp8_matmul
     var ref_output_ndbuffer = NDBuffer[dtype, 2](
-        ref_output_device.unsafe_ptr(),
+        ref_output.device_tensor[update=False]().ptr,
         ref_output_shape,
     )
     var hidden_state_ragged_ndbuffer = NDBuffer[weight_dtype, 2](
@@ -421,15 +352,15 @@ def execute_matmul_k_cache_ragged_scale[
         IndexList[2](ragged_total_length, hidden_size),
     )
     var weight_ref_ndbuffer = NDBuffer[weight_dtype, 2](
-        weight_ref_device.unsafe_ptr(),
+        weight_device.unsafe_ptr(),
         weight_shape,
     )
     var ref_input_scale_ndbuffer = NDBuffer[scale_dtype, 2](
-        ref_input_scale_device.unsafe_ptr(),
+        input_scale.device_tensor[update=False]().ptr,
         input_scale_shape,
     )
     var ref_weight_scale_ndbuffer = NDBuffer[scale_dtype, 2](
-        ref_weight_scale_device.unsafe_ptr(),
+        weight_scale.device_tensor[update=False]().ptr,
         weight_scale_shape,
     )
 
@@ -447,9 +378,8 @@ def execute_matmul_k_cache_ragged_scale[
         ctx,
     )
 
-    ctx.enqueue_copy(kv_block_host_ptr, kv_block_device)
-    ctx.enqueue_copy(ref_output_host_ptr, ref_output_device)
-    ctx.synchronize()
+    var kv_block_host = kv_block.tensor()
+    ref_output_host = ref_output.tensor()
 
     # Verify results
     for bs in range(batch_size):
@@ -470,27 +400,13 @@ def execute_matmul_k_cache_ragged_scale[
                 assert_almost_equal(a, b, atol=atol, rtol=rtol)
 
     # Cleanup host memory
-    kv_block_host_ptr.free()
     input_row_offsets_host_ptr.free()
     weight_host_ptr.free()
-    input_scale_host_ptr.free()
-    weight_scale_host_ptr.free()
-    ref_output_host_ptr.free()
-    weight_ref_host_ptr.free()
-    ref_input_scale_host_ptr.free()
-    ref_weight_scale_host_ptr.free()
 
     # Cleanup device buffers
     _ = hidden_state_ragged_device^
     _ = hidden_state_padded_device^
     _ = weight_device^
-    _ = weight_ref_device^
-    _ = input_scale_device^
-    _ = weight_scale_device^
-    _ = ref_input_scale_device^
-    _ = ref_weight_scale_device^
-    _ = ref_output_device^
-    _ = kv_block_device^
     _ = input_row_offsets_device^
 
     # Cleanup managed objects.

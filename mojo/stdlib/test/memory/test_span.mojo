@@ -13,7 +13,7 @@
 
 from testing import TestSuite
 from testing import assert_equal, assert_raises, assert_true, assert_false
-from test_utils import MoveOnly
+from test_utils import MoveOnly, check_write_to
 from math import iota
 from memory import ImmutSpan, MutSpan
 
@@ -254,18 +254,6 @@ def test_merge():
     assert_equal(b, [0, 5, 10])
 
 
-def test_span_to_string():
-    var l = [1, 2, 3]
-    var s = Span(l)[:2]
-    assert_equal(s.__str__(), "[1, 2]")
-
-
-def test_span_repr():
-    var l = [1, 2, 3]
-    var s = Span(l)[:2]
-    assert_equal(s.__repr__(), "[1, 2]")
-
-
 def test_reverse():
     def _test_dtype[D: DType]():
         var forward: InlineArray[Scalar[D], 11] = [
@@ -501,6 +489,26 @@ def test_immut_span_alias():
 
     # ImmutSpan works with both mutable and immutable data
     assert_equal(sum_span(data), 15)
+
+
+def test_span_write_to():
+    check_write_to(Span([1, 2, 3]), expected="[1, 2, 3]", is_repr=False)
+    check_write_to(Span(List[Int]()), expected="[]", is_repr=False)
+    check_write_to(Span([42]), expected="[42]", is_repr=False)
+
+
+def test_span_write_repr_to():
+    check_write_to(
+        Span([1, 2, 3]),
+        expected="Span[mut=False, Int]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
+    )
+    check_write_to(
+        Span(List[Int]()), expected="Span[mut=False, Int]([])", is_repr=True
+    )
+    check_write_to(
+        Span([42]), expected="Span[mut=False, Int]([Int(42)])", is_repr=True
+    )
 
 
 def test_span_with_move_only_type():

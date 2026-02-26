@@ -23,7 +23,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
-from max.nn.legacy import (
+from max.nn import (
     DynamicRotaryEmbedding,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -31,7 +31,7 @@ from max.nn.legacy import (
     LongRoPEScalingParams,
     RotaryEmbedding,
 )
-from max.nn.legacy.kernels import rope_ragged, rope_ragged_with_position_ids
+from max.nn.kernels import rope_ragged, rope_ragged_with_position_ids
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 MAX_SEQ_LEN = 2**14
@@ -549,8 +549,8 @@ def test_kv_cache_ragged_rope(
     # These imports are deferred to avoid Mojo module import race conditions
     # when running with pytest-xdist parallel workers.
     from max.kv_cache import PagedKVCacheManager
-    from max.nn.legacy.kernels import fused_qk_ragged_rope
-    from max.nn.legacy.kv_cache import (
+    from max.nn.kernels import fused_qk_ragged_rope
+    from max.nn.kv_cache import (
         KVCacheParams,
         PagedCacheValues,
     )

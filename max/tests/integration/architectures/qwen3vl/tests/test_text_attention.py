@@ -21,11 +21,11 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.linear import Linear
+from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
     Qwen3VLMoEDecoderAttentionWithRope,

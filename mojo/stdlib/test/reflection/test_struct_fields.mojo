@@ -866,7 +866,7 @@ def test_reflection_on_nonetype():
 # Test struct with various trait-conforming types
 struct TraitTestStruct:
     var copyable_field: Int  # Int is Copyable
-    var stringable_field: String  # String is Stringable
+    var writable_field: String  # String is Writable
 
 
 def test_conforms_to_with_field_types():
@@ -876,8 +876,8 @@ def test_conforms_to_with_field_types():
     # Int conforms to Copyable
     assert_true(comptime (conforms_to(types[0], Copyable)))
 
-    # String conforms to Stringable
-    assert_true(comptime (conforms_to(types[1], Stringable)))
+    # String conforms to Writable
+    assert_true(comptime (conforms_to(types[1], Writable)))
 
 
 def test_conforms_to_field_iteration():

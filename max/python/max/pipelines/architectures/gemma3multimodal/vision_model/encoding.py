@@ -23,8 +23,8 @@ from max.graph import (
     TensorValue,
     Weight,
 )
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.norm import LayerNorm
+from max.nn.layer import LayerList, Module
+from max.nn.norm import LayerNorm
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .attention import Gemma3VisionAttention

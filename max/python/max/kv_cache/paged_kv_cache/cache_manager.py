@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the :class:`PagedKVCacheManager` for managing paged KV cache with data and tensor parallelism."""
+
 from __future__ import annotations
 
-import dataclasses
 import logging
-import os
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-from max.driver import Buffer, Device
+from max.driver import Device
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
 from .increment_cache_lengths import IncrementCacheLengthsProcessor
@@ -102,23 +102,8 @@ class PagedKVCacheManager:
         )
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
-        dp_1_params = params.copy_as_dp_1()
         for replica_idx, devices in enumerate(self.devices_per_replica):
-            replica_params = dp_1_params
-            # Give each replica its own disk cache subdirectory to avoid
-            # file collisions, double disk-usage accounting, and metadata
-            # corruption when DP > 1.
-            if (
-                self.num_replicas > 1
-                and dp_1_params.disk_offload_dir is not None
-            ):
-                replica_params = dataclasses.replace(
-                    dp_1_params,
-                    disk_offload_dir=os.path.join(
-                        dp_1_params.disk_offload_dir,
-                        f"replica_{replica_idx}",
-                    ),
-                )
+            replica_params = params.copy_as_dp_1(replica_idx=replica_idx)
             self._replica_managers.append(
                 _TPPagedKVCacheManager(
                     params=replica_params,
@@ -193,6 +178,8 @@ class PagedKVCacheManager:
         self,
         batches: Sequence[Sequence[TextGenerationContext]],
         num_steps: int = 1,
+        *,
+        max_cache_length: int | None = None,
     ) -> list[RaggedKVCacheInputs]:
         """Gets the graph inputs for per-replica batches of requests.
 
@@ -202,10 +189,18 @@ class PagedKVCacheManager:
         Args:
             batches: Per-replica batches of requests
             num_steps: Number of steps to run for
+            max_cache_length: Optional explicit max cache length to size LUT
+                views. If not provided, uses request-derived runtime length.
         """
         ret_list: list[RaggedKVCacheInputs] = []
         for replica, ctxs in zip(self._replica_managers, batches, strict=True):
-            ret_list.extend(replica.runtime_inputs(ctxs, num_steps))
+            ret_list.extend(
+                replica.runtime_inputs(
+                    ctxs,
+                    num_steps,
+                    max_cache_length=max_cache_length,
+                )
+            )
         return ret_list
 
     def release(self, request_id: RequestID, replica_idx: int) -> None:
@@ -325,6 +320,6 @@ class PagedKVCacheManager:
         """Returns number of used host pages for the replica."""
         return self._replica_managers[replica_idx].num_used_host_pages
 
-    def get_device_tensors(self, replica_idx: int) -> list[Buffer]:
-        """Returns device tensors for the replica."""
-        return self._replica_managers[replica_idx].device_tensors
+    def get_device_buffer(self, replica_idx: int) -> KVCacheBuffer:
+        """Returns device buffer for the replica."""
+        return self._replica_managers[replica_idx].device_buffer

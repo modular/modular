@@ -17,15 +17,15 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
-from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
-from max.tensor import Tensor
 from PIL import Image
 from tqdm import tqdm
 
@@ -59,7 +59,7 @@ class Flux2ModelInputs(PixelModelInputs):
     num_images_per_prompt: int = 1
     input_image: Image.Image | None = None
     """Optional input image for image-to-image generation (PIL.Image.Image).
-    
+
     This field is used for Flux2 image-to-image generation where an input image
     is provided as a condition for the generation process.
     """

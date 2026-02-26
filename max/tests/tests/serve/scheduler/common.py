@@ -33,7 +33,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TextContext
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (

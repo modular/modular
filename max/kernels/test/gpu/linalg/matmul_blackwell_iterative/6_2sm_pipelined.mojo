@@ -46,6 +46,7 @@ from layout import (
     RuntimeTuple,
     RuntimeLayout,
 )
+from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
@@ -1009,10 +1010,10 @@ def test_blackwell_kernel_6[
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host = LayoutTensor[c_type, c_layout](c_host_ptr)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host_ref = LayoutTensor[c_type, c_layout](c_host_ref_ptr)
+    var c_host_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host = c_host_managed.tensor[update=False]()
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host_ref = c_host_ref_managed.tensor[update=False]()
 
     # Device memory allocation
     var a_device = ctx.enqueue_create_buffer[a_type](M * K)
@@ -1037,15 +1038,15 @@ def test_blackwell_kernel_6[
             ]()
     # Zero out c buffers
     for i in range(M * N):
-        c_host_ptr[i] = Scalar[c_type](0)
-        c_host_ref_ptr[i] = Scalar[c_type](0)
+        c_host.ptr[i] = Scalar[c_type](0)
+        c_host_ref.ptr[i] = Scalar[c_type](0)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device, c_host_ptr)
-    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
+    ctx.enqueue_copy(c_device, c_host.ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref.ptr)
 
     blackwell_kernel_6[
         transpose_b=transpose_b,
@@ -1112,8 +1113,8 @@ def test_blackwell_kernel_6[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host_ptr, c_device)
-        ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+        ctx.enqueue_copy(c_host.ptr, c_device)
+        ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
         ctx.synchronize()
 
         # print(ndbuffer_to_str(c_host))
@@ -1121,8 +1122,8 @@ def test_blackwell_kernel_6[
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host_ptr,
-            c_host_ref_ptr,
+            c_host.ptr,
+            c_host_ref.ptr,
             M * N,
             atol=0.0001,
             rtol=rtol,
@@ -1131,12 +1132,6 @@ def test_blackwell_kernel_6[
 
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 fn get_dic_of_shapes(

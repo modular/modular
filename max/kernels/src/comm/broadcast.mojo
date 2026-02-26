@@ -40,7 +40,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
-    can_enable_p2p,
+    is_p2p_enabled,
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
 
@@ -451,6 +451,8 @@ fn broadcast[
     root: Int,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
+    comptime assert ngpus >= 2, "broadcast requires at least 2 GPUs"
+
     var my_rank: Int = Int(ctx.id())
 
     var num_elements = output_buffer.num_elements()
@@ -465,7 +467,7 @@ fn broadcast[
         "Buffer shapes don't match",
     )
 
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         raise Error("Broadcast currently requires P2P access between GPUs")
 
     comptime BLOCK_SIZE = 256

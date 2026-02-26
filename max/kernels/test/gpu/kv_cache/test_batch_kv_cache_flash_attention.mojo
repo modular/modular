@@ -13,9 +13,6 @@
 
 from collections import Set
 from math import rsqrt
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from random import random_ui64, seed
 
 from gpu.host import DeviceContext
@@ -24,6 +21,7 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import MaterializedMask
@@ -82,20 +80,20 @@ def execute_flash_attention[
     )
     var q_runtime_layout = RuntimeLayout[q_static_layout].row_major(q_shape)
 
-    # Create device buffer for q
-    var q_device = ctx.enqueue_create_buffer[dtype](q_shape.flattened_length())
+    var q = ManagedLayoutTensor[dtype, q_static_layout](q_runtime_layout, ctx)
+    random(q.tensor())
 
-    # Initialize q with random data
-    with q_device.map_to_host() as q_host:
-        var q_host_tensor = LayoutTensor[dtype, q_static_layout](
-            q_host, q_runtime_layout
-        )
-        random(q_host_tensor)
-
-    var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
+    var valid_lengths = ManagedLayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            Index(batch_size)
+        ),
+        ctx,
     )
-    ctx.enqueue_copy(valid_lengths_device, valid_length.ptr)
+    var valid_lengths_host = valid_lengths.tensor[update=False]()
+    for i in range(batch_size):
+        valid_lengths_host[i] = valid_length[i]
 
     # Define layouts for mask tensor
     comptime mask_static_layout = Layout.row_major(
@@ -108,17 +106,11 @@ def execute_flash_attention[
         mask_shape
     )
 
-    # Create device buffer for mask
-    var mask_device = ctx.enqueue_create_buffer[dtype](
-        mask_shape.flattened_length()
+    var mask = ManagedLayoutTensor[dtype, mask_static_layout](
+        mask_runtime_layout, ctx
     )
-
-    # Initialize mask with random data
-    with mask_device.map_to_host() as mask_host:
-        var mask_host_tensor = LayoutTensor[dtype, mask_static_layout](
-            mask_host, mask_runtime_layout
-        )
-        random(mask_host_tensor)
+    var mask_host_tensor = mask.tensor[update=False]()
+    random(mask_host_tensor)
 
     # Define layouts for output tensors
     comptime output_static_layout = Layout.row_major(
@@ -131,34 +123,40 @@ def execute_flash_attention[
         output_shape
     )
 
-    # Create device buffers for outputs
-    var ref_output_device = ctx.enqueue_create_buffer[dtype](
-        output_shape.flattened_length()
+    var ref_output = ManagedLayoutTensor[dtype, output_static_layout](
+        output_runtime_layout, ctx
     )
-    var test_output_device = ctx.enqueue_create_buffer[dtype](
-        output_shape.flattened_length()
+    var test_output = ManagedLayoutTensor[dtype, output_static_layout](
+        output_runtime_layout, ctx
     )
 
     # initialize our KVCache
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
-
-    ctx.enqueue_copy(cache_lengths_dev, cache_valid_length.ptr)
-    var cache_lengths_device = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+    var cache_lengths_managed = ManagedLayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE)
     ](
-        cache_lengths_dev.unsafe_ptr(),
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
+        ctx,
     )
+    var cache_lengths_for_mask = ManagedLayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            Index(batch_size)
+        ),
+        ctx,
+    )
+    var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
+    var cache_lengths_for_mask_host = cache_lengths_for_mask.tensor[
+        update=False
+    ]()
+    for i in range(batch_size):
+        cache_lengths_host[i] = cache_valid_length[i]
+        cache_lengths_for_mask_host[i] = cache_valid_length[i]
+
+    var cache_lengths_device = cache_lengths_managed.device_tensor()
 
     # Define layouts for kv_block tensor
-    comptime kv_block_static_layout = Layout.row_major(
-        UNKNOWN_VALUE,
-        2,
-        UNKNOWN_VALUE,
-        UNKNOWN_VALUE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
-    )
+    comptime kv_block_static_layout = Layout.row_major[6]()
     var kv_block_shape = IndexList[6](
         num_blocks,
         2,
@@ -171,81 +169,44 @@ def execute_flash_attention[
         kv_block_static_layout
     ].row_major(kv_block_shape)
 
-    var kv_block_device = ctx.enqueue_create_buffer[dtype](
-        kv_block_shape.flattened_length()
+    var kv_block = ManagedLayoutTensor[dtype, kv_block_static_layout](
+        kv_block_runtime_layout, ctx
     )
 
-    # Initialize kv_block with random data using regular host memory
-    # (not host-pinned memory via map_to_host) to avoid exhausting
-    # the limited host-pinned memory buffer cache
-    var kv_block_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        kv_block_shape.flattened_length()
-    )
-    var kv_block_host_tensor = LayoutTensor[dtype, kv_block_static_layout](
-        kv_block_host_ptr, kv_block_runtime_layout
-    )
+    # Initialize kv_block once via host view.
+    var kv_block_host_tensor = kv_block.tensor()
     random(kv_block_host_tensor)
-    ctx.enqueue_copy(kv_block_device, kv_block_host_ptr)
-    ctx.synchronize()
-    kv_block_host_ptr.free()
 
     # Create lookup table
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
+    var lookup_table = ManagedLayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
+        ctx,
     )
 
     # Initialize lookup table
-    with lookup_table_device.map_to_host() as lookup_table_host:
-        # hacky way to get random block indices
-        var block_idx_set = Set[Int]()
-        var idx = 0
-        while len(block_idx_set) < batch_size:
-            var randval = Int(random_ui64(0, num_blocks - 1))
-            if randval in block_idx_set:
-                continue
-            block_idx_set.add(randval)
-            lookup_table_host[idx] = UInt32(randval)
-            idx += 1
+    var lookup_table_host = lookup_table.tensor[update=False]()
+    # hacky way to get random block indices
+    var block_idx_set = Set[Int]()
+    var idx = 0
+    while len(block_idx_set) < batch_size:
+        var randval = Int(random_ui64(0, num_blocks - 1))
+        if randval in block_idx_set:
+            continue
+        block_idx_set.add(randval)
+        lookup_table_host[idx] = UInt32(randval)
+        idx += 1
 
     # Create layout tensors for GPU operations
-    var q_tensor = LayoutTensor[dtype, q_static_layout](
-        q_device, q_runtime_layout
-    )
-    var valid_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        valid_lengths_device,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size)
-        ),
-    )
-    var mask_tensor = LayoutTensor[dtype, mask_static_layout](
-        mask_device, mask_runtime_layout
-    )
-    var ref_output_tensor = LayoutTensor[dtype, output_static_layout](
-        ref_output_device, output_runtime_layout
-    )
-    var test_output_tensor = LayoutTensor[dtype, output_static_layout](
-        test_output_device, output_runtime_layout
-    )
-    var kv_block_tensor = LayoutTensor[dtype, kv_block_static_layout](
-        kv_block_device, kv_block_runtime_layout
-    )
-    var lookup_table_tensor = LayoutTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-    ](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
-    )
+    var q_tensor = q.device_tensor()
+    var valid_lengths_tensor = valid_lengths.device_tensor()
+    var mask_tensor = mask.device_tensor()
+    var ref_output_tensor = ref_output.device_tensor()
+    var test_output_tensor = test_output.device_tensor()
+    var kv_block_tensor = kv_block.device_tensor()
+    var lookup_table_tensor = lookup_table.device_tensor()
 
     var kv_collection_device = CollectionType(
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-            kv_block_tensor.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_tensor.runtime_layout.shape.value,
-                kv_block_tensor.runtime_layout.stride.value,
-            ),
-        ),
+        kv_block_tensor,
         cache_lengths_device,
         lookup_table_tensor,
         UInt32(max_prompt_len),
@@ -270,10 +231,8 @@ def execute_flash_attention[
             start_pos=LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ](
-                cache_lengths_dev.unsafe_ptr(),
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    Index(batch_size)
-                ),
+                cache_lengths_for_mask.device_tensor().ptr,
+                cache_lengths_for_mask.device_tensor().runtime_layout,
             ),
         ),
         IdentityScoreMod(),
@@ -296,10 +255,8 @@ def execute_flash_attention[
             start_pos=LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ](
-                cache_lengths_dev.unsafe_ptr(),
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    Index(batch_size)
-                ),
+                cache_lengths_for_mask.device_tensor().ptr,
+                cache_lengths_for_mask.device_tensor().runtime_layout,
             ),
         ),
         ref_output_tensor,
@@ -314,55 +271,41 @@ def execute_flash_attention[
         ctx,
     )
 
-    ctx.synchronize()
-
     # Verify results
     # amd uses more aggressive split-k partitioning
     var rtol = 2e-2 if has_amd_gpu_accelerator() else 8e-3
-    with test_output_device.map_to_host() as test_out_host:
-        with ref_output_device.map_to_host() as ref_out_host:
-            var test_out_tensor = LayoutTensor[dtype, output_static_layout](
-                test_out_host, output_runtime_layout
-            )
-            var ref_out_tensor = LayoutTensor[dtype, output_static_layout](
-                ref_out_host, output_runtime_layout
-            )
-            for bs in range(Int(batch_size)):
-                for s in range(Int(valid_length[bs])):
-                    for h in range(Int(num_q_heads)):
-                        for hd in range(kv_params.head_size):
-                            assert_almost_equal(
-                                ref_out_tensor[bs, s, h, Int(hd)],
-                                test_out_tensor[bs, s, h, Int(hd)],
-                                atol=1e-5,
-                                rtol=rtol,
-                            )
-
-    # Explicitly free device buffers to return memory to the buffer cache
-    _ = q_device^
-    _ = valid_lengths_device^
-    _ = mask_device^
-    _ = ref_output_device^
-    _ = test_output_device^
-    _ = cache_lengths_dev^
-    _ = kv_block_device^
-    _ = lookup_table_device^
+    var test_out_tensor = test_output.tensor()
+    var ref_out_tensor = ref_output.tensor()
+    for bs in range(Int(batch_size)):
+        for s in range(Int(valid_length[bs])):
+            for h in range(Int(num_q_heads)):
+                for hd in range(kv_params.head_size):
+                    assert_almost_equal(
+                        ref_out_tensor[bs, s, h, Int(hd)],
+                        test_out_tensor[bs, s, h, Int(hd)],
+                        atol=1e-5,
+                        rtol=rtol,
+                    )
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
     comptime dtypes = (DType.float32, DType.bfloat16)
     var bs = 2
-    var valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
-    var valid_length = LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
-        valid_length_ptr,
+    var valid_length_managed = ManagedLayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE)
+    ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
+        ctx,
     )
+    var valid_length = valid_length_managed.tensor[update=False]()
 
-    var cache_valid_length_ptr = UnsafePointer[UInt32].alloc(bs)
-    var cache_valid_length = LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
-        cache_valid_length_ptr,
+    var cache_valid_length_managed = ManagedLayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE)
+    ](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
+        ctx,
     )
+    var cache_valid_length = cache_valid_length_managed.tensor[update=False]()
 
     comptime for dtype_idx in range(len(dtypes)):
         comptime dtype = dtypes[dtype_idx]

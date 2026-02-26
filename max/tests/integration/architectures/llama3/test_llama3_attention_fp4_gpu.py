@@ -27,12 +27,12 @@ from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.legacy.float8_config import (
+from max.nn import AttentionWithRope, Linear, RotaryEmbedding
+from max.nn.float8_config import (
     Float8Config,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.pipelines.architectures.llama3_legacy.model_config import (
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
 from max.pipelines.lib.float8 import parse_float8_config

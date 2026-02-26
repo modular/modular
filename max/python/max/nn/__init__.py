@@ -12,48 +12,163 @@
 # ===----------------------------------------------------------------------=== #
 """Neural network modules for MAX.
 
-This module provides the primary neural network building blocks for MAX
-using eager tensor execution.
+Graph-based API:
+    >>> from max.nn import Linear, AttentionWithRope
+    >>> from max.nn.kv_cache import KVCacheParams
 
-New API:
-    - :class:`Module`: Base class for neural network modules
-    - :class:`Linear`: Linear transformation layer
-    - :class:`Embedding`: Vector embedding layer
-    - :class:`Sequential`: Sequential container for modules
-    - :func:`module_dataclass`: Decorator for creating module dataclasses
-
-For legacy layer-based API, use ``max.nn.legacy``:
-    >>> from max.nn.legacy import Module, Layer, Linear
-    >>> from max.nn.legacy.attention import AttentionWithRope
-
-Example:
-    >>> from max.nn import Module, Linear, Embedding, Sequential, module_dataclass
-    >>> from max.tensor import Tensor
+Eager tensor API (module_v3):
+    >>> from max.nn.module_v3 import Module, Linear, Embedding
 """
 
-# New Module-based API (primary)
-# Legacy submodule is available for backward compatibility
-from . import legacy
-from .conv import Conv2d
-from .embedding import Embedding
-from .linear import Linear
-from .module import Module, module_dataclass
-from .norm import GemmaRMSNorm, GroupNorm, RMSNorm
-from .rope import RotaryEmbedding, TransposedRotaryEmbedding
-from .sequential import ModuleList, Sequential
+from . import module_v3
+from .attention import (
+    AttentionWithRope,
+    DistributedAttentionImpl,
+    GGUFQAttentionWithRope,
+    GPTQAttentionWithRope,
+    LatentAttentionWithRope,
+    MultiheadAttention,
+    RaggedAttention,
+    TensorParallelAttentionWithRope,
+    TensorParallelLatentAttentionWithRope,
+)
+from .clamp import clamp
+from .comm import Allreduce, Signals
+from .conv import Conv1D, Conv2d, Conv3D
+from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
+from .data_parallelism import split_batch, split_batch_replicated
+from .embedding import Embedding, VocabParallelEmbedding
+from .float8_config import (
+    Float8Config,
+    Float8InputScaleSpec,
+    Float8ScaleGranularity,
+    Float8ScaleOrigin,
+    Float8WeightScaleSpec,
+)
+from .identity import Identity
+from .kv_cache import (
+    KVCacheInputs,
+    KVCacheInputsSequence,
+    KVCacheMetrics,
+    KVCacheParams,
+    KVCacheStrategy,
+    PagedCacheValues,
+    RaggedKVCacheInputs,
+    build_max_lengths_tensor,
+)
+from .layer import Layer, LayerList, Module, Shardable
+from .linear import (
+    MLP,
+    ColumnParallelLinear,
+    GPTQLinear,
+    Linear,
+)
+from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
+from .moe import MoE, MoEGate, MoEQuantized
+from .norm import (
+    ConstantLayerNorm,
+    GroupNorm,
+    LayerNorm,
+    RMSNorm,
+)
+from .rotary_embedding import (
+    DynamicRotaryEmbedding,
+    LinearScalingParams,
+    Llama3RopeScalingParams,
+    Llama3RotaryEmbedding,
+    LongRoPERotaryEmbedding,
+    LongRoPEScalingParams,
+    RotaryEmbedding,
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
+from .sampling import (
+    MinPSampler,
+    RejectionSampler,
+    RejectionSamplerWithResiduals,
+)
+from .sequential import Sequential
+from .transformer import (
+    DistributedTransformer,
+    DistributedTransformerBlock,
+    ReturnHiddenStates,
+    ReturnLogits,
+    Transformer,
+    TransformerBlock,
+)
 
 __all__ = [
+    "MLP",
+    "Allreduce",
+    "AttentionWithRope",
+    "AttentionWithRopeAndLoRA",
+    "ColumnParallelLinear",
+    "ConstantLayerNorm",
+    "Conv1D",
     "Conv2d",
+    "Conv3D",
+    "ConvTranspose1d",
+    "DistributedAttentionImpl",
+    "DistributedTransformer",
+    "DistributedTransformerBlock",
+    "DynamicRotaryEmbedding",
     "Embedding",
-    "GemmaRMSNorm",
+    "Float8Config",
+    "Float8InputScaleSpec",
+    "Float8ScaleGranularity",
+    "Float8ScaleOrigin",
+    "Float8WeightScaleSpec",
+    "GGUFQAttentionWithRope",
+    "GPTQAttentionWithRope",
+    "GPTQLinear",
     "GroupNorm",
+    "Identity",
+    "KVCacheInputs",
+    "KVCacheInputsSequence",
+    "KVCacheMetrics",
+    "KVCacheParams",
+    "KVCacheStrategy",
+    "LatentAttentionWithRope",
+    "Layer",
+    "LayerList",
+    "LayerNorm",
     "Linear",
+    "LinearLoRA",
+    "LinearScalingParams",
+    "Llama3RopeScalingParams",
+    "Llama3RotaryEmbedding",
+    "LongRoPERotaryEmbedding",
+    "LongRoPEScalingParams",
+    "MinPSampler",
+    "MoE",
+    "MoEGate",
+    "MoEQuantized",
     "Module",
-    "ModuleList",
+    "MultiheadAttention",
+    "PagedCacheValues",
     "RMSNorm",
+    "RaggedAttention",
+    "RaggedKVCacheInputs",
+    "RejectionSampler",
+    "RejectionSamplerWithResiduals",
+    "ReturnHiddenStates",
+    "ReturnLogits",
     "RotaryEmbedding",
     "Sequential",
-    "TransposedRotaryEmbedding",
-    "legacy",
-    "module_dataclass",
+    "Shardable",
+    "Signals",
+    "SupportsLoRA",
+    "TensorParallelAttentionWithRope",
+    "TensorParallelLatentAttentionWithRope",
+    "Transformer",
+    "TransformerBlock",
+    "VocabParallelEmbedding",
+    "WeightNormConvTranspose1d",
+    "YarnRotaryEmbedding",
+    "YarnScalingParams",
+    "build_max_lengths_tensor",
+    "clamp",
+    "module_v3",
+    "split_batch",
+    "split_batch_replicated",
 ]

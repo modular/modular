@@ -20,8 +20,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.buffer_utils import cast_tensor_to
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import kv_cache_ragged_radd
-from max.nn.legacy.kv_cache import (
+from max.nn.kernels import kv_cache_ragged_radd
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )

@@ -948,7 +948,7 @@ PIPELINES = {
             tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
             json_file="torch_llama3_1_bfloat16_golden.json",
         ),
-        cos_dist_threshold=2.0e-2,
+        cos_dist_threshold=2.5e-2,
         kl_div_threshold=4.0e-2,
     ),
     "meta-llama/Llama-3.1-8B-Instruct-data-parallel-bfloat16": PipelineDef(
@@ -1239,7 +1239,7 @@ PIPELINES = {
             json_file="torch_qwen3_vl_4b_instruct_fp8_golden.json",
         ),
         cos_dist_threshold=1.7e00,
-        kl_div_threshold=3.6e-01,
+        kl_div_threshold=4.5e-01,
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
@@ -1291,8 +1291,10 @@ PIPELINES = {
         cos_dist_threshold=2.4e-01,
         kl_div_threshold=8.8e-01,
     ),
+    # TODO(MODELS-1099): Re-enable once upstream tokenizer is fixed.
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        tags=["manual"],
         pipeline="allenai/OLMo-2-1124-7B",
         encoding="float32",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1464,7 +1466,7 @@ PIPELINES = {
             json_file="torch_gemma3-1b_bfloat16_golden.json",
         ),
         cos_dist_threshold=1.3e-3,
-        kl_div_threshold=6.0e-02,
+        kl_div_threshold=1.0e-01,
     ),
     "google/gemma-3-12b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],

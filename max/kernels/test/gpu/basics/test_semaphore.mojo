@@ -14,7 +14,10 @@
 from gpu import NamedBarrierSemaphore
 from gpu.host import DeviceContext
 from gpu import block_idx, grid_dim, thread_idx
+from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 from testing import assert_equal
+from utils import IndexList
 
 comptime NUM_BLOCKS = 32
 comptime NUM_THREADS = 64
@@ -39,29 +42,32 @@ fn test_named_barrier_semaphore_equal_kernel(
 fn test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_equal")
 
-    var a_host = alloc[Int32](NUM_BLOCKS)
-
-    var locks_data = ctx.enqueue_create_buffer[DType.int32](1)
-    var shared_data = ctx.enqueue_create_buffer[DType.int32](NUM_BLOCKS)
-    ctx.enqueue_memset(locks_data, 0)
-    ctx.enqueue_memset(shared_data, NUM_BLOCKS)
+    var locks_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](1)), ctx
+    )
+    var shared_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+            IndexList[1](NUM_BLOCKS)
+        ),
+        ctx,
+    )
+    var locks_host = locks_data.tensor[update=False]()
+    var shared_host = shared_data.tensor[update=False]()
+    locks_host[0] = Int32(0)
+    for i in range(NUM_BLOCKS):
+        shared_host[i] = Int32(NUM_BLOCKS)
 
     comptime kernel = test_named_barrier_semaphore_equal_kernel
     ctx.enqueue_function_experimental[kernel](
-        locks_data,
-        shared_data,
+        locks_data.device_tensor().ptr,
+        shared_data.device_tensor().ptr,
         grid_dim=(NUM_BLOCKS),
         block_dim=(NUM_THREADS),
     )
-    ctx.synchronize()
-
-    ctx.enqueue_copy(a_host, shared_data)
+    shared_host = shared_data.tensor()
 
     for i in range(NUM_BLOCKS):
-        assert_equal(a_host[i], Int32(i))
-
-    _ = shared_data^
-    _ = locks_data^
+        assert_equal(shared_host[i], Int32(i))
 
 
 fn test_named_barrier_semaphore_less_than_kernel(
@@ -83,29 +89,32 @@ fn test_named_barrier_semaphore_less_than_kernel(
 fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     print("== test_named_barrier_semaphore_less_than")
 
-    var a_host = alloc[Int32](NUM_BLOCKS)
-
-    var locks_data = ctx.enqueue_create_buffer[DType.int32](1)
-    var shared_data = ctx.enqueue_create_buffer[DType.int32](NUM_BLOCKS)
-    ctx.enqueue_memset(locks_data, 0)
-    ctx.enqueue_memset(shared_data, NUM_BLOCKS)
+    var locks_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](1)), ctx
+    )
+    var shared_data = ManagedLayoutTensor[DType.int32, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+            IndexList[1](NUM_BLOCKS)
+        ),
+        ctx,
+    )
+    var locks_host = locks_data.tensor[update=False]()
+    var shared_host = shared_data.tensor[update=False]()
+    locks_host[0] = Int32(0)
+    for i in range(NUM_BLOCKS):
+        shared_host[i] = Int32(NUM_BLOCKS)
 
     comptime kernel = test_named_barrier_semaphore_less_than_kernel
     ctx.enqueue_function_experimental[kernel](
-        locks_data,
-        shared_data,
+        locks_data.device_tensor().ptr,
+        shared_data.device_tensor().ptr,
         grid_dim=(NUM_BLOCKS),
         block_dim=(NUM_THREADS),
     )
-    ctx.synchronize()
-
-    ctx.enqueue_copy(a_host, shared_data)
+    shared_host = shared_data.tensor()
 
     for i in range(NUM_BLOCKS):
-        assert_equal(a_host[i], Int32(i))
-
-    _ = shared_data^
-    _ = locks_data^
+        assert_equal(shared_host[i], Int32(i))
 
 
 def main():

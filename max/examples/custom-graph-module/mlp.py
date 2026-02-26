@@ -18,9 +18,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import max.nn as nn
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn import legacy as nn
 
 
 class MLPBlock(nn.Module):

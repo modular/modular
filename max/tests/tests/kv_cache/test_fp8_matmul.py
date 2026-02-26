@@ -20,20 +20,20 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy import (
+from max.nn import (
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
-from max.nn.legacy.kernels import (
+from max.nn.kernels import (
     batched_dynamic_scaled_fp8_matmul,
     dynamic_scaled_matmul,
     fused_qkv_ragged_matmul_scaled_float8,
     grouped_dynamic_scaled_fp8_matmul,
     matmul_k_cache_ragged_scaled_float8,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )

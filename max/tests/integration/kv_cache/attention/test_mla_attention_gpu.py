@@ -19,9 +19,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import flare_mla_prefill_ragged
-from max.nn.legacy.kv_cache import (
+from max.nn.attention import MHAMaskVariant
+from max.nn.kernels import flare_mla_prefill_ragged
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )

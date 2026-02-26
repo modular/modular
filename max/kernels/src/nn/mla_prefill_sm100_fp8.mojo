@@ -460,6 +460,7 @@ struct SM100MLA[
             Int32(Self.config.num_threads)
         )
     )
+    @__llvm_metadata(`nvvm.minctasm`=Int(1))
     fn mla_prefill_kernel[
         blockwise_scale: Int = 0,
     ](
@@ -633,7 +634,7 @@ struct SM100MLA[
 
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             Self.softmax(
                 ptr_tmem_addr[0],
@@ -662,7 +663,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
             Self.correction(
                 ptr_tmem_addr[0],
                 misc_mbars,
@@ -681,7 +682,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             Self.load(
                 misc_mbars,
@@ -714,7 +715,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
             Self.mma(
                 ptr_tmem_addr[0],
                 misc_mbars,
@@ -736,7 +737,7 @@ struct SM100MLA[
 
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             var iter_count: UInt32 = (
                 mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
@@ -1164,7 +1165,7 @@ struct SM100MLA[
             comptime for i in range(batch_size // 2, batch_size):
                 vs[i] = exp2(vs[i] - row_max)
 
-            BatchTileType(p_tmem).store(
+            BatchTileType(p_tmem).store_async(
                 LocalTensor[
                     Self.accum_type, row_major[batch_size * exp_simd]()
                 ](s.ptr, row_major[batch_size * exp_simd]())
@@ -1180,7 +1181,7 @@ struct SM100MLA[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                BatchTileType(p_tmem + UInt32(tmem_offset)).store(
+                BatchTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[batch_size * exp_simd]()
                     ](s.ptr + el_offset, row_major[batch_size * exp_simd]())
@@ -1196,7 +1197,7 @@ struct SM100MLA[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                RemainderTileType(p_tmem + UInt32(tmem_offset)).store(
+                RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[remainder * exp_simd]()
                     ](s.ptr + el_offset, row_major[remainder * exp_simd]())

@@ -151,7 +151,6 @@ fn _dpp_move[
         return bitcast[dtype, 1](SIMD[DType.int32, 2](lo, hi))
     else:
         comptime assert False, "unsupported type for DPP move"
-        return val
 
 
 @always_inline
@@ -309,7 +308,6 @@ fn _shuffle[
 
     else:
         comptime assert False, "unhandled shuffle dtype"
-        return 0
 
 
 @always_inline
@@ -341,7 +339,6 @@ fn _shuffle_amd_helper[
             return bitcast[dtype, simd_width](result)
         else:
             comptime assert False, "unhandled shuffle dtype"
-            return 0
 
 
 @always_inline

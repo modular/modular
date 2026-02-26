@@ -86,7 +86,6 @@ fn max_contiguous_tile_shape[
         return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
     else:
         comptime assert False, "Invalid major"
-        return IntTuple()
 
 
 # TODO: add create method to mma_operand trait and unify this with

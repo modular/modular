@@ -25,12 +25,12 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.kv_cache.paged_kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
 )
-from max.pipelines.architectures.llama3_legacy.model import Llama3Inputs
+from max.pipelines.architectures.llama3.model import Llama3Inputs
 from max.pipelines.lib import ModelOutputs
 from test_common.context_utils import create_text_context
 from test_common.mocks import DummyPipelineConfig

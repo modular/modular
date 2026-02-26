@@ -641,7 +641,6 @@ fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
         return "i32"
     else:
         comptime assert False, "unsupported dtype for air atomic intrinsics"
-        return ""
 
 
 fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:

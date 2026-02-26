@@ -190,7 +190,7 @@ def get_server_cmd(
         cmd += ["--enable-penalties"]
 
     if framework in ["max-ci", "max"] and "tbmod" in model:
-        cmd += ["--no-use-legacy-module"]
+        cmd += ["--prefer-module-v3"]
 
     revision = _load_hf_repo_lock().get(model)
     if revision:
@@ -230,6 +230,7 @@ def call_eval(
         for kw in (
             "academic-ds",
             "deepseek-r1",
+            "deepseek-v3",
             "gpt-oss",
             "internvl3_5",
             "qwen3",

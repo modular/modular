@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides utility functions for computing allowed generation steps in pipeline variants."""
+
 from __future__ import annotations
 
 import logging
@@ -29,7 +32,7 @@ from transformers import AutoConfig
 from ..hf_utils import download_weight_files
 
 if TYPE_CHECKING:
-    from ..model_config import MAXModelConfig
+    from ..config.model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
 

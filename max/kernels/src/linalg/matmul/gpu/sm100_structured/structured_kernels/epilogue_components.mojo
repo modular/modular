@@ -38,7 +38,6 @@ from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout._tile_tensor import TileTensor
 from layout.tma_async import TMATensorTile
-from layout import LayoutTensor
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.utils import elementwise_compute_lambda_type
 from utils.fast_div import FastDiv

@@ -15,84 +15,43 @@
 
 from __future__ import annotations
 
-from max.driver import Buffer, DeviceStream
+from max.driver import DeviceStream
+from max.nn.kv_cache.cache_params import KVCacheBuffer
 
 
-def _combine_lists(
-    a: list[Buffer] | None, b: list[Buffer] | None
-) -> list[Buffer]:
-    a = a or []
-    b = b or []
-    return [*a, *b]
+class BlockOffloadEngine:
+    """Engine for offloading gpu KVCache blocks to host memory.
 
+    This offload engine will allocate a DevicePinnedBuffer with the same shape
+    as the gpu buffer. It uses auxillary d2h streams to hide the latency of
+    KV cache offloading copies on a stream detached from the main kernel exec
+    stream. However, it still issues the h2d transfers on the same stream as
+    kernel execution which is a major limitation (SERVOPT-1036).
+    """
 
-class BlockCopyEngine:
     def __init__(
-        self,
-        block_size: int,
-        num_device_blocks: int,
-        device_tensors: list[Buffer],
-        num_host_blocks: int,
-        host_tensors: list[Buffer] | None,
-        device_scale_tensors: list[Buffer] | None,
-        host_scale_tensors: list[Buffer] | None,
+        self, total_num_host_blocks: int, device_buffer: KVCacheBuffer
     ) -> None:
-        if num_host_blocks > 0 and host_tensors is None:
-            raise ValueError(
-                "Host tensor must be non-null if there are host blocks"
-            )
-        if num_host_blocks <= 0 and host_tensors is not None:
-            raise ValueError(
-                "Host tensor must be null if there are no host blocks"
-            )
-        if num_device_blocks <= 0:
-            raise ValueError("Number of device blocks must be non-zero")
-        if block_size <= 0:
-            raise ValueError("Block size must be positive")
-
-        # There is at least 1 device tensors
-        # Device scale tensors are only non-null if KVCache quantization is enabled.
-        self.device_tensors = _combine_lists(
-            device_tensors, device_scale_tensors
+        self.device_buffer = device_buffer
+        self.host_buffer = device_buffer.allocate_host_offload_buffer(
+            total_num_host_blocks
         )
-        # There can be 0 or len(self.device_tensors) host tensors
-        # Host scale tensors are only non-null if KVCache quantization is enabled.
-        self.host_tensors = _combine_lists(host_tensors, host_scale_tensors)
 
-        self.block_size = block_size
-        self.num_device_blocks = num_device_blocks
-        self.num_host_blocks = num_host_blocks
-
-        self.main_streams: list[DeviceStream] | None = None
-        self.d2h_auxiliary_streams: list[DeviceStream] | None = None
-
-        # Scheduling memory copies on separate stream is only useful if we have
-        # pinned host memory.
-        if self.host_tensors:
-            self.main_streams = [
-                self.host_tensors[i].device.default_stream
-                for i in range(len(self.device_tensors))
-            ]
-            self.d2h_auxiliary_streams = [
-                DeviceStream(self.host_tensors[i].device)
-                for i in range(len(self.device_tensors))
-            ]
-
-    def supports_multistream(self) -> bool:
-        """Returns whether multistream D2H copy is supported."""
-        return self.d2h_auxiliary_streams is not None
+        self.main_streams: dict[int, DeviceStream] = {
+            buffer.device.id: buffer.device.default_stream
+            for buffer in device_buffer.all_buffers
+        }
+        self.d2h_auxiliary_streams: dict[int, DeviceStream] = {
+            buffer.device.id: DeviceStream(buffer.device)
+            for buffer in device_buffer.all_buffers
+        }
 
     def memcpy_h2d(self, dst: int, src: int) -> None:
         """Copies a block from host to device(s)."""
-        if not self.host_tensors:
-            raise ValueError(
-                "Attempted to enqueue h2d copy but there is no host tensor"
-            )
-
         # Copy block from host to each of the devices
         for device_tensor, host_tensor in zip(
-            self.device_tensors,
-            self.host_tensors,
+            self.device_buffer.all_buffers,
+            self.host_buffer.all_buffers,
             strict=True,
         ):
             device_tensor[dst, :, :, :, :, :].inplace_copy_from(
@@ -101,24 +60,17 @@ class BlockCopyEngine:
 
     def memcpy_d2h(self, dst: int, src: int) -> None:
         """Copies a block from device(s) to host."""
-        if not self.host_tensors:
-            raise ValueError(
-                "Attempted to enqueue d2h copy but there is no host tensor"
-            )
-
         # Copy the data from one device to the host.
-        for i, (device_tensor, host_tensor) in enumerate(
-            zip(
-                self.device_tensors,
-                self.host_tensors,
-                strict=True,
-            )
+        for device_buffer, host_buffer in zip(
+            self.device_buffer.all_buffers,
+            self.host_buffer.all_buffers,
+            strict=True,
         ):
-            src_block = device_tensor[src, :, :, :, :, :]
-            dst_block = host_tensor[dst, :, :, :, :, :]
+            src_block = device_buffer[src, :, :, :, :, :]
+            dst_block = host_buffer[dst, :, :, :, :, :]
 
-            if self.d2h_auxiliary_streams is not None:
-                dst_block = dst_block.to(self.d2h_auxiliary_streams[i])
+            device_id = device_buffer.device.id
+            dst_block = dst_block.to(self.d2h_auxiliary_streams[device_id])
 
             dst_block.inplace_copy_from(src_block)
 
@@ -129,10 +81,9 @@ class BlockCopyEngine:
         BatchN+1 begins. This is needed because BatchN+1 may write to the
         same blocks as BatchN is reading from.
         """
-        if self.d2h_auxiliary_streams is None:
-            return
-        assert self.main_streams is not None
         for main_stream, d2h_auxiliary_stream in zip(
-            self.main_streams, self.d2h_auxiliary_streams, strict=True
+            self.main_streams.values(),
+            self.d2h_auxiliary_streams.values(),
+            strict=True,
         ):
             main_stream.wait_for(d2h_auxiliary_stream)

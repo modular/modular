@@ -51,7 +51,7 @@ comptime _NSEC_PER_SEC = _NSEC_PER_USEC * _USEC_PER_MSEC * _MSEC_PER_SEC
 
 
 @fieldwise_init
-struct _CTimeSpec(Defaultable, Stringable, TrivialRegisterPassable, Writable):
+struct _CTimeSpec(Defaultable, TrivialRegisterPassable, Writable):
     var tv_sec: Int  # Seconds
     var tv_subsec: Int  # subsecond (nanoseconds on linux and usec on mac)
 
@@ -67,6 +67,7 @@ struct _CTimeSpec(Defaultable, Stringable, TrivialRegisterPassable, Writable):
                 self.tv_sec * _NSEC_PER_SEC + self.tv_subsec * _NSEC_PER_USEC
             )
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

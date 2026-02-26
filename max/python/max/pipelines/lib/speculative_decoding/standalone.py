@@ -22,7 +22,7 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced

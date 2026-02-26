@@ -28,7 +28,7 @@ comptime blkcnt_t = Int64
 comptime blksize_t = Int64
 
 
-struct _c_stat(Copyable, Defaultable, Stringable, Writable):
+struct _c_stat(Copyable, Defaultable, Writable):
     var st_dev: dev_t
     """ID of device containing file."""
     var st_ino: Int64
@@ -101,6 +101,7 @@ struct _c_stat(Copyable, Defaultable, Stringable, Writable):
         )
         # fmt: on
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

@@ -56,3 +56,44 @@ def test_device_event_str_and_repr(device: driver.Accelerator) -> None:
     assert pointer1 != pointer2, (
         "Different events should have different pointer addresses"
     )
+
+
+def test_device_event_timing_param_default(
+    device: driver.Accelerator,
+) -> None:
+    """Test that events without timing param still work (backward compat)."""
+    event = DeviceEvent(device)
+    device.default_stream.record_event(event)
+    event.synchronize()
+    assert event.is_ready()
+
+
+def test_device_event_elapsed_time(device: driver.Accelerator) -> None:
+    """Test elapsed_time returns a non-negative float."""
+    start = DeviceEvent(device, enable_timing=True)
+    end = DeviceEvent(device, enable_timing=True)
+
+    stream = device.default_stream
+    stream.record_event(start)
+    stream.record_event(end)
+    end.synchronize()
+
+    elapsed = start.elapsed_time(end)
+    assert isinstance(elapsed, float)
+    assert elapsed >= 0.0
+
+
+def test_elapsed_time_without_timing_raises(
+    device: driver.Accelerator,
+) -> None:
+    """Test that elapsed_time raises when events lack timing."""
+    start = DeviceEvent(device)  # enable_timing=False (default)
+    end = DeviceEvent(device)  # enable_timing=False (default)
+
+    stream = device.default_stream
+    stream.record_event(start)
+    stream.record_event(end)
+    end.synchronize()
+
+    with pytest.raises(RuntimeError):
+        start.elapsed_time(end)

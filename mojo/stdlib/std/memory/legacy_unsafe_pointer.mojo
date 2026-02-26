@@ -66,7 +66,6 @@ struct LegacyUnsafePointer[
     DevicePassable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -488,6 +487,7 @@ struct LegacyUnsafePointer[
         """
         return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets a string representation of the pointer.

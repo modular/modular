@@ -20,19 +20,19 @@ from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy import (
+from max.nn import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
 )
-from max.nn.legacy.attention.attention_with_rope import AttentionWithRope
-from max.nn.legacy.float8_config import Float8WeightScaleSpec
-from max.nn.legacy.kv_cache import (
+from max.nn.attention.attention_with_rope import AttentionWithRope
+from max.nn.float8_config import Float8WeightScaleSpec
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
 

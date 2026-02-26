@@ -24,7 +24,7 @@ from typing import Any
 import huggingface_hub
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.float8_config import (
+from max.nn.float8_config import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
@@ -377,11 +377,19 @@ def _parse_fp8_float8_config(
 
     bias_dtype = _bias_dtype(state_dict)
 
+    # All layers use FP8 in this format (e.g. Qwen3-30B-A3B FP8, DeepSeekV3).
+    # modules_to_not_convert only lists layernorms and router gate, not linear layers.
+    if hasattr(huggingface_config, "text_config"):
+        num_hidden_layers = huggingface_config.text_config.num_hidden_layers
+    else:
+        num_hidden_layers = huggingface_config.num_hidden_layers
+    all_layers = set(range(num_hidden_layers))
+
     return Float8Config(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_in_float8=all_layers,
+        attn_qkv_in_float8=all_layers,
         embedding_output_dtype=DType.bfloat16,
         bias_dtype=bias_dtype,
         quant_method=quant_method,

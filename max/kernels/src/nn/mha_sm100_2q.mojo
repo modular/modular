@@ -119,7 +119,6 @@ from kv_cache.types import swizzle_granularity
 from sys import env_get_bool
 from sys._assembly import inlined_assembly
 
-
 comptime logger = Logger()
 
 # TileTensor-based aliases for storage (native types)
@@ -438,22 +437,6 @@ struct TMemTile[
         ]()
 
     @always_inline
-    fn store[
-        *, num_threads: Int
-    ](
-        self,
-        src: STMatrixLayout[
-            Self.BM,
-            Self.BN,
-            num_threads=num_threads,
-            accum_type_size = Self.dtype_size,
-        ].TensorType[Self.dtype],
-    ):
-        self.store_async[num_threads=num_threads](src)
-        tcgen05_store_wait()
-        named_barrier[Int32(num_threads)]()
-
-    @always_inline
     fn load_async_with_st_matrix_layout[
         *, num_threads: Int
     ](
@@ -481,22 +464,56 @@ struct TMemTile[
             " st_mat_layout.num_m_tiles == "
             + String(st_mat_layout.num_m_tiles)
         )
-        comptime repeat = st_mat_layout.repeat
-        comptime frag_size_b32 = st_mat_layout.frag_size * Self.dtype_size // 4
 
         dst = type_of(dst).stack_allocation()
-        comptime load_dtype = DType.uint32
-        var ptr: UnsafePointer[
-            Scalar[load_dtype], MutAnyOrigin, address_space = AddressSpace.LOCAL
-        ]
+        self.load_st_matrix_chunk[
+            num_threads=num_threads,
+            start_repeat=0,
+            num_repeats = st_mat_layout.repeat,
+        ](dst)
 
-        ptr = rebind[type_of(ptr)](dst.ptr)
+    @always_inline
+    fn load_st_matrix_chunk[
+        *, num_threads: Int, start_repeat: Int, num_repeats: Int
+    ](
+        self,
+        dst: STMatrixLayout[
+            Self.BM,
+            Self.BN,
+            num_threads=num_threads,
+            accum_type_size = Self.dtype_size,
+        ].TensorType[Self.dtype],
+    ):
+        """Load a range of repeat columns from tmem into a pre-allocated
+        tensor.
+
+        Parameters:
+            num_threads: Number of threads in the warp group.
+            start_repeat: First repeat index to load (0-based).
+            num_repeats: Number of repeats to load.
+
+        Args:
+            dst: Pre-allocated register tensor.
+        """
+        comptime st_mat_layout = STMatrixLayout[
+            Self.BM,
+            Self.BN,
+            num_threads=num_threads,
+            accum_type_size = Self.dtype_size,
+        ]()
+        comptime load_dtype = DType.uint32
+        var ptr = rebind[
+            UnsafePointer[
+                Scalar[load_dtype],
+                MutAnyOrigin,
+                address_space = AddressSpace.LOCAL,
+            ]
+        ](dst.ptr)
 
         @parameter
         @always_inline
-        fn load_fn[pow_two: Int, offset: Int]():
-            comptime assert pow_two + offset <= repeat
-
+        fn load_fn[pow_two: Int, local_offset: Int]():
+            comptime assert pow_two + local_offset <= num_repeats
             comptime if pow_two > 0:
                 comptime for m_mma in range(st_mat_layout.num_m_tiles):
                     comptime offsets = STMatrixOffsets[
@@ -505,13 +522,13 @@ struct TMemTile[
                         num_threads=num_threads,
                         accum_type_size = Self.dtype_size,
                         curr_repeat=pow_two,
-                        cumulative_repeat=offset,
+                        cumulative_repeat = start_repeat + local_offset,
                         m_mma=m_mma,
                     ]()
                     tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
                     frag = tcgen05_ld[
-                        datapaths=16,  # first dimension of the shape
-                        bits = st_mat_layout.bits,  # second dimension of the shape
+                        datapaths=16,
+                        bits = st_mat_layout.bits,
                         repeat=pow_two,
                         dtype=load_dtype,
                         pack=False,
@@ -520,7 +537,9 @@ struct TMemTile[
                     ptr.store(offsets.ptr_offset, frag)
 
         comptime max_value = 64 if st_mat_layout.bits == 128 else 32
-        break_into_powers_of_two[func=load_fn, N=repeat, max_value=max_value]()
+        break_into_powers_of_two[
+            func=load_fn, N=num_repeats, max_value=max_value
+        ]()
 
     @always_inline
     fn load_async(
@@ -594,13 +613,6 @@ struct TMemTile[
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
 
         break_into_powers_of_two[func=store_fn, N = Self.BN, max_value=128]()
-
-    @always_inline
-    fn store[
-        src_type: DType
-    ](self, src: LocalTensor[src_type, row_major[Self.BN]()]):
-        self.store_async(src)
-        tcgen05_store_wait()
 
 
 struct SM100TensorAccumulatorSS[
@@ -1275,6 +1287,7 @@ fn intrin_ftz[intrin: String](a: Float32, b: Float32) -> Float32:
         String(intrin, ".ftz.f32 $0, $1, $2;"),
         Float32,
         constraints="=f,f,f",
+        has_side_effect=False,
     ](a, b)
 
 
@@ -1284,6 +1297,7 @@ fn intrin[intrin: String](a: Float32, b: Float32, c: Float32) -> Float32:
         String(intrin, ".f32 $0, $1, $2, $3;"),
         Float32,
         constraints="=f,f,f,f",
+        has_side_effect=False,
     ](a, b, c)
 
 
@@ -1307,6 +1321,7 @@ fn intrin_ftz_x2[
         String(s0, intrin, s1),
         _RegisterPackType[Float32, Float32],
         constraints="=f,=f,f,f,f,f",
+        has_side_effect=False,
     ](a[0], a[1], b[0], b[1])
     return {ret[0], ret[1]}
 
@@ -1384,6 +1399,7 @@ fn fma_ftz(
         }""",
         _RegisterPackType[Float32, Float32],
         constraints="=f,=f,f,f,f,f,f,f",
+        has_side_effect=False,
     ](a[0], a[1], b[0], b[1], c[0], c[1])
     return {ret[0], ret[1]}
 
@@ -1474,16 +1490,32 @@ fn maximum[
 
     comptime for w in range(width):
         res[w] = max_ftz(
-            rebind[Float32](x[2 * w]), rebind[Float32](x[2 * w + 1])
+            rebind[Float32](x[3 * w]),
+            rebind[Float32](x[3 * w + 1]),
+            rebind[Float32](x[3 * w + 2]),
         )
-
-    # unroll (using SIMD) to break up dependency chain
-    comptime for i in range(1, BN // (2 * width)):
+    # max idx = 3 * (width-1) + 2 = 3*width - 1
+    comptime remaining_iters = BN - 3 * width
+    comptime num_iters = remaining_iters // (2 * width)
+    comptime for i in range(num_iters):
+        comptime col = i * 2 * width + 3 * width
         comptime for w in range(width):
-            comptime j = i * 2 * width + 2 * w
             res[w] = max_ftz(
-                res[w], rebind[Float32](x[j]), rebind[Float32](x[j + 1])
+                res[w],
+                rebind[Float32](x[col + 2 * w]),
+                rebind[Float32](x[col + 2 * w + 1]),
             )
+
+    comptime remainder_base = 3 * width + 2 * width * num_iters
+    comptime end_iters = (BN - remainder_base) // 2
+    comptime for w in range(end_iters):
+        res[w] = max_ftz(
+            res[w],
+            rebind[Float32](x[remainder_base + 2 * w]),
+            rebind[Float32](x[remainder_base + 2 * w + 1]),
+        )
+    comptime if (BN - remainder_base) % 2 == 1:
+        res[end_iters] = max_ftz(res[end_iters], x[BN - 1])
 
 
 @always_inline
@@ -3243,6 +3275,7 @@ struct SM100MHA2Q[
             Int32(Self.config.num_threads)
         )
     )
+    @__llvm_metadata(`nvvm.minctasm`=Int(1))
     fn kernel(
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
@@ -3493,7 +3526,7 @@ struct SM100MHA2Q[
         warp_group_idx: UInt32,
         inv_row_sum: Scalar[Self.accum_type],
         o_smem_arg: SharedMemPointer[Scalar[Self.output_type]],
-        o_tmem: TMemTile[Self.accum_type, Self.BM // 2, Self.padded_depth],
+        o_tmem_arg: TMemTile[Self.accum_type, Self.BM // 2, Self.padded_depth],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
             Self.config.swizzle_mode,
@@ -3505,107 +3538,188 @@ struct SM100MHA2Q[
         out_head_idx: UInt32,
         out_row_idx: UInt32,
     ):
-        e = elect()
-        if e != 0:
-            ragged_tma_store.prefetch_descriptor()
+        comptime swizzle_granularity = Self.config.swizzle_mode.bytes() // size_of[
+            Self.output_type
+        ]()
+        comptime iters = Self.padded_depth // swizzle_granularity
 
-        o = o_tmem.load_async_with_st_matrix_layout[
+        comptime ST = STMatrixLayout[
+            Self.BM // 2,
+            swizzle_granularity,
+            num_threads=WARPGROUP_SIZE,
+            accum_type_size=4,
+        ]
+        comptime num_rows = ST.vec_local_layout[0].size()
+
+        comptime swizzle = make_swizzle[
+            Self.output_type, Self.config.swizzle_mode
+        ]()
+
+        comptime swizzle_block_size: UInt32 = UInt32(
+            WARP_SIZE * swizzle_granularity
+        )
+
+        e = elect()
+        if local_warp_idx == 0:
+            if e != 0:
+                ragged_tma_store.prefetch_descriptor()
+
+        # Allocate register tiles for double-buffered pipeline.
+        comptime ChunkTMemType = TMemTile[
+            Self.accum_type, Self.BM // 2, swizzle_granularity
+        ]
+        var o_cur = ChunkTMemType.allocate_register_tile[
             num_threads=WARPGROUP_SIZE
         ]()
-        comptime num_rows = o.layout[0].size()
+
+        # --- Composable pipeline primitives, parameterized by m_half ---
+
+        @always_inline
+        @parameter
+        fn load_chunk[col: Int, m_half: Int](dst: type_of(o_cur)):
+            """Async tmem load for one M-half of column `col`."""
+            comptime load_dtype = DType.uint32
+            var ptr = rebind[
+                UnsafePointer[
+                    Scalar[load_dtype],
+                    MutAnyOrigin,
+                    address_space = AddressSpace.LOCAL,
+                ]
+            ](dst.ptr)
+            chunk_tmem_addr = o_tmem_arg.tmem_addr + UInt32(
+                col * swizzle_granularity
+            )
+
+            @parameter
+            @always_inline
+            fn load_fn[pow_two: Int, local_offset: Int]():
+                comptime assert pow_two + local_offset <= ST.repeat
+                comptime if pow_two > 0:
+                    comptime offsets = STMatrixOffsets[
+                        Self.BM // 2,
+                        swizzle_granularity,
+                        num_threads=WARPGROUP_SIZE,
+                        accum_type_size=4,
+                        curr_repeat=pow_two,
+                        cumulative_repeat=local_offset,
+                        m_mma=m_half,
+                    ]()
+                    tmem = chunk_tmem_addr + UInt32(offsets.tmem_offset)
+                    frag = tcgen05_ld[
+                        datapaths=16,
+                        bits = ST.bits,
+                        repeat=pow_two,
+                        dtype=load_dtype,
+                        pack=False,
+                        width = offsets.local_frag_size_b32,
+                    ](tmem)
+                    ptr.store(offsets.ptr_offset, frag)
+
+            comptime max_value = 64 if ST.bits == 128 else 32
+            break_into_powers_of_two[
+                func=load_fn, N = ST.repeat, max_value=max_value
+            ]()
+
+        load_chunk[0, 0](o_cur)
         inv_row_sums = tt_stack_allocation[
             dtype = Self.accum_type, address_space = AddressSpace.LOCAL
         ](row_major[num_rows]())
         lane = local_row % 32
         lane_row = lane // 4
 
-        #  0  1  2  3
-        #  4  5  6  7
-        #  8  9 10 11
-        # 12 13 14 15
-        # 16 17 18 19
-        # 20 21 22 23
-        # 24 25 26 27
-        # 28 29 30 31
-        # lane 0 needs to get
         comptime for i in range(num_rows):
-            # lane // 4, lane // 4 + 8, lane // 4 + 16, lane // 4 + 24
             inv_row_sums[i] = warp.shuffle_idx(
                 inv_row_sum, lane_row + UInt32(8 * i)
             )
-
-        comptime for i in range(num_rows):
-            irs = o.element_type(
-                rebind[Scalar[Self.accum_type]](inv_row_sums[i])
-            )
-
-            comptime for j in range(o.layout[1].size()):
-                o[i, j] *= irs
-
-        comptime swizzle = make_swizzle[
-            Self.output_type, Self.config.swizzle_mode
-        ]()
-
-        comptime ST = STMatrixLayout[
-            Self.BM // 2, Self.padded_depth, num_threads=WARPGROUP_SIZE
-        ]
-
-        comptime swizzle_granularity = Self.config.swizzle_mode.bytes() // size_of[
-            Self.output_type
-        ]()
-        comptime iters = Self.padded_depth // swizzle_granularity
-
-        comptime swizzle_block_size: UInt32 = UInt32(
-            WARP_SIZE * swizzle_granularity
-        )
         o_smem = o_smem_arg + local_warp_idx * swizzle_block_size
 
-        comptime for i in range(2):
+        @always_inline
+        @parameter
+        fn scale_half[m_half: Int](o: type_of(o_cur)):
+            """Scale one M-half's registers by `inv_row_sum`."""
+            comptime rows_per_half = ST.num_row_blocks_per_mma
+            comptime start = m_half * rows_per_half
+            comptime for i in range(start, start + rows_per_half):
+                irs = o.element_type(
+                    rebind[Scalar[Self.accum_type]](inv_row_sums[i])
+                )
+                comptime for k in range(o.layout[1].size()):
+                    o[i, k] *= irs
+
+        @always_inline
+        @parameter
+        fn write_to_smem[j: Int, m_half: Int](o: type_of(o_cur)):
+            """Write one M-half of column `j` to smem."""
             comptime datapath_offset: UInt32 = UInt32(
-                16 * i * swizzle_granularity
+                16 * m_half * swizzle_granularity
+            )
+            comptime ofs = m_half * ST.frag_size
+            comptime reg_layout = row_major[1, ST.frag_size]()
+            var rows_of_o_frags = _LocalTT[Self.accum_type, reg_layout](
+                o.ptr + ofs, reg_layout
             )
 
-            comptime for j in range(iters):
-                comptime ofs = i * ST.frag_size + j * (ST.frag_size // iters)
-                comptime reg_layout = row_major[1, ST.frag_size // iters]()
-                var rows_of_o_frags = _LocalTT[Self.accum_type, reg_layout](
-                    o.ptr + ofs, reg_layout
-                )  # all the repeats across n and m
+            comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
+                j * (Self.BM // 2) * swizzle_granularity
+            )
+            comptime smem_layout = row_major[16, swizzle_granularity]()
+            var accum_smem_warp_tile = _SharedMemTT[
+                Self.output_type, smem_layout
+            ](o_smem + warp_smem_offset, smem_layout)
 
-                comptime warp_smem_offset: UInt32 = datapath_offset + UInt32(
-                    j * (Self.BM // 2) * swizzle_granularity
-                )
-                comptime smem_layout = row_major[16, swizzle_granularity]()
-                var accum_smem_warp_tile = _SharedMemTT[
-                    Self.output_type, smem_layout
-                ](o_smem + warp_smem_offset, smem_layout)
+            output_reg_to_smem_st_matrix[
+                BM=16,
+                swizzle=swizzle,
+                num_consumer=1,
+            ](
+                lane,
+                local_warp_group_idx=0,
+                output_reg_tile=rows_of_o_frags,
+                accum_smem_tile=accum_smem_warp_tile,
+            )
 
-                output_reg_to_smem_st_matrix[
-                    BM=16,
-                    swizzle=swizzle,
-                    num_consumer=1,
-                ](
-                    lane,
-                    local_warp_group_idx=0,
-                    output_reg_tile=rows_of_o_frags,
-                    accum_smem_tile=accum_smem_warp_tile,
-                )
-        named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
+        @always_inline
+        @parameter
+        fn sync_and_tma_store[j: Int]():
+            """Barrier sync + TMA store for column `j`."""
+            named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
 
-        # # first thread of each warp_group
-        if local_warp_idx == 0:
-            if e != 0:
-                fence_async_view_proxy()
+            if local_warp_idx == 0:
+                if e != 0:
+                    fence_async_view_proxy()
+                if e != 0:
+                    ragged_tma_store.async_copy_from_col[j](
+                        o_smem_arg,
+                        ragged_idx=out_row_idx,
+                        dynamic_dim=UInt32(num_output_rows),
+                        middle_idx=out_head_idx,
+                    )
+                if e != 0:
+                    cp_async_bulk_commit_group()
 
-            if e != 0:
-                ragged_tma_store.async_copy_from(
-                    o_smem,
-                    ragged_idx=out_row_idx,
-                    dynamic_dim=UInt32(num_output_rows),
-                    middle_idx=out_head_idx,
-                )
-            if e != 0:
-                cp_async_bulk_commit_group()
+        # --- Pipeline loop ---
+
+        # Prologue: load column 0, m_half=1 into o_cur (m_half=0 was already loaded above).
+        load_chunk[0, 1](o_cur)
+
+        comptime for iter in range(iters):
+            # Each 'iter' processes one column (column 'iter') in two M-halves.
+            comptime next_iter = iter + 1
+            scale_half[0](o_cur)
+            write_to_smem[iter, 0](o_cur)
+
+            comptime if next_iter < iters:
+                load_chunk[next_iter, 0](o_cur)
+
+            scale_half[1](o_cur)
+            write_to_smem[iter, 1](o_cur)
+
+            comptime if next_iter < iters:
+                load_chunk[next_iter, 1](o_cur)
+
+            sync_and_tma_store[iter]()
+
+        # Wait for all TMA stores to complete
         cp_async_bulk_wait_group[0]()
 
     @staticmethod
@@ -3972,7 +4086,7 @@ struct SM100MHA2Q[
                 else:
                     vs[i] = rebind[vs.ElementType](exp2(diff))
 
-            BatchTileType(p_tmem).store(
+            BatchTileType(p_tmem).store_async(
                 LocalTensor[
                     Self.accum_type, row_major[batch_size * exp_simd]()
                 ](s.ptr, row_major[batch_size * exp_simd]())
@@ -4006,7 +4120,7 @@ struct SM100MHA2Q[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                BatchTileType(p_tmem + UInt32(tmem_offset)).store(
+                BatchTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[batch_size * exp_simd]()
                     ](s.ptr + el_offset, row_major[batch_size * exp_simd]())
@@ -4027,7 +4141,7 @@ struct SM100MHA2Q[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                RemainderTileType(p_tmem + UInt32(tmem_offset)).store(
+                RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[remainder * exp_simd]()
                     ](s.ptr + el_offset, row_major[remainder * exp_simd]())

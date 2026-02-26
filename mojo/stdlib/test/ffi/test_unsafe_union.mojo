@@ -102,15 +102,15 @@ def test_unsafe_ptr():
     assert_equal(ptr[], 123)
 
 
-def test_unsafe_get_ref():
+def test_unsafe_get():
     var u = UnsafeUnion[Int32, Float32](Int32(42))
 
-    # Read via unsafe_get_ref
-    assert_equal(u.unsafe_get_ref[Int32](), 42)
+    # Read via unsafe_get
+    assert_equal(u.unsafe_get[Int32](), 42)
 
-    # Modify via unsafe_get_ref
-    u.unsafe_get_ref[Int32]() = 100
-    assert_equal(u.unsafe_get_ref[Int32](), 100)
+    # Modify via unsafe_get
+    u.unsafe_get[Int32]() = 100
+    assert_equal(u.unsafe_get[Int32](), 100)
 
 
 def test_copy():
@@ -269,9 +269,9 @@ def test_nested_unions():
     var inner = InnerUnion(Int32(42))
     var outer = OuterUnion(inner^)
 
-    # Retrieve inner union via unsafe_get_ref (returns reference) and access value
+    # Retrieve inner union via unsafe_get (returns reference) and access value
     # Use ref to get a reference without copying
-    ref retrieved_inner = outer.unsafe_get_ref[InnerUnion]()
+    ref retrieved_inner = outer.unsafe_get[InnerUnion]()
     assert_equal(retrieved_inner.unsafe_get[Int32](), 42)
 
     # Store Int64 directly in outer
@@ -292,8 +292,8 @@ def test_nested_unions():
     var l2 = Level2(l1^)
     var l3 = Level3(l2^)
 
-    ref retrieved_l2 = l3.unsafe_get_ref[Level2]()
-    ref retrieved_l1 = retrieved_l2.unsafe_get_ref[Level1]()
+    ref retrieved_l2 = l3.unsafe_get[Level2]()
+    ref retrieved_l1 = retrieved_l2.unsafe_get[Level1]()
     assert_equal(retrieved_l1.unsafe_get[Int16](), 1000)
 
 

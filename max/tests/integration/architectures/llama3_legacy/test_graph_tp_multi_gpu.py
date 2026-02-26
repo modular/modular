@@ -21,9 +21,9 @@ from max.driver import Device, load_devices, scan_available_devices
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.pipelines.architectures.llama3_legacy.model import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import KVCacheInputs
+from max.pipelines.architectures.llama3.model import (
     Llama3Inputs,
     Llama3Model,
 )

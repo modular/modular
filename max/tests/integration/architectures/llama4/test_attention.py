@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy import RotaryEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn import RotaryEmbedding
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.pipelines.architectures.llama4.layers.attention import (
     _Llama4TextAttention,
 )

@@ -25,15 +25,15 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
     PagedCacheValues,
     RaggedKVCacheInputs,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -254,9 +254,7 @@ class Llama4Model(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
         kv_cache_args = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_cache_args for kv_type in sublist
-        ]
+        flattened_kv_types = kv_cache_args.flatten()
         with Graph(
             getattr(self.huggingface_config, "model_type", "Llama4"),
             input_types=[

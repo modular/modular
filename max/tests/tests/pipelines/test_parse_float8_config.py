@@ -23,7 +23,7 @@ import torch
 from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
-from max.nn.legacy.float8_config import (
+from max.nn.float8_config import (
     Float8ScaleGranularity,
     Float8ScaleOrigin,
 )

@@ -212,8 +212,8 @@ fn assert_equal[
 
     if lhs != rhs_origin_casted:
         raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
+            String(lhs),
+            String(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -240,8 +240,8 @@ fn assert_equal(
     """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
+            String(lhs),
+            String(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )

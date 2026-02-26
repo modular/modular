@@ -16,13 +16,13 @@ import math
 from collections.abc import Iterable
 from functools import cached_property
 
-from max import functional as F
 from max.driver import Device
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import Dim
-from max.nn import Module
-from max.nn.legacy.rotary_embedding import YarnScalingParams
-from max.tensor import Tensor
+from max.nn.module_v3 import Module
+from max.nn.rotary_embedding import YarnScalingParams
 
 
 class RotaryEmbedding(Module[..., Tensor]):

@@ -381,10 +381,8 @@ struct SIMD[dtype: DType, size: Int](
     Indexer,
     Intable,
     Powable,
-    Representable,
     Roundable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Truncable,
     Writable,
@@ -1874,6 +1872,7 @@ struct SIMD[dtype: DType, size: Int](
         comptime assert Self.size == 1, "expected a scalar type"
         return self._refine[new_size=1]().cast[DType.float64]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the SIMD as a string.
@@ -1884,6 +1883,7 @@ struct SIMD[dtype: DType, size: Int](
 
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Get the representation of the SIMD value e.g. "SIMD[DType.int8, 2](1, 2)".
@@ -2144,7 +2144,7 @@ struct SIMD[dtype: DType, size: Int](
         ](self._mlir_value)
         return SIMD(mlir_value=res)
 
-    @always_inline
+    @always_inline("builtin")
     fn is_power_of_two(self) -> SIMD[DType.bool, Self.size]:
         """Checks if the input value is a power of 2 for each element of a SIMD vector.
 
@@ -2157,10 +2157,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         comptime assert Self.dtype.is_integral(), "must be integral"
 
-        comptime if Self.dtype.is_unsigned():
-            return pop_count(self).eq(1)
-        else:
-            return self.gt(0) & (self & (self - 1)).eq(0)
+        return self.gt(0) & (self & (self - 1)).eq(0)
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -3231,7 +3228,6 @@ fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
     else:
         # TODO: Change the error message when we allow SSE3
         comptime assert False, "To call _pshuf_or_tbl1() you need sse4 or neon."
-        return {}
 
 
 fn _pshuf(lookup_table: U8x16, indices: U8x16) -> U8x16:
@@ -3301,7 +3297,6 @@ fn _pow[
             result[i] = _powi(base[i], exp[i].cast[DType.int32]())
     else:
         comptime assert False, "unsupported type combination"
-        return {}
 
 
 @always_inline

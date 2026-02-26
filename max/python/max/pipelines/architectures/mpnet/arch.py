@@ -24,7 +24,7 @@ from .model import MPNetPipelineModel
 from .model_config import MPNetConfig
 
 mpnet_arch = SupportedArchitecture(
-    name="MPNetForMaskedLM_Legacy",
+    name="MPNetForMaskedLM",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "sentence-transformers/all-mpnet-base-v2",
