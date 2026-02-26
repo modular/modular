@@ -200,9 +200,6 @@ TEST_RESOURCES = {
     "//max/tests/integration/dataprocessing:test_causal_attention_mask": {
         "memory": 360,
     },
-    "//max/tests/integration/dataprocessing:test_causal_attention_mask_with_alibi": {
-        "memory": 475,
-    },
     "//max/tests/integration/dataprocessing:test_collate_batch": {
         "cpu": 2,
         "memory": 360,
