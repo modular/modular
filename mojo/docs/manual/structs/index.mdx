@@ -265,7 +265,7 @@ own unless you need custom logic in the copy constructor; for example, if your s
 dynamically allocates memory. For more information, see the section on
 [copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
 
-The `Copyable` trait provides two ways to copy a value: the `copy()` 
+The `Copyable` trait provides two ways to copy a value: the `copy()`
 instance method and the copy initializer.
 In addition, `Copyable` automatically adds movability, so you won't
 need to add both `Copyable` _and_ `Movable` to your declarations.
