@@ -174,7 +174,10 @@ modular_py_test(
     srcs = [
         "test_engine_device_graph.py",
     ],
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tags = [
         "gpu",
     ],
