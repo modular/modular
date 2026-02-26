@@ -13,9 +13,8 @@
 
 
 from algorithm import elementwise
-from layout import Coord, coord_to_index_list
+from layout import Coord, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout import TileTensor
 from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, IndexList

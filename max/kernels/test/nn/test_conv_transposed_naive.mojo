@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord
+from layout import Coord, TileTensor
 from layout._layout import row_major
-from layout import TileTensor
 from nn.conv_transpose import conv_transpose_naive
 
 from utils.index import Index, IndexList

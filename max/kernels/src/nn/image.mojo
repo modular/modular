@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout.coord import coord
 from layout._layout import TensorLayout, row_major
-from layout import TileTensor
 
 from utils.index import IndexList
 

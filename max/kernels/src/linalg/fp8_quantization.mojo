@@ -29,10 +29,14 @@ from gpu import (
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200, H100
-from layout import IntTuple, Layout, LayoutTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    coord_to_index_list,
+)
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout import coord_to_index_list
-from layout import TileTensor
 from logger import Logger
 from memory import LegacyUnsafePointer, bitcast
 

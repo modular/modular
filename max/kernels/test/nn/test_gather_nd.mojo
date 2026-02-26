@@ -13,8 +13,7 @@
 
 
 from layout._layout import row_major
-from layout import Coord
-from layout import TileTensor
+from layout import Coord, TileTensor
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 
 from utils import IndexList

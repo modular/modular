@@ -15,9 +15,8 @@ from collections import Optional
 from sys import size_of
 
 from gpu.host import DeviceContext, HostBuffer
-from layout import Coord, CoordLike, Idx
+from layout import Coord, CoordLike, Idx, TileTensor
 from layout._layout import row_major
-from layout import TileTensor
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,

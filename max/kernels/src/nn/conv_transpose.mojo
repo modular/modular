@@ -35,10 +35,15 @@ from algorithm import (
     vectorize,
 )
 from gpu.host import DeviceContext
-from layout import UNKNOWN_VALUE
-from layout import Coord, CoordLike, Idx, coord_to_index_list
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+)
 from layout._layout import TensorLayout, row_major
-from layout import TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv import _get_cudnn_meta, check_cudnn_error

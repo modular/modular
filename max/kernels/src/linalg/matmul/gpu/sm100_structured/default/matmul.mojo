@@ -30,14 +30,17 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
-    UNKNOWN_VALUE,
+    ComptimeInt,
+    Coord,
+    Idx,
     Layout as LegacyLayout,
     LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
 )
 from layout._layout import RowMajorLayout, TensorLayout, row_major
-from layout import ComptimeInt, RuntimeInt, Coord, Idx
-from layout import TileTensor
 from ..structured_kernels.tile_types import create_tma_tile
 from ..structured_kernels.kernel_common import _to_batched_3d
 

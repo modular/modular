@@ -30,9 +30,8 @@ from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
 from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.sync import syncwarp
-from layout import Coord, Idx
+from layout import Coord, Idx, TileTensor, stack_allocation
 from layout._layout import TensorLayout, row_major
-from layout import TileTensor, stack_allocation
 from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 

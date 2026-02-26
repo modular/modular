@@ -16,15 +16,16 @@
 from buffer import NDBuffer
 from gpu.host import DeviceContext, DeviceBuffer
 from layout import (
-    UNKNOWN_VALUE,
+    Coord,
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
 )
-from layout import Coord, Idx
 from layout._layout import row_major
-from layout import TileTensor
 from layout.int_tuple import fill_like
 from memory import LegacyUnsafePointer, bitcast
 from runtime.asyncrt import DeviceContextPtr

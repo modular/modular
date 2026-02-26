@@ -15,10 +15,8 @@
 from sys import size_of
 from math import ceildiv
 
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Idx, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensor
-from layout import TileTensor
-from layout import Idx
 from layout._layout import row_major
 
 from gpu import block_idx, thread_idx

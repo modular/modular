@@ -19,9 +19,8 @@ from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu.host import DeviceContext, HostBuffer
-from layout import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout._layout import Layout, row_major
-from layout import TileTensor
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple

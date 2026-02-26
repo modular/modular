@@ -32,10 +32,16 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import A100, is_cpu, is_valid_target
-from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
 from layout._layout import Layout as TileLayout, row_major, TensorLayout
-from layout import TileTensor
 from layout.coord import (
     Coord,
     CoordLike,

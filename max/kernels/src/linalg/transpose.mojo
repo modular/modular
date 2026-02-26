@@ -20,15 +20,15 @@ from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from layout import TileTensor
 from memory import LegacyUnsafePointer, memcpy
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]

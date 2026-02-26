@@ -23,12 +23,19 @@ Uses DeepSeek V3-style MoE shapes:
 from sys import size_of
 
 from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout import TileTensor
 from layout._layout import row_major
-from layout import Coord, RuntimeInt, Idx
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     GMEMLayout1D,
 )

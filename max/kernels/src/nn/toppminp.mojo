@@ -15,9 +15,8 @@
 from math import iota
 
 from random import random_float64
-from layout import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout import TileTensor
 from nn.softmax import softmax
 
 from utils import IndexList

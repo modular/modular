@@ -26,7 +26,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout import TileTensor
+from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -45,7 +45,6 @@ from linalg.fp4_utils import (
 )
 from random import random_ui64
 from builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import LayoutTensor, Layout, RuntimeLayout
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 

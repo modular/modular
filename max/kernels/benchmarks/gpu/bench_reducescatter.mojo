@@ -24,9 +24,8 @@ from benchmark import (
 )
 from comm.sync import enable_p2p
 from comm.reducescatter import reducescatter, ReduceScatterConfig
-from layout import TileTensor
+from layout import Idx, TileTensor
 from layout._layout import row_major
-from layout import Idx
 from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (

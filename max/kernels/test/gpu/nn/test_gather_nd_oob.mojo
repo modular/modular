@@ -13,8 +13,7 @@
 
 from gpu.host import DeviceContext
 from layout._layout import row_major
-from layout import Coord
-from layout import TileTensor
+from layout import Coord, TileTensor
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]

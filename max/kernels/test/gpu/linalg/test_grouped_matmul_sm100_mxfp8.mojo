@@ -49,16 +49,18 @@ from linalg.fp4_utils import (
 from random import random_ui64, seed, rand
 from builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import (
-    LayoutTensor,
+    Coord,
+    Idx,
+    IntTuple,
     Layout,
+    LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
+    TileTensor,
     UNKNOWN_VALUE,
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from layout import TileTensor
-from layout import Coord, Idx, RuntimeInt
 from layout._layout import row_major
 
 

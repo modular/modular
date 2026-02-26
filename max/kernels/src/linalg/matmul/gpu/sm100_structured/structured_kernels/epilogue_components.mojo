@@ -30,13 +30,18 @@ from gpu import WARP_SIZE, lane_id, warp_id
 from gpu.memory import fence_async_view_proxy
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from .barriers import WarpGroupBarrier
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE, RuntimeTuple
+from layout import (
+    Layout,
+    RuntimeLayout,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.int_tuple import IntTuple
 from layout._layout import Layout as InternalLayout, TensorLayout, row_major
 from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
-from layout import TileTensor
 from layout.tma_async import TMATensorTile
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.utils import elementwise_compute_lambda_type

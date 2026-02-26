@@ -114,7 +114,7 @@ When the framework doesn't fit:
 
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout
+from layout import CoordLike, Layout
 from layout.tma_async import SharedMemBarrier
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 
@@ -135,7 +135,6 @@ from .tile_types import (
 
 # Import variadic types for SMemTileArray parameters
 from builtin.variadics import Variadic
-from layout import CoordLike
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 

@@ -17,9 +17,8 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from math import rsqrt
 
 from itertools import product
-from layout import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout import TileTensor
 from layout.math import mean, variance
 from nn.normalization import *
 from testing import assert_almost_equal
