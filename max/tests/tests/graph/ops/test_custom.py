@@ -485,6 +485,29 @@ class TestCustomParameterValidation:
             error_msg = str(exc_info.value).lower()
             assert "kernel" in error_msg or "mojo" in error_msg
 
+    def test_custom__shadowed_parameter_name(
+        self, graph_builder: GraphBuilder
+    ) -> None:
+        """Test custom with a parameter whose name shadows a function definition."""
+        custom_ops_path = _custom_ops_path()
+
+        input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
+
+        with Graph(
+            "test_custom__shadowed_parameter_name",
+            input_types=[input_type],
+            custom_extensions=[custom_ops_path],
+        ) as graph:
+            out = ops.custom(
+                name="parameter_name_overload",
+                device=DeviceRef.CPU(),
+                values=[graph.inputs[0].tensor],
+                out_types=[input_type],
+                parameters={"top_k": 0},  # Empty dict
+            )[0].tensor
+
+            graph.output(out)
+
 
 class TestCustomGraphStateConsistency:
     """Tests for graph state consistency after custom operation failures."""
