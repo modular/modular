@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 from max.benchmark.benchmark_shared.config import (
     Backend,
     BenchmarkTask,
+    Endpoint,
     ServingBenchmarkConfig,
     parse_benchmark_args,
 )
@@ -1673,25 +1674,16 @@ async def benchmark(
 
 
 def validate_task_and_endpoint(
-    benchmark_task: BenchmarkTask, endpoint: str
+    benchmark_task: BenchmarkTask, endpoint: Endpoint
 ) -> None:
-    valid_endpoints = {
-        "/v1/completions",
-        "/v1/chat/completions",
-        "/v2/models/ensemble/generate_stream",
-        "/v1/responses",
-    }
-    if endpoint not in valid_endpoints:
-        raise ValueError(f"Unknown endpoint: {endpoint}")
-
     if benchmark_task == BenchmarkTask.text_generation:
-        if endpoint == "/v1/responses":
+        if endpoint == Endpoint.responses:
             raise ValueError(
                 "--benchmark-task text-generation does not support "
                 "--endpoint /v1/responses"
             )
     elif benchmark_task == BenchmarkTask.text_to_image:
-        if endpoint != "/v1/responses":
+        if endpoint != Endpoint.responses:
             raise ValueError(
                 "--benchmark-task text-to-image requires "
                 "--endpoint /v1/responses"
@@ -1717,16 +1709,20 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
     benchmark_task = BenchmarkTask(args.benchmark_task)
+    try:
+        endpoint = Endpoint(args.endpoint)
+    except ValueError as e:
+        raise ValueError(f"Unknown endpoint: {args.endpoint}") from e
 
-    validate_task_and_endpoint(benchmark_task, args.endpoint)
-    chat = args.endpoint == "/v1/chat/completions"
+    validate_task_and_endpoint(benchmark_task, endpoint)
+    chat = endpoint == Endpoint.chat_completions
 
     if args.base_url is not None:
         base_url = args.base_url
     else:
         base_url = f"http://{args.host}:{args.port}"
 
-    api_url = f"{base_url}{args.endpoint}"
+    api_url = f"{base_url}{endpoint.value}"
     tokenizer: PreTrainedTokenizerBase | None
     samples: Samples
 
@@ -1832,7 +1828,7 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             )
         elif isinstance(benchmark_dataset, ArxivSummarizationBenchmarkDataset):
             if output_lengths:
-                ValueError(
+                raise ValueError(
                     "Arxiv summarization dataset does not support --output-lengths."
                     " Please use --max-output-len"
                 )
