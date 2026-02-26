@@ -146,6 +146,17 @@ public:
   /// wrapping quotes.
   static SMLoc getStringLiteralStartLoc(StringRef spelling);
 
+  /// Check if \p ptr points to a triple-quote sequence of \p quoteChar
+  /// within the bounds [ptr, end). Used by both lexer and parser.
+  static bool isTripleQuote(const char *ptr, const char *end, char quoteChar);
+
+  /// Skip past a string literal body starting after the opening quote(s).
+  /// Advances \p ptr past the closing quote delimiter. Handles escape
+  /// sequences by simply skipping backslash + next character (no validation).
+  /// Used by both the lexer and parser to skip over nested strings.
+  static void skipStringBody(const char *&ptr, const char *end, char quoteChar,
+                             bool isTriple);
+
   MojoInflightDiag emitTokenError(const Twine &message) {
     return emitErrorAt(getToken().getSpelling().data(), message);
   }
@@ -175,6 +186,34 @@ private:
   void lexFloat(const char *tokStart, ssize_t indentation);
   void lexString(const char *tokStart, ssize_t indentation);
   void skipComment();
+
+  /// Check if curPtr points to a triple-quote sequence. Delegates to the
+  /// static isTripleQuote.
+  bool isTripleQuoteAt(char quoteChar) const;
+
+  /// Consume a quote delimiter (single or triple). Returns true on success.
+  bool consumeQuoteDelimiter(char quoteChar, bool isTriple);
+
+  /// Consume the opening quote(s) of a string. Returns true if triple-quoted.
+  bool consumeQuoteOpening(char quoteChar);
+
+  struct ConsumeStringResult {
+    struct ErrorAt {
+      const char *errorLoc = nullptr;
+      const char *errorMsg = nullptr;
+    };
+    struct Unterminated {};
+    struct Success {};
+
+    std::variant<Success, Unterminated, ErrorAt> result{};
+  };
+
+  /// Consume a string body up to its closing quote with full escape-sequence
+  /// validation and error reporting. Used by lexString for actual string
+  /// lexing (not for skipping nested strings — use the static skipStringBody
+  /// for that).
+  ConsumeStringResult consumeStringBody(char quoteChar, bool isTripleQuote,
+                                        bool isRaw);
 
 private:
   /// This the source file diagnostic manager to use.

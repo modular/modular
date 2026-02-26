@@ -96,6 +96,16 @@ bool operator<(const SmartVariant<Ts...> &lhs, const SmartVariant<Ts...> &rhs) {
   return lhs.getUnderlyingStorage() < rhs.getUnderlyingStorage();
 }
 
+/// A helper struct to create an overloaded function object.
+/// Useful when visiting a variant type with std::visit.
+template <class... Ts>
+struct Overloaded : Ts... {
+  using Ts::operator()...;
+};
+
+template <class... Ts>
+Overloaded(Ts...) -> Overloaded<Ts...>;
+
 } // namespace M
 
 // Specialization of CastInfo for SmartVariant
