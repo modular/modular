@@ -145,7 +145,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     )
 
     pdl_level: str = Field(
-        default=os.environ.get("PDL_LEVEL", "0"),
+        default=os.environ.get("PDL_LEVEL", "1"),
         description=(
             "Level of overlap of kernel launch via programmatic dependent grid "
             "control."
