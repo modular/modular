@@ -19,6 +19,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `List.remove(value)` method that removes the first occurrence of a
+  value from the list, raising an error if the value is not found.
+
 ## Tooling changes
 
 ## GPU programming
