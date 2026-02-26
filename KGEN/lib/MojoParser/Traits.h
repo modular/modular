@@ -32,9 +32,6 @@ LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
                                         std::optional<MojoInflightDiag> &diag,
                                         ConformanceOp op);
 
-/// Sort & deduplicate the list of symbols deterministically.
-void sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols);
-
 /// Canonicalize the list of symbols that form a trait composition.
 void canonicalizeTraitCompositionSymbols(
     SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols);

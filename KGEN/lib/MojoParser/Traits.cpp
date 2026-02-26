@@ -10,10 +10,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Traits.h"
-
 #include "CallEmission.h"
 #include "ExprNodes.h"
 #include "IREmitter.h"
+
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
 #include "StabilityMarkers.h"
@@ -23,6 +23,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
@@ -1096,38 +1097,14 @@ ConformanceResult ASTDecl::doesNominalTypeConformTo(TraitType trait,
   return ConformanceResult::Yes;
 }
 
-void LIT::sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols) {
-  llvm::sort(symbols, [&](SymbolRefAttr a, SymbolRefAttr b) {
-    if (a.getRootReference() != b.getRootReference())
-      return a.getRootReference().getValue() < b.getRootReference().getValue();
-    // Compare each segment of the symbols in dictionary order.
-    ArrayRef<FlatSymbolRefAttr> aSegments = a.getNestedReferences();
-    ArrayRef<FlatSymbolRefAttr> bSegments = b.getNestedReferences();
-    for (auto [aSeg, bSeg] : llvm::zip(aSegments, bSegments)) {
-      if (aSeg != bSeg)
-        return aSeg.getValue() < bSeg.getValue();
-    }
-    return aSegments.size() < bSegments.size();
-  });
-  symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
-}
-
 void LIT::canonicalizeTraitCompositionSymbols(
     SharedState &shared, SmallVectorImpl<SymbolRefAttr> &symbols) {
-  // Pull in the entire ancestor chain.
-  DenseSet<SymbolRefAttr> seen;
-  for (SymbolRefAttr symbol : symbols) {
-    if (!seen.insert(symbol).second)
-      continue;
-    ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
-    auto traitOp = cast<TraitDeclOp>(memberDecl.getIfOperation());
-    // Only one level of parent lookup is needed because parentTypes always
-    // include their entire ancestor chain.
-    ArrayRef<SymbolRefAttr> parentSymbols =
-        traitOp.getCanonicalTrait().getSymbols();
-    seen.insert(parentSymbols.begin(), parentSymbols.end());
-  }
-  symbols.assign(seen.begin(), seen.end());
+  canonicalizeTraitCompositionSymbols(
+      symbols, [&](SymbolRefAttr symbol) -> TraitDeclOp {
+        ASTDecl &memberDecl = shared.declResolver->getDeclForTypeSymbol(symbol);
+        return cast<TraitDeclOp>(memberDecl.getIfOperation());
+      });
+
   sortAndDeduplicateSymbols(symbols);
 }
 

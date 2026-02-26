@@ -1112,8 +1112,47 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
-FailureOr<TypedAttr>
-LIT::simplifyConformsToAgainstTypeValue(TypeConformsToTraitAttr conformsTo) {
+void LIT::sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols) {
+  llvm::sort(symbols, [&](SymbolRefAttr a, SymbolRefAttr b) {
+    if (a.getRootReference() != b.getRootReference())
+      return a.getRootReference().getValue() < b.getRootReference().getValue();
+    // Compare each segment of the symbols in dictionary order.
+    ArrayRef<FlatSymbolRefAttr> aSegments = a.getNestedReferences();
+    ArrayRef<FlatSymbolRefAttr> bSegments = b.getNestedReferences();
+    for (auto [aSeg, bSeg] : llvm::zip(aSegments, bSegments)) {
+      if (aSeg != bSeg)
+        return aSeg.getValue() < bSeg.getValue();
+    }
+    return aSegments.size() < bSegments.size();
+  });
+  symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
+}
+
+void LIT::canonicalizeTraitCompositionSymbols(
+    SmallVectorImpl<SymbolRefAttr> &symbols,
+    llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
+
+  // Pull in the entire ancestor chain.
+  DenseSet<SymbolRefAttr> seen;
+  for (SymbolRefAttr symbol : symbols) {
+    if (!seen.insert(symbol).second)
+      continue;
+
+    TraitDeclOp traitOp = traitDeclResolver(symbol);
+    // Only one level of parent lookup is needed because parentTypes always
+    // include their entire ancestor chain.
+    ArrayRef<SymbolRefAttr> parentSymbols =
+        traitOp.getCanonicalTrait().getSymbols();
+    seen.insert(parentSymbols.begin(), parentSymbols.end());
+  }
+  symbols.assign(seen.begin(), seen.end());
+
+  sortAndDeduplicateSymbols(symbols);
+}
+
+FailureOr<TypedAttr> LIT::simplifyConformsToAgainstTypeValue(
+    TypeConformsToTraitAttr conformsTo,
+    llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver) {
   // Try to extract a TraitType from the type value.
   TraitType traitType;
   if (auto typeParam = sugarDynCast<TypeParamAttr>(conformsTo.getTypeValue())) {
@@ -1125,7 +1164,11 @@ LIT::simplifyConformsToAgainstTypeValue(TypeConformsToTraitAttr conformsTo) {
   if (!traitType)
     return failure();
 
+  // This is unfortunate that we have non-canonical trait types produced during
+  // parsing. Canonicalize the trait type to get the full list of symbols.
   SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
+  canonicalizeTraitCompositionSymbols(symbols, traitDeclResolver);
+
   llvm::StringSet<> traitSymbolNames;
   for (auto sym : symbols)
     traitSymbolNames.insert(getFlattenedSymbolName(sym));
@@ -1183,8 +1226,10 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
     // Try LIT-specific trait type folding first, then fall back to the attr
     // folder for struct resolution.
-    FailureOr<TypedAttr> result =
-        simplifyConformsToAgainstTypeValue(conformsTo);
+    FailureOr<TypedAttr> result = simplifyConformsToAgainstTypeValue(
+        conformsTo, [&](SymbolRefAttr symbol) -> TraitDeclOp {
+          return symtab.lookupSymbolIn<TraitDeclOp>(module, symbol);
+        });
     if (succeeded(result))
       return result;
     return conformsTo.evaluateWithContext(*this);

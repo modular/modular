@@ -345,3 +345,26 @@ struct CompositionStandaloneSameConstraint[T: Movable](
 
     fn cs_b_method(self) where conforms_to(Self.T, Copyable):
         pass
+
+# ===========================================================================
+# MOCO-3347
+# ===========================================================================
+
+
+struct MyOptional[T: Movable](
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable) and conforms_to(
+        T, Copyable
+    ),
+    Movable,
+):
+    pass
+
+#CHECK-LABEL: lit.struct.decl @Node
+struct Node[ElementType: ImplicitlyCopyable](Movable):
+    var value: MyOptional[Self.ElementType]
+    # CHECK-LABEL: lit.fn @"__init__
+    fn __init__(out self, value: MyOptional[Self.ElementType] = None):
+        # `MyOptional[Self.ElementType]` is implicitly copyable.
+
+        # CHECK: lit.memcpy %value, %0
+        self.value = value
