@@ -3470,9 +3470,11 @@ def grouped_dynamic_scaled_fp8_matmul(
             f"hidden_states and weight dtypes must be float8_e4m3fn, but got {hidden_states.dtype}, {weight.dtype}"
         )
 
-    if (a_scales.dtype != b_scales.dtype) or (a_scales.dtype != DType.float32):
+    if (a_scales.dtype != b_scales.dtype) or (
+        a_scales.dtype not in (DType.float32, DType.bfloat16)
+    ):
         raise TypeError(
-            f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
+            f"a_scales and b_scales dtypes must be float32 or bfloat16 and match, but got {a_scales.dtype}, {b_scales.dtype}"
         )
 
     if expert_ids.dtype != DType.int32:
