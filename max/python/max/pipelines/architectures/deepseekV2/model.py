@@ -29,7 +29,7 @@ from max.interfaces import LogProbabilities
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheParams,
+    KVCacheParamInterface,
     PagedCacheValues,
 )
 from max.nn.layer import Module
@@ -191,7 +191,7 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
+    ) -> KVCacheParamInterface:
         return DeepseekV2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

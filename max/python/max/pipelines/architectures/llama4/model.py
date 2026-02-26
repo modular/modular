@@ -254,9 +254,7 @@ class Llama4Model(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
         kv_cache_args = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_cache_args for kv_type in sublist
-        ]
+        flattened_kv_types = kv_cache_args.flatten()
         with Graph(
             getattr(self.huggingface_config, "model_type", "Llama4"),
             input_types=[

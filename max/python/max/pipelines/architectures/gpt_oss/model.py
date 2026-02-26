@@ -293,9 +293,7 @@ class GptOssModel(
         )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         with Graph(
             getattr(self.huggingface_config, "model_type", "GptOss"),

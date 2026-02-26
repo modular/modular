@@ -1267,7 +1267,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         "LlamaForCausalLM",
         "DeepseekV2ForCausalLM",
         "DeepseekV3ForCausalLM",
-        "DeepseekV3_2ForCausalLM",
+        "DeepseekV32ForCausalLM",
         "DeepseekV3ForCausalLMNextN",
     ):
         with patch_retrieve_architecture(arch_name):

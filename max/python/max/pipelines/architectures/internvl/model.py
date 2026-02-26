@@ -513,9 +513,7 @@ class InternVLModel(
         ]
 
         # Flatten kv types for each device
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)

@@ -224,9 +224,7 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
             nn_model.to(self.devices[0])
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         timer.mark_build_complete()
         compiled_model = nn_model.compile(

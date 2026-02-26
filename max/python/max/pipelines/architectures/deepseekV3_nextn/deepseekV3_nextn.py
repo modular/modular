@@ -32,7 +32,7 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.linear import ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
@@ -314,7 +314,7 @@ class DeepseekV3NextN(Module):
         return ret_val
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         devices = self.config.devices
         device_ref = devices[0]

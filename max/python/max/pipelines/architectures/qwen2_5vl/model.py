@@ -518,9 +518,7 @@ class Qwen2_5VLModel(
         )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         with Graph(
             "qwen2_5vl_language",

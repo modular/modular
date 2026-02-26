@@ -29,7 +29,7 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
-    InputSymbolInterface,
+    FlattenableInputSymbols,
     MultiKVCacheInputSymbols,
     PagedCacheInputSymbols,
     PagedCacheInputSymbolsByReplica,
@@ -184,7 +184,7 @@ class KVCacheParamInterface(Protocol):
         """Number of bytes per cache block."""
         ...
 
-    def get_symbolic_inputs(self) -> InputSymbolInterface:
+    def get_symbolic_inputs(self) -> FlattenableInputSymbols:
         """Returns the symbolic inputs for the KV cache."""
         ...
 

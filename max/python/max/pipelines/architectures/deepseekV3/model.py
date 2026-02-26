@@ -27,7 +27,7 @@ from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import NUM_GROUPS, estimate_ep_memory_usage
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -94,7 +94,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
+    ) -> KVCacheParamInterface:
         encoding = pipeline_config.model.quantization_encoding
         if encoding is not None and is_float4_encoding(encoding):
             cache_dtype = DType.bfloat16

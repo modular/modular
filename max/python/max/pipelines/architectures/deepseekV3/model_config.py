@@ -21,7 +21,10 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
 from max.nn.float8_config import Float8Config
-from max.nn.kv_cache import KVCacheParams, KVCacheQuantizationConfig
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheQuantizationConfig,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config_enums import supported_encoding_dtype
@@ -37,7 +40,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     # MAX specific fields
     dtype: DType
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     devices: list[DeviceRef]
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
@@ -118,7 +121,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
                 "DP attention requires DP degree to match device count."
             )
 
-    def get_kv_params(self) -> KVCacheParams:
+    def get_kv_params(self) -> KVCacheParamInterface:
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
@@ -131,7 +134,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
+    ) -> KVCacheParamInterface:
         data_parallel_degree = pipeline_config.model.data_parallel_degree
 
         kvcache_quant_config = None

@@ -238,8 +238,10 @@ class Gemma3Model(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
         kv_params = self.kv_params
-        fetch_types = kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
+        kv_symbolic = kv_params.get_symbolic_inputs()
+        len_of_kv_tuple_per_dev = (
+            len(kv_symbolic.flatten()) // kv_params.n_devices
+        )
         kv_caches_per_dev: list[PagedCacheValues] = []
         for i in range(len(self.devices)):
             start_idx = i * len_of_kv_tuple_per_dev
@@ -328,9 +330,7 @@ class Gemma3Model(
         )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         with Graph(
             getattr(text_config, "model_type", "Gemma3"),

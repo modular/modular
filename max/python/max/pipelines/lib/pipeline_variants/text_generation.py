@@ -51,7 +51,7 @@ from max.interfaces import (
 )
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputsSequence, KVCacheParams
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast
@@ -210,8 +210,10 @@ class TextGenerationPipeline(
             else ReturnLogits.LAST_TOKEN,
         )
 
+        kv_params = self._pipeline_model.kv_params
+        assert isinstance(kv_params, KVCacheParams)
         self._kv_manager: PagedKVCacheManager = load_kv_manager(
-            params=self._pipeline_model.kv_params,
+            params=kv_params,
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=self._pipeline_model.max_seq_len,
             session=session,

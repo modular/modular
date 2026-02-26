@@ -99,7 +99,7 @@ from max.interfaces import (
 from max.interfaces.tokens import TokenBuffer
 from max.kv_cache import PagedKVCacheManager
 from max.nn import kernels
-from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputsSequence, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
@@ -413,8 +413,10 @@ class OverlapTextGenerationPipeline(
         )
 
         available_cache_memory = model_config.kv_cache._available_cache_memory
+        kv_params = self._pipeline_model.kv_params
+        assert isinstance(kv_params, KVCacheParams)
         self._kv_manager: PagedKVCacheManager = load_kv_manager(
-            params=self._pipeline_model.kv_params,
+            params=kv_params,
             max_batch_size=self._pipeline_config.max_batch_size,
             max_seq_len=self._pipeline_model.max_seq_len,
             session=session,

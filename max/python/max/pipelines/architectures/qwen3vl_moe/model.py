@@ -566,9 +566,7 @@ class Qwen3VLModel(
         )
 
         # Flatten kv types for each device
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
@@ -654,9 +652,7 @@ class Qwen3VLModel(
 
             # Calculate how many KV cache inputs there are
             kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = [
-                kv_type for sublist in kv_inputs for kv_type in sublist
-            ]
+            flattened_kv_types = kv_inputs.flatten()
             num_kv_inputs = len(flattened_kv_types)
 
             # Extract KV cache inputs (they come after signal buffers in the graph)

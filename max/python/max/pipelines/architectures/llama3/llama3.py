@@ -18,7 +18,7 @@ import functools
 from collections.abc import Callable, Sequence
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.nn.attention import (
     AttentionWithRope,
@@ -26,7 +26,7 @@ from max.nn.attention import (
     GPTQAttentionWithRope,
 )
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.layer import Module
 from max.nn.linear import MLP, GPTQLinear, Linear
 from max.nn.lora import AttentionWithRopeAndLoRA
@@ -238,10 +238,10 @@ class Llama3(Transformer):
 
     def input_types(
         self,
-        kv_params: KVCacheParams,
+        kv_params: KVCacheParamInterface,
         lora_manager: LoRAManager | None,
         needs_hidden_state_input: bool = False,
-    ) -> tuple[TensorType, ...]:
+    ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
         # config.

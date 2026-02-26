@@ -32,7 +32,7 @@ from max.graph.quantization import QuantizationEncoding
 from max.nn.comm import Signals
 from max.nn.comm.allreduce import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.moe import MoE, MoEQuantized
@@ -356,7 +356,7 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         )
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         """Get input types for graph construction.
 
@@ -392,7 +392,5 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         signal_buffer_types = signals.input_types()
 
         # Flatten KV types for all devices
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
         return tuple(base_inputs + signal_buffer_types + flattened_kv_types)

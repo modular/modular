@@ -23,7 +23,7 @@ from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
 from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.module_v3 import Module
 from max.nn.module_v3.embedding import Embedding
 from max.nn.module_v3.linear import Linear
@@ -169,7 +169,7 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
     def __init__(
         self,
         config: GptOssConfig,
-        kv_params: KVCacheParams,
+        kv_params: KVCacheParamInterface,
     ) -> None:
         super().__init__()
         self.language_model = GptOssTextModel(config)
@@ -193,7 +193,7 @@ class GptOss(Module[..., tuple[Tensor, ...]]):
 
 def _unflatten_kv_inputs(
     config: GptOssConfig,
-    kv_params: KVCacheParams,
+    kv_params: KVCacheParamInterface,
     kv_inputs_flat: Sequence[Tensor],
 ) -> list[PagedCacheValues]:
     kv_params = config.kv_params

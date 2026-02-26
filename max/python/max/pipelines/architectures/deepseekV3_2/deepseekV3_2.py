@@ -42,7 +42,7 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.norm import RMSNorm
@@ -669,7 +669,7 @@ class DeepseekV3_2(Module):
         return ret_val
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

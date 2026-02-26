@@ -22,7 +22,7 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -302,7 +302,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
             }
         return state_dict
 
-    def graph_inputs(self) -> tuple[TensorType]:
+    def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
 
