@@ -230,6 +230,7 @@ def call_eval(
         for kw in (
             "academic-ds",
             "deepseek-r1",
+            "deepseek-v3",
             "gpt-oss",
             "internvl3_5",
             "qwen3",

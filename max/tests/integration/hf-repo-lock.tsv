@@ -91,6 +91,7 @@ modularai/llama-3	04d5a76d896e71429f2d042bdb2e5956c649cb41
 modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
 neubla/tiny-random-LlamaForCausalLM	1c81a3fba044af78df253edc66bdbab183184932
 nvidia/DeepSeek-R1-0528-NVFP4-v2	25a138f28f49022958b9f2d205f9b7de0cdb6e18
+nvidia/DeepSeek-V3.1-NVFP4	68b4a17cce1482e94030ca00dacda3dec4c6359d
 nvidia/Llama-3.1-405B-Instruct-NVFP4	8ddfc523e75da0cd52d8d486895aa984282f6db9
 nvidia/Llama-3.1-8B-Instruct-NVFP4	bdb54e24298451af785c0ac63c1b485e9b7400a2
 openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1
