@@ -1715,11 +1715,15 @@ def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
     operation is not inherently thread-safe or re-entrant, but that depends on
     the particular interpretation of the address space.
 
-    Example:
+    An optional `initializer` attribute places the global in `.data` with a
+    compile-time value pre-set, instead of the default BSS (zero-initialized)
+    behavior. When an initializer is present, `count` must be 1.
 
+    Example:
 
     ```mlir
     %ptr = pop.global_alloc "name" 2 x !pop.scalar<si32> align 32 address_space 3
+    %init = pop.global_alloc "val" 1 x !pop.scalar<si32> = <42>
     ```
   }];
 
@@ -1728,14 +1732,19 @@ def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
                        DefaultValuedAttr<
                         POP_GlobalAllocAddressSpaceAttr,
                         "GlobalAllocAddressSpace::IGNORE">:$memoryType,
-                       OptionalAttr<AttrOfType<Index>>:$alignment);
+                       OptionalAttr<AttrOfType<Index>>:$alignment,
+                       OptionalAttr<TypedAttrInterface>:$initializer);
   let results = (outs Res<PointerType, "", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
     custom<ParamValue>($name, "StringType::get($_ctxt)")
     custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
-    (`align` custom<IndexParamValue>($alignment)^)? attr-dict
+    (`align` custom<IndexParamValue>($alignment)^)?
+    custom<OptionalGlobalAllocInitializer>($initializer, ref(type($result)))
+    attr-dict
   }];
+
+  let hasVerifier = 1;
 
   let extraClassDeclaration = [{
     struct Payload { int32_t size, align, addressSpace; };

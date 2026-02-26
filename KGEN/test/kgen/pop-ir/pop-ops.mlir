@@ -724,6 +724,15 @@ kgen.generator @global_alloc() {
   kgen.return
 }
 
+// CHECK-LABEL: @global_alloc_initialized
+kgen.generator @global_alloc_initialized() {
+  // CHECK-NEXT: pop.global_alloc "init_test" 1 x scalar<si32> = <42>
+  %0 = pop.global_alloc "init_test" 1 x !pop.scalar<si32> = <42>
+  // CHECK-NEXT: pop.global_alloc "init_aligned" 1 x scalar<si32> align 16 = <7>
+  %1 = pop.global_alloc "init_aligned" 1 x !pop.scalar<si32> align 16 = <7>
+  kgen.return
+}
+
 // CHECK-LABEL: @global_constant_aligned
 kgen.generator @global_constant_aligned() {
   // CHECK: pop.global_constant: i32 = <5> align 16

@@ -353,3 +353,11 @@ kgen.func @invalid_memcpy(%dst: !kgen.pointer<scalar<f32>, 3>, %src: !kgen.point
   pop.memcpy %dst, %src, %0 : !kgen.pointer<scalar<i32>> -> !kgen.pointer<scalar<f32>, 3>
   kgen.return
 }
+
+// -----
+
+kgen.generator @global_alloc_initializer_count_not_1() {
+  // expected-error @below {{'pop.global_alloc' op with an initializer requires count to be 1, but got 4}}
+  %0 = pop.global_alloc "bad" 4 x !pop.scalar<si32> = <42>
+  kgen.return
+}

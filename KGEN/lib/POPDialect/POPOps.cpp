@@ -607,6 +607,43 @@ LogicalResult ExternalCallOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// GlobalAllocOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult GlobalAllocOp::verify() {
+  if (getInitializer()) {
+    auto countAttr = dyn_cast<IntegerAttr>(getCount());
+    if (countAttr && countAttr.getInt() != 1)
+      return emitOpError("with an initializer requires count to be 1, but got ")
+             << countAttr.getInt();
+  }
+  return success();
+}
+
+static ParseResult parseOptionalGlobalAllocInitializer(OpAsmParser &p,
+                                                       TypedAttr &value,
+                                                       Type resultType) {
+  if (failed(p.parseOptionalEqual())) {
+    value = nullptr;
+    return success();
+  }
+  Type elementType = cast<PointerType>(resultType).getElementType();
+  if (p.parseLess() || parseParamValue(p, value, elementType) ||
+      p.parseGreater())
+    return failure();
+  return success();
+}
+
+static void printOptionalGlobalAllocInitializer(OpAsmPrinter &p, Operation *,
+                                                TypedAttr value, Type) {
+  if (!value)
+    return;
+  p << "= <";
+  printParamValue(p, value);
+  p << ">";
+}
+
+//===----------------------------------------------------------------------===//
 // GlobalConstantOp
 //===----------------------------------------------------------------------===//
 

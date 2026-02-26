@@ -3264,6 +3264,12 @@ ErrorTreeOrSuccess GlobalAllocOp::interpret(ArrayRef<Attribute> operands,
   if (addr.isError())
     return ErrorTree(getLoc(), addr.takeError());
 
+  if (auto init = getInitializer()) {
+    ErrorOrSuccess result = state.writeAttributeToMemory(*addr, *init);
+    if (result.isError())
+      return ErrorTree(getLoc(), result.takeError());
+  }
+
   state.mapResults(PointerAttr::get(addr.takeValue(), getType()));
   return success();
 }
@@ -3276,6 +3282,13 @@ GlobalAllocOp::parametric_interpret(ArrayRef<Attribute> operands,
       payload.size, payload.align, payload.addressSpace);
   if (addr.isError())
     return ErrorTree(getLoc(), addr.takeError());
+
+  if (auto init = getInitializer()) {
+    ErrorOrSuccess result =
+        state.writeAttributeToMemory(*addr, state.getReboundAttribute(*init));
+    if (result.isError())
+      return ErrorTree(getLoc(), result.takeError());
+  }
 
   state.mapResults(
       PointerAttr::get(addr.takeValue(), state.getReboundType(getType())));
