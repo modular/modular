@@ -529,7 +529,10 @@ class PixelGenerationTokenizer(
                 attention_mask = [1] * len(input_ids)
 
             # Extract real tokens only (using attention mask) for Flux2 variants
-            if self._pipeline_class_name in (PipelineClassName.FLUX2,):
+            if self._pipeline_class_name in (
+                PipelineClassName.FLUX2,
+                PipelineClassName.FLUX2_KLEIN,
+            ):
                 # Filter to keep only real tokens (where mask == 1)
                 real_token_ids = [
                     token_id
