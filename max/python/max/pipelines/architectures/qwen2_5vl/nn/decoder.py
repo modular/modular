@@ -32,22 +32,22 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
-from max.nn.legacy.comm.allreduce import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.kernels import (
+from max.nn.attention.attention_with_rope import _compute_shard_range
+from max.nn.comm.allreduce import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.float8_config import Float8Config
+from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
-from max.nn.legacy.layer import LayerList, Module, Shardable
-from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
+from max.nn.layer import LayerList, Module, Shardable
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     ShardableCallable,
     forward_sharded_layers,
@@ -55,7 +55,7 @@ from max.nn.legacy.transformer.distributed_transformer import (
 from max.pipelines.architectures.internvl.embedding_utils import (
     merge_multimodal_embeddings,
 )
-from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
+from max.pipelines.architectures.llama3.model_config import Llama3Config
 
 
 class Qwen25VLDecoderAttentionWithRope(Module, Shardable):

@@ -24,7 +24,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy import Linear
+from max.nn import Linear
 from max.pipelines.lib.float8 import parse_float8_config
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack

@@ -29,24 +29,23 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
     uses_opaque,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.layer import Module
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.profiler import traced
@@ -76,7 +75,7 @@ class MistralInputs(ModelInputs):
     return_n_logits: Buffer
 
 
-class MistralModel(PipelineModel[TextContext], KVCacheMixin):
+class MistralModel(PipelineModelWithKVCache[TextContext]):
     model: Model
     """Compiled and initialized model ready for inference."""
 

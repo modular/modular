@@ -22,7 +22,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy import Identity
+from max.nn import Identity
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 
 

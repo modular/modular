@@ -59,6 +59,7 @@ For example:
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -68,6 +69,7 @@ from typing import (
     Any,
     Generic,
     Protocol,
+    final,
     runtime_checkable,
 )
 
@@ -95,13 +97,14 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.interfaces.tokens import TokenBuffer
-from max.nn.legacy import kernels
-from max.nn.legacy.kv_cache import KVCacheInputsSequence
-from max.nn.legacy.transformer import ReturnLogits
+from max.kv_cache import PagedKVCacheManager
+from max.nn import kernels
+from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 
-from .text_generation import TextGenerationPipelineInterface
+from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     get_eos_tokens,
     get_weight_paths,
@@ -109,12 +112,20 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from ..config import PipelineConfig
+    from ..config import (
+        MAXModelConfig,
+        PipelineConfig,
+    )
 
 from dataclasses import dataclass
 
 from ..graph_capture import ServeGraphCaptureRunner
-from ..interfaces import ModelInputs, ModelOutputs, PipelineModel
+from ..interfaces import (
+    ModelInputs,
+    ModelOutputs,
+    PipelineModel,
+    PipelineModelWithKVCache,
+)
 from ..sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
@@ -311,13 +322,14 @@ class ScatterFutureTokenProcessor:
         return new_ragged_input_tokens
 
 
+@final
 class OverlapTextGenerationPipeline(
     TextGenerationPipelineInterface[TextGenerationContextType],
     Generic[TextGenerationContextType],
 ):
     """Overlap text generation pipeline."""
 
-    _pipeline_model: PipelineModel[Any]
+    _pipeline_model: PipelineModelWithKVCache[Any]
 
     def __init__(
         self,
@@ -352,7 +364,7 @@ class OverlapTextGenerationPipeline(
         """
         self._pipeline_config = pipeline_config
 
-        model_config = pipeline_config.model
+        model_config: MAXModelConfig = pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
@@ -383,7 +395,11 @@ class OverlapTextGenerationPipeline(
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = get_weight_paths(model_config)
 
-        self._pipeline_model: PipelineModel[Any] = pipeline_model(
+        if not issubclass(pipeline_model, PipelineModelWithKVCache):
+            raise ValueError(
+                f"OverlapTextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
+            )
+        self._pipeline_model: PipelineModelWithKVCache[Any] = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
             devices=self._devices,
@@ -395,20 +411,29 @@ class OverlapTextGenerationPipeline(
             else ReturnLogits.LAST_TOKEN,
         )
 
+        available_cache_memory = model_config.kv_cache._available_cache_memory
+        self._kv_manager: PagedKVCacheManager = load_kv_manager(
+            params=self._pipeline_model.kv_params,
+            max_batch_size=self._pipeline_config.max_batch_size,
+            max_seq_len=self._pipeline_model.max_seq_len,
+            session=session,
+            available_cache_memory=available_cache_memory,
+        )
+
         # Load sampler.
-        self._sampler = session.load(
+        self._sampler: Model = session.load(
             token_sampler(
                 self._pipeline_config.sampling,
                 device=DeviceRef.from_device(self._devices[0]),
             )
         )
 
-        self._kv_manager = self._pipeline_model.kv_manager
-
         # Overlap scheduling specific initialization.
 
         # Load the scatter future tokens graph.
-        self._scatter_future_tokens = ScatterFutureTokenProcessor(session)
+        self._scatter_future_tokens: ScatterFutureTokenProcessor = (
+            ScatterFutureTokenProcessor(session)
+        )
         # Set previous asynchronously executing batch to None.
         self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
         self._graph_capture_runner: ServeGraphCaptureRunner | None = None
@@ -429,13 +454,6 @@ class OverlapTextGenerationPipeline(
         """Return the tokenizer used for building contexts and decoding."""
         return self._tokenizer
 
-    @property
-    def kv_managers(
-        self,
-    ) -> list[Any]:
-        """Return the list of KV cache managers backing this pipeline."""
-        return [self._kv_manager]
-
     def has_pending_outputs(self) -> bool:
         """Returns True if there are pending outputs for the previous batch.
 
@@ -444,6 +462,8 @@ class OverlapTextGenerationPipeline(
         """
         return self._prev_batch is not None
 
+    # Warmup inputs use runtime construction with explicit max-cache-length LUT
+    # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
     def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
         capture_contexts = [
@@ -461,8 +481,10 @@ class OverlapTextGenerationPipeline(
         with self._kv_manager.reserve(
             capture_contexts, replica_idx=0, num_steps=1
         ):
-            kv_cache_inputs = self._kv_manager.get_runtime_inputs(
-                [capture_contexts], num_steps=1
+            kv_cache_inputs = self._kv_manager.runtime_inputs(
+                [capture_contexts],
+                num_steps=1,
+                max_cache_length=self._pipeline_model.max_seq_len,
             )
             with Tracer("prepare_initial_token_inputs"):
                 model_inputs = (
@@ -492,6 +514,7 @@ class OverlapTextGenerationPipeline(
             warmup_model_inputs=self._warmup_model_inputs,
             execute_model=self._pipeline_model.execute,
             max_batch_size=self._pipeline_config.max_batch_size,
+            decode_max_cache_length_upper_bound=self._pipeline_model.max_seq_len,
         )
         self._graph_capture_runner = graph_capture_runner
         logger.info("Starting serve device graph capture warmup.")
@@ -502,10 +525,32 @@ class OverlapTextGenerationPipeline(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
     ) -> ModelOutputs:
         """Runs the forward pass for the provided inputs and returns the ModelOutputs."""
-        # Prepare the batch.
-        kv_cache_inputs = self._kv_manager.get_runtime_inputs(
-            inputs.batches, num_steps=1
+        runner = self._graph_capture_runner
+        use_graph_capture_replay = (
+            runner is not None
+            and bool(inputs)
+            and inputs.batch_type == BatchType.TG
         )
+        debug_verify_replay_enabled = (
+            use_graph_capture_replay
+            and self._pipeline_config.debug_verify_replay
+        )
+        debug_verify_model_inputs: ModelInputs | None = None
+
+        # Prepare the batch.
+        # Replay uses LUT buffers sized by max cache length so copied inputs
+        # match captured graph buffer shapes.
+        if use_graph_capture_replay:
+            kv_cache_inputs = self._kv_manager.runtime_inputs(
+                inputs.batches,
+                num_steps=1,
+                max_cache_length=self._pipeline_model.max_seq_len,
+            )
+        else:
+            kv_cache_inputs = self._kv_manager.runtime_inputs(
+                inputs.batches,
+                num_steps=1,
+            )
 
         with Tracer("prepare_initial_token_inputs"):
             model_inputs = self._pipeline_model.prepare_initial_token_inputs(
@@ -515,10 +560,29 @@ class OverlapTextGenerationPipeline(
                 ),
             )
 
+        if debug_verify_replay_enabled:
+            # Reuse non-KV buffers from replay inputs and only swap the
+            # runtime-shaped KV inputs used for debug verification.
+            debug_verify_model_inputs = copy.copy(model_inputs)
+            debug_verify_model_inputs.update(
+                kv_cache_inputs=KVCacheInputsSequence(
+                    kv_cache_inputs=self._kv_manager.runtime_inputs(
+                        inputs.batches, num_steps=1
+                    )
+                )
+            )
+
         if not isinstance(model_inputs, _HasRaggedTokens):
             raise RuntimeError(
                 "OverlapTextGenerationPipeline requires model inputs with a "
                 "Buffer `tokens` field."
+            )
+        if debug_verify_model_inputs is not None and not isinstance(
+            debug_verify_model_inputs, _HasRaggedTokens
+        ):
+            raise RuntimeError(
+                "OverlapTextGenerationPipeline requires debug-verify model "
+                "inputs with a Buffer `tokens` field."
             )
         ragged_input_tokens = model_inputs.tokens
         if self._prev_batch is not None:
@@ -532,16 +596,19 @@ class OverlapTextGenerationPipeline(
                 )
             # Overwrite the ragged input tokens with the new ones.
             model_inputs.tokens = new_ragged_input_tokens
+            if debug_verify_model_inputs is not None:
+                debug_verify_model_inputs.tokens = new_ragged_input_tokens
 
         # Execute the model and get next tokens.
         try:
             with Tracer("pipeline_model.execute"):
-                if (
-                    (runner := self._graph_capture_runner)
-                    and inputs
-                    and inputs.batch_type == BatchType.TG
-                ):
-                    return runner.replay(model_inputs=model_inputs)
+                if use_graph_capture_replay:
+                    assert runner is not None
+                    return runner.replay(
+                        model_inputs=model_inputs,
+                        debug_verify_replay=debug_verify_replay_enabled,
+                        debug_verify_model_inputs=debug_verify_model_inputs,
+                    )
 
                 return self._pipeline_model.execute(model_inputs=model_inputs)
         except Exception:
@@ -691,3 +758,8 @@ class OverlapTextGenerationPipeline(
         """
         # KV cache release is handled by the scheduler via batch_constructor
         pass
+
+    @property
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the KV cache manager for this pipeline."""
+        return self._kv_manager

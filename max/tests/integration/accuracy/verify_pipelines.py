@@ -1291,8 +1291,10 @@ PIPELINES = {
         cos_dist_threshold=2.4e-01,
         kl_div_threshold=8.8e-01,
     ),
+    # TODO(MODELS-1099): Re-enable once upstream tokenizer is fixed.
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
+        tags=["manual"],
         pipeline="allenai/OLMo-2-1124-7B",
         encoding="float32",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(

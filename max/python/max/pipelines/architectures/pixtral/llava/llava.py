@@ -13,8 +13,8 @@
 from dataclasses import dataclass
 
 from max.graph import TensorType, TensorValue, TensorValueLike, ops
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.layer import Layer, Module
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import Layer, Module
 from max.pipelines.architectures.pixtral.vision_encoder.vision_encoder import (
     VisionEncoder,
 )

@@ -17,14 +17,14 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.nn.legacy.float8_config import (
+from max.nn.float8_config import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
-from max.nn.legacy.linear import Linear
+from max.nn.linear import Linear
 
 
 def test_linear_shard_basic() -> None:

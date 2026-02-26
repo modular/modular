@@ -1,7 +1,7 @@
 :title: config
 :type: module
 :lang: python
-:source: max/pipelines/lib/config.py
+:source: max/pipelines/lib/config/__init__.py
 
 .. py:currentmodule:: max.pipelines.lib.config
 

@@ -26,23 +26,22 @@ from max.engine.api import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.layer import Module
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.pipelines.lib.log_probabilities import (
@@ -76,7 +75,7 @@ class DeepseekV2Inputs(ModelInputs):
     return_n_logits: Buffer = field(kw_only=True)
 
 
-class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
+class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,

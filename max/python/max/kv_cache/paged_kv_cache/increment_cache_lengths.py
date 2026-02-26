@@ -21,9 +21,9 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.legacy.kv_cache.data_parallelism_utils import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
 )

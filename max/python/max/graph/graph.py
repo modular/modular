@@ -798,7 +798,7 @@ class Graph:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg: Any) -> Any:
             if isinstance(arg, Value):
-                return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)
+                return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore[attr-defined]
             elif isinstance(arg, Type):
                 return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)  # type: ignore
             elif isinstance(arg, list | tuple):
@@ -808,7 +808,7 @@ class Graph:
             elif isinstance(arg, _Type):
                 return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
             elif isinstance(arg, _Value):
-                return mlir.Value._CAPICreate(arg._CAPIPtr)
+                return mlir.Value._CAPICreate(arg._CAPIPtr)  # type: ignore[attr-defined]
             else:
                 return arg
 

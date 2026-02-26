@@ -345,7 +345,7 @@ Here's how to use the hooks directly in your code:
 #### MAX `PrintHook`
 
 ```python
-from max.nn.legacy.hooks import PrintHook
+from max.nn.hooks import PrintHook
 
 # Create hook and name layers
 hook = PrintHook()

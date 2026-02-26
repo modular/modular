@@ -60,7 +60,12 @@ description: {% if decl.summary
 <div class='mojo-alias-detail'>
 <div class="mojo-alias-sig">
 
-`{{ alias.signature }} = {{ alias.value }}`
+{# For values that could contain IR (signatures, types, values), use #}
+{# double backticks to preserve literal backticks. #}
+{# Spaces between the double-backticks and content need to be balanced, #}
+{# so we either add them manually (as here) or use pad_backticks filter. #}
+
+`` {{ alias.signature }} = {{ alias.value }} ``
 
 </div>
 
@@ -83,6 +88,7 @@ description: {% if decl.summary
 {% for param in alias.parameters -%}
 *   ​<b>{{ param.name }}</b> ({% if param.traits -%}
         {%- for trait in param.traits -%}
+            {# Trait names should never contain backticks, so no double backticks here. #}
             {%- if trait.path -%}
                 [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
             {%- else -%}
@@ -92,9 +98,9 @@ description: {% if decl.summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [`{{ param.type }}`]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
         {%- else -%}
-            `{{ param.type }}`
+            ``{{ param.type | pad_backticks }}``
         {%- endif -%}
     {%- endif %}): {{ param.description }}
 {% endfor %}

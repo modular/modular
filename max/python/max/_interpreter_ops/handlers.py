@@ -1402,7 +1402,7 @@ def _handle_select(
         device=target_device,
     )
 
-    ops.elementwise_ops.Select(
+    ops.elementwise_comparison_ops.Select(
         output,
         inputs[0],
         inputs[1],

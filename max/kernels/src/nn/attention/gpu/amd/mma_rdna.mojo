@@ -80,7 +80,9 @@ fn mma_rdna[
         a_tile: A operand register buffer.
         b_tile: B operand buffer (loaded to shared memory).
     """
-    constrained[b_buffer_type._num_stages == 2, "b_tile.num_stages must be 2"]()
+    comptime assert (
+        b_buffer_type._num_stages == 2
+    ), "b_tile.num_stages must be 2"
 
     # For RDNA, group_size is always 1, so num_k_mmas2 is simpler
     comptime num_k_mmas2 = ceildiv(

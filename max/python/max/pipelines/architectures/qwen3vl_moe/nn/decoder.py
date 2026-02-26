@@ -27,14 +27,14 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
-from max.nn.legacy.comm.allreduce import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import MLP, ColumnParallelLinear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.comm.allreduce import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.float8_config import Float8Config
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import LayerList, Module
+from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.norm import RMSNorm
+from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )

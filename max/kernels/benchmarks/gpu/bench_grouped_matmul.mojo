@@ -274,10 +274,9 @@ fn bench_grouped_matmul[
     var expert_ids = from_ndbuffer_row_major(expert_ids_dev)
 
     comptime if is_fp4e2m1:
-        constrained[
-            scaling_kind_str == "nvfp4",
-            "Only support nvfp4 scaling kind for float4-e2m1fn",
-        ]()
+        comptime assert (
+            scaling_kind_str == "nvfp4"
+        ), "Only support nvfp4 scaling kind for float4-e2m1fn"
 
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
             DType.uint32
@@ -468,10 +467,9 @@ fn bench_grouped_matmul[
         expert_scales_host_ptr.free()
 
     elif in_type == DType.float8_e4m3fn:
-        constrained[
-            scaling_kind_str == "1d2d",
-            "Only support 1d2d scaling kind for float8_e4m3fn",
-        ]()
+        comptime assert (
+            scaling_kind_str == "1d2d"
+        ), "Only support 1d2d scaling kind for float8_e4m3fn"
         comptime BLOCK_SCALE_K = 128
         comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
         var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens

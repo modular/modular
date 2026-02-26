@@ -17,7 +17,7 @@ import pytest
 from conftest import assert_all_close
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor, default_dtype
+from max.experimental.tensor import Tensor, default_dtype
 
 
 def test_range_like() -> None:

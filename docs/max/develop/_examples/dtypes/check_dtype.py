@@ -14,7 +14,7 @@
 
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create tensors of different types
 weights = Tensor.ones([3, 3], dtype=DType.float32, device=CPU())

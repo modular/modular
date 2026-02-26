@@ -277,10 +277,10 @@ class TRTLLMRequestDriver(RequestDriver):
 
             if request_func_input.max_tokens is not None:
                 payload["max_tokens"] = request_func_input.max_tokens
-            if request_func_input.top_k is not None:
-                payload["top_k"] = request_func_input.top_k
             if request_func_input.temperature is not None:
                 payload["temperature"] = request_func_input.temperature
+            if request_func_input.top_k is not None:
+                payload["top_k"] = request_func_input.top_k
             if request_func_input.top_p is not None:
                 payload["top_p"] = request_func_input.top_p
 
@@ -453,11 +453,9 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             "OpenAI Completions API URL must end with 'completions' or 'profile'."
         )
 
-        payload = {
+        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
-            "temperature": request_func_input.temperature,
-            "top_p": request_func_input.top_p,
             "best_of": 1,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
@@ -465,9 +463,12 @@ class OpenAICompletionsRequestDriver(RequestDriver):
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-
+        if request_func_input.temperature is not None:
+            payload["temperature"] = request_func_input.temperature
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
+        if request_func_input.top_p is not None:
+            payload["top_p"] = request_func_input.top_p
 
         headers = {
             "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}"
@@ -503,20 +504,19 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         else:  # conversation
             messages_data = request_func_input.prompt
 
-        payload = {
+        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
             "model": request_func_input.model,
             "messages": messages_data,
-            "temperature": request_func_input.temperature,
             "stream": True,
             "ignore_eos": request_func_input.ignore_eos,
         }
 
         if request_func_input.max_tokens is not None:
             payload["max_tokens"] = request_func_input.max_tokens
-
+        if request_func_input.temperature is not None:
+            payload["temperature"] = request_func_input.temperature
         if request_func_input.top_k is not None:
             payload["top_k"] = request_func_input.top_k
-
         if request_func_input.top_p is not None:
             payload["top_p"] = request_func_input.top_p
 

@@ -27,22 +27,22 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.kernels import (
+from max.nn.attention import MHAMaskVariant
+from max.nn.comm import Allreduce
+from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
     uses_opaque,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.layer import Module
+from max.nn.linear import Linear
+from max.nn.rotary_embedding import RotaryEmbedding
 
 from .norm import l2_norm
 

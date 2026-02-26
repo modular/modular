@@ -21,14 +21,14 @@ from typing import TYPE_CHECKING, cast
 
 from max.driver import Device, is_virtual_device_mode, load_devices
 from max.kv_cache import estimate_kv_cache_size, infer_optimal_batch_size
-from max.nn.legacy.kv_cache import compute_max_seq_len_fitting_in_cache
+from max.nn.kv_cache import compute_max_seq_len_fitting_in_cache
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
     from .config import PipelineConfig
 
+from .config.model_config import MAXModelConfig
 from .interfaces import ArchConfig, ArchConfigWithKVCache
-from .model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
 

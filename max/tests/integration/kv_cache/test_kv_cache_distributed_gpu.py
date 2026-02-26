@@ -21,7 +21,7 @@ from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.connectors.local_connector import LocalConnector
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -52,7 +52,7 @@ async def test_kv_cache_multi_gpu() -> None:
 
         batch = [context]
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
-        list_of_kv_tuples = kv_manager.get_runtime_inputs([batch])
+        list_of_kv_tuples = kv_manager.runtime_inputs([batch])
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
             assert len(kv_tuple) == 5
@@ -120,10 +120,6 @@ async def test_swapping_to_host_multi_gpu(
 
     if enable_swapping_to_host:
         replica_manager = kv_manager._replica_managers[0]
-        # Host tensor should be pinned
-        assert replica_manager.host_tensors is not None
-        for i in range(len(replica_manager.host_tensors)):
-            assert replica_manager.host_tensors[i].pinned
         # Evictions should be scheduled on auxiliary stream (via connector)
         connector = replica_manager.connector
         assert isinstance(connector, LocalConnector)
@@ -162,7 +158,7 @@ async def test_swapping_to_host_multi_gpu(
 
             for ctx in batch:
                 kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-            _ = kv_manager.get_runtime_inputs([batch])
+            _ = kv_manager.runtime_inputs([batch])
 
             new_prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
 

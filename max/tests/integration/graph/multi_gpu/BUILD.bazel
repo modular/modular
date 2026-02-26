@@ -33,6 +33,7 @@ modular_py_test(
     name = "multi-gpu-device-graph-tests",
     size = "large",
     srcs = [
+        "conftest.py",
         "test_engine_device_graph.py",
     ],
     exec_properties = {

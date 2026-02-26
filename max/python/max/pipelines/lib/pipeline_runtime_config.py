@@ -21,7 +21,7 @@ from max.config import ConfigFileModel
 from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, PrivateAttr
 
-from .config_enums import PipelineRole
+from .config.config_enums import PipelineRole
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
@@ -219,12 +219,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    use_legacy_module: bool = Field(
-        default=True,
+    prefer_module_v3: bool = Field(
+        default=False,
         description=(
-            "Whether to prefer the legacy ModuleV2 architecture (default=True for backward "
-            "compatibility). When True, tries the ModuleV2 architecture first and falls back "
-            "to ModuleV3. When False, tries ModuleV3 first and falls back to ModuleV2."
+            "Whether to prefer the ModuleV3 architecture (default=False for backward "
+            "compatibility). When False, tries the ModuleV2 architecture first and falls back "
+            "to ModuleV3. When True, tries ModuleV3 first and falls back to ModuleV2."
         ),
     )
 
@@ -235,7 +235,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description="Whether to defer resolving the pipeline config.",
     )
 
-    _config_file_section_name: str = PrivateAttr(default="runtime_config")
+    _config_file_section_name: str = PrivateAttr(default="runtime")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
     MAXConfig file."""

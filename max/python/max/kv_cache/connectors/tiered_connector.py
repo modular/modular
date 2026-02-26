@@ -29,8 +29,8 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -68,10 +68,6 @@ class TieredConnector:
         if not params.enable_prefix_caching:
             raise ValueError(
                 "TieredConnector requires prefix caching to be enabled"
-            )
-        if not params.enable_kvcache_swapping_to_host:
-            raise ValueError(
-                "TieredConnector requires kvcache swapping to host"
             )
         if total_num_host_blocks <= 0:
             raise ValueError("TieredConnector requires host blocks")
@@ -197,11 +193,6 @@ class TieredConnector:
         return "TieredConnector"
 
     @property
-    def host_tensors(self) -> list[Buffer]:
-        """Get the host tensors for KV cache swapping."""
-        return self._host_tensors
-
-    @property
     def host_scale_tensors(self) -> list[Buffer] | None:
         """Get the host scale tensors for FP8 quantization swapping."""
         return self._host_scale_tensors
@@ -292,7 +283,6 @@ class TieredConnector:
         self,
         ctx: TextGenerationContext,
         target_block_ids: list[int],
-        device_tensors: list[Buffer],
     ) -> list[int]:
         """Load data from host cache into device blocks.
 

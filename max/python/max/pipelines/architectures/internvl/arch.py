@@ -21,7 +21,7 @@ from .model_config import InternVLConfig
 from .tokenizer import InternVLTokenizer
 
 internvl_arch = SupportedArchitecture(
-    name="InternVLChatModel_Legacy",
+    name="InternVLChatModel",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["OpenGVLab/InternVL3-8B-Instruct"],
     default_encoding="bfloat16",

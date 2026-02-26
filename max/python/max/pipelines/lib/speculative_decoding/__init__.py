@@ -28,7 +28,7 @@ from max.interfaces import (
 )
 from max.pipelines.core import TextContext
 
-from ..speculative_config import SpeculativeMethod
+from ..config.speculative_config import SpeculativeMethod
 from .base import SpeculativeDecodingPipelineBase
 from .eagle import EAGLESpeculativeDecodingPipeline
 from .ragged_token_merger import RaggedTokenMerger, ragged_token_merger

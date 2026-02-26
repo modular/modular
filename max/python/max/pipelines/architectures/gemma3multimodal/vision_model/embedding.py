@@ -16,9 +16,9 @@ from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.legacy.conv import Conv2d
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.layer import Module
+from max.nn.conv import Conv2d
+from max.nn.embedding import Embedding
+from max.nn.layer import Module
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 

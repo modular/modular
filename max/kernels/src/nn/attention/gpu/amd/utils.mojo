@@ -668,7 +668,7 @@ fn copy_dram_to_sram_lds[
 
 
 @always_inline
-fn load_b_[
+fn load_b_tile[
     mma_shape: IndexList[3], swizzle: Optional[Swizzle], k_tile_idx: Int
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
@@ -729,7 +729,7 @@ fn load_b[
     var output_vectorized = output.vectorize[1, 8]()
 
     comptime for i, j in product(range(M), range(N)):
-        var out_reg = load_b_[mma_shape, swizzle, j](
+        var out_reg = load_b_tile[mma_shape, swizzle, j](
             src.tile[MMA_M, src.shape[1]()](i, 0)
         )
         output_vectorized[i + j * M, 0] = rebind[

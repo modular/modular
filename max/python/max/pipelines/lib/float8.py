@@ -24,7 +24,7 @@ from typing import Any
 import huggingface_hub
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.legacy.float8_config import (
+from max.nn.float8_config import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,

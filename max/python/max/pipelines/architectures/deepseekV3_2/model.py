@@ -23,7 +23,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.pipelines.lib import CompilationTimer
 from max.pipelines.lib.float8 import parse_float8_config
 from typing_extensions import override

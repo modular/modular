@@ -19,8 +19,8 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -28,7 +28,7 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 
-from ..llama3_legacy.model import Llama3Inputs, LlamaModelBase
+from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .eagle_llama3 import EagleLlama3
 from .model_config import Llama3Config
 

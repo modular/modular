@@ -5,7 +5,7 @@
 import enum
 import types
 from collections.abc import Callable, Iterator, Sequence
-from typing import TypeVar, overload
+from typing import Generic, TypeVar, overload
 
 import typing_extensions
 
@@ -995,14 +995,6 @@ class Value(Generic[_T]):
 
     @overload
     def replace_all_uses_except(
-        self, with_: Value, exceptions: list
-    ) -> None: ...
-    @overload
-    def replace_all_uses_except(
-        self, with_: Value, exceptions: Operation
-    ) -> None: ...
-    @overload
-    def replace_all_uses_except(
         self, with_: Value, exceptions: Sequence[Operation]
     ) -> None: ...
     def maybe_downcast(self) -> BlockArgument | OpResult | Value:
@@ -1265,6 +1257,9 @@ class OpOperandList(Sequence[Value]):
     def __setitem__(self, index: int, value: Value) -> None:
         """Sets the operand at the specified index to a new value."""
 
+class OpOperands(Sequence[OpOperand]):
+    def __add__(self, arg: OpOperands, /) -> list[OpOperand]: ...
+
 class OpResultList(Sequence[OpResult]):
     def __add__(self, arg: OpResultList, /) -> list[OpResult]: ...
     @property
@@ -1309,6 +1304,33 @@ class AttrBuilder:
     ) -> None:
         """
         Register an attribute builder for building MLIR attributes from Python values.
+        """
+
+class DynamicOpTrait:
+    @classmethod
+    def attach(*args, **kwargs):
+        """
+        (cls: object, op_name: object, target: object | None = None, context: Context | None = None) -> bool
+
+        Attach the dynamic op trait subclass to the given operation name.
+        """
+
+class IsTerminatorTrait(DynamicOpTrait):
+    @classmethod
+    def attach(*args, **kwargs):
+        """
+        (cls: object, op_name: object, context: Context | None = None) -> bool
+
+        Attach IsTerminator trait to the given operation name.
+        """
+
+class NoTerminatorTrait(DynamicOpTrait):
+    @classmethod
+    def attach(*args, **kwargs):
+        """
+        (cls: object, op_name: object, context: Context | None = None) -> bool
+
+        Attach NoTerminator trait to the given operation name.
         """
 
 class AffineExpr:
@@ -1974,16 +1996,12 @@ class DenseElementsAttr(Attribute):
         and the buffer contents must be bit-castable to the MLIR internal
         representation:
 
-          * Integer types (except for i1): the buffer must be byte aligned to the
-            next byte boundary.
+          * Integer types: the buffer must be byte aligned to the next byte boundary.
           * Floating point types: Must be bit-castable to the given floating point
             size.
-          * i1 (bool): Bit packed into 8bit words where the bit pattern matches a
-            row major ordering. An arbitrary Numpy `bool_` array can be bit packed to
-            this specification with: `np.packbits(ary, axis=None, bitorder='little')`.
+          * i1 (bool): Each boolean value is stored as a single byte (0 or 1).
 
-        If a single element buffer is passed (or for i1, a single byte with value 0
-        or 255), then a splat will be created.
+        If a single element buffer is passed, then a splat will be created.
 
         Args:
           array: The array or buffer to convert.
@@ -1992,8 +2010,7 @@ class DenseElementsAttr(Attribute):
           type: Skips inference of the MLIR element type and uses this instead. The
             storage size must be consistent with the actual contents of the buffer.
           shape: Overrides the shape of the buffer when constructing the MLIR
-            shaped type. This is needed when the physical and logical shape differ (as
-            for i1).
+            shaped type. This is needed when the physical and logical shape differ.
           context: Explicit context, if not from context manager.
 
         Returns:
@@ -2420,12 +2437,13 @@ class StridedLayoutAttr(Attribute):
     def strides(self) -> list[int]:
         """Returns the value of the float point attribute"""
 
-class InferTypeOpInterface:
+class MemoryEffectInstancesList:
+    pass
+
+class InferShapedTypeOpInterface:
     def __init__(self, object: object, context: Context | None = None) -> None:
         """
-        Creates an interface from a given operation/opview object or from a
-        subclass of OpView. Raises ValueError if the operation does not implement the
-        interface.
+        Creates an interface from a given operation/opview object or from a subclass of OpView. Raises ValueError if the operation does not implement the interface.
         """
 
     @property
@@ -2435,8 +2453,37 @@ class InferTypeOpInterface:
     @property
     def opview(self) -> OpView:
         """
-        Returns an OpView subclass _instance_ for which the interface was
-        constructed
+        Returns an OpView subclass _instance_ for which the interface was constructed
+        """
+
+    def inferReturnTypeComponents(
+        self,
+        operands: list | None = None,
+        attributes: Attribute | None = None,
+        regions: types.CapsuleType | None = None,
+        properties: Sequence[Region] | None = None,
+        context: Context | None = None,
+        loc: Location | None = None,
+    ) -> list[ShapedTypeComponents]:
+        """
+        Given the arguments required to build an operation, attempts to infer
+        its return shaped type components. Raises ValueError on failure.
+        """
+
+class InferTypeOpInterface:
+    def __init__(self, object: object, context: Context | None = None) -> None:
+        """
+        Creates an interface from a given operation/opview object or from a subclass of OpView. Raises ValueError if the operation does not implement the interface.
+        """
+
+    @property
+    def operation(self) -> Operation:
+        """Returns an Operation for which the interface was constructed."""
+
+    @property
+    def opview(self) -> OpView:
+        """
+        Returns an OpView subclass _instance_ for which the interface was constructed
         """
 
     def inferReturnTypes(
@@ -2451,6 +2498,30 @@ class InferTypeOpInterface:
         """
         Given the arguments required to build an operation, attempts to infer
         its return types. Raises ValueError on failure.
+        """
+
+class MemoryEffectsOpInterface:
+    def __init__(self, object: object, context: Context | None = None) -> None:
+        """
+        Creates an interface from a given operation/opview object or from a subclass of OpView. Raises ValueError if the operation does not implement the interface.
+        """
+
+    @property
+    def operation(self) -> Operation:
+        """Returns an Operation for which the interface was constructed."""
+
+    @property
+    def opview(self) -> OpView:
+        """
+        Returns an OpView subclass _instance_ for which the interface was constructed
+        """
+
+    @classmethod
+    def attach(*args, **kwargs):
+        """
+        (cls: object, op_name: object, *, target: object | None = None, context: Context | None = None) -> None
+
+        Attach the interface subclass to the given operation name.
         """
 
 class ShapedTypeComponents:
@@ -2489,39 +2560,6 @@ class ShapedTypeComponents:
     def shape(self) -> list | None:
         """
         Returns the shape of the ranked shaped type components as a list of integers. Returns none if the shaped type component does not have a rank.
-        """
-
-class InferShapedTypeOpInterface:
-    def __init__(self, object: object, context: Context | None = None) -> None:
-        """
-        Creates an interface from a given operation/opview object or from a
-        subclass of OpView. Raises ValueError if the operation does not implement the
-        interface.
-        """
-
-    @property
-    def operation(self) -> Operation:
-        """Returns an Operation for which the interface was constructed."""
-
-    @property
-    def opview(self) -> OpView:
-        """
-        Returns an OpView subclass _instance_ for which the interface was
-        constructed
-        """
-
-    def inferReturnTypeComponents(
-        self,
-        operands: list | None = None,
-        attributes: Attribute | None = None,
-        regions: types.CapsuleType | None = None,
-        properties: Sequence[Region] | None = None,
-        context: Context | None = None,
-        loc: Location | None = None,
-    ) -> list[ShapedTypeComponents]:
-        """
-        Given the arguments required to build an operation, attempts to infer
-        its return shaped type components. Raises ValueError on failure.
         """
 
 class IntegerType(Type):
@@ -3193,18 +3231,12 @@ class TupleType(Type):
     type_name: str = ...
     """(arg: object, /) -> str"""
 
-    @overload
     @staticmethod
     def get_tuple(
         elements: Sequence[Type], context: Context | None = None
     ) -> TupleType:
         """Create a tuple type"""
 
-    @overload
-    @staticmethod
-    def get_tuple(
-        elements: Sequence[Type], context: Context | None = None
-    ) -> TupleType: ...
     def get_type(self, pos: int) -> Type:
         """Returns the pos-th type in the tuple type."""
 
@@ -3225,7 +3257,6 @@ class FunctionType(Type):
     type_name: str = ...
     """(arg: object, /) -> str"""
 
-    @overload
     @staticmethod
     def get(
         inputs: Sequence[Type],
@@ -3234,13 +3265,6 @@ class FunctionType(Type):
     ) -> FunctionType:
         """Gets a FunctionType from a list of input and result types"""
 
-    @overload
-    @staticmethod
-    def get(
-        inputs: Sequence[Type],
-        results: Sequence[Type],
-        context: Context | None = None,
-    ) -> FunctionType: ...
     @property
     def inputs(self) -> list:
         """Returns the list of input types in the FunctionType."""

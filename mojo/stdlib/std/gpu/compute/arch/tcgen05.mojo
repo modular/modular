@@ -24,14 +24,14 @@ from gpu.compute.mma import _str_iota  # TODO: move to a string module
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
 from memory import bitcast
 
-comptime check_blackwell_constraint = constrained[
-    _has_blackwell_tcgen05(),
-    (
+
+@always_inline("nodebug")
+fn check_blackwell_constraint():
+    """Compile-time constraint ensuring Blackwell hardware is targeted."""
+    comptime assert _has_blackwell_tcgen05(), (
         "The tcgen05 instructions are only applicable on nVidia Blackwell"
         " (sm_100a, sm_101a) hardware."
-    ),
-]
-"""Compile-time constraint ensuring Blackwell hardware is targeted."""
+    )
 
 
 struct TensorMemory(TrivialRegisterPassable):

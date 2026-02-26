@@ -75,9 +75,9 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, Graph, TensorType, Type
 from max.graph.type import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kernels import lmcache_offload, lmcache_onload
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kernels import lmcache_offload, lmcache_onload
+from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
 logger = logging.getLogger("max.pipelines")
@@ -137,12 +137,12 @@ class MAXGPUConnector(GPUConnectorInterface):
         """
         self._device_tensors = device_tensors
         self._num_layers = params.num_layers
-        self._num_kv_heads = params.n_kv_heads
+        self._num_kv_heads = params.n_kv_heads_per_device
         self._head_dim = params.head_dim
         self._block_size = params.page_size
         self._kv_dtype = _max_dtype_to_torch(params.dtype)
         self._max_dtype = params.dtype
-        self._hidden_dim = params.n_kv_heads * params.head_dim
+        self._hidden_dim = params.n_kv_heads_per_device * params.head_dim
         self._kv_dim = 1 if params.is_mla else 2
         self._session = session
         self._devices = list(devices)
@@ -599,12 +599,13 @@ class LMCacheConnector:
         # kv_shape format: (num_layers, kv_dim, chunk_size, num_kv_heads, head_dim)
         # MLA caches a single fused latent vector (kv_dim=1) instead of
         # separate K and V tensors (kv_dim=2).
+        # Use per-device heads since each TP shard operates independently.
         kv_dim = 1 if self.params.is_mla else 2
         kv_shape = (
             self.params.num_layers,
             kv_dim,
             self._block_size,
-            self.params.n_kv_heads,
+            self.params.n_kv_heads_per_device,
             self.params.head_dim,
         )
 
@@ -723,14 +724,12 @@ class LMCacheConnector:
         self,
         ctx: TextGenerationContext,
         target_block_ids: list[int],
-        device_tensors: list[Buffer],
     ) -> list[int]:
         """Load data from LMCache into device blocks.
 
         Args:
             ctx: The request context.
             target_block_ids: Device block IDs to load data into.
-            device_tensors: Device KV cache tensors to copy into.
 
         Returns:
             List of block hashes for the loaded blocks.
@@ -919,22 +918,6 @@ class LMCacheConnector:
         Note: Host blocks are managed by LMCache internally.
         """
         return 0
-
-    @property
-    def host_tensors(self) -> list[Buffer] | None:
-        """Host tensors.
-
-        Note: LMCache manages host storage internally.
-        """
-        return None
-
-    @property
-    def host_scale_tensors(self) -> list[Buffer] | None:
-        """Host scale tensors.
-
-        Note: LMCache manages host storage internally.
-        """
-        return None
 
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache.

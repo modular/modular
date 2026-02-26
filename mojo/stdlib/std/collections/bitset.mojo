@@ -37,6 +37,7 @@ from sys import simd_width_of, bit_width_of
 
 from algorithm import vectorize
 from bit import log2_floor, pop_count
+from format._utils import FormatStruct
 from memory import pack_bits
 
 from .inline_array import InlineArray
@@ -448,6 +449,15 @@ struct BitSet[size: Int](
                 word &= ~rightmost_bit
 
         writer.write("}")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the `BitSet` to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+        FormatStruct(writer, "BitSet").params(Self.size).fields(self)
 
     fn __repr__(self) -> String:
         """Returns a developer-friendly string representation of the bitset.

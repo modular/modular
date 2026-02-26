@@ -14,7 +14,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheQuantizationConfig
+from max.nn.kv_cache import KVCacheParams, KVCacheQuantizationConfig
 
 
 def test_single_device_compatible() -> None:

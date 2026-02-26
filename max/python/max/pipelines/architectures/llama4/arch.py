@@ -27,7 +27,7 @@ from .model import Llama4Model
 from .model_config import Llama4Config
 
 llama4_arch = SupportedArchitecture(
-    name="Llama4ForConditionalGeneration_Legacy",
+    name="Llama4ForConditionalGeneration",
     example_repo_ids=[
         "meta-llama/Llama-4-Scout-17B-16E-Instruct",
         "meta-llama/Llama-4-Scout-17B-16E",
