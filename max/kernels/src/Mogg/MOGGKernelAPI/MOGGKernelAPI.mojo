@@ -5385,7 +5385,6 @@ struct FlashAttentionGPU:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
@@ -5468,7 +5467,7 @@ struct FlashAttentionGPU:
 
         dispatch_mask_and_score_mod[
             mask_str,
-            score_mod_str,
+            IdentityScoreMod.name_str,
             _dispatch_flash_attention,
             local_window_size,
             num_kv_heads,
@@ -5483,7 +5482,6 @@ struct PaddedFlashAttentionGPU:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
@@ -5537,7 +5535,7 @@ struct PaddedFlashAttentionGPU:
 
         dispatch_mask_and_score_mod[
             mask_str,
-            score_mod_str,
+            IdentityScoreMod.name_str,
             _dispatch_flash_attention,
             local_window_size,
             num_kv_heads,
@@ -5552,7 +5550,6 @@ struct RaggedFlashAttentionGPU:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
@@ -5611,7 +5608,7 @@ struct RaggedFlashAttentionGPU:
 
         dispatch_mask_and_score_mod[
             mask_str,
-            score_mod_str,
+            IdentityScoreMod.name_str,
             _dispatch_flash_attention,
             local_window_size,
             num_kv_heads,
@@ -7032,7 +7029,6 @@ struct Struct_mha_padded_paged:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
@@ -7057,7 +7053,7 @@ struct Struct_mha_padded_paged:
         generic_flash_attention_kv_cache_padded[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
+            score_mod_str = IdentityScoreMod.name_str,
             local_window_size=local_window_size,
         ](
             q.to_layout_tensor(),
@@ -7086,7 +7082,6 @@ struct Struct_mha_ragged_paged:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7109,7 +7104,7 @@ struct Struct_mha_ragged_paged:
         generic_flash_attention_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
+            score_mod_str = IdentityScoreMod.name_str,
             local_window_size=local_window_size,
         ](
             q.to_layout_tensor(),
@@ -7137,7 +7132,6 @@ struct Struct_mha_ragged_paged_sink_weights:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7162,7 +7156,7 @@ struct Struct_mha_ragged_paged_sink_weights:
         generic_flash_attention_kv_cache_ragged_sink[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
+            score_mod_str = IdentityScoreMod.name_str,
             local_window_size=local_window_size,
         ](
             q.to_layout_tensor(),
@@ -7198,7 +7192,6 @@ struct Struct_mla_decode_ragged_paged:
         dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7224,7 +7217,7 @@ struct Struct_mla_decode_ragged_paged:
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
+            score_mod_str = IdentityScoreMod.name_str,
         ](
             q.to_layout_tensor(),
             input_row_offsets.to_layout_tensor(),
@@ -7245,7 +7238,6 @@ struct Struct_mla_prefill_ragged_paged:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q: InputTensor[dtype=dtype, rank=3],
@@ -7271,7 +7263,7 @@ struct Struct_mla_prefill_ragged_paged:
         generic_flare_mla_prefill_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
+            score_mod_str = IdentityScoreMod.name_str,
         ](
             q.to_layout_tensor(),
             k.to_layout_tensor(),
@@ -7413,7 +7405,6 @@ struct Struct_mla_prefill_graph_paged:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7457,7 +7448,7 @@ struct Struct_mla_prefill_graph_paged:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
+                score_mod_str = IdentityScoreMod.name_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7495,7 +7486,6 @@ struct Struct_mla_decode_graph_paged:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7536,7 +7526,7 @@ struct Struct_mla_decode_graph_paged:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
+                score_mod_str = IdentityScoreMod.name_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7566,7 +7556,6 @@ struct Struct_mla_prefill_graph_bf16_paged:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
@@ -7605,7 +7594,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
         ):
             mla_prefill_branch_bf16[
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
+                score_mod_str = IdentityScoreMod.name_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7636,7 +7625,6 @@ struct Struct_mla_decode_graph_bf16_paged:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
@@ -7672,7 +7660,7 @@ struct Struct_mla_decode_graph_bf16_paged:
         ):
             mla_decode_branch_bf16[
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
+                score_mod_str = IdentityScoreMod.name_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7706,7 +7694,6 @@ struct Struct_mla_prefill_graph_decode_paged:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7752,7 +7739,7 @@ struct Struct_mla_prefill_graph_decode_paged:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
+                score_mod_str = IdentityScoreMod.name_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7788,7 +7775,6 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
@@ -7828,7 +7814,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         ):
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
+                score_mod_str = IdentityScoreMod.name_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7867,7 +7853,6 @@ struct Struct_cross_attention_ragged_paged:
         dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
         local_window_size: Int = -1,
     ](
@@ -7892,7 +7877,7 @@ struct Struct_cross_attention_ragged_paged:
         )
         generic_cross_attention_kv_cache[
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
+            score_mod_str = IdentityScoreMod.name_str,
             local_window_size=local_window_size,
             target=target,
         ](
