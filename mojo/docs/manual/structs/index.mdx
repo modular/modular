@@ -221,16 +221,16 @@ For example, the following code produces errors:
 var a = MyPair(1, 2)
 
 # Implicit copy
-var b = a  # value of type 'MyPair' is not implicitly copyable, it does not
-           # conform to 'ImplicitlyCopyable'
+var b = a  # value of type 'MyPair' cannot be implicitly copied,
+           # it does not conform to 'ImplicitlyCopyable'
 
 # Explicit copy
-var c = a.copy()  # 'MyPair' value has no attribute 'copy'
-
+var c = a.copy()  # value of type 'MyPair' cannot be implicitly copied,
+        # it does not conform to 'ImplicitlyCopyable'
 # Move
-var d = a^  #  value of type 'MyPair' cannot be copied or moved; consider
-            # conforming it to 'Copyable', which also adds 'Movable' conformance.
-
+var d = a^  # value of type 'MyPair' cannot be copied or moved; consider
+            # conforming it to 'Copyable', which also adds 'Movable'
+            # conformance.
 ```
 
 In most cases, you can make a struct copyable (and movable) just by adding the
@@ -260,15 +260,13 @@ To make a struct copyable, add the `Copyable` trait:
   ```
 
 In most cases, that's all you need to do. Mojo will generate a copy constructor
-( `__copyinit__()` method) for you. You don't need to write your own unless you
-need custom logic in the copy constructor—for example, if your struct
+( `__init__(out self, *, copy: Self)` method) for you. You don't need to write your
+own unless you need custom logic in the copy constructor; for example, if your struct
 dynamically allocates memory. For more information, see the section on
 [copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
 
-The `Copyable` trait supplies the `copy()` method, which
-provides a more user-friendly way to copy a value than invoking the
-copy constructor directly.
-
+The `Copyable` trait provides two ways to copy a value: the `copy()` 
+instance method and the copy initializer.
 In addition, `Copyable` automatically adds movability, so you won't
 need to add both `Copyable` _and_ `Movable` to your declarations.
 

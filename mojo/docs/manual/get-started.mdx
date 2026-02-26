@@ -379,7 +379,7 @@ Before we move on, let's take a moment to discuss how Mojo handles copying
 values. There's an important difference in Mojo between copying simple types
 like `Int` and `String` and more complex types like `List`:
 
-- An *explicitly copyable* type can be copied by calling its `copy()` method.
+- An *explicitly copyable* type can be copied by calling its copy initializer or `copy()`.
   `List` is explicitly copyable, so if `first` is a `List`, you can copy it like
   this:
 
@@ -391,8 +391,9 @@ like `Int` and `String` and more complex types like `List`:
   This leaves `first` unchanged and assigns `second` its own, uniquely owned
   copy of the list.
 
-- An *implicitly copyable* type can be copied without an explicit call to a
-  `copy()` method. `Int` and `String` are implicitly copyable types, so if
+- An *implicitly copyable* type can be copied without an explicit call to
+  `copy()` or a
+  copy initializer. `Int` and `String` are implicitly copyable types, so if
   `one_value` is an `Int`, you can copy it like this:
 
   ```mojo
@@ -641,7 +642,7 @@ compiler automatically generates the missing methods for you. For our simple
 `Grid` struct, indicating that it conforms to the `Copyable`
 trait is enough to have the Mojo compiler automatically generate the missing
 methods for us. The `Copyable` trait also provides a default implementation of
-the `copy()` method, so you don't need to implement it yourself.
+the copy initializer and `copy()`, so you don't need to implement it yourself.
 
 :::note
 

@@ -68,7 +68,7 @@ cannot materialize comptime value of type 'List[Int]' to runtime
 because it is not 'ImplicitlyCopyable'
 ```
 
-Just like Mojo forces you to explicitly `copy()` a value that's expensive to
+Just like Mojo forces you to explicitly copy a value that's expensive to
 copy, it forces you to explicitly materialize values that are expensive to
 materialize, by calling the
 [`materialize()`](/mojo/std/builtin/value/materialize/) function.

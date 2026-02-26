@@ -407,4 +407,4 @@ There are multiple ways that Mojo can transfer ownership of a value:
   constructors.
 
 In order for the `var` convention to work *without* the transfer
-sigil, the value type must be copyable (via `__copyinit__()`).
+sigil, the value type must be copyable (via `__init__(out self, *, copy: Self)`).
