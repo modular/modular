@@ -151,8 +151,8 @@ def load_scheduler(
 
         token_gen_config = AudioGenerationSchedulerConfig(
             max_batch_size=pipeline_config.max_batch_size,
-            max_forward_steps_tg=pipeline_config.max_num_steps
-            if pipeline_config.max_num_steps != -1
+            max_forward_steps_tg=pipeline_config.runtime.max_num_steps
+            if pipeline_config.runtime.max_num_steps != -1
             else 1,
             max_seq_len=pipeline_config.model.max_length,
             target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,

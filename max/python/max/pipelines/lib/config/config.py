@@ -104,15 +104,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    max_num_steps: int = Field(
-        default=-1,
-        description=(
-            "The number of steps to run for multi-step scheduling. -1 specifies "
-            "a default value based on configuration and platform. Ignored for "
-            "models which are not auto-regressive (e.g. embedding models)."
-        ),
-    )
-
     max_batch_input_tokens: int = Field(
         default=DEFAULT_MAX_BATCH_INPUT_TOKENS,
         description=(
@@ -688,7 +679,7 @@ class PipelineConfig(ConfigFileModel):
                 and self.model.device_specs[0].device_type != "cpu"
             ):
                 self.enable_overlap_scheduler = True
-                self.max_num_steps = 1
+                self.runtime.max_num_steps = 1
                 logger.info(
                     f"Automatically enabling overlap scheduling for {arch.name} with max-num-steps=1. "
                     "You can manually disable this by setting --no-enable-overlap-scheduler --force."
@@ -718,7 +709,7 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
                 )
-            if self.max_num_steps > 1:
+            if self.runtime.max_num_steps > 1:
                 raise ValueError(
                     "Max num steps > 1 is not supported with the Overlap scheduler."
                 )
@@ -745,28 +736,28 @@ class PipelineConfig(ConfigFileModel):
         if not self.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
         self.enable_overlap_scheduler = True
-        if self.max_num_steps != 1:
+        if self.runtime.max_num_steps != 1:
             logger.info(
                 "Setting max-num-steps=1 for device graph capture with overlap scheduling."
             )
-        self.max_num_steps = 1
+        self.runtime.max_num_steps = 1
 
     def _validate_and_resolve_max_num_steps(self) -> None:
         """Validates and resolves the max_num_steps field (platform-specific)."""
-        if self.draft_model is not None and self.max_num_steps > 1:
+        if self.draft_model is not None and self.runtime.max_num_steps > 1:
             raise ValueError(
                 f"max_num_steps must be 1 when speculative decoding is enabled, "
-                f"got {self.max_num_steps}."
+                f"got {self.runtime.max_num_steps}."
             )
-        if self.max_num_steps < 0:
+        if self.runtime.max_num_steps < 0:
             if self.model.default_device_spec == DeviceSpec.cpu():
-                self.max_num_steps = 1
+                self.runtime.max_num_steps = 1
             elif self.draft_model is not None:
                 # Speculative decoding pipelines manage multi-step KV
                 # allocation internally.
-                self.max_num_steps = 1
+                self.runtime.max_num_steps = 1
             else:
-                self.max_num_steps = 10
+                self.runtime.max_num_steps = 10
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """Validates pipeline config when used in speculative decoding mode."""
