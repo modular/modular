@@ -40,6 +40,7 @@ PINS = {
     "apache-tvm-ffi": "apache-tvm-ffi@0.1.3",
     "asgiref": "asgiref@3.8.1",
     "async-asgi-testclient": "async-asgi-testclient@1.4.11",
+    "av": "av@14.2.0",
     "boto3": "boto3@1.40.61",
     "click": "click@8.1.7",
     "codeowners": "codeowners@0.8.0",
