@@ -450,77 +450,82 @@ fn test_dispatch[
             # Check if we have received the correct number of tokens
             var expert_start_idx = n_local_experts * my_rank
             var expert_end_idx = expert_start_idx + n_local_experts
-            var count = 0
+            var expected_tokens = 0
+            var received_tokens = 0
+
+            # Count expected tokens from all ranks for this slot
             for i in range(n_tokens_per_rank * n_ranks * top_k):
                 if (
                     expert_start_idx
                     <= Int(all_ranks_topk_ids[i])
                     < expert_end_idx
                 ):
-                    count += 1
-            assert_equal(count, Int(host_row_offsets[n_local_experts]))
+                    expected_tokens += 1
 
             # Then, check the output
             for expert_idx in range(n_local_experts):
                 var curr_local_expert = host_expert_ids[expert_idx]
                 var curr_expert = n_local_experts * my_rank + curr_local_expert
 
-                var remote_rank = 0
-
-                for token_idx in range(
-                    host_row_offsets[expert_idx],
-                    host_row_offsets[expert_idx + 1],
-                ):
-                    while (
-                        host_dispatch_wait_counter[
-                            2 * (curr_local_expert * n_ranks + remote_rank)
-                        ]
-                        <= Int32(token_idx) + EP_DATA_READY_FLAG
-                    ):
-                        remote_rank += 1
-
-                    var remote_loc = host_src_token_info[2 * token_idx]
-                    var remote_topk_id = host_src_token_info[2 * token_idx + 1]
-
-                    # check if curr_expert is in remote rank's topk_ids
-                    var remote_rank_top_k_ids = (
-                        all_ranks_topk_ids
-                        + remote_rank * n_tokens_per_rank * top_k
+                for remote_rank in range(n_ranks):
+                    var expert_rank_offset = curr_local_expert * Int32(
+                        n_ranks
+                    ) + Int32(remote_rank)
+                    var token_end = (
+                        host_dispatch_wait_counter[2 * expert_rank_offset]
+                        - EP_DATA_READY_FLAG
                     )
+                    var num_tokens = host_dispatch_wait_counter[
+                        2 * expert_rank_offset + 1
+                    ]
+                    var token_start = token_end - num_tokens
+                    received_tokens += Int(num_tokens)
 
-                    assert_equal(
-                        remote_rank_top_k_ids[
-                            remote_loc * top_k + remote_topk_id
-                        ],
-                        curr_expert,
-                    )
+                    for token_idx in range(token_start, token_end):
+                        var remote_loc = host_src_token_info[2 * token_idx]
+                        var remote_topk_id = host_src_token_info[
+                            2 * token_idx + 1
+                        ]
 
-                    # check if the received token matches the remote rank's token
-
-                    var remote_rank_input_tokens = (
-                        all_ranks_input_tokens
-                        + remote_rank * n_tokens_per_rank * hidden_size
-                    )
-                    for i in range(hidden_size):
-                        var remote_token_val = remote_rank_input_tokens[
-                            remote_loc * hidden_size + i
-                        ]
-                        var curr_fp8_val = host_output[
-                            token_idx * hidden_size + i
-                        ]
-                        var curr_token_scale = host_output_scales[
-                            (i // group_size) * max_recv_tokens + token_idx
-                        ]
-                        var curr_token_val = (
-                            curr_fp8_val.cast[scales_dtype]() * curr_token_scale
+                        var remote_rank_top_k_ids = (
+                            all_ranks_topk_ids
+                            + remote_rank * n_tokens_per_rank * top_k
                         )
-                        assert_almost_equal(
-                            remote_token_val,
-                            curr_token_val.cast[input_type](),
-                            String(token_idx) + ", " + String(i),
-                            rtol=1e-1,
-                            atol=1e-1,
+
+                        assert_equal(
+                            remote_rank_top_k_ids[
+                                remote_loc * top_k + remote_topk_id
+                            ],
+                            curr_expert,
                         )
+
+                        var remote_rank_input_tokens = (
+                            all_ranks_input_tokens
+                            + remote_rank * n_tokens_per_rank * hidden_size
+                        )
+                        for i in range(hidden_size):
+                            var remote_token_val = remote_rank_input_tokens[
+                                remote_loc * hidden_size + i
+                            ]
+                            var curr_fp8_val = host_output[
+                                token_idx * hidden_size + i
+                            ]
+                            var curr_token_scale = host_output_scales[
+                                (i // group_size) * max_recv_tokens + token_idx
+                            ]
+                            var curr_token_val = (
+                                curr_fp8_val.cast[scales_dtype]()
+                                * curr_token_scale
+                            )
+                            assert_almost_equal(
+                                remote_token_val,
+                                curr_token_val.cast[input_type](),
+                                String(token_idx) + ", " + String(i),
+                                rtol=1e-1,
+                                atol=1e-1,
+                            )
+
+            assert_equal(received_tokens, expected_tokens)
         clean_up(ctx)
 
     _printf[

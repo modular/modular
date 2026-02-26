@@ -55,20 +55,6 @@ from .model_config import DeepseekV3Config
 logger = logging.getLogger("max.pipelines")
 
 
-def _validate_ep_kernel_limits(
-    ep_config: EPConfig, *, max_local_experts: int = 32
-) -> None:
-    n_ranks = ep_config.n_gpus_per_node * ep_config.n_nodes
-    n_local_experts = ep_config.n_experts // n_ranks
-    if n_local_experts > max_local_experts:
-        raise ValueError(
-            "Expert-parallel local experts per device "
-            f"({n_local_experts}) exceeds kernel limit "
-            f"({max_local_experts}). "
-            "Use more expert-parallel ranks or disable EP."
-        )
-
-
 @dataclass
 class DeepseekV3Inputs(DeepseekV2Inputs):
     """A class representing inputs for the DeepseekV3 model."""
@@ -160,7 +146,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 ep_kwargs["dispatch_fp8_config"] = float8_config
 
             ep_config = EPConfig(**ep_kwargs)
-            _validate_ep_kernel_limits(ep_config)
 
         # Determine data_parallel_degree: EP requires data-parallel attention
         if ep_config is not None:
