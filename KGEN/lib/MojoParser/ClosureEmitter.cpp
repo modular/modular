@@ -860,13 +860,16 @@ ASTDecl *ClosureEmitter::createStructWrapper(
         ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
         parentName, traitFnOp.getSymNameAttr(), implCallSig);
 
-    auto callOp = LIT::CallOp::create(
-        b, implCallSig.getResultType(),
-        BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext()),
-        origins, operands);
+    TypedAttr boundSymbol =
+        BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext());
+    Type callResultType = implCallSig.getResultType();
+    if (auto calleeSig = dyn_cast<FnTypeGeneratorType>(boundSymbol.getType()))
+      callResultType = calleeSig.getResultType();
+
+    auto callOp =
+        LIT::CallOp::create(b, callResultType, boundSymbol, origins, operands);
     Value returnValue = callOp.getResult(0);
-    if (implCallSig.getResultType() !=
-        op.getFuncTypeGenerator().getResultType())
+    if (callResultType != op.getFuncTypeGenerator().getResultType())
       returnValue = RebindOp::create(
           b, op.getFuncTypeGenerator().getResultType(), returnValue);
     IREmitter::emitNormalReturn(b, returnValue);
