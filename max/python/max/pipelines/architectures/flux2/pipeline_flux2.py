@@ -26,6 +26,7 @@ from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.profiler import Tracer, traced
 from PIL import Image
 from tqdm import tqdm
 
@@ -309,6 +310,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return image_latents
 
+    @traced
     def prepare_image_latents(
         self,
         images: list[Tensor],
@@ -343,6 +345,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return image_latents, image_latent_ids
 
+    @traced
     def prepare_prompt_embeddings(
         self,
         tokens: TokenBuffer,
@@ -367,32 +370,42 @@ class Flux2Pipeline(DiffusionPipeline):
         """
         layers = hidden_states_layers or [10, 20, 30]
 
-        text_input_ids = Tensor.constant(
-            tokens.array, dtype=DType.int64, device=self.text_encoder.devices[0]
-        )
-        hidden_states_all = self.text_encoder(text_input_ids)
-        hidden_states_selected = [hidden_states_all[i] for i in layers]
-
-        prompt_embeds = self._prepare_prompt_embeddings(*hidden_states_selected)
-        batch_size, seq_len, _ = map(int, prompt_embeds.shape)
-
-        if num_images_per_prompt != 1:
-            prompt_embeds = F.tile(prompt_embeds, (1, num_images_per_prompt, 1))
-            prompt_embeds = F.reshape(
-                prompt_embeds, [batch_size * num_images_per_prompt, seq_len, -1]
-            )
-
-        batch_size_final = batch_size * num_images_per_prompt
-        text_ids_key = f"{batch_size_final}_{seq_len}"
-        if text_ids_key in self._cached_text_ids:
-            text_ids = self._cached_text_ids[text_ids_key]
-        else:
-            text_ids = self._prepare_text_ids(
-                batch_size=batch_size_final,
-                seq_len=seq_len,
+        with Tracer("text_encoder"):
+            text_input_ids = Tensor.constant(
+                tokens.array,
+                dtype=DType.int64,
                 device=self.text_encoder.devices[0],
             )
-            self._cached_text_ids[text_ids_key] = text_ids
+            hidden_states_all = self.text_encoder(text_input_ids)
+            hidden_states_selected = [hidden_states_all[i] for i in layers]
+
+        with Tracer("prompt_embeddings"):
+            prompt_embeds = self._prepare_prompt_embeddings(
+                *hidden_states_selected
+            )
+            batch_size, seq_len, _ = map(int, prompt_embeds.shape)
+
+        with Tracer("post_process"):
+            if num_images_per_prompt != 1:
+                prompt_embeds = F.tile(
+                    prompt_embeds, (1, num_images_per_prompt, 1)
+                )
+                prompt_embeds = F.reshape(
+                    prompt_embeds,
+                    [batch_size * num_images_per_prompt, seq_len, -1],
+                )
+
+            batch_size_final = batch_size * num_images_per_prompt
+            text_ids_key = f"{batch_size_final}_{seq_len}"
+            if text_ids_key in self._cached_text_ids:
+                text_ids = self._cached_text_ids[text_ids_key]
+            else:
+                text_ids = self._prepare_text_ids(
+                    batch_size=batch_size_final,
+                    seq_len=seq_len,
+                    device=self.text_encoder.devices[0],
+                )
+                self._cached_text_ids[text_ids_key] = text_ids
 
         return prompt_embeds, text_ids
 
@@ -408,6 +421,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return prompt_embeds
 
+    @traced
     def decode_latents(
         self,
         latents: Tensor,
@@ -567,26 +581,32 @@ class Flux2Pipeline(DiffusionPipeline):
         result = F.stack(x_list, axis=0)
         return result
 
+    @traced
     def preprocess_latents(
         self,
         latents: npt.NDArray[np.float32],
         latent_image_ids: npt.NDArray[np.float32],
     ) -> tuple[Tensor, Tensor]:
-        latents_tensor = Tensor.from_dlpack(latents).to(
-            self.transformer.devices[0]
-        )
-        batch = latents_tensor.shape[0]
-        c = latents_tensor.shape[1]
-        h = latents_tensor.shape[2]
-        w = latents_tensor.shape[3]
-        latents_tensor = F.reshape(
-            latents_tensor, (batch, c, h // 2, 2, w // 2, 2)
-        )
-        latents_tensor = self._patchify_and_pack(latents_tensor)
+        with Tracer("host_to_device_latents"):
+            latents_tensor = Tensor.from_dlpack(latents).to(
+                self.transformer.devices[0]
+            )
 
-        latent_image_ids_tensor = Tensor.from_dlpack(
-            latent_image_ids.astype(np.int64)
-        ).to(self.transformer.devices[0])
+        with Tracer("patchify_and_pack"):
+            batch = latents_tensor.shape[0]
+            c = latents_tensor.shape[1]
+            h = latents_tensor.shape[2]
+            w = latents_tensor.shape[3]
+            latents_tensor = F.reshape(
+                latents_tensor, (batch, c, h // 2, 2, w // 2, 2)
+            )
+            latents_tensor = self._patchify_and_pack(latents_tensor)
+
+        with Tracer("host_to_device_ids"):
+            latent_image_ids_tensor = Tensor.from_dlpack(
+                latent_image_ids.astype(np.int64)
+            ).to(self.transformer.devices[0])
+
         return latents_tensor, latent_image_ids_tensor
 
     def _patchify_and_pack(self, latents: Tensor) -> Tensor:
@@ -728,100 +748,109 @@ class Flux2Pipeline(DiffusionPipeline):
         )
 
         # 3) Prepare scheduler tensors.
-        device = self.transformer.devices[0]
-        guidance_key = f"{batch_size}_{model_inputs.guidance_scale}"
-        if guidance_key in self._cached_guidance:
-            guidance = self._cached_guidance[guidance_key]
-        else:
-            guidance = Tensor.full(
-                [latents.shape[0]],
-                model_inputs.guidance_scale,
-                device=device,
-                dtype=dtype,
-            )
-            self._cached_guidance[guidance_key] = guidance
+        with Tracer("prepare_scheduler"):
+            device = self.transformer.devices[0]
+            guidance_key = f"{batch_size}_{model_inputs.guidance_scale}"
+            if guidance_key in self._cached_guidance:
+                guidance = self._cached_guidance[guidance_key]
+            else:
+                guidance = Tensor.full(
+                    [latents.shape[0]],
+                    model_inputs.guidance_scale,
+                    device=device,
+                    dtype=dtype,
+                )
+                self._cached_guidance[guidance_key] = guidance
 
-        image_seq_len = int(latents.shape[1])
-        num_inference_steps = model_inputs.num_inference_steps
-        sigmas_key = f"{num_inference_steps}_{image_seq_len}"
-        if sigmas_key in self._cached_sigmas:
-            sigmas = self._cached_sigmas[sigmas_key]
-        else:
-            sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(device)
-            self._cached_sigmas[sigmas_key] = sigmas
-        all_timesteps, all_dts = self.prepare_scheduler(sigmas)
+            image_seq_len = int(latents.shape[1])
+            num_inference_steps = model_inputs.num_inference_steps
+            sigmas_key = f"{num_inference_steps}_{image_seq_len}"
+            if sigmas_key in self._cached_sigmas:
+                sigmas = self._cached_sigmas[sigmas_key]
+            else:
+                sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(device)
+                self._cached_sigmas[sigmas_key] = sigmas
+            all_timesteps, all_dts = self.prepare_scheduler(sigmas)
 
-        # For faster tensor slicing inside the denoising loop.
-        timesteps_seq: Any = all_timesteps
-        dts_seq: Any = all_dts
-        if hasattr(timesteps_seq, "driver_tensor"):
-            timesteps_seq = timesteps_seq.driver_tensor
-        if hasattr(dts_seq, "driver_tensor"):
-            dts_seq = dts_seq.driver_tensor
+            # For faster tensor slicing inside the denoising loop.
+            timesteps_seq: Any = all_timesteps
+            dts_seq: Any = all_dts
+            if hasattr(timesteps_seq, "driver_tensor"):
+                timesteps_seq = timesteps_seq.driver_tensor
+            if hasattr(dts_seq, "driver_tensor"):
+                dts_seq = dts_seq.driver_tensor
 
         # 4) Denoising loop.
         num_noise_tokens = int(latents.shape[1])
 
         is_img2img = image_latents is not None
-        for i in tqdm(range(num_inference_steps), desc="Denoising"):
-            timestep = timesteps_seq[i : i + 1]
-            dt = dts_seq[i : i + 1]
+        with Tracer("denoising_loop"):
+            for i in tqdm(range(num_inference_steps), desc="Denoising"):
+                with Tracer(f"denoising_step_{i}"):
+                    timestep = timesteps_seq[i : i + 1]
+                    dt = dts_seq[i : i + 1]
 
-            if is_img2img:
-                latents_concat = F.concat([latents, image_latents], axis=1)
-                latent_image_ids_concat = F.concat(
-                    [latent_image_ids, image_latent_ids], axis=1
-                )
-            else:
-                latents_concat = latents
-                latent_image_ids_concat = latent_image_ids
+                    if is_img2img:
+                        latents_concat = F.concat(
+                            [latents, image_latents], axis=1
+                        )
+                        latent_image_ids_concat = F.concat(
+                            [latent_image_ids, image_latent_ids], axis=1
+                        )
+                    else:
+                        latents_concat = latents
+                        latent_image_ids_concat = latent_image_ids
 
-            noise_pred = self.transformer(
-                latents_concat,
-                prompt_embeds,
-                timestep,
-                latent_image_ids_concat,
-                text_ids,
-                guidance,
-            )[0]
-            noise_pred = Tensor.from_dlpack(noise_pred)
+                    with Tracer("transformer"):
+                        noise_pred = self.transformer(
+                            latents_concat,
+                            prompt_embeds,
+                            timestep,
+                            latent_image_ids_concat,
+                            text_ids,
+                            guidance,
+                        )[0]
+                        noise_pred = Tensor.from_dlpack(noise_pred)
 
-            latents = self.scheduler_step(
-                latents, noise_pred, dt, num_noise_tokens
-            )
+                    with Tracer("scheduler_step"):
+                        latents = self.scheduler_step(
+                            latents, noise_pred, dt, num_noise_tokens
+                        )
 
-            if hasattr(device, "synchronize"):
-                device.synchronize()
+                    if hasattr(device, "synchronize"):
+                        device.synchronize()
 
-            if callback_queue is not None:
-                callback_queue.put_nowait(
-                    cast(
-                        np.ndarray,
-                        self.decode_latents(
-                            latents,
-                            latent_image_ids,
-                            model_inputs.height,
-                            model_inputs.width,
-                            output_type=output_type,
-                            is_img2img=is_img2img,
-                        ),
+                    if callback_queue is not None:
+                        callback_queue.put_nowait(
+                            cast(
+                                np.ndarray,
+                                self.decode_latents(
+                                    latents,
+                                    latent_image_ids,
+                                    model_inputs.height,
+                                    model_inputs.width,
+                                    output_type=output_type,
+                                    is_img2img=is_img2img,
+                                ),
+                            )
+                        )
+
+        # 5) Decode final outputs per batch element.
+        image_list = []
+        with Tracer("decode_outputs"):
+            for b in range(batch_size):
+                with Tracer("slice_batch"):
+                    latents_b = latents[b : b + 1]
+                    latent_image_ids_b = latent_image_ids[b : b + 1]
+                image_list.append(
+                    self.decode_latents(
+                        latents_b,
+                        latent_image_ids_b,
+                        model_inputs.height,
+                        model_inputs.width,
+                        output_type=output_type,
+                        is_img2img=is_img2img,
                     )
                 )
-
-        # 4) Decode final outputs per batch element.
-        image_list = []
-        for b in range(batch_size):
-            latents_b = latents[b : b + 1]
-            latent_image_ids_b = latent_image_ids[b : b + 1]
-            image_list.append(
-                self.decode_latents(
-                    latents_b,
-                    latent_image_ids_b,
-                    model_inputs.height,
-                    model_inputs.width,
-                    output_type=output_type,
-                    is_img2img=is_img2img,
-                )
-            )
 
         return Flux2PipelineOutput(images=image_list)  # type: ignore[arg-type]

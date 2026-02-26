@@ -153,8 +153,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--num-warmups",
         type=int,
-        default=3,
-        help="Number of warmups to run before profiling.",
+        default=0,
+        help=(
+            "Number of warmup iterations to run before the timed execution. "
+            "Use >=1 to pre-compile JIT graphs and obtain steady-state timings."
+        ),
     )
     parser.add_argument(
         "--num-profile-iterations",
@@ -388,11 +391,12 @@ async def generate_image(args: argparse.Namespace) -> None:
         batch={context.request_id: context}
     )
 
-    # Step 6-1: Prepare warmup input
-    if args.profile_timings:
+    # Step 6-1: Warmup — run before profiling or timed execution so that JIT
+    # compilation completes and steady-state performance can be measured.
+    if args.num_warmups > 0:
         body_warmup = OpenResponsesRequestBody(
             model=args.model,
-            input="warmup",
+            input=args.prompt,
             seed=args.seed,
             provider_options=ProviderOptions(
                 image=ImageProviderOptions(
@@ -414,13 +418,14 @@ async def generate_image(args: argparse.Namespace) -> None:
         inputs_warmup = PixelGenerationInputs[PixelContext](
             batch={context_warmup.request_id: context_warmup}
         )
+        for i in range(args.num_warmups):
+            print(f"Running warmup {i + 1} of {args.num_warmups}")
+            pipeline.execute(inputs_warmup)
+        print("Warmup complete")
 
     # Step 7: Execute the pipeline
     print("Running diffusion model...")
     if args.profile_timings:
-        for i in range(args.num_warmups):
-            print(f"Running warmup {i + 1} of {args.num_warmups}")
-            pipeline.execute(inputs_warmup)
         with profile_execute(
             pipeline, patch_concat=True, patch_tensor_ops=True
         ) as prof:
