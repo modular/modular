@@ -14,8 +14,9 @@
 from collections import List
 from os.path import exists
 from os import Process
-from os.process import Pipe
+from os.process import Pipe, ProcessStatus
 
+from test_utils import check_write_to
 from testing import (
     assert_false,
     assert_raises,
@@ -81,9 +82,85 @@ def test_process_run_missing():
         _ = Process.run(missing_executable_file, List[String]())
 
 
+def test_processstatus_str():
+    # Common exit codes.
+    check_write_to(
+        ProcessStatus(exit_code=0),
+        expected="ProcessStatus(exit_code: 0)",
+        is_repr=False,
+    )
+    check_write_to(
+        ProcessStatus(exit_code=1),
+        expected="ProcessStatus(exit_code: 1)",
+        is_repr=False,
+    )
+    check_write_to(
+        ProcessStatus(exit_code=127),
+        expected="ProcessStatus(exit_code: 127)",
+        is_repr=False,
+    )
+    check_write_to(
+        ProcessStatus(exit_code=128),
+        expected="ProcessStatus(exit_code: 128)",
+        is_repr=False,
+    )
+    check_write_to(
+        ProcessStatus(exit_code=255),
+        expected="ProcessStatus(exit_code: 255)",
+        is_repr=False,
+    )
+    check_write_to(
+        ProcessStatus(term_signal=15),
+        expected="ProcessStatus(term_signal: 15)",
+        is_repr=False,
+    )
+    check_write_to(
+        ProcessStatus.running(),
+        expected="ProcessStatus(running)",
+        is_repr=False,
+    )
+
+
+def test_processstatus_repr():
+    # exit_code cases.
+    check_write_to(
+        ProcessStatus(exit_code=0),
+        expected="ProcessStatus(exit_code=0)",
+        is_repr=True,
+    )
+    check_write_to(
+        ProcessStatus(exit_code=1),
+        expected="ProcessStatus(exit_code=1)",
+        is_repr=True,
+    )
+    # Common signals: SIGHUP=1, SIGKILL=9, SIGTERM=15.
+    check_write_to(
+        ProcessStatus(term_signal=1),
+        expected="ProcessStatus(term_signal=1)",
+        is_repr=True,
+    )
+    check_write_to(
+        ProcessStatus(term_signal=9),
+        expected="ProcessStatus(term_signal=9)",
+        is_repr=True,
+    )
+    check_write_to(
+        ProcessStatus(term_signal=15),
+        expected="ProcessStatus(term_signal=15)",
+        is_repr=True,
+    )
+    check_write_to(
+        ProcessStatus.running(),
+        expected="ProcessStatus(running=True)",
+        is_repr=True,
+    )
+
+
 def main():
     test_process_run()
     test_process_run_missing()
     test_process_wait()
     test_process_kill()
     test_pipe()
+    test_processstatus_str()
+    test_processstatus_repr()

@@ -22,6 +22,7 @@ _ = Process.run("echo", ["== TEST_ECHO"])
 """
 from collections import List, Optional
 from collections.string import StringSlice
+from format._utils import FormatStruct
 from sys import CompilationTarget
 from sys._libc import (
     waitpid,
@@ -44,7 +45,7 @@ from sys.os import abort, sep
 # ===----------------------------------------------------------------------=== #
 
 
-struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
+struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable, Writable):
     """Represents the termination status of a process.
 
     This struct is returned by `poll()` and `wait()`.
@@ -86,6 +87,45 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
             True if the process has terminated, either normally or by a signal.
         """
         return Bool(self.exit_code) or Bool(self.term_signal)
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Formats this `ProcessStatus` to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        if self.exit_code:
+            writer.write(
+                "ProcessStatus(exit_code: ", self.exit_code.value(), ")"
+            )
+        elif self.term_signal:
+            writer.write(
+                "ProcessStatus(term_signal: ", self.term_signal.value(), ")"
+            )
+        else:
+            writer.write_string("ProcessStatus(running)")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Formats the repr of this `ProcessStatus` to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn fields(mut w: Some[Writer]):
+            if self.exit_code:
+                w.write_string("exit_code=")
+                w.write(self.exit_code.value())
+            elif self.term_signal:
+                w.write_string("term_signal=")
+                w.write(self.term_signal.value())
+            else:
+                w.write_string("running=True")
+
+        FormatStruct(writer, "ProcessStatus").fields[FieldsFn=fields]()
 
 
 struct Pipe:
