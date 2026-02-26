@@ -29,10 +29,6 @@ from max.pipelines.architectures.kimik2_5.layers.rotary_embedding import (
     Rope2DPosEmbRepeated,
 )
 
-# ---------------------------------------------------------------------------
-# Graph helpers
-# ---------------------------------------------------------------------------
-
 DIM = 72
 MAX_HEIGHT = 512
 MAX_WIDTH = 512
@@ -99,11 +95,6 @@ def _build_and_run_get_freqs(
     pos_ids_buf = Buffer.from_numpy(position_ids).to(device)
     (buf,) = compiled.execute(pos_ids_buf)
     return buf
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 class TestPrecomputeFreqsCis:

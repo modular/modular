@@ -19,7 +19,7 @@ import math
 import pytest
 import torch
 from conftest import TorchMLP2
-from max.driver import CPU, Accelerator, Buffer, Device
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
@@ -28,11 +28,8 @@ from max.graph import (
     ShardingStrategy,
     TensorType,
     TensorValue,
-    Value,
 )
-from max.nn import Allreduce, Signals
 from max.pipelines.architectures.kimik2_5.layers.mlp import MLP2
-from test_common.graph_utils import are_all_buffer_values_sequence
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
@@ -42,158 +39,92 @@ MLP_DIM = 4304
 DIM = (HIDDEN_DIM, MLP_DIM, HIDDEN_DIM)
 SEQ_LEN = 16
 
-torch.manual_seed(42)
+
+def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
+    return (torch.randn(shape) * (1.0 / math.sqrt(HIDDEN_DIM))).to(TORCH_DTYPE)
 
 
-def _generate_tensor(
-    shape: tuple[int, ...], dtype: torch.dtype
-) -> torch.Tensor:
-    return (torch.randn(shape) * (1.0 / math.sqrt(HIDDEN_DIM))).to(dtype)
-
-
-def _create_weights(
-    dtype: torch.dtype,
-    has_bias: bool = False,
-) -> dict[str, torch.Tensor]:
+def _create_weights(has_bias: bool = False) -> dict[str, torch.Tensor]:
     weights: dict[str, torch.Tensor] = {
-        "up_proj.weight": _generate_tensor((MLP_DIM, HIDDEN_DIM), dtype),
-        "down_proj.weight": _generate_tensor((HIDDEN_DIM, MLP_DIM), dtype),
+        "up_proj.weight": _generate_tensor((MLP_DIM, HIDDEN_DIM)),
+        "down_proj.weight": _generate_tensor((HIDDEN_DIM, MLP_DIM)),
     }
     if has_bias:
-        weights["up_proj.bias"] = _generate_tensor((MLP_DIM,), dtype)
-        weights["down_proj.bias"] = _generate_tensor((HIDDEN_DIM,), dtype)
+        weights["up_proj.bias"] = _generate_tensor((MLP_DIM,))
+        weights["down_proj.bias"] = _generate_tensor((HIDDEN_DIM,))
     return weights
 
 
 def _create_mlp(
-    dtype: DType,
     device: DeviceRef,
     has_bias: bool = False,
 ) -> MLP2:
     return MLP2(
         dim=DIM,
-        dtype=dtype,
+        dtype=MAX_DTYPE,
         device=device,
         has_bias=has_bias,
     )
 
 
-def _assert_close(expected: torch.Tensor, buffers: list[Buffer]) -> None:
-    rtol = 2e-1
+def _assert_close(expected: torch.Tensor, actual: Buffer) -> None:
+    rtol = 2e-2
     atol = 4 * torch.finfo(TORCH_DTYPE).eps
-    for buf in buffers:
-        torch.testing.assert_close(
-            expected.cpu(),
-            torch.from_dlpack(buf).cpu(),
-            rtol=rtol,
-            atol=atol,
-        )
+    torch.testing.assert_close(
+        expected,
+        torch.from_dlpack(actual).cpu(),
+        rtol=rtol,
+        atol=atol,
+    )
 
 
 def _build_and_run(
     state_dict: dict[str, torch.Tensor],
     x: torch.Tensor,
-    dtype: DType,
     has_bias: bool = False,
-    n_gpus: int = 0,
-    sharding_strategy: ShardingStrategy | None = None,
-) -> list[Buffer]:
-    """Build a MAX graph with the Kimi K2.5 MLP2, execute it, and return outputs."""
-    devices: list[Device] = (
-        [Accelerator(id) for id in range(n_gpus)] if n_gpus > 0 else [CPU(0)]
-    )
-    device_refs = [DeviceRef.from_device(d) for d in devices]
+) -> Buffer:
+    """Build a MAX graph with the Kimi K2.5 MLP2, execute it, and return output."""
+    device = Accelerator(0)
+    device_ref = DeviceRef.from_device(device)
 
-    mlp = _create_mlp(dtype, device_refs[0], has_bias)
-
-    mlp_shards: list[MLP2] | None = None
-    mlp_allreduce: Allreduce | None = None
-
-    if n_gpus > 1:
-        assert sharding_strategy is not None
-        mlp.sharding_strategy = sharding_strategy
-        mlp_shards = mlp.shard(device_refs)
-        if sharding_strategy.is_tensor_parallel:
-            mlp_allreduce = Allreduce(num_accelerators=n_gpus)
-
+    mlp = _create_mlp(device_ref, has_bias)
     mlp.load_state_dict(state_dict)
 
-    session = InferenceSession(devices=devices)
-    signals = Signals(devices=device_refs)
-
-    input_device = DeviceRef.GPU() if n_gpus > 0 else DeviceRef.CPU()
+    session = InferenceSession(devices=[device])
 
     with Graph(
         "kimik2_5_mlp_test",
         input_types=[
-            TensorType(dtype, (x.shape[0], x.shape[1]), device=input_device),
-            *signals.input_types(),
+            TensorType(
+                MAX_DTYPE, (x.shape[0], x.shape[1]), device=DeviceRef.GPU()
+            ),
         ],
     ) as graph:
-        graph_input, *graph_signal_buffers = graph.inputs
+        (graph_input,) = graph.inputs
         assert isinstance(graph_input, TensorValue)
-        assert are_all_buffer_values_sequence(graph_signal_buffers)
-
-        graph_output: Value | list[Value] | list[TensorValue]
-
-        if n_gpus <= 1:
-            graph_output = mlp(graph_input)
-        else:
-            assert mlp_shards is not None
-            distributed = [
-                graph_input.to(DeviceRef.from_device(d)) for d in devices
-            ]
-            shard_outputs = [
-                shard(inp)
-                for shard, inp in zip(mlp_shards, distributed, strict=True)
-            ]
-
-            if mlp_allreduce is not None:
-                graph_output = mlp_allreduce(
-                    shard_outputs, graph_signal_buffers
-                )
-            else:
-                # Replicate: each shard produces the full result independently.
-                graph_output = shard_outputs
-
-        if isinstance(graph_output, list):
-            graph.output(*graph_output)
-        else:
-            graph.output(graph_output)
+        graph.output(mlp(graph_input))
 
     compiled = session.load(graph, weights_registry=mlp.state_dict())
-
-    signal_buffers = [
-        Buffer.zeros(shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev)
-        for dev in devices
-    ]
-
-    returned = compiled.execute(x, *signal_buffers)
-    return [r for r in returned if isinstance(r, Buffer)]
+    x_gpu = Buffer.from_dlpack(x).to(device)
+    (result,) = compiled.execute(x_gpu)
+    assert isinstance(result, Buffer)
+    return result
 
 
-def _run_accuracy_test(
-    n_gpus: int,
-    sharding_strategy: ShardingStrategy | None,
-    has_bias: bool = False,
-) -> None:
+def _run_accuracy_test(has_bias: bool = False) -> None:
     """Shared driver: create weights/input, run MAX + torch, assert close."""
-    state_dict = _create_weights(TORCH_DTYPE, has_bias)
-    device = "cuda" if n_gpus > 0 else "cpu"
-    x = _generate_tensor((SEQ_LEN, HIDDEN_DIM), TORCH_DTYPE).to(device)
+    state_dict = _create_weights(has_bias)
+    x = _generate_tensor((SEQ_LEN, HIDDEN_DIM))
 
     max_output = _build_and_run(
         state_dict,
         x,
-        MAX_DTYPE,
         has_bias=has_bias,
-        n_gpus=n_gpus,
-        sharding_strategy=sharding_strategy,
     )
 
     ref = TorchMLP2(DIM, has_bias=has_bias)
     ref.load_state_dict(state_dict)
-    ref = ref.to(dtype=TORCH_DTYPE, device=device)
+    ref = ref.to(dtype=TORCH_DTYPE)
     torch_output = ref(x).detach()
 
     _assert_close(torch_output, max_output)
@@ -201,19 +132,20 @@ def _run_accuracy_test(
 
 @pytest.mark.parametrize("has_bias", [False, True], ids=["no_bias", "bias"])
 def test_mlp(has_bias: bool) -> None:
-    """Test MLP2 E2E on single GPU (model is served on GPU)."""
-    _run_accuracy_test(1, None, has_bias)
+    """Test MLP2 E2E on single GPU."""
+    torch.manual_seed(42)
+    _run_accuracy_test(has_bias)
 
 
 def test_sharding_strategy_default_is_none() -> None:
     """sharding_strategy is None before any strategy is set."""
-    mlp = _create_mlp(MAX_DTYPE, DeviceRef.CPU())
+    mlp = _create_mlp(DeviceRef.CPU())
     assert mlp.sharding_strategy is None
 
 
 def test_sharding_strategy_roundtrip() -> None:
     """sharding_strategy getter returns the strategy that was set."""
-    mlp = _create_mlp(MAX_DTYPE, DeviceRef.CPU())
+    mlp = _create_mlp(DeviceRef.CPU())
     strategy = ShardingStrategy.replicate(2)
     mlp.sharding_strategy = strategy
     assert mlp.sharding_strategy is strategy
@@ -222,7 +154,7 @@ def test_sharding_strategy_roundtrip() -> None:
 @pytest.mark.parametrize("has_bias", [False, True], ids=["no_bias", "bias"])
 def test_sharding_strategy_unsupported_raises(has_bias: bool) -> None:
     """Unsupported sharding strategies raise ValueError."""
-    mlp = _create_mlp(MAX_DTYPE, DeviceRef.CPU(), has_bias)
+    mlp = _create_mlp(DeviceRef.CPU(), has_bias)
     with pytest.raises(ValueError, match="Unsupported sharding strategy"):
         mlp.sharding_strategy = ShardingStrategy.columnwise(2)
 
@@ -230,7 +162,7 @@ def test_sharding_strategy_unsupported_raises(has_bias: bool) -> None:
 @pytest.mark.parametrize("has_bias", [False, True], ids=["no_bias", "bias"])
 def test_shard_without_strategy_raises(has_bias: bool) -> None:
     """Calling shard() without a sharding strategy raises ValueError."""
-    mlp = _create_mlp(MAX_DTYPE, DeviceRef.CPU(), has_bias)
+    mlp = _create_mlp(DeviceRef.CPU(), has_bias)
     with pytest.raises(
         ValueError,
         match="A sharding strategy must be set prior to calling this method",
