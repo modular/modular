@@ -393,10 +393,13 @@ class MAXGPUConnector(GPUConnectorInterface):
         cpu_tensor = memory_obj.tensor.cpu().contiguous().clone()
         output_buffer = Buffer.from_dlpack(cpu_tensor).to(device_buffer.device)
 
-        # slot_mapping is already on GPU (int64), use from_dlpack directly
-        slot_mapping_buffer = Buffer.from_dlpack(slot_mapping)
+        # Route slot_mapping through CPU to avoid torch's __dlpack__ device
+        # The tensor is small (num_tokens \times int64), so we might have to pay
+        # the copy cost here (which is negligible)
+        slot_mapping_buffer = Buffer.from_dlpack(slot_mapping.cpu()).to(
+            device_buffer.device
+        )
 
-        # Create scalar tensors for start/end
         start_buffer = Buffer.from_numpy(
             torch.tensor([start], dtype=torch.int64).numpy()
         )
@@ -451,10 +454,10 @@ class MAXGPUConnector(GPUConnectorInterface):
         cpu_tensor = memory_obj.tensor.cpu().contiguous().clone()
         input_buffer = Buffer.from_dlpack(cpu_tensor).to(device_buffer.device)
 
-        # slot_mapping is already on GPU (int64), use from_dlpack directly
-        slot_mapping_buffer = Buffer.from_dlpack(slot_mapping)
+        slot_mapping_buffer = Buffer.from_dlpack(slot_mapping.cpu()).to(
+            device_buffer.device
+        )
 
-        # Create scalar tensors for start/end
         start_buffer = Buffer.from_numpy(
             torch.tensor([start], dtype=torch.int64).numpy()
         )
@@ -859,11 +862,19 @@ class LMCacheConnector:
                 dtype=torch.long,
                 device=f"cuda:{self._devices[tp_idx].id}",
             )
-            self._engine.store(
-                hashes=hashes,
-                offsets=offsets,
-                slot_mapping=slot_mapping_tensor,
-            )
+            try:
+                self._engine.store(
+                    hashes=hashes,
+                    offsets=offsets,
+                    slot_mapping=slot_mapping_tensor,
+                )
+            except FileNotFoundError:
+                # LMCache disk backend TOCTOU race: concurrent eviction
+                # deletes a file between existence check and os.remove().
+                logger.warning(
+                    "LMCache disk eviction race during store for TP shard %d.",
+                    tp_idx,
+                )
 
         self._d2h_blocks_copied += len(self._pending_saves)
         self._pending_saves.clear()
