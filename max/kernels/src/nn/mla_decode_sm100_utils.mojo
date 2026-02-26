@@ -2553,17 +2553,16 @@ struct MLA_SM100_Decode_Common[
             tcgen05_load_wait()
             c_cons.release()
             change = _vote_nvidia_helper(scale_value < 1.0) != 0
-            if change:
-                comptime num_o_tiles = Self.config.MMA_PV_N // (
-                    Self.output_tile_width * 2
-                )
-                comptime o_range = Self.config.depth // Self.config.MMA_PV_N
-                # the MMA.ws split the output across two warps
-                comptime o_stride = Self.config.MMA_PV_N // 2
+            comptime num_o_tiles = Self.config.MMA_PV_N // (
+                Self.output_tile_width * 2
+            )
+            comptime o_range = Self.config.depth // Self.config.MMA_PV_N
+            # the MMA.ws split the output across two warps
+            comptime o_stride = Self.config.MMA_PV_N // 2
 
-                comptime for slot_idx in range(o_range):
-                    o_cons.wait()
-
+            comptime for slot_idx in range(o_range):
+                o_cons.wait()
+                if change:
                     comptime for i in range(0, num_o_tiles):
                         # Here we load from o_tmem. it is 32 bit float and we load 64 fp32 element per tile
                         var o_tmem_subtile: UInt32 = (
@@ -2605,9 +2604,6 @@ struct MLA_SM100_Decode_Common[
                             o_tmem_subtile,
                             o_row_subtile.ptr.load[width = Self.config.BN](),
                         )
-                    o_cons.release()
-            else:
-                o_cons.release()
                 o_cons.release()
             tiles_done += 1
 
