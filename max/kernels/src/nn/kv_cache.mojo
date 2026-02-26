@@ -640,7 +640,6 @@ fn generic_flash_attention_kv_cache_padded[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
@@ -685,8 +684,6 @@ fn generic_flash_attention_kv_cache_padded[
         + collection_t.name_str
         + "."
         + mask_str
-        + "."
-        + score_mod_str
         + ".nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
@@ -697,7 +694,6 @@ fn generic_flash_attention_kv_cache_padded[
         return _flash_attention_dispatch[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -718,7 +714,6 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     //,
     *,
     target: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
@@ -763,9 +758,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mha.padded.continuous_batching.tensor_mask."
-        + score_mod_str
-        + ".nhead_"
+        "mo.mha.padded.continuous_batching.tensor_mask.nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
@@ -773,7 +766,6 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     ):
         return _flash_attention_dispatch_materialized_mask[
             target=target,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -795,7 +787,6 @@ fn _flash_attention_dispatch[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[
@@ -844,7 +835,9 @@ fn _flash_attention_dispatch[
             )
 
     return dispatch_mask_and_score_mod[
-        mask_str, score_mod_str, _dispatch_flash_attention
+        mask_str,
+        IdentityScoreMod.name_str,
+        _dispatch_flash_attention,
     ]()
 
 
@@ -854,7 +847,6 @@ fn _flash_attention_dispatch_materialized_mask[
     //,
     *,
     target: StaticString,
-    score_mod_str: String,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[
@@ -917,7 +909,7 @@ fn _flash_attention_dispatch_materialized_mask[
         unswitch[call_flash_attention](Bool(sink_weights))
 
     return dispatch_materialized_mask_and_score_mod[
-        score_mod_str,
+        IdentityScoreMod.name_str,
         _dispatch_flash_attention,
         Int(collection_t.kv_params.num_heads),
     ](
