@@ -214,8 +214,17 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         encoding = pipeline_config.model.quantization_encoding
         assert encoding is not None
-        dtype = supported_encoding_dtype(encoding).size_in_bytes
-        packed_factor = 2 if is_float4_encoding(encoding) else 1
+
+        def _n_elems_to_bytes(n_elems: int) -> int:
+            dtype = supported_encoding_dtype(encoding).size_in_bytes
+            if is_float4_encoding(encoding):
+                # Account for the scales. For NVFP4 format, every 16 FP4 elements
+                # share one FP8 scale factor. The size of the scales is one
+                # eighth of the size of the FP4 quants (8 bits / (16 * 4 bits)).
+                return int(n_elems // 2 * dtype * 1.125)
+            else:
+                return n_elems * dtype
+
         config = model_config.huggingface_config
         assert config is not None
         n_sparse_layers = (
@@ -250,9 +259,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         expert_elems = (
             config.moe_intermediate_size * config.hidden_size * 3
         )  # A factor of 3 accounts for the gate/up/down proj weights.
-        if packed_factor != 1:
-            expert_elems = (expert_elems + packed_factor - 1) // packed_factor
-        expert_size = expert_elems * dtype
+        expert_size = _n_elems_to_bytes(expert_elems)
         routing_experts_size = (
             n_sparse_layers * config.n_routed_experts * expert_size
         )
@@ -373,10 +380,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.hidden_size,
-                dispatch_dtype_size=supported_encoding_dtype(
-                    encoding
-                ).size_in_bytes,
-                combine_dtype_size=DType.bfloat16.size_in_bytes,
+                dispatch_dtype=supported_encoding_dtype(encoding),
+                combine_dtype=DType.bfloat16,
                 max_tokens_per_rank=pipeline_config.max_batch_input_tokens,
                 n_experts=huggingface_config.n_routed_experts,
                 top_k=huggingface_config.num_experts_per_tok,
