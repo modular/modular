@@ -15,12 +15,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from io import BytesIO
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 import requests
 import torch
-from diffusers.pipelines.flux import FluxPipeline
+from diffusers import DiffusionPipeline
+from max.support import fetch_bytes_from_s3
 from PIL import Image
 from transformers import (
     LogitsProcessorList,
@@ -276,9 +279,86 @@ def _packed_randn_tensor(
     return latents
 
 
+def _canonical_randn_tensor(
+    batch_size: int,
+    num_channels_latents: int,
+    latent_height: int,
+    latent_width: int,
+    seed: int | None,
+) -> npt.NDArray[np.float32]:
+    """Generate latents in the same (B, C, H, W) format as MAX pipeline _prepare_latents.
+
+    Using the same seed as MAX yields identical latent values, so diffusers and MAX
+    can be given the same underlying noise when we patchify this for diffusers.
+    """
+    rng = np.random.RandomState(seed)
+    return rng.standard_normal(
+        (batch_size, num_channels_latents, latent_height, latent_width)
+    ).astype(np.float32)
+
+
+def _patchify_latents_numpy(
+    latents: npt.NDArray[np.float32],
+) -> npt.NDArray[np.float32]:
+    """Patchify (B, C, H, W) to (B, C*4, H//2, W//2). Same layout as MAX/diffusers _patchify_latents."""
+    batch_size, num_channels_latents, height, width = latents.shape
+    latents = latents.reshape(
+        batch_size,
+        num_channels_latents,
+        height // 2,
+        2,
+        width // 2,
+        2,
+    )
+    latents = latents.transpose(0, 1, 3, 5, 2, 4)
+    return latents.reshape(
+        batch_size,
+        num_channels_latents * 4,
+        height // 2,
+        width // 2,
+    )
+
+
+def _is_flux2_pipeline(pipeline: Any) -> bool:
+    """Detect FLUX2 pipeline variants robustly.
+
+    Class name checks alone can fail for wrapped/custom subclasses. We also
+    inspect the diffusers config class marker when available.
+    """
+    class_name = pipeline.__class__.__name__
+    if class_name == "Flux2Pipeline" or "Flux2" in class_name:
+        return True
+
+    config = getattr(pipeline, "config", None)
+    if config is None:
+        return False
+
+    config_class_name = None
+    if isinstance(config, dict):
+        config_class_name = config.get("_class_name")
+    elif hasattr(config, "get"):
+        config_class_name = config.get("_class_name")
+    else:
+        config_class_name = getattr(config, "_class_name", None)
+
+    return config_class_name == "Flux2Pipeline"
+
+
+def _load_input_image(image_uri: str) -> Image.Image:
+    """Load an input image for image-to-image generation."""
+    if image_uri.startswith("s3://"):
+        image_bytes = fetch_bytes_from_s3(image_uri)
+        return Image.open(BytesIO(image_bytes)).convert("RGB")
+    if image_uri.startswith(("http://", "https://")):
+        return Image.open(requests.get(image_uri, stream=True).raw).convert(
+            "RGB"
+        )
+    return Image.open(image_uri).convert("RGB")
+
+
 def run_image_generation(
     *,
-    pipeline: FluxPipeline,  # DiffusionPipeline from diffusers
+    pipeline: DiffusionPipeline,
     device: torch.device,
     requests: list[MockPixelGenerationRequest],
     num_steps: int,
@@ -300,6 +380,7 @@ def run_image_generation(
     results = []
 
     pipeline.to(device)  # type: ignore[attr-defined]
+    is_flux2 = _is_flux2_pipeline(pipeline)
 
     for mock_request in requests:
         prompt = mock_request.prompt
@@ -318,6 +399,11 @@ def run_image_generation(
         width = mock_request.width if mock_request.width is not None else 1024
         guidance_scale = mock_request.guidance_scale
         seed = mock_request.seed if mock_request.seed is not None else 42
+        input_image = (
+            _load_input_image(mock_request.input_image)
+            if mock_request.input_image is not None
+            else None
+        )
 
         # Prepare latents using the same approach as MAX pipeline
         # This ensures deterministic and comparable outputs
@@ -326,16 +412,28 @@ def run_image_generation(
         latent_height = 2 * (height // (vae_scale_factor * 2))
         latent_width = 2 * (width // (vae_scale_factor * 2))
 
-        # Generate latents using numpy RandomState (same as MAX)
-        latents = torch.from_numpy(
-            _packed_randn_tensor(
+        # Generate latents using numpy RandomState (same as MAX).
+        # Flux2 expects patchified latents shaped (B, C*4, H//2, W//2).
+        if is_flux2:
+            latents_np = _canonical_randn_tensor(
                 batch_size=1,
                 num_channels_latents=num_channels_latents,
                 latent_height=latent_height,
                 latent_width=latent_width,
                 seed=seed,
             )
-        )
+            latents_np = _patchify_latents_numpy(latents_np)
+            latents = torch.from_numpy(latents_np)
+        else:
+            latents = torch.from_numpy(
+                _packed_randn_tensor(
+                    batch_size=1,
+                    num_channels_latents=num_channels_latents,
+                    latent_height=latent_height,
+                    latent_width=latent_width,
+                    seed=seed,
+                )
+            )
 
         if print_outputs:
             print(f"Latent shape: {latents.shape}, dtype: {latents.dtype}")
@@ -349,6 +447,9 @@ def run_image_generation(
             "width": width,
             "guidance_scale": guidance_scale,
         }
+
+        if input_image is not None:
+            pipeline_kwargs["image"] = input_image
 
         # Add negative prompt if provided
         if mock_request.negative_prompt:

@@ -267,34 +267,59 @@ class PixelGenerationTokenizer(
         rng = np.random.RandomState(seed)
         return rng.standard_normal(shape).astype(np.float32)
 
+    @staticmethod
+    def _resize_with_center_crop(
+        image: PIL.Image.Image, target_width: int, target_height: int
+    ) -> PIL.Image.Image:
+        ratio = target_width / target_height
+        src_ratio = image.width / image.height
+
+        src_w = (
+            target_width
+            if ratio > src_ratio
+            else image.width * target_height // image.height
+        )
+        src_h = (
+            target_height
+            if ratio <= src_ratio
+            else image.height * target_width // image.width
+        )
+
+        resized = image.resize(
+            (src_w, src_h), resample=PIL.Image.Resampling.LANCZOS
+        )
+        canvas = PIL.Image.new("RGB", (target_width, target_height))
+        canvas.paste(
+            resized,
+            box=(
+                target_width // 2 - src_w // 2,
+                target_height // 2 - src_h // 2,
+            ),
+        )
+        return canvas
+
     def _preprocess_input_image(
         self,
         image: PIL.Image.Image | npt.NDArray[np.uint8],
-        target_height: int | None = None,
-        target_width: int | None = None,
     ) -> PIL.Image.Image:
         """Preprocess input image for image-to-image generation.
 
-        This method preprocesses images for condition-based image-to-image generation.
-        Matching diffusers behavior: resizes large images, ensures dimensions are multiples
-        of vae_scale_factor * 2, and optionally resizes to target dimensions.
-
-        Note: This is a simplified version compared to pipeline_flux2.py which uses
-        image_processor.preprocess. This tokenizer-level preprocessing is sufficient
-        for the Max framework's condition-based approach.
+        Matches diffusers FLUX2 behavior:
+        - cap image area when needed
+        - floor dimensions to multiples of vae_scale_factor * 2
+        - apply aspect-ratio preserving center-crop resize to the floored size
 
         Args:
             image: PIL Image or numpy array (uint8) to preprocess.
-            target_height: Target height for the image. If None, uses image's height.
-            target_width: Target width for the image. If None, uses image's width.
 
         Returns:
             Preprocessed PIL Image with adjusted dimensions.
         """
-        import PIL.Image
-
         if isinstance(image, np.ndarray):
             image = PIL.Image.fromarray(image.astype(np.uint8))
+
+        if image.mode != "RGB":
+            image = image.convert("RGB")
 
         image_width, image_height = image.size
         multiple_of = self._vae_scale_factor * 2
@@ -311,17 +336,16 @@ class PixelGenerationTokenizer(
                 )
                 image_width, image_height = image.size
 
-        image_width = (image_width // multiple_of) * multiple_of
-        image_height = (image_height // multiple_of) * multiple_of
-
-        if target_height is not None:
-            image_height = (target_height // multiple_of) * multiple_of
-        if target_width is not None:
-            image_width = (target_width // multiple_of) * multiple_of
+        image_width = max(
+            (image_width // multiple_of) * multiple_of, multiple_of
+        )
+        image_height = max(
+            (image_height // multiple_of) * multiple_of, multiple_of
+        )
 
         if image.size != (image_width, image_height):
-            image = image.resize(
-                (image_width, image_height), PIL.Image.Resampling.LANCZOS
+            image = self._resize_with_center_crop(
+                image, image_width, image_height
             )
 
         return image
@@ -729,17 +753,19 @@ class PixelGenerationTokenizer(
         default_sample_size = self._default_sample_size
         vae_scale_factor = self._vae_scale_factor
 
-        height = image_options.height or default_sample_size * vae_scale_factor
-        width = image_options.width or default_sample_size * vae_scale_factor
+        requested_height = image_options.height
+        requested_width = image_options.width
+        height = requested_height or default_sample_size * vae_scale_factor
+        width = requested_width or default_sample_size * vae_scale_factor
 
         # 2. Preprocess input image if provided
         preprocessed_image_array = None
         if input_image is not None:
-            preprocessed_image = self._preprocess_input_image(
-                input_image, height, width
-            )
-            height = preprocessed_image.height
-            width = preprocessed_image.width
+            preprocessed_image = self._preprocess_input_image(input_image)
+            if requested_height is None:
+                height = preprocessed_image.height
+            if requested_width is None:
+                width = preprocessed_image.width
             # Convert PIL.Image to numpy array for serialization
             # Use .copy() to ensure no references to the PIL.Image object are retained
             preprocessed_image_array = np.array(

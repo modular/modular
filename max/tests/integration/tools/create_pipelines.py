@@ -39,6 +39,7 @@ from max import driver, pipelines
 from max.interfaces import PipelineTask, PipelineTokenizer
 from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
+from max.pipelines.architectures.flux2.pipeline_flux2 import Flux2Pipeline
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import (
@@ -1028,6 +1029,7 @@ class ImageGenerationOracle(PipelineOracle):
         self,
         model_path: str = "black-forest-labs/FLUX.1-dev",
         num_steps: int = 50,
+        requests: list[Any] | None = None,
     ) -> None:
         super().__init__()
         self.model_path = model_path
@@ -1035,6 +1037,11 @@ class ImageGenerationOracle(PipelineOracle):
             PipelineTask.PIXEL_GENERATION
         )  # Placeholder, may need IMAGE_GENERATION
         self.num_steps = num_steps
+        self._inputs = (
+            requests
+            if requests is not None
+            else test_data.DEFAULT_PIXEL_GENERATION
+        )
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -1045,8 +1052,7 @@ class ImageGenerationOracle(PipelineOracle):
     @property
     def inputs(self) -> list[Any]:
         """Input prompts for image generation."""
-
-        return test_data.DEFAULT_PIXEL_GENERATION
+        return self._inputs
 
     def create_max_pipeline(
         self,
@@ -1064,20 +1070,31 @@ class ImageGenerationOracle(PipelineOracle):
             prefer_module_v3=True,
         )
 
-        # Step 2: Initialize the tokenizer
-        tokenizer = PixelGenerationTokenizer(
-            model_path=self.model_path,
-            pipeline_config=config,
-            subfolder="tokenizer",  # Tokenizer is in a subfolder for diffusion models
-            max_length=77,  # Standard max length for CLIP-based encoders
-            subfolder_2="tokenizer_2",
-            secondary_max_length=512,  # Standard max length for T5 encoders
-        )
-
-        pipeline = PixelGenerationPipeline[PixelContext](
-            pipeline_config=config,
-            pipeline_model=FluxPipeline,
-        )
+        is_flux2 = self.model_path.startswith("black-forest-labs/FLUX.2")
+        if is_flux2:
+            tokenizer = PixelGenerationTokenizer(
+                model_path=self.model_path,
+                pipeline_config=config,
+                subfolder="tokenizer",
+                max_length=512,
+            )
+            pipeline = PixelGenerationPipeline[PixelContext](
+                pipeline_config=config,
+                pipeline_model=Flux2Pipeline,
+            )
+        else:
+            tokenizer = PixelGenerationTokenizer(
+                model_path=self.model_path,
+                pipeline_config=config,
+                subfolder="tokenizer",
+                max_length=77,
+                subfolder_2="tokenizer_2",
+                secondary_max_length=512,
+            )
+            pipeline = PixelGenerationPipeline[PixelContext](
+                pipeline_config=config,
+                pipeline_model=FluxPipeline,
+            )
 
         return MaxPipelineAndTokenizer(
             pipeline=pipeline,  # type: ignore
@@ -1094,8 +1111,9 @@ class ImageGenerationOracle(PipelineOracle):
 
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
 
-        # Load FLUX pipeline
-        pipeline = diffusers.AutoPipelineForText2Image.from_pretrained(
+        # Load the exact pipeline class from model config.
+        # AutoPipelineForText2Image in diffusers==0.36.0 cannot resolve FLUX2.
+        pipeline = diffusers.DiffusionPipeline.from_pretrained(
             self.model_path,
             revision=revision,
             torch_dtype=ENCODING_TO_TORCH_DTYPE.get(encoding, torch.bfloat16),  # type: ignore
@@ -1621,5 +1639,12 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "black-forest-labs/FLUX.1-dev": ImageGenerationOracle(
         "black-forest-labs/FLUX.1-dev"
+    ),
+    "black-forest-labs/FLUX.2-dev-t2i": ImageGenerationOracle(
+        "black-forest-labs/FLUX.2-dev",
+    ),
+    "black-forest-labs/FLUX.2-dev-i2i": ImageGenerationOracle(
+        "black-forest-labs/FLUX.2-dev",
+        requests=test_data.FLUX2_PIXEL_GENERATION_I2I,
     ),
 }
