@@ -385,8 +385,27 @@ def targets():
     )
 
     _aiofile_3_9_0_deps = [
-        ":caio@0.9.25",
-    ]
+    ] + select({
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":caio@0.9.25",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":caio@0.9.25",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":caio@0.9.25",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":caio@0.9.25",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":caio@0.9.25",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":caio@0.9.25",
+        ],
+        "//conditions:default": [],
+    })
 
     native.alias(
         name = "_wheel_aiofile@3.9.0",
@@ -1746,9 +1765,28 @@ def targets():
     )
 
     _cupy_cuda12x_13_6_0_deps = [
-        ":fastrlock@0.8.3",
         ":numpy@multiple",
-    ]
+    ] + select({
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":fastrlock@0.8.3",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":fastrlock@0.8.3",
+        ],
+        "//conditions:default": [],
+    })
 
     native.alias(
         name = "_wheel_cupy-cuda12x@13.6.0",
@@ -4463,58 +4501,161 @@ def targets():
     )
 
     _lmcache_0_3_13_deps = [
-        ":aiofile@3.9.0",
-        ":aiofiles@24.1.0",
-        ":aiohttp@3.13.2",
-        ":awscrt@0.31.1",
-        ":cufile-python@0.2.0",
-        ":cupy-cuda12x@13.6.0",
-        ":fastapi@0.124.4",
-        ":httptools@0.7.1",
-        ":httpx@0.27.2",
-        ":msgspec@0.20.0",
         ":numpy@multiple",
-        ":nvtx@0.2.14",
-        ":prometheus-client@0.20.0",
-        ":psutil@7.0.0",
-        ":py-cpuinfo@9.0.0",
-        ":pyyaml@6.0.3",
-        ":pyzmq@27.1.0",
-        ":redis@7.1.0",
-        ":safetensors@0.6.2",
-        ":setuptools-scm@9.2.2",
-        ":setuptools@80.9.0",
-        ":sortedcontainers@2.4.0",
         ":torch@multiple",
-        ":transformers@4.57.1",
-        ":uvicorn@0.30.6",
     ] + select({
-        ":_env_python_3.10_aarch64-apple-darwin": [
-            ":nixl@0.9.0",
-        ],
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":nixl@0.9.0",
-        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":aiofile@3.9.0",
+            ":aiofiles@24.1.0",
+            ":aiohttp@3.13.2",
+            ":awscrt@0.31.1",
+            ":cufile-python@0.2.0",
+            ":cupy-cuda12x@13.6.0",
+            ":fastapi@0.124.4",
+            ":httptools@0.7.1",
+            ":httpx@0.27.2",
+            ":msgspec@0.20.0",
             ":nixl@0.9.0",
-        ],
-        ":_env_python_3.11_aarch64-apple-darwin": [
-            ":nixl@0.9.0",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":nixl@0.9.0",
+            ":nvtx@0.2.14",
+            ":prometheus-client@0.20.0",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":redis@7.1.0",
+            ":safetensors@0.6.2",
+            ":setuptools-scm@9.2.2",
+            ":setuptools@80.9.0",
+            ":sortedcontainers@2.4.0",
+            ":transformers@4.57.1",
+            ":uvicorn@0.30.6",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":aiofile@3.9.0",
+            ":aiofiles@24.1.0",
+            ":aiohttp@3.13.2",
+            ":awscrt@0.31.1",
+            ":cufile-python@0.2.0",
+            ":cupy-cuda12x@13.6.0",
+            ":fastapi@0.124.4",
+            ":httptools@0.7.1",
+            ":httpx@0.27.2",
+            ":msgspec@0.20.0",
             ":nixl@0.9.0",
-        ],
-        ":_env_python_3.12_aarch64-apple-darwin": [
-            ":nixl@0.9.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":nixl@0.9.0",
+            ":nvtx@0.2.14",
+            ":prometheus-client@0.20.0",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":redis@7.1.0",
+            ":safetensors@0.6.2",
+            ":setuptools-scm@9.2.2",
+            ":setuptools@80.9.0",
+            ":sortedcontainers@2.4.0",
+            ":transformers@4.57.1",
+            ":uvicorn@0.30.6",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":aiofile@3.9.0",
+            ":aiofiles@24.1.0",
+            ":aiohttp@3.13.2",
+            ":awscrt@0.31.1",
+            ":cufile-python@0.2.0",
+            ":cupy-cuda12x@13.6.0",
+            ":fastapi@0.124.4",
+            ":httptools@0.7.1",
+            ":httpx@0.27.2",
+            ":msgspec@0.20.0",
             ":nixl@0.9.0",
+            ":nvtx@0.2.14",
+            ":prometheus-client@0.20.0",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":redis@7.1.0",
+            ":safetensors@0.6.2",
+            ":setuptools-scm@9.2.2",
+            ":setuptools@80.9.0",
+            ":sortedcontainers@2.4.0",
+            ":transformers@4.57.1",
+            ":uvicorn@0.30.6",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":aiofile@3.9.0",
+            ":aiofiles@24.1.0",
+            ":aiohttp@3.13.2",
+            ":awscrt@0.31.1",
+            ":cufile-python@0.2.0",
+            ":cupy-cuda12x@13.6.0",
+            ":fastapi@0.124.4",
+            ":httptools@0.7.1",
+            ":httpx@0.27.2",
+            ":msgspec@0.20.0",
+            ":nvtx@0.2.14",
+            ":prometheus-client@0.20.0",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":redis@7.1.0",
+            ":safetensors@0.6.2",
+            ":setuptools-scm@9.2.2",
+            ":setuptools@80.9.0",
+            ":sortedcontainers@2.4.0",
+            ":transformers@4.57.1",
+            ":uvicorn@0.30.6",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":aiofile@3.9.0",
+            ":aiofiles@24.1.0",
+            ":aiohttp@3.13.2",
+            ":awscrt@0.31.1",
+            ":cufile-python@0.2.0",
+            ":cupy-cuda12x@13.6.0",
+            ":fastapi@0.124.4",
+            ":httptools@0.7.1",
+            ":httpx@0.27.2",
+            ":msgspec@0.20.0",
+            ":nvtx@0.2.14",
+            ":prometheus-client@0.20.0",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":redis@7.1.0",
+            ":safetensors@0.6.2",
+            ":setuptools-scm@9.2.2",
+            ":setuptools@80.9.0",
+            ":sortedcontainers@2.4.0",
+            ":transformers@4.57.1",
+            ":uvicorn@0.30.6",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":aiofile@3.9.0",
+            ":aiofiles@24.1.0",
+            ":aiohttp@3.13.2",
+            ":awscrt@0.31.1",
+            ":cufile-python@0.2.0",
+            ":cupy-cuda12x@13.6.0",
+            ":fastapi@0.124.4",
+            ":httptools@0.7.1",
+            ":httpx@0.27.2",
+            ":msgspec@0.20.0",
+            ":nvtx@0.2.14",
+            ":prometheus-client@0.20.0",
+            ":psutil@7.0.0",
+            ":py-cpuinfo@9.0.0",
+            ":pyyaml@6.0.3",
+            ":pyzmq@27.1.0",
+            ":redis@7.1.0",
+            ":safetensors@0.6.2",
+            ":setuptools-scm@9.2.2",
+            ":setuptools@80.9.0",
+            ":sortedcontainers@2.4.0",
+            ":transformers@4.57.1",
+            ":uvicorn@0.30.6",
         ],
         "//conditions:default": [],
     })
@@ -5438,28 +5579,10 @@ def targets():
 
     _nixl_0_9_0_deps = [
     ] + select({
-        ":_env_python_3.10_aarch64-apple-darwin": [
-            ":nixl-cu12@0.9.0",
-        ],
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":nixl-cu12@0.9.0",
-        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
             ":nixl-cu12@0.9.0",
         ],
-        ":_env_python_3.11_aarch64-apple-darwin": [
-            ":nixl-cu12@0.9.0",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":nixl-cu12@0.9.0",
-        ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":nixl-cu12@0.9.0",
-        ],
-        ":_env_python_3.12_aarch64-apple-darwin": [
-            ":nixl-cu12@0.9.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":nixl-cu12@0.9.0",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
@@ -8059,19 +8182,7 @@ def targets():
 
     _redis_7_1_0_deps = [
     ] + select({
-        ":_env_python_3.10_aarch64-apple-darwin": [
-            ":async-timeout@4.0.3",
-        ],
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":async-timeout@4.0.3",
-        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
-            ":async-timeout@4.0.3",
-        ],
-        ":_env_python_3.11_aarch64-apple-darwin": [
-            ":async-timeout@4.0.3",
-        ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":async-timeout@4.0.3",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
@@ -8871,17 +8982,31 @@ def targets():
     )
 
     _setuptools_scm_9_2_2_deps = [
-        ":packaging@25.0",
-        ":setuptools@80.9.0",
     ] + select({
-        ":_env_python_3.10_aarch64-apple-darwin": [
-            ":tomli@2.0.1",
-        ],
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
-            ":tomli@2.0.1",
-        ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":packaging@25.0",
+            ":setuptools@80.9.0",
             ":tomli@2.0.1",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":packaging@25.0",
+            ":setuptools@80.9.0",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":packaging@25.0",
+            ":setuptools@80.9.0",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":packaging@25.0",
+            ":setuptools@80.9.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":packaging@25.0",
+            ":setuptools@80.9.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":packaging@25.0",
+            ":setuptools@80.9.0",
         ],
         "//conditions:default": [],
     })

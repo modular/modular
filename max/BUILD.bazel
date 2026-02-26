@@ -31,6 +31,12 @@ alias(
     tags = [TOP_LEVEL_TAG],
 )
 
+alias(
+    name = "lmcache",
+    actual = "//max/python/max/entrypoints:pipelines_lmcache",
+    tags = [TOP_LEVEL_TAG],
+)
+
 py_repl(
     name = "repl",
     deps = [
