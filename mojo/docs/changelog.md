@@ -551,6 +551,9 @@ what we publish.
   caused searches to fail when searching for strings longer than
   `simd_width_of[DType.bool]()` and haystacks larger than UInt16.MAX.
 
+- `FileDescriptor.write_bytes()`: Fixed silent data loss on partial writes by
+  looping until all bytes are written, matching `FileHandle.write_bytes()`.
+
 - `LinkedList.reverse()`: Fixed missing `prev` pointer updates, which caused
   `__reversed__()` to produce wrong results after reversing.
 
