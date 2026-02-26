@@ -361,3 +361,48 @@ class BenchmarkMetrics(Metrics):
                     errors.append(f"{name}: {err}")
 
         return len(errors) == 0, errors
+
+
+@dataclass
+class PixelGenerationBenchmarkMetrics(Metrics):
+    """Container for pixel generation serving benchmark metrics."""
+
+    completed: int
+    failures: int
+    max_concurrency: int
+    request_throughput: float
+    total_generated_outputs: int
+
+    latency_ms: StandardPercentileMetrics
+
+    peak_gpu_memory_mib: list[float]
+    available_gpu_memory_mib: list[float]
+    gpu_utilization: list[float]
+
+    cpu_utilization_user: float | None
+    cpu_utilization_system: float | None
+
+    server_metrics: ParsedMetrics | None = None
+
+    def validate(self) -> tuple[bool, list[str]]:
+        """Validate that pixel generation metrics are meaningful."""
+        errors: list[str] = []
+
+        if self.failures > 0:
+            errors.append(f"Some requests failed (failures={self.failures})")
+
+        if self.completed <= 0:
+            errors.append(f"No requests completed (completed={self.completed})")
+
+        if not _is_finite_and_positive(self.request_throughput):
+            errors.append(
+                "Invalid throughput:"
+                f" request_throughput={self.request_throughput}"
+            )
+
+        ok, sub_errors = self.latency_ms.validate()
+        if not ok:
+            for err in sub_errors:
+                errors.append(f"latency_ms: {err}")
+
+        return len(errors) == 0, errors

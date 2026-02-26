@@ -47,6 +47,12 @@ class Endpoint(str, enum.Enum):
     completions = "/v1/completions"
     chat_completions = "/v1/chat/completions"
     ensemble_generate_stream = "/v2/models/ensemble/generate_stream"
+    responses = "/v1/responses"
+
+
+class BenchmarkTask(str, enum.Enum):
+    text_generation = "text-generation"
+    text_to_image = "text-to-image"
 
 
 def _add_config_file_arg_to_parser(
@@ -237,6 +243,7 @@ class BaseBenchmarkConfig(MAXConfig):
             # TODO: Propagate proper enum choices here than just the string values
             "backend": [backend.value for backend in Backend],
             "endpoint": [endpoint.value for endpoint in Endpoint],
+            "benchmark_task": [task.value for task in BenchmarkTask],
             "dataset_name": list(DATASET_REGISTRY.keys()),
             "dataset_mode": [mode.value for mode in DatasetMode],
             "random_distribution_type": ["uniform", "normal", "gamma"],
@@ -291,7 +298,13 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default=Endpoint.chat_completions.value,
         metadata={"group": "Backend and API Configuration"},
     )
-    """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream"""
+    """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream"""
+
+    benchmark_task: str = field(
+        default=BenchmarkTask.text_generation.value,
+        metadata={"group": "Backend and API Configuration"},
+    )
+    """Benchmark task type. Choices: text-generation, text-to-image"""
 
     # Request configuration (serving-specific)
     max_concurrency: str | None = field(
@@ -359,6 +372,33 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default=None, metadata={"group": "Output Control"}
     )
     """Top-k for sampling."""
+
+    # Image generation options (serving-specific)
+    image_width: int = field(default=1024, metadata={"group": "Output Control"})
+    """Output image width in output pixels."""
+
+    image_height: int = field(
+        default=1024, metadata={"group": "Output Control"}
+    )
+    """Output image height in output pixels."""
+
+    image_steps: int = field(default=24, metadata={"group": "Output Control"})
+    """Number of denoising steps for pixel generation."""
+
+    image_guidance_scale: float = field(
+        default=3.5, metadata={"group": "Output Control"}
+    )
+    """Guidance scale for pixel generation."""
+
+    image_negative_prompt: str | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
+    """Optional negative prompt for pixel generation."""
+
+    image_seed: int | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
+    """Optional deterministic seed for pixel generation."""
 
     # Traffic control (serving-specific)
     request_rate: str = field(
@@ -540,7 +580,8 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "base_url": "Server or API base url if not using http host and port.",
             "host": "Server host.",
             "port": "Server port.",
-            "endpoint": "API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream",
+            "endpoint": "API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream",
+            "benchmark_task": "Benchmark task type. Choices: text-generation, text-to-image",
             "max_concurrency": "Maximum concurrent requests (optimized for serving benchmarks).",
             "lora": "Optional LoRA name.",
             "max_benchmark_duration_s": "Maximum benchmark duration in seconds.",
@@ -550,6 +591,12 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "max_output_len": "Maximum output length per request.",
             "temperature": "Temperature for sampling.",
             "top_p": "Top-p for sampling.",
+            "image_width": "Output width for pixel generation.",
+            "image_height": "Output height for pixel generation.",
+            "image_steps": "Number of denoising steps for pixel generation.",
+            "image_guidance_scale": "Guidance scale for pixel generation.",
+            "image_negative_prompt": "Optional negative prompt for pixel generation.",
+            "image_seed": "Optional deterministic seed for pixel generation.",
             "request_rate": "Requests per second (finite rate for realistic benchmarking).",
             "burstiness": "Burstiness factor (1.0 = Poisson process).",
             "skip_first_n_requests": "Skip first N requests for measurements.",

@@ -64,6 +64,7 @@ class RequestFuncInput(BaseRequestFuncInput):
     prompt_len: int
     max_tokens: int | None
     ignore_eos: bool
+    extra_body: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -101,6 +102,7 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     generated_text: str = ""
     ttft: float = 0.0  # Time to first token
     prompt_len: int = 0
+    num_generated_outputs: int = 0
 
 
 @dataclass
@@ -544,6 +546,104 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         )
 
 
+def _count_output_images(data: dict[str, Any]) -> int:
+    output = data.get("output")
+    if not isinstance(output, list):
+        logger.warning(
+            f"OpenResponses response has unexpected 'output' type: "
+            f"{type(output).__name__}"
+        )
+        return 0
+
+    count = 0
+
+    for message_idx, message in enumerate(output):
+        if not isinstance(message, dict):
+            logger.warning(
+                f"Skipping output[{message_idx}]: expected dict, got {type(message)}."
+            )
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            logger.warning(
+                f"Skipping output[{message_idx}].content: expected list, got {type(content)}."
+            )
+            continue
+        for item_idx, item in enumerate(content):
+            if not isinstance(item, dict):
+                logger.warning(
+                    f"Skipping output[{message_idx}].content[{item_idx}]: expected dict, got {type(item)}."
+                )
+                continue
+            if item.get("type") == "output_image":
+                count += 1
+
+    return count
+
+
+class OpenResponsesRequestDriver(RequestDriver):
+    """Request driver for OpenResponses API."""
+
+    async def request(
+        self, request_func_input: RequestFuncInput
+    ) -> RequestFuncOutput:
+        """Execute a request to the OpenResponses API."""
+        api_url = request_func_input.api_url
+        assert api_url.endswith("responses"), (
+            "OpenResponses API URL must end with 'responses'."
+        )
+
+        payload: dict[str, Any] = {
+            "model": request_func_input.model,
+            "input": request_func_input.prompt,
+        }
+        payload.update(request_func_input.extra_body)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+        }
+
+        output = RequestFuncOutput()
+        output.prompt_len = request_func_input.prompt_len
+        start = time.perf_counter()
+
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+            try:
+                async with session.post(
+                    url=api_url, json=payload, headers=headers
+                ) as response:
+                    output.latency = time.perf_counter() - start
+                    if response.status != 200:
+                        body = await response.text()
+                        output.error = (
+                            f"HTTP {response.status}: {body}"
+                            if body
+                            else (response.reason or "")
+                        )
+                        output.success = False
+                        return output
+
+                    body = await response.json()
+                    output.num_generated_outputs = _count_output_images(body)
+                    if output.num_generated_outputs <= 0:
+                        output.error = (
+                            "No output_image content found in OpenResponses "
+                            "response body."
+                        )
+                        output.success = False
+                        return output
+
+                    output.success = True
+                    return output
+            except Exception:
+                output.latency = time.perf_counter() - start
+                output.success = False
+                exc_info = sys.exc_info()
+                output.error = "".join(traceback.format_exception(*exc_info))
+                return output
+
+
 class RequestCounter:
     """Thread-safe counter for limiting the number of requests in benchmarks.
 
@@ -676,6 +776,8 @@ def get_request_driver_class(api_url: str) -> type[RequestDriver]:
     """Return the request driver based on the API URL."""
     if api_url.endswith("chat/completions"):
         return OpenAIChatCompletionsRequestDriver
+    if api_url.endswith("responses"):
+        return OpenResponsesRequestDriver
     if api_url.endswith(("completions", "profile")):
         return OpenAICompletionsRequestDriver
     if api_url.endswith("generate_stream"):
@@ -683,5 +785,5 @@ def get_request_driver_class(api_url: str) -> type[RequestDriver]:
     raise ValueError(
         "Unsupported API URL for request driver selection: "
         f"'{api_url}'. Expected an OpenAI completions/chat endpoint or "
-        "TensorRT-LLM generate_stream endpoint."
+        "OpenResponses endpoint or TensorRT-LLM generate_stream endpoint."
     )

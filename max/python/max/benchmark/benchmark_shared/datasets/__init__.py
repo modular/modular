@@ -19,11 +19,19 @@ from .huggingface import HuggingFaceBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
 from .obfuscated_conversations import ObfuscatedConversationsBenchmarkDataset
+from .pixel import PixelBenchmarkDataset, SyntheticPixelBenchmarkDataset
 from .random import RandomBenchmarkDataset, SyntheticBenchmarkDataset
 from .registry import DATASET_REGISTRY, DatasetRegistryEntry
 from .sharegpt import ShareGPTBenchmarkDataset
 from .sonnet import SonnetBenchmarkDataset
-from .types import ChatSession, DatasetMode, OpenAIImage, SampledRequest
+from .types import (
+    ChatSession,
+    DatasetMode,
+    OpenAIImage,
+    PixelGenerationImageOptions,
+    PixelGenerationSampledRequest,
+    SampledRequest,
+)
 from .vision_arena import VisionArenaBenchmarkDataset
 
 __all__ = [
@@ -40,10 +48,14 @@ __all__ = [
     "LocalBenchmarkDataset",
     "ObfuscatedConversationsBenchmarkDataset",
     "OpenAIImage",
+    "PixelBenchmarkDataset",
+    "PixelGenerationImageOptions",
+    "PixelGenerationSampledRequest",
     "RandomBenchmarkDataset",
     "SampledRequest",
     "ShareGPTBenchmarkDataset",
     "SonnetBenchmarkDataset",
     "SyntheticBenchmarkDataset",
+    "SyntheticPixelBenchmarkDataset",
     "VisionArenaBenchmarkDataset",
 ]

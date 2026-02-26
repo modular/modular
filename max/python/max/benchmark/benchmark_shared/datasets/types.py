@@ -16,7 +16,7 @@ from __future__ import annotations
 import base64
 import os
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from io import BytesIO
 from typing import Any, Literal
@@ -54,6 +54,31 @@ class SampledRequest:
     output_len: int | None
     encoded_images: list[OpenAIImage]
     ignore_eos: bool
+
+
+@dataclass
+class PixelGenerationImageOptions:
+    width: int | None = None
+    height: int | None = None
+    steps: int | None = None
+    guidance_scale: float | None = None
+    negative_prompt: str | None = None
+    seed: int | None = None
+
+
+@dataclass
+class PixelGenerationSampledRequest(SampledRequest):
+    """A sampled request for pixel generation.
+
+    prompt_len, output_len, ignore_eos are not used for pixel generation.
+    """
+
+    prompt_formatted: str
+    prompt_len: int = 0
+    output_len: int | None = None
+    encoded_images: list[OpenAIImage] = field(default_factory=list)
+    ignore_eos: bool = True
+    image_options: PixelGenerationImageOptions | None = None
 
 
 MessageSource = Literal["user", "assistant"]
