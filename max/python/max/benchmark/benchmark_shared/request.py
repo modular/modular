@@ -551,20 +551,35 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
 def _count_output_images(data: dict[str, Any]) -> int:
     output = data.get("output")
     if not isinstance(output, list):
+        logger.warning(
+            f"OpenResponses response has unexpected 'output' type: "
+            f"{type(output).__name__}"
+        )
         return 0
 
     count = 0
-    for message in output:
+
+    for message_idx, message in enumerate(output):
         if not isinstance(message, dict):
+            logger.warning(
+                f"Skipping output[{message_idx}]: expected dict, got {type(message)}."
+            )
             continue
         content = message.get("content")
         if not isinstance(content, list):
+            logger.warning(
+                f"Skipping output[{message_idx}].content: expected list, got {type(content)}."
+            )
             continue
-        for item in content:
+        for item_idx, item in enumerate(content):
             if not isinstance(item, dict):
+                logger.warning(
+                    f"Skipping output[{message_idx}].content[{item_idx}]: expected dict, got {type(item)}."
+                )
                 continue
             if item.get("type") == "output_image":
                 count += 1
+
     return count
 
 
