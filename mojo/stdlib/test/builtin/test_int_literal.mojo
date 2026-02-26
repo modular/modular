@@ -122,5 +122,20 @@ def test_shift():
     assert_equal(IntLiteral.__lshift__(1, 6), 64)
 
 
+def test_pow():
+    assert_equal(IntLiteral.__pow__(2, 64), 18446744073709551616)
+    assert_equal(
+        IntLiteral.__pow__(2, 255),
+        57896044618658097711785492504343953926634992332820282019728792003956564819968,
+    )
+    assert_equal(
+        IntLiteral.__pow__(2, 256),
+        115792089237316195423570985008687907853269984665640564039457584007913129639936,
+    )
+    assert_equal(IntLiteral.__pow__(64, 0), 1)
+    # Cannot exponentiate by a negative amount
+    assert_equal(IntLiteral.__pow__(64, -1), 0)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
