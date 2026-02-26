@@ -16,16 +16,45 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    ShardingStrategy,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged_gpu
-from max.nn.layer import Module
+from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 
 
-class Attention(Module):
+def _compute_heads_per_device(
+    *, total_heads: int, device_idx: int, num_devices: int
+) -> int:
+    """Computes the number of heads assigned to a specific device.
+
+    Distributes heads across devices, handling cases where the total is not
+    evenly divisible by the number of devices.
+
+    Args:
+        total_heads: Total number of attention heads.
+        device_idx: The index of the current device (0-based).
+        num_devices: Total number of devices.
+
+    Returns:
+        Number of heads assigned to the specified device.
+    """
+    base_heads, remainder = divmod(total_heads, num_devices)
+    if device_idx < remainder:
+        return base_heads + 1
+    return base_heads
+
+
+class Attention(Module, Shardable):
     """QKV-packed self-attention for the Kimi K2.5 vision encoder.
 
     Args:
@@ -34,6 +63,8 @@ class Attention(Module):
         dtype: Data type for all layer weights.
         device: Device on which to allocate weights.
         has_bias: Whether linear projections include bias terms.
+        head_dim: Dimension per attention head. Defaults to
+            ``hidden_dim // num_heads``.
     """
 
     def __init__(
@@ -43,27 +74,37 @@ class Attention(Module):
         dtype: DType,
         device: DeviceRef,
         has_bias: bool = False,
+        head_dim: int | None = None,
+        _is_sharding: bool = False,
     ) -> None:
         super().__init__()
         self.num_heads = num_heads
         self.hidden_dim = hidden_dim
-        self.head_dim = hidden_dim // num_heads
+        self.head_dim = (
+            head_dim if head_dim is not None else hidden_dim // num_heads
+        )
         self.scale = 1.0 / math.sqrt(self.head_dim)
+        self.dtype = dtype
+        self.has_bias = has_bias
+        self._sharding_strategy: ShardingStrategy | None = None
 
-        self.wqkv = Linear(
-            in_dim=hidden_dim,
-            out_dim=hidden_dim * 3,
-            dtype=dtype,
-            device=device,
-            has_bias=has_bias,
-        )
-        self.wo = Linear(
-            in_dim=hidden_dim,
-            out_dim=hidden_dim,
-            dtype=dtype,
-            device=device,
-            has_bias=has_bias,
-        )
+        # During sharding, sub-layers are assigned directly from the
+        # parent (see shard()), so skip creation here.
+        if not _is_sharding:
+            self.wqkv = Linear(
+                in_dim=hidden_dim,
+                out_dim=hidden_dim * 3,
+                dtype=dtype,
+                device=device,
+                has_bias=has_bias,
+            )
+            self.wo = Linear(
+                in_dim=hidden_dim,
+                out_dim=hidden_dim,
+                dtype=dtype,
+                device=device,
+                has_bias=has_bias,
+            )
 
     @staticmethod
     def _apply_rope(x: TensorValue, freqs_cis: TensorValue) -> TensorValue:
@@ -140,6 +181,76 @@ class Attention(Module):
             scale=self.scale,
         )
 
-        attn_out = ops.reshape(attn_out, (n_patches, self.hidden_dim))
+        attn_out = ops.reshape(attn_out, (n_patches, -1))
 
         return self.wo(attn_out)
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        """Gets the attention sharding strategy."""
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, strategy: ShardingStrategy) -> None:
+        """Sets the sharding strategy for attention weights.
+
+        Args:
+            strategy: The sharding strategy to apply.
+        """
+        if strategy.is_replicate:
+            self.wqkv.sharding_strategy = strategy
+            self.wo.sharding_strategy = strategy
+        elif strategy.is_tensor_parallel:
+            self.wqkv.sharding_strategy = ShardingStrategy.stacked_qkv(
+                strategy.num_devices, self.num_heads, self.head_dim
+            )
+            self.wo.sharding_strategy = ShardingStrategy.head_aware_columnwise(
+                strategy.num_devices, self.num_heads, self.head_dim
+            )
+        else:
+            raise ValueError(
+                f"{self.__class__.__name__} only supports tensor parallel and"
+                f" replicate sharding strategies"
+            )
+
+        self._sharding_strategy = strategy
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[Attention]:
+        """Creates sharded views of this attention layer across multiple devices.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            List of sharded :obj:`Attention` instances, one per device.
+        """
+        if not self._sharding_strategy:
+            raise ValueError(
+                "A sharding strategy must be set prior to calling this method"
+            )
+
+        wqkv_shards = self.wqkv.shard(devices)
+        wo_shards = self.wo.shard(devices)
+
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            sharded_num_heads = _compute_heads_per_device(
+                total_heads=self.num_heads,
+                device_idx=shard_idx,
+                num_devices=self._sharding_strategy.num_devices,
+            )
+
+            sharded = Attention(
+                num_heads=sharded_num_heads,
+                hidden_dim=self.hidden_dim,
+                dtype=self.dtype,
+                device=device,
+                has_bias=self.has_bias,
+                head_dim=self.head_dim,
+                _is_sharding=True,
+            )
+            sharded.wqkv = wqkv_shards[shard_idx]
+            sharded.wo = wo_shards[shard_idx]
+            shards.append(sharded)
+
+        return shards
