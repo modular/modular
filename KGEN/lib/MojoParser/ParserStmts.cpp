@@ -1284,7 +1284,7 @@ static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
                                                  llvm::SMLoc loc,
                                                  const ExprNode *node) {
   ArrayRef<ASTDecl *> raiseHookFns = shared.getBuiltinFunction(
-      declContext, "builtin.error", "__mojo_debugger_raise_hook", loc);
+      declContext, "std.builtin.error", "__mojo_debugger_raise_hook", loc);
   if (raiseHookFns.empty())
     return failure();
 
@@ -1775,7 +1775,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, SMLoc forLoc,
     // Bind the sequence initial value to the parameter for iterator generator.
     // Start by looking up the builtin generator.
     ArrayRef<ASTDecl *> paramForImpl =
-        shared.getBuiltinFunction(scope, "builtin._stubs", name, forLoc);
+        shared.getBuiltinFunction(scope, "std.builtin._stubs", name, forLoc);
     if (paramForImpl.empty())
       return {};
 

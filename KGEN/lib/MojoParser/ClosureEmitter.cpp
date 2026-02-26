@@ -328,10 +328,12 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   storeField(b, self, opaqueFnPtr, b.getStringAttr("field0"));
 
   // Use the no-op destructor and copy constructor.
-  ArrayRef<ASTDecl *> dtor = shared.getBuiltinFunction(
-      decl, "builtin._closure", "__closure_wrapper_noop_dtor", decl.getLoc());
-  ArrayRef<ASTDecl *> copy = shared.getBuiltinFunction(
-      decl, "builtin._closure", "__closure_wrapper_noop_copy", decl.getLoc());
+  ArrayRef<ASTDecl *> dtor =
+      shared.getBuiltinFunction(decl, "std.builtin._closure",
+                                "__closure_wrapper_noop_dtor", decl.getLoc());
+  ArrayRef<ASTDecl *> copy =
+      shared.getBuiltinFunction(decl, "std.builtin._closure",
+                                "__closure_wrapper_noop_copy", decl.getLoc());
   if (dtor.empty() || copy.empty())
     return;
 
