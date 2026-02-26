@@ -1193,6 +1193,7 @@ async def run_single_test_prompt(
     top_p: float | None,
     top_k: int | None,
     max_output_len: int | None,
+    extra_body: dict[str, Any] | None = None,
 ) -> None:
     logger.info("Starting initial single prompt test run...")
     test_prompt: str | list[dict[str, Any]]
@@ -1211,6 +1212,7 @@ async def run_single_test_prompt(
         test_max_tokens: int | None = test_answer.num_tokens
         test_ignore_eos = True
         test_images = []
+        test_extra_body: dict[str, Any] = {}
     else:
         # single-turn chat scenario
         test_request = samples.requests[0]
@@ -1222,6 +1224,10 @@ async def run_single_test_prompt(
         )
         test_ignore_eos = test_request.ignore_eos
         test_images = test_request.encoded_images
+        test_extra_body = build_request_extra_body(
+            base_extra_body=extra_body,
+            request=test_request,
+        )
 
     test_input = RequestFuncInput(
         model=model_id,
@@ -1235,6 +1241,7 @@ async def run_single_test_prompt(
         prompt_len=test_prompt_len,
         max_tokens=test_max_tokens,
         ignore_eos=test_ignore_eos,
+        extra_body=test_extra_body,
     )
     test_output = await request_driver.request(test_input)
     if not test_output.success:
@@ -1316,6 +1323,7 @@ async def benchmark(
             top_p=top_p,
             top_k=top_k,
             max_output_len=max_output_len,
+            extra_body=extra_body,
         )
 
     if burstiness == 1.0:
