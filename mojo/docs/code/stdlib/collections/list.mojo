@@ -36,7 +36,7 @@ fn extend_span():
     numbers = [1, 2, 3]
     more = [4, 5, 6]
     numbers.extend(Span(more))
-    print(numbers.__str__())  # [1, 2, 3, 4, 5, 6]
+    print(numbers)  # [1, 2, 3, 4, 5, 6]
 
 
 fn extend_dtype():

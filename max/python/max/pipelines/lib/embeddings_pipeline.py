@@ -38,7 +38,7 @@ from max.interfaces import (
     RequestID,
     TextGenerationRequest,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:

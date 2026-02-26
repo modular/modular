@@ -31,15 +31,15 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.parallel import ParallelArrayOps
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.layer import Module
+from max.nn.parallel import ParallelArrayOps
+from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.qwen2_5vl.util import (
     compute_multimodal_merge_indices,
 )
@@ -566,9 +566,7 @@ class Qwen3VLModel(
         )
 
         # Flatten kv types for each device
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
@@ -654,9 +652,7 @@ class Qwen3VLModel(
 
             # Calculate how many KV cache inputs there are
             kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = [
-                kv_type for sublist in kv_inputs for kv_type in sublist
-            ]
+            flattened_kv_types = kv_inputs.flatten()
             num_kv_inputs = len(flattened_kv_types)
 
             # Extract KV cache inputs (they come after signal buffers in the graph)

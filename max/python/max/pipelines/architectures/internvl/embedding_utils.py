@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from max.graph import TensorValue, ops
-from max.nn.legacy.kernels import scatter_nd_skip_oob_indices
+from max.nn.kernels import scatter_nd_skip_oob_indices
 
 
 def merge_multimodal_embeddings(

@@ -70,7 +70,7 @@ modular_py_library(
             ":shared_mlp_impl",
             "//max/python/max/engine",
             "//max/python/max/nn",
-            "//max/python/max/nn/legacy/hooks",
+            "//max/python/max/nn/hooks",
             "//max/python/max/pipelines",
             "//max/python/max/serve",
             "//max/tests/integration/graph:modular_graph_test",

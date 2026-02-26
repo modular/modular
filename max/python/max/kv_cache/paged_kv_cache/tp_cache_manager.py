@@ -19,14 +19,14 @@ import logging
 from collections.abc import Sequence
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
-from max.nn.legacy.kv_cache.utils import build_max_lengths_tensor
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.utils import build_max_lengths_tensor
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -124,12 +124,6 @@ class _TPPagedKVCacheManager:
     form one complete page of `page_size` tokens).
     """
 
-    device_tensors: list[Buffer]
-    """List of tensors holding the KV cache blocks, one per device."""
-
-    device_scale_tensors: list[Buffer] | None
-    """List of scales for the quantized KV cache blocks, one per device."""
-
     block_manager: BlockManager
     """Manages allocation, eviction, and reuse of KV cache blocks."""
 
@@ -215,40 +209,22 @@ class _TPPagedKVCacheManager:
             )
 
         # Initialize the block buffers for each device.
-        self.device_tensors = []
-        for device in self.devices:
-            # Zero-initializing GPU device tensors does not introduce significant latency.
-            # Memory is initialized because OOB TMA reads of uninitialized memory on GPU can result in NaNs in downstream kernels.
-            self.device_tensors.append(
-                Buffer.zeros(
-                    shape=[total_num_pages, *params.shape_per_block],
-                    dtype=self.params.dtype,
-                    device=device,
-                )
+        device_buffers = params.allocate_buffers(total_num_pages)
+        if len(device_buffers) != 1:
+            raise ValueError(
+                "Expected params.allocate_buffers to return exactly one buffer since DP == 1. "
+                f"Found {len(device_buffers)} buffers."
             )
-
-        self.device_scale_tensors = None
-        if self.params.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-            assert params.kvcache_quant_config is not None
-            self.device_scale_tensors = []
-            scale_dtype = params.kvcache_quant_config.scale_dtype
-            for device in self.devices:
-                self.device_scale_tensors.append(
-                    Buffer.zeros(
-                        shape=[total_num_pages, *params.shape_per_scale_block],
-                        dtype=scale_dtype,
-                        device=device,
-                    )
-                )
+        self.device_buffer = device_buffers[0]
 
         # Initialize connector for external cache tiers (host memory, LMCache, etc.)
         # The connector owns host memory, host block pool, and handles H2D/D2H transfers.
         self.connector: KVConnector = create_connector(
             params=params,
             devices=devices,
-            device_tensors=self.device_tensors,
-            device_scale_tensors=self.device_scale_tensors,
+            device_buffer=self.device_buffer,
             total_num_host_blocks=total_num_host_pages,
+            total_num_blocks=self.total_num_pages,
             session=session,
         )
 
@@ -314,16 +290,24 @@ class _TPPagedKVCacheManager:
 
     @traced
     def runtime_inputs(
-        self, batch: Sequence[TextGenerationContext], num_steps: int = 1
+        self,
+        batch: Sequence[TextGenerationContext],
+        num_steps: int = 1,
+        *,
+        max_cache_length: int | None = None,
     ) -> Sequence[RaggedKVCacheInputs]:
-        """Gets the graph inputs for a batch of requests.
-
-        This method will raise a RuntimeError if any request has insufficient blocks
-        already allocated to it to run for the given number of steps.
+        """Gets runtime inputs for a batch of requests.
 
         Args:
-            batch: Batch of requests.
-            num_steps: Number of steps to run for.
+            batch: Batch of request contexts.
+            num_steps: Number of decode steps for the fetch.
+            max_cache_length: Optional explicit max cache length to size LUT
+                views. If not provided, uses request-derived runtime length.
+
+        Raises:
+            ValueError: If a request in ``batch`` is missing allocated blocks,
+                if ``batch`` exceeds preallocated runtime capacity, or if
+                ``max_cache_length`` implies a LUT shape that is invalid.
         """
         # Wait for any pending connector operations (H2D loads from host cache).
         self.connector.sync()
@@ -340,41 +324,63 @@ class _TPPagedKVCacheManager:
             seq_len = len(ctx.tokens) + num_steps - 1
             max_seq_len = max(max_seq_len, seq_len)
 
-        max_total_num_pages = ceildiv(max_seq_len, self.page_size)
+        required_num_pages = ceildiv(max_seq_len, self.page_size)
+        if max_cache_length is None:
+            lut_num_pages = required_num_pages
+        else:
+            if max_cache_length < 1:
+                raise ValueError("max_cache_length must be positive")
+            lut_num_pages = ceildiv(max_cache_length, self.page_size)
+            if lut_num_pages < required_num_pages:
+                raise ValueError(
+                    "capture max_cache_length cannot be smaller than the "
+                    "request-required runtime cache length: "
+                    f"{max_cache_length} < {max_seq_len}."
+                )
+
         batch_size = len(batch)
         if batch_size > self._max_batch_size:
             raise ValueError(
                 "Runtime batch size exceeds preallocated KV runtime "
                 f"buffer capacity: {batch_size} > {self._max_batch_size}."
             )
+        if lut_num_pages > self.total_num_pages:
+            raise ValueError(
+                "Runtime LUT view exceeds allocated page capacity: "
+                f"{lut_num_pages} > {self.total_num_pages}."
+            )
 
         # Allocate pinned host staging each invocation so async H2D submissions
         # do not race with subsequent host writes to reused staging buffers.
         device0 = self.devices[0]
-        pinned = not device0.is_host
 
-        # Runtime lookup-table shape is [batch_size, max_total_num_pages]:
+        # Runtime lookup-table shape is [batch_size, lut_num_pages]:
         # rows map to request slots in the current batch and columns map to
         # per-request page slots.
         # [0, total_num_pages) are the valid block ids and total_num_pages
         # denotes an unassigned block.
-        lut_table_host = Buffer(
-            shape=(batch_size, max_total_num_pages),
-            dtype=DType.uint32,
-            device=device0,
-            pinned=pinned,
-        )
-
-        cache_lengths_host = Buffer(
-            shape=(batch_size,),
-            dtype=DType.uint32,
-            device=device0,
-            pinned=pinned,
-        )
-
-        if pinned:
-            lut_table_host.disable_auto_sync()
-            cache_lengths_host.disable_auto_sync()
+        if device0.is_host:
+            lut_table_host: Buffer = Buffer(
+                shape=(batch_size, lut_num_pages),
+                dtype=DType.uint32,
+                device=device0,
+            )
+            cache_lengths_host: Buffer = Buffer(
+                shape=(batch_size,),
+                dtype=DType.uint32,
+                device=device0,
+            )
+        else:
+            lut_table_host = DevicePinnedBuffer(
+                shape=(batch_size, lut_num_pages),
+                dtype=DType.uint32,
+                device=device0,
+            )
+            cache_lengths_host = DevicePinnedBuffer(
+                shape=(batch_size,),
+                dtype=DType.uint32,
+                device=device0,
+            )
 
         runtime_inputs = self._persistent_kv_device_input_buffers
         # Take a contiguous view of the LUT buffer, which is written to below.
@@ -382,7 +388,7 @@ class _TPPagedKVCacheManager:
             _contiguous_prefix_2d(
                 buffer,
                 rows=batch_size,
-                cols=max_total_num_pages,
+                cols=lut_num_pages,
             )
             for buffer in runtime_inputs.lut_table_by_device
         ]
@@ -440,27 +446,21 @@ class _TPPagedKVCacheManager:
         )
 
         ret_list: list[RaggedKVCacheInputs] = []
-        for cache_lengths_device, lookup_table_device, device_blocks in zip(
-            cache_lengths_by_device,
-            lut_table_by_device,
-            self.device_tensors,
-            strict=True,
-        ):
+        for tp_shard in range(self.params.n_devices):
+            cache_lengths_device = cache_lengths_by_device[tp_shard]
+            lookup_table_device = lut_table_by_device[tp_shard]
             cache_lengths_device.inplace_copy_from(cache_lengths_host)
             lookup_table_device.inplace_copy_from(lut_table_host)
-            scales = None
-            if self.device_scale_tensors is not None:
-                assert len(self.device_tensors) == len(
-                    self.device_scale_tensors
-                )
-                scales = self.device_scale_tensors[len(ret_list)]
+
             ret_list.append(
                 RaggedKVCacheInputs(
-                    blocks=device_blocks,
+                    blocks=self.device_buffer.values[tp_shard],
                     cache_lengths=cache_lengths_device,
                     lookup_table=lookup_table_device,
                     max_lengths=max_lengths_host,
-                    kv_scales=scales,
+                    kv_scales=self.device_buffer.scales[tp_shard]
+                    if self.device_buffer.scales is not None
+                    else None,
                 )
             )
 

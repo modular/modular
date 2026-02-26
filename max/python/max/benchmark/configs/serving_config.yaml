@@ -49,7 +49,7 @@ benchmark_config:
   # Output control (serving-specific extensions)
   output_lengths: null  # Path to YAML file with output lengths or int
   max_output_len: null  # Maximum output length per request
-  temperature: 0.0  # Temperature for sampling
+  temperature: null  # Temperature for sampling
   top_p: null  # Top-p for sampling
   top_k: null  # Top-k for sampling
 

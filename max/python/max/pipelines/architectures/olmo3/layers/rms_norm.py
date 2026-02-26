@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm implementation for Olmo3 models."""
 
-from max.nn.norm import RMSNorm, rms_norm
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
+from max.nn.module_v3.norm import RMSNorm, rms_norm
 
 
 class Olmo3RMSNorm(RMSNorm):

@@ -27,11 +27,11 @@ from max.interfaces import (
     SamplingParams,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import RaggedKVCacheInputs
+from max.nn.kv_cache import RaggedKVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
-from max.pipelines.lib.model_config import MAXModelConfig
-from max.pipelines.lib.speculative_config import SpeculativeConfig
+from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )

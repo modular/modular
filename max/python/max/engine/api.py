@@ -386,9 +386,21 @@ class InferenceSession:
         if env_val := os.getenv("MOJO_LOGGING_LEVEL"):
             self.set_mojo_log_level(env_val)
 
+        if env_val := os.getenv("MOJO_ASSERT_LEVEL"):
+            try:
+                assert_level = AssertLevel[env_val.upper()]
+            except KeyError as e:
+                raise TypeError(
+                    f"Invalid assert level ({env_val}). Please use one of: {[x.name for x in AssertLevel]}"
+                ) from e
+            self.set_mojo_assert_level(assert_level)
+
         # TODO: Remove this once the new topk kernel is stable.
         if use_old_top_k_kernel := os.getenv("USE_OLD_TOP_K_KERNEL"):
             self.use_old_top_k_kernel(use_old_top_k_kernel)
+
+        if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
+            self.use_fi_topk_kernel(use_fi_topk)
 
     def __repr__(self) -> str:
         if self.num_threads:
@@ -591,7 +603,13 @@ class InferenceSession:
         self._set_mojo_define("LOGGING_LEVEL", level)
 
     def set_mojo_assert_level(self, level: AssertLevel) -> None:
-        """Sets which mojo asserts are kept in the compiled model."""
+        """Sets which mojo asserts are kept in the compiled model.
+
+        Note:
+            Not all kernels are runnable with asserts enabled. If model
+            compilation or execution fails at higher assert levels, retry with
+            ``AssertLevel.NONE``.
+        """
         self._set_mojo_define("ASSERT", level)
 
     def gpu_profiling(self, mode: GPUProfilingMode) -> None:
@@ -671,6 +689,18 @@ class InferenceSession:
             return
 
         self._set_mojo_define("USE_OLD_TOP_K_KERNEL", 1)
+
+    def use_fi_topk_kernel(self, mode: str) -> None:
+        """Enables the fused-inference top-k kernel.
+
+        Args:
+            mode: String to enable/disable. Accepts "false", "off", "no", "0"
+                to disable, any other value to enable.
+        """
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("USE_FI_TOPK_KERNEL", 1)
 
     def _use_experimental_kernels(self, mode: str) -> None:
         """Enables experimental kernels."""

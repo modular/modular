@@ -40,9 +40,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     ImplicitlyCopyable,
     IntableRaising,
     PathLike,
-    Representable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -234,6 +232,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return Float64(StringSlice(self))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert the string literal to a string.
@@ -243,6 +242,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return String(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Return a representation of this value.
@@ -260,7 +260,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
           The file system path representation as a string.
         """
-        return self.__str__()
+        return String(self)
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[StaticConstantOrigin]:

@@ -14,13 +14,13 @@
 import math
 
 import numpy as np
-from max import functional as F
 from max.driver import Device
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import Dim, TensorType
-from max.nn import Embedding, Linear, Module
-from max.nn.sequential import ModuleList
-from max.tensor import Tensor
+from max.nn.module_v3 import Embedding, Linear, Module
+from max.nn.module_v3.sequential import ModuleList
 
 from .model_config import T5Config
 

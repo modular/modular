@@ -25,7 +25,7 @@ from .model import Gemma3Model
 from .model_config import Gemma3Config
 
 gemma3_arch = SupportedArchitecture(
-    name="Gemma3ForCausalLM_Legacy",
+    name="Gemma3ForCausalLM",
     example_repo_ids=[
         # it = Instruction tuned (recommended).
         # pt = Pre-trained.

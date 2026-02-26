@@ -18,8 +18,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import partial
 
-from max import functional as F
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 
 
 def activation_function_from_name(name: str) -> Callable[[Tensor], Tensor]:

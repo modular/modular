@@ -29,7 +29,7 @@ from max.interfaces import (
     TextGenerationRequest,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -198,7 +198,7 @@ class DummyPipelineModel(PipelineModelWithKVCache):
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
         assert hasattr(self, "kv_params")
-        kv_inputs = self.kv_params.get_symbolic_inputs()[0]
+        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
         with Graph(
             "dummy",
             input_types=[

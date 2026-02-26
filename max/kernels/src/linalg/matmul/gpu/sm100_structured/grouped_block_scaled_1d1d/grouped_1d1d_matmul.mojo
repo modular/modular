@@ -35,7 +35,7 @@ from collections import Optional
 from math import ceildiv
 from sys import size_of
 
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import DeviceContext, Dim, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
@@ -155,6 +155,9 @@ fn grouped_matmul_1d1d_nvfp4[
             128,
             256,
         ), "Only support cta_group == 2 with MMA_M == 256"
+        comptime assert (
+            config.AB_swapped
+        ), "cta_group == 2 requires AB_swapped for scheduler alignment"
     else:
         comptime assert MMA_M == 128 and MMA_N in (128, 256), (
             "Only support MMA_M == 128 and MMA_N in (128, 256) when"
@@ -338,6 +341,9 @@ fn grouped_matmul_1d1d_nvfp4[
             UInt32(K),
             grid_dim=grid_dim,
             block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
+            cluster_dim=Dim(
+                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            ),
             shared_mem_bytes=smem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
@@ -393,6 +399,9 @@ fn grouped_matmul_1d1d_nvfp4[
             UInt32(K),
             grid_dim=grid_dim,
             block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
+            cluster_dim=Dim(
+                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            ),
             shared_mem_bytes=smem_size,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)

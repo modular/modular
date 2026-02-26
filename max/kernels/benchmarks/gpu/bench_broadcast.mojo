@@ -24,7 +24,7 @@ from benchmark import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from comm.sync import can_enable_p2p
+from comm.sync import enable_p2p
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
@@ -339,7 +339,7 @@ def main():
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 
-    if not can_enable_p2p():
+    if not enable_p2p():
         print("P2P not enabled, skipping benchmark.")
         return
 

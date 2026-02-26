@@ -19,13 +19,13 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy import (
+from max.nn import (
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
     Float8WeightScaleSpec,
 )
-from max.nn.legacy.kernels import (
+from max.nn.kernels import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )

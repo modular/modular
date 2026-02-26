@@ -99,9 +99,7 @@ struct List[T: Copyable](
     Defaultable,
     Equatable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A dynamically-allocated and resizable list.
@@ -637,6 +635,7 @@ struct List[T: Copyable](
         """
         return len(self) > 0
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of a `List`.
@@ -650,6 +649,7 @@ struct List[T: Copyable](
         self.write_to(output)
         return output^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns a string representation of a `List`.
@@ -847,7 +847,7 @@ struct List[T: Copyable](
         numbers = [1, 2, 3]
         more = [4, 5, 6]
         numbers.extend(Span(more))
-        print(numbers.__str__())   # [1, 2, 3, 4, 5, 6]
+        print(numbers)   # [1, 2, 3, 4, 5, 6]
         ```
         """
         var elements_len = len(elements)

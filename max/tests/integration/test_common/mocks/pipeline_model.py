@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -117,7 +117,7 @@ class MockPipelineModel(PipelineModelWithKVCache):
                 n_heads=self.huggingface_config.num_attention_heads,
                 n_kv_heads=self.huggingface_config.num_key_value_heads,
                 head_dim=self.huggingface_config.head_dim,
-                zmq_endpoint_base=self.pipeline_config.zmq_endpoint_base,
+                zmq_endpoint_base=self.pipeline_config.runtime.zmq_endpoint_base,
             )
             if self.pipeline_config.lora
             and self.pipeline_config.lora.enable_lora

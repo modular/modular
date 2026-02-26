@@ -26,7 +26,7 @@ from max.interfaces import (
     RequestID,
     TextGenerationOutput,
 )
-from max.nn.legacy.kv_cache import KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputsSequence
 from max.pipelines.core import TTSContext
 from max.profiler import Tracer, traced
 

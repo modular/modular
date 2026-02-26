@@ -43,7 +43,7 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
             quantization_encoding="gptq",
             device_specs=[DeviceSpec.accelerator()],
         ),
-        use_legacy_module=False,
+        prefer_module_v3=True,
     )
 
     # We expect this to fail.
@@ -54,7 +54,7 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
                 quantization_encoding="gptq",
                 device_specs=[DeviceSpec.accelerator()],
             ),
-            use_legacy_module=False,
+            prefer_module_v3=True,
         )
 
 

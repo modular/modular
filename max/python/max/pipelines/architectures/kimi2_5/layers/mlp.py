@@ -23,10 +23,10 @@ from max.graph import (
     TensorValueLike,
 )
 from max.graph.quantization import QuantizationEncoding
-from max.nn.legacy.activation import activation_function_from_name
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
+from max.nn.activation import activation_function_from_name
+from max.nn.float8_config import Float8Config
+from max.nn.layer import Module, Shardable
+from max.nn.linear import Linear
 
 
 # TODO: (MODELS-1084) generalize this (non-gated) MLP layer and move it somewhere central

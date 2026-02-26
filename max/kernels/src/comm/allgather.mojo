@@ -39,7 +39,7 @@ from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from utils import StaticTuple
 
-from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
+from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 
 
 @always_inline
@@ -258,6 +258,7 @@ fn allgather[
         ctxs: List of device contexts for participating GPUs.
         _max_num_blocks: Maximum number of blocks for kernel launch (optional).
     """
+    comptime assert ngpus >= 2, "allgather requires at least 2 GPUs"
 
     # Return early, if all input buffers are empty
     var all_empty = True
@@ -273,7 +274,7 @@ fn allgather[
     var max_num_blocks = _max_num_blocks.or_else(216)
 
     # Check P2P availability.
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         return _allgather_naive(input_buffers, output_buffers, ctxs)
     else:
         return _allgather_p2p(
@@ -300,5 +301,7 @@ fn allgather[
     This version uses the naive implementation since we can't allocate signal
     buffers with proper lifetime in this function.
     """
+    comptime assert ngpus >= 2, "allgather requires at least 2 GPUs"
+
     # Use naive implementation for backward compatibility.
     _allgather_naive(input_buffers, output_buffers, ctxs)

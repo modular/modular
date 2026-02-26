@@ -22,7 +22,7 @@ from .tokenizer import Qwen3VLTokenizer
 from .weight_adapters import convert_qwen3vl_model_state_dict
 
 qwen3vl_moe_arch = SupportedArchitecture(
-    name="Qwen3VLMoeForConditionalGeneration_Legacy",
+    name="Qwen3VLMoeForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "Qwen/Qwen3-VL-30B-A3B-Instruct",
@@ -50,7 +50,7 @@ qwen3vl_moe_arch = SupportedArchitecture(
 # Register the same architecture under Qwen's non-MoE name for models like Qwen3-VL-4B-Instruct
 # repo https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct
 qwen3vl_arch = SupportedArchitecture(
-    name="Qwen3VLForConditionalGeneration_Legacy",
+    name="Qwen3VLForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen3-VL-4B-Instruct", "Qwen/Qwen3-VL-2B-Instruct"],
     default_weights_format=WeightsFormat.safetensors,

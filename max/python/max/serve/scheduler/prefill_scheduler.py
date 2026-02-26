@@ -86,8 +86,9 @@ class PrefillScheduler(Scheduler):
 
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
+            # TODO: Also support scales tensors
             tensors=[
-                kv_cache.get_device_tensors(replica_idx)
+                kv_cache.get_device_buffer(replica_idx).values
                 for replica_idx in range(kv_cache.num_replicas)
             ],
             # Assume all replicas have the same number of pages.

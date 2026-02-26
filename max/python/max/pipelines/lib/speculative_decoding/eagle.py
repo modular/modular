@@ -31,7 +31,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import (
     ModelInputs,

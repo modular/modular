@@ -6,7 +6,7 @@ image: /images/artwork/mojo-get-started.jpg
 ---
 
 import Requirements from '@site/src/components/Requirements';
-import { requirementsNoGPU } from '@site/docs/max/requirements';
+import { requirementsNoGPU } from '../../requirements';
 
 Get ready to learn Mojo! This tutorial gives you a tour of Mojo by building a
 complete program that does much more than simply printing "Hello, world!"
@@ -1416,31 +1416,20 @@ way, you experienced:
 Now that you've seen what Mojo can do, here are some suggestions for continuing
 your learning journey:
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
 
-export const Puzzles = {
-    title: "GPU Puzzles",
-    description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
-    metadata: {
-        permalink: "https://puzzles.modular.com/introduction.html"
-    }
-};
-
-export const Examples = {
-    title: "Code examples",
-    description: "Browse a wide range of Mojo code examples on GitHub",
-    metadata: {
-        permalink: "https://github.com/modular/modular/tree/main/mojo/examples"
-    }
-};
-
-export const nextSteps = [
-    '../gpu/intro-tutorial',
-    Puzzles,
-    Examples,
-]
-
-<MDXListing mdxList={nextSteps} />
+<ListingCards>
+  <ListingCard title="Get started with GPUs"
+    url="/mojo/manual/gpu/intro-tutorial"
+    description="Learn the basics of GPU programming with Mojo" />
+  <ListingCard title="GPU Puzzles"
+    url="https://puzzles.modular.com/introduction.html"
+    description="Learn to program GPUs in Mojo by solving increasingly complex challenges" />
+  <ListingCard title="Code examples"
+    url="https://github.com/modular/modular/tree/main/mojo/examples"
+    description="Browse a wide range of Mojo code examples on GitHub" />
+</ListingCards>
 
 :::tip
 

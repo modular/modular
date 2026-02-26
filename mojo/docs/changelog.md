@@ -204,6 +204,9 @@ what we publish.
 - `comptime assert` no longer errors on always false conditions. The assertion
   will only trigger if its parent scope is concretized.
 
+- A statically False `comptime assert` now ends a scope. Any code following it
+  in the same scope is now a warning, and can be removed.
+
 ### Library changes
 
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
@@ -362,6 +365,11 @@ what we publish.
   - `Variant`
   - `Optional`
 
+- The `stdlib` is beginning to remove support for the `Stringable` and `Representable`
+  traits in favor of the unified `Writable` trait. Most stdlib types have had their
+  conformance to `Stringable` and `Representable` removed and the associated `__str__()`
+  and `__repr__()` methods have been deprecated.
+
 - The `testing` module now provides `assert_equal` and `assert_not_equal`
   overloads for `Tuple`, enabling direct tuple-to-tuple comparisons in tests
   instead of element-by-element assertions. Element types must conform to
@@ -438,6 +446,11 @@ what we publish.
     types based on a compile-time boolean condition. It is the type-level
     equivalent of the ternary conditional expression `Then if If else Else`.
 
+- `reflection/traits` has been added, providing compile-time meta functions
+  (`AllWritable`, `AllMovable`, `AllCopyable`, `AllImplicitlyCopyable`,
+  `AllDefaultable`, `AllEquatable`) that evaluate to `True` if all types in a
+  variadic type list conform to the corresponding trait.
+
 - `UnsafeMaybeUninit` has been renamed as such, and it's methods have had their
   names updated to reflect the `init` name. It also now exposes a `zeroed()` method
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
@@ -483,6 +496,10 @@ what we publish.
   print(a.__floordiv__(b))
   ```
 
+- Remove `DType.get_dtype[T]()` and `DType.is_scalar[T]()`. These were low-level
+  operations for extracting the `DType` of a `SIMD` in generic code. There are
+  better alternatives available in Mojo today using reflection capabilities.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
@@ -502,6 +519,9 @@ what we publish.
   run on a directory. Previously it would also format Python files, which
   conflicted with Python-specific formatters in pre-commit hooks. Users who
   want to format Python files can use `mblack` directly.
+
+- `mojo format` now supports `--print-cache-dir` (hidden, use `--help-hidden`
+  to see it) to display the path to the formatter cache directory.
 
 ### ❌ Removed
 

@@ -23,7 +23,10 @@ mojo_library(
     )
     for name in [
         "data_movement_ops",
-        "elementwise_ops",
+        "elementwise_binary_ops",
+        "elementwise_cast_ops",
+        "elementwise_comparison_ops",
+        "elementwise_unary_ops",
         "layer_norm_ops",
         "matmul_ops",
         "misc_ops",
@@ -34,7 +37,10 @@ mojo_library(
 
 _SHARED_LIBS = [
     ":data_movement_ops",
-    ":elementwise_ops",
+    ":elementwise_binary_ops",
+    ":elementwise_cast_ops",
+    ":elementwise_comparison_ops",
+    ":elementwise_unary_ops",
     ":layer_norm_ops",
     ":matmul_ops",
     ":misc_ops",

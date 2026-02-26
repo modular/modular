@@ -18,7 +18,7 @@ batch_size=64
 max_length=128000
 
 extra_pipelines_args=(
-  --device-memory-utilization=0.8
+  --device-memory-utilization=0.95
   --ep-size 8
   --data-parallel-degree 8
   --max-batch-input-tokens 1024

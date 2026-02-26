@@ -582,7 +582,7 @@ def main():
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
-    var verify = arg_parse("verify", True)
+    var verify = arg_parse("verify", False)
     comptime cache_busting = True
     comptime transpose_b = True
     comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()

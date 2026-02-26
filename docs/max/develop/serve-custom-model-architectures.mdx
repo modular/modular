@@ -9,7 +9,7 @@ is_tutorial: true
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import MDXListing from '@site/src/components/Listing/MDXListing';
-import InstallModular from '@site/docs/_includes/install-modular.mdx';
+import InstallModular from '../../_includes/install-modular.mdx';
 
 MAX comes with built-in support for popular model architectures like
 `Gemma3ForCausalLM`, `Qwen2ForCausalLM`, and `LlamaForCausalLM`, so you can
@@ -76,8 +76,8 @@ from __future__ import annotations
 from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy import ReturnLogits
-from max.pipelines.architectures.llama3_legacy.model import Llama3Model
+from max.nn import ReturnLogits
+from max.pipelines.architectures.llama3.model import Llama3Model
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 
@@ -138,8 +138,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from max.graph.weights import WeightData
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.architectures.llama3_legacy.model_config import Llama3Config
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.llama3.model_config import Llama3Config
 from transformers import AutoConfig
 
 

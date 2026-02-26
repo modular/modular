@@ -24,7 +24,7 @@ from .model import DeepseekV2Model
 from .model_config import DeepseekV2Config
 
 deepseekV2_arch = SupportedArchitecture(
-    name="DeepseekV2ForCausalLM_Legacy",
+    name="DeepseekV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V2-Lite-Chat",

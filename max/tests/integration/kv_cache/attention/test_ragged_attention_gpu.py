@@ -22,8 +22,8 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import (
+from max.nn.attention import MHAMaskVariant
+from max.nn.kernels import (
     flash_attention_gpu,
     flash_attention_ragged_gpu,
 )

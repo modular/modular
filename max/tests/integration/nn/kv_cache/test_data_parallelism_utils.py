@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 
 
 def test_split_into_groups() -> None:

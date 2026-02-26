@@ -16,28 +16,56 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
-from max import functional as F
-from max.driver import CPU
 from max.dtype import DType
-from max.nn import Linear, Module
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-    uses_opaque,
-)
-from max.tensor import Tensor
-
-from ...common_layers.functional_kernels import (
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.nn.attention import MHAMaskVariant
+from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from ...common_layers.rotary_embedding import YarnRotaryEmbedding
+from max.nn.kv_cache import (
+    KVCacheParams,
+    PagedCacheValues,
+    uses_opaque,
+)
+from max.nn.layer import Module, Shardable
+from max.nn.linear import Linear
+from max.nn.rotary_embedding import YarnRotaryEmbedding
 
 
-class GptOssAttention(Module[..., Tensor]):
+def compute_heads_per_device(
+    *, total_heads: int, device_idx: int, num_devices: int
+) -> int:
+    """Computes the number of attention heads per device for sharding.
+
+    This function calculates the number of heads for a given device, enforcing
+    that the total number of heads is evenly divisible by the number of devices.
+    Uneven distribution is disallowed to prevent workload imbalance.
+
+    Args:
+        total_heads: The total number of attention heads.
+        device_idx: The index of the current device (0-indexed).
+        num_devices: The total number of devices for sharding.
+
+    Returns:
+        The number of heads assigned to the specified device.
+
+    Raises:
+        ValueError: If `total_heads` is not evenly divisible by `num_devices`.
+    """
+    base_heads, remainder = divmod(total_heads, num_devices)
+    if device_idx < remainder:
+        raise ValueError(
+            "An uneven distribution of heads is not supported as it will cause a workload imbalance."
+        )
+    else:
+        return base_heads
+
+
+class GptOssAttention(Module, Shardable):
     """Implementation of the distributed attention layer for the GptOss text model.
 
     Depending on the layer type, the attention layer can be either a full attention
@@ -58,7 +86,9 @@ class GptOssAttention(Module[..., Tensor]):
         hidden_size: int,
         kv_params: KVCacheParams,
         layer_idx: int,
-        mask_variant: MHAMaskVariant,
+        layer_type: str = "full_attention",
+        dtype: DType = DType.float32,
+        devices: list[DeviceRef],
         scale: float | None = None,
         has_bias: bool = False,
         local_window_size: int = 1024,
@@ -73,6 +103,11 @@ class GptOssAttention(Module[..., Tensor]):
             kv_params: KV Cache Params, including the number of kv heads, the
                 head dim, and data type.
             layer_idx: The layer number associated with this Attention block.
+            dtype: DType of the attention inputs and weights.
+            devices: Device to place the weights and run the computation. If
+                multiple are provided, the first device is used. Use
+                `TensorParallelAttentionWithRope` to use all devices during
+                attention computation.
             linear_cls: Linear class to use for the outputs dense layer.
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
@@ -86,16 +121,23 @@ class GptOssAttention(Module[..., Tensor]):
         self.layer_idx = layer_idx
         self.kv_params = kv_params
         self.has_bias = has_bias
+        self.devices = devices
+        self._sharding_strategy: ShardingStrategy | None = None
         self.scale = (
             scale
             if scale is not None
             else math.sqrt(1.0 / self.kv_params.head_dim)
         )
         self.local_window_size = local_window_size
-        self.mask_variant = mask_variant
+        self.layer_type = layer_type
 
         # Initialize sinks parameter for each attention head
-        self.sinks = Tensor.zeros([num_attention_heads])
+        self.sinks = Weight(
+            name="sinks",
+            dtype=dtype,
+            shape=[num_attention_heads],
+            device=devices[0],
+        )
 
         if not uses_opaque(self.kv_params.cache_strategy):
             raise ValueError(
@@ -109,35 +151,43 @@ class GptOssAttention(Module[..., Tensor]):
         self.q_proj = Linear(
             in_dim=hidden_size,
             out_dim=self.q_weight_dim,
-            bias=self.has_bias,
+            dtype=dtype,
+            device=devices[0],
+            has_bias=self.has_bias,
         )
         self.k_proj = Linear(
             in_dim=hidden_size,
             out_dim=self.kv_weight_dim,
-            bias=self.has_bias,
+            dtype=dtype,
+            device=devices[0],
+            has_bias=self.has_bias,
         )
         self.v_proj = Linear(
             in_dim=hidden_size,
             out_dim=self.kv_weight_dim,
-            bias=self.has_bias,
+            dtype=dtype,
+            device=devices[0],
+            has_bias=self.has_bias,
         )
 
         self.o_proj = Linear(
             in_dim=self.q_weight_dim,
             out_dim=hidden_size,
-            bias=self.has_bias,
+            dtype=dtype,
+            device=devices[0],
+            has_bias=self.has_bias,
         )
 
     @property
-    def wqkv(self) -> Tensor:
+    def wqkv(self) -> TensorValue:
         """The concatenation of q, k, and v weight vectors."""
-        wq: Tensor = self.q_proj.weight
-        wk: Tensor = self.k_proj.weight
-        wv: Tensor = self.v_proj.weight
-        return F.concat([wq, wk, wv], axis=0)
+        wq: TensorValue = self.q_proj.weight
+        wk: TensorValue = self.k_proj.weight
+        wv: TensorValue = self.v_proj.weight
+        return ops.concat([wq, wk, wv], axis=0)
 
     @property
-    def wqkv_bias(self) -> Tensor | None:
+    def wqkv_bias(self) -> TensorValue | None:
         """The concatenation of q, k, and v bias weight vectors."""
         if not self.has_bias:
             return None
@@ -151,20 +201,22 @@ class GptOssAttention(Module[..., Tensor]):
                 "Projection bias is None, but has_bias=True was specified."
             )
 
-        return F.concat(
+        return ops.concat(
             [self.q_proj.bias, self.k_proj.bias, self.v_proj.bias], axis=0
         )
 
-    def forward(
+    def __call__(
         self,
-        x: Tensor,
+        x: TensorValue,
         kv_collection: PagedCacheValues,
         **kwargs,
-    ) -> Tensor:
+    ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
+        layer_idx = ops.constant(
+            self.layer_idx, DType.uint32, device=DeviceRef.CPU()
+        )
         # Call into fused qkv ragged matmul.
         wqkv = self.wqkv
         xq = fused_qkv_ragged_matmul(
@@ -183,7 +235,7 @@ class GptOssAttention(Module[..., Tensor]):
         # Apply rotary embedding based on layer type
         rope = self.rope
 
-        freqs_cis = F.cast(rope.freqs_cis, xq.dtype).to(xq.device)
+        freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
         xq = fused_qk_ragged_rope(
             self.kv_params,
             xq,
@@ -195,6 +247,11 @@ class GptOssAttention(Module[..., Tensor]):
         )
 
         # Calculate Flash Attention with sinks.
+        mask_variant = (
+            MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
+            if self.layer_type == "sliding_attention"
+            else MHAMaskVariant.CAUSAL_MASK
+        )
         # The sinks parameter modifies the attention computation by adding an extra
         # logit column that acts as an attention sink.
         attn_out = flash_attention_ragged(
@@ -203,11 +260,116 @@ class GptOssAttention(Module[..., Tensor]):
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
-            mask_variant=self.mask_variant,
+            mask_variant=mask_variant,
             scale=self.scale,
             local_window_size=self.local_window_size,
             sink_weights=self.sinks,
         )
-        attn_out = F.reshape(attn_out, shape=[total_seq_len, -1])
+        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)
         return ret
+
+    @property
+    def sharding_strategy(self) -> ShardingStrategy | None:
+        return self._sharding_strategy
+
+    @sharding_strategy.setter
+    def sharding_strategy(self, sharding_strategy: ShardingStrategy) -> None:
+        num_devices = sharding_strategy.num_devices
+
+        if sharding_strategy.is_replicate:
+            self.q_proj.sharding_strategy = sharding_strategy
+            self.k_proj.sharding_strategy = sharding_strategy
+            self.v_proj.sharding_strategy = sharding_strategy
+            self.o_proj.sharding_strategy = sharding_strategy
+
+        elif sharding_strategy.is_tensor_parallel:
+            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+                num_devices
+            )
+            self.o_proj.sharding_strategy = (
+                ShardingStrategy.head_aware_columnwise(
+                    num_devices, self.n_heads, self.kv_params.head_dim
+                )
+            )
+            self.sinks.sharding_strategy = ShardingStrategy.rowwise(num_devices)
+        else:
+            raise ValueError(
+                "GptOssAttention only supports tensor parallel and replicate sharding strategy"
+            )
+
+        self._sharding_strategy = sharding_strategy
+
+    def shard(self, devices: Iterable[DeviceRef]) -> list[GptOssAttention]:
+        """Creates sharded views of this attention layer across multiple devices.
+
+        Overrides the parent method to handle QK normalization layers.
+
+        Args:
+            devices: Iterable of devices to place the shards on.
+
+        Returns:
+            List of sharded GptOssAttention instances, one for each device.
+        """
+        if not self.sharding_strategy:
+            raise ValueError(
+                "GptOssAttention layer cannot be sharded because no sharding strategy was provided."
+            )
+
+        # Get sharded weights
+        q_proj_shards = self.q_proj.shard(devices)
+        k_proj_shards = self.k_proj.shard(devices)
+        v_proj_shards = self.v_proj.shard(devices)
+        o_proj_shards = self.o_proj.shard(devices)
+
+        # Shard sinks parameter
+        sinks_shards = self.sinks.shard(devices)
+
+        shards = []
+        for shard_idx, device in enumerate(devices):
+            # Calculate sharded dimensions - handle uneven head distribution
+            sharded_num_heads = compute_heads_per_device(
+                total_heads=self.n_heads,
+                device_idx=shard_idx,
+                num_devices=self.sharding_strategy.num_devices,
+            )
+            sharded_num_kv_heads = compute_heads_per_device(
+                total_heads=self.kv_params.n_kv_heads,
+                device_idx=shard_idx,
+                num_devices=self.sharding_strategy.num_devices,
+            )
+
+            # Create new attention instance with sharded configuration
+            sharded = GptOssAttention(
+                rope=self.rope,
+                num_attention_heads=sharded_num_heads,
+                num_key_value_heads=sharded_num_kv_heads,
+                hidden_size=self.hidden_size,
+                kv_params=self.kv_params,
+                layer_idx=self.layer_idx,
+                layer_type=self.layer_type,
+                dtype=self.q_proj.weight.dtype,
+                devices=[device],
+                scale=self.scale,
+                has_bias=self.has_bias,
+                local_window_size=self.local_window_size,
+            )
+
+            # Assign sharded weights
+            sharded.q_proj = q_proj_shards[shard_idx]
+            sharded.k_proj = k_proj_shards[shard_idx]
+            sharded.v_proj = v_proj_shards[shard_idx]
+            sharded.o_proj = o_proj_shards[shard_idx]
+
+            # Assign sinks parameter
+            sharded.sinks = sinks_shards[shard_idx]
+
+            shards.append(sharded)
+
+        return shards

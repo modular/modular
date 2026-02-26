@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import math
 
-from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.nn import Linear, Module
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.nn.attention import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
+from max.nn.module_v3 import Linear, Module
 
 from ...common_layers.functional_kernels import (
     flash_attention_ragged,

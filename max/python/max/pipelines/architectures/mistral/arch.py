@@ -24,7 +24,7 @@ from .model import MistralModel
 from .model_config import MistralConfig
 
 mistral_arch = SupportedArchitecture(
-    name="MistralForCausalLM_Legacy",
+    name="MistralForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Nemo-Instruct-2407"],
     default_encoding="bfloat16",

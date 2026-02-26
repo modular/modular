@@ -315,9 +315,6 @@ def test_convert_simd_to_string():
 
 
 fn _test_repr(value: SIMD, expected: String) raises:
-    # Test __repr__
-    assert_equal(value.__repr__(), expected)
-
     # Test write_repr_to
     var string = String()
     value.write_repr_to(string)
