@@ -373,6 +373,33 @@ def test_count_func():
     assert_equal(1, Int(data[:3].count[func=is_2]()))
 
 
+def test_count_value():
+    # Small span (scalar tail only).
+    var small = Span[UInt8]([UInt8(1), 2, 3, 2, 2, 1, 3])
+    assert_equal(3, small.count(UInt8(2)))
+    assert_equal(2, small.count(UInt8(1)))
+    assert_equal(0, small.count(UInt8(9)))
+
+    # Empty span.
+    var empty = Span[UInt8]([UInt8(0)])[:0]
+    assert_equal(0, empty.count(UInt8(0)))
+
+    # Large span that exercises SIMD path and scalar tail.
+    var large = List[UInt8](capacity=300)
+    for i in range(300):
+        large.append(UInt8(i % 10))
+    assert_equal(30, Span(large).count(UInt8(0)))
+    assert_equal(30, Span(large).count(UInt8(5)))
+    assert_equal(0, Span(large).count(UInt8(99)))
+
+    # Other scalar types.
+    var floats = Span[Float32](
+        [Float32(1.0), 2.0, 3.0, 2.0, 2.0, 1.0]
+    )
+    assert_equal(3, floats.count(Float32(2.0)))
+    assert_equal(0, floats.count(Float32(9.0)))
+
+
 def test_unsafe_subspan():
     var data = Span[Int]([0, 1, 2, 3, 4])
 

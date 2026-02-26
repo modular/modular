@@ -862,6 +862,47 @@ struct Span[
         vectorize[simdwidth](length, do_count)
         return UInt(count)
 
+    fn count[
+        dtype: DType, //
+    ](self: Span[Scalar[dtype]], value: Scalar[dtype]) -> Int:
+        """Counts the number of occurrences of a value in the Span.
+
+        Uses SIMD to count matches in parallel.
+
+        Parameters:
+            dtype: The DType of the scalars stored in the Span.
+
+        Args:
+            value: The value to count.
+
+        Returns:
+            The number of occurrences of `value` in the Span.
+
+        Constraints:
+            `dtype` must not be `DType.bool`.
+        """
+        comptime widths: InlineArray[Int, 6] = [256, 128, 64, 32, 16, 8]
+        var ptr = self.unsafe_ptr()
+        var length = len(self)
+        var count = 0
+        var processed = 0
+
+        comptime for i in range(len(widths)):
+            comptime width = widths[i]
+
+            comptime if simd_width_of[dtype]() >= width:
+                for _ in range((length - processed) // width):
+                    var mask = (ptr + processed).load[width=width]().eq(
+                        SIMD[dtype, width](value)
+                    )
+                    count += mask.reduce_bit_count()
+                    processed += width
+
+        for i in range(length - processed):
+            if ptr[processed + i] == value:
+                count += 1
+        return count
+
     @always_inline
     fn unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
         """Returns a subspan of the current span.
