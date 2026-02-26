@@ -571,6 +571,11 @@ populatePublicParameterDecls(SharedState &shared, ArrayRef<Type> paramTypes,
                              PogListAttr paramListAttr,
                              SmallVectorImpl<PublicParameterDecl> &parameters,
                              MojoASTDeclRef *parentDeclContext = nullptr) {
+  // Set the scope to the parent declaration so the ASTType printer can deduce
+  // dependent parameter names.
+  DeclResolver::DeclScopeChanger scope(
+      parentDeclContext && *parentDeclContext ? &**parentDeclContext : nullptr);
+
   // Update param / arg types with decl refs instead of index refs.
   ParameterEvaluator evaluator;
   ArrayRef<PogMetadataAttr> pogs = paramListAttr.getPogs();
@@ -607,13 +612,9 @@ populatePublicParameterDecls(SharedState &shared, ArrayRef<Type> paramTypes,
                                              shared, passingKind, variadicKind,
                                              defaultValue, parentDeclContext));
     if (const ArrayRef<ConstraintAttr> constraints = pogs[idx].getConstraints();
-        !constraints.empty()) {
-      DeclResolver::DeclScopeChanger scope(
-          parentDeclContext && *parentDeclContext ? &**parentDeclContext
-                                                  : nullptr);
+        !constraints.empty())
       parameters.back().setConstraints(
           constraintsToString(constraints, &evaluator, shared));
-    }
   }
   return evaluator;
 }
@@ -1365,7 +1366,6 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     if (const ArrayRef<ConstraintAttr> constraints =
             paramMetaAttribs[parIdx].getConstraints();
         !constraints.empty()) {
-      DeclResolver::DeclScopeChanger scope(declRef ? &*declRef : nullptr);
       std::string constrString =
           constraintsToString(constraints, &evaluator, shared);
       parameters.back().setConstraints(constrString);
@@ -1373,10 +1373,8 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   }
 
   // evaluate constraints
-  if (!sigConstraints.empty()) {
-    DeclResolver::DeclScopeChanger scope(declRef ? &*declRef : nullptr);
+  if (!sigConstraints.empty())
     fnConstraints = constraintsToString(sigConstraints, &evaluator, shared);
-  }
 
   // Grab the types of the arguments to the function.
   for (auto [argIdx, userType, sigType, conventionX, pogAttr] :
