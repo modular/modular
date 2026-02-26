@@ -354,7 +354,8 @@ value from `first` to `second`? Or create a copy of the original value?
 These choices depend on some features of the type of the values involved:
 specifically, if the values are movable, copyable, or implicitly copyable.
 
-- A *copyable* type can be copied explicitly, by calling its `copy()` method.
+- A *copyable* type can be copied explicitly, by calling its copy initializer
+  or the `copy()` method.
 
   ```mojo
   second = first.copy()

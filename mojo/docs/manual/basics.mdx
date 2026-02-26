@@ -201,7 +201,7 @@ struct MyPair(Copyable):
         self.first = first
         self.second = second
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self)
         self.first = copy.first
         self.second = copy.second
 
@@ -222,8 +222,8 @@ function is declared with `def`. In general, you can use either form in a
 struct.
 
 The `MyPair` struct contains two special methods, `__init__()`, the constructor,
-and `__copyinit__()`, the copy constructor. _Lifecycle methods_ like this
-control how a struct is created, copied, moved, and destroyed.
+and `__init__(out self, *, copy: Self)`, the copy constructor. _Lifecycle methods_
+like this control how a struct is created, copied, moved, and destroyed.
 
 For most simple types, you don't need to write the lifecycle methods. You can
 use the `@fieldwise_init` decorator to generate the boilerplate field-wise

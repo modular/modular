@@ -285,7 +285,7 @@ In Mojo, a value can be copied either *explicitly* or  *implicitly*:
 ```mojo
 # Explicit copy
 var s = "Test string"
-var s2 = String(copy=s)
+var s2 = s.copy()
 
 # Implicit copy
 var i = 15
@@ -301,9 +301,9 @@ To make a struct explicitly copyable, you need to:
 By adding the `Copyable` trait, Mojo can generate a default
 copy constructor for you unless you've written one yourself.
 This default method copies each field of the `copy` value
-into the new value. The `Copyable` trait also defines a default `copy()` method,
-which provides a more user-friendly way to copy a value than invoking the
-copy constructor directly.
+into the new value. The `Copyable` trait also defines a default
+`copy()` method which provides an additional way to copy a value,
+versus calling the copy constructor directly.
 
 ```mojo
 @fieldwise_init
@@ -316,7 +316,7 @@ Now this code works to make a copy:
 
 ```mojo
 var mine = MyPet("Loki", 4)
-var yours = MyPet(copy=mine)
+var yours = mine.copy()
 ```
 
 :::note
@@ -408,7 +408,7 @@ struct HeapArray(Copyable):
         print("]")
 ```
 
-Notice that the copy constructor does not copy the `UnsafePointer` value (doing
+Notice that the copy constructor doesn't copy the `UnsafePointer` value (doing
 so would make the copied value refer to the same `data` memory address as the
 original value, which is a shallow copy). Instead, we initialize a new
 `UnsafePointer` to allocate a new block of memory, and then copy over all the
@@ -421,7 +421,7 @@ here:
 ```mojo
 fn copies():
     var a = HeapArray(2, 1)
-    var b = HeapArray(copy=a)  # Calls the copy constructor
+    var b = a.copy()  # Calls the copy method
     a.dump()  # Prints [1, 1]
     b.dump()  # Prints [1, 1]
 
@@ -484,8 +484,9 @@ def main():
 ```
 
 The `ImplicitlyCopyable` trait inherits from `Copyable`, so adding
-`ImplicitlyCopyable` to your type gives you a copy constructor and a default `copy()`
-method. (It also gives you automatic `Movable` conformance.)
+`ImplicitlyCopyable` to your type gives you a copy constructor and a
+`copy()` method. It also gives you automatic `Movable` conformance.
+
 The trait doesn't define any methods of its own: it serves as a signal
 to the compiler that it can insert calls to copy constructor as needed. For
 example, in the previous example, the compiler might generate code equivalent
@@ -493,7 +494,7 @@ to:
 
 ```mojo
 pair = MyPair(3, 4)
-copy = MyPair(copy=pair)
+copy = pair.copy()
 ```
 
 A type should be implicitly copyable only if copying the type is inexpensive and
@@ -524,7 +525,7 @@ Note that [register-passable values](/mojo/manual/decorators/register-passable)
 types are automatically movable, and **cannot** define a custom move
 constructor.
 
-Here's a movable (also Copyable) version of the `MyPet` struct:
+Here's a movable (also copyable) version of the `MyPet` struct:
 
 ```mojo
 @fieldwise_init

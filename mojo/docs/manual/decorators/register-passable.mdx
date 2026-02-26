@@ -29,7 +29,7 @@ struct Pair(Copyable):
         self.a = one
         self.b = two
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.a = copy.a
         self.b = copy.b
 
