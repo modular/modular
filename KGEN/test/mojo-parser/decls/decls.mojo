@@ -6,7 +6,7 @@
 
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
 
-from builtin.stubs import _get_kgen_string
+from std.builtin.stubs import _get_kgen_string
 
 ##===----------------------------------------------------------------------===##
 # fn/def

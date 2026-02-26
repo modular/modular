@@ -4,5 +4,5 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from builtin.error import __mojo_debugger_raise_hook
-from builtin.stubs import *
+from std.builtin.error import __mojo_debugger_raise_hook
+from std.builtin.stubs import *
