@@ -27,9 +27,9 @@ functions.
 
 The fundamental rules that make Mojo's ownership model work are the following:
 
-* Every value has only one owner at a time.
-* When the lifetime of the owner ends, Mojo destroys the value.
-* If there are existing references to a value, Mojo extends the lifetime of
+- Every value has only one owner at a time.
+- When the lifetime of the owner ends, Mojo destroys the value.
+- If there are existing references to a value, Mojo extends the lifetime of
   the owner.
 
 ### Variables and references
@@ -70,33 +70,33 @@ An argument convention specifies whether an argument is mutable or immutable,
 and whether the function owns the value. Each convention is defined by a
 keyword at the beginning of an argument declaration:
 
-* `read`: The function receives an **immutable reference**. This means the
+- `read`: The function receives an **immutable reference**. This means the
   function can read the original value (it is *not* a copy), but it cannot
   mutate (modify) it.
 
-* `mut`: The function receives a **mutable reference**. This means the
+- `mut`: The function receives a **mutable reference**. This means the
   function can read and mutate the original value (it is *not* a copy).
 
-* `var`: The function takes **ownership** of a value. This means the function
+- `var`: The function takes **ownership** of a value. This means the function
   has exclusive ownership of the argument. The caller might choose to transfer
   ownership of an existing value to this function, but that's not always what
   happens. The callee might receive a newly-created value, or a copy of an
   existing value.
 
-* `ref`: The function gets a reference with a parametric mutability: that is,
+- `ref`: The function gets a reference with a parametric mutability: that is,
   the reference can be either mutable or immutable. You can think of `ref`
   arguments as a generalization of the `read` and `mut` conventions.
   `ref` arguments are an advanced topic, and they're described in more detail in
   [Lifetimes, origins, and references](/mojo/manual/values/lifetimes).
 
-* `out`: A special convention used for the `self` argument in
+- `out`: A special convention used for the `self` argument in
   [constructors](/mojo/manual/lifecycle/life#constructor) and for
   [named results](/mojo/manual/functions#named-results). An `out`
   argument is uninitialized at the beginning of the function, and must be
   initialized before the function returns. Although `out` arguments show up in
   the argument list, they're never passed in by the caller.
 
-* `deinit`: A special convention used in the destructor and consuming-move
+- `deinit`: A special convention used in the destructor and consuming-move
   lifecycle methods. A `deinit` argument is initialized at the beginning of the
   function, and uninitialized when the function returns.
 
@@ -158,10 +158,10 @@ argument by `const&` in C++, which also avoids a copy of the value and disables
 mutability in the callee. However, the read convention differs from
 `const&` in C++ in two important ways:
 
-* The Mojo compiler implements a lifetime checker that ensures that values are
+- The Mojo compiler implements a lifetime checker that ensures that values are
   not destroyed when there are outstanding references to those values.
 
-* Small values like `Int`, `Float`, and `SIMD` are always passed in machine
+- Small values like `Int`, `Float`, and `SIMD` are always passed in machine
   registers—instead of through an extra indirection or optimized at every call
   site—because these types are declared with the
   [`@register_passable`](/mojo/manual/decorators/register-passable) decorator.
@@ -298,14 +298,14 @@ Technically, the `var` keyword does not guarantee that the received value is
 gets unique ownership of a value. This happens in one of
 three ways:
 
-* The caller passes the argument with the `^` transfer sigil, which ends the
+- The caller passes the argument with the `^` transfer sigil, which ends the
   lifetime of that variable (the variable becomes uninitialized) and ownership
   is transferred into the function.
 
-* The caller **does not** use the `^` transfer sigil, in which case, Mojo copies
+- The caller **does not** use the `^` transfer sigil, in which case, Mojo copies
   the value. If the type isn't copyable, this is a compile-time error.
 
-* The caller passes in a newly-created "owned" value, such as a value returned
+- The caller passes in a newly-created "owned" value, such as a value returned
   from a function. In this case, no variable owns the value and it can be
   transferred directly to the callee. For example:
 
@@ -394,21 +394,17 @@ operation"—these are not strictly the same thing.
 
 There are multiple ways that Mojo can transfer ownership of a value:
 
-* If a type implements the [move
+- If a type implements the [move
   constructor](/mojo/manual/lifecycle/life#move-constructor),
-  `__moveinit__()`, Mojo may invoke this method *if* a value of that type is
+  `__init__(take=)`, Mojo may invoke this method *if* a value of that type is
   transferred into a function as a `var` argument, *and* the original
   variable's lifetime ends at the same point (with or without use of the `^`
   transfer sigil).
 
-* If a type implements the [copy
-  constructor](/mojo/manual/lifecycle/life#move-constructor), `__copyinit__()`
-  and not `__moveinit__()`, Mojo may copy the value and destroy the old value.
-
-* In some cases, Mojo can optimize away the move operation entirely, leaving the
+- In some cases, Mojo can optimize away the move operation entirely, leaving the
   value in the same memory location but updating its ownership. In these cases,
-  a value can be transferred without invoking either the `__copyinit__()` or
-  `__moveinit__()` constructors.
+  a value can be transferred without invoking either the copy or move
+  constructors.
 
 In order for the `var` convention to work *without* the transfer
 sigil, the value type must be copyable (via `__copyinit__()`).

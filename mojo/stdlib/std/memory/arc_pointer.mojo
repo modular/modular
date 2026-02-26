@@ -43,7 +43,7 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
         """Atomically increment the refcount."""
 
         # `MONOTONIC` is ok here since this ArcPointer is currently being copied
-        # from an existing ArcPointer inside of __copyinit__. This means any
+        # from an existing ArcPointer inside of copy ctor. This means any
         # other ArcPointer in different threads running their destructors will
         # not see a refcount of 0 and will not delete the shared data.
         #
@@ -163,7 +163,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         )
         self._inner = pointer_to_inner.bitcast[Self._inner_type]()
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy an existing reference. Increment the refcount to the object.
 
         Args:

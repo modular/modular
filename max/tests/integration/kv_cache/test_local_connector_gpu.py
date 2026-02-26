@@ -19,7 +19,7 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.kv_cache.connectors.local_connector import LocalConnector
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -54,7 +54,7 @@ def create_local_connector(
     )
 
     # Create device tensors required by the connector
-    device_tensors = [
+    device_values = [
         Buffer(
             shape=[num_device_blocks, *kv_params.shape_per_block],
             dtype=kv_params.dtype,
@@ -64,9 +64,9 @@ def create_local_connector(
 
     return LocalConnector(
         params=kv_params,
-        devices=[device],
-        device_tensors=device_tensors,
-        device_scale_tensors=None,
+        device_buffer=KVCacheBuffer(
+            total_num_pages=num_device_blocks, values=device_values
+        ),
         total_num_host_blocks=num_host_blocks,
     )
 
@@ -75,15 +75,6 @@ def test_connector_name() -> None:
     """Verify LocalConnector has correct name."""
     connector = create_local_connector()
     assert connector.name == "LocalConnector"
-
-
-def test_host_tensors_are_pinned() -> None:
-    """Verify host tensors are pinned for efficient DMA transfers."""
-    connector = create_local_connector()
-    assert connector.host_tensors is not None
-
-    for tensor in connector.host_tensors:
-        assert tensor.pinned, "Host tensors should be pinned memory"
 
 
 def test_num_host_blocks() -> None:
@@ -182,7 +173,7 @@ def test_load_returns_hashes_for_loaded_blocks() -> None:
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
     connector.lookup(ctx, [100, 200])
 
-    loaded_hashes = connector.load(ctx, [10, 11], [])
+    loaded_hashes = connector.load(ctx, [10, 11])
 
     assert loaded_hashes == [100, 200]
 
@@ -192,7 +183,7 @@ def test_load_without_lookup_returns_empty() -> None:
     connector = create_local_connector()
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
-    loaded_hashes = connector.load(ctx, [0, 1], [])
+    loaded_hashes = connector.load(ctx, [0, 1])
 
     assert loaded_hashes == []
 
@@ -231,11 +222,11 @@ def test_load_for_one_context_does_not_affect_another() -> None:
     connector.lookup(ctx1, [100, 200])
     connector.lookup(ctx2, [300, 400])
 
-    loaded1 = connector.load(ctx1, [10, 11], [])
+    loaded1 = connector.load(ctx1, [10, 11])
     assert loaded1 == [100, 200]
 
     assert str(ctx2.request_id) in connector._pending_loads
-    loaded2 = connector.load(ctx2, [12, 13], [])
+    loaded2 = connector.load(ctx2, [12, 13])
     assert loaded2 == [300, 400]
 
 
@@ -258,7 +249,7 @@ def test_on_request_complete_only_affects_target_context() -> None:
     assert str(ctx1.request_id) not in connector._pending_loads
     assert str(ctx2.request_id) in connector._pending_loads
 
-    loaded2 = connector.load(ctx2, [10], [])
+    loaded2 = connector.load(ctx2, [10])
     assert loaded2 == [200]
 
 
@@ -275,7 +266,7 @@ def test_prefix_cache_hit_full_sequence() -> None:
     tokens = connector.lookup(ctx, [100, 200, 300])
     assert tokens == 3 * page_size
 
-    loaded_hashes = connector.load(ctx, [10, 11, 12], [])
+    loaded_hashes = connector.load(ctx, [10, 11, 12])
     assert loaded_hashes == [100, 200, 300]
 
     assert connector.num_used_host_blocks == 3
@@ -293,7 +284,7 @@ def test_prefix_cache_partial_hit() -> None:
     tokens = connector.lookup(ctx, [100, 200, 300])
     assert tokens == 2 * page_size
 
-    loaded_hashes = connector.load(ctx, [10, 11], [])
+    loaded_hashes = connector.load(ctx, [10, 11])
     assert loaded_hashes == [100, 200]
 
 
@@ -309,7 +300,7 @@ def test_prefix_cache_miss_at_start() -> None:
     tokens = connector.lookup(ctx, [100, 200, 300])
     assert tokens == 0
 
-    loaded_hashes = connector.load(ctx, [], [])
+    loaded_hashes = connector.load(ctx, [])
     assert loaded_hashes == []
 
 
@@ -391,7 +382,7 @@ def test_load_releases_host_blocks_after_h2d() -> None:
     assert free_after_lookup == free_before - 3
 
     # Load should release blocks back (ref_cnt 1→0, back in free queue)
-    loaded = connector.load(ctx, [10, 11, 12], [])
+    loaded = connector.load(ctx, [10, 11, 12])
     assert loaded == [100, 200, 300]
 
     free_after_load = (
@@ -417,7 +408,7 @@ def test_repeated_lookup_load_does_not_leak() -> None:
         ctx = create_text_context(np.array([1], dtype=np.int64))
         tokens = connector.lookup(ctx, [100])
         assert tokens == 16
-        loaded = connector.load(ctx, [10], [])
+        loaded = connector.load(ctx, [10])
         assert loaded == [100]
 
     free_after_cycles = (

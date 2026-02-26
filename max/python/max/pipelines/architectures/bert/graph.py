@@ -30,11 +30,12 @@ from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.weights import WeightData
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import LayerNorm
-from max.nn.legacy.sequential import Sequential
+from max.nn.activation import activation_function_from_name
+from max.nn.embedding import Embedding
+from max.nn.layer import Module
+from max.nn.linear import Linear
+from max.nn.norm import LayerNorm
+from max.nn.sequential import Sequential
 
 from .model_config import BertModelConfig
 
@@ -204,15 +205,6 @@ class BertAttention(Module):
         return attention_output
 
 
-_ACTIVATIONS = {
-    "gelu": ops.gelu,
-    "relu": ops.relu,
-    "silu": ops.silu,
-    "sigmoid": ops.sigmoid,
-    "tanh": ops.tanh,
-}
-
-
 class BertIntermediate(Module):
     def __init__(self, config: BertModelConfig) -> None:
         hf_config = config.huggingface_config
@@ -225,7 +217,9 @@ class BertIntermediate(Module):
             device,
             has_bias=True,
         )
-        self.intermediate_act_fn = _ACTIVATIONS[hf_config.hidden_act]
+        self.intermediate_act_fn = activation_function_from_name(
+            hf_config.hidden_act
+        )
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
         hidden_states = self.dense(hidden_states)

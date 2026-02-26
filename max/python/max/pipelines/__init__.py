@@ -17,12 +17,13 @@ from .architectures import register_all_models
 from .core import PixelContext, TextAndVisionContext, TextContext, TTSContext
 from .lib.config import (
     AudioGenerationConfig,
+    KVCacheConfig,
+    MAXModelConfig,
     PipelineConfig,
-    PrependPromptSpeechTokens,
-    PrometheusMetricsMode,
-)
-from .lib.config_enums import (
     PipelineRole,
+    PrependPromptSpeechTokens,
+    ProfilingConfig,
+    PrometheusMetricsMode,
     RepoType,
     RopeType,
     SupportedEncoding,
@@ -41,16 +42,13 @@ from .lib.interfaces import (
     ModelOutputs,
     PipelineModel,
 )
-from .lib.kv_cache_config import KVCacheConfig
 from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MemoryEstimator
-from .lib.model_config import MAXModelConfig
 from .lib.pipeline_variants.pixel_generation import PixelGenerationPipeline
 from .lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
     TextGenerationPipelineInterface,
 )
-from .lib.profiling_config import ProfilingConfig
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .lib.sampling.sampling_config import SamplingConfig
 from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline

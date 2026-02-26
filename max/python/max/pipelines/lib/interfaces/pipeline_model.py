@@ -21,20 +21,24 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Generic
 
-from max.driver import Buffer, Device, is_virtual_device_mode
+from max.driver import (
+    Buffer,
+    Device,
+    enable_all_peer_access,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
-from ..config_enums import supported_encoding_dtype
-from ..kv_cache_config import KVCacheConfig
+from ..config.config_enums import supported_encoding_dtype
+from ..config.kv_cache_config import KVCacheConfig
 from ..lora import LoRAManager
-from .kv_cache import KVCacheMixin
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -78,7 +82,16 @@ class AlwaysSignalBuffersMixin:
         if is_virtual_device_mode():
             return []
 
-        from max.nn.legacy.comm import Signals
+        if len(self.devices) > 1:
+            try:
+                enable_all_peer_access()
+            except RuntimeError:
+                logger.warning(
+                    "Failed to enable peer-to-peer GPU access. "
+                    "Collective operations will fall back to slower paths."
+                )
+
+        from max.nn.comm import Signals
 
         return [
             Buffer.zeros(
@@ -227,29 +240,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             pipeline_config, self.huggingface_config
         )
 
-        if isinstance(self, KVCacheMixin):
-            self.kv_params = self.get_kv_params(
-                huggingface_config=self.huggingface_config,
-                pipeline_config=pipeline_config,
-                devices=self.device_refs,
-                kv_cache_config=kv_cache_config,
-                cache_dtype=pipeline_config.model.kv_cache.cache_dtype,
-            )
-            assert self.kv_cache_config._available_cache_memory is not None, (
-                "Available cache memory should have been set during memory estimation"
-            )
-            assert pipeline_config.max_batch_size is not None, (
-                "max_batch_size should have been set during memory estimation"
-            )
-            self.kv_managers = self.load_kv_managers(
-                kv_params=self.kv_params,
-                max_batch_size=pipeline_config.max_batch_size,
-                max_seq_len=self.max_seq_len,
-                session=session,
-                available_cache_memory=self.kv_cache_config._available_cache_memory,
-            )
-            self.kv_manager = self.kv_managers[0]
-
         self._lora_manager: LoRAManager | None = (
             LoRAManager(
                 pipeline_config.lora,
@@ -258,7 +248,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 self.huggingface_config.num_attention_heads,
                 self.huggingface_config.num_key_value_heads,
                 self.huggingface_config.head_dim,
-                pipeline_config.zmq_endpoint_base,
+                pipeline_config.runtime.zmq_endpoint_base,
             )
             if pipeline_config.lora
             else None
@@ -309,25 +299,30 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         if is_virtual_device_mode():
             return []
 
-        # Import here to avoid circular dependency
-        from max.nn.legacy.comm import Signals
+        if len(self.devices) <= 1:
+            return []
 
-        # Initialize state needed for communication collectives.
-        # Contents of signal buffer should be filled with zeros.
-        return (
-            [
-                Buffer.zeros(
-                    shape=(Signals.NUM_BYTES,),
-                    dtype=DType.uint8,
-                    device=dev,
-                )
-                for dev in self.devices
-            ]
-            if len(self.devices) > 1
-            # Skip creating buffers for single-device, where communication
-            # collectives shouldn't be called.
-            else []
-        )
+        # Enable P2P access between all GPUs before any collective operations.
+        # This must happen before the first allreduce/broadcast/etc. executes.
+        try:
+            enable_all_peer_access()
+        except RuntimeError:
+            logger.warning(
+                "Failed to enable peer-to-peer GPU access. "
+                "Collective operations will fall back to slower paths."
+            )
+
+        # Import here to avoid circular dependency
+        from max.nn.comm import Signals
+
+        return [
+            Buffer.zeros(
+                shape=(Signals.NUM_BYTES,),
+                dtype=DType.uint8,
+                device=dev,
+            )
+            for dev in self.devices
+        ]
 
     @property
     def dtype(self) -> DType:
@@ -483,3 +478,52 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         raise NotImplementedError(
             f"Log probabilities not implemented for {type(self)}."
         )
+
+
+class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
+    """A pipeline model that supports KV cache."""
+
+    kv_params: KVCacheParamInterface
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: WeightsAdapter | None,
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+    ) -> None:
+        super().__init__(
+            pipeline_config=pipeline_config,
+            session=session,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            weights=weights,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+        )
+        self.kv_params = self.get_kv_params(
+            huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
+            devices=self.device_refs,
+            kv_cache_config=self.kv_cache_config,
+            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
+        )
+
+    # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
+    @classmethod
+    @abstractmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParamInterface:
+        """Returns the KV cache params for the pipeline model."""
+        ...

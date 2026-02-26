@@ -1955,8 +1955,7 @@ fn _load_impl[
         )
 
     comptime if (
-        dtype_bitwidth <= 16
-        and size_of[DType.uint32]() <= bytes_to_load < size_of[DType.uint64]()
+        dtype_bitwidth < 32 and bytes_to_load >= size_of[DType.uint32]()
     ):
         return bitcast[dtype, width](
             _load_impl[
@@ -2014,6 +2013,42 @@ fn _load_impl[
             has_side_effect=True,
         ](ptr.bitcast[NoneType](), res[0], res[1], res[2], res[3])
         return SIMD[dtype, width](tmp[0], tmp[1], tmp[2], tmp[3])
+    elif width == 8:
+        var tmp = inlined_assembly[
+            instruction_name + " {$0, $1, $2, $3, $4, $5, $6, $7}, [$8];",
+            _RegisterPackType[
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+                Scalar[dtype],
+            ],
+            constraints="=r,=r,=r,=r,=r,=r,=r,=r,l,r,r,r,r,r,r,r,r",
+            has_side_effect=True,
+        ](
+            ptr.bitcast[NoneType](),
+            res[0],
+            res[1],
+            res[2],
+            res[3],
+            res[4],
+            res[5],
+            res[6],
+            res[7],
+        )
+        return SIMD[dtype, width](
+            tmp[0],
+            tmp[1],
+            tmp[2],
+            tmp[3],
+            tmp[4],
+            tmp[5],
+            tmp[6],
+            tmp[7],
+        )
     else:
         var lhs = _load_impl[
             width = width // 2,

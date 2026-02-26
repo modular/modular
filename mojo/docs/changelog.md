@@ -21,6 +21,32 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports `comptime if` and `comptime for` as the preferred syntax
+  for compile-time conditional and loop constructs, replacing the legacy
+  `@parameter if` and `@parameter for` decorator forms:
+
+  ```mojo
+  # Old syntax (still accepted, deprecated in a future release)
+  @parameter
+  if some_condition:
+      ...
+
+  @parameter
+  for i in range(10):
+      ...
+
+  # New syntax
+  comptime if some_condition:
+      ...
+
+  comptime for i in range(10):
+      ...
+  ```
+
+  Both syntaxes are accepted in this release. The `@parameter` forms will be
+  deprecated soon, and the parser will generate a warning and a fixit suggestion
+  to migrate to the new syntax.
+
 - `@register_passable("trivial")` is now deprecated,
    conform to `TrivialRegisterPassable` trait instead.
    The decorator will be removed after next release.
@@ -84,175 +110,15 @@ what we publish.
       print(align_of[AlignedBuffer[128]]())  # Prints 128
   ```
 
-- Mojo now supports raising "typed errors", where a function can specify a
-  what type it raises instead of defaulting to the `Error` type. This is done by
-  specifying it after the `raises` keyword, e.g.
-  `fn foo() raises CustomError -> Int`.
-
-  Raised errors in Mojo are very efficient - they work as an alternate return
-  value: for example, a function like `fn () raises Int -> Float32:` compiles
-  into code that returns either an `Int` or a `Float32` and uses an implicit
-  boolean result to determine which one is valid - there is no expensive stack
-  unwinding or slow dynamic logic that is implied.  This means that thrown
-  errors work fine on GPUs and other embedded targets.
-
-  The 'caught' type in a `try` block is automatically inferred to be the first
-  thrown type inside of the `try` body, e.g.:
+- Mojo now allows move constructors to take their "take" argument as either
+  `deinit` or `var`. `deinit` should be generally preferred, but `var` can be
+  useful in unusual cases where you want C++-like behavior where the destructor
+  still runs on the value after the move constructor is done with it.
 
   ```mojo
-  try:
-      print(foo())
-  except err:       # "err" is typed as CustomError
-      print(err)
-  ```
-
-  Typed throws "just work" with generics, allowing the definition of higher
-  order functions like:
-
-  ```mojo
-  fn parametric_raise_example[ErrorType: AnyType](fp: fn () raises ErrorType) raises ErrorType:
-      # ... presumably some iteration or other exciting stuff happening here.
-      fp()
-  ```
-
-  This dovetails with other support to allow contextually generic thrown types,
-  e.g.:
-
-  ```mojo
-  fn call_parametric_raise_example[GenTy: AnyType](func_ptr: fn () raises GenTy):
-    fn raise_int() raises Int: pass
-    try:
-        parametric_raise_example(raise_int)
-    except err_int:   # Typed as Int
-        ref x: Int = err_int
-
-    fn raise_string() raises String: pass
-    try:
-      parametric_raise_example(raise_string)
-    except err_string: # Typed as String
-        ref s: String = err_string
-
-    try:
-      parametric_raise_example(func_ptr)
-    except err_gen: # Typed as GenTy
-        ref s: GenTy = err_gen
-
-    # Non-raising functions infer an error type of `Never`, allowing these
-    # functions to propagate non-raisability across generic higher-order
-    # functions conveniently.
-    fn doesnt_raise(): pass
-    # Note this isn't in a try block. Mojo knows 'parametric_raise_example'
-    # doesn't raise because the 'doesnt_raise' function doesn't.
-    parametric_raise_example(doesnt_raise)
-  ```
-
-  As part of this, context managers have been extended to support typed throws,
-  and can also infer an error type if they need to handle it, e.g.:
-
-  ```mojo
-  struct MyGenericExitCtxtMgr:
-    # Called on entry to the with block.
-    fn __enter__(self): ...
-    # Called on exit from the with block when no error is thrown.
-    fn __exit__(self): ...
-    # Called on exit from the with block if an error is thrown.
-    fn __exit__[ErrType: AnyType](self, err: ErrType) -> Bool: ...
-  ```
-
-- Mojo now allows implicit conversions between function types from a non-raising
-  function to a raising function.  It also allows implicit conversions between
-  function types whose result types are implicitly convertible.
-
-  ```mojo
-  fn takes_raising_float(a: fn () raises -> Float32): ...
-  fn returns_int() -> Int: ...
-  fn example():
-      # This is now ok.
-      takes_raising_float(returns_int)
-  ```
-
-- Mojo now differentiates between `...` and `pass` in trait methods. The use of
-
-  `...` continues to denote no default implementation - `pass` now specifies a
-  default do-nothing implementation. For example:
-
-  ```mojo
-  trait T:
-      # No default implementation
-      fn foo(self): ...
-
-      # Default implementation that does nothing
-      fn bar(self) : pass
-  ```
-
-  The compiler will error on the use of `pass` to define a default
-  implementation for a trait method with results:
-
-  ```mojo
-  trait T:
-      foo.mojo:2:26: error: trait method has results but default implementation returns no value; did you mean '...'?
-      fn foo(self) -> Int: pass
-                           ^
-      trait.mojo:2:8: note: in 'foo', declared here
-      fn foo(self) -> Int: pass
-         ^
-  ```
-
-- Mojo now supports a `Never` type, which can never be instantiated.
-  This type can be used for functions (like `abort()`) which do not have a
-  normal return value, and for functions that are guaranteed to raise without
-  returning a normal value.  Functions that are declared to raise `Never` (and
-  generic functions instantiated with `Never` as their error type) compile into
-  the same ABI as functions that don't `raise`.
-
-- Mojo now allows the use of a `comptime(x)` expression to force a subexpression
-  to be evaluated at compile time.  This can help make working with certain
-  types more elegant when you can't (or don't want to) materialize them into a
-  runtime value.  For example, if you just want the size from a compile time
-  layout:
-
-  ```mojo
-  fn takes_layout[a: Layout]():
-    # materializes entire layout value just to get the size out of it
-    print(a.size())
-    # Could already work around this with a comptime declaration, verbosely.
-    comptime a_size = a.size()
-    print(a_size)
-    # Can now tell Mojo to evaluate the expression at comptime.
-    print(comptime(a.size()))
-  ```
-
-- The `deinit` argument convention can now be applied to any argument of a
-  struct method, but the argument type still must be of the enclosing struct
-  type.
-
-- Context managers (used in `with` statements) can now define consuming exit
-  methods, i.e. `fn __exit__(var self)` which can be useful for linear context
-  managers. This also works with `deinit`.
-
-- Mojo now allows functions that return references to convert to functions that
-  return values if the type is implicitly copyable or implicitly convertible to
-  the destination type:
-
-  ```mojo
-  fn fn_returns_ref(x: SomeType) -> ref [x.field] Int: ...
-  fn examples():
-      # OK, Int result from fn_returns_ref can be implicitly copied.
-      var f1 : fn (x: SomeType) -> Int = fn_returns_ref
-      # OK, Int result from fn_returns_ref implicitly converts to Float64.
-      var f2 : fn (x: SomeType) -> Float64 = fn_returns_ref
-  ```
-
-- Mojo now supports the `...` expression.  It is a logically empty value of
-  `EllipsisType`.  It can be used in overloaded functions (e.g. getitem calls),
-  e.g.:
-
-  ```mojo
-  struct YourType:
-    fn __getitem__(self, idx: Int) -> Int:
-      # ... behavior when passed x[i]
-    fn __getitem__(self, idx: EllipsisType) -> Int:
-      # ... behavior when passed x[...]
+  fn __init__(out self, *, var take: Self):
+    self.data = munge(take.data)
+    # take.__del__() runs here.
   ```
 
 ### Language changes
@@ -260,10 +126,19 @@ what we publish.
 - `**_` and `*_` are no longer supported in parameter binding lists. Use a more
   concise `...` to unbind any unspecified parameter explicitly.
 
-- The `__moveinit__` and `__copyinit__` methods are being renamed to `__init__`
-  to standardize construction. As such, the argument name for `__moveinit__`
-  must now be named `take` and the argument name for `__copyinit__` must now be
-  named `copy`.
+- As part of "init unification", the `__moveinit__` and `__copyinit__` methods
+  [are now
+  renamed](https://github.com/modular/modular/blob/main/mojo/proposals/remove_move_and_copy_init.md)
+  to `fn __init__(out self, *, take: Self)` and
+  `fn __init__(out self, *, copy: Self)` respectively.  Mojo now
+  accepts these names for initializers, but also supports the legacy
+  `__moveinit__` and `__copyinit__` names as well (for now).  However, the
+  argument name for these legacy methods must now be named `take` and `copy`
+  respectively.  Please move to the more modern `__init__` names when possible.
+
+- As part of init unification, the `__moveinit__is_trivial` and
+  `__copyinit__is_trivial` members of `Movable` and `Copyable` have been renamed
+  to `__move_ctor_is_trivial` and `__copy_ctor_is_trivial` respectively.
 
 - Slice literals in subscripts has changed to be more similar to collection
   literals. They now pass an empty tuple as a required `__slice_literal__`
@@ -326,7 +201,16 @@ what we publish.
 - Unstable `__comptime_assert` syntax is now finalized as `comptime assert`. A
   deprecation warning is emitted with a fixit for the old syntax.
 
+- `comptime assert` no longer errors on always false conditions. The assertion
+  will only trigger if its parent scope is concretized.
+
+- A statically False `comptime assert` now ends a scope. Any code following it
+  in the same scope is now a warning, and can be removed.
+
 ### Library changes
+
+- `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
+  Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 
 - `Set.__gt__()` and `Set.__lt__()` now use an O(1) `len()` check plus a single
   `issubset()` traversal instead of two full traversals.
@@ -335,7 +219,7 @@ what we publish.
   `memory` module for efficient bulk memory operations. These functions handle
   moving, copying, and destroying multiple values in contiguous memory, with
   automatic optimization for trivial types using `memcpy`. They encapsulate the
-  common pattern of checking `__moveinit__is_trivial`, `__copyinit__is_trivial`,
+  common pattern of checking `__move_ctor_is_trivial`, `__copy_ctor_is_trivial`,
   or `__del__is_trivial` and selecting the appropriate implementation. The `List`
   collection now uses these functions internally for improved code clarity and
   maintainability.
@@ -481,6 +365,11 @@ what we publish.
   - `Variant`
   - `Optional`
 
+- The `stdlib` is beginning to remove support for the `Stringable` and `Representable`
+  traits in favor of the unified `Writable` trait. Most stdlib types have had their
+  conformance to `Stringable` and `Representable` removed and the associated `__str__()`
+  and `__repr__()` methods have been deprecated.
+
 - The `testing` module now provides `assert_equal` and `assert_not_equal`
   overloads for `Tuple`, enabling direct tuple-to-tuple comparisons in tests
   instead of element-by-element assertions. Element types must conform to
@@ -557,10 +446,18 @@ what we publish.
     types based on a compile-time boolean condition. It is the type-level
     equivalent of the ternary conditional expression `Then if If else Else`.
 
+- `reflection/traits` has been added, providing compile-time meta functions
+  (`AllWritable`, `AllMovable`, `AllCopyable`, `AllImplicitlyCopyable`,
+  `AllDefaultable`, `AllEquatable`) that evaluate to `True` if all types in a
+  variadic type list conform to the corresponding trait.
+
 - `UnsafeMaybeUninit` has been renamed as such, and it's methods have had their
   names updated to reflect the `init` name. It also now exposes a `zeroed()` method
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
   being copied or moved, allowing for more practical uses.
+
+- `Span[T]` is no longer restricted to `Copyable` types. It now works with `T: AnyType`.
+  There are a few restrictions including iteration requiring `T: Copyable`.
 
 - `Int.write_padded` now accounts for a negative sign when calculating the
   width, resulting in a consistent width regardless of sign:
@@ -599,6 +496,10 @@ what we publish.
   print(a.__floordiv__(b))
   ```
 
+- Remove `DType.get_dtype[T]()` and `DType.is_scalar[T]()`. These were low-level
+  operations for extracting the `DType` of a `SIMD` in generic code. There are
+  better alternatives available in Mojo today using reflection capabilities.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
@@ -613,6 +514,14 @@ what we publish.
     (requires `--target-triple`).
   - `--print-supported-accelerators`: Lists all supported GPU and accelerator
     architectures (NVIDIA, AMD, Apple Metal).
+
+- `mojo format` now only formats Mojo files (`.mojo`, `.🔥`) by default when
+  run on a directory. Previously it would also format Python files, which
+  conflicted with Python-specific formatters in pre-commit hooks. Users who
+  want to format Python files can use `mblack` directly.
+
+- `mojo format` now supports `--print-cache-dir` (hidden, use `--help-hidden`
+  to see it) to display the path to the formatter cache directory.
 
 ### ❌ Removed
 
@@ -644,3 +553,7 @@ what we publish.
 
 - `LinkedList.reverse()`: Fixed missing `prev` pointer updates, which caused
   `__reversed__()` to produce wrong results after reversing.
+
+- Mojo would previously consider types Movable if they had a `__moveinit__`
+  method, even if they didn't conform to `Movable`.  Movability is now tied to
+  the conformance which implies the method.

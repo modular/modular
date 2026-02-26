@@ -55,7 +55,11 @@ modular_py_library(
         imports = ["."],
         tags = [
             "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
-        ],
+        ] + (["skip-external-ci"] if src in [
+            # FIXME: SDLC-3032
+            "test_conv.py",
+            "test_mlp.py",
+        ] else []),
         target_compatible_with = select({
             "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
             "//:asan": ["@platforms//:incompatible"],  # Too slow with ASAN
@@ -66,7 +70,7 @@ modular_py_library(
             ":shared_mlp_impl",
             "//max/python/max/engine",
             "//max/python/max/nn",
-            "//max/python/max/nn/legacy/hooks",
+            "//max/python/max/nn/hooks",
             "//max/python/max/pipelines",
             "//max/python/max/serve",
             "//max/tests/integration/graph:modular_graph_test",

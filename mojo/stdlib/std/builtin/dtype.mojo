@@ -32,8 +32,6 @@ struct DType(
     Hashable,
     ImplicitlyCopyable,
     KeyElement,
-    Representable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -386,6 +384,7 @@ struct DType(
         else:
             return DType.invalid
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets the name of the DType.
@@ -478,6 +477,7 @@ struct DType(
         """
         writer.write("DType.", self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __repr__(self) -> String:
         """Gets the representation of the DType e.g. `"DType.float32"`.
@@ -722,8 +722,7 @@ struct DType(
         elif dtype == DType.float64:
             return 1024
         else:
-            constrained[False, "unsupported float type"]()
-            return {}
+            comptime assert False, "unsupported float type"
 
     @staticmethod
     @always_inline("nodebug")
@@ -751,8 +750,7 @@ struct DType(
         elif dtype == DType.float64:
             return 11
         else:
-            constrained[False, "unsupported float type"]()
-            return {}
+            comptime assert False, "unsupported float type"
 
     @staticmethod
     @always_inline
@@ -843,96 +841,6 @@ struct DType(
 
         abort("invalid dtype")
 
-    # ===----------------------------------------------------------------------===#
-    # utils
-    # ===----------------------------------------------------------------------===#
-
-    @staticmethod
-    fn get_dtype[T: AnyType, size: Int = 1]() -> DType:
-        """Get the `DType` if the given Type is a `SIMD[_, size]` of a `DType`.
-
-        Parameters:
-            T: AnyType.
-            size: The SIMD size to compare against.
-
-        Returns:
-            The `DType` if matched, otherwise `DType.invalid`.
-        """
-
-        comptime if _type_is_eq[T, SIMD[DType.bool, size]]():
-            return DType.bool
-        elif _type_is_eq[T, SIMD[DType.int, size]]():
-            return DType.int
-        elif _type_is_eq[T, SIMD[DType.uint, size]]():
-            return DType.uint
-
-        elif _type_is_eq[T, SIMD[DType.uint8, size]]():
-            return DType.uint8
-        elif _type_is_eq[T, SIMD[DType.int8, size]]():
-            return DType.int8
-        elif _type_is_eq[T, SIMD[DType.uint16, size]]():
-            return DType.uint16
-        elif _type_is_eq[T, SIMD[DType.int16, size]]():
-            return DType.int16
-        elif _type_is_eq[T, SIMD[DType.uint32, size]]():
-            return DType.uint32
-        elif _type_is_eq[T, SIMD[DType.int32, size]]():
-            return DType.int32
-        elif _type_is_eq[T, SIMD[DType.uint64, size]]():
-            return DType.uint64
-        elif _type_is_eq[T, SIMD[DType.int64, size]]():
-            return DType.int64
-        elif _type_is_eq[T, SIMD[DType.uint128, size]]():
-            return DType.uint128
-        elif _type_is_eq[T, SIMD[DType.int128, size]]():
-            return DType.int128
-        elif _type_is_eq[T, SIMD[DType.uint256, size]]():
-            return DType.uint256
-        elif _type_is_eq[T, SIMD[DType.int256, size]]():
-            return DType.int256
-
-        elif _type_is_eq[T, SIMD[DType.float4_e2m1fn, size]]():
-            return DType.float4_e2m1fn
-
-        elif _type_is_eq[T, SIMD[DType.float8_e8m0fnu, size]]():
-            return DType.float8_e8m0fnu
-        elif _type_is_eq[T, SIMD[DType.float8_e3m4, size]]():
-            return DType.float8_e3m4
-        elif _type_is_eq[T, SIMD[DType.float8_e4m3fn, size]]():
-            return DType.float8_e4m3fn
-        elif _type_is_eq[T, SIMD[DType.float8_e4m3fnuz, size]]():
-            return DType.float8_e4m3fnuz
-        elif _type_is_eq[T, SIMD[DType.float8_e5m2, size]]():
-            return DType.float8_e5m2
-        elif _type_is_eq[T, SIMD[DType.float8_e5m2fnuz, size]]():
-            return DType.float8_e5m2fnuz
-
-        elif _type_is_eq[T, SIMD[DType.bfloat16, size]]():
-            return DType.bfloat16
-        elif _type_is_eq[T, SIMD[DType.float16, size]]():
-            return DType.float16
-
-        elif _type_is_eq[T, SIMD[DType.float32, size]]():
-            return DType.float32
-
-        elif _type_is_eq[T, SIMD[DType.float64, size]]():
-            return DType.float64
-
-        else:
-            return DType.invalid
-
-    @staticmethod
-    fn is_scalar[T: AnyType]() -> Bool:
-        """Whether the given Type is a Scalar of a DType.
-
-        Parameters:
-            T: AnyType.
-
-        Returns:
-            The result.
-        """
-        return Self.get_dtype[T]() != DType.invalid
-
 
 # ===-------------------------------------------------------------------===#
 # integral_type_of
@@ -945,7 +853,6 @@ fn _integral_type_of[dtype: DType]() -> DType:
 
     comptime if dtype.is_integral():
         return dtype
-
     elif dtype.is_float8():
         return DType.int8
     elif dtype.is_half_float():
@@ -954,8 +861,8 @@ fn _integral_type_of[dtype: DType]() -> DType:
         return DType.int32
     elif dtype == DType.float64:
         return DType.int64
-
-    return dtype.invalid
+    else:
+        comptime assert False, "unexpected dtype in _integral_type_of"
 
 
 # ===-------------------------------------------------------------------===#
@@ -972,7 +879,6 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
         return dtype
     elif dtype.is_integral():
         return _uint_type_of_width[bit_width_of[dtype]()]()
-
     elif dtype.is_float8():
         return DType.uint8
     elif dtype.is_half_float():
@@ -981,8 +887,8 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
         return DType.uint32
     elif dtype == DType.float64:
         return DType.uint64
-
-    return dtype.invalid
+    else:
+        comptime assert False, "unexpected dtype in _unsigned_integral_type_of"
 
 
 # ===-------------------------------------------------------------------===#
@@ -1101,6 +1007,6 @@ fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
         return "%.17g"
 
     else:
-        constrained[False, "invalid dtype"]()
+        comptime assert False, "invalid dtype"
 
     return ""

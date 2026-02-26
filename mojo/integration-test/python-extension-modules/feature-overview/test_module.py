@@ -68,7 +68,7 @@ def test_case_create_mojo_type_instance() -> None:
 
     assert person.name() == "John Smith"
 
-    assert repr(person) == "Person('John Smith', 123)"
+    assert repr(person) == "Person('John Smith', Int(123))"
 
     with pytest.raises(Exception) as cm:
         person.change_name("John Modular")
@@ -121,13 +121,13 @@ def test_case_create_mojo_object_in_mojo() -> None:
 
 def test_case_mutate_wrapped_object() -> None:
     mojo_int = feature_overview.Int()
-    assert repr(mojo_int) == "0"
+    assert repr(mojo_int) == "Int(0)"
 
     feature_overview.incr_int(mojo_int)
-    assert repr(mojo_int) == "1"
+    assert repr(mojo_int) == "Int(1)"
 
     feature_overview.incr_int(mojo_int)
-    assert repr(mojo_int) == "2"
+    assert repr(mojo_int) == "Int(2)"
 
     # --------------------------------
     # Test passing the wrong arguments
@@ -169,13 +169,13 @@ def test_case_mutate_wrapped_object() -> None:
 
 def test_case_mojo_value_convert_from_python() -> None:
     mojo_int = feature_overview.Int()
-    assert repr(mojo_int) == "0"
+    assert repr(mojo_int) == "Int(0)"
 
     feature_overview.add_to_int(mojo_int, 5)
-    assert repr(mojo_int) == "5"
+    assert repr(mojo_int) == "Int(5)"
 
     feature_overview.add_to_int(mojo_int, 3)
-    assert repr(mojo_int) == "8"
+    assert repr(mojo_int) == "Int(8)"
 
     #
     # Wrong type of argument

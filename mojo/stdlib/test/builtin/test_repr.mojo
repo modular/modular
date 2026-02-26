@@ -25,7 +25,7 @@ struct Dog(Representable):
 
 def test_explicit_conformance():
     dog = Dog(name="Fido", age=3)
-    assert_equal(repr(dog), "Dog(name='Fido', age=3)")
+    assert_equal(repr(dog), "Dog(name='Fido', age=Int(3))")
 
 
 @fieldwise_init
@@ -39,7 +39,7 @@ struct Cat(Representable):
 
 def test_implicit_conformance():
     cat = Cat(name="Whiskers", age=2)
-    assert_equal(repr(cat), "Cat(name='Whiskers', age=2)")
+    assert_equal(repr(cat), "Cat(name='Whiskers', age=Int(2))")
 
 
 def test_none_representation():

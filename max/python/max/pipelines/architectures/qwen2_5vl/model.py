@@ -33,25 +33,24 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.parallel import ParallelArrayOps
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.layer import Module
+from max.nn.parallel import ParallelArrayOps
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
@@ -130,7 +129,7 @@ class Qwen2_5VLInputs(ModelInputs):
 
 
 class Qwen2_5VLModel(
-    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextAndVisionContext]
 ):
     """A Qwen2.5VL pipeline model for multimodal text generation."""
 
@@ -519,9 +518,7 @@ class Qwen2_5VLModel(
         )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         with Graph(
             "qwen2_5vl_language",

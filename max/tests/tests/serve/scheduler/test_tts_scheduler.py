@@ -34,7 +34,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.core import TTSContext
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
@@ -104,6 +104,7 @@ def create_kv_cache(
         total_num_host_pages=num_host_pages,
         session=session,
         enable_runtime_checks=True,
+        max_batch_size=max_batch_size,
     )
 
     assert kv_manager.get_num_pages(replica_idx=0) == num_blocks
@@ -210,7 +211,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
 
         for context in ctxs:
             self.kv_cache.alloc(context, replica_idx=0, num_steps=num_tokens)
-        self.kv_cache.get_runtime_inputs([ctxs], num_steps=num_tokens)
+        self.kv_cache.runtime_inputs([ctxs], num_steps=num_tokens)
 
         # Generate the responses
         responses = {}

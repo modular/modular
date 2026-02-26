@@ -76,7 +76,10 @@ struct _Accumulator[
     fn __init__(
         out self,
         other_storage: NDBuffer[
-            Self.dtype, 1, _, Self.num_rows * Self.num_cols * Self.simd_width
+            Self.dtype,
+            1,
+            MutAnyOrigin,
+            Self.num_rows * Self.num_cols * Self.simd_width,
         ],
     ):
         comptime assert (
@@ -88,7 +91,7 @@ struct _Accumulator[
 
     # NOTE: This is NOT a deepcopy; self uses the same _storage as copy.
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)

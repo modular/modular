@@ -37,8 +37,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 # MAX EP APIs
-from max.nn.legacy.comm.ep.ep_config import EPConfig
-from max.nn.legacy.comm.ep.ep_manager import EPBatchManager, EPCommInitializer
+from max.nn.comm.ep.ep_config import EPConfig
+from max.nn.comm.ep.ep_manager import EPBatchManager, EPCommInitializer
 
 
 def _torch_dtype_from_max(dtype: DType) -> torch.dtype:

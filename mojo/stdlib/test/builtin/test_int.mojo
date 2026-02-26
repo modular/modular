@@ -145,22 +145,6 @@ def test_abs():
     assert_equal(Int.MIN.__abs__(), Int.MIN)
 
 
-def test_string_conversion():
-    assert_equal(Int(3).__str__(), "3")
-    assert_equal(Int(-3).__str__(), "-3")
-    assert_equal(Int(0).__str__(), "0")
-    assert_equal(Int(100).__str__(), "100")
-    assert_equal(Int(-100).__str__(), "-100")
-
-
-def test_int_representation():
-    assert_equal(Int(3).__repr__(), "3")
-    assert_equal(Int(-3).__repr__(), "-3")
-    assert_equal(Int(0).__repr__(), "0")
-    assert_equal(Int(100).__repr__(), "100")
-    assert_equal(Int(-100).__repr__(), "-100")
-
-
 def test_int_write_repr_to():
     fn check(i: Int, expected: String) raises:
         var string = String()

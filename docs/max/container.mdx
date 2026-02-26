@@ -1,0 +1,560 @@
+---
+title: MAX container
+sidebar_label: Container
+description: Learn more about the provided Docker container for MAX deployment
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import MDXListing from '@site/src/components/Listing/MDXListing';
+import Requirements from '@site/src/components/Requirements';
+import { requirementsNoMacWithGPU } from '../requirements';
+
+The MAX container is our official Docker container that simplifies the process
+to deploy a GenAI model with an OpenAI-compatible endpoint. The container
+includes the latest version of MAX and it integrates with orchestration tools
+like Kubernetes.
+
+Alternatively, you can also experiment with MAX on a local endpoint using the
+[`max serve`](/max/cli/serve) command. The result is the same because
+the MAX container creates an isolated environment that also uses `max serve` to
+create an endpoint you can interact with using our OpenAI-compatible [REST
+API](/max/api/serve).
+
+:::note Linux only
+
+The MAX container is currently not compatible with macOS.
+
+:::
+
+## Get started
+
+First, make sure you're on a system with the following requirements:
+
+<Requirements requirementsData={requirementsNoMacWithGPU}
+url="/max/packages#system-requirements" />
+
+Then start an endpoint with the MAX container:
+
+1. Make sure you have [Docker
+installed](https://docs.docker.com/get-started/get-docker/).
+
+2. Agree to the [Gemma 3 license on Hugging
+Face](https://huggingface.co/google/gemma-3-27b-it) and set the `HF_TOKEN`
+environment variable:
+
+    ```bash
+    export HF_TOKEN="hf_..."
+    ```
+
+3. Start the container and an endpoint for Gemma 3:
+
+    <Tabs>
+      <TabItem value="nvidia" label="NVIDIA">
+
+        ```bash
+        docker run --gpus=1 \
+          -v ~/.cache/huggingface:/root/.cache/huggingface \
+          -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
+          -p 8000:8000 \
+          modular/max-nvidia-full:latest \
+          --model-path google/gemma-3-27b-it
+        ```
+
+      </TabItem>
+      <TabItem value="amd" label="AMD">
+
+        ```bash
+        docker run \
+          -v ~/.cache/huggingface:/root/.cache/huggingface \
+          -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
+          --env "HF_TOKEN=${HF_TOKEN}" \
+          -p 8000:8000 \
+          --group-add keep-groups \
+          --device /dev/kfd \
+          --device /dev/dri \
+          modular/max-amd:latest \
+          --model-path google/gemma-3-27b-it
+        ```
+
+      </TabItem>
+    </Tabs>
+
+        It can take a few minutes to pull the container and then download and
+        compile the model.
+
+        When the endpoint is ready, you'll see a message that says this:
+
+        ```output
+        🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
+        ```
+
+
+3. Open a new terminal and send a request using the `openai` Python API or
+`curl`:
+
+    <Tabs>
+      <TabItem value="python" label="Python">
+
+        1. Create a new virtual environment:
+
+            ```sh
+            mkdir quickstart && cd quickstart
+            ```
+
+            ```sh
+            python3 -m venv .venv/quickstart \
+              && source .venv/quickstart/bin/activate
+            ```
+
+        2. Install the OpenAI Python API:
+
+            ```bash
+            pip install openai
+            ```
+
+        3. Create the following file to send an inference request:
+
+            ```python title="generate-text.py"
+            from openai import OpenAI
+
+            client = OpenAI(
+                base_url="http://0.0.0.0:8000/v1",
+                api_key="EMPTY",
+            )
+
+            completion = client.chat.completions.create(
+                model="google/gemma-3-27b-it",
+                messages=[
+                    {
+                      "role": "user",
+                      "content": "Who won the world series in 2020?"
+                    },
+                ],
+            )
+
+            print(completion.choices[0].message.content)
+            ```
+
+        4. Run it and you should see results like this:
+
+            ```sh
+            python generate-text.py
+            ```
+
+            ```output
+            The **Los Angeles Dodgers** won the World Series in 2020!
+
+            They defeated the Tampa Bay Rays 4 games to 2. It was their first World Series title since 1988.
+
+            It was a unique World Series as it was played in a neutral site (Globe Life Field in Arlington, Texas) due to the COVID-19 pandemic.
+            ```
+
+      </TabItem>
+      <TabItem value="curl" label="cURL">
+
+        Run this command:
+
+        ```sh
+        curl -N http://0.0.0.0:8000/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -d '{
+            "model": "google/gemma-3-27b-it",
+            "stream": true,
+            "messages": [
+                {"role": "user", "content": "Who won the World Series in 2020?"}
+            ]
+        }' | grep -o '"content":"[^"]*"' | sed 's/"content":"//g' | sed 's/"//g' | tr -d '\n' | sed 's/\\n/\n/g'
+        ```
+
+        You should see results like this:
+
+        ```output
+        The **Los Angeles Dodgers** won the World Series in 2020!
+
+        They defeated the Tampa Bay Rays 4 games to 2. It was their first World Series title since 1988.
+
+        It was a unique World Series as it was played in a neutral site (Globe Life Field in Arlington, Texas) due to the COVID-19 pandemic.
+        ```
+
+      </TabItem>
+    </Tabs>
+
+For details about the OpenAI-compatible endpoint, see [our Serve API
+docs](/max/api/serve).
+
+To run a different model, change the `--model-path` to something else from [our
+model repository](https://builds.modular.com/?category=models).
+
+For information about the available containers, see the [Modular
+Docker Hub repositories](https://hub.docker.com/r/modular).
+
+## Container options
+
+The `docker run` command above includes the bare minimum commands and options,
+but there are other `docker` options you might consider, plus several options
+to control features of the endpoint.
+
+### Docker options
+
+- `--gpus`: If your system includes a compatible NVIDIA GPU, you must add the
+[`--gpus`
+option](https://docs.docker.com/reference/cli/docker/container/run/#gpus) in
+order for the container to access it. It doesn't hurt to include this even if
+your system doesn't have a [GPU compatible with
+MAX](/max/packages#gpu-compatibility).
+
+- `--devices`: When deploying MAX on multiple GPUs, you must specify the ID of
+the GPUs to use. For example, to use four available GPUs, you should include the
+following: `--devices gpu:0,1,2,3`. When you don't specify a `--devices` option,
+MAX defaults to using the first available GPU it discovers (equivalent to
+`--devices gpu:0`). You can also optionally specify `--devices cpu`.
+
+- `-v`: We use the [`-v`
+option](https://docs.docker.com/reference/cli/docker/container/run/#volume) to
+save a cache of Hugging Face and MAX models to your local disk that we can
+reuse across containers. You can optionally export a `MODULAR_MAX_CACHE_DIR`
+environment variable to change the MAX cache directory location.
+
+- `-p`: We use the [`-p`
+option](https://docs.docker.com/reference/cli/docker/container/run/#publish) to
+specify the exposed port for the endpoint.
+
+You also might need some environment variables (set with `--env`):
+
+- `HF_TOKEN`: This is required to access gated models on Hugging Face
+(after your account is granted access). For example:
+
+  ```sh
+  docker run \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
+    # highlight-start
+    --env "HF_TOKEN=${HF_TOKEN}" \
+    # highlight-end
+    -p 8000:8000 \
+    modular/max-nvidia-full:latest \
+    --model-path google/gemma-3-27b-it
+  ```
+
+  Learn more about
+  [`HF_TOKEN`](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hftoken)
+  and how to create [Hugging Face access
+  tokens](https://huggingface.co/docs/hub/en/security-tokens).
+
+### MAX options
+
+Following the container name in the `docker run` command, you must specify a
+model with `--model-path`, but there are other options you might need
+to configure the `max serve` behavior.
+
+To see all available options, see the [`max` CLI
+page](/max/cli/serve), because the MAX container is basically a
+wrapper around that tool.
+
+- `--model-path`: This is required to specify the model you want to
+deploy. To find other GenAI models that are compatible with MAX, check out
+our [list of models on MAX
+Builds](https://builds.modular.com/?category=models).
+
+- `--max-length`: Specifies the maximum length of the text sequence (including
+the input tokens). We mention this one here because it's often necessary to
+adjust the max length when you have trouble running a large model on a machine
+with limited memory.
+
+For the rest of the `max serve` options, see the [`max` CLI
+page](/max/cli/serve).
+
+## Container contents
+
+There are multiple MAX container options, including:
+- [`max-full`](/max/container#full-container)
+- [`max-amd`](/max/container#amd-container)
+- [`max-amd-base`](/max/container#amd-container)
+- [`max-nvidia-full`](/max/container#nvidia-container)
+- [`max-nvidia-base`](/max/container#nvidia-container)
+
+### Full container
+
+The full MAX container (`max-full`) is a hardware-agnostic container that's
+built to deploy the latest version of MAX on both AMD and NVIDIA GPUs.
+
+You can run the container on either NVIDIA or AMD as follows:
+
+<Tabs>
+  <TabItem value="nvidia" label="NVIDIA">
+
+    ```bash
+    docker run --gpus=1 \
+      -v ~/.cache/huggingface:/root/.cache/huggingface \
+      -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
+      --env "HF_TOKEN=${HF_TOKEN}" \
+      -p 8000:8000 \
+      modular/max-full:latest \
+      --model-path google/gemma-3-27b-it
+    ```
+
+  </TabItem>
+  <TabItem value="amd" label="AMD">
+
+    ```bash
+    docker run \
+      -v ~/.cache/huggingface:/root/.cache/huggingface \
+      -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
+      --env "HF_TOKEN=${HF_TOKEN}" \
+      --group-add keep-groups \
+      --device /dev/kfd \
+      --device /dev/dri \
+      -p 8000:8000 \
+      modular/max-full:latest \
+      --model-path google/gemma-3-27b-it
+    ```
+
+  </TabItem>
+</Tabs>
+
+The `max-full` container includes the following:
+
+- Ubuntu 22.04
+- Python 3.12
+- MAX 25.4
+- PyTorch (GPU) 2.6.0
+- ROCm
+- cuDNN
+- CUDA 12.8
+- NumPy
+- Hugging Face Transformers
+
+For more information, see the [full MAX container on Docker
+Hub](https://hub.docker.com/r/modular/max-full).
+
+### AMD container
+
+The AMD MAX container (`max-amd`) is great if you want an AMD-specific
+deployment without NVIDIA or CUDA dependencies. The AMD MAX container is
+available in two flavors:
+
+- `max-amd` includes all ROCm and PyTorch GPU dependencies
+- `max-amd-base` includes minimal dependencies, ROCm, and the AMD Driver
+
+You can run the AMD container as follows:
+
+```bash
+docker run \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
+  --env "HF_TOKEN=${HF_TOKEN}" \
+  --group-add keep-groups \
+  --device /dev/kfd \
+  --device /dev/dri \
+  -p 8000:8000 \
+  modular/max-amd:latest \
+  --model-path google/gemma-3-27b-it
+```
+
+Or, to use the base container, replace `max-amd` with
+`max-amd-base`.
+
+For more information, see the
+[full AMD container](https://hub.docker.com/r/modular/max-amd) or
+[base AMD container](https://hub.docker.com/r/modular/max-amd-base) on Docker
+Hub.
+
+### NVIDIA container
+
+The NVIDIA MAX container is available in two flavors:
+
+- `max-nvidia-full` includes all CUDA and PyTorch GPU dependencies
+- `max-nvidia-base` includes minimal dependencies, PyTorch CPU, and the NVIDIA
+Driver (excludes CUDA)
+
+You can run the NVIDIA container as follows:
+
+```bash
+docker run --gpus=1 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
+  --env "HF_TOKEN=${HF_TOKEN}" \
+  -p 8000:8000 \
+  modular/max-nvidia-full:latest \
+  --model-path google/gemma-3-27b-it
+```
+
+Or, to use the base container, replace `max-nvidia-full` with
+`max-nvidia-base`.
+
+For more information, see the [full NVIDIA
+container](https://hub.docker.com/r/modular/max-nvidia-full) or [base NVIDIA
+container](https://hub.docker.com/r/modular/max-nvidia-base) on Docker Hub.
+
+## Recommended cloud instances
+
+For best performance and compatibility with the [available models on MAX
+Builds](https://builds.modular.com/?category=models), we recommend that you
+deploy the MAX container on a cloud instance with a GPU that meets the [MAX
+system requirements](/max/packages#system-requirements).
+
+The Modular Platform is hardware-agnostic and optimized for both the latest
+NVIDIA and AMD GPUs. To take full advantage of this flexibility, Modular
+partners with [compute providers](https://www.modular.com/customers) that
+prioritize diverse hardware optionality. For enterprise-grade hardware
+flexibility, see our available [editions](https://www.modular.com/pricing).
+
+If you're running on AWS, GCP, or Azure and want to test MAX with cloud GPUs,
+we recommend the following instances:
+
+AWS instances:
+
+- [P6](https://aws.amazon.com/ec2/instance-types/p6/) instance family
+  (B200 GPU)
+- [P5](https://aws.amazon.com/ec2/instance-types/p5/) instance family
+  (H100 GPU)
+- [P4d](https://aws.amazon.com/ec2/instance-types/p4/) instance family
+  (A100 GPU)
+
+GCP instances:
+
+- [A4](https://cloud.google.com/compute/docs/gpus#b200-gpus) machine series
+  (B200 GPU)
+- [A3](https://cloud.google.com/compute/docs/gpus#a3-series) machine series
+  (H100 GPU)
+- [A2](https://cloud.google.com/compute/docs/gpus#a100-gpus) machine series
+  (A100 GPU)
+
+Azure instances:
+
+- [ND_GB200_v6-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-gb200-v6-series) virtual machine
+- [NCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#ncads_h100_v5-series) virtual machine
+- [NCCads_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nccads_h100_v5-series) virtual machine
+- [ND_H100_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_h100_v5-series) virtual machine
+- [NC_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nc-family#nc_a100_v4-series) virtual machine
+- [NDm_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#ndm_a100_v4-series) virtual machine
+- [ND_A100_v4-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_a100_v4-series) virtual machine
+- [ND_MI300X_v5-series](https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/nd-family#nd_mi300x_v5-series) virtual machine (AMD GPU)
+
+## Logs
+
+The MAX container writes logs to stdout in JSON format, which you can consume
+and view via your cloud provider's platform (for example, [with AWS
+CloudWatch](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/using_awslogs.html)).
+
+Console log level is `INFO` by default. You can modify the log level using the
+`MAX_SERVE_LOGS_CONSOLE_LEVEL` environment variable. It accepts the following
+log levels (in order of increasing verbosity): `CRITICAL`, `ERROR`, `WARNING`,
+`INFO`, `DEBUG`. For example:
+
+```bash
+docker run modular/max-nvidia-full:latest \
+    -env MAX_SERVE_LOGS_CONSOLE_LEVEL=DEBUG \
+    ...
+```
+
+Logs default to structured JSON, but if you'd like a more readable format in
+your console, you can disable structured logs by adding the
+`MODULAR_STRUCTURED_LOGGING=0` environment variable. For example:
+
+```bash
+docker run --gpus=1 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
+  -p 8000:8000 \
+  # highlight-start
+  --env "MODULAR_STRUCTURED_LOGGING=0" \
+  # highlight-end
+  modular/max-nvidia-full:latest \
+  --model-path google/gemma-3-27b-it
+```
+
+
+## Metrics
+
+The MAX container exposes a `/metrics` endpoint that follows the
+[Prometheus](https://prometheus.io/docs/introduction/overview/) text format.
+You can scrape the metrics listed below using Prometheus or another collection
+service.
+
+These are raw metrics and it's up to you to compute the desired time series and
+aggregations. For example, we provide a count for output tokens
+(`maxserve_num_output_tokens_total`), which you can use to calculate the output
+tokens per second (OTP/s).
+
+Here are all the available metrics:
+
+- `maxserve_request_time_milliseconds`:  Histogram of time spent handling each
+  request (total inference time, or TIT), in milliseconds.
+- `maxserve_input_processing_time_milliseconds`: Histogram of input processing
+  time (IPT), in milliseconds.
+- `maxserve_output_processing_time_milliseconds`: Histogram of output
+  generation time (OGT), in milliseconds.
+- `maxserve_time_to_first_token_milliseconds`: Histogram of time to first
+  token (TTFT), in milliseconds.
+- `maxserve_num_input_tokens_total`: Total number of input tokens processed
+  so far.
+- `maxserve_num_output_tokens_total`: Total number of output tokens processed
+  so far.
+- `maxserve_input_tokens_per_request`: Histogram of input tokens per request.
+- `maxserve_output_tokens_per_request`: Histogram of output tokens per request.
+- `maxserve_request_count_total`: Total requests since start.
+- `maxserve_num_requests_running`: Number of requests currently running.
+
+### Telemetry
+
+In addition to sharing these metrics via the `/metrics` endpoint, the MAX
+container actively sends the metrics to Modular via push telemetry (using
+OpenTelemetry).
+
+:::note
+
+None of the telemetry includes personally identifiable information (PII).
+
+:::
+
+This telemetry is anonymous and helps us quickly identify problems and build
+better products for you. Without this telemetry, we would rely solely on
+user-submitted bug reports, which are limited and would severely limit our
+performance insights.
+
+However, if you don't want to share this data with Modular, you can disable
+telemetry in your container. To disable telemetry, enable the
+`MAX_SERVE_DISABLE_TELEMETRY` environment variable when you start your MAX
+container. For example:
+
+```bash
+docker run modular/max-nvidia-full:latest \
+    -env MAX_SERVE_DISABLE_TELEMETRY=1 \
+    ...
+```
+
+#### Deployment and user ID
+
+Again, the telemetry is completely anonymous by default. But if you'd like to
+share some information to help our team assist you in understanding your
+deployment performance, you can add some identity information to the telemetry
+with these environment variables:
+
+- `MAX_SERVE_DEPLOYMENT_ID`: Your application name.
+- `MODULAR_USER_ID`: Your company name.
+
+For example:
+
+```bash
+docker run modular/max-nvidia-full:latest \
+    -env MAX_SERVE_DEPLOYMENT_ID='Project name' \
+    -env MODULAR_USER_ID='Example Inc.' \
+    ...
+```
+
+## License
+
+The NVIDIA MAX container is released under the
+[NVIDIA Deep Learning Container license](https://developer.download.nvidia.com/licenses/NVIDIA_Deep_Learning_Container_License.pdf).
+
+## Next steps
+
+export const docs = [
+  '../deploy/local-to-cloud.mdx',
+  '../model-formats.mdx',
+  '../serve/index.mdx',
+];
+
+<MDXListing mdxList={docs} />

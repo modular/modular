@@ -72,8 +72,7 @@ fn coord_transform[
     elif mode == CoordinateTransformationMode.Asymmetric:
         return out_coord_f32 / scale
     else:
-        constrained[False, "coordinate_transformation_mode not implemented"]()
-        return 0
+        comptime assert False, "coordinate_transformation_mode not implemented"
 
 
 struct RoundMode(ImplicitlyCopyable):
@@ -121,16 +120,14 @@ struct Interpolator[mode: InterpolationMode](
         comptime if Self.mode == InterpolationMode.Linear:
             return 1
         else:
-            constrained[False, "InterpolationMode not supported"]()
-            return -1
+            comptime assert False, "InterpolationMode not supported"
 
     @always_inline
     fn filter(self, x: Float32) -> Float32:
         comptime if Self.mode == InterpolationMode.Linear:
             return linear_filter(x)
         else:
-            constrained[False, "InterpolationMode not supported"]()
-            return -1
+            comptime assert False, "InterpolationMode not supported"
 
 
 fn resize_nearest_neighbor[
@@ -162,8 +159,7 @@ fn resize_nearest_neighbor[
         elif round_mode == RoundMode.Ceil:
             return ceil(val)
         else:
-            constrained[False, "round_mode not implemented"]()
-            return val
+            comptime assert False, "round_mode not implemented"
 
     @__copy_capture(scales)
     @parameter

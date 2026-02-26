@@ -814,7 +814,7 @@ def test_memmove_non_overlapping_regions():
 
 
 def test_uninit_move_n_trivial():
-    # Test with trivial move type - should use memcpy, not call __moveinit__
+    # Test with trivial move type - should use memcpy, not call move constructor
     comptime Counter = MoveCounter[Int, trivial_move=True]
     var src = alloc[Counter](3)
     (src + 0).init_pointee_move(Counter(10))
@@ -871,7 +871,7 @@ def test_uninit_move_n_nontrivial():
 
 
 def test_uninit_copy_n_trivial():
-    # Test with trivial copy type - should use memcpy, not call __copyinit__
+    # Test with trivial copy type - should use memcpy, not call copy ctor
     comptime Counter = CopyCounter[Int, trivial_copy=True]
     var src = alloc[Counter](3)
     src.init_pointee_move(Counter(0))

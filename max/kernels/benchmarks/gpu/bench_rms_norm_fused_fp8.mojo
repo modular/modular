@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
 from random import random_float64
-from sys import env_get_bool, env_get_dtype, size_of
+from sys import env_get_bool, env_get_dtype
 
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext
-from internal_utils import env_get_shape, int_list_to_tuple
+from internal_utils import env_get_shape, int_list_to_tuple, CacheBustingBuffer
 from runtime.asyncrt import DeviceContextPtr
 from layout._coord import Coord, coord_to_index_list
 from layout._layout import row_major
@@ -34,23 +33,6 @@ from buffer import NDBuffer
 from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
 from memory import LegacyUnsafePointer
 from utils.index import Index, IndexList
-
-
-# Cache busting helpers: 512 MiB is larger than 2x the infinity cache on MI300x.
-fn _calculate_stride(tensor_size: Int, alignment: Int) -> Int:
-    return align_up(tensor_size, alignment)
-
-
-fn _calculate_buffer_size[
-    dtype: DType
-](tensor_size: Int, alignment: Int) -> Int:
-    comptime k512m = 512 * 1024 * 1024
-    var stride = _calculate_stride(tensor_size, alignment)
-    return align_up(k512m, stride * size_of[dtype]()) // size_of[dtype]()
-
-
-fn _calculate_offset(iteration: Int, stride: Int, buffer_size: Int) -> Int:
-    return (iteration * stride) % buffer_size
 
 
 fn bench_rms_norm_fused_fp8[
@@ -86,19 +68,19 @@ fn bench_rms_norm_fused_fp8[
     # Calculate buffer sizes for cache busting
     comptime simd_size = 4
     var data_size = rows * cols
-    var stride_data = _calculate_stride(data_size, simd_size)
-    var buf_data_in = _calculate_buffer_size[in_dtype](data_size, simd_size)
-    var buf_data_out = _calculate_buffer_size[out_dtype](data_size, simd_size)
-
-    # Allocate device buffers - use larger sizes when cache busting
-    var alloc_data_in = buf_data_in if cache_busting else data_size
-    var alloc_data_out = buf_data_out if cache_busting else data_size
-
-    var data_d = ctx.enqueue_create_buffer[in_dtype](alloc_data_in)
+    var cb_data = CacheBustingBuffer[in_dtype](
+        data_size, simd_size, ctx, cache_busting
+    )
+    var cb_rms_output = CacheBustingBuffer[in_dtype](
+        data_size, simd_size, ctx, cache_busting
+    )
+    var cb_fp8_output = CacheBustingBuffer[out_dtype](
+        data_size, simd_size, ctx, cache_busting
+    )
+    var cb_fused_output = CacheBustingBuffer[out_dtype](
+        data_size, simd_size, ctx, cache_busting
+    )
     var gamma_d = ctx.enqueue_create_buffer[in_dtype](cols)
-    var rms_output_d = ctx.enqueue_create_buffer[in_dtype](alloc_data_in)
-    var fp8_output_d = ctx.enqueue_create_buffer[out_dtype](alloc_data_out)
-    var fused_output_d = ctx.enqueue_create_buffer[out_dtype](alloc_data_out)
     var scales_d = ctx.enqueue_create_buffer[DType.float32](rows)
 
     var param_shape = Index(cols)
@@ -110,22 +92,15 @@ fn bench_rms_norm_fused_fp8[
     var weight_offset = Scalar[in_dtype](0.0)
 
     # Copy data to device (initialize the whole buffer when cache busting)
-    from internal_utils._utils import InitializationType, init_vector_launch
+    from internal_utils._utils import InitializationType
 
     comptime random_distribution = InitializationType.uniform_distribution
-    init_vector_launch[in_dtype](
-        data_d, alloc_data_in, random_distribution, ctx
-    )
-    init_vector_launch[in_dtype](
-        rms_output_d, alloc_data_in, random_distribution, ctx
-    )
+    cb_data.init_on_device(random_distribution, ctx)
+    cb_rms_output.init_on_device(random_distribution, ctx)
     ctx.enqueue_copy(gamma_d, gamma_h)
 
     # ===== Benchmark 1: RMS norm alone =====
-    # Extract pointers outside kernel context
     comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-    var data_base_ptr = data_d.unsafe_ptr()
-    var rms_output_base_ptr = rms_output_d.unsafe_ptr()
 
     @always_inline
     @__copy_capture(
@@ -133,35 +108,20 @@ fn bench_rms_norm_fused_fp8[
         gamma_tensor,
         epsilon,
         weight_offset,
-        stride_data,
-        buf_data_in,
-        data_base_ptr,
-        rms_output_base_ptr,
+        cb_data,
+        cb_rms_output,
     )
     @parameter
     fn bench_rms_norm(mut b: Bencher) raises:
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            # Calculate offsets - zero when not cache busting
-            var offset_in = 0
-            var offset_out = 0
-
-            @parameter
-            if cache_busting:
-                offset_in = _calculate_offset(
-                    iteration, stride_data, buf_data_in
-                )
-                offset_out = _calculate_offset(
-                    iteration, stride_data, buf_data_in
-                )
-
             # Construct buffers with offsets
             var data_ptr_offset = UnsafePointer[Scalar[in_dtype]](
-                data_base_ptr + offset_in
+                cb_data.offset_ptr(iteration)
             )
             var rms_output_ptr_offset = UnsafePointer[Scalar[in_dtype]](
-                rms_output_base_ptr + offset_out
+                cb_rms_output.offset_ptr(iteration)
             )
             var data_buf_offset = TileTensor(
                 data_ptr_offset, row_major(Coord(shape))
@@ -208,18 +168,12 @@ fn bench_rms_norm_fused_fp8[
     )
 
     # ===== Benchmark 2: FP8 quantization alone =====
-    # Extract pointers outside kernel context
-    var rms_output_base_ptr_fp8 = rms_output_base_ptr
-    var fp8_output_base_ptr = fp8_output_d.unsafe_ptr()
     var scales_base_ptr = scales_d.unsafe_ptr()
 
     @always_inline
     @__copy_capture(
-        stride_data,
-        buf_data_in,
-        buf_data_out,
-        rms_output_base_ptr_fp8,
-        fp8_output_base_ptr,
+        cb_rms_output,
+        cb_fp8_output,
         scales_base_ptr,
     )
     @parameter
@@ -227,35 +181,23 @@ fn bench_rms_norm_fused_fp8[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            # Calculate offsets - zero when not cache busting
-            var offset_in = 0
-            var offset_out = 0
-
-            @parameter
-            if cache_busting:
-                offset_in = _calculate_offset(
-                    iteration, stride_data, buf_data_in
-                )
-                offset_out = _calculate_offset(
-                    iteration, stride_data, buf_data_out
-                )
-
             # Input function for FP8 quant (reads from RMS norm output)
-            @__copy_capture(offset_in, rms_output_base_ptr_fp8)
+            var rms_ptr_offset = UnsafePointer[Scalar[in_dtype]](
+                cb_rms_output.offset_ptr(iteration)
+            )
+
+            @__copy_capture(rms_ptr_offset)
             @always_inline
             @parameter
             fn fp8_input_fn[
                 width: Int, alignment: Int
             ](row: Int, col: Int) -> SIMD[in_dtype, width]:
-                var rms_ptr = UnsafePointer[Scalar[in_dtype]](
-                    rms_output_base_ptr_fp8 + offset_in
-                )
                 var idx = row * cols + col
-                return rms_ptr.load[width=width](idx)
+                return rms_ptr_offset.load[width=width](idx)
 
             var fp8_output_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
                 UnsafePointer[Scalar[out_dtype]](
-                    fp8_output_base_ptr + offset_out
+                    cb_fp8_output.offset_ptr(iteration)
                 ),
                 Index(rows, cols),
             )
@@ -280,9 +222,6 @@ fn bench_rms_norm_fused_fp8[
     )
 
     # ===== Benchmark 3: Fused RMS norm + FP8 quantization =====
-    # Extract pointers outside kernel context
-    var data_base_ptr_fused = data_base_ptr
-    var fused_output_base_ptr = fused_output_d.unsafe_ptr()
     var scales_base_ptr_fused = scales_base_ptr
 
     @always_inline
@@ -291,11 +230,8 @@ fn bench_rms_norm_fused_fp8[
         gamma_tensor,
         epsilon,
         weight_offset,
-        stride_data,
-        buf_data_in,
-        buf_data_out,
-        data_base_ptr_fused,
-        fused_output_base_ptr,
+        cb_data,
+        cb_fused_output,
         scales_base_ptr_fused,
     )
     @parameter
@@ -303,29 +239,17 @@ fn bench_rms_norm_fused_fp8[
         @parameter
         @always_inline
         fn kernel_launch(ctx_: DeviceContext, iteration: Int) raises:
-            # Calculate offsets - zero when not cache busting
-            var offset_in = 0
-            var offset_out = 0
-
-            @parameter
-            if cache_busting:
-                offset_in = _calculate_offset(
-                    iteration, stride_data, buf_data_in
-                )
-                offset_out = _calculate_offset(
-                    iteration, stride_data, buf_data_out
-                )
-
             # Input function with offset
-            @__copy_capture(offset_in, data_base_ptr_fused)
+            var data_ptr_offset = UnsafePointer[Scalar[in_dtype]](
+                cb_data.offset_ptr(iteration)
+            )
+
+            @__copy_capture(data_ptr_offset)
             @always_inline
             @parameter
             fn input_fn_fused[
                 width: Int, _rank: Int
             ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
-                var data_ptr_offset = UnsafePointer[Scalar[in_dtype]](
-                    data_base_ptr_fused + offset_in
-                )
                 var data_buf_offset = TileTensor(
                     data_ptr_offset, row_major(Coord(shape))
                 )
@@ -336,7 +260,7 @@ fn bench_rms_norm_fused_fp8[
 
             var fused_output_ndbuf = NDBuffer[out_dtype, rank, MutAnyOrigin](
                 UnsafePointer[Scalar[out_dtype]](
-                    fused_output_base_ptr + offset_out
+                    cb_fused_output.offset_ptr(iteration)
                 ),
                 rebind[IndexList[rank]](coord_to_index_list(Coord(shape))),
             )
@@ -392,7 +316,7 @@ fn bench_rms_norm_fused_fp8[
     var rms_verify_base_ptr = rms_verify_d.unsafe_ptr()
 
     # Run separate operations with zero offset
-    var data_ptr_verify = UnsafePointer[Scalar[in_dtype]](data_base_ptr)
+    var data_ptr_verify = UnsafePointer[Scalar[in_dtype]](cb_data.unsafe_ptr())
     var rms_output_ptr_verify = UnsafePointer[Scalar[in_dtype]](
         rms_verify_base_ptr
     )
@@ -455,13 +379,15 @@ fn bench_rms_norm_fused_fp8[
     ](fp8_output_ndbuf_verify, scales_ndbuf_verify, Float32(448.0), ctx, rows)
 
     # Run fused kernel
-    @__copy_capture(data_base_ptr_fused)
+    var data_base_ptr_verify = cb_data.unsafe_ptr()
+
+    @__copy_capture(data_base_ptr_verify)
     @always_inline
     @parameter
     fn input_fn_fused_verify[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
-        var data_ptr = UnsafePointer[Scalar[in_dtype]](data_base_ptr_fused)
+        var data_ptr = UnsafePointer[Scalar[in_dtype]](data_base_ptr_verify)
         var data_buf = TileTensor(data_ptr, row_major(Coord(shape)))
         var idx = data_buf.layout(Coord(coords))
         return data_buf.ptr.load[width=width](idx)
@@ -600,11 +526,11 @@ fn bench_rms_norm_fused_fp8[
     fp8_output_h.free()
     fused_output_h.free()
 
-    _ = data_d
+    _ = cb_data
     _ = gamma_d
-    _ = rms_output_d
-    _ = fp8_output_d
-    _ = fused_output_d
+    _ = cb_rms_output
+    _ = cb_fp8_output
+    _ = cb_fused_output
     _ = scales_d
     _ = fp8_verify_d
     _ = fused_verify_d

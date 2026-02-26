@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
     compute_max_seq_len_fitting_in_cache,

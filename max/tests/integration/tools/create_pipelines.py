@@ -41,7 +41,11 @@ from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationPipeline, PixelGenerationTokenizer
+from max.pipelines.lib import (
+    PipelineRuntimeConfig,
+    PixelGenerationPipeline,
+    PixelGenerationTokenizer,
+)
 from peft.peft_model import PeftModel
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
@@ -125,6 +129,9 @@ class PipelineOracle(ABC):
     necessary to run the model.
     """
 
+    model_path: str
+    """ID of the Hugging Face repository."""
+
     task: PipelineTask = PipelineTask.TEXT_GENERATION
     default_batch_size: int | list[int] | None = None
 
@@ -169,17 +176,10 @@ class PipelineOracle(ABC):
         device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         """Instantiate a vLLM pipeline config."""
-        path = getattr(self, "model_path", None)
-        # We shouldn't hit this; we only have it because using the string
-        # `model_path` is standard practice rather than enforced behavior.
-        if not path:
-            raise ValueError(
-                f"Cannot find `model_path` for {self.__class__.__name__}"
-            )
         # Use tensor parallelism across all GPU devices
         gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
-            model_path=path,
+            model_path=self.model_path,
             trust_remote_code=getattr(self, "trust_remote_code", False),
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
@@ -228,10 +228,6 @@ class _ModelConfigExtras(TypedDict):
     huggingface_weight_revision: NotRequired[str]
 
 
-class _PipelineConfigExtras(TypedDict):
-    enable_chunked_prefill: NotRequired[bool]
-
-
 def _create_vision_max_pipeline(
     model_path: str,
     encoding: pipelines.SupportedEncoding,
@@ -267,14 +263,15 @@ def _create_vision_max_pipeline(
             else _ModelConfigExtras()
         ),
     )
+    runtime = (
+        PipelineRuntimeConfig(enable_chunked_prefill=enable_chunked_prefill)
+        if enable_chunked_prefill is not None
+        else PipelineRuntimeConfig()
+    )
     config = pipelines.PipelineConfig(
         model=model,
         max_num_steps=1,
-        **(
-            _PipelineConfigExtras(enable_chunked_prefill=enable_chunked_prefill)
-            if enable_chunked_prefill is not None
-            else _PipelineConfigExtras()
-        ),
+        runtime=runtime,
     )
     tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
     assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
@@ -283,9 +280,6 @@ def _create_vision_max_pipeline(
 
 class InternVLPipelineOracle(PipelineOracle):
     """Pipeline oracle for InternVL3 architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(self, model_path: str) -> None:
         super().__init__()
@@ -371,9 +365,6 @@ class InternVLPipelineOracle(PipelineOracle):
 class Idefics3PipelineOracle(PipelineOracle):
     """Pipeline oracle for Idefics3 architectures."""
 
-    model_path: str
-    """ID of the Hugging Face repository."""
-
     def __init__(self, model_path: str) -> None:
         super().__init__()
         self.model_path = model_path
@@ -456,9 +447,6 @@ class Idefics3PipelineOracle(PipelineOracle):
 
 class Qwen2_5VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen2.5VL architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(self, model_path: str) -> None:
         super().__init__()
@@ -547,9 +535,6 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
 
 class Qwen3VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen3VL architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(
         self,
@@ -1036,9 +1021,6 @@ class LoRAOracle(PipelineOracle):
 class ImageGenerationOracle(PipelineOracle):
     """Pipeline oracle for FLUX image generation."""
 
-    model_path: str
-    """ID of the Hugging Face repository."""
-
     num_steps: int
     """Number of denoising steps."""
 
@@ -1079,7 +1061,7 @@ class ImageGenerationOracle(PipelineOracle):
                 model_path=self.model_path,
                 device_specs=device_specs,
             ),
-            use_legacy_module=False,
+            prefer_module_v3=True,
         )
 
         # Step 2: Initialize the tokenizer
@@ -1362,7 +1344,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="allenai/Olmo-3-7B-Instruct",
         config_params={
             "max_length": 32768,
-            "use_legacy_module": False,
+            "prefer_module_v3": True,
         },
         device_encoding_map={
             "gpu": ["bfloat16"],

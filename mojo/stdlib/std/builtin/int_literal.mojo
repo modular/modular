@@ -23,7 +23,6 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Floorable,
     Indexer,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Truncable,
 ):
@@ -460,6 +459,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         """
         return self
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert from IntLiteral to String.

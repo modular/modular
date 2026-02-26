@@ -61,13 +61,70 @@ fn _inline_array_construction_checks[size: Int]():
     ), "number of elements in `InlineArray` must be >= 0"
 
 
+@fieldwise_init
+struct _InlineArrayIter[
+    mut: Bool,
+    //,
+    T: Copyable,
+    size: Int,
+    origin: Origin[mut=mut],
+    forward: Bool = True,
+](ImplicitlyCopyable, Iterable, Iterator):
+    """Iterator for `InlineArray`.
+
+    Parameters:
+        mut: A boolean to indicate if the iterator is mutable.
+        T: The type of the elements in the iterator.
+        size: The size of the array.
+        origin: The origin of the iterator.
+        forward: A boolean to indicate if the iterator is forward.
+    """
+
+    comptime Element = Self.T
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var index: Int
+    var src: Pointer[InlineArray[Self.T, Self.size], Self.origin]
+
+    @always_inline
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    fn __next__(
+        mut self,
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
+        comptime if Self.forward:
+            if self.index >= Self.size:
+                raise StopIteration()
+            self.index += 1
+            return self.src[][self.index - 1]
+        else:
+            if self.index <= 0:
+                raise StopIteration()
+            self.index -= 1
+            return self.src[][self.index]
+
+    @always_inline
+    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+        var iter_len: Int
+
+        comptime if Self.forward:
+            iter_len = Self.size - self.index
+        else:
+            iter_len = self.index
+
+        return (iter_len, {iter_len})
+
+
 struct InlineArray[ElementType: Copyable, size: Int](
     Copyable,
     Defaultable,
     DevicePassable,
-    Representable,
+    Iterable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A fixed-size sequence of homogeneous elements where size is a constant
@@ -99,8 +156,8 @@ struct InlineArray[ElementType: Copyable, size: Int](
     comptime __del__is_trivial: Bool = downcast[
         Self.ElementType, ImplicitlyDestructible
     ].__del__is_trivial
-    comptime __copyinit__is_trivial: Bool = Self.ElementType.__copyinit__is_trivial
-    comptime __moveinit__is_trivial: Bool = Self.ElementType.__moveinit__is_trivial
+    comptime __copy_ctor_is_trivial: Bool = Self.ElementType.__copy_ctor_is_trivial
+    comptime __move_ctor_is_trivial: Bool = Self.ElementType.__move_ctor_is_trivial
 
     # Fields
     comptime type = __mlir_type[
@@ -113,6 +170,18 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     comptime device_type: AnyType = Self
     """The device-side type for this array."""
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = _InlineArrayIter[
+        Self.ElementType, Self.size, iterable_origin, True
+    ]
+    """The iterator type for this array.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
@@ -147,15 +216,11 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """This constructor will always cause a compile time error if used.
         It is used to steer users away from uninitialized memory.
         """
-        constrained[
-            False,
-            (
-                "Initialize with either a variadic list of arguments, a default"
-                " fill element or pass the keyword argument"
-                " 'uninitialized=True'."
-            ),
-        ]()
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        comptime assert False, (
+            "Initialize with either a variadic list of arguments, a default"
+            " fill element or pass the keyword argument"
+            " 'uninitialized=True'."
+        )
 
     @always_inline
     fn __init__(out self, *, uninitialized: Bool):
@@ -334,7 +399,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         # FIXME: Why doesn't consume_elements work here?
         storage^._anihilate()
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy constructs the array from another array.
 
         Args:
@@ -348,7 +413,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         ```
         """
 
-        comptime if Self.ElementType.__copyinit__is_trivial:
+        comptime if Self.ElementType.__copy_ctor_is_trivial:
             self._array = copy._array
         else:
             self = Self(uninitialized=True)
@@ -356,7 +421,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
                 var ptr = self.unsafe_ptr() + idx
                 ptr.init_pointee_copy(copy.unsafe_get(idx))
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Move constructs the array from another array.
 
         Args:
@@ -366,7 +431,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Moves the elements from the source array into this array.
         """
 
-        comptime if Self.ElementType.__moveinit__is_trivial:
+        comptime if Self.ElementType.__move_ctor_is_trivial:
             self._array = take._array
         else:
             self = Self(uninitialized=True)
@@ -674,6 +739,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Self.size,
         ).fields[FieldsFn=write_fields]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline
     fn __str__(self) -> String:
         """Returns a string representation of the InlineArray.
@@ -685,6 +751,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         self.write_to(output)
         return output^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @always_inline
     fn __repr__(self) -> String:
         """Returns a string representation of the InlineArray.
@@ -695,3 +762,21 @@ struct InlineArray[ElementType: Copyable, size: Int](
         output = String()
         self.write_repr_to(output)
         return output^
+
+    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        """Iterate over elements of the array, returning immutable references.
+
+        Returns:
+            An iterator of immutable references to the array elements.
+        """
+        return {0, Pointer(to=self)}
+
+    fn __reversed__(
+        ref self,
+    ) -> _InlineArrayIter[Self.ElementType, Self.size, origin_of(self), False]:
+        """Iterate over elements of the array in reverse order, returning immutable references.
+
+        Returns:
+            An iterator of immutable references to the array elements in reverse order.
+        """
+        return _InlineArrayIter[forward=False](Self.size, Pointer(to=self))

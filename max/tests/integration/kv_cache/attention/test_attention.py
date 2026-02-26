@@ -25,8 +25,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.legacy.kv_cache import (
+from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
+from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     PagedCacheValues,
@@ -84,6 +84,7 @@ def test_kv_cache_ragged_attention(
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
@@ -152,7 +153,7 @@ def test_kv_cache_ragged_attention(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
+        kv_manager.runtime_inputs([batch])[0]
     )
 
     @modular_graph_test(

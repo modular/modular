@@ -143,9 +143,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     Copyable,
     Defaultable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A doubly-linked list implementation.
@@ -224,7 +222,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         elements^.consume_elements[init_elt]()
 
-    fn __copyinit__(out self, read copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Initialize this list as a copy of another list.
 
         Args:
@@ -776,6 +774,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = iterator^
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Convert the list to its string representation.
 
@@ -789,6 +788,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self.write_to(writer)
         return writer
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Convert the list to its string representation.
 

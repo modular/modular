@@ -1,0 +1,556 @@
+---
+id: python-to-mojo
+title: "Mojo tips for Python Devs"
+sidebar_label: "Tips for Python devs"
+description: "Explore ways Mojo differs from Python as you prepare to migrate"
+---
+
+Mojo is designed with Python programmers in mind, but it isn't "just Python,
+only faster." Mojo introduces a type system, ownership-aware semantics,
+and low-level control that, as a Python developer, you may not have had
+to reason about to make your code work.
+
+This guide offers a practical resource for experienced Python developers.
+It shows how familiar Python patterns translate into Mojo, where your
+instincts still apply and where Mojo asks you to build a new mental
+model.
+
+This isn't a tutorial. It's a core set of language migration signposts
+as you migrate to Mojo.
+
+## Mojo's core model for Python developers
+
+Mojo looks like Python but its execution model is closer to Rust,
+Swift, C++, and other MLIR-optimized systems languages. Key differences
+from Python include:
+
+- **Mojo is statically typed.** In Python, types are optional hints
+    that the interpreter mostly ignores at runtime. In Mojo, types are
+    first-class citizens. The compiler uses them to generate fast,
+    specialized machine code.
+- **Mojo uses *value semantics* and explicit mutability.** In Python,
+    almost everything is a mutable reference, so assigning a list doesn't
+    copy it. Mojo uses value semantics. In Mojo, assigning or passing a
+    value establishes an independent copy. Changes to one value don't affect
+    others unless sharing is made explicit. This makes data flow clear and
+    enables safe parallelism.
+- **Mojo supports ownership and C-like manual management.** With
+    ownership, the compiler tracks which variables and fields are
+    responsible for a value's lifetime. This lets Mojo manage memory
+    without a garbage collector. For low-level work, such as interfacing
+    with C libraries, Mojo also supports explicit memory management through
+    its `UnsafePointer` API.
+- **Mojo compiles to machine code.** Python runs through an interpreter
+    that translates your code at runtime, adding overhead to every
+    operation. Mojo compiles directly to native machine code. This gives
+    you fast and predictable performance, no interpreter overhead, and no
+    GIL, the Global Interpreter Lock that forces Python to run only one
+    thread at a time even on multi-core hardware.
+- **Mojo is multi-paradigm.** Mojo borrows Python's syntax, not its
+    philosophy. There are no dynamic classes and no garbage collection,
+    just structs, ownership, and compile-time guarantees. Think Python's
+    readability, Rust's performance model.
+
+Understanding these differences is essential for writing correct, fast
+Mojo.
+
+## Moving from Python to Mojo
+
+This section introduces a curated set of migration topics that
+introduce common Mojo patterns.
+
+### Value semantics
+
+In Mojo, when you assign a value to a new variable, it's given a
+unique owned value, not a second reference pointing to the same data.
+This can catch new adopters off guard.
+
+In Python, both `a` and `b` refer to one list:
+
+```python
+a = [1, 2, 3]
+b = a
+b.append(4)
+print(a)  # [1, 2, 3, 4]
+# a changed because b and a both point to the same list
+```
+
+In Mojo, assignment gives you a copy. If you're not working with
+trivial types (like Int or Bool), you may need to use a copy call.
+You can also use and create types that are implicitly copyable.
+
+```mojo
+var a: List[Int] = [1, 2, 3]
+var b = List[Int](copy=a) # b is an independent copy
+b.append(4)
+print(a)  # [1, 2, 3]  a is unchanged
+
+var c = "hello"  # hello
+var d = c        # hello, implicit copy
+d = d + " world" # hello world
+print(c)  # hello
+print(d)  # hello world
+```
+
+This is *value semantics*. Your data doesn't change just because
+another variable was assigned. To use Python-like reference behavior,
+declare `b` with `ref` instead of `var` :
+
+```mojo
+var a: List[Int] = [1, 2, 3]
+ref b = a # b is a reference to the same value
+b.append(4) # The list updates. a still owns the list.
+print(a) # [1, 2, 3, 4]
+```
+
+### Mutability
+
+In both Python and Mojo, almost everything you create can be changed
+after the fact. In Mojo, there are some special rules.
+
+**Python**
+
+Nearly everything is mutable.
+
+```python
+a = 10       # 10
+b = a        # 10
+b = b + 10   # 20
+print(a, b)  # 10 20
+```
+
+**Mojo**
+
+All variables are mutable by default. Function arguments aren't
+mutable by default.
+
+```mojo
+var x = 10 # 10
+x = 20     # 20, with a warning that assignment to 10 was never used
+
+fn foo(value: Int):
+    value += 1 # Error, expression must be mutable
+
+var y = 20
+foo(y)
+```
+
+Default immutability in the function gives the compiler more room to
+optimize and makes concurrent code safer, since immutable values can't
+be accidentally changed by multiple threads. Using the `mut` keyword in
+the argument declaration makes it mutable.
+
+```mojo
+fn foo(mut value: Int):
+    value += 1 # This works
+```
+
+## Numbers
+
+Python has `int` and `float` of arbitrary precision. Mojo uses types
+that are specific, and integrate into parallel execution
+because performance and optimization are important language features.
+
+**Mojo number types**
+
+Mojo uses explicit, fixed-width numeric types, such
+as: `Int8`, `Int16`, `Int32`, `Int64`, `Float16`, `Float32`, `Float64`.
+These fixed-width types aren't just a constraint, they're a feature.
+Mojo's numeric types are built on `SIMD`, which means the compiler can
+operate on multiple values in a single hardware instruction. Choosing
+the right type gives the compiler room to generate faster code.
+
+**Mojo's `Int` type**
+
+The general `Int` type maps to your machine's native word size. This is
+typically 64 bits on a 64-bit system. You can always check:
+
+```mojo
+from sys import size_of
+
+fn main():
+    var a: Int = 5
+    var bytes = size_of[Int]()
+    print(bytes)  # 8 on a 64-bit system
+```
+
+Mojo doesn't provide a floating point analog (that is, it fits to the
+machine) to its general integer type. That means there's no `Float`
+type.
+
+**Python**
+
+Python's `int` is arbitrary precision. It can hold any integer, as
+large as memory allows. `float` is always 64-bit. Division between two
+integers always returns a float:
+
+```python
+print(7 / 2)   # 2.5 — always float
+print(7 // 2)  # 3 — floor division, returns int
+```
+
+**Mojo**
+
+Division behaves differently than Python. Dividing two integers
+returns a truncated integer. Use `/` for integer division, and
+cast explicitly when you need a float result:
+
+```mojo
+var a: Int = 7
+var b: Int = 2
+
+print(a / b)                       # 3 - integer division, truncates
+print(Float64(a) / Float64(b))     # 3.5 — explicit float division
+```
+
+## Data structures: lists
+
+**Python**
+
+In Python, lists are dynamic. They can hold mixed types and grow freely.
+
+```python
+nums = ["one", 2.0, 3]
+nums.append(4) # ['one', 2.0, 3, 4]
+```
+
+**Mojo**
+
+A typed list holds only one kind of value. In this example, it's `Int`.
+The compiler uses this constraint to generate faster code.
+
+```mojo
+var nums: List[Int] = [1, 2, 3]
+nums.append(4) # [1, 2, 3, 4]
+```
+
+## Data structures: dictionaries
+
+Python dicts are dynamic. Keys and values can be anything. Mojo
+supports Python-style dicts for compatibility and typed dicts for
+performance. Typed dicts use Swiss tables to improve the efficiency of
+data storage and retrieval.
+
+**Python**
+
+```python
+counts = {"a": 1, "b": "two"}
+counts["c"] = 3.0 # {'a': 1, 'b': 'two', 'c': 3.0}
+```
+
+**Mojo**
+
+A typed declaration like `Dict[String, Int]` tells the compiler exactly
+what kinds of keys and values to expect. This supports tighter, faster
+code.
+
+```mojo
+var counts: Dict[String, Int] = {"a": 1, "b": 2}
+counts["c"] = 3 # {a: 1, b: 2, c: 3}
+```
+
+## Comprehensions
+
+Python's comprehensions have direct Mojo analogs. The syntax is
+essentially identical.
+
+**Python**
+
+```python
+squares = [x*x for x in [0, 1, 2, 3, 4] if x % 2 == 0]
+    # [0, 4, 16], list
+positive_numbers = [x for x in range(-3, 3) if x > 0]
+    # [1, 2], list
+
+{x: x * x for x in range(3)}
+    #  {0: 0, 1: 1, 2: 4}, dict
+{k: v.upper() for k, v in [(1, "one"), (2, "two")]}
+    # {1: 'ONE', 2: 'TWO'}, dict
+
+number_set = {x for x in range(5)}
+    # {0, 1, 2, 3, 4}, set
+```
+
+**Mojo**
+
+```mojo
+var list_squares = [x * x for x in [0, 1, 2, 3, 4] if x % 2 == 0]
+    # [0, 4, 16], list
+var positive_numbers = [x for x in range(-3, 3) if x > 0]
+    # [1, 2], list
+
+var dict_squares = {x: x * x for x in range(3)}
+    #  {0: 0, 1: 1, 2: 4}, dict
+var upper_case = {k: v.upper() for k, v in [(1, "one"), (2, "two")]}
+    # {1: ONE, 2: TWO}, dict
+
+var number_set = {x for x in range(5)}
+    # {0, 1, 2, 3, 4}, set
+```
+
+## Iterations
+
+In terms of syntax, Mojo's `for` and `while` loops align with
+Python.
+
+**Mojo using a typed for-loop**
+
+```mojo
+var nums = [0, 1, 2, 3, 4]
+var squares2: List[Int] = []
+
+for x in nums:
+    if x % 2 == 0:
+        squares2.append(x * x)
+
+print(squares2) # [0, 4, 16]
+```
+
+**Mojo using a while loop**
+
+```mojo
+var squares3: List[Int] = []
+var idx = 0
+
+while idx < 3:
+    squares3.append(idx * idx)
+    idx += 1
+
+print(squares3)  # [0, 1, 4]
+```
+
+## Functions definitions
+
+In Python, you can write a function without specifying the types of its
+arguments or return value. In Mojo, you declare types explicitly.
+That's how Mojo knows how to compile the function efficiently.
+
+**Python**
+
+```python
+def add(a, b):
+    return a + b
+```
+
+**Mojo**
+
+```mojo
+fn add(a: Int, b: Int) -> Int:
+    return a + b
+```
+
+The `->` syntax declares the return type. When omitted, it returns
+`None`, a special Mojo term that represents the absence of a value.
+
+## Error handling
+
+Mojo handles errors the same way Python does. It raises and catches
+exceptions.
+
+**Python**
+
+```python
+try:
+    raise ValueError("bad input")
+except ValueError as e:
+    print(e)  # bad input
+```
+
+**Mojo**
+
+```mojo
+try:
+    raise Error("bad input")
+except e:
+    print(e)  # bad input
+```
+
+**Raising typed errors in functions and methods**
+
+Mojo also supports typed errors by declaring a type after the `raises`
+keyword. The `raises` keyword in function and method declarations
+indicates that they may generate or propagate errors.
+
+```mojo
+@fieldwise_init
+struct MyCustomError(Writable):
+    var message: String
+
+fn test_typed_error() raises MyCustomError: # Typed error
+    raise MyCustomError("custom error occurred")
+
+try:
+    test_typed_error()
+except e:
+    print(e) # MyCustomError(message=custom error occurred)
+```
+
+Functions that don't handle the errors they raise automatically
+delegate error handling back to their caller.
+
+In Mojo, each `try/except` statement can handle a single error type.
+
+## Types: classes vs structs
+
+Python classes are flexible and dynamic. You can add attributes at
+runtime, mix types, and override behavior freely. Mojo uses `struct`, a
+statically typed alternative that the compiler can optimize
+aggressively.
+
+Mojo structs are stack-allocated. The value lives in a fast, fixed-size
+region of memory rather than on the heap, where a garbage collector
+must track and clean it up.
+
+**Python**
+
+```python
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+```
+
+**Mojo**
+
+```mojo
+struct Point:
+    var x: Int
+    var y: Int
+
+    fn __init__(out self, x: Int, y: Int):
+        self.x = x
+        self.y = y
+
+...
+
+fn main():
+    var point = Point(5, 3)
+    print(point.x, point.y) # 5, 3
+```
+
+Structs deliver performance and predictability.
+
+## Types: variable static typing
+
+**Python**
+
+In Python, you may assign different types to the same variable.
+
+```python
+a = "x" # String
+a = 10  # Not an error
+```
+
+**Mojo**
+
+In Mojo, once you use a name in a scope, it's statically typed and
+can't be re-bound to a different type:
+
+```mojo
+var a = 1    # Int
+a = "string" # Error: can't implicitly convert String to Int
+```
+
+Creating a subordinate scope allows you to re-use the symbol with a
+different type.
+
+```mojo
+var a = 1
+fn foo() raises:
+    var a = "hello"
+    print(a)
+foo()    # hello
+print(a) # 1
+```
+
+## Types and polymorphism: duck typing vs. traits
+
+In Python, duck typing means you don't declare what interface an object
+must have. If it has the method you call, it works at runtime. This is
+flexible, but it gives you no safety net at build time.
+
+Mojo uses traits to solve the same problem explicitly. A trait defines
+the methods a type must implement or provides a default implementation.
+The compiler verifies that any type used in that role actually provides
+those methods, so mistakes surface before your code runs.
+
+**Python duck typing**
+
+```python
+def draw(shape):
+    shape.draw()  # Works if shape has draw(), fails at runtime if not
+```
+
+**Mojo traits**
+
+```mojo
+trait Drawable:
+    fn draw(self):
+        ... # required method
+
+fn test_draw[T: Drawable](shape: T):
+    shape.draw()  # Compiler guarantees shape has `draw()`
+```
+
+## Memory model
+
+Python manages memory automatically through a garbage collector, a
+background process that tracks which objects are no longer in use and
+frees their memory. You never have to think about it. The tradeoff is
+that you have no control over when collection happens or how memory is
+laid out.
+
+Mojo uses ASAP ("as soon as possible") memory management. The compiler
+knows exactly when a value is used for the final time and its lifetime
+ends. This frees memory at the right moment without waiting for a
+collector to run.
+
+**Python**
+
+- The garbage collector handles memory automatically.
+- Everything is a heap-allocated reference.
+
+**Mojo**
+
+- ASAP memory management doesn't wait to free memory that's no longer
+    needed. It frees memory as soon the compiler knows a value won't
+    reappear.
+- If you need manual control, Mojo offers a suite of pointer and
+    allocation options. You get convenience by default, and precise
+    `alloc()` and `free()` control when you reach for it.
+
+## Python instincts that may surprise you in Mojo
+
+**"I don't need types."**
+
+In Python, that's often fine. In Mojo, types are how the compiler
+generates fast, optimized code. Untyped code works in dynamic languages
+like Python, but it leaves performance on the table.
+
+**"Everything is mutable."**
+
+In Mojo, variables are mutable by default, but function and method
+arguments may not be.
+
+**"I can mix types in a list."**
+
+Mojo collections use static types and benefit from the performance that
+brings.
+
+**"Threads are how I parallelize."**
+
+Python threads are limited by the GIL. Mojo focuses on high-performance
+GPU code, which is required for machine-learning and other
+high-performance compute workloads.
+
+**"Classes are the natural way to structure things."**
+
+Mojo's `struct` value type and its traits offer a better fit for
+performance-sensitive code.
+
+## The Mojo mindset
+
+Mojo gives you Pythonic ergonomics with systems-level control. That
+control comes when you embrace types, memory lifetimes, and value
+semantics. You don't have to use all of it at once, it's there for when
+you need it.

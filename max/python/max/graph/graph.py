@@ -312,7 +312,7 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
 class Graph:
     """Represents a single MAX graph.
 
-    A `Graph` is a callable routine in MAX Engine. Like functions, graphs have a
+    A `Graph` is a callable routine in MAX. Like functions, graphs have a
     name and signature. Unlike a function, which follows an imperative
     programming model, a `Graph` follows a dataflow programming model, using
     lazily-executed, parallel operations instead of sequential instructions.
@@ -345,17 +345,17 @@ class Graph:
             input_types=[TensorType(DType.float32, (2,))]
         )
 
-    You can't call a `Graph` directly from Python. You must compile it and
-    execute it with MAX Engine. For more detail, see the tutorial about how to
-    [build a graph with MAX
-    Graph](/max/tutorials/get-started-with-max-graph-in-python).
+    You can't call a :class:`Graph` directly from Python. You must compile it and
+    execute it with MAX Engine. For more detail, see the
+    `build a graph with MAX Graph tutorial </max/develop/get-started-with-max-graph-in-python>`_.
 
     When creating a graph, a global sequence of chains is initialized and stored
-    in Graph._current_chain. Every side-effecting op, e.g. buffer_load,
-    store_buffer, load_slice_buffer, store_slice_buffer, will use the current
-    chain to perform the op and update Graph._current_chain with a new
-    chain. Currently, the input/output chains for mutable ops can be used at
-    most once. The goal of this design choice is to prevent data races.
+    in ``_current_chain``. Every side-effecting op, such as
+    :func:`buffer_load()`, :func:`buffer_store()`, and
+    :func:`buffer_store_slice()`, will use the current chain to perform the op
+    and update ``_current_chain`` with a new chain. Currently, the
+    input/output chains for mutable ops can be used at most once. The goal of
+    this design choice is to prevent data races.
 
     Args:
         name: A name for the graph.
@@ -523,27 +523,32 @@ class Graph:
     ) -> Graph:
         """Creates and adds a subgraph to the current graph.
 
-        Creates a new :obj:`Graph` instance configured as a subgraph of the current
-        graph. The subgraph inherits the parent graph's module and symbolic
-        parameters. A chain type is automatically appended to the input
-        types to enable proper operation sequencing within the subgraph.
+        Creates a new :class:`Graph` instance configured as a subgraph of the
+        current graph. The subgraph inherits the parent graph's module and
+        symbolic parameters. A chain type is automatically appended to the
+        input types to enable proper operation sequencing within the subgraph.
 
-        The created subgraph is marked with special MLIR attributes to identify it
-        as a subgraph and is registered in the parent graph's subgraph registry.
+        The created subgraph is marked with special MLIR attributes to identify
+        it as a subgraph and is registered in the parent graph's subgraph
+        registry.
 
         Args:
             name: The name identifier for the subgraph.
-            forward: The optional callable that defines the sequence of operations
-                for the subgraph's forward pass. If provided, the subgraph will be
-                built immediately using this callable.
-            input_types: The data types for the subgraph's input tensors. A chain
-                type will be automatically added to these input types.
+            forward: The optional callable that defines the sequence of
+                operations for the subgraph's forward pass. If provided, the
+                subgraph will be built immediately using this callable.
+            input_types: The data types for the subgraph's input tensors. A
+                chain type will be automatically added to these input types.
             path: The optional path to a saved subgraph definition to load from
                 disk instead of creating a new one.
             custom_extensions: The list of paths to custom operation libraries
                 to load for the subgraph. Supports ``.mojopkg`` files and Mojo
                 source directories.
             devices: The list of devices this subgraph is meant to use.
+
+        Returns:
+            A new :class:`Graph` instance registered as a subgraph of this
+            graph.
         """
         subgraph = Graph(
             name=name,
@@ -605,7 +610,7 @@ class Graph:
 
         Created once per graph and never advanced/merged by the graph itself.
         Use it for operations that are safe to schedule without threading
-        per-device ordering (e.g., host→device transfers for staging).
+        per-device ordering (for example, host→device transfers for staging).
         """
         return self._always_ready_chain
 
@@ -755,7 +760,7 @@ class Graph:
     def current(cls) -> Graph:
         """Gets the currently active graph from the execution context.
 
-        Retrieves the :obj:`Graph` instance that is currently active within
+        Retrieves the :class:`Graph` instance that is currently active within
         the execution context. The current graph is automatically set when
         entering a graph's context using a ``with`` statement or when the
         graph is being built. This provides access to the active graph from
@@ -798,7 +803,7 @@ class Graph:
         # Convert args from instances of Python graph-api Value() to mlir.Value
         def unwrap(arg: Any) -> Any:
             if isinstance(arg, Value):
-                return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)
+                return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore[attr-defined]
             elif isinstance(arg, Type):
                 return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)  # type: ignore
             elif isinstance(arg, list | tuple):
@@ -808,7 +813,7 @@ class Graph:
             elif isinstance(arg, _Type):
                 return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
             elif isinstance(arg, _Value):
-                return mlir.Value._CAPICreate(arg._CAPIPtr)
+                return mlir.Value._CAPICreate(arg._CAPIPtr)  # type: ignore[attr-defined]
             else:
                 return arg
 
@@ -922,7 +927,12 @@ class Graph:
             )
 
     def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
-        """Sets the output nodes of the :obj:`Graph`."""
+        """Sets the output nodes of the :class:`Graph`.
+
+        Args:
+            outputs: The output values of the graph. Each value may be a
+                :class:`Value` or any :obj:`TensorValueLike`.
+        """
         outputs = tuple(
             o if isinstance(o, Value) else TensorValue(o) for o in outputs
         )
@@ -990,7 +1000,12 @@ class Graph:
 
     @property
     def output_types(self) -> list[Type[Any]]:
-        """View of the types of the graph output terminator."""
+        """The types of the graph output values.
+
+        Raises:
+            TypeError: If the graph has not yet been terminated by a call to
+                :meth:`output()`.
+        """
         terminator = self._body.operations[-1]
         if not isinstance(terminator, mo.OutputOp):
             raise TypeError("Graph not yet terminated by a call to output")

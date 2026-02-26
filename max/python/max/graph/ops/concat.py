@@ -35,8 +35,8 @@ def concat(
 
     .. code-block:: python
 
-        import max.functional as F
-        from max.tensor import Tensor
+        import max.experimental.functional as F
+        from max.experimental.tensor import Tensor
 
         # Create two 2x2 matrices
         a = Tensor.constant([[1, 2], [3, 4]])

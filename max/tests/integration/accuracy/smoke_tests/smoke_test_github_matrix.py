@@ -36,6 +36,7 @@ HW_EX = {"vllm": {"MI355", "8xMI355"}, "sglang": {"MI355", "8xMI355"}}
 XL = {"8xB200", "8xMI355"}
 MULTI = {"2xH100"} | XL
 NON_XL = set(RUNNERS) - XL
+DISABLE = set(RUNNERS)
 
 # Model → set of exclusion tags:
 #   - framework        (e.g. "max")
@@ -44,6 +45,7 @@ NON_XL = set(RUNNERS) - XL
 #   - use XL           to skip on 8xB200 and 8xMI355
 #   - use MULTI        to skip on all multi-GPU runners
 #   - use NON_XL       to skip on everything except 8xB200 and 8xMI355
+#   - use DISABLE      to skip on all runners (temporarily disable a model)
 #
 # If you want to add a model to the smoke test:
 #   1. Trigger the smoke test job with the model name you want to add:
@@ -55,19 +57,20 @@ NON_XL = set(RUNNERS) - XL
 # fmt: off
 MODELS: dict[str, set[str]] = {
     "allenai/olmo-3-7b-instruct": MULTI | {"max"},
-    "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
+    "allenai/olmocr-2-7b-1025-fp8": MULTI | {"sglang"},
     "bytedance-seed/academic-ds-9b": MULTI | {"max", "max-ci@MI355", "sglang@B200", "vllm@B200"},
     "deepseek-ai/deepseek-r1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
     "deepseek-ai/deepseek-v2-lite-chat": MULTI | {"max", "vllm@B200"},
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
     "google/gemma-3-12b-it": MULTI,
-    "google/gemma-3-27b-it": XL,
+    "google/gemma-3-27b-it": MULTI,  # TODO(MODELS-1021)
     "meta-llama/llama-3.1-8b-instruct": MULTI,
     "meta-llama/llama-3.2-1b-instruct": MULTI,
     "microsoft/phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
     "mistralai/mistral-nemo-instruct-2407": MULTI | {"vllm"},
     "mistralai/mistral-small-3.1-24b-instruct-2503": MULTI | {"vllm"},
+    "nvidia/deepseek-v3.1-nvfp4": NON_XL | {"8xMI355"},
     "opengvlab/internvl3-8b-instruct": MULTI | {"sglang"},
     "opengvlab/internvl3_5-8b-instruct": MULTI | {"max", "sglang"},
     "qwen/qwen2.5-7b-instruct": MULTI,
@@ -80,7 +83,7 @@ MODELS: dict[str, set[str]] = {
     "qwen/qwen3-vl-30b-a3b-instruct": XL | {"max-ci@2xH100", "max-ci@H100", "max@2xH100", "max@H100"},
     "qwen/qwen3-vl-30b-a3b-instruct-fp8": XL | {"max", "MI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # max: 26.2, MI355: no FP8, B200: MODELS-1020
     "qwen/qwen3-vl-30b-a3b-thinking": XL | {"max", "max-ci@2xH100", "max-ci@H100"},
-    "redhatai/gemma-3-27b-it-fp8-dynamic": XL,
+    "redhatai/gemma-3-27b-it-fp8-dynamic": MULTI,  # TODO(MODELS-1021)
     "nvidia/llama-3.1-405b-instruct-nvfp4": NON_XL | {"max", "8xMI355"},
     "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": NON_XL,
     "unsloth/gpt-oss-20b-bf16": XL | {"max@H100"},
@@ -89,9 +92,11 @@ MODELS: dict[str, set[str]] = {
 # These models are hardcoded to run on module-V3. They're duplicates
 # of the model from the org listed in the comment next to the model name.
 V3_MODELS: dict[str, set[str]] = {
-    "tbmod/Meta-Llama-3.1-8B-Instruct": MULTI, # unsloth/
-    "tbmod/Llama-3.2-1B-Instruct": MULTI, # unsloth/
-    "tbmod/gpt-oss-20b-BF16": XL | {"max@H100"}, # unsloth/
+    "tbmod/meta-llama-3.1-8b-instruct": MULTI, # unsloth/
+    "tbmod/llama-3.2-1b-instruct": MULTI, # unsloth/
+    "tbmod/gpt-oss-20b-bf16": DISABLE,  # unsloth/ TODO(MXF-121)
+    "tbmod/phi-3.5-mini-instruct": MULTI, # microsoft/
+    "tbmod/phi-4": MULTI, # microsoft/
 }
 
 MODELS = {**MODELS, **V3_MODELS}

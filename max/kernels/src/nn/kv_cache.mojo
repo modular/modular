@@ -1530,6 +1530,41 @@ fn generic_get_paged_cache[
     }
 
 
+fn generic_get_paged_cache_with_scales[
+    dtype: DType,
+    scale_dtype: DType,
+    kv_params: KVCacheStaticParams,
+    page_size: Int,
+    quantization_granularity: Int,
+](
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
+    lookup_table: LayoutTensor[DType.uint32, Layout.row_major[2]()],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
+    scales: LayoutTensor[mut=True, scale_dtype, Layout.row_major[6]()],
+    out result: PagedKVCacheCollection[
+        dtype, kv_params, page_size, scale_dtype, quantization_granularity
+    ],
+):
+    """Create a PagedKVCacheCollection with scales for MLA attention.
+
+    Args:
+        blocks: KV cache blocks tensor [num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim].
+        cache_lengths: Cache lengths per batch [batch_size].
+        lookup_table: Page lookup table [batch_size, max_pages].
+        max_lengths: Max lengths tensor [[max_seq_length, max_cache_length]].
+        scales: Scales tensor [num_blocks, kv_dim, num_layers, page_size, num_heads, head_dim_granularity].
+    """
+    return {
+        blocks = blocks.as_any_origin(),
+        cache_lengths = cache_lengths.get_immutable().as_any_origin(),
+        lookup_table = lookup_table.get_immutable().as_any_origin(),
+        max_seq_length = max_lengths[0, 0][0],
+        max_cache_length = max_lengths[0, 1][0],
+        scales = scales.as_any_origin(),
+    }
+
+
 # ===-----------------------------------------------------------------------===#
 # GPU→CPU Page Copy for KV Cache Offloading
 # ===-----------------------------------------------------------------------===#

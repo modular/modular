@@ -285,8 +285,7 @@ struct TensorCore[
         elif _out_type == DType.float64 and _in_type == DType.float64:
             return [shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16]
         else:
-            constrained[False, "No valid shape of mma"]()
-            return [shape_null]
+            comptime assert False, "No valid shape of mma"
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
 
@@ -379,8 +378,7 @@ struct TensorCore[
             ](lane_id())
             a_reg_tile.vectorize[1, simd_width]().copy_from(a_reg_frags)
         else:
-            constrained[
-                False,
+            comptime assert False, String(
                 "Data type ",
                 String(Self.in_type),
                 " is not supported for loading matrix A fragments on AMD",
@@ -388,7 +386,7 @@ struct TensorCore[
                     " GPUs. Only float32, bfloat16, float16, float8 and bfloat8"
                     " are supported."
                 ),
-            ]()
+            )
         return a_reg_tile
 
     @always_inline
@@ -564,8 +562,7 @@ struct TensorCore[
                 ](lane_id())
                 b_reg_tile.vectorize[simd_width, 1]().copy_from(b_ram_frags)
         else:
-            constrained[
-                False,
+            comptime assert False, String(
                 "Data type ",
                 String(Self.in_type),
                 " is not supported for loading matrix B fragments on AMD",
@@ -573,7 +570,7 @@ struct TensorCore[
                     " GPUs. Only float32, bfloat16, float16, float8 and bfloat8"
                     " are supported."
                 ),
-            ]()
+            )
 
         return b_reg_tile
 
@@ -646,7 +643,7 @@ struct TensorCore[
             var b_ram_frags = b.distribute[warp_layout](lane_id())
             b_reg_tile.copy_from(b_ram_frags)
         else:
-            constrained[False, "No valid type to load matrix fragment b"]()
+            comptime assert False, "No valid type to load matrix fragment b"
         return b_reg_tile
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
@@ -690,7 +687,7 @@ struct TensorCore[
             )
             c_reg_tile.vectorize[1, 4]().copy_from(c_ram_frags)
         else:
-            constrained[False, "No valid type to load matrix fragment c"]()
+            comptime assert False, "No valid type to load matrix fragment c"
         return c_reg_tile
 
     @always_inline
@@ -720,7 +717,7 @@ struct TensorCore[
             ](lane_id())
             c_reg_tile.vectorize[1, 2]().copy_from(c_ram_frags)
         else:
-            constrained[False, "No valid type to load matrix fragment c"]()
+            comptime assert False, "No valid type to load matrix fragment c"
         return c_reg_tile
 
     @always_inline
@@ -773,7 +770,7 @@ struct TensorCore[
                 )
                 dst.copy_from(d_src.vectorize[1, 4]())
         else:
-            constrained[False, "No valid type to store to LayoutTensor d"]()
+            comptime assert False, "No valid type to store to LayoutTensor d"
 
     @always_inline
     fn _store_d_nvidia(
@@ -808,7 +805,7 @@ struct TensorCore[
             ).copy_from(d_src.vectorize[1, 2]())
 
         else:
-            constrained[False, "No valid type to store to LayoutTensor d"]()
+            comptime assert False, "No valid type to store to LayoutTensor d"
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
@@ -1412,29 +1409,20 @@ fn get_mma_shape[
         ):
             return shape_16x8x32
         else:
-            constrained[False, "Unsupported mma shape."]()
-            return shape_null
+            comptime assert False, "Unsupported mma shape."
     else:
         comptime if _is_amd_rdna():
             comptime if _is_amd_rdna2_or_earlier():
-                constrained[
-                    False,
-                    (
-                        "RDNA1/RDNA2 tensor core support requires fallback"
-                        " paths (not yet implemented)"
-                    ),
-                ]()
-                return shape_null
+                comptime assert False, (
+                    "RDNA1/RDNA2 tensor core support requires fallback"
+                    " paths (not yet implemented)"
+                )
 
             comptime if accum_type == DType.float32 and input_type == DType.float32:
-                constrained[
-                    False,
-                    (
-                        "RDNA WMMA does not support FP32 inputs (only FP16/BF16"
-                        " -> FP32)"
-                    ),
-                ]()
-                return shape_null
+                comptime assert False, (
+                    "RDNA WMMA does not support FP32 inputs (only FP16/BF16"
+                    " -> FP32)"
+                )
             elif accum_type == DType.float32 and input_type.is_half_float():
                 return shape_16x16x16
             elif (
@@ -1450,8 +1438,7 @@ fn get_mma_shape[
             elif accum_type == DType.int32 and (input_type == DType._uint4):
                 return shape_16x16x16
             else:
-                constrained[False, "Unsupported RDNA mma shape."]()
-                return shape_null
+                comptime assert False, "Unsupported RDNA mma shape."
         else:
             comptime if accum_type == DType.float32 and input_type == DType.float32:
                 return shape_16x16x4
@@ -1460,8 +1447,7 @@ fn get_mma_shape[
             elif accum_type == DType.float32 and input_type.is_float8():
                 return shape_16x16x32
             else:
-                constrained[False, "Unsupported CDNA mma shape."]()
-                return shape_null
+                comptime assert False, "Unsupported CDNA mma shape."
 
 
 @always_inline

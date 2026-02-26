@@ -31,31 +31,31 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy.attention.multi_latent_attention import (
+from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
 )
-from max.nn.legacy.attention.multi_latent_attention_fp8 import (
+from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import (
+from max.nn.comm import Signals
+from max.nn.comm.ep import EPBatchManager
+from max.nn.data_parallelism import split_batch_replicated
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.layer import LayerList, Module
+from max.nn.linear import (
     MLP,
     ColumnParallelLinear,
 )
-from max.nn.legacy.moe import MoE, MoEQuantized
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import (
+from max.nn.moe import MoE, MoEQuantized
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 
@@ -293,14 +293,16 @@ class DeepseekV3DecoderLayer(Module):
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
         num_devices = len(kv_blocks)
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
-        for i in range(num_devices):
-            mla_prefill_metadata.append(
-                MLAPrefillMetadata(
-                    buffer_row_offsets=mla_prefill_metadata_flat[3 * i],
-                    cache_offsets=mla_prefill_metadata_flat[3 * i + 1],
-                    buffer_lengths=mla_prefill_metadata_flat[3 * i + 2],
+        if self.config.graph_mode != "decode":
+            assert len(mla_prefill_metadata_flat) == 3 * num_devices
+            for i in range(num_devices):
+                mla_prefill_metadata.append(
+                    MLAPrefillMetadata(
+                        buffer_row_offsets=mla_prefill_metadata_flat[3 * i],
+                        cache_offsets=mla_prefill_metadata_flat[3 * i + 1],
+                        buffer_lengths=mla_prefill_metadata_flat[3 * i + 2],
+                    )
                 )
-            )
 
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
@@ -732,7 +734,7 @@ class DeepseekV3(Module):
         return ret_val
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

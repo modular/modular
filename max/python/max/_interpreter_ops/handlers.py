@@ -1118,6 +1118,54 @@ for op_type in ops.SOFTMAX:
     register_op_handler(op_type)(softmax_handler(op_type))
 
 
+# Cumsum operation
+
+
+@register_op_handler(mo.CumsumOp)
+def _handle_cumsum(
+    op: mo.CumsumOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.cumsum by dispatching to Mojo cumsum kernel.
+
+    Args:
+        op: The cumsum operation.
+        inputs: Input buffers - first is the input tensor, second is the
+            axis tensor (scalar int64).
+
+    Returns:
+        List containing the cumsum tensor buffer.
+    """
+    assert isinstance(inputs[0], Buffer)  # input tensor
+    assert isinstance(inputs[1], Buffer)  # axis (scalar int64)
+
+    input_buffer = inputs[0]
+    axis_buffer = inputs[1]
+
+    # Extract axis value from the axis tensor (scalar si64)
+    axis = int(axis_buffer.to_numpy().item())
+
+    # Extract exclusive and reverse from op attributes
+    exclusive = op.exclusive
+    reverse = op.reverse
+
+    # Output shape is the same as input shape (cumsum preserves shape)
+    output = Buffer(
+        shape=input_buffer.shape,
+        dtype=input_buffer.dtype,
+        device=input_buffer.device,
+    )
+
+    ops.misc_ops.CumSum(
+        output,
+        input_buffer,
+        axis,
+        exclusive,
+        reverse,
+    )
+
+    return [output]
+
+
 # Layer norm operations
 
 
@@ -1354,7 +1402,7 @@ def _handle_select(
         device=target_device,
     )
 
-    ops.elementwise_ops.Select(
+    ops.elementwise_comparison_ops.Select(
         output,
         inputs[0],
         inputs[1],

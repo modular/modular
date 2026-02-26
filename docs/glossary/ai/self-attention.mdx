@@ -1,0 +1,36 @@
+---
+title: Self-attention
+meta_title: What is self-attention?
+---
+
+Self-attention is a mechanism in a [transformer](transformer.mdx) model that
+calculates the importance of different tokens (such as words) in a sequence,
+relative to each other. Each token is said to "attend to" all other tokens in
+the sequence by assigning an "attention score" to each one.
+
+In a large language model (LLM), self-attention allows the model to build an
+understanding of the whole text by evaluating how each word is relevant to all
+other words in the text, no matter how far they are from each other.
+
+The attention scores are computed using query, key, and value (QKV) vectors
+that pertain to each token:
+
+- The **query** is a vector that expresses what information a token is
+*looking for* among all the other tokens (like a search query).
+
+- The **key** is a vector that describes the information a token *offers* to
+other tokens (like an answer to a token's query).
+
+- The **value** is a vector that provides the **contextually-relevant
+information** about this token.
+
+After calculating attention scores by comparing the **query** and **key**
+vectors between tokens, self-attention uses the scores to apply weighted
+information from each token's **value** into a new [embedding](embedding.mdx)
+for each token. Thus, self-attention outputs a new token embedding for each
+token that carries information about its relationship with the other tokens in
+the sequence.
+
+The model also saves the calculated keys and values into the [KV
+cache](kv-cache.mdx) to avoid redundant recompute for the same tokens during
+the next [autoregression](autoregression.mdx) cycle.

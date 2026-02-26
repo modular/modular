@@ -111,8 +111,7 @@ fn bench_matmul_all_reduce[
     var temp_buffer_num_bytes = ngpus * size_of[dtype]() * temp_length
 
     # Initialize buffers for each GPU
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         # Allocate A. B, C on device for matmul.
         A_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](mk))
         B_list.append(list_of_ctx[i].enqueue_create_buffer[dtype](nk))
@@ -146,10 +145,10 @@ fn bench_matmul_all_reduce[
     comptime B_static_shape = DimList(n.dim, k.dim)
     comptime C_static_shape = DimList(m.dim, n.dim)
     var As = InlineArray[
-        NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape], ngpus
+        NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape], ngpus
     ](fill={})
     var Bs = InlineArray[
-        NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape], ngpus
+        NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape], ngpus
     ](fill={})
     var Cs = InlineArray[
         NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape], ngpus
@@ -159,12 +158,11 @@ fn bench_matmul_all_reduce[
     ](fill={})
 
     # Setup the kernel NDBuffers
-    @parameter
-    for i in range(ngpus):
-        As[i] = NDBuffer[dtype, 2, MutAnyOrigin, A_static_shape](
+    comptime for i in range(ngpus):
+        As[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape](
             A_list[i].unsafe_ptr(), DimList(m.value, k.value)
         )
-        Bs[i] = NDBuffer[dtype, 2, MutAnyOrigin, B_static_shape](
+        Bs[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape](
             B_list[i].unsafe_ptr(), DimList(n.value, k.value)
         )
         Cs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
@@ -179,8 +177,7 @@ fn bench_matmul_all_reduce[
         NDBuffer[dtype, 2, MutAnyOrigin]()
     )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, 2](
             C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
         )
@@ -201,8 +198,7 @@ fn bench_matmul_all_reduce[
             rebind[IndexList[2]](coords), rebind[SIMD[dtype, _width]](val)
         )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     @parameter

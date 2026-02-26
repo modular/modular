@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for KV cache registry functions: load_kv_manager and load_kv_managers."""
+"""Tests for KV cache registry functions: load_kv_manager."""
 
 from __future__ import annotations
 
@@ -20,11 +20,9 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.kv_cache import load_kv_manager, load_kv_managers
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    MultiKVCacheParams,
-)
+from max.kv_cache import load_kv_manager
+from max.kv_cache.registry import load_multi_kv_managers
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 
 
 def create_kv_params(
@@ -91,23 +89,6 @@ class TestLoadKvManager:
         assert call_kwargs["params"] == params
         assert call_kwargs["session"] == mock_session
         assert call_kwargs["total_num_pages"] > 0
-
-    def test_load_kv_manager_rejects_non_kv_cache_params(self) -> None:
-        """load_kv_manager should raise TypeError for non-KVCacheParams."""
-        mock_session = MagicMock()
-
-        # MultiKVCacheParams is not accepted by load_kv_manager (singular)
-        params = create_kv_params()
-        multi_params = MultiKVCacheParams.from_params(params)
-
-        with pytest.raises(TypeError, match="must be a KVCacheParams"):
-            load_kv_manager(
-                params=multi_params,
-                max_batch_size=16,
-                max_seq_len=2048,
-                session=mock_session,
-                available_cache_memory=1024 * 1024 * 1024,
-            )
 
     def test_load_kv_manager_rejects_zero_batch_size(self) -> None:
         """load_kv_manager should raise ValueError for batch_size <= 0."""
@@ -182,7 +163,7 @@ class TestLoadKvManagers:
         params = create_kv_params()
         mock_session = MagicMock()
 
-        result = load_kv_managers(
+        result = load_kv_manager(
             params=params,
             max_batch_size=16,
             max_seq_len=2048,
@@ -190,9 +171,7 @@ class TestLoadKvManagers:
             available_cache_memory=1024 * 1024 * 1024,
         )
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert result[0] == mock_manager
+        assert result == mock_manager
 
     @patch("max.kv_cache.registry.PagedKVCacheManager")
     def test_load_kv_managers_multi_params(
@@ -208,7 +187,7 @@ class TestLoadKvManagers:
         multi_params = MultiKVCacheParams.from_params(params1, params2)
         mock_session = MagicMock()
 
-        result = load_kv_managers(
+        result = load_multi_kv_managers(
             params=multi_params,
             max_batch_size=16,
             max_seq_len=2048,
@@ -231,7 +210,7 @@ class TestLoadKvManagers:
         multi_params = MultiKVCacheParams.from_params(params1, params2)
         mock_session = MagicMock()
 
-        load_kv_managers(
+        load_multi_kv_managers(
             params=multi_params,
             max_batch_size=16,
             max_seq_len=2048,
@@ -254,7 +233,7 @@ class TestLoadKvManagers:
         with pytest.raises(
             ValueError, match="max_batch_size must be greater than 0"
         ):
-            load_kv_managers(
+            load_kv_manager(
                 params=params,
                 max_batch_size=0,
                 max_seq_len=2048,
@@ -276,7 +255,7 @@ class TestLoadKvManagers:
         multi_params = MultiKVCacheParams.from_params(params1, params2, params3)
         mock_session = MagicMock()
 
-        result = load_kv_managers(
+        result = load_multi_kv_managers(
             params=multi_params,
             max_batch_size=16,
             max_seq_len=2048,
@@ -307,25 +286,3 @@ class TestLoadKvManagerVirtualDevice:
         )
 
         assert isinstance(result, Mock)
-
-    @patch("max.kv_cache.registry.is_virtual_device_mode", return_value=True)
-    def test_load_kv_managers_returns_mocks_in_virtual_mode(
-        self, mock_is_virtual: MagicMock
-    ) -> None:
-        """In virtual device mode, load_kv_managers should return Mocks."""
-        params1 = create_kv_params()
-        params2 = create_kv_params()
-        multi_params = MultiKVCacheParams.from_params(params1, params2)
-        mock_session = MagicMock()
-
-        result = load_kv_managers(
-            params=multi_params,
-            max_batch_size=16,
-            max_seq_len=2048,
-            session=mock_session,
-            available_cache_memory=1024 * 1024 * 1024,
-        )
-
-        assert len(result) == 2
-
-        assert all(isinstance(m, Mock) for m in result)

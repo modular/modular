@@ -15,21 +15,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from functools import partial
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.nn.module_v3 import Linear, Module
 
-from max import functional as F
-from max.nn import Linear, Module
-from max.tensor import Tensor
-
-_ACTIVATION_FUNCTIONS: dict[str, Callable[[Tensor], Tensor]] = {
-    "silu": F.silu,
-    "gelu": F.gelu,
-    "gelu_tanh": partial(F.gelu, approximate="tanh"),
-    "relu": F.relu,
-    "tanh": F.tanh,
-    "sigmoid": F.sigmoid,
-}
+from .activation import activation_function_from_name
 
 
 class MLP(Module[[Tensor], Tensor]):
@@ -85,8 +75,9 @@ class MLP(Module[[Tensor], Tensor]):
             out_dim=feed_forward_length,
             bias=bias,
         )
-        assert activation_function in _ACTIVATION_FUNCTIONS
-        self.activation_function = _ACTIVATION_FUNCTIONS[activation_function]
+        self.activation_function = activation_function_from_name(
+            activation_function
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         """Applies the MLP transformation to the input.

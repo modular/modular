@@ -84,7 +84,7 @@ struct CompiledFunctionInfo[
     func_type: __TypeOfAllTypes,
     func: func_type,
     target: _TargetType,
-](Stringable, TrivialRegisterPassable, Writable):
+](TrivialRegisterPassable, Writable):
     """Contains compilation information and results for a function.
 
     Stores assembly/IR code, function metadata, and error information from
@@ -141,6 +141,7 @@ struct CompiledFunctionInfo[
         """
         return writer.write(self.asm)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the assembly/IR to a string.
 

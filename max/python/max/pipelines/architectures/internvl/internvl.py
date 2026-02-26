@@ -32,20 +32,20 @@ from max.graph import (
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
-from max.nn.legacy.attention import TensorParallelAttentionWithRope
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kernels import flash_attention_gpu
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module, Shardable
-from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.norm import LayerNorm, RMSNorm
-from max.nn.legacy.rotary_embedding import DynamicRotaryEmbedding
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.attention import TensorParallelAttentionWithRope
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.comm import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kernels import flash_attention_gpu
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import LayerList, Module, Shardable
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.rotary_embedding import DynamicRotaryEmbedding
+from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
-from max.pipelines.architectures.llama3_legacy.model_config import (
+from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config

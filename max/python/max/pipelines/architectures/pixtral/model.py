@@ -22,29 +22,28 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.layer import Module
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.profiler import traced
@@ -79,7 +78,7 @@ class PixtralInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     """The overall interface to the Pixtral model."""
 
     model: Model
@@ -303,7 +302,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             }
         return state_dict
 
-    def graph_inputs(self) -> tuple[TensorType]:
+    def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
 
@@ -401,7 +400,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self,
         session: InferenceSession,
     ) -> Model:
-        if self.pipeline_config.enable_echo:
+        if self.pipeline_config.model.enable_echo:
             raise ValueError(
                 "Pixtral model does not currently implement enable echo."
             )

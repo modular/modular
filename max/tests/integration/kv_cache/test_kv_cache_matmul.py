@@ -26,12 +26,12 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.kv_cache import PagedKVCacheManager
 from max.mlir import StringAttr
-from max.nn.legacy.kernels import (
+from max.nn.kernels import (
     fused_qkv_ragged_matmul,
     matmul_k_cache_ragged,
     matmul_kv_cache_ragged,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
@@ -88,11 +88,11 @@ def _dump_k_or_v_cache_to_torch_tensor(
     torch_dtype = cache.params.dtype.to_torch()
 
     # [total_num_pages, kv_dim, num_layers, page_size, n_heads, head_dim]
-    device_tensor = cache.get_device_tensors(replica_idx=0)[device_id]
-    device_tensor_torch = from_dlpack(device_tensor).to(torch_dtype).cpu()
+    device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
+    device_buffer_torch = from_dlpack(device_buffer).to(torch_dtype).cpu()
 
     # [total_num_pages, num_layers, page_size, n_heads, head_dim]
-    device_tensor_torch = device_tensor_torch[:, key_or_value.value, :, :, :, :]
+    device_buffer_torch = device_buffer_torch[:, key_or_value.value, :, :, :, :]
 
     # [seq_len, num_layers, n_heads, head_dim]
     seq_len = ctx.tokens.processed_length
@@ -112,7 +112,7 @@ def _dump_k_or_v_cache_to_torch_tensor(
         block_id = req_blocks[start_idx // cache.page_size]
 
         # [num_layers, page_size, n_heads, head_dim]
-        block_torch = device_tensor_torch[block_id, :]
+        block_torch = device_buffer_torch[block_id, :]
 
         for token_idx in range(start_idx, end_idx):
             res[token_idx, :, :, :] = block_torch[
@@ -161,6 +161,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_params.get_symbolic_inputs()[0]
@@ -228,7 +229,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
+        kv_manager.runtime_inputs([batch])[0]
     )
 
     @modular_graph_test(
@@ -349,6 +350,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
@@ -381,7 +383,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch])[0]
     kv_blocks = kv_inputs[0]
     # First check that the KV cache was zeroed out on initialization.
     assert not kv_blocks.to_numpy().any()
@@ -482,6 +484,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     graph = Graph(
@@ -513,7 +516,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch])[0]
 
     hidden_states = torch.randn(
         size=[total_seq_len, num_q_heads * kv_params.head_dim],
@@ -586,6 +589,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         kv_params,
         total_num_pages=8,
         session=InferenceSession(devices=[CPU()]),
+        max_batch_size=128,
     )
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     graph = Graph(

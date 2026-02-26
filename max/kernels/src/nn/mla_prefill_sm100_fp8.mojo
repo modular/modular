@@ -221,9 +221,10 @@ struct CvtToMMAPipline[
 
 
 @always_inline
-fn cvt_block_fp8_to_bf16[
+fn cvt_block_fp8_to_bf16_with_scale[
     input_type: DType,
     output_type: DType,
+    KRopeType: MHAOperand,
     //,
     swizzle_fp8: Swizzle,
     swizzle_bf16: Swizzle,
@@ -234,12 +235,15 @@ fn cvt_block_fp8_to_bf16[
     mut output: LayoutTensor[
         output_type, _, MutAnyOrigin, address_space = AddressSpace.SHARED, ...
     ],
+    k_rope_lut: KRopeType,
+    seq_info: SeqInfo,
+    kv_start_row: UInt32,
+    num_keys: UInt32,
     tid: UInt32,
 ):
-    constrained[
-        input_type == DType.float8_e4m3fn and output_type == DType.bfloat16,
-        "Only support float8_e4m3fn to bfloat16 conversion",
-    ]()
+    comptime assert (
+        input_type == DType.float8_e4m3fn and output_type == DType.bfloat16
+    ), "Only support float8_e4m3fn to bfloat16 conversion"
 
     comptime num_regs = input.layout.size() // WARP_SIZE
     comptime row_stride = type_of(input).stride[0]()
@@ -263,8 +267,29 @@ fn cvt_block_fp8_to_bf16[
         var row = UInt32(i * 2) + t_row
         var col = t_col * 4
         var elem_offset = row * UInt32(row_stride) + col
-        var fp16x4 = fp8_regs.slice[4, offset = i * 4]().cast[output_type]()
-        (output.ptr + Int(swizzle_bf16(elem_offset))).store[width=4](fp16x4)
+
+        comptime if KRopeType.quantization_enabled:
+            var tok_idx = kv_start_row + row
+            if tok_idx < num_keys:
+                scale = k_rope_lut.load_scale[width=1](
+                    batch_idx=Int(seq_info.prompt_idx),
+                    start_tok_idx=Int(tok_idx),
+                    head_idx=0,
+                    head_dim_idx=576 - 64,
+                )
+            else:
+                scale = SIMD[KRopeType.scale_dtype, 1](1)
+
+            var fp32x4 = fp8_regs.slice[4, offset = i * 4]().cast[
+                KRopeType.scale_dtype
+            ]()
+            fp32x4 = fp32x4 * scale
+            (output.ptr + Int(swizzle_bf16(elem_offset))).store[width=4](
+                fp32x4.cast[output_type]()
+            )
+        else:
+            var fp16x4 = fp8_regs.slice[4, offset = i * 4]().cast[output_type]()
+            (output.ptr + Int(swizzle_bf16(elem_offset))).store[width=4](fp16x4)
 
 
 @fieldwise_init
@@ -435,7 +460,10 @@ struct SM100MLA[
             Int32(Self.config.num_threads)
         )
     )
-    fn mla_prefill_kernel(
+    @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    fn mla_prefill_kernel[
+        blockwise_scale: Int = 0,
+    ](
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
@@ -606,7 +634,7 @@ struct SM100MLA[
 
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             Self.softmax(
                 ptr_tmem_addr[0],
@@ -635,7 +663,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
             Self.correction(
                 ptr_tmem_addr[0],
                 misc_mbars,
@@ -654,7 +682,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             Self.load(
                 misc_mbars,
@@ -687,7 +715,7 @@ struct SM100MLA[
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
             Self.mma(
                 ptr_tmem_addr[0],
                 misc_mbars,
@@ -709,7 +737,7 @@ struct SM100MLA[
 
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
-            ](kv_lut, k_rope_lut, seq_info)
+            ](k_rope_lut, seq_info)
 
             var iter_count: UInt32 = (
                 mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
@@ -726,7 +754,10 @@ struct SM100MLA[
                 iter_count,
                 tma_to_cvt_pipeline,
                 cvt_to_mma_pipeline,
+                k_rope_lut,
                 kv_mem_ptr,
+                seq_info,
+                pos.num_keys,
                 local_thread_idx,
             )
 
@@ -1134,7 +1165,7 @@ struct SM100MLA[
             comptime for i in range(batch_size // 2, batch_size):
                 vs[i] = exp2(vs[i] - row_max)
 
-            BatchTileType(p_tmem).store(
+            BatchTileType(p_tmem).store_async(
                 LocalTensor[
                     Self.accum_type, row_major[batch_size * exp_simd]()
                 ](s.ptr, row_major[batch_size * exp_simd]())
@@ -1150,7 +1181,7 @@ struct SM100MLA[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                BatchTileType(p_tmem + UInt32(tmem_offset)).store(
+                BatchTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[batch_size * exp_simd]()
                     ](s.ptr + el_offset, row_major[batch_size * exp_simd]())
@@ -1166,7 +1197,7 @@ struct SM100MLA[
                 comptime tmem_offset = (
                     el_offset * size_of[Self.qkv_type]()
                 ) // size_of[Self.accum_type]()
-                RemainderTileType(p_tmem + UInt32(tmem_offset)).store(
+                RemainderTileType(p_tmem + UInt32(tmem_offset)).store_async(
                     LocalTensor[
                         Self.accum_type, row_major[remainder * exp_simd]()
                     ](s.ptr + el_offset, row_major[remainder * exp_simd]())
@@ -1705,12 +1736,17 @@ struct SM100MLA[
         mut iter_count: UInt32,
         mut tma_to_cvt_pipeline: TMAtoCvtPipeline,
         mut cvt_to_mma_pipeline: CvtToMMAPipline,
+        k_rope: Self.KRopeType,
         kv_mem_ptr: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
+        seq_info: SeqInfo,
+        num_keys: UInt32,
         local_thread_idx: UInt32,
     ):
         var k_rope_smem_ptr = kv_mem_ptr + Self.config.BN * Self.kv_depth
         var local_warp_idx = local_thread_idx // UInt32(WARP_SIZE)
         var local_lane_idx = local_thread_idx % UInt32(WARP_SIZE)
+
+        var kv_start_tok: UInt32 = 0
 
         comptime swizzle_fp8 = make_swizzle[
             Self.KRopeType.dtype, TensorMapSwizzle.SWIZZLE_64B
@@ -1743,22 +1779,39 @@ struct SM100MLA[
 
         tma_to_cvt_pipeline.consumer_wait()
 
-        cvt_block_fp8_to_bf16[
+        cvt_block_fp8_to_bf16_with_scale[
             swizzle_fp8=swizzle_fp8,
             swizzle_bf16=swizzle_bf16,
-        ](k_rope_tile_fp8, k_rope_tile_bf16, local_lane_idx)
+        ](
+            k_rope_tile_fp8,
+            k_rope_tile_bf16,
+            k_rope,
+            seq_info,
+            kv_start_tok + UInt32(Self.BN // 2) * local_warp_idx,
+            num_keys,
+            local_lane_idx,
+        )
 
         tma_to_cvt_pipeline.step()
         cvt_to_mma_pipeline.producer_commit()
 
         while iter_count != 0:
             iter_count -= 1
+            kv_start_tok += UInt32(Self.BN)
             tma_to_cvt_pipeline.consumer_wait()
 
-            cvt_block_fp8_to_bf16[
+            cvt_block_fp8_to_bf16_with_scale[
                 swizzle_fp8=swizzle_fp8,
                 swizzle_bf16=swizzle_bf16,
-            ](k_rope_tile_fp8, k_rope_tile_bf16, local_lane_idx)
+            ](
+                k_rope_tile_fp8,
+                k_rope_tile_bf16,
+                k_rope,
+                seq_info,
+                kv_start_tok + UInt32(Self.BN // 2) * local_warp_idx,
+                num_keys,
+                local_lane_idx,
+            )
 
             fence_async_view_proxy()
 
@@ -1938,6 +1991,7 @@ fn mla_sm100_prefill_fp8[
     cache_depth: Int,
     use_score_mod: Bool,
     _ndbuffer_mha_operand: Bool,
+    blockwise_scale: Int = 0,
 ](
     output: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, ...
@@ -2027,6 +2081,7 @@ fn mla_sm100_prefill_fp8[
         cache_depth=cache_depth,
         use_score_mod=use_score_mod,
         _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+        blockwise_scale=blockwise_scale,
     ](
         ragged_tma_store,
         q_tma_op,
@@ -2060,6 +2115,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     cache_depth: Int,
     use_score_mod: Bool,
     _ndbuffer_mha_operand: Bool,
+    blockwise_scale: Int = 0,
 ](
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
@@ -2137,7 +2193,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
         _ndbuffer_mha_operand,
     ]
 
-    comptime kernel = SM100MLAType.mla_prefill_kernel
+    comptime kernel = SM100MLAType.mla_prefill_kernel[blockwise_scale]
 
     comptime out_depth = SM100MLAType.kv_depth
 

@@ -220,7 +220,7 @@ def test_load_returns_hashes_for_loaded_blocks(
 
     ctx = make_dummy_context()
     connector.lookup(ctx, [100, 200])
-    loaded_hashes = connector.load(ctx, [10, 11], [])
+    loaded_hashes = connector.load(ctx, [10, 11])
     assert loaded_hashes == [100, 200]
 
 
@@ -230,7 +230,7 @@ def test_load_without_lookup_returns_empty(
     _, tp_mgr = kv_cache_manager
     connector = _get_connector(tp_mgr)
     ctx = make_dummy_context()
-    loaded_hashes = connector.load(ctx, [0, 1], [])
+    loaded_hashes = connector.load(ctx, [0, 1])
     assert loaded_hashes == []
 
 
@@ -244,10 +244,10 @@ def test_full_prefix_cache_hit(
     connector = _get_connector(tp_mgr)
 
     # Fill device tensor with pattern so we can verify data integrity
-    device_tensor = tp_mgr.device_tensors[0]
-    pattern = np.arange(device_tensor.to_numpy().size, dtype=np.float32)
-    pattern = pattern.reshape(device_tensor.shape)
-    device_tensor.inplace_copy_from(Buffer.from_numpy(pattern))
+    device_buffer = tp_mgr.device_buffer.values[0]
+    pattern = np.arange(device_buffer.to_numpy().size, dtype=np.float32)
+    pattern = pattern.reshape(device_buffer.shape)
+    device_buffer.inplace_copy_from(Buffer.from_numpy(pattern))
 
     connector.save([0, 1, 2], [100, 200, 300])
     connector.flush()
@@ -256,7 +256,7 @@ def test_full_prefix_cache_hit(
     tokens = connector.lookup(ctx, [100, 200, 300])
     assert tokens == 3 * INTEGRATION_PAGE_SIZE
 
-    loaded_hashes = connector.load(ctx, [10, 11, 12], [])
+    loaded_hashes = connector.load(ctx, [10, 11, 12])
     assert loaded_hashes == [100, 200, 300]
 
 
@@ -273,7 +273,7 @@ def test_partial_prefix_hit(
     tokens = connector.lookup(ctx, [2000, 2001, 2002])
     assert tokens == 2 * INTEGRATION_PAGE_SIZE
 
-    loaded_hashes = connector.load(ctx, [10, 11], [])
+    loaded_hashes = connector.load(ctx, [10, 11])
     assert loaded_hashes == [2000, 2001]
 
 
@@ -293,8 +293,8 @@ def test_multiple_requests_independent(
     assert tokens1 == 2 * INTEGRATION_PAGE_SIZE
     assert tokens2 == 2 * INTEGRATION_PAGE_SIZE
 
-    loaded1 = connector.load(ctx1, [10, 11], [])
-    loaded2 = connector.load(ctx2, [12, 13], [])
+    loaded1 = connector.load(ctx1, [10, 11])
+    loaded2 = connector.load(ctx2, [12, 13])
     assert loaded1 == [100, 200]
     assert loaded2 == [300, 400]
 
@@ -425,10 +425,10 @@ def test_disk_tier_storage(
     tp_mgr = kv_cache_manager_with_disk
     connector = _get_connector(tp_mgr)
 
-    device_tensor = tp_mgr.device_tensors[0]
-    pattern = np.arange(device_tensor.to_numpy().size, dtype=np.float32)
-    pattern = pattern.reshape(device_tensor.shape)
-    device_tensor.inplace_copy_from(Buffer.from_numpy(pattern))
+    device_buffer = tp_mgr.device_buffer.values[0]
+    pattern = np.arange(device_buffer.to_numpy().size, dtype=np.float32)
+    pattern = pattern.reshape(device_buffer.shape)
+    device_buffer.inplace_copy_from(Buffer.from_numpy(pattern))
 
     block_ids = list(range(8))
     block_hashes = [21000 + i for i in block_ids]
@@ -453,7 +453,7 @@ def test_disk_tier_storage(
     assert tokens == len(block_ids) * INTEGRATION_PAGE_SIZE
 
     target_block_ids = list(range(32, 40))
-    loaded_hashes = connector.load(ctx, target_block_ids, [])
+    loaded_hashes = connector.load(ctx, target_block_ids)
     assert loaded_hashes == block_hashes
 
 
@@ -473,8 +473,8 @@ def test_tiered_storage_roundtrip(
         head_dim=64,
     )
 
-    device_tensor = tp_mgr.device_tensors[0]
-    original_pattern = fill_paged_cache(device_tensor, test_config)
+    device_buffer = tp_mgr.device_buffer.values[0]
+    original_pattern = fill_paged_cache(device_buffer, test_config)
 
     block_ids = list(range(8))
     block_hashes = [30000 + i for i in block_ids]
@@ -482,24 +482,24 @@ def test_tiered_storage_roundtrip(
     connector.flush()
 
     # Clear the device tensor to verify data is actually loaded
-    device_tensor.inplace_copy_from(
+    device_buffer.inplace_copy_from(
         Buffer.zeros(
-            shape=device_tensor.shape,
-            dtype=device_tensor.dtype,
-            device=device_tensor.device,
+            shape=device_buffer.shape,
+            dtype=device_buffer.dtype,
+            device=device_buffer.device,
         )
     )
-    cleared_data = device_tensor.to_numpy()
+    cleared_data = device_buffer.to_numpy()
     assert np.all(cleared_data == 0), "Device tensor should be cleared"
 
     ctx = make_dummy_context()
     tokens = connector.lookup(ctx, block_hashes)
     assert tokens == len(block_ids) * INTEGRATION_PAGE_SIZE
 
-    loaded_hashes = connector.load(ctx, block_ids, [])
+    loaded_hashes = connector.load(ctx, block_ids)
     assert loaded_hashes == block_hashes
 
-    loaded_data = device_tensor.to_numpy()
+    loaded_data = device_buffer.to_numpy()
     for block_id in block_ids:
         np.testing.assert_array_almost_equal(
             loaded_data[block_id],
@@ -525,8 +525,8 @@ def test_tiered_storage_pattern_verification(
         head_dim=64,
     )
 
-    device_tensor = tp_mgr.device_tensors[0]
-    original_pattern = fill_paged_cache(device_tensor, test_config)
+    device_buffer = tp_mgr.device_buffer.values[0]
+    original_pattern = fill_paged_cache(device_buffer, test_config)
 
     block_ids = list(range(8))
     block_hashes = [40000 + i for i in block_ids]
@@ -534,19 +534,19 @@ def test_tiered_storage_pattern_verification(
     connector.flush()
 
     # Clear device tensor
-    device_tensor.inplace_copy_from(
+    device_buffer.inplace_copy_from(
         Buffer.zeros(
-            shape=device_tensor.shape,
-            dtype=device_tensor.dtype,
-            device=device_tensor.device,
+            shape=device_buffer.shape,
+            dtype=device_buffer.dtype,
+            device=device_buffer.device,
         )
     )
 
     ctx = make_dummy_context()
     connector.lookup(ctx, block_hashes)
-    connector.load(ctx, block_ids, [])
+    connector.load(ctx, block_ids)
 
-    loaded_data = device_tensor.to_numpy()
+    loaded_data = device_buffer.to_numpy()
     for block_id in block_ids:
         expected = original_pattern[block_id]
         actual = loaded_data[block_id]
@@ -569,10 +569,10 @@ def test_multiple_requests_with_tiered_storage(
     tp_mgr = kv_cache_manager_with_disk
     connector = _get_connector(tp_mgr)
 
-    device_tensor = tp_mgr.device_tensors[0]
-    pattern = np.arange(device_tensor.to_numpy().size, dtype=np.float32)
-    pattern = pattern.reshape(device_tensor.shape)
-    device_tensor.inplace_copy_from(Buffer.from_numpy(pattern))
+    device_buffer = tp_mgr.device_buffer.values[0]
+    pattern = np.arange(device_buffer.to_numpy().size, dtype=np.float32)
+    pattern = pattern.reshape(device_buffer.shape)
+    device_buffer.inplace_copy_from(Buffer.from_numpy(pattern))
 
     # First batch
     batch1_ids = list(range(8))
@@ -590,12 +590,12 @@ def test_multiple_requests_with_tiered_storage(
     tokens1 = connector.lookup(ctx1, batch1_hashes)
     assert tokens1 == len(batch1_hashes) * INTEGRATION_PAGE_SIZE
 
-    loaded1 = connector.load(ctx1, list(range(32, 40)), [])
+    loaded1 = connector.load(ctx1, list(range(32, 40)))
     assert loaded1 == batch1_hashes
 
     ctx2 = create_text_context(np.array([4, 5, 6], dtype=np.int64))
     tokens2 = connector.lookup(ctx2, batch2_hashes)
     assert tokens2 == len(batch2_hashes) * INTEGRATION_PAGE_SIZE
 
-    loaded2 = connector.load(ctx2, list(range(40, 48)), [])
+    loaded2 = connector.load(ctx2, list(range(40, 48)))
     assert loaded2 == batch2_hashes

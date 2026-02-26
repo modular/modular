@@ -20,19 +20,19 @@ from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy import (
+from max.nn import (
     Float8Config,
     Float8InputScaleSpec,
     Float8ScaleGranularity,
     Float8ScaleOrigin,
 )
-from max.nn.legacy.attention.attention_with_rope import AttentionWithRope
-from max.nn.legacy.float8_config import Float8WeightScaleSpec
-from max.nn.legacy.kv_cache import (
+from max.nn.attention.attention_with_rope import AttentionWithRope
+from max.nn.float8_config import Float8WeightScaleSpec
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
 
@@ -99,6 +99,7 @@ def _create_kv_manager(
         params=kv_params,
         total_num_pages=8,
         session=gpu_session,
+        max_batch_size=128,
     )
 
     return manager, kv_params
@@ -264,7 +265,7 @@ def _build_and_execute_attention_graph(
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
-    fetch_result = kv_manager.get_runtime_inputs([batch])[0]
+    fetch_result = kv_manager.runtime_inputs([batch])[0]
     blocks_tensor = fetch_result[0]
     cache_lengths_tensor = fetch_result[1]
     lookup_table_tensor = fetch_result[2]

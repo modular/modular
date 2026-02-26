@@ -142,10 +142,11 @@ def load_scheduler(
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "kv_manager")
         kv_cache = pipeline.kv_manager
-        assert isinstance(kv_cache, PagedKVCacheManager)
 
-        assert pipeline_config.ce_delay_ms is not None
-        assert pipeline_config.enable_prioritize_first_decode is not None
+        assert pipeline_config.runtime.ce_delay_ms is not None
+        assert (
+            pipeline_config.runtime.enable_prioritize_first_decode is not None
+        )
         assert pipeline_config.model.max_length is not None
 
         token_gen_config = AudioGenerationSchedulerConfig(
@@ -155,12 +156,12 @@ def load_scheduler(
             else 1,
             max_seq_len=pipeline_config.model.max_length,
             target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,
-            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
-            max_queue_size_tg=pipeline_config.max_queue_size_tg,
-            min_batch_size_tg=pipeline_config.min_batch_size_tg,
-            ce_delay_ms=pipeline_config.ce_delay_ms,
-            enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
+            enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
+            enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
+            max_queue_size_tg=pipeline_config.runtime.max_queue_size_tg,
+            min_batch_size_tg=pipeline_config.runtime.min_batch_size_tg,
+            ce_delay_ms=pipeline_config.runtime.ce_delay_ms,
+            enable_prioritize_first_decode=pipeline_config.runtime.enable_prioritize_first_decode,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
         audio_pipeline = cast(AudioGeneratorPipelineType, pipeline)

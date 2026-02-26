@@ -131,10 +131,9 @@ struct Rng(Movable):
             var result = Float64(min) * (1.0 - f) + Float64(max) * f
             return Scalar[dtype](result)
         else:
-            constrained[
-                False, "rand_scalar expected bool, integral, or floating point"
-            ]()
-            return 0
+            comptime assert (
+                False
+            ), "rand_scalar expected bool, integral, or floating point"
 
     # TODO (MSTDL-1185): Can remove when UInt and SIMD are unified.
     fn rand_uint(

@@ -37,15 +37,15 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.nn.kv_cache import KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig
 
-from ..config_enums import RepoType
 from ..hf_utils import download_weight_files
-from ..interfaces import ModelOutputs, PipelineModel
+from ..interfaces import ModelOutputs, PipelineModel, PipelineModelWithKVCache
 from ..pipeline_variants.text_generation import TextGenerationPipelineInterface
 from ..sampling import rejection_sampler_with_residuals, token_sampler
 from ..utils import upper_bounded_default
@@ -214,7 +214,7 @@ class SpeculativeDecodingPipelineBase(
         weight_paths: list[Path] = []
         if (
             self.pipeline_config.model.huggingface_weight_repo.repo_type
-            == RepoType.online
+            == "online"
         ):
             # Download weight files if not existent.
             weight_paths = download_weight_files(
@@ -238,6 +238,29 @@ class SpeculativeDecodingPipelineBase(
         if not self.pipeline_config.model.quantization_encoding:
             raise ValueError(
                 f"quantization_encoding must be provided, {self.pipeline_config.model.quantization_encoding}"
+            )
+
+        # Use draft model's pipeline model and weight adapters if provided
+        # Otherwise fall back to target model's (for backward compatibility)
+        actual_draft_pipeline_model = (
+            draft_pipeline_model
+            if draft_pipeline_model is not None
+            else pipeline_model
+        )
+        actual_draft_weight_adapters = (
+            draft_weight_adapters
+            if draft_weight_adapters is not None
+            else weight_adapters
+        )
+
+        if not (
+            issubclass(pipeline_model, PipelineModelWithKVCache)
+            and issubclass(
+                actual_draft_pipeline_model, PipelineModelWithKVCache
+            )
+        ):
+            raise ValueError(
+                f"Speculative decoding requires both the target and draft models to support KV cache, found {pipeline_model.__name__} and {actual_draft_pipeline_model.__name__}"
             )
 
         self._target_model = pipeline_model(
@@ -330,7 +353,7 @@ class SpeculativeDecodingPipelineBase(
         draft_weight_paths: list[Path] = []
         if (
             self.pipeline_config.draft_model.huggingface_weight_repo.repo_type
-            == RepoType.online
+            == "online"
         ):
             # Download weight files if not existent.
             draft_weight_paths = download_weight_files(
@@ -355,19 +378,6 @@ class SpeculativeDecodingPipelineBase(
         _draft_weights_format = weights_format(draft_weight_paths)
         assert self.pipeline_config.speculative is not None
         self._speculative_config = self.pipeline_config.speculative
-
-        # Use draft model's pipeline model and weight adapters if provided
-        # Otherwise fall back to target model's (for backward compatibility)
-        actual_draft_pipeline_model = (
-            draft_pipeline_model
-            if draft_pipeline_model is not None
-            else pipeline_model
-        )
-        actual_draft_weight_adapters = (
-            draft_weight_adapters
-            if draft_weight_adapters is not None
-            else weight_adapters
-        )
 
         shared_weights: dict[str, DLPackArray] | None = None
         shared_ep_comm_initializer = None
@@ -458,6 +468,25 @@ class SpeculativeDecodingPipelineBase(
 
         self._num_draft_steps = (
             self.pipeline_config.speculative.num_speculative_tokens
+        )
+
+        target_kv_params = self._target_model.kv_params
+        assert isinstance(target_kv_params, KVCacheParams)
+        self._target_kv_manager: PagedKVCacheManager = load_kv_manager(
+            params=target_kv_params,
+            max_batch_size=pipeline_config.max_batch_size,
+            max_seq_len=self._target_model.max_seq_len,
+            session=self._target_session,
+            available_cache_memory=self._target_model.kv_cache_config._available_cache_memory,
+        )
+        draft_kv_params = self._draft_model.kv_params
+        assert isinstance(draft_kv_params, KVCacheParams)
+        self._draft_kv_manager: PagedKVCacheManager = load_kv_manager(
+            params=draft_kv_params,
+            max_batch_size=pipeline_config.max_batch_size,
+            max_seq_len=self._draft_model.max_seq_len,
+            session=self._draft_session,
+            available_cache_memory=self._draft_model.kv_cache_config._available_cache_memory,
         )
 
     def _maybe_build_deepseekv3_nextn_shared_resources(
@@ -616,13 +645,6 @@ class SpeculativeDecodingPipelineBase(
         return (a, b, c)
 
     @property
-    def kv_managers(
-        self,
-    ) -> list[PagedKVCacheManager]:
-        """Returns the KV cache managers for target and draft models."""
-        return [self._target_model.kv_manager, self._draft_model.kv_manager]
-
-    @property
     def metrics(self) -> SpeculativeDecodingMetrics:
         """Get the current speculative decoding metrics.
 
@@ -721,8 +743,9 @@ class SpeculativeDecodingPipelineBase(
             if current_length >= context_max_length:
                 context.status = GenerationStatus.MAXIMUM_LENGTH
 
-            # Construct generation output
-            res[context.request_id] = context.to_generation_output()
+            output = context.to_generation_output()
+            if output.tokens:
+                res[context.request_id] = output
 
         return res
 
@@ -741,10 +764,11 @@ class SpeculativeDecodingPipelineBase(
         # The request may not have been claimed yet if it errored before
         # execute() ran the draft model, so check before releasing.
         replica_idx = self._draft_replica_idx.pop(request_id, 0)
-        if self._draft_model.kv_manager.contains(
-            request_id, replica_idx=replica_idx
-        ):
-            self._draft_model.kv_manager.release(
-                request_id, replica_idx=replica_idx
-            )
+        if self._draft_kv_manager.contains(request_id, replica_idx=replica_idx):
+            self._draft_kv_manager.release(request_id, replica_idx=replica_idx)
         # Target model KV cache is released by scheduler via batch_constructor
+
+    @property
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the target model KV cache manager."""
+        return self._target_kv_manager

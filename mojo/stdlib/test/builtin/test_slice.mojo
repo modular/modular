@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from builtin.builtin_slice import ContiguousSlice, StridedSlice
+from test_utils import check_write_to
 from testing import assert_equal, assert_true, TestSuite
 
 
@@ -73,13 +75,71 @@ struct SliceStringable:
 
 def test_slice_stringable():
     var s = SliceStringable()
-    assert_equal(s[2::-1], "slice(2, None, -1)")
-    assert_equal(s[1:-1:2], "slice(1, -1, 2)")
-    assert_equal(s[:-1], "slice(None, -1, None)")
-    assert_equal(s[::], "slice(None, None, None)")
-    assert_equal(s[::4], "slice(None, None, 4)")
-    assert_equal(repr(slice(None, 2, 3)), "slice(None, 2, 3)")
-    assert_equal(repr(slice(10)), "slice(None, 10, None)")
+    assert_equal(s[2::-1], "Slice(2, None, -1)")
+    assert_equal(s[1:-1:2], "Slice(1, -1, 2)")
+    assert_equal(s[:-1], "Slice(None, -1, None)")
+    assert_equal(s[::], "Slice(None, None, None)")
+    assert_equal(s[::4], "Slice(None, None, 4)")
+    assert_equal(repr(slice(None, 2, 3)), "Slice(start=None, end=2, step=3)")
+    assert_equal(repr(slice(10)), "Slice(start=None, end=10, step=None)")
+
+
+def test_strided_slice_write_to():
+    check_write_to(
+        StridedSlice(1, 10, 2), expected="Slice(1, 10, 2)", is_repr=False
+    )
+    check_write_to(
+        StridedSlice(2, None, -1), expected="Slice(2, None, -1)", is_repr=False
+    )
+    check_write_to(
+        StridedSlice(1, -1, 2), expected="Slice(1, -1, 2)", is_repr=False
+    )
+    check_write_to(
+        StridedSlice(None, 5, 2), expected="Slice(None, 5, 2)", is_repr=False
+    )
+
+    check_write_to(
+        StridedSlice(1, 10, 2),
+        expected="Slice(start=1, end=10, step=2)",
+        is_repr=True,
+    )
+    check_write_to(
+        StridedSlice(2, None, -1),
+        expected="Slice(start=2, end=None, step=-1)",
+        is_repr=True,
+    )
+    check_write_to(
+        StridedSlice(None, None, 3),
+        expected="Slice(start=None, end=None, step=3)",
+        is_repr=True,
+    )
+
+
+def test_contiguous_slice_write_to():
+    check_write_to(
+        ContiguousSlice(1, 5, None), expected="Slice(1, 5, None)", is_repr=False
+    )
+    check_write_to(
+        ContiguousSlice(None, 3, None),
+        expected="Slice(None, 3, None)",
+        is_repr=False,
+    )
+    check_write_to(
+        ContiguousSlice(None, None, None),
+        expected="Slice(None, None, None)",
+        is_repr=False,
+    )
+
+    check_write_to(
+        ContiguousSlice(1, 5, None),
+        expected="Slice(start=1, end=5, step=None)",
+        is_repr=True,
+    )
+    check_write_to(
+        ContiguousSlice(None, None, None),
+        expected="Slice(start=None, end=None, step=None)",
+        is_repr=True,
+    )
 
 
 def test_slice_eq():

@@ -1650,6 +1650,10 @@ fn _elementwise_impl_cpu_nd[
     """
     comptime assert rank > 1, "Specialization for ND where N > 1"
 
+    # If we know we won't do any work, return early
+    if shape[rank - 1] == 0:
+        return
+
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     # Strategy: we parallelize over all dimensions except the innermost and
@@ -1871,6 +1875,10 @@ fn parallelize_over_rows[
         axis: Rows are slices along the axis dimension of shape.
         grain_size: The minimum number of elements to warrant using an additional thread.
     """
+    # If we know we will have no work, return early
+    if shape[axis] == 0:
+        return
+
     var total_size = shape.flattened_length()
     var num_rows = total_size // shape[axis]
 
@@ -1965,6 +1973,10 @@ fn _stencil_impl_cpu[
     comptime assert (
         stencil_axis[0] == 1 and stencil_axis[1] == 2
     ), "Only stencil spatial axes [1, 2] are supported"
+
+    # If we know we will have no work, return early
+    if shape[rank - 1] == 0:
+        return
 
     var total_size = shape.flattened_length()
 

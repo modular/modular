@@ -38,7 +38,7 @@ from max.interfaces import (
     RequestID,
     TextGenerationRequest,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
@@ -149,7 +149,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         tracer.push("prepare_response")
         for batch_index, request_id in enumerate(inputs.batch.keys()):
             request_embeddings = batch_embeddings[batch_index]
-            if not self._pipeline_config.pool_embeddings:
+            if not self._pipeline_config.model.pool_embeddings:
                 # Remove padded tokens from embeddings
                 request_embeddings = request_embeddings[
                     : context_batch[batch_index].tokens.active_length, :

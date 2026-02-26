@@ -23,7 +23,6 @@ modular_py_test(
         "test_bfloat16_utils.py",
         "test_context.py",
         "test_cumsum.py",
-        "test_disable_auto_sync.py",
         "test_dtype.py",
         "test_engine.py",
         "test_explicit_device.py",
@@ -100,7 +99,7 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_config_pure.py",
-        "test_use_legacy_module.py",
+        "test_prefer_module_v3.py",
     ],
     data = [
         "//max/tests/integration/Inputs:inputs",
@@ -175,7 +174,7 @@ modular_py_test(
     srcs = [
         "test_engine_device_graph.py",
     ],
-    gpu_constraints = ["//:nvidia_gpu"],
+    gpu_constraints = ["//:has_gpu"],
     tags = [
         "gpu",
     ],
@@ -248,10 +247,10 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "test_eagle_hidden_states_ops",
+    name = "test_eagle_hidden_state_manager",
     size = "large",
     srcs = [
-        "test_eagle_hidden_states_ops.py",
+        "test_eagle_hidden_state_manager.py",
     ],
     env = {"MODULAR_PATH": "."},
     gpu_constraints = ["//:has_multi_gpu"],
@@ -262,7 +261,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("torch"),
@@ -300,6 +300,7 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "manual",
         "no-sandbox",
         "requires-network",
     ],

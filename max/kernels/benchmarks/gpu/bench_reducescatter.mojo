@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from math import align_up
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
 from utils.numerics import get_accum_type
 
@@ -23,13 +22,15 @@ from benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from comm.sync import can_enable_p2p
+from comm.sync import enable_p2p
 from comm.reducescatter import reducescatter, ReduceScatterConfig
+from layout._tile_tensor import TileTensor
+from layout._layout import row_major
+from layout._coord import Idx
 from comm import MAX_GPUS, Signal
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (
+    CacheBustingBuffer,
     arg_parse,
     pytorch_like_tolerances_for,
     human_readable_size,
@@ -82,8 +83,8 @@ fn bench_reducescatter[
     max_num_blocks: Optional[Int],
     ragged: Bool,
 ) raises:
-    constrained[ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"]()
-    constrained[rank == 1, "this test code currently assumes rank 1"]()
+    comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     var name = String(
         _get_test_str[dtype, use_multimem, cache_busting](
@@ -105,8 +106,8 @@ fn bench_reducescatter[
 
     comptime num_buffers = 1 if use_multimem else ngpus
 
-    # Create device buffers for all GPUs
-    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    # Create cache busting input buffers for each GPU
+    var cb_inputs = List[CacheBustingBuffer[dtype]]()
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
         capacity=ngpus
@@ -118,18 +119,16 @@ fn bench_reducescatter[
         fill={}
     )
 
-    # Cache busting: allocate larger buffer to avoid cache reuse
-    var stride = align_up(input_length, rs_config.simd_width)
-    comptime m512 = 512 * 1024 * 1024
-    var cache_elems = (
-        align_up(m512, stride * size_of[dtype]()) // size_of[dtype]()
-    )
-
     # Initialize buffers for each GPU
     for gpu_idx in range(ngpus):
-        # Create input and output device buffers
-        in_bufs_list.append(
-            list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](cache_elems)
+        # Create input (cache busting) and output device buffers
+        cb_inputs.append(
+            CacheBustingBuffer[dtype](
+                input_length,
+                rs_config.simd_width,
+                list_of_ctx[gpu_idx],
+                cache_busting,
+            )
         )
         out_bufs_list.append(
             list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](
@@ -138,16 +137,20 @@ fn bench_reducescatter[
         )
 
         # Create and initialize host buffers
-        var host_buffer = alloc[Scalar[dtype]](cache_elems)
+        var host_buffer = alloc[Scalar[dtype]](cb_inputs[0].alloc_size())
         host_buffers.append(host_buffer)
 
         # Fill with repeated GPU-specific values for cache busting
-        for i in range(cache_elems // stride):
+        for i in range(cb_inputs[0].alloc_size() // cb_inputs[0].stride):
             for j in range(input_length):
-                host_buffer[i * stride + j] = _per_gpu_value[dtype](gpu_idx, j)
+                host_buffer[i * cb_inputs[0].stride + j] = _per_gpu_value[
+                    dtype
+                ](gpu_idx, j)
 
         # Copy to device
-        list_of_ctx[gpu_idx].enqueue_copy(in_bufs_list[gpu_idx], host_buffer)
+        list_of_ctx[gpu_idx].enqueue_copy(
+            cb_inputs[gpu_idx].device_buffer(), host_buffer
+        )
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -162,20 +165,27 @@ fn bench_reducescatter[
             signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
         )
 
-    # Create input and output NDBuffers
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
-        fill={}
-    )
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
-        fill={}
+    # Create input and output TileTensors
+    comptime OutputTileType = type_of(
+        TileTensor(
+            out_bufs_list[0].unsafe_ptr(), row_major(Idx(output_lengths[0]))
+        )
     )
 
+    comptime InputTileType = type_of(
+        TileTensor(
+            cb_inputs[0].unsafe_ptr(), row_major(Idx(input_length))
+        ).as_immut()
+    )
+    var in_bufs = InlineArray[InputTileType, num_buffers](uninitialized=True)
+    var out_bufs = InlineArray[OutputTileType, ngpus](uninitialized=True)
+
     for i in range(ngpus):
-        in_bufs[i if not use_multimem else 0] = NDBuffer[dtype, rank](
-            in_bufs_list[i].unsafe_ptr(), DimList(input_length)
+        in_bufs[i if not use_multimem else 0] = InputTileType(
+            cb_inputs[i].unsafe_ptr(), row_major(Idx(input_length))
         )
-        out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
+        out_bufs[i] = OutputTileType(
+            out_bufs_list[i].unsafe_ptr(), row_major(Idx(output_lengths[i]))
         )
         list_of_ctx[i].synchronize()
 
@@ -185,21 +195,13 @@ fn bench_reducescatter[
         @parameter
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            # Offset the input buffer if cache_busting
-            var offset = 0
-
-            @parameter
-            if cache_busting:
-                offset = (cache_iter * stride) % cache_elems
-
-            @parameter
-            for i in range(ngpus):
-                in_bufs[i] = NDBuffer[dtype, rank](
-                    in_bufs_list[i].unsafe_ptr() + offset,
-                    DimList(input_length),
+            comptime for i in range(ngpus):
+                in_bufs[i] = InputTileType(
+                    cb_inputs[i].offset_ptr(cache_iter),
+                    row_major(Idx(input_length)),
                 )
 
-            reducescatter[ngpus=ngpus, use_multimem=use_multimem](
+            reducescatter[dtype=dtype, ngpus=ngpus, use_multimem=use_multimem](
                 in_bufs,
                 out_bufs[ctx_idx],
                 rank_sigs,
@@ -217,12 +219,10 @@ fn bench_reducescatter[
     b.dump_report()
 
     # Copy results back and verify
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_copy(host_buffers[i], out_bufs_list[i])
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
     # Verify results
@@ -231,15 +231,13 @@ fn bench_reducescatter[
     #  - quantizing each per-GPU term to `dtype` by calling _per_gpu_value[dtype](...)
     #  - accumulating in Float32
     #  - finally casting to `dtype` for the expected value
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         for j in range(output_lengths[i]):
             comptime accum_t = get_accum_type[dtype]()
             var accum = Scalar[accum_t](0)
             var global_idx = rank_starts[i] + j
 
-            @parameter
-            for k in range(ngpus):
+            comptime for k in range(ngpus):
                 var term_dtype = _per_gpu_value[dtype](k, global_idx)
                 accum += Scalar[accum_t](term_dtype)
             var expected_sum = Scalar[dtype](accum)
@@ -278,8 +276,7 @@ def main():
     # When ragged, add (ngpus/2) * simd_width elements to create uneven partitions
     comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
 
-    @parameter
-    if ragged:
+    comptime if ragged:
         num_bytes += (num_gpus // 2) * simd_size * size_of[dtype]()
 
     var m = Bench()
@@ -296,7 +293,7 @@ def main():
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 
-    if not can_enable_p2p():
+    if not enable_p2p():
         print("P2P not enabled, skipping benchmark.")
         return
 

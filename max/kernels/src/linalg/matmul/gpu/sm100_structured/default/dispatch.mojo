@@ -80,11 +80,11 @@ fn matmul_dispatch_sm100[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
-    constrained[a_type == b_type, "a_type and b_type must be the same"]()
+    comptime assert a_type == b_type, "a_type and b_type must be the same"
 
     var m = c.dim[0]()
     comptime static_N = c.shape.get[1]()
@@ -151,10 +151,7 @@ fn matmul_dispatch_sm100[
             else:
                 raise Error("Heuristic and outliers dispatch failed.")
         else:
-            constrained[
-                False,
-                "Unsupported shape for benchmarking mode.",
-            ]()
+            comptime assert False, "Unsupported shape for benchmarking mode."
 
     var epilogue_type = String("None")
 
@@ -1364,10 +1361,10 @@ fn heuristic_and_outliers_dispatch[
     comptime static_N = c.shape.get[1]()
     comptime static_K = a.shape.get[1]()
 
-    constrained[
-        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
-        "Only support bfloat16 and float8_e4m3fn input types",
-    ]()
+    comptime assert a_type == b_type and a_type in (
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+    ), "Only support bfloat16 and float8_e4m3fn input types"
 
     comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
@@ -1475,17 +1472,31 @@ fn matmul_dispatch_sm100_bf16[
         Index(4096, 7168),
     ]
 
+    comptime DeepSeek_NK = [
+        Index(16384, 512),
+    ]
+
     comptime miscellaneous_NK = [
         Index(1536, 4096),
         Index(4096, 1536),
     ]
 
-    comptime if Index(static_N, static_K) in miscellaneous_NK:
+    comptime static_NK = Index(static_N, static_K)
+
+    comptime if static_NK in DeepSeek_NK:
         return heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
+            pdl_level = PDLLevel(1),
+        ](c, a, b, ctx)
+
+    comptime if static_NK in miscellaneous_NK:
+        return heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level = PDLLevel(1),
         ](c, a, b, ctx)
 
     comptime if Index(static_N, static_K) in llama3_8b_NK:
@@ -1970,8 +1981,8 @@ fn _vendor_blas_matmul_sm100[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime K = a.shape.get[1]()
@@ -2072,10 +2083,9 @@ fn _matmul_dispatch_sm100[
     var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
     var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
 
-    constrained[
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None,
-        "Either the epilogue lambda or the compute lambda can be used",
-    ]()
+    comptime assert (
+        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
+    ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if not elementwise_lambda_fn:
         if not c.data:

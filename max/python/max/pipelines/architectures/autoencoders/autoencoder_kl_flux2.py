@@ -14,12 +14,11 @@
 from types import SimpleNamespace
 from typing import Any
 
-from max import functional as F
 from max.driver import Device
+from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
-from max.nn import Module
+from max.nn.module_v3 import Module
 from max.pipelines.lib import SupportedEncoding
-from max.tensor import Tensor
 
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLFlux2Config
@@ -144,15 +143,14 @@ class AutoencoderKLFlux2Model(BaseAutoencoderModel):
         super().load_model()
 
         if bn_mean_data is not None or bn_var_data is not None:
-            with F.lazy():
-                if bn_mean_data is not None:
-                    self.bn_running_mean = Tensor.from_dlpack(bn_mean_data).to(
-                        self.devices[0]
-                    )
-                if bn_var_data is not None:
-                    self.bn_running_var = Tensor.from_dlpack(bn_var_data).to(
-                        self.devices[0]
-                    )
+            if bn_mean_data is not None:
+                self.bn_running_mean = Tensor.from_dlpack(bn_mean_data).to(
+                    self.devices[0]
+                )
+            if bn_var_data is not None:
+                self.bn_running_var = Tensor.from_dlpack(bn_var_data).to(
+                    self.devices[0]
+                )
 
         return self.model
 

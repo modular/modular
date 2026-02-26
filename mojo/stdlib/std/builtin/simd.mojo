@@ -240,8 +240,8 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
       dtype: The data type of SIMD vector elements.
       size: The number of elements in the SIMD vector. The size must not be greater than 2**15.
     """
-    constrained[dtype != DType.invalid, "simd type cannot be DType.invalid"]()
-    constrained[size.is_power_of_two(), "simd width must be power of 2"]()
+    comptime assert dtype != DType.invalid, "simd type cannot be DType.invalid"
+    comptime assert size.is_power_of_two(), "simd width must be power of 2"
     # MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
     # a limit of 2^15 for the number of operands of the instruction.
     # NOTE: Even after the limit increases in LLVM, compile time might be 3x
@@ -249,9 +249,9 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
     # SIMD, we better to keep limit at 2^15.
     # NOTE: Might need to revisit the limit for targets that use GlobalISel
     # as it does have smaller limit now.
-    constrained[
-        size <= 2**15, "simd size is too large and must be less than 2^15"
-    ]()
+    comptime assert (
+        size <= 2**15
+    ), "simd size is too large and must be less than 2^15"
 
 
 @always_inline("nodebug")
@@ -381,10 +381,8 @@ struct SIMD[dtype: DType, size: Int](
     Indexer,
     Intable,
     Powable,
-    Representable,
     Roundable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Truncable,
     Writable,
@@ -869,7 +867,7 @@ struct SIMD[dtype: DType, size: Int](
             self = Scalar[Self.dtype](Int(py=py))
         else:
             self = Scalar[Self.dtype]()
-            constrained[False, "unsupported dtype"]()
+            comptime assert False, "unsupported dtype"
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1285,13 +1283,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is greater than `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Strict inequality is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.gt(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Strict inequality is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.gt(...)`?"
+        )
         return self.gt(rhs).__bool__()
 
     @always_inline("builtin")
@@ -1304,13 +1299,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is greater than or equal to `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Greater than or equal is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.ge(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Greater than or equal is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.ge(...)`?"
+        )
         return self.ge(rhs).__bool__()
 
     @always_inline("builtin")
@@ -1323,13 +1315,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is less than `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Strict inequality is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.lt(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Strict inequality is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.lt(...)`?"
+        )
         return self.lt(rhs).__bool__()
 
     @always_inline("builtin")
@@ -1342,13 +1331,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is less than or equal to `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Less than or equal is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.le(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Less than or equal is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.le(...)`?"
+        )
         return self.le(rhs).__bool__()
 
     # ===------------------------------------------------------------------=== #
@@ -1886,6 +1872,7 @@ struct SIMD[dtype: DType, size: Int](
         comptime assert Self.size == 1, "expected a scalar type"
         return self._refine[new_size=1]().cast[DType.float64]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the SIMD as a string.
@@ -1896,6 +1883,7 @@ struct SIMD[dtype: DType, size: Int](
 
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Get the representation of the SIMD value e.g. "SIMD[DType.int8, 2](1, 2)".
@@ -2156,7 +2144,7 @@ struct SIMD[dtype: DType, size: Int](
         ](self._mlir_value)
         return SIMD(mlir_value=res)
 
-    @always_inline
+    @always_inline("builtin")
     fn is_power_of_two(self) -> SIMD[DType.bool, Self.size]:
         """Checks if the input value is a power of 2 for each element of a SIMD vector.
 
@@ -2169,10 +2157,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         comptime assert Self.dtype.is_integral(), "must be integral"
 
-        comptime if Self.dtype.is_unsigned():
-            return pop_count(self).eq(1)
-        else:
-            return self.gt(0) & (self & (self - 1)).eq(0)
+        return self.gt(0) & (self & (self - 1)).eq(0)
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -3242,8 +3227,7 @@ fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
         return _tbl1(lookup_table, indices)
     else:
         # TODO: Change the error message when we allow SSE3
-        constrained[False, "To call _pshuf_or_tbl1() you need sse4 or neon."]()
-        return {}
+        comptime assert False, "To call _pshuf_or_tbl1() you need sse4 or neon."
 
 
 fn _pshuf(lookup_table: U8x16, indices: U8x16) -> U8x16:
@@ -3312,8 +3296,7 @@ fn _pow[
         comptime for i in range(width):
             result[i] = _powi(base[i], exp[i].cast[DType.int32]())
     else:
-        constrained[False, "unsupported type combination"]()
-        return {}
+        comptime assert False, "unsupported type combination"
 
 
 @always_inline
@@ -4029,6 +4012,6 @@ fn _write_scalar[
     elif dtype.is_integral():
         _ = _write_int(writer, value)
     else:
-        constrained[
-            False, "unable to write dtype, only integral/float/bool supported"
-        ]()
+        comptime assert (
+            False
+        ), "unable to write dtype, only integral/float/bool supported"

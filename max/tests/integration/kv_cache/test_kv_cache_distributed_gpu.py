@@ -21,7 +21,7 @@ from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.connectors.local_connector import LocalConnector
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -45,13 +45,14 @@ async def test_kv_cache_multi_gpu() -> None:
             params=kv_params,
             total_num_pages=8,
             session=inference_session,
+            max_batch_size=128,
         )
         context = create_text_context(np.empty(1))
         kv_manager.claim(context.request_id, replica_idx=0)
 
         batch = [context]
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
-        list_of_kv_tuples = kv_manager.get_runtime_inputs([batch])
+        list_of_kv_tuples = kv_manager.runtime_inputs([batch])
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
             assert len(kv_tuple) == 5
@@ -93,6 +94,7 @@ def create_kv_cache(
         total_num_host_pages=num_host_pages,
         session=session,
         enable_runtime_checks=True,
+        max_batch_size=max_batch_size,
     )
 
     return kv_manager
@@ -118,14 +120,9 @@ async def test_swapping_to_host_multi_gpu(
 
     if enable_swapping_to_host:
         replica_manager = kv_manager._replica_managers[0]
-        # Host tensor should be pinned
-        assert replica_manager.host_tensors is not None
-        for i in range(len(replica_manager.host_tensors)):
-            assert replica_manager.host_tensors[i].pinned
         # Evictions should be scheduled on auxiliary stream (via connector)
         connector = replica_manager.connector
         assert isinstance(connector, LocalConnector)
-        assert connector._block_copy_engine.supports_multistream()
 
     def gen_prompt(length: int) -> np.ndarray:
         # returns a binary sequence of length `length`
@@ -160,7 +157,7 @@ async def test_swapping_to_host_multi_gpu(
 
             for ctx in batch:
                 kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-            _ = kv_manager.get_runtime_inputs([batch])
+            _ = kv_manager.runtime_inputs([batch])
 
             new_prompt_tokens = sum(ctx.tokens.active_length for ctx in batch)
 

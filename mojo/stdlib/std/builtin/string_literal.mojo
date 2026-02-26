@@ -40,9 +40,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     ImplicitlyCopyable,
     IntableRaising,
     PathLike,
-    Representable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -234,6 +232,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return Float64(StringSlice(self))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert the string literal to a string.
@@ -243,6 +242,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         """
         return String(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Return a representation of this value.
@@ -260,7 +260,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         Returns:
           The file system path representation as a string.
         """
-        return self.__str__()
+        return String(self)
 
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[StaticConstantOrigin]:
@@ -395,20 +395,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         #   Remove bitcast after changing pop.string.address
         #   return type.
         return ptr.bitcast[Byte]()
-
-    @always_inline
-    @deprecated("Use `StringLiteral.as_c_string_slice()` instead.")
-    fn unsafe_cstr_ptr(
-        self,
-    ) -> UnsafePointer[c_char, StaticConstantOrigin]:
-        """Retrieves a C-string-compatible pointer to the underlying memory.
-
-        The returned pointer is guaranteed to be NUL terminated, and not null.
-
-        Returns:
-            The pointer to the underlying memory.
-        """
-        return self.unsafe_ptr().bitcast[c_char]()
 
     @always_inline
     fn as_c_string_slice(

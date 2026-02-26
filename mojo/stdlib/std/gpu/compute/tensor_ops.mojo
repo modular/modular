@@ -221,11 +221,9 @@ fn _tc_reduce_vector[
             return tmp.reduce_add()
 
         else:
-            constrained[False, "unsupported simd_width for BF16"]()
-            return val[0].cast[out_type]()
+            comptime assert False, "unsupported simd_width for BF16"
     else:
-        constrained[False, "unsupported input/output type"]()
-        return val[0].cast[out_type]()
+        comptime assert False, "unsupported input/output type"
 
 
 @always_inline

@@ -24,15 +24,15 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention.multi_latent_attention import (
+from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
     RaggedKVCacheInputs,
 )
-from max.nn.legacy.rotary_embedding import (
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -107,6 +107,7 @@ def _single_gpu_baseline(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     hidden_state_type = TensorType(
@@ -164,7 +165,7 @@ def _single_gpu_baseline(
     row_off[1] = prompt_lens[0]
 
     if use_prefill:
-        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+        kv_inputs = kv_manager.runtime_inputs([batch])[0]
         inp = (
             Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
             .view(DType.bfloat16)
@@ -178,7 +179,7 @@ def _single_gpu_baseline(
     for tok_idx in range(total_tokens):
         for ctx in batch:
             kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-        kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+        kv_inputs = kv_manager.runtime_inputs([batch])[0]
         tok = (
             Buffer.from_numpy(
                 input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -364,6 +365,7 @@ def _run_distributed_dp(
         params=_build_kv_params(config, dp_degree),
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     compiled, _ = _build_graph_and_compile(
@@ -389,7 +391,7 @@ def _run_distributed_dp(
 
     if use_prefill:
         # Single execute covering full prompt lengths (identical prompt on each replica).
-        fetch_list = kv_manager.get_runtime_inputs(batches_by_replica)
+        fetch_list = kv_manager.runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         # Per-device inputs: full sequence + [0, T] row offsets (built on host)
@@ -416,7 +418,7 @@ def _run_distributed_dp(
     for tok_idx in range(total_tokens):
         for ctx in batch:
             kv_manager.alloc(ctx, replica_idx=replica_idx, num_steps=1)
-        fetch_list = kv_manager.get_runtime_inputs(batches_by_replica)
+        fetch_list = kv_manager.runtime_inputs(batches_by_replica)
         kv_args = _flatten_kv_kv_inputs(fetch_list)
 
         step_args = []

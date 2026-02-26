@@ -21,18 +21,17 @@ to device when needed for prefix cache hits.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 
-from max.driver import Buffer, Device
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache.cache_params import KVCacheBuffer
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
 )
 
-from ..paged_kv_cache.block_copy_engine import BlockCopyEngine
+from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
 from ..paged_kv_cache.block_pool import BlockPool
 from ..paged_kv_cache.block_utils import KVCacheBlock
 
@@ -50,9 +49,7 @@ class LocalConnector:
     def __init__(
         self,
         params: KVCacheParams,
-        devices: Sequence[Device],
-        device_tensors: list[Buffer],
-        device_scale_tensors: list[Buffer] | None,
+        device_buffer: KVCacheBuffer,
         total_num_host_blocks: int,
     ) -> None:
         """Initialize the local host memory connector."""
@@ -60,69 +57,16 @@ class LocalConnector:
             raise ValueError(
                 "LocalConnector requires prefix caching to be enabled"
             )
-        if not params.enable_kvcache_swapping_to_host:
-            raise ValueError(
-                "LocalConnector requires kvcache swapping to host to be enabled"
-            )
         if total_num_host_blocks <= 0:
             raise ValueError("LocalConnector requires host blocks")
 
-        self._devices = list(devices)
         self._block_size = params.page_size
+
         self._total_num_host_blocks = total_num_host_blocks
 
-        shape_per_block = params.shape_per_block
-        dtype = params.dtype
-
-        # Create host tensors (pinned memory for efficient transfers)
-        self._host_tensors: list[Buffer] = []
-        self._host_scale_tensors: list[Buffer] | None = None
-        if (
-            params.quantized_kv_cache
-            and params.kvcache_quant_config is not None
-        ):
-            self._host_scale_tensors = []
-
-        for device in devices:
-            if device.is_host:
-                raise ValueError(
-                    "Host device detected. Paging to host is not supported "
-                    "when executing on CPU."
-                )
-            # Pinned memory for efficient H2D/D2H transfers
-            self._host_tensors.append(
-                Buffer(
-                    shape=[total_num_host_blocks, *shape_per_block],
-                    dtype=dtype,
-                    device=device,
-                    pinned=True,
-                )
-            )
-            if self._host_scale_tensors is not None:
-                assert params.kvcache_quant_config is not None
-                self._host_scale_tensors.append(
-                    Buffer(
-                        shape=[
-                            total_num_host_blocks,
-                            *params.shape_per_scale_block,
-                        ],
-                        dtype=params.kvcache_quant_config.scale_dtype,
-                        device=device,
-                        pinned=True,
-                    )
-                )
-
-        # Create BlockCopyEngine for memory transfers
-        self._block_copy_engine = BlockCopyEngine(
-            block_size=self._block_size,
-            num_device_blocks=device_tensors[0].shape[0]
-            if device_tensors
-            else 0,
-            device_tensors=device_tensors,
-            num_host_blocks=total_num_host_blocks,
-            host_tensors=self._host_tensors,
-            device_scale_tensors=device_scale_tensors,
-            host_scale_tensors=self._host_scale_tensors,
+        # Create BlockOffloadEngine for memory transfers
+        self._block_copy_engine = BlockOffloadEngine(
+            total_num_host_blocks, device_buffer
         )
 
         # Host block pool for managing host memory
@@ -147,16 +91,6 @@ class LocalConnector:
     def name(self) -> str:
         """Connector name for logging/debugging."""
         return "LocalConnector"
-
-    @property
-    def host_tensors(self) -> list[Buffer]:
-        """Get the host tensors for KV cache swapping."""
-        return self._host_tensors
-
-    @property
-    def host_scale_tensors(self) -> list[Buffer] | None:
-        """Get the host scale tensors for FP8 quantization swapping."""
-        return self._host_scale_tensors
 
     @property
     def num_host_blocks(self) -> int:
@@ -203,7 +137,6 @@ class LocalConnector:
         self,
         ctx: TextGenerationContext,
         target_block_ids: list[int],
-        device_tensors: list[Buffer],
     ) -> list[int]:
         """Load data from host cache into device blocks.
 

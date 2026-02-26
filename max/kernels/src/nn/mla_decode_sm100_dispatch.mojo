@@ -93,6 +93,9 @@ fn mla_decode_sm100_dispatch[
     score_mod: score_mod_t,
     ctx: DeviceContext,
 ) raises:
+    # Get the base pointer to the scales tensor from the operand.
+    var scales_ptr = k.scales_raw_ptr()
+
     # CRITICAL: The kernel's OffsetPosition adds q_max_seq_len to num_keys when
     # _is_cache_length_accurate=False. We must use the same effective num_keys
     # here to compute num_partitions correctly, otherwise there's a mismatch
@@ -144,6 +147,7 @@ fn mla_decode_sm100_dispatch[
             valid_length,
             mask,
             score_mod,
+            scales_ptr,
             ctx,
         )
     else:
@@ -177,6 +181,7 @@ fn mla_decode_sm100_dispatch[
             valid_length,
             mask,
             score_mod,
+            scales_ptr,
             ctx,
         )
 
@@ -221,6 +226,7 @@ fn _mla_decode_sm100_dispatch_impl[
     ],
     mask: mask_t,
     score_mod: score_mod_t,
+    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     comptime hw_info = ctx.default_device_info
@@ -426,6 +432,7 @@ fn _mla_decode_sm100_dispatch_impl[
             valid_length,
             mask,
             score_mod,
+            scales_ptr,
             ctx,
         )
 
@@ -593,6 +600,7 @@ fn _mla_decode_sm100_dispatch_impl[
             valid_length,
             mask,
             score_mod,
+            scales_ptr,
             ctx,
         )
 
@@ -634,8 +642,10 @@ fn mla_decode_sm100_sink_split_k[
     ],
     mask: mask_t,
     score_mod: score_mod_t,
+    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
+    comptime _scale_block_size = k_t.quantization_granularity if k_t.quantization_enabled else 0
     comptime mla_config = MLA_SM100_Decode_Config(
         num_q_heads=num_heads,
         group=group,  # num_q_heads/h_k(1)
@@ -648,6 +658,7 @@ fn mla_decode_sm100_sink_split_k[
         page_size=k_t.page_size,
         decoding_warp_split_k=decoding_warp_split_k,
         split_page_size=split_page_size,
+        scale_block_size=_scale_block_size,
     )
     var num_rows_q = num_matrix_view_rows_decode(q)
     q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
@@ -709,6 +720,7 @@ fn mla_decode_sm100_sink_split_k[
             valid_len,
             mask,
             score_mod,
+            scales_ptr,
             ctx,
         )
     else:
@@ -741,6 +753,7 @@ fn mla_decode_sm100_sink_split_k[
             valid_len,
             mask,
             score_mod,
+            scales_ptr,
             ctx,
         )
 
@@ -788,6 +801,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     valid_len: ValidLengthType,
     mask: MaskType,
     score_mod: ScoreModType,
+    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     var mla_decode_pack = MLA_Decode_Pack[
@@ -867,6 +881,10 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         max_cache_valid_length,
     )
 
+    # Dispatch to the appropriate kernel:
+    # - FP8: float8_e4m3fn KV cache (handles both tensorwise and blockwise scaling
+    #   via @parameter if Self.config.scale_block_size > 0 conditionals)
+    # - BF16: bfloat16 KV cache (no conversion needed)
     comptime kernel = MLA_SM100_Decode_KV_FP8[
         q_type=q_type,
         KVLUTType=KVLUTType,
@@ -906,6 +924,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         num_partitions,
         max_cache_valid_length,
         mla_decode_pack,
+        scales_ptr,
         grid_dim=grid_dim,
         block_dim=block_dim,
         shared_mem_bytes=config.smem_used,

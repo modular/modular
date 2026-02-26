@@ -85,8 +85,7 @@ fn max_contiguous_tile_shape[
         # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
         return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
     else:
-        constrained[False, "Invalid major"]()
-        return IntTuple()
+        comptime assert False, "Invalid major"
 
 
 # TODO: add create method to mma_operand trait and unify this with
@@ -399,11 +398,10 @@ struct MmaOpSM100_SS[
         elif dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
             return UMMAKind.KIND_F8F6F4
         else:
-            constrained[
-                False,
+            comptime assert False, String(
                 "Unsupported/not implemented operand type for UMMA: ",
                 String(dtype),
-            ]()
+            )
 
         return UMMAKind(-1)
 

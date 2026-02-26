@@ -230,9 +230,9 @@ def load_text_generation_scheduler(
         # For spec decoding, there may be multiple KVCaches. The scheduler
         # arbitrarily uses either the draft or target one. The other kvcache is
         # hidden from scheduler currently and managed by pipelines.
-        kv_cache=pipeline.kv_managers[0],
+        kv_cache=pipeline.kv_manager,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        support_empty_batches=pipeline_config.execute_empty_batches,
+        support_empty_batches=pipeline_config.runtime.execute_empty_batches,
     )

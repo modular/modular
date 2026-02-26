@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import TensorValue, ops
-from max.nn.legacy.moe import MoEGate, StackedMoE
+from max.nn.moe import MoEGate, StackedMoE
 
 
 class Qwen3VLMoEGate(MoEGate):

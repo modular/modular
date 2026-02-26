@@ -14,7 +14,7 @@
 
 from contextvars import ContextVar
 
-from max._support import contextvar_context
+from max.experimental.support import contextvar_context
 
 
 def test_contextvar_context() -> None:

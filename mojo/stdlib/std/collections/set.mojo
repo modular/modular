@@ -32,9 +32,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     Hashable,
     Iterable,
     KeyElement,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A set data type.
@@ -308,6 +306,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             hash_value ^= hash(e)
         hasher.update(hash_value)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of the set.
@@ -319,6 +318,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self.write_to(output)
         return output
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns the string representation of the set.
@@ -418,9 +418,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     fn pop(mut self) raises -> Self.T:
         """Remove any one item from the set, and return it.
 
-        As an implementation detail this will remove the first item
-        according to insertion order. This is practically useful
-        for breadth-first search implementations.
+        As an implementation detail this will remove the last item
+        according to insertion order.
 
         Returns:
             The element which was removed from the set.
@@ -428,12 +427,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Raises:
             If the set is empty.
         """
-        if not self:
+        try:
+            return self._data.popitem().key.copy()
+        except:
             raise "Pop on empty set"
-        var iter = self.__iter__()
-        var first = iter.__next__().copy()
-        self.remove(first)
-        return first^
 
     fn union(self, other: Self) -> Self:
         """Set union.

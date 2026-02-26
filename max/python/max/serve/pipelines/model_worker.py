@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import time
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import (
@@ -23,10 +24,10 @@ from contextlib import (
     asynccontextmanager,
 )
 from multiprocessing.synchronize import Event
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import uvloop
-from max.driver import Buffer, Device
+from max.driver import Device, DevicePinnedBuffer
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.interfaces import (
@@ -60,6 +61,11 @@ logger = logging.getLogger("max.serve")
 GiB = 1024 * 1024 * 1024
 
 
+@runtime_checkable
+class SupportsGraphCaptureWarmup(Protocol):
+    def warmup_graph_capture(self) -> None: ...
+
+
 def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
     """Prime the pinned memory manager cache for the given device.
 
@@ -79,9 +85,7 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
     """
     if device.is_host:
         return
-    pinned = Buffer(
-        shape=(bytes,), dtype=DType.int8, device=device, pinned=True
-    )
+    pinned = DevicePinnedBuffer(shape=(bytes,), dtype=DType.int8, device=device)
     del pinned
 
 
@@ -97,8 +101,9 @@ def get_reset_prefix_cache_backend(
     Returns:
         The paged KV cache manager if available, None otherwise.
     """
-    if hasattr(pipeline, "kv_managers"):
-        kv_manager = pipeline.kv_managers[-1]
+
+    if hasattr(pipeline, "kv_manager"):
+        kv_manager = pipeline.kv_manager
         if isinstance(kv_manager, PagedKVCacheManager) and not isinstance(
             kv_manager, DummyKVCache
         ):
@@ -197,6 +202,29 @@ class ModelWorker:
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
                 pipeline = model_factory()
 
+            with Tracer("graph_capture_warmup"):
+                if pipeline_config.runtime.device_graph_capture:
+                    if not isinstance(pipeline, SupportsGraphCaptureWarmup):
+                        raise ValueError(
+                            "device_graph_capture is enabled but the pipeline "
+                            "does not support graph-capture warmup."
+                        )
+                    max_batch_size = pipeline_config.max_batch_size
+                    if max_batch_size is None:
+                        raise ValueError(
+                            "device_graph_capture requires max_batch_size to be set."
+                        )
+                    warmup_start_s = time.monotonic()
+                    pipeline.warmup_graph_capture()
+                    warmup_duration_s = time.monotonic() - warmup_start_s
+                    logger.info(
+                        "Device graph capture warmup completed in %.2fs "
+                        "(model=%s, max_batch_size=%d).",
+                        warmup_duration_s,
+                        pipeline_config.model.model_path,
+                        max_batch_size,
+                    )
+
             # Boot up the api worker comms
             worker_queues = await exit_stack.enter_async_context(
                 model_worker_interface.model_worker_queues()
@@ -213,7 +241,7 @@ class ModelWorker:
             # Get the reset prefix cache backend.
             reset_prefix_cache_backend, kv_cache = (
                 get_reset_prefix_cache_backend(
-                    pipeline, pipeline_config.zmq_endpoint_base
+                    pipeline, pipeline_config.runtime.zmq_endpoint_base
                 )
             )
 

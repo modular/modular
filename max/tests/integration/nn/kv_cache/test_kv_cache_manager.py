@@ -19,7 +19,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -43,6 +43,7 @@ async def test_step() -> None:
         params=params,
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
+        max_batch_size=128,
     )
 
     # Create three text contexts and externally claim each using their request_id
@@ -61,7 +62,7 @@ async def test_step() -> None:
     for j in range(3):
         for ctx in batch:
             kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-        kv_manager.get_runtime_inputs([batch])
+        kv_manager.runtime_inputs([batch])
         for ctx in batch:
             ctx.update(42)
         kv_manager.step([batch])
@@ -99,6 +100,7 @@ async def test_claim_and_release() -> None:
         params=params,
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
+        max_batch_size=128,
     )
     # This test requires PagedKVCacheManager to access internal _replica_managers
     assert isinstance(kv_manager, PagedKVCacheManager), (
@@ -155,6 +157,7 @@ async def test_fetch_paged() -> None:
         params=params,
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
+        max_batch_size=128,
     )
 
     # Claim 5 items
@@ -167,7 +170,7 @@ async def test_fetch_paged() -> None:
     # Fetch 3 of the 5 contexts created above
     for ctx in contexts[:3]:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_collection = kv_manager.get_runtime_inputs([contexts[:3]])[0]
+    kv_collection = kv_manager.runtime_inputs([contexts[:3]])[0]
 
     assert kv_collection is not None
 
@@ -189,6 +192,7 @@ async def test_reserve_claims_and_releases() -> None:
         params=params,
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
+        max_batch_size=128,
     )
     contexts = [
         create_text_context(np.zeros(1, dtype=np.int64)) for _ in range(2)
@@ -200,3 +204,77 @@ async def test_reserve_claims_and_releases() -> None:
 
     for context in contexts:
         assert not kv_manager.contains(context.request_id, replica_idx=0)
+
+
+@pytest.mark.asyncio
+async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
+    device = CPU()
+    total_num_pages = 8
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=1,
+        head_dim=16,
+        num_layers=10,
+        cache_strategy="paged",
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+    )
+
+    kv_manager = PagedKVCacheManager(
+        params=params,
+        session=InferenceSession(devices=[device]),
+        total_num_pages=total_num_pages,
+        max_batch_size=128,
+    )
+
+    short_context = create_text_context(np.zeros(1, dtype=np.int64))
+    kv_manager.claim(short_context.request_id, replica_idx=0)
+
+    kv_manager.alloc(short_context, replica_idx=0, num_steps=1)
+    first_inputs = kv_manager.runtime_inputs([[short_context]])[0]
+    assert tuple(first_inputs.lookup_table.shape) == (1, 1)
+
+    long_context = create_text_context(np.zeros(256, dtype=np.int64))
+    kv_manager.claim(long_context.request_id, replica_idx=0)
+
+    kv_manager.alloc(long_context, replica_idx=0, num_steps=1)
+    second_inputs = kv_manager.runtime_inputs([[long_context]])[0]
+    assert tuple(second_inputs.lookup_table.shape) == (1, 2)
+
+
+@pytest.mark.asyncio
+async def test_runtime_inputs_lookup_table_uses_explicit_max_cache_length() -> (
+    None
+):
+    device = CPU()
+    total_num_pages = 8
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=1,
+        head_dim=16,
+        num_layers=10,
+        cache_strategy="paged",
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+    )
+
+    kv_manager = PagedKVCacheManager(
+        params=params,
+        session=InferenceSession(devices=[device]),
+        total_num_pages=total_num_pages,
+        max_batch_size=128,
+    )
+
+    context = create_text_context(np.zeros(1, dtype=np.int64))
+    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.alloc(context, replica_idx=0, num_steps=1)
+
+    runtime_inputs = kv_manager.runtime_inputs([[context]])[0]
+    assert tuple(runtime_inputs.lookup_table.shape) == (1, 1)
+
+    explicit_inputs = kv_manager.runtime_inputs(
+        [[context]],
+        max_cache_length=1024,
+        num_steps=1,
+    )[0]
+    assert tuple(explicit_inputs.lookup_table.shape) == (1, total_num_pages)

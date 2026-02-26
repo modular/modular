@@ -27,9 +27,9 @@ from max.interfaces import (
 )
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
-from max.pipelines.lib.kv_cache_config import KVCacheConfig
-from max.pipelines.lib.model_config import MAXModelConfig
-from max.pipelines.lib.speculative_config import SpeculativeConfig
+from max.pipelines.lib.config.kv_cache_config import KVCacheConfig
+from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -75,7 +75,6 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
             num_speculative_tokens=10,
         ),
         max_batch_size=4,
-        max_num_steps=num_steps,
     )
 
     tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
@@ -119,7 +118,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
 
-    target_kv_manager = pipeline.kv_managers[-1]
+    target_kv_manager = pipeline.kv_manager
     target_kv_manager.claim(req_id1, replica_idx=0)
     target_kv_manager.claim(req_id2, replica_idx=0)
     target_kv_manager.alloc(context1, replica_idx=0, num_steps=num_steps)

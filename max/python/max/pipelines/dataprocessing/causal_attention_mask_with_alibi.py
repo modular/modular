@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Builds causal attention masks combined with ALiBi positional bias for text generation."""
+
 from __future__ import annotations
 
 from typing import Any

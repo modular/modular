@@ -101,7 +101,7 @@ fn quantize_dynamic_scaled_fp4fp8[
     ctx: DeviceContext,
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
     scales: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    input: LayoutTensor[in_dtype, input_layout, MutAnyOrigin],
+    input: LayoutTensor[in_dtype, input_layout, ImmutAnyOrigin],
     num_cols: Int,
     num_cols_padded: Int,
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
@@ -195,7 +195,7 @@ fn quantize_dynamic_scaled_fp4fp8_kernel[
 ](
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
     scales: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    input: LayoutTensor[in_dtype, input_layout, MutAnyOrigin],
+    input: LayoutTensor[in_dtype, input_layout, ImmutAnyOrigin],
     num_cols: Int,
     num_cols_padded: Int,
     tensor_sf: Float32,
@@ -347,7 +347,9 @@ fn block_scales_interleave_fp4[
     num_max_threads: Int = 1024,
 ](
     ctx: DeviceContext,
-    input_scales: LayoutTensor[scales_dtype, input_scales_layout, MutAnyOrigin],
+    input_scales: LayoutTensor[
+        scales_dtype, input_scales_layout, ImmutAnyOrigin
+    ],
     output_scales: LayoutTensor[
         scales_dtype, output_scales_layout, MutAnyOrigin
     ],
@@ -400,7 +402,9 @@ fn block_scales_interleave_fp4_kernel[
     SF_VECTOR_SIZE: Int = 16,
     num_max_threads: Int = 1024,
 ](
-    input_scales: LayoutTensor[scales_dtype, input_scales_layout, MutAnyOrigin],
+    input_scales: LayoutTensor[
+        scales_dtype, input_scales_layout, ImmutAnyOrigin
+    ],
     output_scales: LayoutTensor[
         scales_dtype, output_scales_layout, MutAnyOrigin
     ],
@@ -673,7 +677,7 @@ fn quantize_dynamic_block_scaled[
 ](
     output_device: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin, _],
     scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
-    input_device: NDBuffer[in_dtype, 2, MutAnyOrigin, _],
+    input_device: NDBuffer[in_dtype, 2, ImmutAnyOrigin, _],
     tensor_sf: Float32,  # tensor-wise scale factor
     ctx: DeviceContext,
 ) raises:
@@ -762,7 +766,7 @@ fn block_scales_interleave[
     target: StaticString = "cpu",
 ](
     output_scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
-    input_scales_device: NDBuffer[scales_dtype, 2, MutAnyOrigin, _],
+    input_scales_device: NDBuffer[scales_dtype, 2, ImmutAnyOrigin, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert (
@@ -1055,7 +1059,7 @@ fn quantize_dynamic_scaled_fp4_async[
     ctx: DeviceContext,
     output_tensor: LayoutTensor[output_dtype, output_layout, MutAnyOrigin],
     scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
-    input_tensor: LayoutTensor[input_dtype, input_layout, MutAnyOrigin],
+    input_tensor: LayoutTensor[input_dtype, input_layout, ImmutAnyOrigin],
     tensor_sf: Float32 = 1.0,  # tensor-wise scale factor
 ) raises:
     comptime assert (
@@ -1210,10 +1214,10 @@ fn block_scaled_matmul[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
-    a_device: NDBuffer[a_type, 2, MutAnyOrigin, _],
-    b_device: NDBuffer[b_type, 2, MutAnyOrigin, _],
-    a_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
-    b_scales_device: NDBuffer[scales_dtype, 5, MutAnyOrigin, _],
+    a_device: NDBuffer[a_type, 2, ImmutAnyOrigin, _],
+    b_device: NDBuffer[b_type, 2, ImmutAnyOrigin, _],
+    a_scales_device: NDBuffer[scales_dtype, 5, ImmutAnyOrigin, _],
+    b_scales_device: NDBuffer[scales_dtype, 5, ImmutAnyOrigin, _],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -1282,6 +1286,31 @@ fn block_scaled_matmul[
         k,
         "]",
     )
+
+    comptime static_N = c.layout.shape[1].value()
+    comptime static_K = a.layout.shape[1].value()
+    comptime static_NK = Index(static_N, static_K)
+
+    comptime DeepSeek_NK = [
+        Index(7168, 16384),
+        # Index(4096, 7168),
+        # Index(7168, 2048),
+    ]
+
+    comptime if static_NK in DeepSeek_NK:
+        if m == 1:
+            var status = heuristic_and_outliers_dispatch[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                pdl_level = PDLLevel(1),
+            ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+
+            if status == DISPATCH_HIT:
+                logger.info("Executing SM100 Block Scaled matmul kernel")
+                return
+            else:
+                raise Error("Heuristic and outliers dispatch failed")
 
     comptime if env_get_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False

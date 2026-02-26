@@ -38,7 +38,6 @@ from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout._tile_tensor import TileTensor
 from layout.tma_async import TMATensorTile
-from layout import LayoutTensor
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.utils import elementwise_compute_lambda_type
 from utils.fast_div import FastDiv
@@ -1802,7 +1801,7 @@ fn shared_memory_epilogue_transpose[
     comptime if warp_dim == 2:
         # Use new Layout for idx2crd operations
         comptime layout_3d = row_major[2, Int(stageN), swizzle_dim]()
-        constrained[c_smem_layout.rank() == 4, "c_smem_layout must be 4D"]()
+        comptime assert c_smem_layout.rank() == 4, "c_smem_layout must be 4D"
         comptime thread_layout = Layout.row_major(1, 8, 1, 4)
         comptime result = zipped_divide(
             upcast(c_smem_layout, simd_size), thread_layout
@@ -1877,7 +1876,7 @@ fn shared_memory_epilogue_transpose[
                     )
     else:
         # Layout F: https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-f
-        constrained[c_smem_layout.rank() == 3, "c_smem_layout must be 3D"]()
+        comptime assert c_smem_layout.rank() == 3, "c_smem_layout must be 3D"
         comptime thread_layout = Layout.row_major(min(16, Int(stageN)), 1, 2)
         comptime thread_bound = UInt(thread_layout.cosize())
         var lane = lane_id()

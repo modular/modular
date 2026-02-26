@@ -14,7 +14,7 @@
 
 from collections.abc import Sequence
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import Mock
 
 import numpy as np
 from max.driver import CPU, Buffer, Device
@@ -22,12 +22,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -35,7 +31,7 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -46,15 +42,38 @@ class MockModelInputs(ModelInputs):
         active_batch_size: int,
         eos_prob: float,
         kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
+        return_n_logits: int | Buffer = 1,
     ) -> None:
         self.active_batch_size = active_batch_size
         self.eos_prob = eos_prob
+        self.tokens = Buffer.from_numpy(
+            np.zeros((max(active_batch_size, 1),), dtype=np.int64)
+        )
+        self.input_row_offsets = Buffer.from_numpy(
+            np.array([0, max(active_batch_size, 1)], dtype=np.uint32)
+        )
+        self.signal_buffers: list[Buffer] = []
         self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
+        if isinstance(return_n_logits, Buffer):
+            self.return_n_logits = return_n_logits
+        else:
+            self.return_n_logits = Buffer.from_numpy(
+                np.array([return_n_logits], dtype=np.uint32)
+            )
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
+        return (
+            self.tokens,
+            self.input_row_offsets,
+            self.return_n_logits,
+            *self.signal_buffers,
+            *kv_cache_inputs,
+        )
 
 
-class MockPipelineModel(PipelineModel):
+class MockPipelineModel(PipelineModelWithKVCache):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -82,7 +101,7 @@ class MockPipelineModel(PipelineModel):
 
         # This is required to smuggle these parameters in.
         self.max_length = pipeline_config.model.max_length
-        self.kv_manager = MagicMock(spec=PagedKVCacheManager)
+        self.kv_params = Mock(spec=KVCacheParams)
 
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.
@@ -98,7 +117,7 @@ class MockPipelineModel(PipelineModel):
                 n_heads=self.huggingface_config.num_attention_heads,
                 n_kv_heads=self.huggingface_config.num_key_value_heads,
                 head_dim=self.huggingface_config.head_dim,
-                zmq_endpoint_base=self.pipeline_config.zmq_endpoint_base,
+                zmq_endpoint_base=self.pipeline_config.runtime.zmq_endpoint_base,
             )
             if self.pipeline_config.lora
             and self.pipeline_config.lora.enable_lora

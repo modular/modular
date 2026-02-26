@@ -279,7 +279,7 @@ fn schedule_barrier(
     comptime if is_amd_gpu():
         llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
     else:
-        constrained[False, "schedule_barrier is only supported on AMDGPU."]()
+        comptime assert False, "schedule_barrier is only supported on AMDGPU."
 
 
 @always_inline("nodebug")
@@ -309,9 +309,9 @@ fn schedule_group_barrier(
             Int32(Int(mask)), size, sync_id
         )
     else:
-        constrained[
-            False, "schedule_group_barrier is only supported on AMDGPU."
-        ]()
+        comptime assert (
+            False
+        ), "schedule_group_barrier is only supported on AMDGPU."
 
 
 # reference for waitcnt_arg and related synchronization utilities:
@@ -511,7 +511,7 @@ fn _mbarrier_impl[
             address.address_space_cast[AddressSpace.GENERIC]().address
         )
     else:
-        constrained[False, "invalid address space"]()
+        comptime assert False, "invalid address space"
 
 
 @always_inline("nodebug")

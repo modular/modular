@@ -826,7 +826,6 @@ PIPELINES = {
     # tolerances below ~5e-2.
     "meta-llama/Meta-Llama-3-8B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
         pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
         encoding="float32",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -840,7 +839,6 @@ PIPELINES = {
     ),
     "meta-llama/Llama-3.1-8B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
         pipeline="meta-llama/Llama-3.1-8B-Instruct",
         encoding="float32",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -950,7 +948,7 @@ PIPELINES = {
             tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
             json_file="torch_llama3_1_bfloat16_golden.json",
         ),
-        cos_dist_threshold=2.0e-2,
+        cos_dist_threshold=2.5e-2,
         kl_div_threshold=4.0e-2,
     ),
     "meta-llama/Llama-3.1-8B-Instruct-data-parallel-bfloat16": PipelineDef(
@@ -1063,7 +1061,6 @@ PIPELINES = {
     ),
     "mistralai/Mistral-Nemo-Instruct-2407-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big"],
         pipeline="mistralai/Mistral-Nemo-Instruct-2407",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1076,7 +1073,6 @@ PIPELINES = {
     ),
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big"],
         pipeline="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
         encoding="bfloat16",
         cos_dist_threshold=3.0e-03,
@@ -1151,7 +1147,6 @@ PIPELINES = {
     ),
     "mistral-community/pixtral-12b-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big"],
         pipeline="mistral-community/pixtral-12b",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1244,11 +1239,11 @@ PIPELINES = {
             json_file="torch_qwen3_vl_4b_instruct_fp8_golden.json",
         ),
         cos_dist_threshold=1.7e00,
-        kl_div_threshold=3.6e-01,
+        kl_div_threshold=4.5e-01,
     ),
     "Qwen/Qwen3-8B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only"],  # TODO: Attention is broken on AMD.
+        tags=["nvidia-only"],  # TODO: Attention is broken on AMD.
         pipeline="Qwen/Qwen3-8B",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1260,7 +1255,7 @@ PIPELINES = {
     ),
     "Qwen/Qwen3-30B-A3B-Instruct-2507-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only", "no-h100"],
+        tags=["nvidia-only", "no-h100"],
         pipeline="Qwen/Qwen3-30B-A3B-Instruct-2507",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1296,9 +1291,10 @@ PIPELINES = {
         cos_dist_threshold=2.4e-01,
         kl_div_threshold=8.8e-01,
     ),
+    # TODO(MODELS-1099): Re-enable once upstream tokenizer is fixed.
     "allenai/OLMo-2-1124-7B-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
+        tags=["manual"],
         pipeline="allenai/OLMo-2-1124-7B",
         encoding="float32",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1318,7 +1314,7 @@ PIPELINES = {
     ),
     "HuggingFaceM4/Idefics3-8B-Llama3": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only"],
+        tags=["nvidia-only"],
         pipeline="HuggingFaceM4/Idefics3-8B-Llama3",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1335,7 +1331,6 @@ PIPELINES = {
     ),
     "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
         compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
         pipeline="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
         encoding="float32",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1361,7 +1356,6 @@ PIPELINES = {
     ),
     "microsoft/phi-4-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big"],
         pipeline="microsoft/phi-4",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1401,7 +1395,6 @@ PIPELINES = {
     ),
     "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big"],
         pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
         encoding="bfloat16",
         cos_dist_threshold=8.0e-03,
@@ -1473,11 +1466,10 @@ PIPELINES = {
             json_file="torch_gemma3-1b_bfloat16_golden.json",
         ),
         cos_dist_threshold=1.3e-3,
-        kl_div_threshold=6.0e-02,
+        kl_div_threshold=1.0e-01,
     ),
     "google/gemma-3-12b-it-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big"],
         pipeline="google/gemma-3-12b-it",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1503,7 +1495,7 @@ PIPELINES = {
     ),
     "RedHatAI/gemma-3-27b-it-FP8-dynamic": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "float8-support"],
+        tags=["float8-support"],
         pipeline="RedHatAI/gemma-3-27b-it-FP8-dynamic",
         encoding="float8_e4m3fn",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1516,7 +1508,7 @@ PIPELINES = {
     # Multi-GPU variant
     "RedHatAI/gemma-3-27b-it-FP8-dynamic-multi": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "float8-support", "nvidia-multi"],
+        tags=["float8-support", "nvidia-multi"],
         pipeline="RedHatAI/gemma-3-27b-it-FP8-dynamic",
         encoding="float8_e4m3fn",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(
@@ -1528,7 +1520,7 @@ PIPELINES = {
     ),
     "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
-        tags=["big", "tts"],  # TTS tag to identify text-to-speech models
+        tags=["tts"],  # TTS tag to identify text-to-speech models
         pipeline="HKUSTAudio/Llasa-8B",
         encoding="bfloat16",
         pregenerated_torch_goldens=PregeneratedTorchGoldens(

@@ -18,12 +18,12 @@ from queue import Queue
 from typing import Literal
 
 import numpy as np
-from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.interfaces import PixelGenerationContext, TokenBuffer
 from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
-from max.tensor import Tensor
 from tqdm import tqdm
 
 from ..autoencoders import AutoencoderKLModel

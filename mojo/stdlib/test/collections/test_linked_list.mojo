@@ -160,16 +160,6 @@ def test_setitem():
     assert_equal(l1[2], 5)
 
 
-def test_str():
-    var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(l1.__str__(), "[1, 2, 3]")
-
-
-def test_repr():
-    var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(l1.__repr__(), "LinkedList[Int]([Int(1), Int(2), Int(3)])")
-
-
 def test_pop_on_empty_list():
     with assert_raises():
         var ll = LinkedList[Int]()
@@ -414,7 +404,7 @@ def test_list_extend_non_trivial():
     # Tests three things:
     #   - extend() for non-plain-old-data types
     #   - extend() with mixed-length self and other lists
-    #   - extend() using optimal number of __moveinit__() calls
+    #   - extend() using optimal number of move constructor calls
     var v1 = LinkedList[MoveCounter[String]]()
     v1.append(MoveCounter[String]("Hello"))
     v1.append(MoveCounter[String]("World"))

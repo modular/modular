@@ -27,8 +27,8 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn.legacy import Allreduce, Signals
-from max.nn.legacy.moe import MoE
+from max.nn import Allreduce, Signals
+from max.nn.moe import MoE
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )

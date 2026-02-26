@@ -36,7 +36,7 @@ example_repo_ids = [
 ]
 
 gemma3_multimodal_arch = SupportedArchitecture(
-    name="Gemma3ForConditionalGeneration_Legacy",
+    name="Gemma3ForConditionalGeneration",
     example_repo_ids=example_repo_ids,
     default_encoding="bfloat16",
     supported_encodings={

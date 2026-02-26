@@ -22,9 +22,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import KVCacheParams
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.kernels import KVCacheParams
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
 )
@@ -189,6 +189,7 @@ def generate_max_outputs(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Construct input types.
@@ -242,7 +243,7 @@ def generate_max_outputs(
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
+        kv_manager.runtime_inputs([batch])[0]
     )
 
     output = compiled.execute(

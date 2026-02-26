@@ -200,8 +200,7 @@ fn bench_grouped_matmul[
         a_scale_dim0 += ceildiv(num_tokens, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids_input[i])
 
-        @parameter
-        if in_type == DType.float8_e4m3fn:
+        comptime if in_type == DType.float8_e4m3fn:
             comptime a_scale_alignment = 16 // size_of[DType.float32]()
             if num_tokens % a_scale_alignment != 0:
                 abort(
@@ -261,8 +260,7 @@ fn bench_grouped_matmul[
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
         c_dev.store[width=width, alignment=alignment](
@@ -275,12 +273,10 @@ fn bench_grouped_matmul[
     var a_offsets = from_ndbuffer_row_major(a_offsets_dev)
     var expert_ids = from_ndbuffer_row_major(expert_ids_dev)
 
-    @parameter
-    if is_fp4e2m1:
-        constrained[
-            scaling_kind_str == "nvfp4",
-            "Only support nvfp4 scaling kind for float4-e2m1fn",
-        ]()
+    comptime if is_fp4e2m1:
+        comptime assert (
+            scaling_kind_str == "nvfp4"
+        ), "Only support nvfp4 scaling kind for float4-e2m1fn"
 
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
             DType.uint32
@@ -399,8 +395,7 @@ fn bench_grouped_matmul[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                @parameter
-                if use_vendor_blas:
+                comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
@@ -472,10 +467,9 @@ fn bench_grouped_matmul[
         expert_scales_host_ptr.free()
 
     elif in_type == DType.float8_e4m3fn:
-        constrained[
-            scaling_kind_str == "1d2d",
-            "Only support 1d2d scaling kind for float8_e4m3fn",
-        ]()
+        comptime assert (
+            scaling_kind_str == "1d2d"
+        ), "Only support 1d2d scaling kind for float8_e4m3fn"
         comptime BLOCK_SCALE_K = 128
         comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
         var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
@@ -539,8 +533,7 @@ fn bench_grouped_matmul[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                @parameter
-                if use_vendor_blas:
+                comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
@@ -621,8 +614,7 @@ fn bench_grouped_matmul[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                @parameter
-                if use_vendor_blas:
+                comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 

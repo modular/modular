@@ -726,7 +726,7 @@ struct TMATensorTile[
         self.descriptor = descriptor
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """
         Copy initializes this `TMATensorTile` from another instance.
 
@@ -2757,7 +2757,7 @@ def create_tma_tile[
     return create_tma_descriptor[tensor.dtype, 2, swizzle_mode](
         DeviceBuffer(
             ctx,
-            tensor.ptr.mut_cast[True]().address_space_cast[
+            tensor.ptr.unsafe_mut_cast[True]().address_space_cast[
                 AddressSpace.GENERIC
             ](),
             1,
@@ -3755,7 +3755,7 @@ struct RaggedTMA3DTile[
         )
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """
         Copy initializes this `RaggedTMA3DTile` from another instance.
 
@@ -3813,6 +3813,51 @@ struct RaggedTMA3DTile[
             )
 
     @always_inline
+    fn async_copy_from_col[
+        col: Int,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
+    ](
+        self,
+        src: UnsafePointer[
+            Scalar[Self.dtype], address_space = AddressSpace.SHARED
+        ],
+        *,
+        ragged_idx: UInt32,
+        dynamic_dim: UInt32,
+        middle_idx: UInt32,
+    ):
+        """Copy a single swizzle_granularity-wide column chunk from smem to
+        gmem.
+
+        Parameters:
+            col: Which column chunk (0-indexed, each chunk is
+                swizzle_granularity columns).
+            eviction_policy: Optional cache eviction policy that controls how
+                the data is handled in the cache hierarchy. Defaults to
+                EVICT_FIRST.
+
+        Args:
+            src: Source shared memory pointer (base of the full tile).
+            ragged_idx: Index into the ragged dimension.
+            dynamic_dim: Number of rows to copy.
+            middle_idx: Index into the middle (generally head) dimension.
+        """
+        var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
+        var box_idx: UInt = UInt(UInt32(Self.BM) - dynamic_dim)
+        comptime copy_offset = col * Self.BM * Self.swizzle_granularity
+
+        cp_async_bulk_tensor_global_shared_cta[eviction_policy=eviction_policy](
+            src + copy_offset,
+            UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+            Index(
+                UInt(col * Self.swizzle_granularity),
+                box_idx,
+                UInt(middle_idx),
+                offset_ragged_idx,
+            ),
+        )
+
+    @always_inline
     fn async_copy_from[
         eviction_policy: CacheEviction = CacheEviction.EVICT_FIRST,
     ](
@@ -3839,23 +3884,12 @@ struct RaggedTMA3DTile[
                 in the cache hierarchy. Defaults to EVICT_FIRST.
         """
 
-        var offset_ragged_idx: UInt = UInt(ragged_idx + dynamic_dim)
-        var box_idx: UInt = UInt(UInt32(Self.BM) - dynamic_dim)
-
         comptime for col in range(ceildiv(Self.BN, Self.swizzle_granularity)):
-            comptime copy_offset = col * Self.BM * Self.swizzle_granularity
-
-            cp_async_bulk_tensor_global_shared_cta[
-                eviction_policy=eviction_policy
-            ](
-                src + copy_offset,
-                UnsafePointer(to=self.descriptor).bitcast[NoneType](),
-                Index(
-                    UInt(col * Self.swizzle_granularity),
-                    box_idx,
-                    UInt(middle_idx),
-                    offset_ragged_idx,
-                ),
+            self.async_copy_from_col[col, eviction_policy](
+                src,
+                ragged_idx=ragged_idx,
+                dynamic_dim=dynamic_dim,
+                middle_idx=middle_idx,
             )
 
     @always_inline
@@ -4379,7 +4413,7 @@ struct TMATensorTileIm2col[
         self.lower_corner_w = lower_corner_w
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy initializes from another instance.
 
         Args:

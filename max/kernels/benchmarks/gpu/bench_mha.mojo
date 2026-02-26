@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, isclose, rsqrt
-from random import rand
-from sys import env_get_bool, env_get_dtype, env_get_int, size_of
+from math import isclose, rsqrt
+from sys import env_get_bool, env_get_dtype, env_get_int
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu import *
 from gpu.host import DeviceContext
-from internal_utils import arg_parse
-from internal_utils._utils import InitializationType, init_vector_launch
+from internal_utils import CacheBustingBuffer, arg_parse
+from internal_utils._utils import InitializationType
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from memory import LegacyUnsafePointer
 
@@ -31,23 +30,6 @@ from testing import assert_almost_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
-
-
-# Cache busting helpers: 512 MiB is larger than 2x the infinity cache on MI300x.
-fn _calculate_stride(tensor_size: Int, alignment: Int) -> Int:
-    return align_up(tensor_size, alignment)
-
-
-fn _calculate_buffer_size[
-    dtype: DType
-](tensor_size: Int, alignment: Int) -> Int:
-    comptime k512m = 512 * 1024 * 1024
-    var stride = _calculate_stride(tensor_size, alignment)
-    return align_up(k512m, stride * size_of[dtype]()) // size_of[dtype]()
-
-
-fn _calculate_offset(iteration: Int, stride: Int, buffer_size: Int) -> Int:
-    return (iteration * stride) % buffer_size
 
 
 fn run_mha[
@@ -77,95 +59,49 @@ fn run_mha[
     var v_size = k_size
     var o_size = q_size
 
-    # For cache busting: calculate strides and larger buffer sizes.
+    # Cache busting buffers: allocate oversized to defeat L2/infinity cache.
     comptime simd_size = 4
-    var stride_q = _calculate_stride(q_size, simd_size)
-    var stride_k = _calculate_stride(k_size, simd_size)
-    var stride_v = _calculate_stride(v_size, simd_size)
-    var stride_o = _calculate_stride(o_size, simd_size)
+    var cb_q = CacheBustingBuffer[qkv_type](
+        q_size, simd_size, ctx, cache_busting
+    )
+    var cb_k = CacheBustingBuffer[qkv_type](
+        k_size, simd_size, ctx, cache_busting
+    )
+    var cb_v = CacheBustingBuffer[qkv_type](
+        v_size, simd_size, ctx, cache_busting
+    )
+    var cb_o = CacheBustingBuffer[qkv_type](
+        o_size, simd_size, ctx, cache_busting
+    )
 
-    var buf_q = _calculate_buffer_size[qkv_type](q_size, simd_size)
-    var buf_k = _calculate_buffer_size[qkv_type](k_size, simd_size)
-    var buf_v = _calculate_buffer_size[qkv_type](v_size, simd_size)
-    var buf_o = _calculate_buffer_size[qkv_type](o_size, simd_size)
-
-    # Device pointers - use larger buffer sizes when cache busting.
-    var alloc_q = buf_q if cache_busting else q_size
-    var alloc_k = buf_k if cache_busting else k_size
-    var alloc_v = buf_v if cache_busting else v_size
-    var alloc_o = buf_o if cache_busting else o_size
-
-    # Allocate memory for all variables.
-    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
-    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
-    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
+    # Allocate host memory for verification.
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(alloc_o)
-
-    # Q, K, V are randomly initialized.
-    rand[qkv_type](q_ptr, q_size)
-    rand[qkv_type](k_ptr, k_size)
-    rand[qkv_type](v_ptr, v_size)
-
-    var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](alloc_q)
-    var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](alloc_k)
-    var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](alloc_v)
-    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](alloc_o)
+    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(
+        cb_o.alloc_size()
+    )
 
     # Initialize data on the device.
     comptime random_distribution = InitializationType.uniform_distribution
 
-    init_vector_launch[qkv_type](
-        q_device_ptr, alloc_q, random_distribution, ctx
-    )
-    init_vector_launch[qkv_type](
-        k_device_ptr, alloc_k, random_distribution, ctx
-    )
-    init_vector_launch[qkv_type](
-        v_device_ptr, alloc_v, random_distribution, ctx
-    )
+    cb_q.init_on_device(random_distribution, ctx)
+    cb_k.init_on_device(random_distribution, ctx)
+    cb_v.init_on_device(random_distribution, ctx)
 
     if bench:
 
         @parameter
         @always_inline
-        @__copy_capture(
-            stride_q,
-            stride_k,
-            stride_v,
-            stride_o,
-            buf_q,
-            buf_k,
-            buf_v,
-            buf_o,
-            q_device_ptr,
-            k_device_ptr,
-            v_device_ptr,
-            output_device_ptr,
-        )
+        @__copy_capture(cb_q, cb_k, cb_v, cb_o)
         fn bench_func(mut b: Bencher):
             @parameter
             @always_inline
             fn _kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                # Calculate offsets - zero when not cache busting.
-                var offset_q = 0
-                var offset_k = 0
-                var offset_v = 0
-                var offset_o = 0
-
-                @parameter
-                if cache_busting:
-                    offset_q = _calculate_offset(iteration, stride_q, buf_q)
-                    offset_k = _calculate_offset(iteration, stride_k, buf_k)
-                    offset_v = _calculate_offset(iteration, stride_v, buf_v)
-                    offset_o = _calculate_offset(iteration, stride_o, buf_o)
-
                 # Construct device buffers with offsets.
                 comptime q_layout = Layout.row_major(
                     UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
                 )
                 var q_device = LayoutTensor[qkv_type, q_layout](
-                    q_device_ptr.unsafe_ptr() + offset_q,
+                    cb_q.offset_ptr(iteration),
                     RuntimeLayout[q_layout].row_major(
                         Index(batch_size, seq_len, num_heads, depth)
                     ),
@@ -174,7 +110,7 @@ fn run_mha[
                     UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
                 )
                 var k_device = LayoutTensor[qkv_type, k_layout](
-                    k_device_ptr.unsafe_ptr() + offset_k,
+                    cb_k.offset_ptr(iteration),
                     RuntimeLayout[k_layout].row_major(
                         Index(batch_size, num_keys, kv_num_heads, depth)
                     ),
@@ -183,7 +119,7 @@ fn run_mha[
                     UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
                 )
                 var v_device = LayoutTensor[qkv_type, v_layout](
-                    v_device_ptr.unsafe_ptr() + offset_v,
+                    cb_v.offset_ptr(iteration),
                     RuntimeLayout[v_layout].row_major(
                         Index(batch_size, num_keys, kv_num_heads, depth)
                     ),
@@ -192,7 +128,7 @@ fn run_mha[
                     UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
                 )
                 var output_device = LayoutTensor[qkv_type, output_layout](
-                    output_device_ptr.unsafe_ptr() + offset_o,
+                    cb_o.offset_ptr(iteration),
                     RuntimeLayout[output_layout].row_major(
                         Index(batch_size, seq_len, num_heads, depth)
                     ),
@@ -241,7 +177,7 @@ fn run_mha[
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var q_device = LayoutTensor[qkv_type, q_layout](
-        q_device_ptr.unsafe_ptr(),
+        cb_q.unsafe_ptr(),
         RuntimeLayout[q_layout].row_major(
             Index(batch_size, seq_len, num_heads, depth)
         ),
@@ -250,7 +186,7 @@ fn run_mha[
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
     )
     var k_device = LayoutTensor[qkv_type, k_layout](
-        k_device_ptr.unsafe_ptr(),
+        cb_k.unsafe_ptr(),
         RuntimeLayout[k_layout].row_major(
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
@@ -259,7 +195,7 @@ fn run_mha[
         UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth
     )
     var v_device = LayoutTensor[qkv_type, v_layout](
-        v_device_ptr.unsafe_ptr(),
+        cb_v.unsafe_ptr(),
         RuntimeLayout[v_layout].row_major(
             Index(batch_size, num_keys, kv_num_heads, depth)
         ),
@@ -268,7 +204,7 @@ fn run_mha[
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
     )
     var output_device = LayoutTensor[qkv_type, output_layout](
-        output_device_ptr.unsafe_ptr(),
+        cb_o.unsafe_ptr(),
         RuntimeLayout[output_layout].row_major(
             Index(batch_size, seq_len, num_heads, depth)
         ),
@@ -290,7 +226,7 @@ fn run_mha[
 
     if verify:
         # Copy output for verification
-        ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
+        ctx.enqueue_copy(flash_output_ptr, cb_o.device_buffer())
         # Allocate and initialize mask for verification
         var mask_size = batch_size * num_heads * seq_len * num_keys
         var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
@@ -370,14 +306,11 @@ fn run_mha[
                         print(h, s, d, actual, expect)
                     assert_almost_equal(expect, actual, atol=1e-5, rtol=rtol)
 
-    _ = q_device_ptr
-    _ = k_device_ptr
-    _ = v_device_ptr
-    _ = output_device_ptr
+    _ = cb_q
+    _ = cb_k
+    _ = cb_v
+    _ = cb_o
 
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
     output_ptr.free()
     flash_output_ptr.free()
 

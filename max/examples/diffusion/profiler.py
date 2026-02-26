@@ -149,6 +149,12 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
 
         self._wrap_if_exists(
             target,
+            "execute",
+            "E2E execute",
+            self._pipeline_module_label,
+        )
+        self._wrap_if_exists(
+            target,
             "_prepare_prompt_embeddings",
             "prompt/prepare_embeddings",
             self._pipeline_module_label,
@@ -318,7 +324,7 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
     def _patch_tensor_ops_global(self) -> None:
         """Patch Tensor conversion/movement ops (process-wide while active)."""
         try:
-            from max.tensor import Tensor
+            from max.experimental.tensor import Tensor
         except Exception:
             return
 
@@ -375,7 +381,7 @@ class ExecuteProfiler(AbstractContextManager["ExecuteProfiler"]):
     def _patch_concat_global(self) -> None:
         """Patch max.functional.concat (process-wide while active)."""
         try:
-            from max import functional as F
+            from max.experimental import functional as F
         except Exception:
             return
 

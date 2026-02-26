@@ -20,11 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import kv_cache_ragged_2m_iadd
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kernels import kv_cache_ragged_2m_iadd
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.pipelines.core import TextContext
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -75,9 +72,9 @@ def dump_kv_cache_to_torch(
 ) -> list[torch.Tensor]:
     """Extract K or V cache contents for each sequence in batch."""
     torch_dtype = cache.params.dtype.to_torch()
-    device_tensor = cache.get_device_tensors(replica_idx=0)[device_id]
-    device_tensor_torch = from_dlpack(device_tensor).to(torch_dtype).cpu()
-    device_tensor_torch = device_tensor_torch[:, key_or_value, :, :, :, :]
+    device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
+    device_buffer_torch = from_dlpack(device_buffer).to(torch_dtype).cpu()
+    device_buffer_torch = device_buffer_torch[:, key_or_value, :, :, :, :]
 
     results = []
     for ctx in batch:
@@ -94,7 +91,7 @@ def dump_kv_cache_to_torch(
         for start_idx in range(0, seq_len, cache.page_size):
             end_idx = min(start_idx + cache.page_size, seq_len)
             block_id = req_blocks[start_idx // cache.page_size]
-            block_torch = device_tensor_torch[block_id, 0]
+            block_torch = device_buffer_torch[block_id, 0]
 
             for token_idx in range(start_idx, end_idx):
                 result[token_idx] = block_torch[token_idx % cache.page_size]
@@ -148,6 +145,7 @@ def run_kv_cache_2m_iadd(
         params=kv_params,
         session=session,
         total_num_pages=16,
+        max_batch_size=128,
     )
 
     batch = []
@@ -158,7 +156,7 @@ def run_kv_cache_2m_iadd(
         batch.append(context)
 
     # Zero the KV cache before iadd test (since iadd adds to existing values)
-    cache_tensor = kv_manager.get_device_tensors(replica_idx=0)[0]
+    cache_tensor = kv_manager.get_device_buffer(replica_idx=0).values[0]
     cache_tensor.inplace_copy_from(
         Buffer.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
     )
@@ -209,7 +207,7 @@ def run_kv_cache_2m_iadd(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
 
     compiled.execute(
         to_max_tensor(kv_lora_output, device),

@@ -642,8 +642,8 @@ mechanisms, activation functions, and probability distributions.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create input tensor
     x = Tensor.constant([0.0, 1.0, 2.0])
@@ -818,8 +818,8 @@ probability calculations in machine learning.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create input tensor (positive values only)
     x = Tensor.constant([1.0, 2.718, 7.389, 20.0])
@@ -930,8 +930,8 @@ gradient problem.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create input with negative and positive values
     x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
@@ -969,8 +969,8 @@ def sigmoid(x: TensorValue) -> TensorValue:
 
     .. code-block:: python
 
-        import max.functional as F
-        from max.tensor import Tensor
+        import max.experimental.functional as F
+        from max.experimental.tensor import Tensor
 
         # Create input tensor
         x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
@@ -1140,8 +1140,8 @@ implementing mathematical operations like standard deviation.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create tensor with positive values
     x = Tensor.constant([1.0, 4.0, 9.0, 16.0])
@@ -1204,8 +1204,8 @@ with gradient flow during training.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create input tensor
     x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])

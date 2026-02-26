@@ -25,14 +25,14 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention.multi_latent_attention import (
+from max.nn.attention.multi_latent_attention import (
     LatentAttentionWithRope,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.rotary_embedding import (
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -123,6 +123,7 @@ def _generate_latent_attention_max_outputs(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     hidden_state_type = TensorType(
@@ -184,7 +185,7 @@ def _generate_latent_attention_max_outputs(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-            kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+            kv_inputs = kv_manager.runtime_inputs([batch])[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -206,7 +207,7 @@ def _generate_latent_attention_max_outputs(
 
     for ctx in batch:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch])[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
