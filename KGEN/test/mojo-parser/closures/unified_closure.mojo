@@ -776,3 +776,39 @@ def main():
         print(x)
 
     callee[simd_width=4](10, 11, my_func)
+
+
+# // -----
+
+# COM: Verify the result is properly rebound in the struct wrapper when a closure
+# COM: lazily conforms to a trait whose return type contains an alias parameter.
+
+
+@fieldwise_init
+struct V[dtype: Int, width: Int](RegisterPassable):
+    var _v: Int
+
+
+# CHECK: lit.struct.decl @"fn[width: Int]() -> V[42, width]_{{.*}}"
+
+# CHECK: lit.fn @"__call__$fn[width: Int]() -> V[dtype, width]{{.*}}"
+# CHECK: kgen.rebind %{{.*}} : {{.*}}{42}{{.*}} to {{.*}}_dtype{{.*}}
+# CHECK-NEXT: lit.return
+
+# CHECK: kgen.conformance @"fn[width: Int]() -> V[dtype, width] register_passable" {
+# CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator
+# CHECK-NEXT: kgen.witness "dtype" :{{.*}} = {42}
+fn callee[
+    dtype: Int,
+    F: fn[width: Int]() unified register_passable -> V[dtype, width],
+](closure: F):
+    var result = closure[4]()
+
+
+fn rebindResult():
+    fn my_closure[
+        width: Int
+    ]() unified register_passable {} -> V[42, width]:
+        return V[42, width](0)
+
+    callee[42](my_closure)
