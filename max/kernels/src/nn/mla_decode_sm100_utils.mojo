@@ -2364,8 +2364,16 @@ struct MLA_SM100_Decode_Common[
 
             if half_idx == 0 and head_idx < Self.config.num_q_heads:
                 # Compute LSE in log2 format: log2(li) + mi
-                # li is already the sum of exp2 values, mi is already in log2 scale
-                var partial_lse = log2(li[0]) + mi
+                # li is the running sum of exp2 values; mi is the running max
+                # in log2 scale.  When all scores in this split are causally
+                # masked, the online softmax produces NaN via exp2(-inf+inf),
+                # poisoning li.  Clamping li to 0 makes log2(0)=-inf, and
+                # -inf + mi(-inf) = -inf, giving this split zero weight in
+                # the combine kernel (same as pdl_early_exit for empty splits).
+                # On NVIDIA GPUs, max(NaN, 0) = 0 per PTX semantics.
+                var partial_lse = (
+                    log2(max(li[0], Scalar[Self.AccumType](0))) + mi
+                )
 
                 # LSE offset calculation:
                 # lse_accum_split shape: (num_splits, batch_size, max_seq_len, num_heads)
