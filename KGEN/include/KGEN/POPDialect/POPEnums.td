@@ -159,6 +159,7 @@ def POP_IntLiteralBinKind : I32EnumAttr<"IntLiteralBinKind",
   I32EnumAttrCase<"And", 7, "and">,
   I32EnumAttrCase<"Or", 8, "or">,
   I32EnumAttrCase<"Xor", 9, "xor">,
+  I32EnumAttrCase<"Pow", 10, "pow">,
 ]> {
   let cppNamespace = "M::KGEN::POP";
   let genSpecializedAttr = 0;

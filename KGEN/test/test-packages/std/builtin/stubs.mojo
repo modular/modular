@@ -219,6 +219,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return self
 
     @always_inline("builtin")
+    fn __pow__(
+        self, rhs: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<pow `,
+            self.value,
+            `,`,
+            rhs.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
+        return {}
+
+    @always_inline("builtin")
     fn __floordiv__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[

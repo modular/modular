@@ -857,6 +857,9 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     case POP::IntLiteralBinKind::Xor:
       binOp = " ^ ";
       break;
+    case POP::IntLiteralBinKind::Pow:
+      binOp = " ** ";
+      break;
     }
 
     return printOperands({intLitBin.getLhs(), intLitBin.getRhs()},
