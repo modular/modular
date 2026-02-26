@@ -210,8 +210,9 @@ fn bench_string_replace[
 
     @always_inline
     fn call_fn() unified {read}:
-        var res = black_box(items).replace(black_box(old), black_box(new))
-        keep(res)
+        for _ in range(10**6 // length):  # for stability with small lengths
+            var res = black_box(items).replace(black_box(old), black_box(new))
+            keep(res.unsafe_ptr())
 
     b.iter(call_fn)
 
