@@ -44,7 +44,7 @@ from nn.mha_mask import (
     NullMask,
     SlidingWindowCausalMask,
 )
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
+from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
@@ -726,12 +726,7 @@ fn _dispatch_score_mod[
     fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
         return callback_fn(score_mod)
 
-    comptime if score_mod_type == AlibiScoreMod.name_str:
-        comptime assert (
-            num_heads > 0
-        ), "You must specify num_heads for AlibiScoreMod"
-        return wrapper(AlibiScoreMod[num_heads]())
-    elif score_mod_type == IdentityScoreMod.name_str:
+    comptime if score_mod_type == IdentityScoreMod.name_str:
         return wrapper(IdentityScoreMod())
     else:
         comptime assert False, "Unsupported score mod type: " + score_mod_type
