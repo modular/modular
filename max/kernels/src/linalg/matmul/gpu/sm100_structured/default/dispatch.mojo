@@ -1402,6 +1402,9 @@ fn heuristic_and_outliers_dispatch[
                 k_group_size=Int(tuning_config.k_group_size),
                 num_split_k=tuning_config.num_split_k,
             )
+
+            logger.info("dispatching to outlier config: ", matmul_config)
+
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=matmul_config,
@@ -1421,6 +1424,8 @@ fn heuristic_and_outliers_dispatch[
 
     comptime for config in configs:
         if config_runtime == config:
+            logger.info("dispatching to config: ", config)
+
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
