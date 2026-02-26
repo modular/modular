@@ -123,6 +123,19 @@ class GptOssModel(
 
         self.model = self.load_model(session)
 
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        del pipeline_config, huggingface_config  # Unused.
+
+        # FIXME GEX-3248: This is a workaround for a MemoryManager fragmentation
+        # issue. In #77700 we swapped the order of model weight loading and kv
+        # cache loading. This affected memory fragmentation and led to CUDA OOM
+        # when running `br smoke-test -- unsloth/gpt-oss-20b-bf16` on 1xH100.
+        # We reduce the kv cache size slightly to avoid this.
+        return 6 * 1024 * 1024 * 1024  # 6 GiB
+
     @staticmethod
     def calculate_max_seq_len(
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
