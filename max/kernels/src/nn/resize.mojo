@@ -16,9 +16,9 @@ from math import ceil, floor
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from layout._coord import Coord, coord_to_index_list
+from layout.coord import Coord, coord_to_index_list
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout.int_tuple import fill_like
 from memory import memcpy
 

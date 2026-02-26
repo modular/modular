@@ -27,7 +27,7 @@ from math import ceildiv
 
 from gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor, RuntimeLayout
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 
 from ..structured_kernels.tile_types import GMEMLayout1D
 from memory import UnsafePointer

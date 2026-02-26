@@ -18,8 +18,8 @@ from sys.info import _current_target
 from algorithm import elementwise
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
-from layout._coord import Coord, CoordLike, coord_to_index_list
-from layout._tile_tensor import TileTensor
+from layout.coord import Coord, CoordLike, coord_to_index_list
+from layout.tile_tensor import TileTensor
 from layout._layout import row_major, TensorLayout
 
 from utils import IndexList, StaticTuple

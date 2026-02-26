@@ -22,9 +22,9 @@ from algorithm.functional import tile
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
 from layout import UNKNOWN_VALUE
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout.coord import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id

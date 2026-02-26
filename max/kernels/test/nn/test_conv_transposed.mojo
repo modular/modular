@@ -16,9 +16,9 @@ from random import rand
 from sys.info import simd_width_of
 
 from algorithm.functional import vectorize
-from layout._coord import Coord
+from layout.coord import Coord
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,

@@ -14,9 +14,9 @@
 
 from math import iota, isclose
 
-from layout._coord import Coord, Idx
+from layout.coord import Coord, Idx
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.cumsum import cumsum
 
 from utils.index import IndexList

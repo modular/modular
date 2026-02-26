@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from layout._coord import Idx
+from layout.coord import Idx
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.spatial_merge import spatial_merge
 from testing import assert_equal
 

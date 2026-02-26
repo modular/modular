@@ -21,9 +21,9 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
-from layout._coord import Coord, Idx
+from layout.coord import Coord, Idx
 from layout._layout import Layout as TileLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (

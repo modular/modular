@@ -32,9 +32,9 @@ from layout.layout_tensor import (
     copy_local_to_dram,
 )
 
-from layout._tile_tensor import TileTensor, stack_allocation
+from layout.tile_tensor import TileTensor, stack_allocation
 from layout._layout import TensorLayout, row_major
-from layout._coord import (
+from layout.coord import (
     Coord,
     coord,
     Idx,

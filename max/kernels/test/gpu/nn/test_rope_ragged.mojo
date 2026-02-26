@@ -13,9 +13,9 @@
 
 from gpu.host import DeviceContext, DeviceBuffer, HostBuffer
 from internal_utils import assert_almost_equal
-from layout._coord import Coord, Idx, coord
+from layout.coord import Coord, Idx, coord
 from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.rope import rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,

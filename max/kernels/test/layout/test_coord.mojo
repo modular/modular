@@ -18,7 +18,7 @@ from sys.intrinsics import _type_is_eq
 
 from builtin.variadics import Variadic
 
-from layout._coord import (
+from layout.coord import (
     ComptimeInt,
     CoordLike,
     Idx,

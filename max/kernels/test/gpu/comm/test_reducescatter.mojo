@@ -14,9 +14,9 @@
 from sys import size_of
 from itertools import product
 
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout._layout import row_major
-from layout._coord import Coord, Idx
+from layout.coord import Coord, Idx
 from collections import Optional
 from comm import Signal, MAX_GPUS
 from comm.reducescatter import (

@@ -28,9 +28,9 @@ from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
-from layout._coord import Coord, _DimsToCoordLike
+from layout.coord import Coord, _DimsToCoordLike
 from layout._layout import Layout as TileLayout
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]

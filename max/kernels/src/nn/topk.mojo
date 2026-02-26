@@ -35,7 +35,7 @@ from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
 from random import Random
-from layout._coord import (
+from layout.coord import (
     ComptimeInt,
     Coord,
     CoordLike,
@@ -45,7 +45,7 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import TensorLayout, Layout, RowMajorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from math import log2
 from memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index

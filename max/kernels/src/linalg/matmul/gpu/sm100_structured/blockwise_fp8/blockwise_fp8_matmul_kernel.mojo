@@ -60,7 +60,7 @@ from gpu.sync import (
 )
 from gpu.compute.arch.tcgen05 import *
 from layout._layout import TensorLayout
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,

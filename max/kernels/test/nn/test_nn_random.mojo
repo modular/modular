@@ -14,7 +14,7 @@
 from random import seed
 
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.randn import random_normal
 
 

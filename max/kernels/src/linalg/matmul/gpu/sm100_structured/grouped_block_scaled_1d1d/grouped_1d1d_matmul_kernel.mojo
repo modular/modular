@@ -55,7 +55,7 @@ from gpu.sync import named_barrier, syncwarp
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout as LegacyLayout, LayoutTensor
 from layout._layout import TensorLayout
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from ..structured_kernels.tile_types import (
     GMEMLayout1D,
     GMEMTile,
@@ -67,7 +67,7 @@ from ..structured_kernels.tile_types import (
     tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
-from layout._coord import CoordLike, ComptimeInt, RuntimeInt
+from layout.coord import CoordLike, ComptimeInt, RuntimeInt
 from layout._layout import RowMajorLayout, _IntToComptimeInt
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 from layout.tensor_core_async import (

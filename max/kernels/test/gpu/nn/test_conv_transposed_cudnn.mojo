@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-from layout._coord import Coord
+from layout.coord import Coord
 from layout._fillers import random
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from testing import assert_almost_equal
 

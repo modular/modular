@@ -42,7 +42,7 @@ from ._layout import (
     _RowMajor,
     row_major,
 )
-from ._coord import (
+from .coord import (
     ComptimeInt,
     RuntimeInt,
     Idx,
@@ -115,8 +115,8 @@ struct TileTensor[
 
     ```mojo
     from layout._layout import row_major
-    from layout._tile_tensor import TileTensor
-    from layout._coord import Idx
+    from layout.tile_tensor import TileTensor
+    from layout.coord import Idx
 
     # Create a 4x4 tensor with row-major layout
     var storage = InlineArray[Float32, 16](uninitialized=True)
@@ -308,8 +308,8 @@ struct TileTensor[
         ```mojo
         from gpu.host import DeviceContext, DeviceBuffer
         from layout._layout import row_major
-        from layout._tile_tensor import TileTensor
-        from layout._coord import Idx
+        from layout.tile_tensor import TileTensor
+        from layout.coord import Idx
 
         comptime dtype = DType.float32
 
@@ -357,8 +357,8 @@ struct TileTensor[
         ```mojo
         from gpu.host import DeviceContext, HostBuffer
         from layout._layout import row_major
-        from layout._tile_tensor import TileTensor
-        from layout._coord import Idx
+        from layout.tile_tensor import TileTensor
+        from layout.coord import Idx
 
         comptime dtype = DType.float32
 
@@ -642,7 +642,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout._tile_tensor import TileTensor
+        from layout.tile_tensor import TileTensor
         from layout._layout import row_major
 
         def main():
@@ -898,7 +898,7 @@ struct TileTensor[
 
         ```mojo
         from layout._layout import row_major
-        from layout._tile_tensor import TileTensor
+        from layout.tile_tensor import TileTensor
 
         var storage = InlineArray[Float32, 16](uninitialized=True)
         var tensor = TileTensor(storage, row_major[4, 4]()).fill(1.0)
@@ -1042,7 +1042,7 @@ struct TileTensor[
 
         ```mojo
         from layout._layout import row_major
-        from layout._tile_tensor import TileTensor
+        from layout.tile_tensor import TileTensor
 
         def main():
             var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
@@ -1056,7 +1056,7 @@ struct TileTensor[
 
         ```mojo
         from layout._layout import row_major
-        from layout._tile_tensor import TileTensor
+        from layout.tile_tensor import TileTensor
 
         var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
         var tensor = TileTensor(storage, row_major[3,4]()).fill(0.0)
@@ -1182,7 +1182,7 @@ struct TileTensor[
 
         ```mojo
         from layout._layout import row_major
-        from layout._tile_tensor import TileTensor
+        from layout.tile_tensor import TileTensor
         comptime layout_3d = row_major[16, 16, 16]()
         var stack = InlineArray[UInt8, layout_3d.static_product](fill=0)
         var tensor_3d = TileTensor(stack, layout_3d)
@@ -1424,7 +1424,7 @@ struct TileTensor[
 
         ```mojo
         from layout._layout import row_major
-        from layout._tile_tensor import TileTensor
+        from layout.tile_tensor import TileTensor
 
         var storage = InlineArray[Float32, 12](uninitialized=True)
         var tensor = TileTensor(storage, row_major[3, 4]()).fill(1.0)
@@ -1486,8 +1486,8 @@ struct TileTensor[
 
         ```mojo
         from layout._layout import row_major
-        from layout._tile_tensor import TileTensor
-        from layout._coord import Idx, Coord
+        from layout.tile_tensor import TileTensor
+        from layout.coord import Idx, Coord
 
         var storage = InlineArray[Float32, 12](uninitialized=True)
         var tensor = TileTensor(storage, row_major[3, 4]()).fill(1.0)
@@ -1588,7 +1588,7 @@ struct TileTensor[
 
         Examples:
             ```mojo
-            from layout._tile_tensor import TileTensor
+            from layout.tile_tensor import TileTensor
             from layout._layout import row_major
             var storage = InlineArray[Float32, 12](uninitialized=True)
             var tensor = TileTensor(Span(storage), row_major[3, 4]())

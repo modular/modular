@@ -18,9 +18,9 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple, CacheBustingBuffer
 from runtime.asyncrt import DeviceContextPtr
-from layout._coord import Coord, coord_to_index_list
+from layout.coord import Coord, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout import (
     UNKNOWN_VALUE,
     Layout,

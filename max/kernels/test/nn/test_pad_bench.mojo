@@ -18,9 +18,9 @@ from os import abort
 
 import benchmark
 from benchmark import Unit, keep
-from layout._coord import Coord
+from layout.coord import Coord
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.pad import pad_constant, pad_reflect
 from python import Python
 from testing import assert_true

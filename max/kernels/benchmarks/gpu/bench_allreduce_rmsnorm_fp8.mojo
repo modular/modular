@@ -45,9 +45,9 @@ from comm.sync import is_p2p_enabled
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer
 
-from layout._coord import Coord
+from layout.coord import Coord
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.normalization import rms_norm_fused_fp8
 from runtime.asyncrt import DeviceContextPtr
 from utils import IndexList

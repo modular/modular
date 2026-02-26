@@ -22,7 +22,7 @@ from builtin.variadics import (
     _ReduceVariadicAndIdxToVariadic,
 )
 
-from ._coord import (
+from .coord import (
     ComptimeInt,
     Idx,
     Coord,

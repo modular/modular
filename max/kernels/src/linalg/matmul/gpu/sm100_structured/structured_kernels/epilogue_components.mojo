@@ -36,7 +36,7 @@ from layout._layout import Layout as InternalLayout, TensorLayout, row_major
 from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout.tma_async import TMATensorTile
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.utils import elementwise_compute_lambda_type
@@ -164,7 +164,7 @@ fn store_fragment_to_smem[
     comptime if transpose_c:
         # Use new Layout directly instead of RuntimeLayout wrapper
         from layout._layout import Layout as NewLayout
-        from layout._coord import Coord, Idx
+        from layout.coord import Coord, Idx
 
         comptime trans_layout = NewLayout(
             Coord(Idx[8](), Idx[2](), Idx[2]()),
@@ -219,7 +219,7 @@ fn store_fragment_to_smem[
     """Store fragment to SMEM via st.matrix."""
     from gpu.compute.mma import st_matrix
     from memory import bitcast
-    from layout._coord import Coord, Idx
+    from layout.coord import Coord, Idx
 
     comptime c_type = dst.dtype
     comptime stsmx_row_size = 32 // size_of[
@@ -674,7 +674,7 @@ struct TMAStoreExecutor[
         warp_id: UInt32,
     ):
         """Transpose TMA store using reshape."""
-        from layout._coord import Coord, Idx
+        from layout.coord import Coord, Idx
 
         # Convert to LayoutTensor at TMA async_store boundary
         from memory import LegacyUnsafePointer
@@ -1322,7 +1322,7 @@ struct TMEMToSMemWriter[
         - Small swizzle (SWIZZLE_32B): each warp fragment fits within its own
           swizzle block, using simple tiles_per_frag tiling.
         """
-        from layout._coord import Coord, Idx
+        from layout.coord import Coord, Idx
 
         # SWIZZLE_128B: swizzle_width=64 > data_paths=16 → True
         # SWIZZLE_32B:  swizzle_width=16 == data_paths=16 → False
@@ -1439,7 +1439,7 @@ struct TMEMToSMemWriter[
         c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
     ):
         """Non-transposed output."""
-        from layout._coord import Coord, Idx
+        from layout.coord import Coord, Idx
 
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
         var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](

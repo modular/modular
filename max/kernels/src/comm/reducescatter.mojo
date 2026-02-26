@@ -16,9 +16,9 @@
 from collections import InlineArray
 from collections.optional import Optional
 
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout._layout import TensorLayout
-from layout._coord import Coord
+from layout.coord import Coord
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,

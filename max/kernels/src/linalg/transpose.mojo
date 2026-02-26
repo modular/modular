@@ -28,7 +28,7 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from memory import LegacyUnsafePointer, memcpy
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
