@@ -1,8 +1,4 @@
----
-title: "Multi-Head Latent Attention"
-author: Shouzheng Liu
-date: February 19, 2025
----
+# Multi-Head Latent Attention
 
 - **Author:** Shouzheng Liu
 - **Date:** February 19, 2025

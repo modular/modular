@@ -42,6 +42,6 @@ Guide](../../CONTRIBUTING.md)
   Mojo standard library.
 - [`/max/docs`](/max/docs): Docs for developers working in the MAX framework
   codebase.
-- [`/docs/eng-design`](/docs/eng-design): Engineering design documents for the
-  Modular Platform.
+- [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
+  describe how core Modular technologies work.
 - [docs.modular.com](https://docs.modular.com): All other developer docs.

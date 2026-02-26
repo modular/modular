@@ -1,8 +1,4 @@
----
-title: "FB8 Support in Mojo"
-author: Abdul Dakkak
-date: January 16, 2025
----
+# FB8 Support in Mojo
 
 - **Author:** Abdul Dakkak
 - **Date:** January 16, 2025

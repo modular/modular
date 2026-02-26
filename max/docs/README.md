@@ -40,8 +40,8 @@ analysis.
 
 ## Other docs
 
-- [`/docs/eng-design`](/docs/eng-design): Engineering design documents for the
-  Modular Platform.
+- [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
+  describe how core Modular technologies work.
 - [`/mojo/stdlib/docs`](/mojo/stdlib/docs): Docs for developers working in the
   Mojo standard library.
 - [`/mojo/docs`](/mojo/docs): Source docs for docs.modular.com/mojo.

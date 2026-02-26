@@ -1,8 +1,4 @@
----
-title: AMD Print Lessons Learned
-author: Lukas Hermann
-date: January 21, 2025
----
+# AMD Print Lessons Learned
 
 - **Author:** Lukas Hermann
 - **Date:** January 21, 2025

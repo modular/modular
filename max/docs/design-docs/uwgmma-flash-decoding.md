@@ -1,8 +1,4 @@
----
-title: "U/WGMMA Flash Decoding"
-author: Chris Elrod
-date: May 8, 2025
----
+# U/WGMMA Flash Decoding
 
 - **Author:** Chris Elrod
 - **Date:** May 8, 2025

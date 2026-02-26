@@ -1,8 +1,5 @@
----
-title: "Matmul to Flash Attention"
-author: "Hengjie Wang"
-date: "August 6, 2024"
----
+# Matmul to Flash Attention
+
 - **Author:** Hengjie Wang
 - **Date:** August 6, 2024
 

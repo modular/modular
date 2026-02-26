@@ -1,8 +1,4 @@
----
-title: "WGMMA Programming"
-author: "Sultan Durrani"
-date: "January 17, 2025"
----
+# WGMMA Programming
 
 Hopper (H100) introduced a new tensor core instruction called Warp Group MMA
 (WGMMA).  The regular Matrix Multiply-Accumulate (MMA) tensor core instructions
@@ -150,12 +146,12 @@ __global__ void test_wgmma_8(float* C) {
     for (int i = 0; i < 8; i++)
     {
         int ind = ((tid % 2) * 512) + ((tid / 2) * 8 + i);
-        float val = (tid * 8) + i;  
+        float val = (tid * 8) + i;
         A[ind] = (bf16)(val);
     }
 
     int xtid = tid % 64;
-    float val = (tid / 64) * 64 + ((xtid % 8) * 8) + (xtid / 8);    
+    float val = (tid / 64) * 64 + ((xtid % 8) * 8) + (xtid / 8);
     B[tid] = (bf16)val;
 
     __syncthreads();

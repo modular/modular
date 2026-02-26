@@ -1,4 +1,10 @@
-# Contents
+# Design docs
+
+This is a collection of engineering docs that describe how the core
+Modular Platform technologies work and some of the lessons we learned while
+building them.
+
+## Contents
 
 - [AMD Print Lessons Learned](amd-printf-lessons-learned.md)
 
@@ -80,12 +86,6 @@
     Attention (MLA) implementation that reduces KV cache memory usage
     to just 576 values per token by storing compressed latent
     representations instead of full K and V tensors.
-
-- [PyTorch Layers to MAX Mapping Guide](pytorch-to-max-mapping-guide.md)
-
-    This guide provides mappings between common PyTorch layers used in
-    HuggingFace `transformers` and their equivalent MAX graph operations and
-    layer abstractions.
 
 - [Token sampling](token-sampling.md)
 

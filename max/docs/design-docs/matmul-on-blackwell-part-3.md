@@ -1,8 +1,4 @@
----
-title: "Matrix Multiplication on Blackwell: Part 3-The Optimizations Behind 85% of SOTA Performance"
-authors: "Ali Taha, Jiexiang Liu, Hengjie Wang, Abdul Dakkak"
-date: "September 12, 2025"
----
+# Matrix Multiplication on Blackwell: Part 3-The Optimizations Behind 85% of SOTA Performance
 
 - **Authors**: Ali Taha, Jiexiang Liu, Hengjie Wang, Abdul Dakkak
 - **Date**: September 12, 2025
