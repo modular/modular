@@ -15,7 +15,6 @@ from sys import simd_width_of, size_of
 from math import ceildiv, exp2, recip
 from math.constants import log2e
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
 from nn.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.mha_tile_scheduler import (
     MHATileScheduler,
@@ -352,10 +351,8 @@ struct SM100MLA[
     KRopeType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     SchedulerType: MHATileScheduler,
     config: FA4Config,
-    use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
     KVRowOffsetsType: OptionalPointer,
@@ -502,7 +499,6 @@ struct SM100MLA[
         batch_size: UInt32,
         pack: Pack[
             Self.MaskType,
-            Self.ScoreModType,
             Self.SchedulerType,
             Self.ValidLengthType,
             Self.SinkType,
@@ -530,7 +526,6 @@ struct SM100MLA[
         ), "Persistent kernels not yet supported with FA4"
 
         mask = pack.mask
-        score_mod = pack.score_mod
         scheduler = pack.scheduler
         valid_length = pack.valid_length
         max_seq_len = pack.max_seq_len
@@ -645,7 +640,6 @@ struct SM100MLA[
                 mask,
                 pos.num_keys,
                 scale.cast[Self.accum_type](),
-                score_mod,
                 max_seq_len.as_uint32(),
                 ragged_tma_store,
                 q_smem.bitcast[Scalar[Self.output_type]](),
@@ -908,7 +902,6 @@ struct SM100MLA[
         mask: Self.MaskType,
         num_keys: UInt32,
         scale: Float32,
-        score_mod: Self.ScoreModType,
         max_seq_len: UInt32,
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
@@ -950,9 +943,7 @@ struct SM100MLA[
         var scale_log2e: Scalar[Self.accum_type] = scale
         var correction_smem = correction_smem_arg + tid
 
-        comptime if not (
-            Self.use_score_mod or Self.MaskType.apply_log2e_after_mask
-        ):
+        comptime if not Self.MaskType.apply_log2e_after_mask:
             scale_log2e *= log2e
 
         @parameter
@@ -960,12 +951,9 @@ struct SM100MLA[
         fn mask_row[
             BN: Int, //, mask_strategy: MaskStrategy
         ](s: LocalTensor[Self.accum_type, row_major[BN]()], kv_row: UInt32,):
-            apply_mask[
-                use_score_mod = Self.use_score_mod, mask_strategy=mask_strategy
-            ](
+            apply_mask[mask_strategy=mask_strategy](
                 s,
                 mask,
-                score_mod,
                 scale_log2e,
                 prompt_idx=seq_info.prompt_idx,
                 q_head_idx=q_head_idx,
@@ -1982,14 +1970,12 @@ fn mla_sm100_prefill_fp8[
     KVType: MHAOperand,
     KRopeType: MHAOperand,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     MaxPromptLenType: OptionallyStaticInt,
     //,
     config: MHAConfig,
     group: Int,
     q_depth: Int,
     cache_depth: Int,
-    use_score_mod: Bool,
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
 ](
@@ -2001,7 +1987,6 @@ fn mla_sm100_prefill_fp8[
     v: KVType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    score_mod_functor: ScoreModType,
     valid_length: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -2079,7 +2064,6 @@ fn mla_sm100_prefill_fp8[
     _mla_prefill_sm100_valid_length_dispatch[
         fa4_config=fa4_config,
         cache_depth=cache_depth,
-        use_score_mod=use_score_mod,
         _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         blockwise_scale=blockwise_scale,
     ](
@@ -2091,7 +2075,6 @@ fn mla_sm100_prefill_fp8[
         k,
         k_rope,
         mask_functor,
-        score_mod_functor,
         valid_length,
         max_prompt_len,
         scale,
@@ -2107,13 +2090,11 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     q_type: DType,
     k_swizzle_mode: TensorMapSwizzle,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     KRopeType: MHAOperand,
     MaxPromptLenType: OptionallyStaticInt,
     //,
     fa4_config: FA4Config,
     cache_depth: Int,
-    use_score_mod: Bool,
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
 ](
@@ -2156,7 +2137,6 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     kv_lut: KVType,
     k_rope_lut: KRopeType,
     mask_functor: MaskType,
-    score_mod_functor: ScoreModType,
     valid_length: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -2181,10 +2161,8 @@ fn _mla_prefill_sm100_valid_length_dispatch[
         KRopeType,
         output_type,
         MaskType,
-        ScoreModType,
         SchedulerType,
         fa4_config,
-        use_score_mod,
         ValidLengthType,
         SinkType,
         KVRowOffsetsType,
@@ -2199,7 +2177,6 @@ fn _mla_prefill_sm100_valid_length_dispatch[
 
     comptime PackType = Pack[
         MaskType,
-        ScoreModType,
         SchedulerType,
         ValidLengthType,
         SinkType,
@@ -2210,7 +2187,6 @@ fn _mla_prefill_sm100_valid_length_dispatch[
 
     var pack: PackType = {
         mask_functor,
-        score_mod_functor,
         SchedulerType(),
         valid_len,
         SinkType(),

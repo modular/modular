@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
 from nn.mha_utils import (
     MHAConfig,
     OptionallyStaticInt,
@@ -34,14 +33,12 @@ fn mla_sm100_prefill[
     KVType: MHAOperand,
     KRopeType: MHAOperand,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     MaxPromptLenType: OptionallyStaticInt,
     //,
     config: MHAConfig,
     group: Int,
     q_depth: Int,
     cache_depth: Int,
-    use_score_mod: Bool,
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
 ](
@@ -53,7 +50,6 @@ fn mla_sm100_prefill[
     v: KVType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    score_mod_functor: ScoreModType,
     valid_length: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -71,7 +67,6 @@ fn mla_sm100_prefill[
             group = Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
-            use_score_mod=use_score_mod,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](
             output,
@@ -80,7 +75,6 @@ fn mla_sm100_prefill[
             rebind[type_of(k)](v),
             k_rope,
             mask_functor,
-            score_mod_functor,
             valid_length,
             max_prompt_len,
             scale,
@@ -93,7 +87,6 @@ fn mla_sm100_prefill[
             group = Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
-            use_score_mod=use_score_mod,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
             blockwise_scale=blockwise_scale,
         ](
@@ -103,7 +96,6 @@ fn mla_sm100_prefill[
             rebind[type_of(k)](v),
             k_rope,
             mask_functor,
-            score_mod_functor,
             valid_length,
             max_prompt_len,
             scale,

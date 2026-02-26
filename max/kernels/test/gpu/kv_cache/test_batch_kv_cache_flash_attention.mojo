@@ -25,7 +25,6 @@ from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import MaterializedMask
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 from sys import has_amd_gpu_accelerator
 from utils import Index, IndexList
@@ -235,7 +234,6 @@ def execute_flash_attention[
                 cache_lengths_for_mask.device_tensor().runtime_layout,
             ),
         ),
-        IdentityScoreMod(),
         valid_lengths_tensor,
         rsqrt(Float32(kv_params.head_size)),
         ctx,

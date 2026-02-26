@@ -26,7 +26,6 @@ from nn.mha_mask import (
     MaterializedMask,
     TileMaskStatus,
 )
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal, assert_equal
 
 from utils.index import Index
@@ -209,7 +208,6 @@ fn test_attention[
         k_device,
         v_device,
         ChunkedCausalMask[local_window_size](),
-        IdentityScoreMod(),
         scale,
         ctx,
     )
@@ -236,7 +234,6 @@ fn test_attention[
         k_device,
         v_device,
         MaterializedMask(mask4d),
-        IdentityScoreMod(),
         scale,
         ctx,
     )

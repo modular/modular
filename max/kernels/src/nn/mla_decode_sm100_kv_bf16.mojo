@@ -41,7 +41,6 @@ from nn.mha_fa3_utils import (
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
@@ -84,9 +83,7 @@ struct MLA_SM100_Decode_KV_BF16[
     output_type: DType,
     SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     config: MLA_SM100_Decode_Config,
-    use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
@@ -123,9 +120,7 @@ struct MLA_SM100_Decode_KV_BF16[
         Self.output_type,
         Self.SplitAccumType,
         Self.MaskType,
-        Self.ScoreModType,
         Self.config,
-        Self.use_score_mod,
         Self.ValidLengthType,
         Self._is_cache_length_accurate,
         Self.ragged,
@@ -212,7 +207,6 @@ struct MLA_SM100_Decode_KV_BF16[
         mla_decode_pack: MLA_Decode_Pack[
             ValidLengthType = Self.ValidLengthType,
             MaskType = Self.MaskType,
-            ScoreModType = Self.ScoreModType,
             SplitAccumType = Self.SplitAccumType,
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
@@ -221,7 +215,6 @@ struct MLA_SM100_Decode_KV_BF16[
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
         mask = mla_decode_pack.mask
-        score_mod = mla_decode_pack.score_mod
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         var offset_position = OffsetPosition[
@@ -421,9 +414,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 offset_position,
                 scale,
                 mask,
-                score_mod,
                 prompt_idx=UInt32(offset_position.batch_idx),
-                max_seq_len=UInt32(q_max_seq_len),
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
             )

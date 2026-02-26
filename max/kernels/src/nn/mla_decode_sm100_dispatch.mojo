@@ -31,7 +31,6 @@ from nn.mha_fa3_utils import (
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
 from nn.mha_utils import (
     MHAConfig,
 )
@@ -63,14 +62,12 @@ fn mla_decode_sm100_dispatch[
     output_type: DType,
     output_layout: Layout,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     valid_layout: Layout,
     config: MHAConfig,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
     *,
-    use_score_mod: Bool = False,
     ragged: Bool = False,
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
@@ -90,7 +87,6 @@ fn mla_decode_sm100_dispatch[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
-    score_mod: score_mod_t,
     ctx: DeviceContext,
 ) raises:
     # Get the base pointer to the scales tensor from the operand.
@@ -124,13 +120,11 @@ fn mla_decode_sm100_dispatch[
             output_type=output_type,
             output_layout=output_layout,
             mask_t=mask_t,
-            score_mod_t=score_mod_t,
             valid_layout=valid_layout,
             config=config,
             depth=depth,
             num_heads=num_heads,
             group=group,
-            use_score_mod=use_score_mod,
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             decoding_warp_split_k=decoding_warp_split_k,
@@ -146,7 +140,6 @@ fn mla_decode_sm100_dispatch[
             q_max_seq_len,
             valid_length,
             mask,
-            score_mod,
             scales_ptr,
             ctx,
         )
@@ -158,13 +151,11 @@ fn mla_decode_sm100_dispatch[
             output_type=output_type,
             output_layout=output_layout,
             mask_t=mask_t,
-            score_mod_t=score_mod_t,
             valid_layout=valid_layout,
             config=config,
             depth=depth,
             num_heads=num_heads,
             group=group,
-            use_score_mod=use_score_mod,
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             decoding_warp_split_k=decoding_warp_split_k,
@@ -180,7 +171,6 @@ fn mla_decode_sm100_dispatch[
             q_max_seq_len,
             valid_length,
             mask,
-            score_mod,
             scales_ptr,
             ctx,
         )
@@ -196,14 +186,12 @@ fn _mla_decode_sm100_dispatch_impl[
     output_type: DType,
     output_layout: Layout,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     valid_layout: Layout,
     config: MHAConfig,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
     *,
-    use_score_mod: Bool = False,
     ragged: Bool = False,
     _is_cache_length_accurate: Bool = False,
     decoding_warp_split_k: Bool = False,
@@ -225,7 +213,6 @@ fn _mla_decode_sm100_dispatch_impl[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
-    score_mod: score_mod_t,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
@@ -406,14 +393,12 @@ fn _mla_decode_sm100_dispatch_impl[
             k_t=k_t,
             output_type=output_type,
             mask_t=mask_t,
-            score_mod_t=score_mod_t,
             valid_layout=valid_layout,
             config=config,
             depth=depth,
             num_heads=num_heads,
             SplitAccumType=SplitAccumType,
             group=group,
-            use_score_mod=use_score_mod,
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             decoding_warp_split_k=True,
@@ -431,7 +416,6 @@ fn _mla_decode_sm100_dispatch_impl[
             q_max_seq_len,
             valid_length,
             mask,
-            score_mod,
             scales_ptr,
             ctx,
         )
@@ -574,14 +558,12 @@ fn _mla_decode_sm100_dispatch_impl[
             k_t=k_t,
             output_type=output_type,
             mask_t=mask_t,
-            score_mod_t=score_mod_t,
             valid_layout=valid_layout,
             config=config,
             depth=depth,
             num_heads=num_heads,
             SplitAccumType=SplitAccumType,
             group=group,
-            use_score_mod=use_score_mod,
             ragged=ragged,
             _is_cache_length_accurate=_is_cache_length_accurate,
             decoding_warp_split_k=False,
@@ -599,7 +581,6 @@ fn _mla_decode_sm100_dispatch_impl[
             q_max_seq_len,
             valid_length,
             mask,
-            score_mod,
             scales_ptr,
             ctx,
         )
@@ -612,14 +593,12 @@ fn mla_decode_sm100_sink_split_k[
     output_type: DType,
     mask_t: MHAMask,
     *,
-    score_mod_t: ScoreModTrait,
     valid_layout: Layout,
     config: MHAConfig,
     depth: Int,
     num_heads: Int,
     SplitAccumType: OptionalPointer,
     group: Int,
-    use_score_mod: Bool,
     ragged: Bool,
     _is_cache_length_accurate: Bool,
     decoding_warp_split_k: Bool,
@@ -641,7 +620,6 @@ fn mla_decode_sm100_sink_split_k[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     mask: mask_t,
-    score_mod: score_mod_t,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
@@ -699,9 +677,7 @@ fn mla_decode_sm100_sink_split_k[
             output_type=output_type,
             SplitAccumType=SplitAccumType,
             MaskType=mask_t,
-            ScoreModType=score_mod_t,
             config=mla_config,
-            use_score_mod=use_score_mod,
             ValidLengthType=ValidLengthType,
             ragged=True,
             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -719,7 +695,6 @@ fn mla_decode_sm100_sink_split_k[
             q_max_seq_len,
             valid_len,
             mask,
-            score_mod,
             scales_ptr,
             ctx,
         )
@@ -732,9 +707,7 @@ fn mla_decode_sm100_sink_split_k[
             output_type=output_type,
             SplitAccumType=SplitAccumType,
             MaskType=mask_t,
-            ScoreModType=score_mod_t,
             config=mla_config,
-            use_score_mod=use_score_mod,
             ValidLengthType=ValidLengthType,
             ragged=False,
             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -752,7 +725,6 @@ fn mla_decode_sm100_sink_split_k[
             q_max_seq_len,
             valid_len,
             mask,
-            score_mod,
             scales_ptr,
             ctx,
         )
@@ -765,9 +737,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     output_type: DType,
     SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     config: MLA_SM100_Decode_Config,
-    use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
@@ -800,16 +770,15 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
-    score_mod: ScoreModType,
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
     var mla_decode_pack = MLA_Decode_Pack[
         ValidLengthType=ValidLengthType,
         MaskType=MaskType,
-        ScoreModType=ScoreModType,
         SplitAccumType=SplitAccumType,
-    ](mask, score_mod, valid_len, lse_accum_split_ptr)
+    ](mask, valid_len, lse_accum_split_ptr)
+
     var block_x = ceildiv(config.num_q_heads, config.BM)
     var grid_dim = (block_x, q_max_seq_len, block_z)
     # bf16: 3 warp groups; fp8: 4 warp groups (adds fp8-to-bf16 convert WG)
@@ -891,9 +860,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         output_type=output_type,
         SplitAccumType=SplitAccumType,
         MaskType=MaskType,
-        ScoreModType=ScoreModType,
         config=config,
-        use_score_mod=use_score_mod,
         ValidLengthType=ValidLengthType,
         _is_cache_length_accurate=_is_cache_length_accurate,
         ragged=ragged,
@@ -903,9 +870,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         output_type=output_type,
         SplitAccumType=SplitAccumType,
         MaskType=MaskType,
-        ScoreModType=ScoreModType,
         config=config,
-        use_score_mod=use_score_mod,
         ValidLengthType=ValidLengthType,
         _is_cache_length_accurate=_is_cache_length_accurate,
         ragged=ragged,

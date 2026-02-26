@@ -644,7 +644,7 @@ comptime callback_fn_type = fn[mask_t: MHAMask](
 
 
 @always_inline
-fn dispatch_mask_and_score_mod[
+fn dispatch_mask[
     mask_type: String,
     callback_fn: callback_fn_type,
     local_window_size: Int = -1,
@@ -679,7 +679,7 @@ fn dispatch_mask_and_score_mod[
 
 
 @always_inline
-fn dispatch_materialized_mask_and_score_mod[
+fn dispatch_materialized_mask[
     dtype: DType,
     layout: Layout,
     //,

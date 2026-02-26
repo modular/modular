@@ -25,7 +25,6 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention
 from nn.mla import flare_mla_decoding, flare_mla_prefill
 from nn.mha_mask import CausalMask, MaterializedMask
-from nn.mha_score_mod import IdentityScoreMod
 
 from utils.index import Index
 
@@ -140,7 +139,6 @@ fn bench_decode[
                     q_device,
                     k_device,
                     CausalMask(),
-                    IdentityScoreMod(),
                     scale,
                     ctx,
                     num_partitions,
@@ -151,7 +149,6 @@ fn bench_decode[
                     q_device,
                     k_device,
                     MaterializedMask(mask3d),
-                    IdentityScoreMod(),
                     scale,
                     ctx,
                     num_partitions,
@@ -162,7 +159,6 @@ fn bench_decode[
                     q_device,
                     k_device,
                     MaterializedMask(mask4d),
-                    IdentityScoreMod(),
                     scale,
                     ctx,
                     num_partitions,
@@ -353,7 +349,6 @@ fn bench_prefill[
                 v_device,
                 cache_device,
                 CausalMask(),
-                IdentityScoreMod(),
                 input_row_offsets_device,
                 cache_row_offsets_device,
                 scale,

@@ -51,7 +51,6 @@ from memory import alloc
 from nn.mha import mha_gpu_naive
 from nn.mha_mask import NullMask
 from nn.mha_operand import KVCacheMHAOperand
-from nn.mha_score_mod import IdentityScoreMod
 from nn.mla import flare_mla_decoding
 from testing import assert_almost_equal, assert_true
 from gpu.host.info import B200
@@ -459,7 +458,6 @@ fn run_test_blockwise_fp8[
         q_lt,
         kv_cache,
         NullMask(),
-        IdentityScoreMod(),
         row_offsets_lt,
         scale,
         ctx,
@@ -933,7 +931,6 @@ fn run_bench_blockwise_fp8[
             q_lt,
             kv_cache,
             NullMask(),
-            IdentityScoreMod(),
             row_offsets_lt,
             scale,
             ctx,

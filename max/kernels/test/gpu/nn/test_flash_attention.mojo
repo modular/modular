@@ -28,7 +28,6 @@ from nn.mha import (
     mha_gpu_naive,
 )
 from nn.mha_mask import MaterializedMask, NullMask
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils.index import Index
@@ -286,7 +285,6 @@ fn test[
                 k_device,
                 v_device,
                 MaterializedMask(mask3d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
                 num_partitions,
@@ -298,7 +296,6 @@ fn test[
                 k_device,
                 v_device,
                 MaterializedMask(mask4d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
                 num_partitions,
@@ -872,7 +869,6 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             k_device,
             v_device,
             NullMask(),
-            IdentityScoreMod(),
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,

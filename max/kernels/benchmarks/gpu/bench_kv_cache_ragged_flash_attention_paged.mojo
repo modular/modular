@@ -28,7 +28,6 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 
@@ -381,7 +380,6 @@ def execute_kv_cache_ragged_flash_attention[
                     k_cache_device,
                     v_cache_device,
                     CausalMask(),
-                    IdentityScoreMod(),
                     input_row_offsets_layout_tensor,
                     rsqrt(Float32(head_dim)),
                     ctx,
@@ -419,7 +417,6 @@ def execute_kv_cache_ragged_flash_attention[
             k_cache_device,
             v_cache_device,
             CausalMask(),
-            IdentityScoreMod(),
             input_row_offsets_layout_tensor,
             rsqrt(Float32(head_dim)),
             ctx,

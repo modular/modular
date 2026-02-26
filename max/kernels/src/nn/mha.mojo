@@ -82,7 +82,6 @@ from nn.mha_operand import (
     LayoutTensorMHAOperand,
     RaggedMHAOperand,
 )
-from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_sm90 import mha_sm90_dispatch
 from nn.mha_sm100_1q import mha_sm100_dispatch as mha_sm100_1q_dispatch
 from nn.mha_sm100_2q import mha_sm100_dispatch as mha_sm100_2q_dispatch
@@ -122,7 +121,6 @@ fn flash_attention[
     dtype: DType,
     q_layout: Layout,
     //,
-    use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[2])),
         UInt(Int(q_layout.shape[3])),
@@ -170,7 +168,6 @@ fn flash_attention[
         task_id=Int(ctx.id()),
     ):
         return flash_attention[
-            use_score_mod=use_score_mod,
             config=config,
             decoding_warp_split_k=decoding_warp_split_k,
             naive_kernel=naive_kernel,
@@ -192,7 +189,6 @@ fn flash_attention[
                     ].row_major(mask.runtime_layout.shape.value.canonicalize()),
                 )
             ),
-            IdentityScoreMod(),
             scale,
             context.get_device_context(),
             num_partitions,
@@ -275,11 +271,9 @@ fn depth_supported_by_gpu[
 fn flash_attention[
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     q_layout: Layout,
     //,
-    use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
@@ -296,7 +290,6 @@ fn flash_attention[
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
         mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -402,7 +395,6 @@ fn flash_attention[
 
         flash_attention_dispatch[
             kv_num_heads = Int(kv_num_heads),
-            use_score_mod=use_score_mod,
             config=config,
             ragged=ragged,
             sink=sink,
@@ -414,7 +406,6 @@ fn flash_attention[
             k_operand,
             v_operand,
             mask_functor,
-            score_mod_functor,
             max_prompt_len,
             num_keys,
             scale,
@@ -451,12 +442,10 @@ fn flash_attention_dispatch[
     k_t: MHAOperand,
     v_t: MHAOperand,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     q_layout: Layout,
     //,
     kv_num_heads: Int,
-    use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
@@ -483,7 +472,6 @@ fn flash_attention_dispatch[
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     max_prompt_len: Int,
     max_cache_valid_length: Int,
     scale: Float32,
@@ -548,7 +536,6 @@ fn flash_attention_dispatch[
                     mha_sm90_dispatch[
                         config=config,
                         group = Int(group),
-                        use_score_mod=use_score_mod,
                         ragged=ragged,
                         sink=sink,
                         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -559,7 +546,6 @@ fn flash_attention_dispatch[
                         rebind[k_t](v),
                         num_rows_q,
                         mask_functor,
-                        score_mod_functor,
                         valid_length.value().to_device_buffer(ctx),
                         DynamicInt(max_prompt_len),
                         max_cache_valid_length,
@@ -579,7 +565,6 @@ fn flash_attention_dispatch[
                         mha_sm100_1q_dispatch[
                             config=config,
                             group = Int(group),
-                            use_score_mod=use_score_mod,
                             ragged=ragged,
                             sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -590,7 +575,6 @@ fn flash_attention_dispatch[
                             rebind[k_t](v),
                             num_rows_q,
                             mask_functor,
-                            score_mod_functor,
                             valid_length.value().to_device_buffer(ctx),
                             DynamicInt(max_prompt_len),
                             max_cache_valid_length,
@@ -605,7 +589,6 @@ fn flash_attention_dispatch[
                         mha_sm100_2q_dispatch[
                             config=config,
                             group = Int(group),
-                            use_score_mod=use_score_mod,
                             ragged=ragged,
                             sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -616,7 +599,6 @@ fn flash_attention_dispatch[
                             rebind[k_t](v),
                             num_rows_q,
                             mask_functor,
-                            score_mod_functor,
                             valid_length.value()
                             .to_device_buffer(ctx)
                             .unsafe_ptr(),
@@ -639,11 +621,9 @@ fn flash_attention_dispatch[
                     v_t,
                     output.dtype,
                     mask_t,
-                    score_mod_t,
                     type_of(valid_length.value()).layout,
                     config,
                     group = Int(group),
-                    use_score_mod=use_score_mod,
                     ragged=ragged,
                     is_shared_kv=is_shared_kv,
                     sink=sink,
@@ -675,7 +655,6 @@ fn flash_attention_dispatch[
                     kv_input_row_offsets,
                     sink_weights,
                     mask_functor,
-                    score_mod_functor,
                     grid_dim=grid_dim,
                     block_dim=(Int(config.num_threads()), 1, 1),
                     shared_mem_bytes=Int(smem_use),
@@ -766,7 +745,6 @@ fn flash_attention_dispatch[
                     v_t,
                     output.dtype,
                     mask_t,
-                    score_mod_t,
                     type_of(valid_length.value()).layout,
                     BM=BM,
                     BN=BN,
@@ -778,7 +756,6 @@ fn flash_attention_dispatch[
                     num_threads = UInt(num_threads),
                     num_pipeline_stages = UInt(num_pipeline_stages),
                     group=group,
-                    use_score_mod=use_score_mod,
                     ragged=ragged,
                     is_shared_kv=is_shared_kv,
                     sink=sink,
@@ -795,7 +772,6 @@ fn flash_attention_dispatch[
                             mha_sm90_dispatch[
                                 config=config,
                                 group = Int(group),
-                                use_score_mod=use_score_mod,
                                 ragged=ragged,
                                 sink=sink,
                                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -806,7 +782,6 @@ fn flash_attention_dispatch[
                                 rebind[k_t](v),
                                 num_rows_q,
                                 mask_functor,
-                                score_mod_functor,
                                 valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
                                 max_cache_valid_length,
@@ -821,7 +796,6 @@ fn flash_attention_dispatch[
                             mha_sm100_1q_dispatch[
                                 config=config,
                                 group = Int(group),
-                                use_score_mod=use_score_mod,
                                 ragged=ragged,
                                 sink=sink,
                                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -832,7 +806,6 @@ fn flash_attention_dispatch[
                                 rebind[k_t](v),
                                 num_rows_q,
                                 mask_functor,
-                                score_mod_functor,
                                 valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
                                 max_cache_valid_length,
@@ -865,7 +838,6 @@ fn flash_attention_dispatch[
                             valid_length.value(),
                             sink_weights,
                             mask_functor,
-                            score_mod_functor,
                             grid_dim=(
                                 1,
                                 Int(num_blocks_y),
@@ -964,7 +936,6 @@ fn flash_attention_dispatch[
                             mha_sm90_dispatch[
                                 config=config,
                                 group = Int(group),
-                                use_score_mod=use_score_mod,
                                 ragged=ragged,
                                 sink=sink,
                                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -975,7 +946,6 @@ fn flash_attention_dispatch[
                                 rebind[k_t](v),
                                 num_rows_q,
                                 mask_functor,
-                                score_mod_functor,
                                 valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
                                 max_cache_valid_length,
@@ -993,7 +963,6 @@ fn flash_attention_dispatch[
                             mha_sm100_1q_dispatch[
                                 config=config,
                                 group = Int(group),
-                                use_score_mod=use_score_mod,
                                 ragged=ragged,
                                 sink=sink,
                                 _is_cache_length_accurate=_is_cache_length_accurate,
@@ -1004,7 +973,6 @@ fn flash_attention_dispatch[
                                 rebind[k_t](v),
                                 num_rows_q,
                                 mask_functor,
-                                score_mod_functor,
                                 valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
                                 max_cache_valid_length,
@@ -1026,7 +994,6 @@ fn flash_attention_dispatch[
                             v_t,
                             intermediate_dtype,
                             mask_t,
-                            score_mod_t,
                             type_of(valid_length.value()).layout,
                             BM=BM,
                             BN=BN,
@@ -1038,7 +1005,6 @@ fn flash_attention_dispatch[
                             num_threads = UInt(num_threads),
                             num_pipeline_stages = UInt(num_pipeline_stages),
                             group=group,
-                            use_score_mod=use_score_mod,
                             ragged=ragged,
                             is_shared_kv=is_shared_kv,
                             sink=sink,
@@ -1061,7 +1027,6 @@ fn flash_attention_dispatch[
                             valid_length.value(),
                             sink_weights,
                             mask_functor,
-                            score_mod_functor,
                             grid_dim=(
                                 num_partitions_value,
                                 Int(num_blocks_y),
@@ -1158,11 +1123,9 @@ fn flash_attention_dispatch[
 
 fn flash_attention[
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     q_layout: Layout,
     //,
-    use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[2])),
         UInt(Int(q_layout.shape[3])),
@@ -1180,7 +1143,6 @@ fn flash_attention[
     k: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     v: LayoutTensor[mut=False, address_space = AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     scale: Float32,
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
@@ -1237,7 +1199,6 @@ fn flash_attention[
 
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,
-        use_score_mod=use_score_mod,
         config=config,
         ragged=False,
         sink=sink,
@@ -1252,7 +1213,6 @@ fn flash_attention[
         k_operand,
         v_operand,
         mask_functor,
-        score_mod_functor,
         q.dim[1](),
         num_keys,
         scale,
@@ -1267,11 +1227,9 @@ fn flash_attention[
 
 fn flash_attention_ragged[
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     type: DType,
     q_layout: Layout,
     //,
-    use_score_mod: Bool = False,
     config: MHAConfig[type] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),  # num_heads
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),  # head_dim
@@ -1292,7 +1250,6 @@ fn flash_attention_ragged[
         mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     scale: Float32,
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
@@ -1344,7 +1301,6 @@ fn flash_attention_ragged[
     )
     flash_attention_dispatch[
         kv_num_heads=kv_num_heads,
-        use_score_mod=use_score_mod,
         config=config,
         ragged=True,
         _is_flash_attention_applicable=flash_attention_applicable,
@@ -1356,7 +1312,6 @@ fn flash_attention_ragged[
         k_operand,
         v_operand,
         mask_functor,
-        score_mod_functor,
         Int(max_prompt_len[0]),
         Int(max_prompt_len[0]),
         scale,
@@ -1392,11 +1347,9 @@ fn mha[
     v_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     valid_length_layout: Layout,
     config: MHAConfig,
     group: Int = 1,
-    use_score_mod: Bool = False,
     ragged: Bool = False,
     is_shared_kv: Bool = False,
     sink: Bool = False,
@@ -1426,7 +1379,6 @@ fn mha[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     mask: mask_t,
-    score_mod: score_mod_t,
 ):
     comptime depth = config.depth
     comptime num_heads = config.num_heads
@@ -1508,7 +1460,6 @@ fn mha[
             mha_single_batch_pipelined[
                 config=config,
                 group=group,
-                use_score_mod=use_score_mod,
                 sink=sink,
             ](
                 q_ptr + q_batch_offset,
@@ -1522,7 +1473,6 @@ fn mha[
                 num_keys,
                 mask_tensor_col,
                 mask,
-                score_mod,
                 Int(batch_idx),
                 sink_weights,
             )
@@ -1530,7 +1480,6 @@ fn mha[
             mha_single_batch[
                 config=config,
                 group=group,
-                use_score_mod=use_score_mod,
                 sink=sink,
             ](
                 q_ptr + q_batch_offset,
@@ -1544,15 +1493,10 @@ fn mha[
                 num_keys,
                 mask_tensor_col,
                 mask,
-                score_mod,
                 Int(batch_idx),
                 sink_weights,
             )
     elif _is_amd_rdna():
-        comptime assert (
-            use_score_mod == False
-        ), "use_score_mod must be False for AMD flash attention"
-
         comptime rdna_config = MHAAttentionConfigRDNA[False, config, group]()
         var attention = AttentionRDNA[config, group, False, sink](
             rdna_config,
@@ -1570,10 +1514,6 @@ fn mha[
         )
         attention.mha_prefill_rdna()
     elif is_amd_gpu():
-        comptime assert (
-            use_score_mod == False
-        ), "use_score_mod must be False for AMD flash attention"
-
         comptime attention_config = MHAAttentionConfig[False, config, group]()
         var attention = Attention[config, group, False, sink](
             attention_config,
@@ -1611,11 +1551,9 @@ fn mha_single_batch[
     v_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     *,
     config: MHAConfig,
     group: Int = 1,
-    use_score_mod: Bool = False,
     sink: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
@@ -1629,7 +1567,6 @@ fn mha_single_batch[
     num_keys: Int,
     mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
-    score_mod: score_mod_t,
     batch_idx: Int,
     sink_weights: OptionalReg[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -2044,8 +1981,11 @@ fn mha_single_batch[
         @parameter
         fn _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
-                scale.cast[accum_type]() if use_score_mod
-                or mask_t.apply_log2e_after_mask else scale.cast[accum_type]()
+                scale.cast[
+                    accum_type
+                ]() if mask_t.apply_log2e_after_mask else scale.cast[
+                    accum_type
+                ]()
                 * log2e
             )
 
@@ -2094,21 +2034,7 @@ fn mha_single_batch[
                                 p_reg_vec2[mma_id, i] * scale_log2e
                             )
 
-                        comptime if use_score_mod:
-                            p_reg_vec2[mma_id, i] = (
-                                score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32](
-                                        Int(block_idx.z),
-                                        Int(block_idx.y),
-                                        Int(score_row_with_start_pos),
-                                        Int(score_col),
-                                    ),
-                                    p_reg_vec2[mma_id, i],
-                                    max_seq_len,
-                                )
-                                * log2e
-                            )
-                        elif mask_t.apply_log2e_after_mask:
+                        comptime if mask_t.apply_log2e_after_mask:
                             p_reg_vec2[mma_id, i] = (
                                 p_reg_vec2[mma_id, i] * log2e
                             )
@@ -2361,11 +2287,9 @@ fn mha_single_batch_pipelined[
     v_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     *,
     config: MHAConfig,
     group: Int = 1,
-    use_score_mod: Bool = False,
     sink: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
@@ -2379,7 +2303,6 @@ fn mha_single_batch_pipelined[
     num_keys: Int,
     mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
-    score_mod: score_mod_t,
     batch_idx: Int,
     sink_weights: OptionalReg[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -2776,8 +2699,11 @@ fn mha_single_batch_pipelined[
         @parameter
         fn _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
-                scale.cast[accum_type]() if use_score_mod
-                or mask_t.apply_log2e_after_mask else scale.cast[accum_type]()
+                scale.cast[
+                    accum_type
+                ]() if mask_t.apply_log2e_after_mask else scale.cast[
+                    accum_type
+                ]()
                 * log2e
             )
 
@@ -2827,21 +2753,7 @@ fn mha_single_batch_pipelined[
                                 p_reg_vec2[mma_id, i] * scale_log2e
                             )
 
-                        comptime if use_score_mod:
-                            p_reg_vec2[mma_id, i] = (
-                                score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32](
-                                        Int(block_idx.z),
-                                        Int(block_idx.y),
-                                        Int(score_row_with_start_pos),
-                                        Int(score_col),
-                                    ),
-                                    p_reg_vec2[mma_id, i],
-                                    max_seq_len,
-                                )
-                                * log2e
-                            )
-                        elif mask_t.apply_log2e_after_mask:
+                        comptime if mask_t.apply_log2e_after_mask:
                             p_reg_vec2[mma_id, i] = (
                                 p_reg_vec2[mma_id, i] * log2e
                             )
@@ -3072,7 +2984,6 @@ fn mha_decoding[
     v_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     valid_length_layout: Layout,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
@@ -3084,7 +2995,6 @@ fn mha_decoding[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
-    use_score_mod: Bool = False,
     ragged: Bool = False,
     is_shared_kv: Bool = False,
     sink: Bool = False,
@@ -3111,7 +3021,6 @@ fn mha_decoding[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     mask: mask_t,
-    score_mod: score_mod_t,
 ):
     comptime accum_type = get_accum_type[q_type]()
     var batch_idx = block_idx.z
@@ -3172,7 +3081,6 @@ fn mha_decoding[
                 num_threads=num_threads,
                 num_pipeline_stages=num_pipeline_stages,
                 group=group,
-                use_score_mod=use_score_mod,
                 decoding_warp_split_k=decoding_warp_split_k,
                 sink=sink,
             ](
@@ -3188,7 +3096,6 @@ fn mha_decoding[
                 UInt(max_cache_valid_length),
                 sink_weights,
                 mask,
-                score_mod,
                 Int(batch_idx),
             )
         else:
@@ -3203,7 +3110,6 @@ fn mha_decoding[
                 num_threads=num_threads,
                 num_pipeline_stages=num_pipeline_stages,
                 group=group,
-                use_score_mod=use_score_mod,
                 decoding_warp_split_k=decoding_warp_split_k,
                 sink=sink,
             ](
@@ -3218,7 +3124,6 @@ fn mha_decoding[
                 UInt(num_partitions),
                 UInt(max_cache_valid_length),
                 mask,
-                score_mod,
                 Int(batch_idx),
                 sink_weights,
             )
@@ -3234,9 +3139,6 @@ fn mha_decoding[
             num_pipeline_stages=num_pipeline_stages,
             k_group_size=group,
         )
-        comptime assert (
-            use_score_mod == False
-        ), "use_score_mod must be False for AMD flash attention"
         var sink_weights_lt: OptionalReg[
             LayoutTensor[
                 q_ptr.type.dtype,
@@ -3290,9 +3192,6 @@ fn mha_decoding[
             num_pipeline_stages=num_pipeline_stages,
             k_group_size=group,
         )
-        comptime assert (
-            use_score_mod == False
-        ), "use_score_mod must be False for AMD flash attention"
         var sink_weights_lt: OptionalReg[
             LayoutTensor[
                 q_ptr.type.dtype,
@@ -3345,13 +3244,11 @@ fn scale_and_mask_helper[
     p_type: DType,
     p_layout: Layout,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     group: Int,
     num_n_mmas: Int,
     WN: Int,
     MMA_N: Int,
     simd_width: Int,
-    use_score_mod: Bool = False,
 ](
     p_reg_tile: LayoutTensor[
         mut=True, p_type, p_layout, address_space = AddressSpace.LOCAL
@@ -3362,7 +3259,6 @@ fn scale_and_mask_helper[
     lane: UInt,
     warp: UInt,
     mask: mask_t,
-    score_mod: score_mod_t,
     kv_tile_start_row: Int,
     mask_stride: UInt,
     max_seq_len: Int,  # max_prompt_len + max_cache_len
@@ -3413,21 +3309,7 @@ fn scale_and_mask_helper[
                     * scale_log2e.cast[p_type](),
                 )
 
-                comptime if use_score_mod:
-                    p_reg_tile[n_mma, i + i_group * simd_width] = (
-                        score_mod.score_mod(
-                            Index(
-                                Int(block_idx.z),
-                                Int(q_head_idx),
-                                Int(score_row),
-                                score_col,
-                            ),
-                            p_reg_tile[n_mma, i + i_group * simd_width],
-                            max_seq_len,
-                        )
-                        * log2e
-                    )
-                elif mask_t.apply_log2e_after_mask:
+                comptime if mask_t.apply_log2e_after_mask:
                     p_reg_tile[n_mma, i + i_group * simd_width] = (
                         p_reg_tile[n_mma, i + i_group * simd_width] * log2e
                     )
@@ -3454,7 +3336,6 @@ fn mha_decoding_single_batch[
     v_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     *,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
@@ -3466,7 +3347,6 @@ fn mha_decoding_single_batch[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
-    use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
     sink: Bool = False,
 ](
@@ -3481,7 +3361,6 @@ fn mha_decoding_single_batch[
     num_partitions: UInt,
     max_cache_valid_length: UInt,  # longest KV cache entry
     mask: mask_t,
-    score_mod: score_mod_t,
     batch_idx: Int,
     sink_weights: OptionalReg[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -3730,8 +3609,9 @@ fn mha_decoding_single_batch[
         q_gmem_iter._incr()
 
     var scale_log2e: Float32 = (
-        scale.cast[DType.float32]() if use_score_mod
-        or mask_t.apply_log2e_after_mask else scale.cast[DType.float32]()
+        scale.cast[
+            DType.float32
+        ]() if mask_t.apply_log2e_after_mask else scale.cast[DType.float32]()
         * log2e
     )
 
@@ -3822,7 +3702,6 @@ fn mha_decoding_single_batch[
             WN = Int(WN),
             MMA_N=MMA_N,
             simd_width=p_frag_simdwidth,
-            use_score_mod=use_score_mod,
             group = Int(group),
         ](
             p_reg_tile,
@@ -3832,7 +3711,6 @@ fn mha_decoding_single_batch[
             lane,
             warp_id,
             mask,
-            score_mod,
             kv_tile_start_row,
             stride,
             Int(max_cache_valid_length),
@@ -4151,7 +4029,6 @@ fn mha_decoding_single_batch_pipelined[
     v_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     *,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
@@ -4163,7 +4040,6 @@ fn mha_decoding_single_batch_pipelined[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
-    use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
     sink: Bool = False,
 ](
@@ -4181,7 +4057,6 @@ fn mha_decoding_single_batch_pipelined[
         LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ],
     mask: mask_t,
-    score_mod: score_mod_t,
     batch_idx: Int,
 ):
     """Flash attention v2 algorithm."""
@@ -4395,8 +4270,9 @@ fn mha_decoding_single_batch_pipelined[
     )
 
     var scale_log2e: Float32 = (
-        scale.cast[DType.float32]() if use_score_mod
-        or mask_t.apply_log2e_after_mask else scale.cast[DType.float32]()
+        scale.cast[
+            DType.float32
+        ]() if mask_t.apply_log2e_after_mask else scale.cast[DType.float32]()
         * log2e
     )
 
@@ -4470,7 +4346,6 @@ fn mha_decoding_single_batch_pipelined[
             WN = Int(WN),
             MMA_N=MMA_N,
             simd_width=p_frag_simdwidth,
-            use_score_mod=use_score_mod,
             group = Int(group),
         ](
             p_reg_tile,
@@ -4480,7 +4355,6 @@ fn mha_decoding_single_batch_pipelined[
             lane,
             warp_id,
             mask,
-            score_mod,
             kv_tile_start_row,
             stride,
             Int(max_cache_valid_length),

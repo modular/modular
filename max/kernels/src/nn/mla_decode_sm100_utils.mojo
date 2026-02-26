@@ -69,7 +69,6 @@ from nn.mha_fa3_utils import (
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
@@ -140,11 +139,9 @@ fn tma_tile_qo[
 struct MLA_Decode_Pack[
     ValidLengthType: OptionalPointer,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     SplitAccumType: OptionalPointer,
 ](Copyable, DevicePassable, TrivialRegisterPassable):
     var mask: Self.MaskType
-    var score_mod: Self.ScoreModType
     var valid_length: Self.ValidLengthType
     var lse_accum_split_ptr: Self.SplitAccumType
     comptime device_type: AnyType = Self
@@ -164,12 +161,10 @@ struct MLA_Decode_Pack[
     fn __init__(
         out self,
         mask: Self.MaskType,
-        score_mod: Self.ScoreModType,
         valid_length: Self.ValidLengthType,
         lse_accum_split_ptr: Self.SplitAccumType,
     ):
         self.mask = mask
-        self.score_mod = score_mod
         self.valid_length = valid_length
         self.lse_accum_split_ptr = lse_accum_split_ptr
 
@@ -1843,9 +1838,7 @@ struct MLA_SM100_Decode_Common[
     output_type: DType,
     SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     config: MLA_SM100_Decode_Config,
-    use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
@@ -1999,11 +1992,9 @@ struct MLA_SM100_Decode_Common[
         num_keys: Int,
         s_row: LocalTensor[Self.AccumType, row_major[half_load]()],
         mask: Self.MaskType,
-        score_mod: Self.ScoreModType,
         prompt_idx: UInt32,
         q_head_idx: UInt32,
         score_row: UInt32,
-        max_seq_len: UInt32,
         cache_len: Int,
         start_pos: UInt32,
         cache_start_pos: UInt32,
@@ -2060,20 +2051,6 @@ struct MLA_SM100_Decode_Common[
                 v = mask.mask(coord, v)
                 masked_val = v[0]
 
-            comptime if Self.use_score_mod:
-                var v2: SIMD[Self.AccumType, 1] = masked_val
-                var coord = clamped_index_coordinate(
-                    prompt_idx,
-                    q_head_idx,
-                    score_row + start_pos + cache_start_pos,
-                    UInt32(col0 + i),
-                    UInt32(tile_key_base),
-                    num_keys,
-                    cache_start_pos,
-                )
-                v2 = score_mod.score_mod(coord, v2, Int(max_seq_len))
-                masked_val = v2[0]
-
             s_row[i][0] = masked_val
             current_max = max(current_max, masked_val)
 
@@ -2120,9 +2097,7 @@ struct MLA_SM100_Decode_Common[
         ],
         scale: Float32,
         mask: Self.MaskType,
-        score_mod: Self.ScoreModType,
         prompt_idx: UInt32,  # batch index
-        max_seq_len: UInt32,  # for score_mod
         lse_accum_split_ptr: Self.SplitAccumType,
         batch_size: Int,
     ):
@@ -2131,7 +2106,7 @@ struct MLA_SM100_Decode_Common[
 
         comptime NoMask: Bool = (MaskName == "NullMask")
         comptime CausalMask: Bool = (MaskName == "CausalMask")
-        comptime NeedLog2eAfter: Bool = Self.MaskType.apply_log2e_after_mask or Self.use_score_mod
+        comptime NeedLog2eAfter: Bool = Self.MaskType.apply_log2e_after_mask
         comptime CheckDuringDecoding: Bool = Self.MaskType.check_mask_during_decoding
 
         # Same S base / stride as in mma()
@@ -2227,11 +2202,9 @@ struct MLA_SM100_Decode_Common[
                     num_keys,
                     s_row,
                     mask,
-                    score_mod,
                     prompt_idx,
                     q_head_idx,
                     score_row,
-                    max_seq_len,
                     cache_len,
                     start_pos,
                     cache_start_pos,
@@ -2246,11 +2219,9 @@ struct MLA_SM100_Decode_Common[
                     num_keys,
                     s_row,
                     mask,
-                    score_mod,
                     prompt_idx,
                     q_head_idx,
                     score_row,
-                    max_seq_len,
                     cache_len,
                     start_pos,
                     cache_start_pos,
