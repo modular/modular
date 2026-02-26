@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
@@ -493,7 +494,11 @@ class KVCacheParams(KVCacheParamInterface):
             is_mla=self.is_mla,
             data_parallel_degree=1,
             kvcache_quant_config=self.kvcache_quant_config,
-            disk_offload_dir=self.disk_offload_dir,
+            disk_offload_dir=os.path.join(
+                self.disk_offload_dir, f"replica_{replica_idx}"
+            )
+            if self.disk_offload_dir is not None
+            else None,
             disk_offload_max_gb=self.disk_offload_max_gb,
             disk_offload_direct_io=self.disk_offload_direct_io,
             lmcache_config_file=self.lmcache_config_file,
