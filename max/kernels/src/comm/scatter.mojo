@@ -68,7 +68,7 @@ fn scatter_pull_kernel[
 ](
     output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     input_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], dp_size
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
     ],
     chunk_num_elems: InlineArray[Int, dp_size],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -131,7 +131,7 @@ fn scatter[
     dp_size: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], dp_size],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], dp_size],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
@@ -150,7 +150,7 @@ fn scatter[
 
     # Extract raw pointers and sizes from NDBuffers for the kernel.
     var input_ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], dp_size
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
     ](fill={})
     var chunk_num_elems = InlineArray[Int, dp_size](fill=0)
     for i in range(dp_size):

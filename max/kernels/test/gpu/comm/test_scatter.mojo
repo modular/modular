@@ -77,9 +77,9 @@ fn _test_pull[
 
     # Allocate input chunks on GPU 0.
     var input_devbufs = List[DeviceBuffer[dtype]]()
-    var input_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], dp_size](
-        fill={}
-    )
+    var input_bufs = InlineArray[
+        NDBuffer[dtype, rank, ImmutAnyOrigin], dp_size
+    ](fill={})
     var host_buf = alloc[Scalar[dtype]](max_chunk_size)
 
     for dp in range(dp_size):
@@ -89,7 +89,7 @@ fn _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        input_bufs[dp] = NDBuffer[dtype, rank, MutAnyOrigin](
+        input_bufs[dp] = NDBuffer[dtype, rank, ImmutAnyOrigin](
             dev_buf.unsafe_ptr(), DimList(n)
         )
         input_devbufs.append(dev_buf)
