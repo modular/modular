@@ -207,8 +207,7 @@ from nn.kv_cache_ragged import (
 )
 from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import MHAMask
-from nn.mha_score_mod import IdentityScoreMod
-from nn.mha_utils import dispatch_mask_and_score_mod
+from nn.mha_utils import dispatch_mask
 from nn.mla_graph import (
     mla_prefill_branch_fp8,
     mla_prefill_branch_bf16,
@@ -5444,18 +5443,17 @@ struct FlashAttentionGPU:
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
         fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
-            flash_attention[use_score_mod=False](
+            flash_attention[](
                 output_buffer,
                 q_buffer,
                 k_buffer,
                 v_buffer,
                 mask,
-                IdentityScoreMod(),
                 scale,
                 ctx[],
             )
 
-        dispatch_mask_and_score_mod[
+        dispatch_mask[
             mask_str,
             _dispatch_flash_attention,
             local_window_size,
@@ -5496,7 +5494,6 @@ struct PaddedFlashAttentionGPU:
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
         fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
             flash_attention[
-                use_score_mod=False,
                 _use_valid_length=True,
                 _padded_ndbuffer=True,
             ](
@@ -5505,13 +5502,12 @@ struct PaddedFlashAttentionGPU:
                 k_buffer,
                 v_buffer,
                 mask,
-                IdentityScoreMod(),
                 scale,
                 ctx[],
                 valid_length=OptionalReg[valid_length_t](_valid_length),
             )
 
-        dispatch_mask_and_score_mod[
+        dispatch_mask[
             mask_str,
             _dispatch_flash_attention,
             local_window_size,
@@ -5559,7 +5555,7 @@ struct RaggedFlashAttentionGPU:
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
         fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
-            flash_attention_ragged[use_score_mod=False](
+            flash_attention_ragged[](
                 output_buffer,
                 q_buffer,
                 k_buffer,
@@ -5567,12 +5563,11 @@ struct RaggedFlashAttentionGPU:
                 _input_row_offsets,
                 q_max_seq_len.to_layout_tensor(),
                 mask,
-                IdentityScoreMod(),
                 scale,
                 ctx[],
             )
 
-        dispatch_mask_and_score_mod[
+        dispatch_mask[
             mask_str,
             _dispatch_flash_attention,
             local_window_size,

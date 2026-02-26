@@ -25,7 +25,6 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils.index import Index
@@ -140,7 +139,6 @@ fn run_mha[
                     k_device,
                     v_device,
                     CausalMask(),
-                    IdentityScoreMod(),
                     scale,
                     ctx,
                     num_partitions if num_partitions > 0 else Optional[Int](),
@@ -216,7 +214,6 @@ fn run_mha[
         k_device,
         v_device,
         CausalMask(),
-        IdentityScoreMod(),
         scale,
         ctx,
         num_partitions if num_partitions > 0 else Optional[Int](),

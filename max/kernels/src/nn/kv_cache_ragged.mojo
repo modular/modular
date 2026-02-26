@@ -43,8 +43,7 @@ from nn.flash_attention import (
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import MHAMask
-from nn.mha_score_mod import IdentityScoreMod
-from nn.mha_utils import dispatch_mask_and_score_mod
+from nn.mha_utils import dispatch_mask
 from nn.mla import (
     _k_cache_to_buffer,
     flare_mla_decoding,
@@ -2781,15 +2780,12 @@ fn _flash_attention_dispatch[
                     sink_weights,
                 )
             else:
-                gpu_flash_attention[
-                    use_score_mod=False, ragged=True, sink=sink
-                ](
+                gpu_flash_attention[ragged=True, sink=sink](
                     output,
                     q,
                     k,
                     v,
                     mask,
-                    IdentityScoreMod(),
                     input_row_offsets,
                     scale,
                     context.get_device_context(),
@@ -2798,7 +2794,7 @@ fn _flash_attention_dispatch[
 
         unswitch[call_flash_attention](Bool(sink_weights))
 
-    return dispatch_mask_and_score_mod[
+    return dispatch_mask[
         mask_str,
         _dispatch_flash_attention,
         local_window_size,
@@ -2996,13 +2992,12 @@ fn _flare_mla_decode_kv_cache_ragged[
             q,
             k,
             mask,
-            IdentityScoreMod(),
             input_row_offsets,
             scale,
             context.get_device_context(),
         )
 
-    dispatch_mask_and_score_mod[
+    dispatch_mask[
         mask_str,
         _dispatch_mla,
         local_window_size,
@@ -3170,7 +3165,6 @@ fn _flare_mla_prefill_kv_cache_ragged[
             v,
             k_rope,
             mask,
-            IdentityScoreMod(),
             input_row_offsets,
             buffer_row_offsets,
             scale,
@@ -3187,7 +3181,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
             ),
         )
 
-    dispatch_mask_and_score_mod[
+    dispatch_mask[
         mask_str,
         _mla_dispatch,
         local_window_size,
@@ -3362,13 +3356,12 @@ fn _cross_attention_dispatch[
                 sink_weights,
             )
         else:
-            gpu_flash_attention[use_score_mod=False, ragged=True, sink=False](
+            gpu_flash_attention[ragged=True, sink=False](
                 output,
                 q,
                 k,
                 v,
                 mask,
-                IdentityScoreMod(),
                 q_input_row_offsets,
                 scale,
                 context.get_device_context(),
@@ -3386,7 +3379,7 @@ fn _cross_attention_dispatch[
                 None,
             )
 
-    return dispatch_mask_and_score_mod[
+    return dispatch_mask[
         mask_str,
         _dispatch_flash_attention,
         local_window_size,

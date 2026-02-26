@@ -29,7 +29,6 @@ from layout._fillers import random
 from layout.layout import *
 from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 
 from utils import IndexList
 
@@ -301,7 +300,6 @@ def execute_kv_cache_ragged_flash_attention[
                 k_cache_device,
                 v_cache_device,
                 CausalMask(),
-                IdentityScoreMod(),
                 input_row_offsets_tensor,
                 rsqrt(Float32(head_dim)),
                 ctx,

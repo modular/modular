@@ -50,7 +50,6 @@ from layout.tma_async import (
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
 from nn.mha_tile_scheduler import (
     MHASchedulerSynchronization,
     MHATileScheduler,
@@ -146,7 +145,6 @@ struct NullPointer[dtype_: DType](OptionalPointer):
 
 struct Pack[
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     SchedulerType: MHATileScheduler,
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
@@ -155,7 +153,6 @@ struct Pack[
     PartitionType: MHAPartitionScheme,
 ](Copyable, DevicePassable, TrivialRegisterPassable):
     var mask: Self.MaskType
-    var score_mod: Self.ScoreModType
     var scheduler: Self.SchedulerType
     var valid_length: Self.ValidLengthType
     var sink_weights: Self.SinkType
@@ -176,7 +173,6 @@ struct Pack[
     fn __init__(
         out self,
         mask: Self.MaskType,
-        score_mod: Self.ScoreModType,
         scheduler: Self.SchedulerType,
         valid_length: Self.ValidLengthType,
         sink_weights: Self.SinkType,
@@ -185,7 +181,6 @@ struct Pack[
         partition: Self.PartitionType,
     ):
         self.mask = mask
-        self.score_mod = score_mod
         self.scheduler = scheduler
         self.valid_length = valid_length
         self.sink_weights = sink_weights
@@ -831,7 +826,6 @@ fn _apply_mask[
     decoding: Bool,
     accum_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     reg_tile_layout: Layout,
     element_layout: Layout,
     //,
@@ -840,7 +834,6 @@ fn _apply_mask[
     WN: Int,
     num_m_mmas: Int,
     num_n_mmas: Int,
-    use_score_mod: Bool,
 ](
     mask_warp_row_arg: UInt32,
     position: MHAPosition[
@@ -852,7 +845,6 @@ fn _apply_mask[
     kv_tile_start_row: UInt32,
     mask: mask_t,
     mask_status: TileMaskStatus,
-    score_mod: score_mod_t,
     p_reg_tile: LayoutTensor[
         accum_type,
         reg_tile_layout,
@@ -935,21 +927,7 @@ fn _apply_mask[
                         else:
                             p *= scale_log2e
 
-                        comptime if use_score_mod:
-                            p = (
-                                score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32](
-                                        Int(position.prompt_idx),
-                                        Int(q_head_idx),
-                                        Int(score_row_with_start_pos),
-                                        Int(score_col),
-                                    ),
-                                    p,
-                                    Int(max_seq_len),
-                                )
-                                * log2e
-                            )
-                        elif mask_t.apply_log2e_after_mask:
+                        comptime if mask_t.apply_log2e_after_mask:
                             p *= log2e
 
                         var bound: IndexList[2, element_type = DType.uint32]

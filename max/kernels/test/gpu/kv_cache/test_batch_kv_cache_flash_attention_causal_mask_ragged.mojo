@@ -26,7 +26,6 @@ from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
@@ -295,7 +294,6 @@ def execute_ragged_flash_attention[
         k_cache_device,
         v_cache_device,
         CausalMask(),
-        IdentityScoreMod(),
         input_row_offsets_tensor,
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -308,7 +306,6 @@ def execute_ragged_flash_attention[
         k_cache_device,
         v_cache_device,
         CausalMask(),
-        IdentityScoreMod(),
         valid_lengths_tensor,
         rsqrt(Float32(kv_params.head_size)),
         ctx,
