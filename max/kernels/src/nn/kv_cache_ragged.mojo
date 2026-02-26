@@ -43,7 +43,7 @@ from nn.flash_attention import (
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import MHAMask
-from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
+from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import dispatch_mask_and_score_mod
 from nn.mla import (
     _k_cache_to_buffer,
@@ -2765,9 +2765,7 @@ fn _flash_attention_dispatch[
 
     @parameter
     @__copy_capture(k, v)
-    fn _dispatch_flash_attention[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
             comptime if is_cpu[target]():
@@ -2783,18 +2781,15 @@ fn _flash_attention_dispatch[
                     sink_weights,
                 )
             else:
-                comptime use_score_mod = not _type_is_eq[
-                    score_mod_t, IdentityScoreMod
-                ]()
                 gpu_flash_attention[
-                    use_score_mod=use_score_mod, ragged=True, sink=sink
+                    use_score_mod=False, ragged=True, sink=sink
                 ](
                     output,
                     q,
                     k,
                     v,
                     mask,
-                    score_mod,
+                    IdentityScoreMod(),
                     input_row_offsets,
                     scale,
                     context.get_device_context(),
@@ -2805,10 +2800,8 @@ fn _flash_attention_dispatch[
 
     return dispatch_mask_and_score_mod[
         mask_str,
-        IdentityScoreMod.name_str,
         _dispatch_flash_attention,
         local_window_size,
-        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -2997,15 +2990,13 @@ fn _flare_mla_decode_kv_cache_ragged[
     @parameter
     @always_inline
     @__copy_capture(k)
-    fn _dispatch_mla[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[rank = q.rank, ragged=True](
             output,
             q,
             k,
             mask,
-            score_mod,
+            IdentityScoreMod(),
             input_row_offsets,
             scale,
             context.get_device_context(),
@@ -3013,10 +3004,8 @@ fn _flare_mla_decode_kv_cache_ragged[
 
     dispatch_mask_and_score_mod[
         mask_str,
-        IdentityScoreMod.name_str,
         _dispatch_mla,
         local_window_size,
-        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -3173,9 +3162,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
 
     @parameter
     @__copy_capture(k_rope)
-    fn _mla_dispatch[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _mla_dispatch[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_prefill[rank=3,](
             output,
             q,
@@ -3183,7 +3170,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
             v,
             k_rope,
             mask,
-            score_mod,
+            IdentityScoreMod(),
             input_row_offsets,
             buffer_row_offsets,
             scale,
@@ -3202,10 +3189,8 @@ fn _flare_mla_prefill_kv_cache_ragged[
 
     dispatch_mask_and_score_mod[
         mask_str,
-        IdentityScoreMod.name_str,
         _mla_dispatch,
         local_window_size,
-        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -3362,9 +3347,7 @@ fn _cross_attention_dispatch[
     @__copy_capture(
         q, k, v, output, context, q_input_row_offsets, kv_input_row_offsets
     )
-    fn _dispatch_flash_attention[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q,
@@ -3379,12 +3362,7 @@ fn _cross_attention_dispatch[
                 sink_weights,
             )
         else:
-            comptime use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-            gpu_flash_attention[
-                use_score_mod=use_score_mod, ragged=True, sink=False
-            ](
+            gpu_flash_attention[use_score_mod=False, ragged=True, sink=False](
                 output,
                 q,
                 k,
@@ -3410,10 +3388,8 @@ fn _cross_attention_dispatch[
 
     return dispatch_mask_and_score_mod[
         mask_str,
-        IdentityScoreMod.name_str,
         _dispatch_flash_attention,
         local_window_size,
-        Int(collection_t.kv_params.num_heads),
     ]()
 
 

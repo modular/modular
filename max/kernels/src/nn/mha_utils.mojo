@@ -44,7 +44,6 @@ from nn.mha_mask import (
     NullMask,
     SlidingWindowCausalMask,
 )
-from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
@@ -639,28 +638,21 @@ fn get_start_and_end_for_partitions[
     # return (start, end)
 
 
-comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait](
-    mask: mask_t, score_mod: score_mod_t
+comptime callback_fn_type = fn[mask_t: MHAMask](
+    mask: mask_t
 ) raises capturing -> None
 
 
 @always_inline
 fn dispatch_mask_and_score_mod[
     mask_type: String,
-    score_mod_type: String,
     callback_fn: callback_fn_type,
     local_window_size: Int = -1,
-    num_heads: Int = -1,
 ]() raises -> None:
     @always_inline
     @parameter
     fn outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
-        @always_inline
-        @parameter
-        fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
-            return callback_fn(mask, score_mod)
-
-        return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
+        return callback_fn(mask)
 
     # TODO: attach string constants to mask types themselves.
     comptime if MaskName.CAUSAL == mask_type:
@@ -691,9 +683,7 @@ fn dispatch_materialized_mask_and_score_mod[
     dtype: DType,
     layout: Layout,
     //,
-    score_mod_type: String,
     callback_fn: callback_fn_type,
-    num_heads: Int = -1,
 ](
     mask_nd: LayoutTensor[dtype, layout, MutAnyOrigin],
     start_pos_nd: OptionalReg[
@@ -703,33 +693,7 @@ fn dispatch_materialized_mask_and_score_mod[
     ] = None,
 ) raises -> None:
     var mask = MaterializedMask(mask_nd, start_pos_nd)
-
-    @always_inline
-    @__copy_capture(mask)
-    @parameter
-    fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
-        return callback_fn(mask, score_mod)
-
-    return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
-
-
-@always_inline
-fn _dispatch_score_mod[
-    score_mod_type: String,
-    callback_fn: fn[score_mod_t: ScoreModTrait](
-        score_mod: score_mod_t
-    ) raises capturing -> None,
-    num_heads: Int = -1,
-]() raises -> None:
-    @always_inline
-    @parameter
-    fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
-        return callback_fn(score_mod)
-
-    comptime if score_mod_type == IdentityScoreMod.name_str:
-        return wrapper(IdentityScoreMod())
-    else:
-        comptime assert False, "Unsupported score mod type: " + score_mod_type
+    return callback_fn(mask)
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`
