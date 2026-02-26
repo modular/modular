@@ -749,7 +749,7 @@ struct VariadicPack[
     is_owned: Bool,
     element_trait: type_of(AnyType),
     *element_types: element_trait,
-](RegisterPassable, Sized):
+](Copyable, RegisterPassable, Sized):
     """A utility class to access heterogeneous variadic function arguments.
 
     `VariadicPack` is used when you need to accept variadic arguments where each
@@ -830,6 +830,20 @@ struct VariadicPack[
             value: The argument to construct the pack with.
         """
         self._value = value
+
+    @always_inline("nodebug")
+    fn __init__(out self, *, copy: Self):
+        """Copy construct the variadic pack.
+
+        Args:
+            copy: The pack to copy from.
+
+        Constraints:
+            The variadic pack must not be owned.
+        """
+
+        comptime assert not Self.is_owned, "Cannot copy an owned variadic pack."
+        self._value = copy._value
 
     @always_inline("nodebug")
     fn __del__(deinit self):

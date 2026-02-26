@@ -24,6 +24,7 @@ from collections.string.string_slice import (
 )
 from builtin.builtin_slice import ContiguousSlice
 from hashlib.hasher import Hasher
+from format.tstring import TString
 from format._utils import (
     STACK_BUFFER_BYTES,
     _TotalWritableBytes,
@@ -350,6 +351,19 @@ struct String(
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
+
+    @implicit
+    fn __init__(out self, tstring: TString):
+        """Construct a string from a TString (template string).
+
+        This constructor enables implicit conversion from TString to String,
+        allowing t-strings to be used seamlessly where strings are expected.
+
+        Args:
+            tstring: The TString to convert to a String.
+        """
+        self = Self()
+        tstring.write_to(self)
 
     fn __init__(out self, *, unsafe_from_utf8: Span[Byte]):
         """Construct a string by copying the data. This constructor is explicit
