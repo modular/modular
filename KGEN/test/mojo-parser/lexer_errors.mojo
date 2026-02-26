@@ -85,3 +85,72 @@ r"AB\"
 fn inconsistent_indent():
     var x = __mlir_attr.`1 : index`
    	var y = __mlir_attr.`2 : index`  # expected-error {{leading indentation uses inconsistent whitespace (tabs and spaces) than previous line}}
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+t"Hello
+t"Hello"
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+t'Hello
+t'Hello'
+
+# // -----
+
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+t"""Hello
+
+# // -----
+
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+t'''Hello
+
+# // -----
+
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+t"Hello{name
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+t"Hello
+World"
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+t'Hello
+World'
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+T"Hello
+T"Hello"
+
+# // -----
+
+# expected-error @+1 {{t-string cannot contain unescaped newline (use triple quotes or escape as \n)}}
+T'Hello
+T'Hello'
+
+# // -----
+
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+t"Unclosed {expr
+t"Unclosed {expr}"
+
+# // -----
+
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+t"Missing closing brace {expr"
+t"Missing closing brace {expr}"
+
+# // -----
+
+# expected-error @+1 {{unterminated t-string (missing closing quote)}}
+t"Nested {t"inner} incomplete"
+t"Nested {t"inner"} incomplete"
