@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/Lexer.h"
+#include "KGEN/MojoParser/ASTType.h"
 #include "Support/IPRational.h"
 #include "mlir/IR/Diagnostics.h"
 #include "llvm/ADT/APFloat.h"
@@ -476,11 +477,157 @@ void Lexer::skipComment() {
 /// Checks if character \p C is one of the 8 octal digits.
 static bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 
+// === Static helpers for string/t-string skipping (shared by lexer & parser)
+
+bool Lexer::isTripleQuote(const char *ptr, const char *end, char quoteChar) {
+  return ptr + 2 < end && ptr[0] == quoteChar && ptr[1] == quoteChar &&
+         ptr[2] == quoteChar;
+}
+
+void Lexer::skipStringBody(const char *&ptr, const char *end, char quoteChar,
+                           bool isTriple) {
+  while (ptr < end) {
+    if (*ptr == '\\') {
+      ptr++;
+      if (ptr < end)
+        ptr++;
+      continue;
+    }
+    if (*ptr == quoteChar) {
+      if (!isTriple) {
+        ptr++;
+        return;
+      }
+      if (isTripleQuote(ptr, end, quoteChar)) {
+        ptr += 3;
+        return;
+      }
+    }
+    ptr++;
+  }
+}
+
+// === Instance methods
+
+bool Lexer::isTripleQuoteAt(char quoteChar) const {
+  return isTripleQuote(curPtr, curBuffer.end(), quoteChar);
+}
+
+bool Lexer::consumeQuoteDelimiter(char quoteChar, bool isTriple) {
+  if (!isTriple) {
+    ++curPtr;
+    return true;
+  }
+
+  if (isTripleQuoteAt(quoteChar)) {
+    curPtr += 3;
+    return true;
+  }
+  return false;
+}
+
+bool Lexer::consumeQuoteOpening(char quoteChar) {
+  bool isTriple = isTripleQuoteAt(quoteChar);
+  consumeQuoteDelimiter(quoteChar, isTriple);
+  return isTriple;
+}
+
+/// Scan for a string's closing quote, handling escape sequences.
+/// Returns Success, InvalidEscape, or Unterminated.
+/// Updates curPtr to point after the closing quote if found.
+/// On Unterminated, curPtr is left at the problematic position.
+Lexer::ConsumeStringResult
+Lexer::consumeStringBody(char quoteChar, bool isTripleQuote, bool isRaw) {
+  auto startPtr = curPtr;
+  auto result = ConsumeStringResult{.result = ConsumeStringResult::Success{}};
+  while (curPtr != curBuffer.end()) {
+    switch (*curPtr) {
+    case '\\':
+      if (isRaw) {
+        ++curPtr;
+        if (curPtr == curBuffer.end())
+          return {.result = ConsumeStringResult::Unterminated{}};
+        // Handle trailing windows style newline.
+        if (*curPtr == '\r' && curPtr + 1 < curBuffer.end() &&
+            curPtr[1] == '\n')
+          ++curPtr;
+        ++curPtr;
+        break;
+      }
+
+      // Handle escape sequences
+      ++curPtr;
+      if (curPtr == curBuffer.end())
+        return {.result = ConsumeStringResult::Unterminated{}};
+
+      if (isOctalDigit(*curPtr)) {
+        // at most 3 octal digits.
+        size_t i = 0;
+        while (curPtr != curBuffer.end() && isOctalDigit(*curPtr) && i < 3) {
+          ++curPtr;
+          ++i;
+        }
+      } else if (*curPtr == 'x') {
+        ++curPtr;
+        // exactly 2 hex digits.
+        size_t i = 0;
+        while (curPtr != curBuffer.end() && llvm::isHexDigit(*curPtr) &&
+               i < 2) {
+          ++curPtr;
+          ++i;
+        }
+        if (i != 2) {
+          result.result = ConsumeStringResult::ErrorAt{
+              .errorLoc = startPtr,
+              .errorMsg =
+                  "invalid hex escape sequence: exactly two hex digits needed"};
+        }
+      } else if (!llvm::is_contained({'\\', '"', '\'', '\n', '\r', 'a', 'b',
+                                      'f', 'n', 'r', 't', 'v'},
+                                     *curPtr)) {
+        result.result = ConsumeStringResult::ErrorAt{
+            .errorLoc = curPtr - 1,
+            .errorMsg = "invalid escape sequence",
+        };
+        ++curPtr;
+      } else {
+        if (*curPtr == '\r' && curPtr + 1 < curBuffer.end() &&
+            curPtr[1] == '\n') // Windows newline
+          ++curPtr;
+        ++curPtr;
+      }
+      break;
+    case '\'':
+    case '"':
+      // Check if this is the closing quote
+      if (*curPtr == quoteChar) {
+        if (consumeQuoteDelimiter(quoteChar, isTripleQuote)) {
+          // Successfully found closing quote
+          return result;
+        }
+      }
+      ++curPtr;
+      break;
+    case '\n':
+    case '\r':
+      // newline isn't allowed in a short string.
+      if (!isTripleQuote)
+        return {.result = ConsumeStringResult::Unterminated{}};
+      ++curPtr;
+      break;
+    default:
+      ++curPtr;
+      break;
+    }
+  }
+
+  return {.result = ConsumeStringResult::Unterminated{}};
+}
+
 /// Lex a string literal.
 ///
 /// stringliteral   ::=  [stringprefix](shortstring | longstring)
-/// stringprefix    ::=  "r" | "u" | "R" | "U" | "f" | "F"
-///                      | "fr" | "Fr" | "fR" | "FR" | "rf" | "rF" | "Rf" | "RF"
+/// stringprefix    ::=  "r" | "R"
 /// shortstring     ::=  "'" shortstringitem* "'" | '"' shortstringitem* '"'
 /// longstring      ::=  "'''" longstringitem* "'''" |
 ///                      '"""' longstringitem* '"""'
@@ -493,7 +640,6 @@ static bool isOctalDigit(char C) { return C >= '0' && C <= '7'; }
 void Lexer::lexString(const char *tokStart, ssize_t indentation) {
   curPtr = tokStart;
   bool isRaw = false;
-  bool isTripleQuote = false;
   if (*curPtr == 'r' || *curPtr == 'R') {
     isRaw = true;
     ++curPtr;
@@ -504,89 +650,21 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
     return;
   }
   char quoteChar = *curPtr;
-  if ((curPtr[1] == quoteChar && curPtr[2] == quoteChar)) {
-    isTripleQuote = true;
-    curPtr += 2;
-  }
-  ++curPtr;
+  bool isTripleQuote = consumeQuoteOpening(quoteChar);
 
-  while (curPtr != curBuffer.end()) {
-    switch (*curPtr++) {
-    case '\\':
-      if (isRaw) {
-        if (curPtr == curBuffer.end()) {
-          emitErrorAt(tokStart, "unterminated string");
-          return;
-        }
-        // Handle trailing windows style newline.
-        if (*curPtr == '\r' && curPtr[1] == '\n')
-          ++curPtr;
-        ++curPtr;
-        break;
-      }
-
-      // Skip escaped characters
-      if (isOctalDigit(*curPtr)) {
-        // at most 3 octal digits.
-        size_t i = 0;
-        while (isOctalDigit(*curPtr) && i < 3) {
-          ++curPtr;
-          ++i;
-        }
-      } else if (*curPtr == 'x') {
-        ++curPtr;
-        // exactly 2 hex digits.
-        size_t i = 0;
-        while (llvm::isHexDigit(*curPtr) && i < 2) {
-          ++curPtr;
-          ++i;
-        }
-        if (i != 2) {
-          emitErrorAt(
-              tokStart,
-              "invalid hex escape sequence: exactly two hex digits needed");
-          return;
-        }
-      } else if (!llvm::is_contained({'\\', '"', '\'', '\n', '\r', 'a', 'b',
-                                      'f', 'n', 'r', 't', 'v'},
-                                     *curPtr)) {
-        emitErrorAt(curPtr - 1, "invalid escape sequence");
-      } else {
-        if (*curPtr == '\r' && curPtr[1] == '\n') // Windows newline
-          ++curPtr;
-        ++curPtr;
-      }
-      break;
-    case '\'':
-    case '"':
-      // end of short strings.
-      if (curPtr[-1] == quoteChar) {
-        if (!isTripleQuote)
-          return formToken(Token::string, tokStart, indentation);
-
-        // end of long string
-        if (curPtr[0] == quoteChar && curPtr[1] == quoteChar) {
-          curPtr += 2;
-          return formToken(Token::string, tokStart, indentation);
-        }
-      }
-      break;
-    case '\n':
-    case '\r':
-      // newline isn't allowed in a short string.
-      if (!isTripleQuote) {
-        emitErrorAt(tokStart, "unterminated string");
-        return;
-      }
-      // Skip newline.
-      break;
-    default:
-      // Skip over other characters.
-      break;
-    }
-  }
-
-  emitErrorAt(tokStart, "unterminated string");
+  auto result = consumeStringBody(quoteChar, isTripleQuote, isRaw);
+  std::visit(Overloaded{
+                 [&](ConsumeStringResult::Success) {
+                   formToken(Token::string, tokStart, indentation);
+                 },
+                 [&](ConsumeStringResult::ErrorAt errorAt) {
+                   emitErrorAt(errorAt.errorLoc, errorAt.errorMsg);
+                 },
+                 [&](ConsumeStringResult::Unterminated) {
+                   emitErrorAt(tokStart, "unterminated string");
+                 },
+             },
+             result.result);
 }
 
 /// Lex a integer number literal.
@@ -788,22 +866,8 @@ IPRational Lexer::getFloatLiteralValue(StringRef spelling) {
   return IPRational(numerator, denominator);
 }
 
-/// Return the a string value of `spelling` after the escape sequences are
-/// handled. `spelling` is known to have been lexed as a string literal token.
-std::string Lexer::getStringLiteralValue(StringRef bytes) {
-  bool isRaw = false;
-  if (bytes[0] == 'r' || bytes[0] == 'R') {
-    isRaw = true;
-    bytes = bytes.drop_front();
-  }
-
-  // Drop quotes and triple quotes.
-  if (bytes.size() >= 6 &&
-      (bytes.starts_with("\"\"\"") || bytes.starts_with("'''")))
-    bytes = bytes.drop_front(3).drop_back(3);
-  else
-    bytes = bytes.drop_front().drop_back();
-
+/// Helper function to process escape sequences in string content.
+static std::string processEscapeSequences(StringRef bytes, bool isRaw) {
   std::string result;
   result.reserve(bytes.size());
   for (size_t i = 0, end = bytes.size(); i != end;) {
@@ -890,6 +954,25 @@ std::string Lexer::getStringLiteralValue(StringRef bytes) {
     }
   }
   return result;
+}
+
+/// Return the a string value of `spelling` after the escape sequences are
+/// handled. `spelling` is known to have been lexed as a string literal token.
+std::string Lexer::getStringLiteralValue(StringRef bytes) {
+  bool isRaw = false;
+  if (bytes[0] == 'r' || bytes[0] == 'R') {
+    isRaw = true;
+    bytes = bytes.drop_front();
+  }
+
+  // Drop quotes and triple quotes.
+  if (bytes.size() >= 6 &&
+      (bytes.starts_with("\"\"\"") || bytes.starts_with("'''")))
+    bytes = bytes.drop_front(3).drop_back(3);
+  else
+    bytes = bytes.drop_front().drop_back();
+
+  return processEscapeSequences(bytes, isRaw);
 }
 
 SMLoc Lexer::getStringLiteralStartLoc(StringRef spelling) {
