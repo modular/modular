@@ -174,6 +174,36 @@ def _store_cache_common(
         layer_idx: Layer index for the cache
         key_or_value: 0 for key cache, 1 for value cache
     """
+
+    _validate_inputs(x_cache, input_row_offsets, layer_idx, kv_collection)
+
+    # Set up parameters for the kernel
+    parameters: dict[str, int | str | DType] = {
+        "key_or_value": key_or_value,
+    }
+
+    ops.inplace_custom(
+        "mo.kv_cache.store.paged.ragged",
+        device=x_cache.device,
+        values=[
+            x_cache,
+            kv_collection.blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            input_row_offsets,
+            kv_collection.max_lengths,
+            layer_idx,
+        ],
+        parameters=parameters,
+    )
+
+
+def _validate_inputs(
+    x_cache: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+    kv_collection: PagedKVCacheTensorsNoOpaque,
+) -> None:
     # Input validation
     if input_row_offsets.dtype != DType.uint32:
         raise ValueError(
@@ -224,24 +254,36 @@ def _store_cache_common(
             f"expected layer_idx to be a scalar (rank 0), was rank {layer_idx.rank}"
         )
 
-    # Set up parameters for the kernel
-    parameters: dict[str, int | str | DType] = {
-        "key_or_value": key_or_value,
-    }
 
+def store_k_scale_cache(
+    kv_collection: PagedKVCacheTensorsNoOpaque,
+    x_k_scale: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+    quantization_granularity: int,
+) -> None:
+    """Stores key scale tensor into the KV cache."""
+    _validate_inputs(x_k_scale, input_row_offsets, layer_idx, kv_collection)
+    if kv_collection.kv_scales is None:
+        raise ValueError(
+            "kv_collection.kv_scales is None, expected a buffer value"
+        )
     ops.inplace_custom(
-        "mo.kv_cache.store.paged.ragged",
-        device=x_cache.device,
+        "mo.kv_cache.store_k_scales.paged.ragged",
+        device=x_k_scale.device,
         values=[
-            x_cache,
+            x_k_scale,
             kv_collection.blocks,
             kv_collection.cache_lengths,
             kv_collection.lookup_table,
             input_row_offsets,
             kv_collection.max_lengths,
+            kv_collection.kv_scales,
             layer_idx,
         ],
-        parameters=parameters,
+        parameters={
+            "quantization_granularity": quantization_granularity,
+        },
     )
 
 
