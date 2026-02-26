@@ -299,6 +299,267 @@ def print_section(title: str, char: str = "-") -> None:
     print("{s:{c}^{n}}".format(s=title, n=50, c=char))
 
 
+def print_lora_benchmark_results(
+    lora_manager: LoRABenchmarkManager,
+) -> None:
+    """Print LoRA benchmark statistics if available."""
+
+    print_section(title=" LoRA Adapter Benchmark Results ", char="=")
+    print(
+        "{:<40} {:<10}".format(
+            "Total LoRA loads:", lora_manager.metrics.total_loads
+        )
+    )
+    print(
+        "{:<40} {:<10}".format(
+            "Total LoRA unloads:", lora_manager.metrics.total_unloads
+        )
+    )
+
+    if lora_manager.metrics.load_times_ms:
+        print_section(title="LoRA Load Times")
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Mean load time:",
+                statistics.mean(lora_manager.metrics.load_times_ms),
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Median load time:",
+                statistics.median(lora_manager.metrics.load_times_ms),
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Min load time:", min(lora_manager.metrics.load_times_ms)
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Max load time:", max(lora_manager.metrics.load_times_ms)
+            )
+        )
+        if len(lora_manager.metrics.load_times_ms) > 1:
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Std dev load time:",
+                    statistics.stdev(lora_manager.metrics.load_times_ms),
+                )
+            )
+
+    if lora_manager.metrics.unload_times_ms:
+        print_section(title="LoRA Unload Times")
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Mean unload time:",
+                statistics.mean(lora_manager.metrics.unload_times_ms),
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Median unload time:",
+                statistics.median(lora_manager.metrics.unload_times_ms),
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Min unload time:",
+                min(lora_manager.metrics.unload_times_ms),
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Max unload time:",
+                max(lora_manager.metrics.unload_times_ms),
+            )
+        )
+        if len(lora_manager.metrics.unload_times_ms) > 1:
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Std dev unload time:",
+                    statistics.stdev(lora_manager.metrics.unload_times_ms),
+                )
+            )
+
+
+def print_benchmark_summary(
+    metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
+    benchmark_duration: float,
+    request_rate: float,
+    max_concurrency: int | None,
+    achieved_request_rate: float,
+    collect_gpu_stats: bool,
+    collect_cpu_stats: bool,
+    lora_manager: LoRABenchmarkManager | None = None,
+) -> None:
+    """Print benchmark summary for both text-generation and text-to-image."""
+
+    # 1. Print common benchmark summary
+    print_section(title=" Serving Benchmark Result ", char="=")
+    print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
+    print("{:<40} {:<10}".format("Failed requests:", metrics.failures))
+    print(
+        "{:<40} {:<10.2f}".format("Benchmark duration (s):", benchmark_duration)
+    )
+    if isinstance(metrics, BenchmarkMetrics):
+        print(
+            "{:<40} {:<10}".format("Total input tokens:", metrics.total_input)
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Total generated tokens:", metrics.total_output
+            )
+        )
+        # We found that response chunks can be empty in content and the token number
+        # can be different with the re-tokenization in one pass or chunk-by-chunk.
+        # Let's count the number of nonempty_response_chunks for all serving backends.
+        # With the move to zero-overhead single step scheduling, this should generally
+        # exactly match the number of requested output tokens.
+        print(
+            "{:<40} {:<10}".format(
+                "Total nonempty serving response chunks:",
+                metrics.nonempty_response_chunks,
+            )
+        )
+    elif isinstance(metrics, PixelGenerationBenchmarkMetrics):
+        print(
+            "{:<40} {:<10}".format(
+                "Total generated outputs:", metrics.total_generated_outputs
+            )
+        )
+    offline_benchmark = math.isinf(request_rate) and max_concurrency is None
+    print(
+        "{:<40} {:<10.5f}".format(
+            "Input request rate (req/s):",
+            float("inf") if offline_benchmark else achieved_request_rate,
+        )
+    )
+    print(
+        "{:<40} {:<10.5f}".format(
+            "Request throughput (req/s):", metrics.request_throughput
+        )
+    )
+    print("{:<40} {:<10}".format("Max Concurrency:", metrics.max_concurrency))
+
+    if isinstance(metrics, BenchmarkMetrics):
+        print_section(title="Client Experience Metrics")
+        print(
+            metrics.input_throughput.format_with_prefix(
+                prefix="input token throughput", unit="tok/s"
+            )
+        )
+        print(
+            metrics.output_throughput.format_with_prefix(
+                prefix="output token throughput", unit="tok/s"
+            )
+        )
+        print_section(title="Time to First Token")
+        print(metrics.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
+        print_section(title="Time per Output Token (excl. 1st token)")
+        print(metrics.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
+        print_section(title="Inter-token Latency")
+        print(metrics.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
+
+    print_section(title="Per-Request E2E Latency")
+    print(
+        metrics.latency_ms.format_with_prefix(
+            prefix="Request Latency", unit="ms"
+        )
+    )
+
+    if isinstance(metrics, BenchmarkMetrics):
+        print_section(title="Token Stats")
+        print("{:<40} {:<10}".format("Max input tokens:", metrics.max_input))
+        print("{:<40} {:<10}".format("Max output tokens:", metrics.max_output))
+        print("{:<40} {:<10}".format("Max total tokens:", metrics.max_total))
+
+    # Print GPU and CPU statistics
+    if collect_gpu_stats and metrics.peak_gpu_memory_mib:
+        print_section(title="GPU Statistics")
+        for gpu_id in range(len(metrics.peak_gpu_memory_mib)):
+            print(
+                "{:<40} {:<10.2f}".format(
+                    f"GPU {gpu_id} peak memory (MiB):",
+                    metrics.peak_gpu_memory_mib[gpu_id],
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    f"GPU {gpu_id} available memory (MiB):",
+                    metrics.available_gpu_memory_mib[gpu_id],
+                )
+            )
+            print(
+                "{:<40} {:<10.2f}".format(
+                    f"GPU {gpu_id} utilization (%):",
+                    metrics.gpu_utilization[gpu_id],
+                )
+            )
+    if collect_cpu_stats:
+        print_section(title="CPU Statistics")
+        print(
+            "{:<40} {:<10.2f}".format(
+                "CPU utilization user (%):",
+                metrics.cpu_utilization_user or 0.0,
+            )
+        )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "CPU utilization system (%):",
+                metrics.cpu_utilization_system or 0.0,
+            )
+        )
+    print("=" * 50)
+    if lora_manager:
+        print_lora_benchmark_results(lora_manager)
+    if metrics.server_metrics:
+        print_server_metrics(metrics.server_metrics)
+    print("=" * 50)
+
+
+def _add_optional_result(
+    result: dict[str, Any],
+    metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
+    lora_manager: LoRABenchmarkManager | None,
+) -> None:
+    if lora_manager is not None:
+        result["lora_metrics"] = {
+            "total_loads": lora_manager.metrics.total_loads,
+            "total_unloads": lora_manager.metrics.total_unloads,
+            "load_times_ms": lora_manager.metrics.load_times_ms,
+            "unload_times_ms": lora_manager.metrics.unload_times_ms,
+        }
+
+    if metrics.server_metrics is None:
+        return
+
+    result["server_metrics"] = {
+        "counters": metrics.server_metrics.counters,
+        "gauges": metrics.server_metrics.gauges,
+        "histograms": {
+            name: {
+                "buckets": hist.buckets,
+                "sum": hist.sum,
+                "count": hist.count,
+                "mean": hist.mean,
+            }
+            for name, hist in metrics.server_metrics.histograms.items()
+        },
+    }
+
+    if isinstance(metrics, BenchmarkMetrics):
+        result["server_metrics"].update(
+            {
+                # Convenience fields for prefill/decode breakdown.
+                "prefill_batch_execution_time_ms": metrics.mean_prefill_batch_time_ms,
+                "prefill_batch_count": metrics.prefill_batch_count,
+                "decode_batch_execution_time_ms": metrics.mean_decode_batch_time_ms,
+                "decode_batch_count": metrics.decode_batch_count,
+            }
+        )
+
+
 def hash_string(s: str) -> str:
     """Hash a string using SHA-256. This is stable and deterministic across runs.
 
@@ -1262,6 +1523,15 @@ async def benchmark(
         except Exception as e:
             logger.warning(f"Failed to collect server metrics: {e}")
 
+    achieved_request_rate = 0.0
+    if timing_data and timing_data.get("intervals"):
+        mean_interval = sum(timing_data["intervals"]) / len(
+            timing_data["intervals"]
+        )
+        achieved_request_rate = (
+            round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
+        )
+
     if benchmark_task == BenchmarkTask.text_to_image:
         pixel_metrics = calculate_pixel_generation_metrics(
             outputs=outputs,
@@ -1273,72 +1543,16 @@ async def benchmark(
             server_metrics=server_metrics,
         )
 
-        print_section(title=" Serving Benchmark Result ", char="=")
-        print(
-            "{:<40} {:<10}".format(
-                "Successful requests:", pixel_metrics.completed
-            )
+        print_benchmark_summary(
+            metrics=pixel_metrics,
+            benchmark_duration=benchmark_duration,
+            request_rate=request_rate,
+            achieved_request_rate=achieved_request_rate,
+            max_concurrency=max_concurrency,
+            collect_gpu_stats=collect_gpu_stats,
+            collect_cpu_stats=collect_cpu_stats,
+            lora_manager=lora_manager,
         )
-        print(
-            "{:<40} {:<10}".format("Failed requests:", pixel_metrics.failures)
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Benchmark duration (s):", benchmark_duration
-            )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Request throughput (req/s):",
-                pixel_metrics.request_throughput,
-            )
-        )
-        print(pixel_metrics.latency_ms.format_with_prefix("latency", unit="ms"))
-        print(
-            "{:<40} {:<10}".format(
-                "Total generated outputs:",
-                pixel_metrics.total_generated_outputs,
-            )
-        )
-        if collect_gpu_stats and pixel_metrics.peak_gpu_memory_mib:
-            print_section(title="GPU Statistics")
-            for gpu_id in range(len(pixel_metrics.peak_gpu_memory_mib)):
-                print(
-                    "{:<40} {:<10.2f}".format(
-                        f"GPU {gpu_id} peak memory (MiB):",
-                        pixel_metrics.peak_gpu_memory_mib[gpu_id],
-                    )
-                )
-                print(
-                    "{:<40} {:<10.2f}".format(
-                        f"GPU {gpu_id} available memory (MiB):",
-                        pixel_metrics.available_gpu_memory_mib[gpu_id],
-                    )
-                )
-                print(
-                    "{:<40} {:<10.2f}".format(
-                        f"GPU {gpu_id} utilization (%):",
-                        pixel_metrics.gpu_utilization[gpu_id],
-                    )
-                )
-        if collect_cpu_stats:
-            print_section(title="CPU Statistics")
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "CPU utilization user (%):",
-                    pixel_metrics.cpu_utilization_user or 0.0,
-                )
-            )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "CPU utilization system (%):",
-                    pixel_metrics.cpu_utilization_system or 0.0,
-                )
-            )
-        print("=" * 50)
-
-        if pixel_metrics.server_metrics:
-            print_server_metrics(pixel_metrics.server_metrics)
 
         result = {
             "duration": benchmark_duration,
@@ -1363,28 +1577,11 @@ async def benchmark(
             "gpu_utilization": pixel_metrics.gpu_utilization,
         }
 
-        if lora_manager:
-            result["lora_metrics"] = {
-                "total_loads": lora_manager.metrics.total_loads,
-                "total_unloads": lora_manager.metrics.total_unloads,
-                "load_times_ms": lora_manager.metrics.load_times_ms,
-                "unload_times_ms": lora_manager.metrics.unload_times_ms,
-            }
-
-        if pixel_metrics.server_metrics:
-            result["server_metrics"] = {
-                "counters": pixel_metrics.server_metrics.counters,
-                "gauges": pixel_metrics.server_metrics.gauges,
-                "histograms": {
-                    name: {
-                        "buckets": hist.buckets,
-                        "sum": hist.sum,
-                        "count": hist.count,
-                        "mean": hist.mean,
-                    }
-                    for name, hist in pixel_metrics.server_metrics.histograms.items()
-                },
-            }
+        _add_optional_result(
+            result=result,
+            metrics=pixel_metrics,
+            lora_manager=lora_manager,
+        )
 
         return result, pixel_metrics
 
@@ -1399,207 +1596,17 @@ async def benchmark(
         collect_gpu_stats=collect_gpu_stats,
         server_metrics=server_metrics,
     )
-    achieved_request_rate = 0.0
-    if timing_data and timing_data.get("intervals"):
-        mean_interval = sum(timing_data["intervals"]) / len(
-            timing_data["intervals"]
-        )
-        achieved_request_rate = (
-            round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
-        )
 
-    print_section(title=" Serving Benchmark Result ", char="=")
-    print(
-        "{:<40} {:<10}".format("Successful requests:", text_metrics.completed)
+    print_benchmark_summary(
+        metrics=text_metrics,
+        benchmark_duration=benchmark_duration,
+        request_rate=request_rate,
+        max_concurrency=max_concurrency,
+        achieved_request_rate=achieved_request_rate,
+        collect_gpu_stats=collect_gpu_stats,
+        collect_cpu_stats=collect_cpu_stats,
+        lora_manager=lora_manager,
     )
-    print("{:<40} {:<10}".format("Failed requests:", text_metrics.failures))
-    print(
-        "{:<40} {:<10.2f}".format("Benchmark duration (s):", benchmark_duration)
-    )
-    print(
-        "{:<40} {:<10}".format("Total input tokens:", text_metrics.total_input)
-    )
-    print(
-        "{:<40} {:<10}".format(
-            "Total generated tokens:", text_metrics.total_output
-        )
-    )
-    # We found that response chunks can be empty in content and the token number
-    # can be different with the re-tokenization in one pass or chunk-by-chunk.
-    # Let's count the number of nonempty_response_chunks for all serving backends.
-    # With the move to zero-overhead single step scheduling, this should generally
-    # exactly match the number of requested output tokens.
-    print(
-        "{:<40} {:<10}".format(
-            "Total nonempty serving response chunks:",
-            text_metrics.nonempty_response_chunks,
-        )
-    )
-    offline_benchmark = math.isinf(request_rate) and max_concurrency is None
-    print(
-        "{:<40} {:<10.5f}".format(
-            "Input request rate (req/s):",
-            float("inf") if offline_benchmark else achieved_request_rate,
-        )
-    )
-    print(
-        "{:<40} {:<10.5f}".format(
-            "Request throughput (req/s):", text_metrics.request_throughput
-        )
-    )
-    print_section(title="Client Experience Metrics")
-    print(
-        "{:<40} {:<10}".format("Max Concurrency:", text_metrics.max_concurrency)
-    )
-    print(
-        text_metrics.input_throughput.format_with_prefix(
-            prefix="input token throughput", unit="tok/s"
-        )
-    )
-    print(
-        text_metrics.output_throughput.format_with_prefix(
-            prefix="output token throughput", unit="tok/s"
-        )
-    )
-    print_section(title="Time to First Token")
-    print(text_metrics.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
-    print_section(title="Time per Output Token (excl. 1st token)")
-    print(text_metrics.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
-    print_section(title="Inter-token Latency")
-    print(text_metrics.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
-    print_section(title="Per-Request E2E Latency")
-    print(
-        text_metrics.latency_ms.format_with_prefix(
-            prefix="Request Latency", unit="ms"
-        )
-    )
-    print_section(title="Token Stats")
-    print("{:<40} {:<10}".format("Max input tokens:", text_metrics.max_input))
-    print("{:<40} {:<10}".format("Max output tokens:", text_metrics.max_output))
-    print("{:<40} {:<10}".format("Max total tokens:", text_metrics.max_total))
-    if collect_gpu_stats:
-        for i in range(len(text_metrics.gpu_utilization)):
-            print_section(title=f"GPU Stats {i}")
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "GPU Utilization (%):", text_metrics.gpu_utilization[i]
-                )
-            )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Peak GPU Memory Used (MiB):",
-                    text_metrics.peak_gpu_memory_mib[i],
-                )
-            )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "GPU Memory Available (MiB):",
-                    text_metrics.available_gpu_memory_mib[i],
-                )
-            )
-
-    if collect_cpu_stats and text_metrics.cpu_utilization_user is not None:
-        print_section(title="CPU Stats")
-        print(
-            "{:<40} {:<10.2f}".format(
-                "CPU User Utilization (%):",
-                text_metrics.cpu_utilization_user or 0.0,
-            )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "CPU System Utilization (%):",
-                text_metrics.cpu_utilization_system or 0.0,
-            )
-        )
-
-    print("=" * 50)
-
-    # Print LoRA benchmark results
-    if lora_manager:
-        print_section(title=" LoRA Adapter Benchmark Results ", char="=")
-        print(
-            "{:<40} {:<10}".format(
-                "Total LoRA loads:", lora_manager.metrics.total_loads
-            )
-        )
-        print(
-            "{:<40} {:<10}".format(
-                "Total LoRA unloads:", lora_manager.metrics.total_unloads
-            )
-        )
-
-        if lora_manager.metrics.load_times_ms:
-            print_section(title="LoRA Load Times")
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Mean load time:",
-                    statistics.mean(lora_manager.metrics.load_times_ms),
-                )
-            )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Median load time:",
-                    statistics.median(lora_manager.metrics.load_times_ms),
-                )
-            )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Min load time:", min(lora_manager.metrics.load_times_ms)
-                )
-            )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Max load time:", max(lora_manager.metrics.load_times_ms)
-                )
-            )
-            if len(lora_manager.metrics.load_times_ms) > 1:
-                print(
-                    "{:<40} {:<10.2f}".format(
-                        "Std dev load time:",
-                        statistics.stdev(lora_manager.metrics.load_times_ms),
-                    )
-                )
-
-        if lora_manager.metrics.unload_times_ms:
-            print_section(title="LoRA Unload Times")
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Mean unload time:",
-                    statistics.mean(lora_manager.metrics.unload_times_ms),
-                )
-            )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Median unload time:",
-                    statistics.median(lora_manager.metrics.unload_times_ms),
-                )
-            )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Min unload time:",
-                    min(lora_manager.metrics.unload_times_ms),
-                )
-            )
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Max unload time:",
-                    max(lora_manager.metrics.unload_times_ms),
-                )
-            )
-            if len(lora_manager.metrics.unload_times_ms) > 1:
-                print(
-                    "{:<40} {:<10.2f}".format(
-                        "Std dev unload time:",
-                        statistics.stdev(lora_manager.metrics.unload_times_ms),
-                    )
-                )
-
-        print("=" * 50)
-
-    # Print server-side metrics if available
-    if text_metrics.server_metrics:
-        print_server_metrics(text_metrics.server_metrics)
 
     result = {
         "duration": benchmark_duration,
@@ -1656,35 +1663,11 @@ async def benchmark(
         "gpu_utilization": text_metrics.gpu_utilization,
     }
 
-    # Add LoRA metrics to result if available
-    if lora_manager:
-        result["lora_metrics"] = {
-            "total_loads": lora_manager.metrics.total_loads,
-            "total_unloads": lora_manager.metrics.total_unloads,
-            "load_times_ms": lora_manager.metrics.load_times_ms,
-            "unload_times_ms": lora_manager.metrics.unload_times_ms,
-        }
-
-    # Add server-side metrics to result if available
-    if text_metrics.server_metrics:
-        result["server_metrics"] = {
-            "counters": text_metrics.server_metrics.counters,
-            "gauges": text_metrics.server_metrics.gauges,
-            "histograms": {
-                name: {
-                    "buckets": hist.buckets,
-                    "sum": hist.sum,
-                    "count": hist.count,
-                    "mean": hist.mean,
-                }
-                for name, hist in text_metrics.server_metrics.histograms.items()
-            },
-            # Convenience fields for prefill/decode breakdown
-            "prefill_batch_execution_time_ms": text_metrics.mean_prefill_batch_time_ms,
-            "prefill_batch_count": text_metrics.prefill_batch_count,
-            "decode_batch_execution_time_ms": text_metrics.mean_decode_batch_time_ms,
-            "decode_batch_count": text_metrics.decode_batch_count,
-        }
+    _add_optional_result(
+        result=result,
+        metrics=text_metrics,
+        lora_manager=lora_manager,
+    )
 
     return result, text_metrics
 
