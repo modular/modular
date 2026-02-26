@@ -182,3 +182,29 @@ fn makeClosure[B:Int](something: Cartesian):
       return something
    # expected-error @below {{invalid call to 'takeClosure': violated constraint}}
    takeClosure[Sphere, type_of(closureImpl)](closureImpl)
+
+
+# ===----------------------------------------------------------------------=== #
+# Non-compatible parameter signatures disqualify conformance
+# ===----------------------------------------------------------------------=== #
+
+fn _print(x: Int):
+    pass
+
+# expected-note @below {{function declared here}}
+fn callee_no_params[
+    func: fn() unified -> None,
+    //,
+](closure: func):
+    closure()
+
+
+def incompatible_param_signature():
+    var x = 42
+
+    @always_inline
+    fn my_func[param_only: Int]() unified {read x}:
+        _print(x)
+
+    # expected-error @below {{does not conform to trait 'fn() -> None'}}
+    callee_no_params(my_func)
