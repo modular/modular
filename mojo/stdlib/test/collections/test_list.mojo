@@ -821,6 +821,24 @@ def test_list_count():
     var list2 = List[Int]()
     assert_equal(0, list2.count(1))
 
+    # Test SIMD-optimized path for Scalar types.
+    var scalars = List[Float32]()
+    scalars.extend([Float32(1), 2, 3, 2, 5, 2, 7, 2, 9, 10])
+    assert_equal(4, scalars.count(Float32(2)))
+    assert_equal(1, scalars.count(Float32(1)))
+    assert_equal(0, scalars.count(Float32(4)))
+
+    # Large list that exercises both SIMD and scalar tail paths.
+    var large = List[UInt8](capacity=300)
+    for i in range(300):
+        large.append(UInt8(i % 10))
+    assert_equal(30, large.count(UInt8(0)))
+    assert_equal(30, large.count(UInt8(5)))
+    assert_equal(0, large.count(UInt8(99)))
+
+    var empty_scalars = List[UInt8]()
+    assert_equal(0, empty_scalars.count(UInt8(1)))
+
 
 def test_list_add():
     var a = [1, 2, 3]

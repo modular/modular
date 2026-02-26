@@ -1380,6 +1380,31 @@ struct List[T: Copyable](
                 count += 1
         return count
 
+    fn count[
+        dtype: DType, //
+    ](self: List[Scalar[dtype], ...], value: Scalar[dtype]) -> Int:
+        """Counts the number of occurrences of a value in the list.
+
+        Uses SIMD to count matches in parallel for Scalar types.
+
+        Parameters:
+            dtype: The DType of the scalars stored in the list.
+
+        Args:
+            value: The value to count.
+
+        Returns:
+            The number of occurrences of the value in the list.
+
+        Examples:
+
+        ```mojo
+        var list = List[Int](1, 2, 3, 2, 2, 1, 3)
+        print(list.count(2))  # 3
+        ```
+        """
+        return Span(self).count(value)
+
     fn swap_elements(mut self, elt_idx_1: Int, elt_idx_2: Int):
         """Swaps elements at the specified indexes if they are different.
 
