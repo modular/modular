@@ -1,8 +1,4 @@
----
-title: "Elementwise Operations on GPUs"
-author: Chad Jarvis
-date: August 12, 2024
----
+# Elementwise Operations on GPUs
 
 - **Author:** Chad Jarvis
 - **Date:** August 12, 2024

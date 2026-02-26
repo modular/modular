@@ -1,9 +1,4 @@
----
-title: "GenAI Tech Talk: Paged Attention"
-author: Austin Doolittle
-author: Brian Zhang
-date: January 30, 2025
----
+# GenAI Tech Talk: Paged Attention
 
 - **Authors:** Austin Doolittle and Brian Zhang
 - **Date:** January 30, 2025

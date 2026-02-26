@@ -1,8 +1,4 @@
----
-title: "Token Sampling"
-author: Abdul Dakkak
-date: November 20, 2024
----
+# Token Sampling
 
 - **Author:** Abdul Dakkak
 - **Date:** November 20, 2024
@@ -59,16 +55,16 @@ def sample(x: Tensor[float], t: float):
   """
   normalization = sum([exp(logit * t) for logit in x])
   cumsum_target = U(0, 1) # uniform random float between [0, 1]
-  
+
   # Note: x doesn't have to be sorted for this to work
   # the likelihood that `cumsum_target` falls within a slice representing
   # token at index `i` is proportional to the "area" covered by the spacing
-  # between the cumulative sum 
-  # e.g., [0, 0.5, 0.75, 1.0] 
+  # between the cumulative sum
+  # e.g., [0, 0.5, 0.75, 1.0]
   # corresponds to token likelihoods: p(0) = 0.5, p(1) = 0.25, p(2) = 0.25)
-  # If you throw a dart at U(0, 1), you will hit the first half ([0, 0.5]) 
-  # 50% of the time, which is consistent with the desire that you select 
-  # token 0 50% of the time (and by extension token 1 25% of the time, 
+  # If you throw a dart at U(0, 1), you will hit the first half ([0, 0.5])
+  # 50% of the time, which is consistent with the desire that you select
+  # token 0 50% of the time (and by extension token 1 25% of the time,
   # and token 2 25% of the time.)
  cumsum = 0
   for i in range(len(x)):

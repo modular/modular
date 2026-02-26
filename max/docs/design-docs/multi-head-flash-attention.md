@@ -1,8 +1,4 @@
----
-title: "Multi-Head Flash Attention" 
-author: Chris Elrod
-date: May 7, 2025
----
+# Multi-Head Flash Attention
 
 - **Author:** Chris Elrod
 - **Date:** May 7, 2025
@@ -27,7 +23,7 @@ Multi-head attention extends this, adding the parameters `q_heads` and
 Then, we have:
 
 ```none
-A = softmax(Q_{q_head} @ K_{kv_head}') @ V_{kv_head} 
+A = softmax(Q_{q_head} @ K_{kv_head}') @ V_{kv_head}
   = softmax(Q_{q_head} @ K_{q_head//group}') @ V_{q_head//group}
 ```
 
@@ -119,7 +115,7 @@ for kv_start in range(0, num_keys, BN):
     correction = exp(old_rowmax - row_max)
     row_sum = row_sum * correction + rowsum(P)
     O = correction*O + P @ V[block_range, :]
-    
+
 O /= row_sum
 ```
 
@@ -183,9 +179,9 @@ for kv_start in range(BN, num_keys, BN):
     row_sum = row_sum * correction + rowsum(P)
     O.wait() # frees `bf16` register tile
     O = correction*O
-    
+
 # NOTE: the `P` in `P @ V` is a truncation to `bfloat16`, so the registers
-#       do not alias `S` or `P` elsewhere; 
+#       do not alias `S` or `P` elsewhere;
 ```
 
 Now, the `P @ V[subset, :]` wgmma instructions are capable of overlapping the

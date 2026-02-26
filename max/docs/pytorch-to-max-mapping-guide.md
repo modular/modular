@@ -1,9 +1,4 @@
----
-title: "PyTorch Layers to MAX Mapping Guide"
-author: Brad Larson
-author: Claude
-date: June 23, 2025
----
+# PyTorch Layers to MAX Mapping Guide
 
 - **Authors:** Brad Larson and Claude
 - **Date:** June 23, 2025
@@ -232,35 +227,35 @@ class TransformerBlockMAX:
             device=config.device,
             dtype=config.dtype
         )
-        
+
         self.attention_norm = nn.RMSNorm(
             dim=config.hidden_size,
             dtype=config.dtype
         )
-        
+
         self.mlp = nn.Sequential([
             nn.Linear(config.hidden_size, config.intermediate_size),
             # Activation handled in forward
             nn.Linear(config.intermediate_size, config.hidden_size)
         ])
-        
+
         self.mlp_norm = nn.RMSNorm(
             dim=config.hidden_size,
             dtype=config.dtype
         )
-    
+
     def forward(self, x, mask=None):
         # Attention block
         normed = self.attention_norm(x)
         attn_output = self.attention(normed, mask=mask)
         x = x + attn_output
-        
+
         # MLP block
         normed = self.mlp_norm(x)
         mlp_output = self.mlp(normed)
         mlp_output = ops.gelu(mlp_output)  # Activation
         x = x + mlp_output
-        
+
         return x
 ```
 
@@ -271,43 +266,43 @@ from max.graph import Graph, ops
 from max.dtype import DType
 
 def multi_head_attention_graph(
-    query, key, value, 
+    query, key, value,
     num_heads, head_dim,
     mask=None
 ):
     """Multi-head attention using MAX graph operations."""
     batch_size, seq_len, hidden_dim = query.shape
-    
+
     # Reshape for multi-head attention
     # [batch, seq, hidden] -> [batch, heads, seq, head_dim]
     Q = query.reshape((batch_size, seq_len, num_heads, head_dim))
     Q = Q.transpose(1, 2)
-    
+
     K = key.reshape((batch_size, seq_len, num_heads, head_dim))
     K = K.transpose(1, 2)
-    
+
     V = value.reshape((batch_size, seq_len, num_heads, head_dim))
     V = V.transpose(1, 2)
-    
+
     # Attention scores
     scores = ops.matmul(Q, K.transpose(-2, -1))
     scores = scores / ops.sqrt(ops.constant(head_dim, dtype=DType.float32))
-    
+
     # Apply mask if provided
     if mask is not None:
         mask_value = ops.constant(-1e9, dtype=scores.dtype)
         scores = ops.where(mask, scores, mask_value)
-    
+
     # Softmax
     attention_weights = ops.softmax(scores)
-    
+
     # Apply attention to values
     context = ops.matmul(attention_weights, V)
-    
+
     # Reshape back
     context = context.transpose(1, 2)
     context = context.reshape((batch_size, seq_len, hidden_dim))
-    
+
     return context
 ```
 
@@ -319,9 +314,9 @@ from max.graph import ops
 from max.dtype import DType
 
 class FeedForwardMAX:
-    def __init__(self, hidden_size, intermediate_size, 
+    def __init__(self, hidden_size, intermediate_size,
                  use_float8=False, device=None):
-        
+
         # Configure Float8 if requested
         float8_config = None
         if use_float8:
@@ -329,7 +324,7 @@ class FeedForwardMAX:
                 input_scale_spec=nn.Float8ScaleGranularity.rowwise,
                 weight_scale_spec=nn.Float8ScaleGranularity.colwise
             )
-        
+
         self.w1 = nn.Linear(
             in_dim=hidden_size,
             out_dim=intermediate_size,
@@ -337,7 +332,7 @@ class FeedForwardMAX:
             device=device,
             float8_config=float8_config
         )
-        
+
         self.w2 = nn.Linear(
             in_dim=intermediate_size,
             out_dim=hidden_size,
@@ -345,7 +340,7 @@ class FeedForwardMAX:
             device=device,
             float8_config=float8_config
         )
-    
+
     def forward(self, x):
         # SwiGLU activation
         hidden = self.w1(x)
@@ -441,7 +436,7 @@ x = x + residual  # Use ops.add for graph ops
 ```python
 # Create causal mask
 mask = ops.band_part(
-    ops.ones((seq_len, seq_len)), 
+    ops.ones((seq_len, seq_len)),
     num_lower=-1,  # Keep all lower triangle
     num_upper=0    # Remove upper triangle
 )

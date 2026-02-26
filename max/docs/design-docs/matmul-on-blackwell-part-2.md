@@ -1,8 +1,4 @@
----
-title: "Matrix Multiplication on Blackwell: Part 2—Using Hardware Features to Optimize Matmul"
-authors: "Ali Taha, Jiexiang Liu, Hengjie Wang, Abdul Dakkak"
-date: "September 5, 2025"
----
+# Matrix Multiplication on Blackwell: Part 2—Using Hardware Features to Optimize Matmul
 
 - **Authors**: Ali Taha, Jiexiang Liu, Hengjie Wang, Abdul Dakkak
 - **Date**: September 5, 2025

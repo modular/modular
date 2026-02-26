@@ -1,8 +1,4 @@
----
-title: "Matrix Multiplication on Blackwell: Part 1—Introduction"
-authors: "Ali Taha, Jiexiang Liu, Hengjie Wang"
-date: "August 28, 2025"
----
+# Matrix Multiplication on Blackwell: Part 1—Introduction
 
 - **Authors**: Ali Taha, Jiexiang Liu, and Hengjie Wang
 - **Date**: August 28, 2025

@@ -31,6 +31,6 @@ example, with Pixi), and run tests. Start here if you're new to contributing.
 
 - [`/mojo/docs`](/mojo/docs): Source docs for docs.modular.com/mojo.
 - [`/max/docs`](/max/docs): Docs for developers working in the MAX framework.
-- [`/docs/eng-design`](/docs/eng-design): Engineering design documents for the
-  Modular Platform.
+- [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
+  describe how core Modular technologies work.
 - [docs.modular.com](https://docs.modular.com): All other developer docs.
