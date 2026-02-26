@@ -650,13 +650,20 @@ class Module(Generic[_P, _R]):
                     existing,
                     Tensor.from_dlpack(weights[name]),
                 )
-        compiled = F.functional(session.load(graph, weights_registry=weights))
+        session_model = session.load(graph, weights_registry=weights)
+
+        # Wrap the compiled session model with lightweight input/output conversion.
+        # Avoid F.functional here: that wrapper creates an EagerRealizationContext on
+        # every call, which builds a new MLIR graph, runs optimization passes, and
+        # compiles a seed mini-graph — adding significant per-call overhead.
+        def _compiled(*args: Any) -> list[Tensor]:
+            return [Tensor(storage=r) for r in session_model(*args)]
 
         if unary:
             # Return the single result for a unary module
-            return functools.wraps(self)(lambda *inputs: compiled(*inputs)[0])
+            return functools.wraps(self)(lambda *inputs: _compiled(*inputs)[0])
 
-        return compiled
+        return _compiled
 
     def __rich_repr__(self):
         yield from self.children
