@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""TileTensor type for structured memory access with compile-time layout information."""
 
 from sys import align_of, simd_width_of
 from os import abort
@@ -172,10 +173,18 @@ struct TileTensor[
     """
 
     comptime static_shape[i: Int] = Self.LayoutType.static_shape[i]
-    """Get the compile-time shape value for dimension i, or -1 if dynamic."""
+    """Get the compile-time shape value for dimension i, or -1 if dynamic.
+
+    Parameters:
+        i: The dimension index.
+    """
 
     comptime static_stride[i: Int] = Self.LayoutType.static_stride[i]
-    """Get the compile-time stride value for dimension i, or -1 if dynamic."""
+    """Get the compile-time stride value for dimension i, or -1 if dynamic.
+
+    Parameters:
+        i: The dimension index.
+    """
 
     var ptr: UnsafePointer[
         Scalar[Self.dtype], Self.origin, address_space = Self.address_space
@@ -398,9 +407,15 @@ struct TileTensor[
     fn __getitem__(
         self, coord: Coord
     ) -> Self.ElementType where coord.flat_rank == Self.flat_rank:
-        """Retrieves a single element from the tensor at the specified coordinates.
+        """Retrieve a single element from the tensor at the specified coordinates.
 
         Accepts Coords of flat_rank (flattened).
+
+        Args:
+            coord: The coordinates specifying the element's position.
+
+        Returns:
+            The element at the specified position.
         """
         return self.load(coord)
 
@@ -447,9 +462,13 @@ struct TileTensor[
     fn __setitem__(
         self, coord: Coord, value: Self.ElementType
     ) where coord.flat_rank == Self.flat_rank and Self.mut:
-        """Sets a single element in the tensor at the specified coordinates.
+        """Set a single element in the tensor at the specified coordinates.
 
         Accepts Coords of flat_rank (flattened).
+
+        Args:
+            coord: The coordinates specifying the element's position.
+            value: The value to store at the specified position.
         """
         self.store(coord, value)
 
@@ -716,6 +735,16 @@ struct TileTensor[
         This is needed because TensorLayout trait parameters erase concrete
         stride types -- the compiler cannot prove all_dims_known through
         a trait-bounded parameter even when the underlying strides are static.
+
+        Parameters:
+            tile_sizes: Tile dimensions along each axis.
+            stride_layout: The layout providing static stride types.
+
+        Args:
+            coordinates: Tile coordinates in the grid.
+
+        Returns:
+            A view into the original tensor representing the specified tile.
         """
         return _tile[stride_layout=stride_layout](
             self, coord[*tile_sizes](), coordinates
@@ -774,6 +803,16 @@ struct TileTensor[
 
         Use when the parent has dynamic strides but the values are known
         at compile time. See tile[stride_layout=...] for details.
+
+        Parameters:
+            tile_sizes: Tile dimensions along each axis.
+            stride_layout: The layout providing static stride types.
+
+        Args:
+            coordinates: Tile coordinates in the grid.
+
+        Returns:
+            Tuple of (tile, corner_coords, offset).
         """
         return _tile_with_offset[stride_layout=stride_layout](
             self, coord[*tile_sizes](), coordinates
@@ -1687,11 +1726,13 @@ struct TileTensor[
     fn address_space_cast[
         target_address_space: AddressSpace
     ](self,) -> Self.AddressSpaceCastType[target_address_space]:
-        """
-        Return a version of this tensor cast to a new address_space.
+        """Return a version of this tensor cast to a new address space.
+
+        Parameters:
+            target_address_space: The target address space to cast to.
 
         Returns:
-            A `TileTensor` covering the same elements, in a different address_space.
+            A TileTensor covering the same elements in the new address space.
         """
         return {
             self.ptr.address_space_cast[target_address_space](),

@@ -33,11 +33,22 @@ trait CoordLike(
     """Trait for unified layout handling of compile-time and runtime indices."""
 
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike]
+    """The variadic element types for tuple coordinates."""
+
     comptime static_value: Int
+    """The compile-time value if statically known, -1 otherwise."""
+
     comptime is_static_value = False
+    """True if the value is known at compile time."""
+
     comptime is_tuple = False
+    """True if this is a tuple type (Coord), False for scalar values."""
+
     comptime is_value = not Self.is_tuple
+    """True if this is a scalar value, False for tuple types."""
+
     comptime DTYPE = DType.invalid
+    """The data type for runtime values, or invalid for compile-time values."""
 
     # Note that unlike the __len__() from Sized, this is a static method.
     @staticmethod
@@ -50,18 +61,30 @@ trait CoordLike(
         ...
 
     fn __repr__(self) -> String:
-        """Get the string representation of this type."""
+        """Get the string representation of this type.
+
+        Returns:
+            A string representation of the value.
+        """
         ...
 
     fn value(self) -> Int:
-        """Get the value of this type.
-        Only valid for value types.
+        """Get the integer value of this coordinate.
+
+        Only valid for value types (not tuples).
+
+        Returns:
+            The integer value.
         """
         ...
 
     fn tuple(var self) -> Coord[*Self.VariadicType]:
-        """Get the value of this type.
+        """Get this coordinate as a Coord tuple.
+
         Only valid for tuple types.
+
+        Returns:
+            The coordinate as a Coord tuple.
         """
         ...
 
@@ -92,9 +115,16 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Tuple[
         Self
     ].element_types
+    """The variadic element types (Self for scalar types)."""
+
     comptime static_value: Int = Self.val
+    """The compile-time value."""
+
     comptime DTYPE = DType.int
+    """The data type (int for compile-time integers)."""
+
     comptime is_static_value = True
+    """True, indicating this is a compile-time known value."""
 
     fn __init__(out self):
         """Initialize a compile-time integer with the specified value."""
@@ -103,25 +133,55 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     @staticmethod
     @always_inline("nodebug")
     fn __len__() -> Int:
+        """Get the length (always 1 for scalar types).
+
+        Returns:
+            Always returns 1.
+        """
         return 1
 
     fn __repr__(self) -> String:
+        """Get the string representation of this compile-time integer.
+
+        Returns:
+            A string in the format "ComptimeInt[value]()".
+        """
         return String("ComptimeInt[", self.value(), "]()")
 
     @always_inline("nodebug")
     fn product(self) -> Int:
+        """Calculate the product (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
         return self.value()
 
     @always_inline("nodebug")
     fn sum(self) -> Int:
+        """Calculate the sum (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
         return self.value()
 
     @always_inline("nodebug")
     fn value(self) -> Int:
+        """Get the integer value.
+
+        Returns:
+            The compile-time integer value.
+        """
         return Self.val
 
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
+        """Get as a tuple (not valid for ComptimeInt).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
         comptime assert False, "ComptimeInt is not a tuple type"
 
 
@@ -135,13 +195,19 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Tuple[
         Self
     ].element_types
+    """The variadic element types (Self for scalar types)."""
+
     comptime static_value: Int = -1
+    """Always -1 for runtime values (not statically known)."""
+
     comptime DTYPE = Self.dtype
+    """The data type for the runtime integer value."""
 
     var _value: Scalar[Self.dtype]
     """The runtime scalar value."""
 
     fn __init__(out self):
+        """Initialize a runtime integer with value 0."""
         self._value = 0
 
     fn __init__(out self, value: Scalar[Self.dtype]):
@@ -155,26 +221,56 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
     @staticmethod
     @always_inline("nodebug")
     fn __len__() -> Int:
+        """Get the length (always 1 for scalar types).
+
+        Returns:
+            Always returns 1.
+        """
         return 1
 
     @always_inline("nodebug")
     fn __repr__(self) -> String:
+        """Get the string representation of this runtime integer.
+
+        Returns:
+            A string in the format "RuntimeInt(value)".
+        """
         return String("RuntimeInt(", self.value(), ")")
 
     @always_inline("nodebug")
     fn product(self) -> Int:
+        """Calculate the product (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
         return self.value()
 
     @always_inline("nodebug")
     fn sum(self) -> Int:
+        """Calculate the sum (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
         return self.value()
 
     @always_inline("nodebug")
     fn value(self) -> Int:
+        """Get the integer value.
+
+        Returns:
+            The runtime integer value as an Int.
+        """
         return Int(self._value)
 
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
+        """Get as a tuple (not valid for RuntimeInt).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
         comptime assert False, "RuntimeInt is not a tuple type"
 
 
@@ -233,12 +329,13 @@ fn Idx(
 fn Idx(
     value: Scalar,
 ) -> RuntimeInt[value.dtype] where value.dtype.is_integral():
-    """Helper to create runtime indices.
+    """Create a runtime index from a scalar value.
+
     Args:
         value: The integer value for the runtime index.
+
     Returns:
         A `RuntimeInt` instance with the specified value.
-    Usage: Idx(5) creates a RuntimeInt with value 5.
     """
     return RuntimeInt[value.dtype](value)
 
@@ -252,12 +349,25 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     """
 
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Self.element_types
+    """The variadic element types of this Coord."""
+
     comptime static_value: Int = -1
+    """Always -1 for tuple types (value not applicable)."""
+
     comptime is_tuple = True
+    """True, indicating this is a tuple type."""
+
     comptime all_dims_known = _AllStatic[*Self.element_types]
+    """True if all dimensions are statically known at compile time."""
+
     comptime static_product = _StaticProduct[*Self.element_types]
+    """The product of all static dimensions, or -1 if any are dynamic."""
+
     comptime rank = Variadic.size(Self.element_types)
+    """The number of top-level elements in this Coord."""
+
     comptime flat_rank = Variadic.size(_Flattened[*Self.element_types])
+    """The total number of leaf elements after flattening nested Coords."""
 
     var _storage: _RegTuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
@@ -277,6 +387,15 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         out self: Coord[*_Splatted[RuntimeInt[dtype], rank]],
         index_list: std.utils.IndexList[rank, element_type=dtype],
     ):
+        """Construct a Coord from an IndexList.
+
+        Parameters:
+            rank: The number of elements in the index list.
+            dtype: The data type of the index list elements.
+
+        Args:
+            index_list: The IndexList to convert to a Coord.
+        """
         self = type_of(self)()
 
         comptime for i in range(rank):
@@ -315,6 +434,11 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     fn __repr__(self) -> String:
+        """Get the string representation of this Coord.
+
+        Returns:
+            A string in the format "Coord(elem1, elem2, ...)".
+        """
         var result = String("Coord(")
 
         comptime for i in range(Self.__len__()):
@@ -394,6 +518,11 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     fn product(self) -> Int:
+        """Calculate the product of all elements recursively.
+
+        Returns:
+            The product of all leaf values in the Coord.
+        """
         var result = 1
 
         comptime for i in range(Self.__len__()):
@@ -403,6 +532,11 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     fn sum(self) -> Int:
+        """Calculate the sum of all elements recursively.
+
+        Returns:
+            The sum of all leaf values in the Coord.
+        """
         var result = 0
 
         comptime for i in range(Self.__len__()):
@@ -412,6 +546,11 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     fn value(self) -> Int:
+        """Get the value (not valid for Coord tuples).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
         comptime assert False, "Coord is not a value type"
 
     @always_inline("nodebug")
@@ -502,7 +641,16 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     fn __eq__[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Bool:
-        """Check if this tuple's elements are equal to the other tuple's elements.
+        """Check if this Coord equals another.
+
+        Parameters:
+            other_types: The element types of the other Coord.
+
+        Args:
+            other: The Coord to compare with.
+
+        Returns:
+            True if all elements are equal, False otherwise.
         """
 
         comptime assert Self.__len__() == Coord[*other_types].__len__(), (
@@ -537,14 +685,35 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     fn __ne__[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Bool:
+        """Check if this Coord is not equal to another.
+
+        Parameters:
+            other_types: The element types of the other Coord.
+
+        Args:
+            other: The Coord to compare with.
+
+        Returns:
+            True if any elements differ, False if all are equal.
+        """
         return not self == other
 
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
+        """Get this Coord as a tuple.
+
+        Returns:
+            This Coord (identity operation for tuple types).
+        """
         return rebind[Coord[*Self.VariadicType]](self)
 
     @always_inline("nodebug")
     fn reverse(var self) -> Coord[*Variadic.reverse[*Self.element_types]]:
+        """Reverse the order of elements in this Coord.
+
+        Returns:
+            A new Coord with elements in reverse order.
+        """
         return Coord[*Variadic.reverse[*Self.element_types]](
             rebind[_RegTuple[*Variadic.reverse[*Self.element_types]]](
                 self._storage.reverse()
@@ -557,6 +726,17 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     ](var self, var other: Coord[*other_element_types]) -> Coord[
         *Variadic.concat_types[Self.element_types, other_element_types]
     ]:
+        """Concatenate this Coord with another.
+
+        Parameters:
+            other_element_types: The element types of the other Coord.
+
+        Args:
+            other: The Coord to append.
+
+        Returns:
+            A new Coord containing elements from both Coords.
+        """
         return Coord[
             *Variadic.concat_types[Self.element_types, other_element_types]
         ](
@@ -656,6 +836,11 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return result
 
     fn write_to(self, mut w: Some[Writer]):
+        """Write this Coord to a Writer.
+
+        Args:
+            w: The writer to output to.
+        """
         w.write("(")
 
         comptime for i in range(Self.rank):
@@ -707,7 +892,22 @@ fn crd2idx[
     Stride: CoordLike,
     out_type: DType = DType.int64,
 ](crd: Index, shape: Shape, stride: Stride) -> Scalar[out_type]:
-    """Calculate the index from a coordinate tuple."""
+    """Calculate the linear index from a coordinate tuple.
+
+    Parameters:
+        Index: The coordinate type (must be CoordLike).
+        Shape: The shape type (must be CoordLike).
+        Stride: The stride type (must be CoordLike).
+        out_type: The output scalar type.
+
+    Args:
+        crd: The multi-dimensional coordinate.
+        shape: The shape of the tensor.
+        stride: The stride of the tensor.
+
+    Returns:
+        The linear index corresponding to the coordinate.
+    """
     comptime shape_len = Shape.__len__()
     comptime stride_len = Stride.__len__()
     comptime crd_len = Index.__len__()
@@ -1060,15 +1260,17 @@ fn coord[
 ](var values: Tuple[*element_types]) -> Coord[
     *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
 ] where _AllEqual[Int, *element_types]:
-    """Helper to create a Coord from a variadic pack of integers.
+    """Create a Coord from a tuple of integers with specified dtype.
+
     Parameters:
         dtype: The data type for the runtime integer values.
-        rank: The number of elements in the tuple.
+        element_types: The types of elements in the input tuple.
+
     Args:
-        values: The run-time integer values.
+        values: The runtime integer values.
+
     Returns:
-        A `Coord` instance containing `ComptimeInt` elements for each value.
-    Usage: coord[5, 3, 2]() creates Coord(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+        A Coord instance containing RuntimeInt elements for each value.
     """
     var tuple = Coord[
         *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
@@ -1084,12 +1286,13 @@ fn coord[
 
 
 fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
-    """Helper to create a Coord from a variadic pack of integers.
+    """Create a Coord from compile-time integer values.
+
     Parameters:
         values: The compile-time integer values.
+
     Returns:
-        A `Coord` instance containing `ComptimeInt` elements for each value.
-    Usage: coord[5, 3, 2]() creates Coord(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+        A Coord instance containing ComptimeInt elements for each value.
     """
     # values is a ZST since all elements are comptime
     var tuple = Coord[*_IntToComptimeInt[*values]]()
