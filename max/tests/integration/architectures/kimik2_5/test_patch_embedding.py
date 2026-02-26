@@ -55,32 +55,28 @@ N_IMAGES = 1
 GRID_T, GRID_H, GRID_W = 1, 2, 2
 N_PATCHES = GRID_T * GRID_H * GRID_W
 
-torch.manual_seed(42)
+
+def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
+    return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(TORCH_DTYPE)
 
 
-def _rand_tensor(shape: tuple[int, ...], dtype: torch.dtype) -> torch.Tensor:
-    return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(dtype)
-
-
-def _create_state_dict(
-    dtype: torch.dtype, has_bias: bool
-) -> dict[str, torch.Tensor]:
+def _create_state_dict(has_bias: bool) -> dict[str, torch.Tensor]:
     """State dict keys match Module.raw_state_dict (proj has name='proj' -> proj.proj.*)."""
     state: dict[str, torch.Tensor] = {
-        "proj.proj.weight": _rand_tensor(
-            (HIDDEN_SIZE, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE), dtype
+        "proj.proj.weight": _generate_tensor(
+            (HIDDEN_SIZE, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
         ),
-        "pos_emb.weight": _rand_tensor(
-            (INIT_POS_EMB_HEIGHT, INIT_POS_EMB_WIDTH, HIDDEN_SIZE), dtype
+        "pos_emb.weight": _generate_tensor(
+            (INIT_POS_EMB_HEIGHT, INIT_POS_EMB_WIDTH, HIDDEN_SIZE)
         ),
     }
     if has_bias:
-        state["proj.proj.bias"] = _rand_tensor((HIDDEN_SIZE,), dtype)
+        state["proj.proj.bias"] = _generate_tensor((HIDDEN_SIZE,))
     return state
 
 
 def _create_patch_embedding(
-    dtype: DType, device: DeviceRef, has_bias: bool = True
+    device: DeviceRef, has_bias: bool = True
 ) -> PatchEmbeddingLayer:
     """Build PatchEmbeddingLayer with config values (no JSON)."""
     return PatchEmbeddingLayer(
@@ -90,7 +86,7 @@ def _create_patch_embedding(
         init_pos_emb_height=INIT_POS_EMB_HEIGHT,
         init_pos_emb_width=INIT_POS_EMB_WIDTH,
         init_pos_emb_time=INIT_POS_EMB_TIME,
-        dtype=dtype,
+        dtype=MAX_DTYPE,
         device=device,
         has_bias=has_bias,
     )
@@ -100,7 +96,6 @@ def _torch_proj_only(
     pixel_values: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
     has_bias: bool,
-    device: torch.device,
 ) -> torch.Tensor:
     """Reference: Conv2d(3, 1152, 14, stride=14) then view to (L, 1152)."""
     conv = nn.Conv2d(
@@ -109,10 +104,10 @@ def _torch_proj_only(
         kernel_size=PATCH_SIZE,
         stride=PATCH_SIZE,
         bias=has_bias,
-    ).to(device=device, dtype=pixel_values.dtype)
-    conv.weight = nn.Parameter(state_dict["proj.proj.weight"].to(device))
+    ).to(dtype=TORCH_DTYPE)
+    conv.weight = nn.Parameter(state_dict["proj.proj.weight"])
     if has_bias:
-        conv.bias = nn.Parameter(state_dict["proj.proj.bias"].to(device))
+        conv.bias = nn.Parameter(state_dict["proj.proj.bias"])
     conv.eval()
     with torch.no_grad():
         out = conv(pixel_values)
@@ -123,7 +118,6 @@ def _build_and_run_max(
     pixel_values: torch.Tensor,
     grid_thws: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
-    dtype: DType,
     has_bias: bool,
     n_gpus: int = 0,
 ) -> torch.Tensor:
@@ -133,12 +127,12 @@ def _build_and_run_max(
     )
     device_ref = DeviceRef.GPU() if n_gpus > 0 else DeviceRef.CPU()
 
-    layer = _create_patch_embedding(dtype, device_ref, has_bias)
+    layer = _create_patch_embedding(device_ref, has_bias)
     layer.load_state_dict(state_dict)
 
     session = InferenceSession(devices=devices)
 
-    pixel_type = TensorType(dtype, pixel_values.shape, device_ref)
+    pixel_type = TensorType(MAX_DTYPE, pixel_values.shape, device_ref)
     grid_type = TensorType(DType.int64, grid_thws.shape, device_ref)
 
     with Graph(
@@ -150,11 +144,10 @@ def _build_and_run_max(
         graph.output(out)
 
     compiled = session.load(graph, weights_registry=layer.state_dict())
-    run_device = pixel_values.cuda() if n_gpus > 0 else pixel_values.cpu()
-    grid_device = grid_thws.cuda() if n_gpus > 0 else grid_thws.cpu()
+    device = devices[0]
     result = compiled.execute(
-        Buffer.from_dlpack(run_device),
-        Buffer.from_dlpack(grid_device),
+        Buffer.from_dlpack(pixel_values).to(device),
+        Buffer.from_dlpack(grid_thws).to(device),
     )
     return from_dlpack(result[0])
 
@@ -288,7 +281,6 @@ def _torch_full_patch_embed(
     grid_thws: torch.Tensor,
     state_dict: dict[str, torch.Tensor],
     has_bias: bool,
-    device: torch.device,
 ) -> torch.Tensor:
     """Full reference: MoonVision3dPatchEmbed (proj + pos_emb)."""
     model = _MoonVision3dPatchEmbedTorch(
@@ -299,11 +291,11 @@ def _torch_full_patch_embed(
         pos_emb_width=INIT_POS_EMB_WIDTH,
         pos_emb_time=INIT_POS_EMB_TIME,
         has_bias=has_bias,
-    ).to(device=device, dtype=pixel_values.dtype)
-    model.proj.weight = nn.Parameter(state_dict["proj.proj.weight"].to(device))
+    ).to(dtype=TORCH_DTYPE)
+    model.proj.weight = nn.Parameter(state_dict["proj.proj.weight"])
     if has_bias:
-        model.proj.bias = nn.Parameter(state_dict["proj.proj.bias"].to(device))
-    model.pos_emb.weight = nn.Parameter(state_dict["pos_emb.weight"].to(device))
+        model.proj.bias = nn.Parameter(state_dict["proj.proj.bias"])
+    model.pos_emb.weight = nn.Parameter(state_dict["pos_emb.weight"])
     model.eval()
     with torch.no_grad():
         return model(pixel_values, grid_thws)
@@ -318,21 +310,19 @@ def test_patch_embedding_full_matches_torch() -> None:
     Enable this test once Learnable2DInterpPosEmbDividedFixed applies position
     embeddings in the graph (interpolation + time_weight + per-image slicing).
     """
+    torch.manual_seed(42)
     has_bias = True
-    pixel_values = _rand_tensor(
-        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE), TORCH_DTYPE
+    pixel_values = _generate_tensor(
+        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
     )
     grid_thws = torch.tensor([[GRID_T, GRID_H, GRID_W]], dtype=torch.int64)
-    state_dict = _create_state_dict(TORCH_DTYPE, has_bias)
-    device = torch.device("cuda")
-    pixel_values = pixel_values.to(device)
-    grid_thws = grid_thws.to(device)
+    state_dict = _create_state_dict(has_bias)
 
     torch_out = _torch_full_patch_embed(
-        pixel_values, grid_thws, state_dict, has_bias, device
+        pixel_values, grid_thws, state_dict, has_bias
     )
     max_out = _build_and_run_max(
-        pixel_values, grid_thws, state_dict, MAX_DTYPE, has_bias, n_gpus=1
+        pixel_values, grid_thws, state_dict, has_bias, n_gpus=1
     )
 
     _assert_close(torch_out, max_out)
@@ -341,20 +331,18 @@ def test_patch_embedding_full_matches_torch() -> None:
 
 def test_patch_embedding_forward_matches_torch_proj() -> None:
     """PatchEmbeddingLayer output matches torch Conv2d projection (pos_emb is no-op)."""
+    torch.manual_seed(42)
     has_bias = True  # Model uses bias in patch_embed.proj
-    pixel_values = _rand_tensor(
-        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE), TORCH_DTYPE
+    pixel_values = _generate_tensor(
+        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
     )
     grid_thws = torch.tensor([[GRID_T, GRID_H, GRID_W]], dtype=torch.int64)
 
-    state_dict = _create_state_dict(TORCH_DTYPE, has_bias)
-    device = torch.device("cuda")
-    pixel_values = pixel_values.to(device)
-    grid_thws = grid_thws.to(device)
+    state_dict = _create_state_dict(has_bias)
 
-    torch_out = _torch_proj_only(pixel_values, state_dict, has_bias, device)
+    torch_out = _torch_proj_only(pixel_values, state_dict, has_bias)
     max_out = _build_and_run_max(
-        pixel_values, grid_thws, state_dict, MAX_DTYPE, has_bias, n_gpus=1
+        pixel_values, grid_thws, state_dict, has_bias, n_gpus=1
     )
 
     _assert_close(torch_out, max_out)

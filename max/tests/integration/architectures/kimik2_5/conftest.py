@@ -23,7 +23,7 @@ class TorchMLP2(nn.Module):
     """PyTorch reference for the MLP2 layer (non-gated MLP with gelu_tanh)."""
 
     def __init__(
-        self, dim: tuple[int, int, int], has_bias: bool = True
+        self, dim: tuple[int, int, int], has_bias: bool = False
     ) -> None:
         super().__init__()
         self.up_proj = nn.Linear(dim[0], dim[1], bias=has_bias)

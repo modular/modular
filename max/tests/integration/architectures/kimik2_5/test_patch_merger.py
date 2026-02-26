@@ -37,17 +37,9 @@ EPS = 1e-05
 N_K = MERGE_KERNEL_SIZE[0] * MERGE_KERNEL_SIZE[1]
 INPUT_DIM = MM_HIDDEN_SIZE * N_K
 
-# Two different patch counts to exercise ragged input.
-NUM_PATCHES_A = 64
-NUM_PATCHES_B = 24
 
-torch.manual_seed(42)
-
-
-def _generate_tensor(
-    shape: tuple[int, ...], dtype: torch.dtype
-) -> torch.Tensor:
-    return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(dtype)
+def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
+    return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(TORCH_DTYPE)
 
 
 class TorchPatchMergerMLP(nn.Module):
@@ -72,23 +64,20 @@ class TorchPatchMergerMLP(nn.Module):
         return x
 
 
-def _create_weights(dtype: torch.dtype) -> dict[str, torch.Tensor]:
+def _create_weights() -> dict[str, torch.Tensor]:
     return {
-        "pre_norm.weight": _generate_tensor((MM_HIDDEN_SIZE,), dtype),
-        "pre_norm.bias": _generate_tensor((MM_HIDDEN_SIZE,), dtype),
-        "proj.0.weight": _generate_tensor((INPUT_DIM, INPUT_DIM), dtype),
-        "proj.0.bias": _generate_tensor((INPUT_DIM,), dtype),
-        "proj.2.weight": _generate_tensor((HIDDEN_SIZE, INPUT_DIM), dtype),
-        "proj.2.bias": _generate_tensor((HIDDEN_SIZE,), dtype),
+        "pre_norm.weight": _generate_tensor((MM_HIDDEN_SIZE,)),
+        "pre_norm.bias": _generate_tensor((MM_HIDDEN_SIZE,)),
+        "proj.0.weight": _generate_tensor((INPUT_DIM, INPUT_DIM)),
+        "proj.0.bias": _generate_tensor((INPUT_DIM,)),
+        "proj.2.weight": _generate_tensor((HIDDEN_SIZE, INPUT_DIM)),
+        "proj.2.bias": _generate_tensor((HIDDEN_SIZE,)),
     }
 
 
-def _create_patch_merger_mlp(
-    dtype: DType,
-    device: DeviceRef,
-) -> PatchMergerMLP:
+def _create_patch_merger_mlp(device: DeviceRef) -> PatchMergerMLP:
     return PatchMergerMLP(
-        dtype=dtype,
+        dtype=MAX_DTYPE,
         device=device,
         mm_hidden_size=MM_HIDDEN_SIZE,
         hidden_size=HIDDEN_SIZE,
@@ -114,12 +103,11 @@ def _remap_keys_for_max(
 def _build_and_run(
     state_dict: dict[str, torch.Tensor],
     x: torch.Tensor,
-    dtype: DType,
 ) -> Buffer:
     device = Accelerator(0)
     device_ref = DeviceRef.from_device(device)
 
-    mlp = _create_patch_merger_mlp(dtype, device_ref)
+    mlp = _create_patch_merger_mlp(device_ref)
     mlp.load_state_dict(_remap_keys_for_max(state_dict))
 
     session = InferenceSession(devices=[device])
@@ -127,7 +115,7 @@ def _build_and_run(
     with Graph(
         "kimik2_5_patch_merger_mlp_test",
         input_types=[
-            TensorType(dtype, tuple(x.shape), device=DeviceRef.GPU()),
+            TensorType(MAX_DTYPE, tuple(x.shape), device=DeviceRef.GPU()),
         ],
     ) as graph:
         (graph_input,) = graph.inputs
@@ -135,7 +123,8 @@ def _build_and_run(
         graph.output(mlp(graph_input))
 
     compiled = session.load(graph, weights_registry=mlp.state_dict())
-    (result,) = compiled.execute(x)
+    x_gpu = Buffer.from_dlpack(x).to(device)
+    (result,) = compiled.execute(x_gpu)
     assert isinstance(result, Buffer)
     return result
 
@@ -153,15 +142,18 @@ def _assert_close(expected: torch.Tensor, actual: Buffer) -> None:
 
 def test_patch_merger_mlp_gpu() -> None:
     """Test PatchMergerMLP accuracy on GPU against PyTorch reference."""
-    state_dict = _create_weights(TORCH_DTYPE)
-
+    torch.manual_seed(42)
     # Two ragged items with different patch counts: (N_i, N_k, mm_hidden_size)
-    item_a = _generate_tensor((NUM_PATCHES_A, N_K, MM_HIDDEN_SIZE), TORCH_DTYPE)
-    item_b = _generate_tensor((NUM_PATCHES_B, N_K, MM_HIDDEN_SIZE), TORCH_DTYPE)
+    num_patches_a = 64
+    num_patches_b = 24
+
+    state_dict = _create_weights()
+    item_a = _generate_tensor((num_patches_a, N_K, MM_HIDDEN_SIZE))
+    item_b = _generate_tensor((num_patches_b, N_K, MM_HIDDEN_SIZE))
 
     # Concatenate into a single ragged tensor for MAX.
     x = torch.cat([item_a, item_b], dim=0)
-    max_output = _build_and_run(state_dict, x.cuda(), MAX_DTYPE)
+    max_output = _build_and_run(state_dict, x)
 
     # Run torch reference per-item.
     ref = TorchPatchMergerMLP()

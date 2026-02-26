@@ -35,12 +35,9 @@ HIDDEN_DIM = 1152
 HEAD_DIM = HIDDEN_DIM // NUM_HEADS
 MLP_DIM = 4304
 
-ROPE_DIM = HEAD_DIM
 ROPE_MAX_HEIGHT = 512
 ROPE_MAX_WIDTH = 512
 ROPE_THETA = 10000.0
-
-torch.manual_seed(42)
 
 
 def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
@@ -105,7 +102,9 @@ class TorchMoonViTEncoderLayer(nn.Module):
         self.wqkv = nn.Linear(HIDDEN_DIM, HIDDEN_DIM * 3)
         self.wo = nn.Linear(HIDDEN_DIM, HIDDEN_DIM)
 
-        self.mlp = TorchMLP2(dim=(HIDDEN_DIM, MLP_DIM, HIDDEN_DIM))
+        self.mlp = TorchMLP2(
+            dim=(HIDDEN_DIM, MLP_DIM, HIDDEN_DIM), has_bias=True
+        )
 
     def attention_qkvpacked(
         self,
@@ -257,6 +256,7 @@ def _build_and_run(
 )
 def test_vision_attention(grid_thws: list[tuple[int, int, int]]) -> None:
     """Test EncoderLayer E2E on single GPU."""
+    torch.manual_seed(42)
     seq_lens = [t * h * w for t, h, w in grid_thws]
     n_patches = sum(seq_lens)
     input_row_offsets = torch.tensor(
@@ -268,7 +268,7 @@ def test_vision_attention(grid_thws: list[tuple[int, int, int]]) -> None:
     x = _generate_tensor((n_patches, HIDDEN_DIM))
 
     rope_ref = TorchRope2DPosEmbRepeated(
-        ROPE_DIM, ROPE_MAX_HEIGHT, ROPE_MAX_WIDTH, ROPE_THETA
+        HEAD_DIM, ROPE_MAX_HEIGHT, ROPE_MAX_WIDTH, ROPE_THETA
     )
     rope_freqs_cis_complex = rope_ref.get_freqs_cis(
         torch.tensor(grid_thws), device=x.device
