@@ -136,7 +136,6 @@ fn mla_decode_sm100_dispatch[
             scale,
             batch_size,
             effective_max_cache_len,
-            max_cache_valid_length,
             q_max_seq_len,
             valid_length,
             mask,
@@ -167,7 +166,6 @@ fn mla_decode_sm100_dispatch[
             scale,
             batch_size,
             effective_max_cache_len,
-            max_cache_valid_length,
             q_max_seq_len,
             valid_length,
             mask,
@@ -207,7 +205,6 @@ fn _mla_decode_sm100_dispatch_impl[
     scale: Float32,
     batch_size: Int,
     effective_max_cache_len: Int,
-    max_cache_valid_length: Int,
     q_max_seq_len: Int,
     valid_length: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
@@ -412,7 +409,6 @@ fn _mla_decode_sm100_dispatch_impl[
             batch_size,
             block_z,
             num_partitions,
-            max_cache_valid_length,
             q_max_seq_len,
             valid_length,
             mask,
@@ -577,7 +573,6 @@ fn _mla_decode_sm100_dispatch_impl[
             batch_size,
             block_z,
             num_partitions,
-            max_cache_valid_length,
             q_max_seq_len,
             valid_length,
             mask,
@@ -614,7 +609,6 @@ fn mla_decode_sm100_sink_split_k[
     batch_size: Int,
     block_z: Int,
     num_partitions: Int,
-    max_cache_valid_length: Int,  # longest KV cache entry
     q_max_seq_len: Int,
     valid_length: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
@@ -691,7 +685,6 @@ fn mla_decode_sm100_sink_split_k[
             batch_size,
             block_z,
             num_partitions,
-            max_cache_valid_length,
             q_max_seq_len,
             valid_len,
             mask,
@@ -721,7 +714,6 @@ fn mla_decode_sm100_sink_split_k[
             batch_size,
             block_z,
             num_partitions,
-            max_cache_valid_length,
             q_max_seq_len,
             valid_len,
             mask,
@@ -766,7 +758,6 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     batch_size: Int,
     block_z: Int,
     num_partitions: Int,
-    max_cache_valid_length: Int,  # longest KV cache entry,
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
@@ -826,8 +817,6 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         config.rope_depth,
         "config.swizzle_mode:",
         config.swizzle_mode,
-        "max_cache_valid_length:",
-        max_cache_valid_length,
         "output_tile_width:",
         (config.BN // 2) * (4 // size_of[output_type]()),
     )
@@ -846,8 +835,6 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         block_z,
         "Num Partitions:",
         num_partitions,
-        "Max Cache Valid Length:",
-        max_cache_valid_length,
     )
 
     # Dispatch to the appropriate kernel:
@@ -887,7 +874,6 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         batch_size,
         q_max_seq_len,
         num_partitions,
-        max_cache_valid_length,
         mla_decode_pack,
         scales_ptr,
         grid_dim=grid_dim,
