@@ -147,8 +147,6 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
     return evaluateGetSourceNameAttr(getSourceNameAttr);
   if (auto getTypeNameAttr = dyn_cast<GetTypeNameAttr>(attr))
     return evaluateGetTypeNameAttr(getTypeNameAttr);
-  if (auto typeConformToTraitAttr = dyn_cast<TypeConformsToTraitAttr>(attr))
-    return evaluateTypeConformToTraitAttr(typeConformToTraitAttr);
   if (auto isStructTypeAttr = dyn_cast<IsStructTypeAttr>(attr))
     return evaluateIsStructTypeAttr(isStructTypeAttr);
   if (auto getBaseTypeNameAttr = dyn_cast<GetBaseTypeNameAttr>(attr))

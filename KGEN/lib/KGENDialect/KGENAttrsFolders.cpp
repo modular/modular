@@ -83,6 +83,19 @@ GetWitnessAttr::evaluateWithContext(ParameterEvaluationContext &context) const {
 }
 
 //===----------------------------------------------------------------------===//
+// TypeConformsToTraitAttr
+//===----------------------------------------------------------------------===//
+
+FailureOr<TypedAttr> TypeConformsToTraitAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  FailureOr<ResolvedStructHandle> resolvedOr =
+      context.resolveStructOp(getTypeValue(), /*acceptAsync=*/false);
+  if (succeeded(resolvedOr) && resolvedOr->decl)
+    return simplify(SymbolTable(resolvedOr->decl.getOperation()));
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
 // Struct Field Attr evaluateWithContext implementations
 //===----------------------------------------------------------------------===//
 

@@ -1113,12 +1113,19 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
 //===----------------------------------------------------------------------===//
 
 FailureOr<TypedAttr>
-LIT::simplifyConformsToAgainstTypeValue(TypeConformsToTraitAttr conformsTo,
-                                        TraitType traitToCheck) {
-  if (!traitToCheck)
+LIT::simplifyConformsToAgainstTypeValue(TypeConformsToTraitAttr conformsTo) {
+  // Try to extract a TraitType from the type value.
+  TraitType traitType;
+  if (auto typeParam = sugarDynCast<TypeParamAttr>(conformsTo.getTypeValue())) {
+    if (auto paramType = dyn_cast<ParamType>(typeParam.getMlirType()))
+      traitType = dyn_cast<TraitType>(paramType.getParam().getType());
+  }
+  if (!traitType)
+    traitType = dyn_cast<TraitType>(conformsTo.getTypeValue().getType());
+  if (!traitType)
     return failure();
 
-  SmallVector<mlir::SymbolRefAttr> symbols(traitToCheck.getSymbols());
+  SmallVector<mlir::SymbolRefAttr> symbols(traitType.getSymbols());
   llvm::StringSet<> traitSymbolNames;
   for (auto sym : symbols)
     traitSymbolNames.insert(getFlattenedSymbolName(sym));
@@ -1171,23 +1178,16 @@ FailureOr<TypedAttr> LITSymTabEvaluationContext::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
 
-  // Handle TypeConformsToTraitAttr with LIT-specific logic.
+  // Handle TypeConformsToTraitAttr.
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
-    FailureOr<ResolvedStructHandle> resolvedOr =
-        resolveStructOp(conformsTo.getTypeValue(), /*acceptAsync=*/false);
-    if (succeeded(resolvedOr))
-      return conformsTo.simplify(SymbolTable(resolvedOr->decl.getOperation()));
-
-    // Resolution failed, try fold tighter trait types.
-    auto typeValue = dyn_cast<TypeParamAttr>(conformsTo.getTypeValue());
-    if (!typeValue)
-      return failure();
-
-    if (auto paramType = dyn_cast<ParamType>(typeValue.getTypeValue())) {
-      return simplifyConformsToAgainstTypeValue(
-          conformsTo, dyn_cast<TraitType>(paramType.getParam().getType()));
-    }
+    // Try LIT-specific trait type folding first, then fall back to the attr
+    // folder for struct resolution.
+    FailureOr<TypedAttr> result =
+        simplifyConformsToAgainstTypeValue(conformsTo);
+    if (succeeded(result))
+      return result;
+    return conformsTo.evaluateWithContext(*this);
   }
 
   // Handle DowncastAttr.
