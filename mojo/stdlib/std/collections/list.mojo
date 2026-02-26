@@ -1380,6 +1380,32 @@ struct List[T: Copyable](
                 count += 1
         return count
 
+    fn remove[
+        _T: Equatable & Copyable & ImplicitlyDestructible, //
+    ](mut self: List[_T], value: _T) raises:
+        """Removes the first occurrence of a value from the list.
+
+        Parameters:
+            _T: The type of the elements in the list. Must implement the
+                traits `Equatable` and `ImplicitlyDestructible`.
+
+        Args:
+            value: The value to remove.
+
+        Raises:
+            If the value is not found in the list.
+
+        Examples:
+
+        ```mojo
+        var my_list = [1, 2, 3, 2]
+        my_list.remove(2)
+        print(my_list)  # [1, 3, 2]
+        ```
+        """
+        var idx = self.index(value)
+        _ = self.pop(idx)
+
     fn swap_elements(mut self, elt_idx_1: Int, elt_idx_2: Int):
         """Swaps elements at the specified indexes if they are different.
 
