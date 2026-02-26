@@ -26,7 +26,7 @@ class Rope2DPosEmbRepeated(Module):
     Pre-computes a (max_height * max_width, dim//2, 2) table of [cos, sin]
     values.
 
-    The interleaving matches the Kimi-K2.5 torch reference: for each
+    The interleaving matches the Kimi K2.5 torch reference: for each
     frequency index *i* the table stores [x_cos_i, x_sin_i, y_cos_i, y_sin_i]
     when viewed as a flat dim//2 * 2 vector.
 

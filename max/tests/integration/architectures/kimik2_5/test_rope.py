@@ -22,20 +22,20 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.kimi2_5.layers.data_processing import (
+from max.pipelines.architectures.kimik2_5.layers.data_processing import (
     compute_position_ids,
 )
-from max.pipelines.architectures.kimi2_5.layers.rotary_embedding import (
+from max.pipelines.architectures.kimik2_5.layers.rotary_embedding import (
     Rope2DPosEmbRepeated,
 )
 
 # ---------------------------------------------------------------------------
-# Torch reference - direct translation of the Kimi-K2.5 reference code
+# Torch reference - direct translation of the Kimi K2.5 reference code
 # ---------------------------------------------------------------------------
 
 
 class TorchRope2DPosEmbRepeated(nn.Module):
-    """Nearly verbatim copy of the Kimi-K2.5 reference ``Rope2DPosEmbRepeated``."""
+    """Nearly verbatim copy of the Kimi K2.5 reference ``Rope2DPosEmbRepeated``."""
 
     def __init__(
         self,
