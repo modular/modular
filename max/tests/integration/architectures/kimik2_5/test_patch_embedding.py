@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for Kimi2.5 PatchEmbeddingLayer (MoonVision3dPatchEmbed).
+"""Tests for Kimi K2.5 PatchEmbeddingLayer (MoonVision3dPatchEmbed).
 
 Reference: nvidia/Kimi-K2.5-NVFP4 modeling_kimi_k25.py
 - MoonVision3dPatchEmbed: proj (Conv2d) + pos_emb (Learnable2DInterpPosEmbDivided_fixed).
@@ -34,7 +34,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.kimi2_5.layers.patch_embedding import (
+from max.pipelines.architectures.kimik2_5.layers.patch_embedding import (
     PatchEmbeddingLayer,
 )
 from torch.utils.dlpack import from_dlpack
@@ -154,7 +154,7 @@ def _build_and_run_max(
     grid_type = TensorType(DType.int64, grid_thws.shape, device_ref)
 
     with Graph(
-        "kimi2_5_patch_embed_test",
+        "kimik2_5_patch_embed_test",
         input_types=(pixel_type, grid_type),
     ) as graph:
         pv, grid = graph.inputs

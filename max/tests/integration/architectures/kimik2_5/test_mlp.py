@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for Kimi2.5 MLP2 layer."""
+"""Tests for Kimi K2.5 MLP2 layer."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from max.graph import (
     Value,
 )
 from max.nn import Allreduce, Signals
-from max.pipelines.architectures.kimi2_5.layers.mlp import MLP2
+from max.pipelines.architectures.kimik2_5.layers.mlp import MLP2
 from test_common.graph_utils import are_all_buffer_values_sequence
 from transformers.activations import GELUTanh
 
@@ -137,7 +137,7 @@ def _build_and_run(
     n_gpus: int = 0,
     sharding_strategy: ShardingStrategy | None = None,
 ) -> list[Buffer]:
-    """Build a MAX graph with the Kimi2.5 MLP2, execute it, and return outputs."""
+    """Build a MAX graph with the Kimi K2.5 MLP2, execute it, and return outputs."""
     devices: list[Device] = (
         [Accelerator(id) for id in range(n_gpus)] if n_gpus > 0 else [CPU(0)]
     )
@@ -163,7 +163,7 @@ def _build_and_run(
     input_device = DeviceRef.GPU() if n_gpus > 0 else DeviceRef.CPU()
 
     with Graph(
-        "kimi2_5_mlp_test",
+        "kimik2_5_mlp_test",
         input_types=[
             TensorType(dtype, (x.shape[0], x.shape[1]), device=input_device),
             *signals.input_types(),

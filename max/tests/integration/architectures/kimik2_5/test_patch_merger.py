@@ -22,7 +22,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.pipelines.architectures.kimi2_5.layers.patch_merger import (
+from max.pipelines.architectures.kimik2_5.layers.patch_merger import (
     PatchMergerMLP,
 )
 
@@ -145,7 +145,7 @@ def _build_and_run(
     session = InferenceSession(devices=[device])
 
     with Graph(
-        "kimi2_5_patch_merger_mlp_test",
+        "kimik2_5_patch_merger_mlp_test",
         input_types=[
             TensorType(dtype, tuple(x.shape), device=DeviceRef.GPU()),
         ],
