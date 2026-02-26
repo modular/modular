@@ -203,7 +203,6 @@ struct MLA_SM100_Decode_KV_BF16[
         batch_size: Int,
         q_max_seq_len: Int,
         num_partitions: Int,
-        max_cache_valid_length: Int,  # longest KV cache entry,
         mla_decode_pack: MLA_Decode_Pack[
             ValidLengthType = Self.ValidLengthType,
             MaskType = Self.MaskType,
