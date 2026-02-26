@@ -234,7 +234,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         alignment=128,
     ]
     comptime a_scales_smem_tile_t = LayoutTensor[
-        accum_type,
+        a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -252,7 +252,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         (b_size * size_of[b_type]()) % 128
     ) == 0, "preserve alignment"
     comptime assert (
-        (a_scales_size * size_of[accum_type]()) % 16
+        (a_scales_size * size_of[a_scales_type]()) % 16
     ) == 0, "preserve alignment"
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
@@ -376,18 +376,18 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
-                    b_scale = rebind[Scalar[accum_type]](
+                    b_scale = rebind[Scalar[b_scales_type]](
                         b_scales_2d[b_scale_m_offset + idx0, k_iter]
-                    )
+                    ).cast[accum_type]()
                 else:
-                    b_scale = rebind[Scalar[accum_type]](
+                    b_scale = rebind[Scalar[b_scales_type]](
                         b_scales_2d[b_scale_m_offset + idx0 + 1, k_iter]
-                    )
+                    ).cast[accum_type]()
 
             else:
-                b_scale = rebind[Scalar[accum_type]](
+                b_scale = rebind[Scalar[b_scales_type]](
                     b_scales_2d[b_scale_m_offset + block_idx.x, k_iter]
-                )
+                ).cast[accum_type]()
 
             var m_offset = (warp_id * 16) + (lane_id() // 4)
 
@@ -604,7 +604,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
 
     comptime smem_use = (
         BM * size_of[a_type]() + BN * size_of[b_type]()
-    ) * BK + 24 + size_of[accum_type]() * BM
+    ) * BK + 24 + size_of[a_scales_type]() * BM
 
     comptime block_dim = 128
 
@@ -1119,7 +1119,7 @@ fn promote_accumulators[
 
     comptime assert (
         a_scales_type == b_scales_type and accum_type == DType.float32
-    ), "Only support float32 for a_scales, b_scales, and accum_type"
+    ), "a_scales_type must equal b_scales_type, and accum_type must be float32"
     # Rows each warp is responsible for:
     # warp_id 0 -> 0-15 upper, 16-31 lower
     # warp_id 1 -> 32-47 upper, 48-63 lower
@@ -1430,7 +1430,7 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     comptime assert (
         b_scales_type == a_scales_type and accum_type == DType.float32
-    ), "Only support float32 for a_scales and b_scales"
+    ), "a_scales_type must equal b_scales_type, and accum_type must be float32"
     comptime assert transpose_b, "only support k-major B"
 
     comptime SCHEDULER_THREADS = WARP_SIZE
@@ -1994,7 +1994,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
 
     comptime assert (
         a_scales_type == b_scales_type
-    ), "Only support float32 for scales"
+    ), "a_scales_type must equal b_scales_type"
 
     if (a_scales.dim(1) * size_of[a_scales_type]()) % 16 != 0:
         raise Error(
@@ -2240,9 +2240,9 @@ fn grouped_matmul_dynamic_scaled_fp8[
     comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
-    comptime assert (
-        a_scales_type == b_scales_type == DType.float32
-    ), "input A and B scales dtype should be float32"
+    comptime assert a_scales_type == b_scales_type and (
+        a_scales_type == DType.float32 or a_scales_type == DType.bfloat16
+    ), "input A and B scales dtype should be float32 or bfloat16"
     comptime assert (
         input_scale_granularity == "block"
         and weight_scale_granularity == "block"
