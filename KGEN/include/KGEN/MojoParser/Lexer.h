@@ -157,6 +157,21 @@ public:
   static void skipStringBody(const char *&ptr, const char *end, char quoteChar,
                              bool isTriple);
 
+  /// Starting after an opening '{' in a t-string interpolation, advance \p ptr
+  /// to the matching '}' while correctly skipping nested strings, t-strings,
+  /// and tracking brace depth. Returns true if matching '}' was found, false
+  /// if \p end was reached without finding it. Used by both the lexer and
+  /// parser.
+  static bool findTStringInterpolationEnd(const char *&ptr, const char *end,
+                                          size_t depth = 0);
+
+  /// Skip past a t-string body (brace-tracking + nested string/t-string
+  /// skipping). Advances \p ptr past the closing quote delimiter. Returns
+  /// true if the closing quote was found, false if unterminated.
+  /// Used by both the lexer and parser.
+  static bool skipTStringBody(const char *&ptr, const char *end, char quoteChar,
+                              bool isTriple, size_t depth = 0);
+
   MojoInflightDiag emitTokenError(const Twine &message) {
     return emitErrorAt(getToken().getSpelling().data(), message);
   }
@@ -185,6 +200,7 @@ private:
   void lexInteger(const char *tokStart, ssize_t indentation);
   void lexFloat(const char *tokStart, ssize_t indentation);
   void lexString(const char *tokStart, ssize_t indentation);
+  void lexTString(const char *tokStart, ssize_t indentation);
   void skipComment();
 
   /// Check if curPtr points to a triple-quote sequence. Delegates to the

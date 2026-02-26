@@ -43,6 +43,7 @@ TOK_IDENTIFIER(escaped_identifier) // `!foo`
 TOK_LITERAL(integer)   // 42, 0x42, 0o42, 0b101010
 TOK_LITERAL(float_num) // 1.0
 TOK_LITERAL(string)    // "Hello"
+TOK_LITERAL(t_string)  // t"Hello {world}!"
 
 // Punctuation.
 // See cpython/3.X/Parser/token.c

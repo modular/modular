@@ -242,6 +242,10 @@ void Lexer::lexToken() {
     default:
       // Handle identifiers.
       if (llvm::isAlpha(curPtr[-1])) {
+        // T-string literal
+        if ((curPtr[-1] == 't' || curPtr[-1] == 'T') &&
+            (*curPtr == '\'' || *curPtr == '"'))
+          return lexTString(tokStart, indentation);
         // Raw string literal
         if ((curPtr[-1] == 'r' || curPtr[-1] == 'R') &&
             (*curPtr == '\'' || *curPtr == '"'))
@@ -665,6 +669,138 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
                  },
              },
              result.result);
+}
+
+bool Lexer::findTStringInterpolationEnd(const char *&ptr, const char *end,
+                                        size_t depth) {
+  assert(depth <= 20 && "t-string nesting depth (20) exceeded");
+  assert((ptr && *ptr == '{') && "expected '{' at beginning of interpolation");
+  ptr++; // skip '{'
+  int braceDepth = 1;
+  while (ptr < end && braceDepth > 0) {
+    switch (*ptr) {
+    case '{':
+      braceDepth++;
+      ptr++;
+      break;
+    case '}':
+      braceDepth--;
+      if (braceDepth > 0)
+        ptr++;
+      break;
+    case '\\':
+      ptr++;
+      if (ptr < end)
+        ptr++;
+      break;
+    case '\'':
+    case '"': {
+      char quote = *ptr;
+      bool triple = isTripleQuote(ptr, end, quote);
+      ptr += triple ? 3 : 1;
+      skipStringBody(ptr, end, quote, triple);
+      break;
+    }
+    case 't':
+    case 'T':
+      if (ptr + 1 < end && (ptr[1] == '\'' || ptr[1] == '"')) {
+        ptr++; // skip 't'/'T'
+        char quote = *ptr;
+        bool triple = isTripleQuote(ptr, end, quote);
+        ptr += triple ? 3 : 1;
+        skipTStringBody(ptr, end, quote, triple, depth + 1);
+        break;
+      }
+      ptr++;
+      break;
+    default:
+      ptr++;
+      break;
+    }
+  }
+  if (braceDepth == 0) {
+    ptr++; // skip '}'
+    return true;
+  }
+  return false;
+}
+
+bool Lexer::skipTStringBody(const char *&ptr, const char *end, char quoteChar,
+                            bool isTriple, size_t depth) {
+  while (ptr < end) {
+    switch (*ptr) {
+    case '{':
+      // Escaped brace {{ stays in the literal region.
+      if (ptr + 1 < end && ptr[1] == '{') {
+        ptr += 2;
+        continue;
+      }
+      if (!findTStringInterpolationEnd(ptr, end, depth))
+        return false;
+      continue;
+    case '}':
+      // Escaped brace }} stays in the literal region.
+      if (ptr + 1 < end && ptr[1] == '}') {
+        ptr += 2;
+        continue;
+      }
+      // Lone '}' at depth 0 — just advance past it.
+      ptr++;
+      continue;
+    case '\\':
+      ptr++;
+      if (ptr < end)
+        ptr++;
+      continue;
+    case '\'':
+    case '"':
+      if (*ptr == quoteChar) {
+        if (!isTriple) {
+          ptr++;
+          return true;
+        }
+        if (isTripleQuote(ptr, end, quoteChar)) {
+          ptr += 3;
+          return true;
+        }
+      }
+      ptr++;
+      continue;
+    case '\n':
+    case '\r':
+      if (!isTriple)
+        return false; // newline in single-quoted literal region
+      [[fallthrough]];
+    default:
+      ptr++;
+      continue;
+    }
+  }
+  return false; // unterminated
+}
+
+/// Lex a t-string literal as a single token, consuming the entire body from the
+/// opening t" to the closing ". The parser will later walk the spelling to
+/// extract literal parts and expression regions.
+void Lexer::lexTString(const char *tokStart, ssize_t indentation) {
+  curPtr = tokStart + 1; // past 't'/'T'
+  assert((*curPtr == '\'' || *curPtr == '"') &&
+         "lexTString expected a quote character");
+
+  char quoteChar = *curPtr;
+  bool isTriple = consumeQuoteOpening(quoteChar);
+
+  if (skipTStringBody(curPtr, curBuffer.end(), quoteChar, isTriple))
+    return formToken(Token::t_string, tokStart, indentation);
+
+  // Distinguish newline-in-single-quoted from truly unterminated.
+  // If we stopped at a newline character, give the more specific error.
+  if (curPtr != curBuffer.end() && (*curPtr == '\n' || *curPtr == '\r'))
+    emitErrorAt(tokStart,
+                "t-string cannot contain unescaped newline (use triple "
+                "quotes or escape as \\n)");
+  else
+    emitErrorAt(tokStart, "unterminated t-string (missing closing quote)");
 }
 
 /// Lex a integer number literal.
