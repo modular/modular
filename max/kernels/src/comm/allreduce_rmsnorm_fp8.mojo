@@ -43,9 +43,9 @@ from gpu import (
 )
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.primitives import block
-from layout._coord import Coord, Idx
+from layout.coord import Coord, Idx
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout as LegacyLayout
 from layout.layout_tensor import LayoutTensor as LegacyLayoutTensor

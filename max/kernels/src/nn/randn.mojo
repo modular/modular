@@ -13,7 +13,7 @@
 
 from random import randn
 
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 
 
 fn random_normal[

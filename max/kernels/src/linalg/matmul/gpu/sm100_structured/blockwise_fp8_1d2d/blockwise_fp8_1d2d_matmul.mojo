@@ -38,7 +38,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout as LegacyLayout, LayoutTensor
-from layout._tile_tensor import TileTensor, flatten_leading
+from layout.tile_tensor import TileTensor, flatten_leading
 from ..structured_kernels.tile_types import create_tma_tile
 
 from utils.index import Index, IndexList

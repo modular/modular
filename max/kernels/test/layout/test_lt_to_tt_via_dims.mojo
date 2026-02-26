@@ -13,7 +13,7 @@
 """Step-by-step tests for lt_to_tt via _DimsToCoordLike (the working path)."""
 
 from buffer import Dim, DimList
-from layout._coord import (
+from layout.coord import (
     _DimsToCoordLike,
     Coord,
     CoordLike,
@@ -21,7 +21,7 @@ from layout._coord import (
     RuntimeInt,
 )
 from layout._layout import Layout as InternalLayout
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 
 
 # ============================================================

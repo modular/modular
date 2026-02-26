@@ -19,9 +19,9 @@ from random import random_float64
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId
-from layout._coord import Coord, Idx
+from layout.coord import Coord, Idx
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.toppminp import min_p_sampling, top_p_sampling
 from testing import assert_equal
 

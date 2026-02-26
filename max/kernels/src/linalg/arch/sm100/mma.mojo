@@ -22,8 +22,8 @@ from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.compute.arch.tcgen05 import *
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import IntTuple, Layout, LayoutTensor
-from layout._coord import coord_to_int_tuple
-from layout._tile_tensor import TileTensor
+from layout.coord import coord_to_int_tuple
+from layout.tile_tensor import TileTensor
 from layout.layout import coalesce
 from layout.tensor_core_async import (
     tile_to_descriptor,

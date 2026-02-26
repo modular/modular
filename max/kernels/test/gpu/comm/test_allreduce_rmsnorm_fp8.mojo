@@ -23,9 +23,9 @@ from comm.allreduce_rmsnorm_fp8 import allreduce_rmsnorm_fp8
 from comm.sync import is_p2p_enabled
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout._coord import Coord
+from layout.coord import Coord
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout._utils import ManagedLayoutTensor
 from nn.normalization import rms_norm_fused_fp8
 from runtime.asyncrt import DeviceContextPtr

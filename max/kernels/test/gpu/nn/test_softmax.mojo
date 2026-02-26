@@ -24,9 +24,9 @@ from gpu.host import DeviceContext
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, RuntimeLayout
-from layout._coord import Coord, Idx
+from layout.coord import Coord, Idx
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.softmax import (
     _online_softmax_kernel,
     _softmax_cpu,

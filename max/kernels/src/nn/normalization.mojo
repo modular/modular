@@ -39,7 +39,7 @@ from gpu.host.info import is_cpu, is_gpu
 from gpu.memory import external_memory
 from gpu.primitives import block
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from layout._coord import (
+from layout.coord import (
     Coord,
     CoordLike,
     DynamicCoord,
@@ -48,7 +48,7 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import Layout, TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout import Layout as LegacyLayout
 from layout.layout_tensor import LayoutTensor as LegacyLayoutTensor

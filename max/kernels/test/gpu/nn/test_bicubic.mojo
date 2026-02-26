@@ -14,9 +14,9 @@
 from math import isclose
 
 from gpu.host import DeviceContext
-from layout._coord import Coord, CoordLike, coord
+from layout.coord import Coord, CoordLike, coord
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
 from testing import assert_almost_equal

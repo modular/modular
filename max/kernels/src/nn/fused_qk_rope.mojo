@@ -21,7 +21,7 @@ from complex import ComplexSIMD
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
-from layout._coord import (
+from layout.coord import (
     Coord,
     CoordLike,
     Idx,
@@ -30,7 +30,7 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import TensorLayout, RowMajorLayout, Layout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from utils import IndexList

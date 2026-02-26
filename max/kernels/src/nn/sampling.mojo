@@ -19,7 +19,7 @@ from algorithm.functional import elementwise
 from gpu import block_idx, thread_idx
 from gpu.host.info import is_gpu
 from layout._layout import TensorLayout
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 from runtime.asyncrt import DeviceContextPtr
 

@@ -13,9 +13,9 @@
 from complex import ComplexFloat32
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-from layout._coord import Coord, Idx, coord
+from layout.coord import Coord, Idx, coord
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from math import sqrt
 from nn.irfft import irfft
 from testing import assert_almost_equal

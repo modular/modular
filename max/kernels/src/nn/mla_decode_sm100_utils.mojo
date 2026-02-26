@@ -84,7 +84,7 @@ from nn.mha_sm100_2q import (
     sub_ftz,
 )
 from layout._layout import row_major
-from layout._tile_tensor import stack_allocation as tt_stack_allocation
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 from builtin.device_passable import DevicePassable
 from sys._assembly import inlined_assembly

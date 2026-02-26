@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout._coord import Coord, CoordLike, Idx
+from layout.coord import Coord, CoordLike, Idx
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.concat import _concat_parallel, _concat_serial, concat
 
 from utils import Index, IndexList, StaticTuple

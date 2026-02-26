@@ -759,7 +759,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
         Examples:
             ```mojo
-            from layout._coord import Coord, Idx
+            from layout.coord import Coord, Idx
             var nested = Coord(
                 Idx[5](),
                 Coord(Idx[3](), Idx[2]()),
@@ -813,7 +813,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
         Examples:
             ```mojo
-            from layout._coord import Coord, ComptimeInt, RuntimeInt
+            from layout.coord import Coord, ComptimeInt, RuntimeInt
             var c = Coord(ComptimeInt[3](), RuntimeInt[DType.int32](5), ComptimeInt[7]())
             var dynamic = c.make_dynamic[DType.int64]()
             # dynamic is Coord(RuntimeInt[DType.int64](3), RuntimeInt[DType.int64](5), RuntimeInt[DType.int64](7))
@@ -1562,7 +1562,7 @@ For each Dim in the input:
 Example:
     ```mojo
     from buffer import Dim, DimList
-    from layout._coord import _DimsToCoordLike, Coord
+    from layout.coord import _DimsToCoordLike, Coord
 
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
     comptime dims = DimList(Dim(3), Dim(), Dim(5))
@@ -1615,7 +1615,7 @@ For each Dim in the input:
 Example:
     ```mojo
     from buffer import Dim, DimList
-    from layout._coord import _DimsToCoordLike, Coord
+    from layout.coord import _DimsToCoordLike, Coord
 
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
     comptime dims = DimList(Dim(3), Dim(), Dim(5))
@@ -1666,7 +1666,7 @@ For each Dim in the input:
 Example:
     ```mojo
     from buffer import Dim, DimList
-    from layout._coord import _CoordToDimList, Coord, Idx
+    from layout.coord import _CoordToDimList, Coord, Idx
 
     # Static dims become ComptimeInt, dynamic dims become RuntimeInt
     var coords = Coord(Idx(3), Idx[5]())
@@ -1707,7 +1707,7 @@ All elements are converted to RuntimeInt[dtype], regardless of their original ty
 Example:
 
     ```mojo
-    from layout._coord import _CoordToDynamic, ComptimeInt, RuntimeInt, Coord
+    from layout.coord import _CoordToDynamic, ComptimeInt, RuntimeInt, Coord
     # All elements become RuntimeInt[DType.int64]
     comptime types = _CoordToDynamic[DType.int64, ComptimeInt[3], RuntimeInt[DType.int32], ComptimeInt[5]]
     # types is equivalent to Variadic.types[RuntimeInt[DType.int64], RuntimeInt[DType.int64], RuntimeInt[DType.int64]]
@@ -1775,7 +1775,7 @@ For each dimension:
 
 Example:
     ```mojo
-    from layout._coord import _Idx2CrdResultTypes, ComptimeInt, RuntimeInt
+    from layout.coord import _Idx2CrdResultTypes, ComptimeInt, RuntimeInt
     comptime stride_t = Variadic.types[T=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]
     comptime shape_t = Variadic.types[T=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]
     comptime types = _Idx2CrdResultTypes[DType.int64, RuntimeInt[DType.int64], stride_t, shape_t]

@@ -22,9 +22,9 @@ GPU kernel output to it.
 from math import ceildiv
 
 from gpu.host import DeviceContext
-from layout._coord import Coord, Idx
+from layout.coord import Coord, Idx
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.tpool_patch_merger import (
     tpool_patch_merger,
 )

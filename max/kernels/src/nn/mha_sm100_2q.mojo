@@ -65,8 +65,8 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 from layout._layout import Layout as InternalLayout, row_major
-from layout._tile_tensor import TileTensor
-from layout._tile_tensor import stack_allocation as tt_stack_allocation
+from layout.tile_tensor import TileTensor
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,

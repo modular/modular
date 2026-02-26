@@ -15,9 +15,9 @@ from math import clamp
 
 from algorithm import elementwise
 from gpu.host import DeviceContext, get_gpu_target
-from layout._coord import Coord, DynamicCoord, Idx, coord_to_index_list
+from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
 from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from runtime.asyncrt import DeviceContextPtr
 from sys.info import simd_width_of, _current_target
 

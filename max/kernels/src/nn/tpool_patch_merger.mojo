@@ -16,9 +16,9 @@ from sys.info import simd_width_of
 
 from gpu import block_idx, thread_idx
 from gpu.host import DeviceContext
-from layout._coord import Coord, Idx, coord
+from layout.coord import Coord, Idx, coord
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from memory import UnsafePointer
 from runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, StaticTensorSpec

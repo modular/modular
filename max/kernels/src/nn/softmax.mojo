@@ -40,9 +40,9 @@ from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from layout._coord import RuntimeInt, coord_to_index_list
+from layout.coord import RuntimeInt, coord_to_index_list
 from layout._layout import RowMajorLayout, row_major
-from layout._tile_tensor import (
+from layout.tile_tensor import (
     TileTensor,
     TensorLayout,
     stack_allocation as tt_stack_allocation,

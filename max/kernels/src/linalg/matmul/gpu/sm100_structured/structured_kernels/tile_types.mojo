@@ -44,7 +44,7 @@ from layout.tma_async import (
 )
 from builtin.variadics import Variadic
 from buffer import Dim, DimList
-from layout._coord import (
+from layout.coord import (
     ComptimeInt,
     Coord,
     CoordLike,
@@ -53,7 +53,7 @@ from layout._coord import (
     _DimsToCoordLike,
 )
 from layout._layout import Layout, TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 from memory import LegacyUnsafePointer, stack_allocation
 from utils.static_tuple import StaticTuple

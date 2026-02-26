@@ -27,9 +27,9 @@ from buffer.dimlist import DimList, Dim
 from gpu.host import DeviceContext
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from internal_utils._utils import InitializationType, init_vector_launch
-from layout._coord import Coord, Idx, RuntimeInt
+from layout.coord import Coord, Idx, RuntimeInt
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (

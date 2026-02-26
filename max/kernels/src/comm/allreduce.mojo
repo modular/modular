@@ -96,9 +96,9 @@ from math import ceildiv
 from sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from layout._layout import row_major
-from layout._coord import Coord, Idx
+from layout.coord import Coord, Idx
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,

@@ -31,8 +31,8 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200, H100
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._coord import coord_to_index_list
-from layout._tile_tensor import TileTensor
+from layout.coord import coord_to_index_list
+from layout.tile_tensor import TileTensor
 from logger import Logger
 from memory import LegacyUnsafePointer, bitcast
 

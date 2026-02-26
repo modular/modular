@@ -13,8 +13,8 @@
 
 from math import iota
 
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
+from layout.coord import Coord, Idx
+from layout.tile_tensor import TileTensor
 
 from utils import IndexList
 

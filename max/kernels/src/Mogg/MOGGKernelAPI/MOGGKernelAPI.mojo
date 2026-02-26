@@ -69,7 +69,7 @@ from kv_cache.types import (
 )
 from layout import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
-from layout._coord import (
+from layout.coord import (
     DynamicCoord,
     RuntimeInt,
     Coord,
@@ -78,7 +78,7 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import Layout as TileLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
