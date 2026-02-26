@@ -2839,6 +2839,7 @@ namespace M::KGEN::LIT {
 
 struct AuxiliaryParameters {
   size_t startingIndex;
+  size_t numStructAuxiliaryParams;
   SmallVector<ParamDeclAttr> traitAuxiliaryParameters;
   SmallVector<TypedAttr> structAliases;
   SmallVector<StringAttr> traitAliases;
@@ -2871,71 +2872,47 @@ private:
 
 namespace {
 
-/// Check if an actual argument type matches an expected argument type, handling
-/// auxiliary parameter references.
 static bool canArgTypeMatchTraitArgType(Type actualType, Type expectedType,
                                         AuxiliaryParameters &ctx,
                                         SharedState &shared,
-                                        AliasSubstitutions &substitutions) {
-  // unwrap references
-  if (auto actualRef = dyn_cast<RefType>(actualType)) {
-    if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
-      if (actualRef.getOriginType().isMutableKnown(true) &&
-          !expectedRef.getOriginType().isMutableKnown(true))
-        return false;
-      return canArgTypeMatchTraitArgType(actualRef.getElementType(),
-                                         expectedRef.getElementType(), ctx,
-                                         shared, substitutions);
-    }
-  }
+                                        AliasSubstitutions &substitutions);
 
-  auto expectedParamType = dyn_cast<ParamType>(expectedType);
-  if (!expectedParamType)
-    return isEqualCanon(actualType, expectedType);
+struct AliasConstraintInfo {
+  Type constraintType;
+  StringAttr traitAliasName;
+};
 
-  TypedAttr expectedParam = expectedParamType.getParam();
-  auto expectedIndexRef = sugarDynCast<ParamIndexRefAttr>(expectedParam);
-  // If the expected is not a ParamIndexRefAttr then it is referencing a call
-  // parameter in which case the actual must have been an exact match.
-  if (!expectedIndexRef)
-    return isEqualCanon(actualType, expectedType);
-
-  // Check if this is an auxiliary parameter (alias reference).
+static std::optional<AliasConstraintInfo>
+getAliasConstraintForExpectedIndexRef(ParamIndexRefAttr expectedIndexRef,
+                                      AuxiliaryParameters &ctx) {
   ParamDeclAttr auxiliaryParameter =
       ctx.getAdaptorAuxiliaryParameter(expectedIndexRef);
   if (!auxiliaryParameter)
-    return isEqualCanon(actualType, expectedType);
-
-  Type constraintType = auxiliaryParameter.getType();
-  // Use the trait's alias name (e.g., "R") not the auxiliary param name ("_R")
+    return std::nullopt;
   StringAttr traitAliasName = ctx.getTraitAliasName(expectedIndexRef);
   if (!traitAliasName)
-    return false;
+    return std::nullopt;
+  return AliasConstraintInfo{
+      .constraintType = auxiliaryParameter.getType(),
+      .traitAliasName = traitAliasName,
+  };
+}
 
-  auto actualParamType = dyn_cast<ParamType>(actualType);
-  // Record a concrete type.
-  if (!actualParamType)
-    return canTypeConformToAliasConstraint(
-        actualType, constraintType, traitAliasName, shared, substitutions);
-
-  TypedAttr actualParam = actualParamType.getParam();
-  auto actualIndexRef = sugarDynCast<ParamIndexRefAttr>(actualParam);
-  if (!actualIndexRef)
-    return false;
+static bool
+tryRecordAliasFromActualIndexRef(ParamIndexRefAttr actualIndexRef,
+                                 Type constraintType, StringAttr traitAliasName,
+                                 AuxiliaryParameters &ctx, SharedState &shared,
+                                 AliasSubstitutions &substitutions) {
   Type actualConstraint = actualIndexRef.getType();
   TypedAttr aliasRef = ctx.getAliasRef(actualIndexRef);
   size_t index = actualIndexRef.getIndex();
-  assert(aliasRef &&
-         "If expected references an auxiliary parameter and actual is "
-         "non-concrete, actual must also reference an auxiliary parameter");
-  // Record which adaptor parameter index supplies the trait alias value.
-  // This index lets us recover the argument bound to the target auxiliary
-  // parameter.
+  if (!aliasRef)
+    return false;
   if (isEqualCanon(actualConstraint, constraintType))
     return tryRecordSubstitution(substitutions, traitAliasName, aliasRef,
                                  index);
 
-  // If both are trait types, check conformance.
+  // Handle the case where the expected type is a superset of the actual type.
   if (auto actualTrait = sugarDynCast<TraitType>(actualConstraint)) {
     if (auto expectedTrait = sugarDynCast<TraitType>(constraintType)) {
       if (ASTType(actualTrait).checkConformance(expectedTrait, shared) ==
@@ -2949,50 +2926,203 @@ static bool canArgTypeMatchTraitArgType(Type actualType, Type expectedType,
   return false;
 }
 
-/// Check if a struct's __call__ signature can implement a closure trait's
-/// __call__ signature.
-static LogicalResult
-canStructSignatureImplementTrait(FnTypeGeneratorType structSig,
-                                 FnTypeGeneratorType traitSig,
-                                 AuxiliaryParameters &ctx, SharedState &shared,
-                                 AliasSubstitutions &outSubstitutions) {
-  if (structSig.hasMemoryOnlyResult() != traitSig.hasMemoryOnlyResult())
-    return failure();
+/// Check if a concrete value can satisfy an alias constraint type.
+static bool
+canValueConformToAliasConstraint(TypedAttr actualValue, Type constraintType,
+                                 StringAttr aliasName, SharedState &shared,
+                                 AliasSubstitutions &substitutions) {
+  if (sugarIsa<TraitType>(constraintType)) {
+    // A TypeParamAttr wraps a concrete type with a trait constraint as its MLIR
+    // type. Unwrap to get the concrete type for conformance checking.
+    Type actualType = actualValue.getType();
+    if (auto typeParam = dyn_cast<TypeParamAttr>(actualValue))
+      actualType = typeParam.getTypeValue();
+    return canTypeConformToAliasConstraint(actualType, constraintType,
+                                           aliasName, shared, substitutions);
+  }
+  if (!isEqualCanon(actualValue.getType(), constraintType))
+    return false;
+  return tryRecordSubstitution(substitutions, aliasName, actualValue);
+}
 
-  ArrayRef<Type> structArgs = structSig.getArguments();
-  ArrayRef<Type> traitArgs = traitSig.getArguments();
+/// Match two parameter values, allowing expected values to reference auxiliary
+/// alias parameters and recording substitutions.
+static bool canParamValueMatchTraitParamValue(
+    TypedAttr actualParam, TypedAttr expectedParam, AuxiliaryParameters &ctx,
+    SharedState &shared, AliasSubstitutions &substitutions) {
+  if (isEqualCanon(actualParam, expectedParam))
+    return true;
 
-  if (structArgs.size() != traitArgs.size())
-    return failure();
-
-  // Check each argument type
-  for (auto [structArg, traitArg] : llvm::zip(structArgs, traitArgs)) {
-    if (!canArgTypeMatchTraitArgType(structArg, traitArg, ctx, shared,
-                                     outSubstitutions))
-      return failure();
+  if (auto actualTypeParam = dyn_cast<TypeParamAttr>(actualParam)) {
+    if (auto expectedTypeParam = dyn_cast<TypeParamAttr>(expectedParam))
+      return canArgTypeMatchTraitArgType(actualTypeParam.getTypeValue(),
+                                         expectedTypeParam.getTypeValue(), ctx,
+                                         shared, substitutions);
   }
 
-  // Check result types
-  if (!canArgTypeMatchTraitArgType(structSig.getUserResultType(),
-                                   traitSig.getUserResultType(), ctx, shared,
-                                   outSubstitutions))
-    return failure();
+  auto expectedIndexRef = sugarDynCast<ParamIndexRefAttr>(expectedParam);
+  if (!expectedIndexRef)
+    return false;
+
+  std::optional<AliasConstraintInfo> aliasConstraint =
+      getAliasConstraintForExpectedIndexRef(expectedIndexRef, ctx);
+  if (!aliasConstraint)
+    return false;
+
+  auto actualIndexRef = sugarDynCast<ParamIndexRefAttr>(actualParam);
+  if (!actualIndexRef)
+    return canValueConformToAliasConstraint(
+        actualParam, aliasConstraint->constraintType,
+        aliasConstraint->traitAliasName, shared, substitutions);
+  return tryRecordAliasFromActualIndexRef(
+      actualIndexRef, aliasConstraint->constraintType,
+      aliasConstraint->traitAliasName, ctx, shared, substitutions);
+}
+
+/// Check if one function signature can implement another.
+static bool canFunctionSignatureMatchTrait(FnTypeGeneratorType actualSig,
+                                           FnTypeGeneratorType expectedSig,
+                                           AuxiliaryParameters &ctx,
+                                           SharedState &shared,
+                                           AliasSubstitutions &substitutions) {
+  if (actualSig.hasMemoryOnlyResult() != expectedSig.hasMemoryOnlyResult())
+    return false;
+  ArrayRef<Type> actualParams =
+      actualSig.getInputParamTypes().drop_back(ctx.numStructAuxiliaryParams);
+  ArrayRef<Type> targetParams = expectedSig.getInputParamTypes().drop_back(
+      ctx.traitAuxiliaryParameters.size());
+  if (actualParams.size() != targetParams.size())
+    return false;
+
+  for (auto [thisParam, thatParam] : llvm::zip(actualParams, targetParams)) {
+    if (!canArgTypeMatchTraitArgType(thisParam, thatParam, ctx, shared,
+                                     substitutions))
+      return false;
+  }
+
+  ArrayRef<Type> actualArgs = actualSig.getArguments();
+  ArrayRef<Type> expectedArgs = expectedSig.getArguments();
+  if (actualArgs.size() != expectedArgs.size())
+    return false;
+
+  for (auto [actualArg, expectedArg] : llvm::zip(actualArgs, expectedArgs)) {
+    if (!canArgTypeMatchTraitArgType(actualArg, expectedArg, ctx, shared,
+                                     substitutions))
+      return false;
+  }
+
+  if (!canArgTypeMatchTraitArgType(actualSig.getUserResultType(),
+                                   expectedSig.getUserResultType(), ctx, shared,
+                                   substitutions))
+    return false;
 
   // TODO: handle throws/async transformations
-  if (structSig.getFnEffects() != traitSig.getFnEffects())
-    return failure();
+  if (actualSig.getFnEffects() != expectedSig.getFnEffects())
+    return false;
 
-  return success();
+  return true;
+}
+
+/// Check if an actual argument type matches an expected argument type, handling
+/// auxiliary parameter references.
+static bool canArgTypeMatchTraitArgType(Type actualType, Type expectedType,
+                                        AuxiliaryParameters &ctx,
+                                        SharedState &shared,
+                                        AliasSubstitutions &substitutions) {
+
+  // unwrap references
+  if (auto actualRef = dyn_cast<RefType>(actualType)) {
+    if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
+      if (actualRef.getOriginType().isMutableKnown(true) &&
+          !expectedRef.getOriginType().isMutableKnown(true))
+        return false;
+      return canArgTypeMatchTraitArgType(actualRef.getElementType(),
+                                         expectedRef.getElementType(), ctx,
+                                         shared, substitutions);
+    }
+  }
+
+  auto expectedParamType = dyn_cast<ParamType>(expectedType);
+  if (!expectedParamType) {
+    // The actual type and the expected type are concrete types but may contain
+    // references to parameters.
+    if (auto actual = dyn_cast<LIT::StructType>(actualType)) {
+      if (auto expected = dyn_cast<LIT::StructType>(expectedType)) {
+        if (actual.getParamValues().size() != expected.getParamValues().size())
+          return false;
+        if (actual.getParamValues().size() == 0)
+          return isEqualCanon(actualType, expectedType);
+        if (actual.getSymbol() != expected.getSymbol())
+          return false;
+        for (auto [actualParam, expectedParam] :
+             llvm::zip(actual.getParamValues(), expected.getParamValues())) {
+          if (!canParamValueMatchTraitParamValue(actualParam, expectedParam,
+                                                 ctx, shared, substitutions))
+            return false;
+        }
+        // if all parameters are matchable and symbol is the same then they are
+        // the same.
+        return true;
+      }
+      // actual is struct type but expected is something else: not param nor
+      // struct. Fail
+      return false;
+    }
+    // The actual type and the expected type are generator types but may contain
+    // references to parameters.
+    if (auto actualFnSym = dyn_cast<FnTypeGeneratorType>(actualType)) {
+      if (auto expectedFnSym = dyn_cast<FnTypeGeneratorType>(expectedType)) {
+        return canFunctionSignatureMatchTrait(actualFnSym, expectedFnSym, ctx,
+                                              shared, substitutions);
+      }
+    }
+    return isEqualCanon(actualType, expectedType);
+  }
+
+  TypedAttr expectedParam = expectedParamType.getParam();
+  auto expectedIndexRef = sugarDynCast<ParamIndexRefAttr>(expectedParam);
+  // If the expected is not a ParamIndexRefAttr then it is referencing a call
+  // parameter in which case the actual must have been an exact match.
+  if (!expectedIndexRef)
+    return isEqualCanon(actualType, expectedType);
+
+  // Check if this is an auxiliary parameter (alias reference).
+  std::optional<AliasConstraintInfo> aliasConstraint =
+      getAliasConstraintForExpectedIndexRef(expectedIndexRef, ctx);
+  if (!aliasConstraint)
+    return isEqualCanon(actualType, expectedType);
+
+  auto actualParamType = dyn_cast<ParamType>(actualType);
+  // Record a concrete type.
+  if (!actualParamType)
+    return canTypeConformToAliasConstraint(
+        actualType, aliasConstraint->constraintType,
+        aliasConstraint->traitAliasName, shared, substitutions);
+
+  TypedAttr actualParam = actualParamType.getParam();
+  auto actualIndexRef = sugarDynCast<ParamIndexRefAttr>(actualParam);
+  if (!actualIndexRef)
+    return false;
+  assert(ctx.getAliasRef(actualIndexRef) &&
+         "If expected references an auxiliary parameter and actual is "
+         "non-concrete, actual must also reference an auxiliary parameter");
+  return tryRecordAliasFromActualIndexRef(
+      actualIndexRef, aliasConstraint->constraintType,
+      aliasConstraint->traitAliasName, ctx, shared, substitutions);
 }
 
 } // namespace
 
 bool AdapteeValue::isConcrete() const {
-  if (auto typeValue = dyn_cast<KGEN::TypeParamAttr>(aliasValue)) {
-    if (isa<StructType>(typeValue.getMlirType()))
-      return true;
+  if (!aliasValue)
+    return false;
+  if (isa<ParamDeclRefAttr, ParamIndexRefAttr, GetWitnessAttr>(aliasValue))
+    return false;
+  if (auto upcast = dyn_cast<UpcastAttr>(aliasValue)) {
+    return !isa<ParamDeclRefAttr, ParamIndexRefAttr, GetWitnessAttr>(
+        upcast.getInputTypeValue());
   }
-  return false;
+  return true;
 }
 
 void ClosureEmitter::buildCallAdaptorAndAddWitness(
@@ -3187,15 +3317,20 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   unsigned startingIndex =
       callFunction.getInputParams().size() - (traitAliasCount + originCount);
   SmallVector<TypedAttr> structAliasOps;
-  for (AliasDeclOp aliasOp : structDeclOp.getFields().getOps<AliasDeclOp>())
-    structAliasOps.push_back(*aliasOp.getValue());
+  DenseSet<Attribute> uniqueGetWitnessAttrs;
+  for (AliasDeclOp aliasOp : structDeclOp.getFields().getOps<AliasDeclOp>()) {
+    TypedAttr value = *aliasOp.getValue();
+    structAliasOps.push_back(value);
+    if (isa<GetWitnessAttr>(value))
+      uniqueGetWitnessAttrs.insert(value);
+  }
   SmallVector<StringAttr> traitAliasOps;
   for (AliasDeclOp aliasOp : traitAliasRange)
     traitAliasOps.push_back(aliasOp.getParamDecl().getName());
 
-  AuxiliaryParameters auxCtx{startingIndex, std::move(auxiliaryParams),
-                             std::move(structAliasOps),
-                             std::move(traitAliasOps)};
+  AuxiliaryParameters auxCtx{
+      startingIndex, uniqueGetWitnessAttrs.size(), std::move(auxiliaryParams),
+      std::move(structAliasOps), std::move(traitAliasOps)};
   for (ASTDecl *callDecl : callDecls) {
     auto structCallFn = dyn_cast_or_null<FnOp>(callDecl->getIfOperation());
     if (!structCallFn)
@@ -3206,9 +3341,8 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
 
     AliasSubstitutions aliasSubstitutions;
     FnTypeGeneratorType structCallSig = structCallFn.getFuncTypeGenerator();
-    if (succeeded(canStructSignatureImplementTrait(
-            structCallSig, traitSignature, auxCtx, shared,
-            aliasSubstitutions))) {
+    if (canFunctionSignatureMatchTrait(structCallSig, traitSignature, auxCtx,
+                                       shared, aliasSubstitutions)) {
       if (rebind)
         buildCallAdaptorAndAddWitness(structDeclOp, structDecl, traitDeclOp,
                                       callFunction, structCallFn, auxCtx,

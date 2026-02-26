@@ -597,3 +597,182 @@ fn useIt[TT: DoIt, C: fn(x: TT) unified](impl: C):
 fn addTrivialRegisterPassable(x: Int):
     fn closure() unified register_passable {var} -> Int:
         return x
+
+
+# // -----
+
+# COM: Verify top-level function symbols get conformance for count's closure
+# COM: trait.
+
+@fieldwise_init
+struct ToyBool:
+    var value: Int
+
+
+@fieldwise_init
+struct ToyMask[dtype_tag: Int, w: Int]:
+    var value: Int
+
+
+struct ToySIMD[dtype_tag: Int, w: Int]:
+    pass
+
+
+struct ToyScalar[dtype_tag: Int]:
+    pass
+
+
+@fieldwise_init
+struct MiniSpan[dtype_tag: Int]:
+    var value: Int
+
+    fn count[
+        F: fn[w: Int](vec: ToySIMD[Self.dtype_tag, w]) unified -> ToyMask[
+            Self.dtype_tag, w
+        ]
+    ](self, func: F) -> Int:
+        return 0
+
+# CHECK: lit.struct.decl @"fn[w: Int](vec: ToySIMD[1, w]) -> ToyMask[1, w]_{{.*}}"
+# CHECK: kgen.conformance @"fn[w: Int](vec: ToySIMD[dtype_tag, w]) -> ToyMask[dtype_tag, w]" {
+# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
+# CHECK: kgen.witness "dtype_tag" : !Int = {1}
+
+fn is_vec_a[
+    w: Int
+](vec: ToySIMD[1, w]) -> ToyMask[1, w]:
+    _ = vec
+    return ToyMask[1, w](0)
+
+
+fn repro_top_level():
+    var s = MiniSpan[1](0)
+    _ = s.count[is_vec_a](is_vec_a)
+
+
+# // -----
+
+# COM: Verify nested captured unified closures get conformance for count's
+# COM: closure trait.
+
+
+@fieldwise_init
+struct ToyBool:
+    var value: Int
+
+
+@fieldwise_init
+struct ToyMask[dtype_tag: Int, u: Int]:
+    var value: Int
+
+
+struct ToySIMD[dtype_tag: Int, u: Int]:
+    pass
+
+
+struct ToyScalar[dtype_tag: Int]:
+    pass
+
+
+@fieldwise_init
+struct MiniSpan[dtype_tag: Int]:
+    var value: Int
+
+    fn count[
+        F: fn[u: Int](vec: ToySIMD[Self.dtype_tag, u]) unified -> ToyMask[
+            Self.dtype_tag, u
+        ]
+    ](self, func: F) -> Int:
+        return 0
+
+
+# CHECK: lit.struct.decl @"fn[u: Int](vec: ToySIMD[1, u]) -> ToyMask[1, u]_{{.*}}"
+# CHECK: kgen.conformance @"fn[u: Int](vec: ToySIMD[dtype_tag, u]) -> ToyMask[dtype_tag, u]" {
+# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
+# CHECK: kgen.witness "dtype_tag" : !Int = {1}
+fn repro_capturing():
+    var capture = 0
+    fn is_vec_a_capturing[
+        u: Int
+    ](vec: ToySIMD[1, u]) unified {var capture} -> ToyMask[1, u]:
+        _ = vec
+        _ = capture
+        return ToyMask[1, u](0)
+
+    var s = MiniSpan[1](0)
+    _ = s.count(is_vec_a_capturing)
+
+
+# // -----
+
+# COM: Verify nested type parameters constrained by a trait (not just Int
+# COM: parameters) get conformance resolved from nested struct type arguments.
+
+
+trait ElemLike:
+    pass
+
+
+struct ConcreteElem(ElemLike):
+    pass
+
+
+@fieldwise_init
+struct Box[E: ElemLike, n: Int]:
+    var value: Int
+
+
+@fieldwise_init
+struct Store[E: ElemLike]:
+    var value: Int
+
+    fn apply[
+        F: fn[n: Int](item: Box[Self.E, n]) unified -> Box[Self.E, n]
+    ](self, func: F) -> Int:
+        return 0
+
+
+# CHECK: lit.struct.decl @"fn[n: Int](item: Box[ConcreteElem, n]) -> Box[ConcreteElem, n]_{{.*}}"
+# CHECK: kgen.conformance @"fn[n: Int](item: Box[E, n]) -> Box[E, n]" {
+# CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
+# CHECK: kgen.witness "E" : !ElemLike = !ConcreteElem
+fn repro_nested_type_param():
+    var capture = 0
+    fn apply_concrete[
+        n: Int
+    ](item: Box[ConcreteElem, n]) unified {var capture} -> Box[ConcreteElem, n]:
+        _ = item
+        _ = capture
+        return Box[ConcreteElem, n](0)
+
+    var s = Store[ConcreteElem](0)
+    _ = s.apply(apply_concrete)
+
+
+# // -----
+
+# COM: Verify that custom types (the result type !kgen.none in this case) are compared using equality
+
+fn print(x:Int):
+    pass
+
+
+fn callee[
+    func: fn[width: Int, rank: Int, alignment: Int = 1]() unified -> None,
+    //,
+    simd_width: Int,
+](shape: Int, ctx: Int, closure: func):
+    closure[simd_width, 2]()
+
+
+# CHECK: lit.struct.decl @"fn[simd_width: Int, rank: Int, alignment: Int = 1]() -> None_{{.*}}"
+# CHECK: kgen.conformance @"fn[width: Int, rank: Int, alignment: Int = 1]() -> None" {
+# CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
+def main():
+    var x = 42
+
+    @always_inline
+    fn my_func[simd_width: Int, rank: Int, alignment: Int = 1]() unified {read x}:
+        print(x)
+
+    callee[simd_width=4](10, 11, my_func)
