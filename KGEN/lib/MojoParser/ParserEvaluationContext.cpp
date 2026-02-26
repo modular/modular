@@ -125,8 +125,11 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
     // Try LIT-specific trait type folding first, then fall back to the attr
     // folder for struct resolution.
-    FailureOr<TypedAttr> result =
-        simplifyConformsToAgainstTypeValue(conformsTo);
+    FailureOr<TypedAttr> result = simplifyConformsToAgainstTypeValue(
+        conformsTo, [&](SymbolRefAttr symbol) -> TraitDeclOp {
+          ASTDecl &decl = shared.declResolver->getDeclForTypeSymbol(symbol);
+          return cast<TraitDeclOp>(decl.getIfOperation());
+        });
     if (succeeded(result))
       return result;
     return conformsTo.evaluateWithContext(*this);

@@ -310,11 +310,17 @@ TypedAttr stripStructExtractFromBool(TypedAttr prop);
 // ParameterEvaluationContext
 //===----------------------------------------------------------------------===//
 
+void sortAndDeduplicateSymbols(SmallVectorImpl<SymbolRefAttr> &symbols);
+void canonicalizeTraitCompositionSymbols(
+    SmallVectorImpl<SymbolRefAttr> &symbols,
+    llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
+
 /// Simplify a conforms_to attr by checking if the type value's trait bounds
 /// already prove conformance. Extracts the TraitType from the type value
 /// automatically, handling both parser and post-lower-lit representations.
-FailureOr<TypedAttr>
-simplifyConformsToAgainstTypeValue(TypeConformsToTraitAttr conformsTo);
+FailureOr<TypedAttr> simplifyConformsToAgainstTypeValue(
+    TypeConformsToTraitAttr conformsTo,
+    llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
 
 /// LIT dialect evaluation context. Resolves LIT struct declarations for struct
 /// reflection operations. Inherits common dispatch from base class.
