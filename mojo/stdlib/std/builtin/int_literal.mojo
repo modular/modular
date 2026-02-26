@@ -254,7 +254,27 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         """
         return {}
 
-    # TODO: implement __pow__
+    @always_inline("builtin")
+    fn __pow__(
+        self, exp: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<pow `,
+            self.value,
+            `,`,
+            exp.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
+        """Return the value raised to the power of the given exponent.
+
+        Args:
+            exp: The exponent value.
+
+        Returns:
+            The value of `self` raised to the power of `exp`.
+        """
+        return {}
 
     @always_inline("builtin")
     fn __floordiv__(
