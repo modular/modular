@@ -223,6 +223,24 @@ async def run_with_default_executor(
     return await loop.run_in_executor(None, fn, *args, **kwargs)
 
 
+def _resolve_tokenizer_max_length(
+    max_length: int | None, pipeline_config: PipelineConfig | None
+) -> int | None:
+    """Resolve tokenizer max length with pipeline config fallback."""
+    if max_length is not None:
+        return max_length
+
+    if pipeline_config is None:
+        return None
+
+    model_config = getattr(pipeline_config, "model", None)
+    if model_config is None:
+        return None
+
+    model_max_length = getattr(model_config, "max_length", None)
+    return model_max_length if isinstance(model_max_length, int) else None
+
+
 class TextTokenizer(
     PipelineTokenizer[
         TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
@@ -256,15 +274,16 @@ class TextTokenizer(
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
+        resolved_max_length = _resolve_tokenizer_max_length(
+            max_length, pipeline_config
+        )
 
         try:
             self.delegate = AutoTokenizer.from_pretrained(
                 model_path,
                 revision=revision,
                 trust_remote_code=trust_remote_code,
-                # If `max_length` is None, the max length will be taken
-                # from the HuggingFace tokenizer_config.
-                model_max_length=max_length,
+                model_max_length=resolved_max_length,
             )
         except Exception as e:
             raise ValueError(
@@ -276,6 +295,10 @@ class TextTokenizer(
                 "- '--trust-remote-code' is needed but not set\n"
             ) from e
 
+        if resolved_max_length is not None:
+            # Keep delegate warnings/validations aligned with pipeline max_length.
+            self.delegate.model_max_length = resolved_max_length
+
         # Override chat template if provided
         # This will be used by the delegate's apply_chat_template method automatically
         self._custom_template_provided = chat_template is not None
@@ -285,7 +308,7 @@ class TextTokenizer(
                 f"Set custom chat template on tokenizer for {model_path}"
             )
 
-        self.max_length = max_length or self.delegate.model_max_length
+        self.max_length = self.delegate.model_max_length
 
         # configure Llama whitespace fix if needed
         self._enable_llama_whitespace_fix = (
@@ -578,16 +601,20 @@ class TextAndVisionTokenizer(
         **unused_kwargs,
     ) -> None:
         self.model_path = model_path
+        resolved_max_length = _resolve_tokenizer_max_length(
+            max_length, pipeline_config
+        )
 
         self.delegate = AutoTokenizer.from_pretrained(
             model_path,
             revision=revision,
             trust_remote_code=trust_remote_code,
-            # If `max_length` is None, the max length will be taken
-            # from the HuggingFace tokenizer_config.
-            model_max_length=max_length,
+            model_max_length=resolved_max_length,
         )
-        self.max_length = max_length or self.delegate.model_max_length
+        if resolved_max_length is not None:
+            # Keep delegate warnings/validations aligned with pipeline max_length.
+            self.delegate.model_max_length = resolved_max_length
+        self.max_length = self.delegate.model_max_length
 
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
