@@ -1287,6 +1287,31 @@ fn block_scaled_matmul[
         "]",
     )
 
+    comptime static_N = c.layout.shape[1].value()
+    comptime static_K = a.layout.shape[1].value()
+    comptime static_NK = Index(static_N, static_K)
+
+    comptime DeepSeek_NK = [
+        Index(7168, 16384),
+        # Index(4096, 7168),
+        # Index(7168, 2048),
+    ]
+
+    comptime if static_NK in DeepSeek_NK:
+        if m == 1:
+            var status = heuristic_and_outliers_dispatch[
+                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                pdl_level = PDLLevel(1),
+            ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+
+            if status == DISPATCH_HIT:
+                logger.info("Executing SM100 Block Scaled matmul kernel")
+                return
+            else:
+                raise Error("Heuristic and outliers dispatch failed")
+
     comptime if env_get_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
     ]():

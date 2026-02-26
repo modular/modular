@@ -101,7 +101,7 @@ fn _dispatch_max_num_blocks[
     """
 
     # get default entry
-    # TODO: first search for default for that sm
+    # TODO(KERN-2503): first search for default for that sm
     # if not found look for a generic config
     @parameter
     fn rule_eq_arch_default(x: TuningConfigAllreduce) -> Bool:

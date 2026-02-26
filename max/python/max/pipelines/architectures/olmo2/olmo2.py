@@ -16,10 +16,10 @@ import functools
 from collections.abc import Callable
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
 from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.layer import Module
 from max.nn.linear import MLP, Linear
 from max.nn.norm import RMSNorm
@@ -172,7 +172,9 @@ class Olmo2(Transformer):
             embedding_multiplier=config.embedding_multiplier,
         )
 
-    def input_types(self, kv_params: KVCacheParams) -> tuple[TensorType, ...]:
+    def input_types(
+        self, kv_params: KVCacheParamInterface
+    ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
         # config.

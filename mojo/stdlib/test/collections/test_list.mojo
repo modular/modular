@@ -830,23 +830,23 @@ def test_list_add():
     # check that original values aren't modified
     assert_equal(len(a), 3)
     assert_equal(len(b), 3)
-    assert_equal(c.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(c), "[1, 2, 3, 4, 5, 6]")
 
     a += b.copy()
     assert_equal(len(a), 6)
-    assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(a), "[1, 2, 3, 4, 5, 6]")
     assert_equal(len(b), 3)
 
     a = [1, 2, 3]
     a += b^
     assert_equal(len(a), 6)
-    assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(a), "[1, 2, 3, 4, 5, 6]")
 
     var d = [1, 2, 3]
     var e = [4, 5, 6]
     var f = d + e^
     assert_equal(len(f), 6)
-    assert_equal(f.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(f), "[1, 2, 3, 4, 5, 6]")
 
     var l = [1, 2, 3]
     l += []
@@ -857,13 +857,13 @@ def test_list_mult():
     var a = [1, 2, 3]
     var b = a * 2
     assert_equal(len(b), 6)
-    assert_equal(b.__str__(), "[1, 2, 3, 1, 2, 3]")
+    assert_equal(String(b), "[1, 2, 3, 1, 2, 3]")
     b = a * 3
     assert_equal(len(b), 9)
-    assert_equal(b.__str__(), "[1, 2, 3, 1, 2, 3, 1, 2, 3]")
+    assert_equal(String(b), "[1, 2, 3, 1, 2, 3, 1, 2, 3]")
     a *= 2
     assert_equal(len(a), 6)
-    assert_equal(a.__str__(), "[1, 2, 3, 1, 2, 3]")
+    assert_equal(String(a), "[1, 2, 3, 1, 2, 3]")
 
     var l = [1, 2]
     l *= 1

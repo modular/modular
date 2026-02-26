@@ -38,6 +38,7 @@ from max.interfaces import (
     TextGenerationRequest,
 )
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
@@ -469,15 +470,19 @@ class SpeculativeDecodingPipelineBase(
             self.pipeline_config.speculative.num_speculative_tokens
         )
 
+        target_kv_params = self._target_model.kv_params
+        assert isinstance(target_kv_params, KVCacheParams)
         self._target_kv_manager: PagedKVCacheManager = load_kv_manager(
-            params=self._target_model.kv_params,
+            params=target_kv_params,
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=self._target_model.max_seq_len,
             session=self._target_session,
             available_cache_memory=self._target_model.kv_cache_config._available_cache_memory,
         )
+        draft_kv_params = self._draft_model.kv_params
+        assert isinstance(draft_kv_params, KVCacheParams)
         self._draft_kv_manager: PagedKVCacheManager = load_kv_manager(
-            params=self._draft_model.kv_params,
+            params=draft_kv_params,
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=self._draft_model.max_seq_len,
             session=self._draft_session,

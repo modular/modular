@@ -32,7 +32,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
@@ -248,7 +248,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
                 self.huggingface_config.num_attention_heads,
                 self.huggingface_config.num_key_value_heads,
                 self.huggingface_config.head_dim,
-                pipeline_config.zmq_endpoint_base,
+                pipeline_config.runtime.zmq_endpoint_base,
             )
             if pipeline_config.lora
             else None
@@ -483,7 +483,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     """A pipeline model that supports KV cache."""
 
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
 
     def __init__(
         self,
@@ -524,6 +524,6 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
+    ) -> KVCacheParamInterface:
         """Returns the KV cache params for the pipeline model."""
         ...

@@ -117,7 +117,7 @@ class MockPipelineModel(PipelineModelWithKVCache):
                 n_heads=self.huggingface_config.num_attention_heads,
                 n_kv_heads=self.huggingface_config.num_key_value_heads,
                 head_dim=self.huggingface_config.head_dim,
-                zmq_endpoint_base=self.pipeline_config.zmq_endpoint_base,
+                zmq_endpoint_base=self.pipeline_config.runtime.zmq_endpoint_base,
             )
             if self.pipeline_config.lora
             and self.pipeline_config.lora.enable_lora

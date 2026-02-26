@@ -242,6 +242,7 @@ struct MLA_SM100_Decode_KV_FP8[
             Int32(Self.config.num_threads)
         )
     )
+    @__llvm_metadata(`nvvm.minctasm`=Int(1))
     fn kernel(
         q_tma: QOTMATile[
             dtype = Self.q_type,

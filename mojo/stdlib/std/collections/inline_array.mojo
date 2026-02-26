@@ -124,9 +124,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     Defaultable,
     DevicePassable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A fixed-size sequence of homogeneous elements where size is a constant
@@ -223,7 +221,6 @@ struct InlineArray[ElementType: Copyable, size: Int](
             " fill element or pass the keyword argument"
             " 'uninitialized=True'."
         )
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
     fn __init__(out self, *, uninitialized: Bool):
@@ -742,6 +739,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             Self.size,
         ).fields[FieldsFn=write_fields]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline
     fn __str__(self) -> String:
         """Returns a string representation of the InlineArray.
@@ -753,6 +751,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         self.write_to(output)
         return output^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @always_inline
     fn __repr__(self) -> String:
         """Returns a string representation of the InlineArray.

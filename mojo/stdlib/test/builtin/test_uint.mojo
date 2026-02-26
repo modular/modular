@@ -190,26 +190,6 @@ def test_abs():
     assert_equal(UInt(0).__abs__(), UInt(0))
 
 
-def test_string_conversion():
-    assert_equal(UInt(3).__str__(), "3")
-    assert_equal(UInt(Int(-3)).__str__(), "18446744073709551613")
-    assert_equal(UInt(0).__str__(), "0")
-    assert_equal(UInt(100).__str__(), "100")
-    assert_equal(UInt(Int(-100)).__str__(), "18446744073709551516")
-
-
-def test_uint_representation():
-    assert_equal(UInt(3).__repr__(), "SIMD[DType.uint, 1](3)")
-    assert_equal(
-        UInt(Int(-3)).__repr__(), "SIMD[DType.uint, 1](18446744073709551613)"
-    )
-    assert_equal(UInt(0).__repr__(), "SIMD[DType.uint, 1](0)")
-    assert_equal(UInt(100).__repr__(), "SIMD[DType.uint, 1](100)")
-    assert_equal(
-        UInt(Int(-100)).__repr__(), "SIMD[DType.uint, 1](18446744073709551516)"
-    )
-
-
 def test_indexer():
     assert_true(5 == index(UInt(5)))
     assert_true(987 == index(UInt(987)))

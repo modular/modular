@@ -55,9 +55,7 @@ struct String(
     IntableRaising,
     KeyElement,
     PathLike,
-    Representable,
     Sized,
-    Stringable,
     Writable,
     Writer,
 ):
@@ -1039,6 +1037,7 @@ struct String(
         """
         return self.byte_length()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __str__(self) -> String:
         """Gets the string itself.
@@ -1051,13 +1050,14 @@ struct String(
         """
         return self
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of the `String` instance.
 
         Returns:
             A new representation of the string.
         """
-        return StringSlice(self).__repr__()
+        return repr(StringSlice(self))
 
     @always_inline("nodebug")
     fn __fspath__(self) -> String:

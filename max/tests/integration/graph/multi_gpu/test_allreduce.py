@@ -627,3 +627,89 @@ def test_transfer_to_subgraph_with_allreduce(num_gpus: int) -> None:
     for tensor in outputs:
         assert isinstance(tensor, Buffer)
         assert np.allclose(expected, tensor.to(host).to_numpy(), atol=1e-6)
+
+
+def test_multi_device_epilogue_fusion_with_scalar_broadcast() -> None:
+    """Regression test: epilogue fusion of a broadcast scalar into a multi-device op.
+
+    Multi-device ops (MO_MultiDevice trait) produce a MOGG KernelOp whose
+    output lambdas run inside GPU sub-kernels.  The MOGG code-gen must use
+    the GPU-safe pointer-decomposition path for those lambdas so that
+    captured tensor data survives the host-to-device transition.
+
+    When the fused epilogue includes a scalar (0-D) constant that must be
+    broadcast to the output shape, the load inside the lambda requires the
+    GPU-safe ``simd_load_from_tensor_pointer`` (with explicit rank via
+    ``getRankNonZero``) rather than ``simd_load_from_managed_tensor_slice``.
+    If the kernel's device is incorrectly reported as "host", the non-GPU
+    path is chosen and the ManagedTensorSlice capture produces garbage
+    pointers on the device, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
+
+    This test exercises the pattern via ``matmul_allreduce``, which uses the
+    ``MO_MultiDevice`` trait.
+    """
+    num_gpus = 2
+    if (available_gpus := accelerator_count()) < num_gpus:
+        pytest.skip(
+            f"skipping {num_gpus=} test since only {available_gpus} available"
+        )
+
+    K = 64
+    out_n = 32
+
+    graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    session = InferenceSession(devices=[host] + devices)
+
+    # Weights are [N, K] per device (matmul_allreduce does A @ B^T).
+    weight_np = np.ones((out_n, K), dtype=np.float32)
+    weight_bufs = [Buffer.from_numpy(weight_np).to(d) for d in devices]
+    for d in devices:
+        d.synchronize()
+
+    with Graph(
+        "matmul_allreduce_scalar_epilogue",
+        input_types=[
+            *[
+                TensorType(DType.float32, shape=[M, K], device=d)
+                for d in graph_devices
+            ],
+            *[
+                TensorType(DType.float32, shape=[out_n, K], device=d)
+                for d in graph_devices
+            ],
+            *signals.input_types(),
+        ],
+    ) as graph:
+        inputs = [graph.inputs[i].tensor for i in range(num_gpus)]
+        weights = [graph.inputs[num_gpus + i].tensor for i in range(num_gpus)]
+        signal_bufs = [inp.buffer for inp in graph.inputs[2 * num_gpus :]]
+
+        ma_outs = ops.allreduce.matmul_allreduce(inputs, weights, signal_bufs)
+
+        # Scalar (0-D) constants that must broadcast to [M, out_n].
+        biases = [
+            ops.constant(7, dtype=DType.float32, device=DeviceRef.GPU(id))
+            for id in range(num_gpus)
+        ]
+        graph.output(*[x + b for x, b in zip(ma_outs, biases, strict=True)])
+
+    compiled = session.load(graph)
+
+    a_np = np.ones((M, K), np.float32)
+    input_bufs = [Buffer.from_numpy(a_np).to(d) for d in devices]
+    for d in devices:
+        d.synchronize()
+
+    outputs = compiled.execute(*input_bufs, *weight_bufs, *signals.buffers())
+
+    # Each device: matmul([M,K] @ [K,N]) = [M,N] of all K's.
+    # Allreduce sums num_gpus copies → K * num_gpus, then + 7.
+    expected_val = float(K * num_gpus) + 7.0
+    expected = np.full((M, out_n), expected_val, dtype=np.float32)
+    for tensor in outputs:
+        assert isinstance(tensor, Buffer)
+        assert np.allclose(expected, tensor.to(host).to_numpy(), atol=1e-6)

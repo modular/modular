@@ -78,7 +78,7 @@ fn bench_reduce[
 
     var name = String(
         _get_test_str[dtype, use_multimem, use_vendor_ccl, cache_busting](
-            ngpus, num_bytes, ragged
+            ngpus, num_bytes, max_num_blocks.or_else(0), ragged
         )
     )
 
@@ -311,8 +311,11 @@ fn bench_reduce[
 
 
 fn _get_test_str[
-    dtype: DType, use_multimem: Bool, use_vendorccl: Bool, cache_busting: Bool
-](ngpus: Int, num_bytes: Int, ragged: Bool) -> String:
+    dtype: DType,
+    use_multimem: Bool,
+    use_vendorccl: Bool,
+    cache_busting: Bool,
+](ngpus: Int, num_bytes: Int, max_num_blocks: Int, ragged: Bool) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
     var vendorccl_tag = "-vendorccl" if use_vendorccl else ""
     var cache_tag = "-cachebust" if cache_busting else ""
@@ -322,6 +325,8 @@ fn _get_test_str[
         dtype,
         "-",
         ngpus,
+        "-max_num_blocks-",
+        max_num_blocks,
         multimem_tag,
         vendorccl_tag,
         cache_tag,

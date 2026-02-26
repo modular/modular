@@ -134,7 +134,6 @@ struct Rng(Movable):
             comptime assert (
                 False
             ), "rand_scalar expected bool, integral, or floating point"
-            return 0
 
     # TODO (MSTDL-1185): Can remove when UInt and SIMD are unified.
     fn rand_uint(

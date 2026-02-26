@@ -88,8 +88,8 @@ class EPConfig:
         """
         return estimate_ep_memory_usage(
             hidden_size=self.hidden_size,
-            dispatch_dtype_size=self.dispatch_dtype.size_in_bytes,
-            combine_dtype_size=self.combine_dtype.size_in_bytes,
+            dispatch_dtype=self.dispatch_dtype,
+            combine_dtype=self.combine_dtype,
             max_tokens_per_rank=self.max_tokens_per_rank,
             n_experts=self.n_experts,
             top_k=self.top_k,
@@ -123,8 +123,8 @@ class EPConfig:
 def estimate_ep_memory_usage(
     *,
     hidden_size: int,
-    dispatch_dtype_size: int,
-    combine_dtype_size: int,
+    dispatch_dtype: DType,
+    combine_dtype: DType,
     max_tokens_per_rank: int,
     n_experts: int,
     top_k: int,
@@ -146,11 +146,21 @@ def estimate_ep_memory_usage(
     Returns:
         Total estimated memory usage in bytes per device per buffer group.
     """
-    d_token_size = hidden_size * dispatch_dtype_size
+
+    def _n_elems_to_bytes(dtype: DType, n_elems: int) -> int:
+        if dtype in (DType.uint8, DType.float4_e2m1fn):
+            # Account for the scales. For NVFP4 format, every 16 FP4 elements
+            # share one FP8 scale factor. The size of the scales is one eighth
+            # of the size of the FP4 quants (8 bits / (16 * 4 bits)).
+            return int(n_elems // 2 * dtype.size_in_bytes * 1.125)
+        else:
+            return n_elems * dtype.size_in_bytes
+
+    d_token_size = _n_elems_to_bytes(dispatch_dtype, hidden_size)
     dispatch_send_buf_size = max_tokens_per_rank * d_token_size
     dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
 
-    c_token_size = hidden_size * combine_dtype_size
+    c_token_size = hidden_size * combine_dtype.size_in_bytes
     combine_send_buf_size = n_experts * max_tokens_per_rank * c_token_size
     combine_recv_buf_size = top_k * max_tokens_per_rank * c_token_size
 

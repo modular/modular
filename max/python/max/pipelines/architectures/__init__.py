@@ -40,6 +40,7 @@ def register_all_models() -> None:
     from .deepseekV3_nextn import deepseekV3_nextn_arch
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
+    from .exaone_modulev3 import exaone_modulev3_arch
     from .flux1 import flux1_arch
     from .flux2 import flux2_arch
     from .gemma3 import gemma3_arch
@@ -59,6 +60,7 @@ def register_all_models() -> None:
     from .olmo import olmo_arch
     from .olmo2 import olmo2_arch
     from .olmo3 import olmo3_arch
+    from .olmo_modulev3 import olmo_modulev3_arch
     from .phi3 import phi3_arch
     from .phi3_modulev3 import phi3_modulev3_arch
     from .pixtral import pixtral_arch
@@ -70,6 +72,7 @@ def register_all_models() -> None:
 
     architectures = [
         exaone_arch,
+        exaone_modulev3_arch,
         deepseekV2_arch,
         deepseekV3_arch,
         deepseekV3_2_arch,
@@ -93,6 +96,7 @@ def register_all_models() -> None:
         mistral3_arch,
         mpnet_arch,
         olmo_arch,
+        olmo_modulev3_arch,
         olmo2_arch,
         olmo3_arch,
         phi3_arch,

@@ -19,8 +19,6 @@ These are Mojo built-ins, so you don't need to import them.
 struct NoneType(
     Defaultable,
     ImplicitlyCopyable,
-    Representable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -46,6 +44,7 @@ struct NoneType(
         """
         self._value = value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of `None`.
@@ -55,6 +54,7 @@ struct NoneType(
         """
         return "None"
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns the string representation of `None`.

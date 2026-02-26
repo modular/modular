@@ -40,7 +40,6 @@ from max.pipelines.lib.registry import (
     get_pipeline_for_task,
 )
 from max.pipelines.lib.sampling import SamplingConfig
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import (
     ConfigDict,
     Field,
@@ -97,63 +96,11 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    max_queue_size_tg: int | None = Field(
-        default=None,
-        description=(
-            "Maximum number of requests in decode queue. By default, this is "
-            "max_batch_size."
-        ),
-    )
-
-    min_batch_size_tg: int | None = Field(
-        default=None,
-        description=(
-            "Soft floor on the decode batch size. If the TG batch size is "
-            "larger, the scheduler continues TG batches; if it falls below, the "
-            "scheduler prioritizes CE. This is not a strict minimum. By "
-            "default, this is max_queue_size_tg. Experimental for the TTS "
-            "scheduler."
-        ),
-    )
-
     ep_size: int = Field(
         default=1,
         description=(
             "The expert parallelism size. Needs to be 1 (no expert parallelism) "
             "or the total number of GPUs across nodes."
-        ),
-    )
-
-    ce_delay_ms: float = Field(
-        default=0.0,
-        description=(
-            "Duration of scheduler sleep prior to starting a prefill batch. "
-            "Experimental for the TTS scheduler."
-        ),
-    )
-
-    enable_prioritize_first_decode: bool = Field(
-        default=False,
-        description=(
-            "When enabled, the scheduler always runs a TG batch immediately "
-            "after a CE batch with the same requests. This may reduce "
-            "time-to-first-chunk latency. Experimental for the TTS scheduler."
-        ),
-    )
-
-    enable_chunked_prefill: bool = Field(
-        default=True,
-        description=(
-            "Enable chunked prefill to split context encoding requests into "
-            "multiple chunks based on max_batch_input_tokens."
-        ),
-    )
-
-    enable_in_flight_batching: bool = Field(
-        default=False,
-        description=(
-            "When enabled, prioritizes token generation by batching it with "
-            "context encoding requests."
         ),
     )
 
@@ -172,20 +119,6 @@ class PipelineConfig(ConfigFileModel):
             "The target number of un-encoded tokens to include in each batch. "
             "This value is used for chunked prefill and memory estimation."
         ),
-    )
-
-    zmq_endpoint_base: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description=(
-            "Prefix for ZMQ endpoints used for IPC. This ensures unique "
-            "endpoints across MAX Serve instances on the same host. Example: "
-            'lora_request_zmq_endpoint = f"{zmq_endpoint_base}-lora_request".'
-        ),
-    )
-
-    execute_empty_batches: bool = Field(
-        default=False,
-        description="Whether the scheduler should execute empty batches.",
     )
 
     max_batch_total_tokens: int | None = Field(
@@ -980,7 +913,10 @@ class PipelineConfig(ConfigFileModel):
             self._validate_required_arguments_against_architecture(arch)
 
         # Validate that model supports empty batches, if being requested.
-        if self.execute_empty_batches and not arch.supports_empty_batches:
+        if (
+            self.runtime.execute_empty_batches
+            and not arch.supports_empty_batches
+        ):
             raise ValueError(
                 f"Architecture '{arch.name}' does not support empty batches. "
                 "Please set `execute_empty_batches` to False."
@@ -1194,9 +1130,12 @@ class PipelineConfig(ConfigFileModel):
         pipeline_entries: list[tuple[str, Any]] = [
             ("max_seq_len", self.model.max_length),
             ("max_batch_size", self.max_batch_size),
-            ("chunked_prefill", self.enable_chunked_prefill),
+            ("chunked_prefill", self.runtime.enable_chunked_prefill),
             ("max_batch_input_tokens", self.max_batch_input_tokens),
-            ("in_flight_batching", self.enable_in_flight_batching),
+            (
+                "in_flight_batching",
+                self.runtime.enable_in_flight_batching,
+            ),
         ]
 
         logger.info("")

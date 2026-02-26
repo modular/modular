@@ -24,7 +24,7 @@ from max.graph.quantization import QuantizationEncoding
 from max.nn.attention import TensorParallelAttentionWithRope
 from max.nn.comm import Signals
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
 from max.nn.transformer import (
@@ -194,7 +194,7 @@ class DistributedLlama3(DistributedTransformer):
         )
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

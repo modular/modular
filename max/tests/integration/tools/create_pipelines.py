@@ -41,7 +41,11 @@ from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationPipeline, PixelGenerationTokenizer
+from max.pipelines.lib import (
+    PipelineRuntimeConfig,
+    PixelGenerationPipeline,
+    PixelGenerationTokenizer,
+)
 from peft.peft_model import PeftModel
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
@@ -224,10 +228,6 @@ class _ModelConfigExtras(TypedDict):
     huggingface_weight_revision: NotRequired[str]
 
 
-class _PipelineConfigExtras(TypedDict):
-    enable_chunked_prefill: NotRequired[bool]
-
-
 def _create_vision_max_pipeline(
     model_path: str,
     encoding: pipelines.SupportedEncoding,
@@ -263,14 +263,15 @@ def _create_vision_max_pipeline(
             else _ModelConfigExtras()
         ),
     )
+    runtime = (
+        PipelineRuntimeConfig(enable_chunked_prefill=enable_chunked_prefill)
+        if enable_chunked_prefill is not None
+        else PipelineRuntimeConfig()
+    )
     config = pipelines.PipelineConfig(
         model=model,
         max_num_steps=1,
-        **(
-            _PipelineConfigExtras(enable_chunked_prefill=enable_chunked_prefill)
-            if enable_chunked_prefill is not None
-            else _PipelineConfigExtras()
-        ),
+        runtime=runtime,
     )
     tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
     assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)

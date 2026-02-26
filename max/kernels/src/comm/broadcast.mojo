@@ -451,6 +451,8 @@ fn broadcast[
     root: Int,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
+    comptime assert ngpus >= 2, "broadcast requires at least 2 GPUs"
+
     var my_rank: Int = Int(ctx.id())
 
     var num_elements = output_buffer.num_elements()

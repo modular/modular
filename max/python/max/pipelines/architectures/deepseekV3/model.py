@@ -20,14 +20,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from max.driver import Buffer, is_virtual_device_mode
+from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import NUM_GROUPS, estimate_ep_memory_usage
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -55,20 +55,6 @@ from .model_config import DeepseekV3Config
 logger = logging.getLogger("max.pipelines")
 
 
-def _validate_ep_kernel_limits(
-    ep_config: EPConfig, *, max_local_experts: int = 32
-) -> None:
-    n_ranks = ep_config.n_gpus_per_node * ep_config.n_nodes
-    n_local_experts = ep_config.n_experts // n_ranks
-    if n_local_experts > max_local_experts:
-        raise ValueError(
-            "Expert-parallel local experts per device "
-            f"({n_local_experts}) exceeds kernel limit "
-            f"({max_local_experts}). "
-            "Use more expert-parallel ranks or disable EP."
-        )
-
-
 @dataclass
 class DeepseekV3Inputs(DeepseekV2Inputs):
     """A class representing inputs for the DeepseekV3 model."""
@@ -94,7 +80,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
+    ) -> KVCacheParamInterface:
         encoding = pipeline_config.model.quantization_encoding
         if encoding is not None and is_float4_encoding(encoding):
             cache_dtype = DType.bfloat16
@@ -160,7 +146,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 ep_kwargs["dispatch_fp8_config"] = float8_config
 
             ep_config = EPConfig(**ep_kwargs)
-            _validate_ep_kernel_limits(ep_config)
 
         # Determine data_parallel_degree: EP requires data-parallel attention
         if ep_config is not None:
@@ -214,8 +199,17 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         encoding = pipeline_config.model.quantization_encoding
         assert encoding is not None
-        dtype = supported_encoding_dtype(encoding).size_in_bytes
-        packed_factor = 2 if is_float4_encoding(encoding) else 1
+
+        def _n_elems_to_bytes(n_elems: int) -> int:
+            dtype = supported_encoding_dtype(encoding).size_in_bytes
+            if is_float4_encoding(encoding):
+                # Account for the scales. For NVFP4 format, every 16 FP4 elements
+                # share one FP8 scale factor. The size of the scales is one
+                # eighth of the size of the FP4 quants (8 bits / (16 * 4 bits)).
+                return int(n_elems // 2 * dtype * 1.125)
+            else:
+                return n_elems * dtype
+
         config = model_config.huggingface_config
         assert config is not None
         n_sparse_layers = (
@@ -250,9 +244,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         expert_elems = (
             config.moe_intermediate_size * config.hidden_size * 3
         )  # A factor of 3 accounts for the gate/up/down proj weights.
-        if packed_factor != 1:
-            expert_elems = (expert_elems + packed_factor - 1) // packed_factor
-        expert_size = expert_elems * dtype
+        expert_size = _n_elems_to_bytes(expert_elems)
         routing_experts_size = (
             n_sparse_layers * config.n_routed_experts * expert_size
         )
@@ -373,10 +365,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.hidden_size,
-                dispatch_dtype_size=supported_encoding_dtype(
-                    encoding
-                ).size_in_bytes,
-                combine_dtype_size=DType.bfloat16.size_in_bytes,
+                dispatch_dtype=supported_encoding_dtype(encoding),
+                combine_dtype=DType.bfloat16,
                 max_tokens_per_rank=pipeline_config.max_batch_input_tokens,
                 n_experts=huggingface_config.n_routed_experts,
                 top_k=huggingface_config.num_experts_per_tok,
@@ -636,31 +626,42 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         context_batch = flatten2d(replica_batches)
         # Create tokens
+        tokens: Buffer
+        pinned_input_row_offsets: Buffer
         if len(context_batch) == 0:
-            tokens = Buffer(
-                shape=[0], dtype=DType.int64, device=device0, pinned=pinned
-            )
             if pinned:
-                tokens.disable_auto_sync()
+                tokens = DevicePinnedBuffer(
+                    shape=[0], dtype=DType.int64, device=device0
+                )
+            else:
+                tokens = Buffer(shape=[0], dtype=DType.int64, device=device0)
             host_input_row_offsets = Buffer.zeros(shape=[1], dtype=DType.uint32)
 
-            pinned_input_row_offsets = Buffer.zeros(
-                shape=[1], dtype=DType.uint32, device=device0, pinned=pinned
-            )
             if pinned:
-                pinned_input_row_offsets.disable_auto_sync()
+                pinned_input_row_offsets = DevicePinnedBuffer.zeros(
+                    shape=[1], dtype=DType.uint32, device=device0
+                )
+            else:
+                pinned_input_row_offsets = Buffer.zeros(
+                    shape=[1], dtype=DType.uint32, device=device0
+                )
             device_input_row_offsets = pinned_input_row_offsets.to(device0)
         else:
             # Create a ragged token vector of length: sum(len(t) for t in tokens).
             num_tokens = sum(ctx.tokens.active_length for ctx in context_batch)
-            tokens_host = Buffer(
-                shape=(num_tokens,),
-                dtype=DType.int64,
-                device=device0,
-                pinned=pinned,
-            )
+            tokens_host: Buffer
             if pinned:
-                tokens_host.disable_auto_sync()
+                tokens_host = DevicePinnedBuffer(
+                    shape=(num_tokens,),
+                    dtype=DType.int64,
+                    device=device0,
+                )
+            else:
+                tokens_host = Buffer(
+                    shape=(num_tokens,),
+                    dtype=DType.int64,
+                    device=device0,
+                )
             np.concatenate(
                 [ctx.tokens.active for ctx in context_batch],
                 out=tokens_host.to_numpy(),
@@ -684,14 +685,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
             host_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
 
-            pinned_input_row_offsets = Buffer(
-                shape=(len(context_batch) + 1,),
-                dtype=DType.uint32,
-                device=device0,
-                pinned=pinned,
-            )
             if pinned:
-                pinned_input_row_offsets.disable_auto_sync()
+                pinned_input_row_offsets = DevicePinnedBuffer(
+                    shape=(len(context_batch) + 1,),
+                    dtype=DType.uint32,
+                    device=device0,
+                )
+            else:
+                pinned_input_row_offsets = Buffer(
+                    shape=(len(context_batch) + 1,),
+                    dtype=DType.uint32,
+                    device=device0,
+                )
             pinned_input_row_offsets.to_numpy()[:] = input_row_offsets[:]
             device_input_row_offsets = pinned_input_row_offsets.to(device0)
 

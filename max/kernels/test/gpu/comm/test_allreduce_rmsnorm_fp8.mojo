@@ -22,9 +22,11 @@ from comm.allreduce import allreduce
 from comm.allreduce_rmsnorm_fp8 import allreduce_rmsnorm_fp8
 from comm.sync import is_p2p_enabled
 from gpu.host import DeviceBuffer, DeviceContext
+from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._coord import Coord
 from layout._layout import row_major
 from layout._tile_tensor import TileTensor
+from layout._utils import ManagedLayoutTensor
 from nn.normalization import rms_norm_fused_fp8
 from runtime.asyncrt import DeviceContextPtr
 from testing import assert_true
@@ -104,11 +106,15 @@ fn test_fused_allreduce_rmsnorm_fp8[
 
     # --- Shared params ---
     var ctx = list_of_ctx[0]
-    var gamma_dev = ctx.enqueue_create_buffer[in_dtype](cols)
-    var gamma_host = alloc[Scalar[in_dtype]](cols)
+    var gamma = ManagedLayoutTensor[in_dtype, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](cols)),
+        ctx,
+    )
+    var gamma_host = gamma.tensor[update=False]()
     for i in range(cols):
         gamma_host[i] = (Float64(i + cols) / Float64(cols)).cast[in_dtype]()
-    ctx.enqueue_copy(gamma_dev, gamma_host)
+    _ = gamma.device_tensor()
+    var gamma_dev = gamma.device_data.value()
 
     comptime shape = IndexList[2](rows, cols)
     var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
@@ -317,17 +323,8 @@ fn test_fused_allreduce_rmsnorm_fp8[
     fused_scales_host.free()
     ref_fp8_host.free()
     fused_fp8_host.free()
-    gamma_host.free()
     for i in range(ngpus):
         host_bufs[i].free()
-    _ = signal_buffers^
-    _ = in_dev^
-    _ = ar_out_dev^
-    _ = ref_fp8_dev^
-    _ = ref_scales_dev^
-    _ = fused_fp8_dev^
-    _ = fused_scales_dev^
-    _ = gamma_dev^
 
     print("    PASS")
 

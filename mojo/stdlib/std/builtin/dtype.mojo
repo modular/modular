@@ -32,8 +32,6 @@ struct DType(
     Hashable,
     ImplicitlyCopyable,
     KeyElement,
-    Representable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -386,6 +384,7 @@ struct DType(
         else:
             return DType.invalid
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets the name of the DType.
@@ -478,6 +477,7 @@ struct DType(
         """
         writer.write("DType.", self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __repr__(self) -> String:
         """Gets the representation of the DType e.g. `"DType.float32"`.
@@ -723,7 +723,6 @@ struct DType(
             return 1024
         else:
             comptime assert False, "unsupported float type"
-            return {}
 
     @staticmethod
     @always_inline("nodebug")
@@ -752,7 +751,6 @@ struct DType(
             return 11
         else:
             comptime assert False, "unsupported float type"
-            return {}
 
     @staticmethod
     @always_inline
@@ -865,8 +863,6 @@ fn _integral_type_of[dtype: DType]() -> DType:
         return DType.int64
     else:
         comptime assert False, "unexpected dtype in _integral_type_of"
-        # TODO(MOCO-3340): Remove dummy return value.
-        return DType.int64
 
 
 # ===-------------------------------------------------------------------===#
@@ -893,8 +889,6 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
         return DType.uint64
     else:
         comptime assert False, "unexpected dtype in _unsigned_integral_type_of"
-        # TODO(MOCO-3340): Remove dummy return value.
-        return DType.uint64
 
 
 # ===-------------------------------------------------------------------===#

@@ -29,7 +29,7 @@ def test_interval():
 
     # Test string representations
     assert_equal(String(interval), "(1, 10)")
-    assert_equal(repr(interval), "Interval(1, 10)")
+    assert_equal(repr(interval), "Interval[Int](start=Int(1), end=Int(10))")
 
     # Test equality comparisons
     assert_equal(interval, Interval(1, 10))

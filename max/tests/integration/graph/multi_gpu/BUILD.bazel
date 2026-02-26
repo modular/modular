@@ -12,39 +12,11 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = ["test_engine_device_graph.py"],
     ),
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_multi_gpu"],
-    tags = ["gpu"],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("numpy"),
-    ],
-)
-
-modular_py_test(
-    name = "multi-gpu-device-graph-tests",
-    size = "large",
-    srcs = [
-        "conftest.py",
-        "test_engine_device_graph.py",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "2",
-    },
-    gpu_constraints = [
-        "//:has_multi_gpu",
-        # This test is only supported on CUDA platforms currently, fold this
-        # back into the other multi-GPU tests once we have more broad support.
-        "//:nvidia_gpu",
-    ],
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",

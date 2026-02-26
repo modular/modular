@@ -23,6 +23,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.experimental import functional as F
+from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
@@ -82,6 +83,7 @@ class Llama3Inputs(ModelInputs):
 class Llama3Model(PipelineModelWithKVCache[TextContext]):
     """Llama3 pipeline model using the ModuleV3 API."""
 
+    config_class: type[Llama3Config] = Llama3Config
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     attention_bias: bool = False
 
@@ -169,7 +171,7 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
             state_dict = {
                 key: value.data() for key, value in self.weights.items()
             }
-        model_config = Llama3Config.initialize(self.pipeline_config)
+        model_config = self.config_class.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,
@@ -178,14 +180,12 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
         )
-        with F.lazy():
+        with F.lazy(), default_dtype(model_config.dtype):
             nn_model = Llama3(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         timer.mark_build_complete()
         compiled_model = nn_model.compile(

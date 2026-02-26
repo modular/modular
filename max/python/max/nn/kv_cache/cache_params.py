@@ -15,19 +15,21 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
 from typing import Literal, Protocol, runtime_checkable
 
+from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
-    InputSymbolInterface,
+    FlattenableInputSymbols,
     MultiKVCacheInputSymbols,
     PagedCacheInputSymbols,
     PagedCacheInputSymbolsByReplica,
@@ -69,6 +71,92 @@ def uses_opaque(strategy: KVCacheStrategy) -> bool:
 
 
 @dataclass
+class KVCacheBuffer:
+    """This is a collection of the KVCache buffers.
+
+    There are two types of supported buffers today: values and scales.
+    The scales are optional and used for FP8 quantization.
+
+    The length of the list of buffers correspond to the tensor parallel degree
+    where each buffer in the list corresponds to a single TP shard.
+
+    For DP, we would have multiple instances of KVCacheBuffer per replica.
+    """
+
+    total_num_pages: int
+    values: list[Buffer]
+    scales: list[Buffer] | None = None
+
+    def __post_init__(self) -> None:
+        if self.total_num_pages <= 0:
+            raise ValueError("Total number of pages must be strictly positive")
+
+        if len(self.values) == 0:
+            raise ValueError("List of values must be non-empty")
+
+        if self.scales is None:
+            return
+
+        if len(self.scales) != len(self.values):
+            raise ValueError("Scales must be the same length as values")
+
+        for value, scale in zip(self.values, self.scales, strict=True):
+            if value.device != scale.device:
+                raise ValueError(
+                    "Corresponding values and scales must be on the same device"
+                )
+            if isinstance(value, DevicePinnedBuffer) != isinstance(
+                scale, DevicePinnedBuffer
+            ):
+                raise ValueError(
+                    "Corresponding values and scales must be either both pinned or both non-pinned"
+                )
+
+    def allocate_host_offload_buffer(
+        self, total_num_host_pages: int
+    ) -> KVCacheBuffer:
+        """Allocates a KVCacheBuffer for host offloading.
+
+        The allocated buffer will have the same characteristics as the original
+        buffer, apart from the total_num_pages and the location. The host offload
+        buffer will be allocated on DevicePinnedBuffer for fast transfer speeds.
+        """
+        if any(
+            buffer.device.is_host or isinstance(buffer, DevicePinnedBuffer)
+            for buffer in self.all_buffers
+        ):
+            raise ValueError(
+                "KVCacheBuffer is on the CPU. Unable to allocate host offload buffer for already-on-CPU buffers."
+            )
+
+        return KVCacheBuffer(
+            total_num_pages=self.total_num_pages,
+            values=[
+                DevicePinnedBuffer(
+                    shape=[total_num_host_pages, *value.shape[1:]],
+                    dtype=value.dtype,
+                    device=value.device,
+                )
+                for value in self.values
+            ],
+            scales=[
+                DevicePinnedBuffer(
+                    shape=[total_num_host_pages, *scale.shape[1:]],
+                    dtype=scale.dtype,
+                    device=scale.device,
+                )
+                for scale in self.scales
+            ]
+            if self.scales is not None
+            else None,
+        )
+
+    @property
+    def all_buffers(self) -> list[Buffer]:
+        return [*self.values, *(self.scales if self.scales is not None else [])]
+
+
+@dataclass
 class KVCacheQuantizationConfig:
     """Configuration for KVCache quantization.
 
@@ -96,7 +184,7 @@ class KVCacheParamInterface(Protocol):
         """Number of bytes per cache block."""
         ...
 
-    def get_symbolic_inputs(self) -> InputSymbolInterface:
+    def get_symbolic_inputs(self) -> FlattenableInputSymbols:
         """Returns the symbolic inputs for the KV cache."""
         ...
 
@@ -369,7 +457,7 @@ class KVCacheParams(KVCacheParamInterface):
 
         return num_host_blocks
 
-    def copy_as_dp_1(self) -> KVCacheParams:
+    def copy_as_dp_1(self, replica_idx: int = 0) -> KVCacheParams:
         """Creates a copy of the KVCacheParams with data parallelism disabled.
 
         This method creates a new instance of the current configuration and adjusts
@@ -402,11 +490,15 @@ class KVCacheParams(KVCacheParamInterface):
             host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
             cache_strategy=self.cache_strategy,
             page_size=self.page_size,
-            devices=devices_per_replica[0],
+            devices=devices_per_replica[replica_idx],
             is_mla=self.is_mla,
             data_parallel_degree=1,
             kvcache_quant_config=self.kvcache_quant_config,
-            disk_offload_dir=self.disk_offload_dir,
+            disk_offload_dir=os.path.join(
+                self.disk_offload_dir, f"replica_{replica_idx}"
+            )
+            if self.disk_offload_dir is not None
+            else None,
             disk_offload_max_gb=self.disk_offload_max_gb,
             disk_offload_direct_io=self.disk_offload_direct_io,
             lmcache_config_file=self.lmcache_config_file,
@@ -484,6 +576,42 @@ class KVCacheParams(KVCacheParamInterface):
             )
             input_symbols.extend(symbols)
         return PagedCacheInputSymbolsByReplica(values=input_symbols)
+
+    def allocate_buffers(self, total_num_pages: int) -> list[KVCacheBuffer]:
+        """Allocates the buffers for the KV cache."""
+        devices_per_replica = split_into_groups(
+            x=[d.to_device() for d in self.devices],
+            groups=self.data_parallel_degree,
+        )
+        kv_cache_buffers: list[KVCacheBuffer] = []
+        for devices in devices_per_replica:
+            values = []
+            for device in devices:
+                value = Buffer.zeros(
+                    shape=[total_num_pages, *self.shape_per_block],
+                    dtype=self.dtype,
+                    device=device,
+                )
+                values.append(value)
+
+            scales: list[Buffer] | None = None
+            if self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+                scales = []
+                assert self.kvcache_quant_config is not None
+                scale_dtype = self.kvcache_quant_config.scale_dtype
+                for device in devices:
+                    scale = Buffer.zeros(
+                        shape=[total_num_pages, *self.shape_per_scale_block],
+                        dtype=scale_dtype,
+                        device=device,
+                    )
+                    scales.append(scale)
+
+            kv_cache_buffer = KVCacheBuffer(
+                values=values, scales=scales, total_num_pages=total_num_pages
+            )
+            kv_cache_buffers.append(kv_cache_buffer)
+        return kv_cache_buffers
 
 
 @dataclass(frozen=True)
