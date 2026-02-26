@@ -58,6 +58,9 @@ This version is still a work in progress.
 - Subscripting `String` and `StringSlice` now requires a named parameter for range
   indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
+- Added `List.remove(value)` method that removes the first occurrence of a
+  value from the list, raising an error if the value is not found.
+
 ## Tooling changes
 
 ## ❌ Removed
