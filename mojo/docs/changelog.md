@@ -209,6 +209,10 @@ what we publish.
 
 ### Library changes
 
+- `List` now has a `remove()` method that removes the first occurrence of a
+  value, matching Python's `list.remove()` behavior. Raises if the value is not
+  found.
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 

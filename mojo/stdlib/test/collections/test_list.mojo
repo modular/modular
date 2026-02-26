@@ -822,6 +822,43 @@ def test_list_count():
     assert_equal(0, list2.count(1))
 
 
+def test_list_remove():
+    # Remove first occurrence.
+    var list = [1, 2, 3, 2, 5]
+    list.remove(2)
+    assert_equal(list, [1, 3, 2, 5])
+
+    # Remove only element.
+    var single = [42]
+    single.remove(42)
+    assert_equal(len(single), 0)
+
+    # Remove from end.
+    var list2 = [1, 2, 3]
+    list2.remove(3)
+    assert_equal(list2, [1, 2])
+
+    # Remove from beginning.
+    var list3 = [1, 2, 3]
+    list3.remove(1)
+    assert_equal(list3, [2, 3])
+
+    # Raise when not found.
+    var list4 = [1, 2, 3]
+    with assert_raises():
+        list4.remove(99)
+
+    # Raise on empty list.
+    var empty = List[Int]()
+    with assert_raises():
+        empty.remove(1)
+
+    # Works with strings.
+    var strings = ["a", "b", "c", "b"]
+    strings.remove("b")
+    assert_equal(strings, ["a", "c", "b"])
+
+
 def test_list_add():
     var a = [1, 2, 3]
     var b = [4, 5, 6]
