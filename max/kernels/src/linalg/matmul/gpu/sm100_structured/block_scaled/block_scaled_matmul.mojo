@@ -36,6 +36,7 @@ from layout._layout import RowMajorLayout, TensorLayout, row_major
 from layout import ComptimeInt, RuntimeInt, Coord, Idx
 from layout import TileTensor
 from ..structured_kernels.tile_types import create_tma_tile
+from ..structured_kernels.kernel_common import _to_batched_3d
 
 from utils.index import Index, IndexList
 from utils.static_tuple import StaticTuple
@@ -62,7 +63,7 @@ from .block_scaled_smem import BlockScaledSmem
 
 # =============================================================================
 # LayoutTensor helpers (kept for grouped_block_scaled_matmul.mojo which imports
-# these). New code should use _to_batched_3d below.
+# these). New code should use _to_batched_3d from kernel_common.
 # =============================================================================
 
 
@@ -114,32 +115,6 @@ fn _convert_input_to_batched_tensor[
 # =============================================================================
 # TileTensor reshape helpers
 # =============================================================================
-
-
-comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
-    ComptimeInt[1], L._shape_types[0], L._shape_types[1]
-]
-"""3D batched layout from a 2D layout: prepend batch=1, preserve shape types."""
-
-
-fn _to_batched_3d(
-    tensor: TileTensor[...],
-) -> tensor.ViewType[_Batched3DLayout[type_of(tensor).LayoutType]]:
-    """Reshape 2D TileTensor to 3D by prepending batch=1: (M, K) -> (1, M, K).
-
-    The input must be rank 2. Shape types (static/dynamic) are preserved.
-    """
-    comptime L = type_of(tensor).LayoutType
-    comptime assert L.rank == 2, "expected rank-2 TileTensor"
-    return tensor.reshape(
-        row_major(
-            Coord(
-                Idx[1](),
-                tensor.layout.shape[0](),
-                tensor.layout.shape[1](),
-            )
-        )
-    )
 
 
 comptime _Scales5DLayoutBatched[L: TensorLayout] = RowMajorLayout[

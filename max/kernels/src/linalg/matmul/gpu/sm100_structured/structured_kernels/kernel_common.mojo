@@ -15,6 +15,7 @@
 This module contains common components used by all SM100 matmul kernel variants:
 - WarpRole: Warp specialization roles (MMA, Load, Scheduler, Epilogue)
 - KernelContext: Common kernel state (election vars, CTA coords, masks)
+- _Batched3DLayout / _to_batched_3d: Reshape 2D TileTensor to 3D (batch=1)
 - consumer_main_loop: Legacy MMA consumer loop (deprecated but kept for compatibility)
 """
 
@@ -27,6 +28,9 @@ from gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from gpu.host.nvidia.tma import TensorMapSwizzle
+from layout._layout import RowMajorLayout, TensorLayout, row_major
+from layout.coord import ComptimeInt, Coord, Idx
+from layout.tile_tensor import TileTensor
 
 from utils.index import IndexList
 
@@ -272,3 +276,34 @@ fn consumer_main_loop[
                 init_c=(iter_idx + UInt32(j) == k_start),
             )
         mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
+
+
+# =============================================================================
+# _Batched3DLayout / _to_batched_3d - 2D → 3D TileTensor reshape
+# =============================================================================
+
+
+comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
+    ComptimeInt[1], L._shape_types[0], L._shape_types[1]
+]
+"""3D batched layout from a 2D layout: prepend batch=1, preserve shape types."""
+
+
+fn _to_batched_3d(
+    tensor: TileTensor[...],
+) -> tensor.ViewType[_Batched3DLayout[type_of(tensor).LayoutType]]:
+    """Reshape 2D TileTensor to 3D by prepending batch=1: (M, K) -> (1, M, K).
+
+    The input must be rank 2. Shape types (static/dynamic) are preserved.
+    """
+    comptime L = type_of(tensor).LayoutType
+    comptime assert L.rank == 2, "expected rank-2 TileTensor"
+    return tensor.reshape(
+        row_major(
+            Coord(
+                Idx[1](),
+                tensor.layout.shape[0](),
+                tensor.layout.shape[1](),
+            )
+        )
+    )
