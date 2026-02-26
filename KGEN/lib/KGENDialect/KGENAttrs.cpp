@@ -632,7 +632,7 @@ TypedAttr TypeConformsToTraitAttr::getTypeRefIfResolved() {
 }
 
 FailureOr<TypedAttr>
-TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp) {
+TypeConformsToTraitAttr::simplify(const SymbolTable &traitTableOp) const {
   // Check when the trait symbol table contains all the traits required.
   for (auto toCheck : getTraitNames().getValues())
     if (!traitTableOp.lookup(cast<StringAttr>(toCheck).getValue()))

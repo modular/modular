@@ -123,15 +123,13 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
   // Handle TypeConformsToTraitAttr.
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
-    FailureOr<ResolvedStructHandle> resolvedOr =
-        resolveStructOp(conformsTo.getTypeValue(), /*acceptAsync=*/false);
-    if (succeeded(resolvedOr))
-      return conformsTo.simplify(SymbolTable(resolvedOr->decl.getOperation()));
-
-    // Try fold tighter trait types.
-    ASTType typeToCheck = conformsTo.getTypeValue();
-    auto traitToCheck = dyn_cast<TraitType>(typeToCheck.getMetaType());
-    return simplifyConformsToAgainstTypeValue(conformsTo, traitToCheck);
+    // Try LIT-specific trait type folding first, then fall back to the attr
+    // folder for struct resolution.
+    FailureOr<TypedAttr> result =
+        simplifyConformsToAgainstTypeValue(conformsTo);
+    if (succeeded(result))
+      return result;
+    return conformsTo.evaluateWithContext(*this);
   }
 
   // Handle DowncastAttr.

@@ -128,38 +128,6 @@ IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
       getTypeNameAttr.getType())};
 }
 
-FailureOr<TypedAttr> IREvaluatorContext::evaluateTypeConformToTraitAttr(
-    TypeConformsToTraitAttr typeConformToTraitAttr) {
-  // This is the list of trait names (`alias T = T1 & T2 & ....`) we need to
-  // check.
-  auto traitNames =
-      dyn_cast<VariadicAttr>(typeConformToTraitAttr.getTraitNames());
-  if (!traitNames) {
-    emitError({*errorLoc, "'" + TypeConformsToTraitAttr::name + "'" +
-                              " did not narrow to concrete trait names"});
-    return failure();
-  }
-
-  // Unwrap the type reference to get to the underlying TypeInstanceRefAttr.
-  TypedAttr typeRef =
-      getTypeRefForTypeValueIfResolved(typeConformToTraitAttr.getTypeValue());
-  auto instanceRef = dyn_cast_if_present<TypeInstanceRefAttr>(typeRef);
-  if (!instanceRef) {
-    emitError({*errorLoc, "'" + TypeConformsToTraitAttr::name +
-                              "' requires a struct type"});
-    return failure();
-  }
-  ParamNodeBase *genNode = lookupParamNodeBase(instanceRef.getSymbol());
-  if (!isa<StructGeneratorOp>(genNode->gen)) {
-    emitError({*errorLoc, "'" + TypeConformsToTraitAttr::name +
-                              "' requires a struct type"});
-    return failure();
-  }
-  StructGeneratorOp genOp = cast<StructGeneratorOp>(genNode->gen);
-
-  return typeConformToTraitAttr.simplify(SymbolTable(genOp));
-}
-
 FailureOr<TypedAttr>
 IREvaluatorContext::evaluateIsStructTypeAttr(IsStructTypeAttr attr) {
   MLIRContext *ctx = attr.getContext();

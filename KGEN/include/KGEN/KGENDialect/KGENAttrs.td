@@ -524,7 +524,9 @@ def KGEN_TypeParamAttr : KGEN_ExprAttr<"TypeParam", "type"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms_to_trait",
-  [TypedAttrInterface, ContextuallyEvaluatedAttrInterface]> {
+  [TypedAttrInterface,
+   DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                               ["evaluateWithContext"]>]> {
   let summary = "check whether the type conforms to specific traits";
   let description = [{
     This represents a flag to indicate the type, specified by `typeValue`,
@@ -562,7 +564,7 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
     /// Fold the attribute given the operations that holds a symbol table for
     /// the trait it implemented, it should either be a `kgen.struct.generator`
     /// or a `lit.struct.decl` which contains symbol table for `conformance_op`.
-    FailureOr<TypedAttr> simplify(const SymbolTable &traitTableOp);
+    FailureOr<TypedAttr> simplify(const SymbolTable &traitTableOp) const;
   }];
 
   let genVerifyDecl = 1;

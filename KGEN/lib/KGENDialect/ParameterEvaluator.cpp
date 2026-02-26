@@ -181,24 +181,9 @@ Operation *SymTabEvaluationContext::resolveConformanceForStruct(
   return symtab.lookupSymbolIn<ConformanceOp>(resolved.decl, traitName);
 }
 
-Operation *SymTabEvaluationContext::getStructInstIfResolved(TypedAttr typeVal) {
-  auto genRef = dyn_cast_if_present<TypeGeneratorRefAttr>(typeVal);
-  if (!genRef)
-    return nullptr;
-
-  // Find the struct decl for the instance.
-  return symtab.lookupSymbolIn<StructGeneratorOp>(module, genRef.getSymbol());
-}
-
 FailureOr<TypedAttr> SymTabEvaluationContext::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
-
-  // Handle TypeConformsToTraitAttr using struct resolution.
-  if (auto conformsTo = sugarDynCast<TypeConformsToTraitAttr>(typedAttr)) {
-    if (auto decl = getStructInstIfResolved(conformsTo.getTypeRefIfResolved()))
-      return conformsTo.simplify(SymbolTable(decl));
-  }
 
   // Handle inlined apply operations.
   if (auto pocAttr = sugarDynCast<ParamOperatorAttr>(typedAttr))

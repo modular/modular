@@ -186,7 +186,6 @@ protected:
 
 private:
   FailureOr<TypedAttr> inlineApply(ParamOperatorAttr apply);
-  Operation *getStructInstIfResolved(TypedAttr typeVal);
 };
 
 //===----------------------------------------------------------------------===//
