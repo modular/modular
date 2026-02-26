@@ -75,7 +75,9 @@ from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     DISPATCH_MISS,
 )
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-
+from runtime.tracing import Trace, TraceLevel, trace_arg
+from collections.string.string_slice import get_static_string
+from collections import OptionalReg
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -1209,9 +1211,11 @@ fn block_scaled_matmul[
     *,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
+    transpose_a: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    _trace_description: StaticString = "",
+    target: StaticString = "cpu",
 ](
     c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
     a_device: NDBuffer[a_type, 2, ImmutAnyOrigin, _],
@@ -1291,27 +1295,6 @@ fn block_scaled_matmul[
     comptime static_K = a.layout.shape[1].value()
     comptime static_NK = Index(static_N, static_K)
 
-    comptime DeepSeek_NK = [
-        Index(7168, 16384),
-        # Index(4096, 7168),
-        # Index(7168, 2048),
-    ]
-
-    comptime if static_NK in DeepSeek_NK:
-        if m == 1:
-            var status = heuristic_and_outliers_dispatch[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                pdl_level = PDLLevel(1),
-            ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
-
-            if status == DISPATCH_HIT:
-                logger.info("Executing SM100 Block Scaled matmul kernel")
-                return
-            else:
-                raise Error("Heuristic and outliers dispatch failed")
-
     comptime if env_get_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
     ]():
@@ -1328,20 +1311,69 @@ fn block_scaled_matmul[
         else:
             raise Error("Heuristic and outliers dispatch failed")
 
-    logger.info("Executing CUBLAS SM100 Block Scaled matmul kernel")
+    comptime DeepSeek_NK = [
+        Index(7168, 16384),
+        # Index(4096, 7168),
+        # Index(7168, 2048),
+    ]
 
-    block_scaled_matmul_with_epilogue[
-        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        transpose_b=transpose_b,
-    ](
-        c,
-        a,
-        b,
-        a_scales,
-        b_scales,
-        tensor_sf,
-        ctx,
-    )
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        # fmt: off
+        return String(
+            "(",
+            target,
+            ";", trace_arg("A", IndexList[2](m, k), a_type),
+            ";", trace_arg("B", IndexList[2](k, n), b_type),
+            ";", trace_arg("C", IndexList[2](m, n), c_type),
+            ";transpose_a=", True,
+            ";transpose_b=", transpose_b,
+            ")"
+        )
+        # fmt: on
+
+    with Trace[TraceLevel.OP, target=target](
+        # Create a string literal so that the event label works with the
+        # AsyncRT profiler, whose event labels must be `StaticString`s.
+        get_static_string[
+            "block_scaled_matmul_",
+            String("nvfp4_" if a_type == DType.uint8 else "mxfp8_"),
+            String(SF_VECTOR_SIZE) + String("_sfvs"),
+            _trace_description if _trace_description else "",
+        ](),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=OptionalReg(Int(ctx.id())),
+    ):
+        comptime if static_NK in DeepSeek_NK:
+            if m == 1:
+                var status = heuristic_and_outliers_dispatch[
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    pdl_level = PDLLevel(1),
+                ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+
+                if status == DISPATCH_HIT:
+                    logger.info(
+                        "Executing Mojo SM100 Block Scaled matmul kernel"
+                    )
+                    return
+
+        logger.info("Executing CUBLAS SM100 Block Scaled matmul kernel")
+
+        block_scaled_matmul_with_epilogue[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            tensor_sf,
+            ctx,
+        )
 
 
 ########################################################
