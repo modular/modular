@@ -23,6 +23,7 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     BufferValueLike,
+    DeviceKind,
     DeviceRef,
     Dim,
     StaticDim,
@@ -43,37 +44,43 @@ from max.nn.float8_config import (
 
 from .attention.mask_config import (
     AttentionMaskVariant,
-    MHAMaskConfig,
     MHAMaskVariant,
-    PositionalEncodingVariant,
 )
 from .kv_cache import KVCacheParams, PagedCacheValues, kernel_substring
+from .no_opaque_kernels import PagedKVCacheTensorsNoOpaque
 
-_MHA_MASK_CONFIG_DICT = {
-    MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+_MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
+    MHAMaskVariant.CAUSAL_MASK: AttentionMaskVariant.CAUSAL_MASK,
+    MHAMaskVariant.NULL_MASK: AttentionMaskVariant.NULL_MASK,
+    MHAMaskVariant.CHUNKED_CAUSAL_MASK: (
+        AttentionMaskVariant.CHUNKED_CAUSAL_MASK
     ),
-    MHAMaskVariant.CAUSAL_ALIBI_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.ALIBI_POS,
-    ),
-    MHAMaskVariant.NULL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.NULL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.CHUNKED_CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CHUNKED_CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK: (
+        AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
     ),
 }
+_NO_POSITIONAL_ENCODING_SCORE_MOD_STR = "no_pos"
 
 KEY_CACHE_INDEX = 0
 VALUE_CACHE_INDEX = 1
+
+
+def _mask_str(mask_variant: MHAMaskVariant) -> str:
+    return _MHA_MASK_VARIANT_TO_ATTENTION_MASK[mask_variant].value
+
+
+def _mha_parameters(
+    mask_variant: MHAMaskVariant,
+    *,
+    local_window_size: int | None = None,
+) -> dict[str, int | str | DType]:
+    parameters: dict[str, int | str | DType] = {
+        "mask_str": _mask_str(mask_variant),
+        "score_mod_str": _NO_POSITIONAL_ENCODING_SCORE_MOD_STR,
+    }
+    if local_window_size is not None:
+        parameters["local_window_size"] = local_window_size
+    return parameters
 
 
 def ceildiv(n: Dim, d: Dim) -> Dim:
@@ -1586,12 +1593,9 @@ def flash_attention_padded_kv_cache(
             f"{kv_params.cache_strategy}"
         )
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-        "local_window_size": local_window_size,
-    }
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
+    )
 
     cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.mha.padded.{cache_strategy_str}"
@@ -1609,6 +1613,147 @@ def flash_attention_padded_kv_cache(
         out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
         parameters=parameters,
     )[0].tensor
+
+
+def _validate_argument_tensor(
+    name: str,
+    tensor: TensorValue | BufferValue,
+    dtype: DType | None = None,
+    rank: int | None = None,
+    device: DeviceRef | None = None,
+    device_type: DeviceKind | None = None,
+) -> None:
+    errors = []
+    if dtype is not None and tensor.dtype != dtype:
+        errors.append(
+            f"{name}.dtype was expected to be {dtype} but got {tensor.dtype}"
+        )
+    if rank is not None and tensor.rank != rank:
+        errors.append(
+            f"{name}.rank was expected to be {rank} but got {tensor.rank}"
+        )
+    if device is not None and tensor.device != device:
+        errors.append(
+            f"{name}.device was expected to be {device} but got {tensor.device}"
+        )
+    if device_type is not None and tensor.device.device_type != device_type:
+        errors.append(
+            f"{name}'s device type was expected to be {device_type} but got {tensor.device.device_type}"
+        )
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
+def mla_fp8_index_top_k(
+    q: TensorValue,
+    q_s: TensorValue,
+    input_row_offsets: TensorValue,
+    k_collection: PagedKVCacheTensorsNoOpaque,
+    layer_idx: TensorValue,
+    top_k: int,
+    quantization_granularity: int,
+    mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+) -> TensorValue:
+    """Computes top-k indices for MLA FP8 indexed attention scores.
+
+    This function computes FP8 matmul between queries and cached keys (with scales),
+    applies masking, and returns the indices of the top-k highest-scoring keys per token.
+    Scores are aggregated (summed) across all attention heads.
+
+    Args:
+        q: Query tensor of shape [total_seq_len, num_heads, head_dim] in FP8.
+        q_s: Query scales tensor of shape [total_seq_len, num_heads] in float32.
+        input_row_offsets: Input row offsets tensor of shape [batch_size + 1].
+        k_collection: Paged KV cache collection. Must be FP8 quantized with scales.
+        layer_idx: Layer index for cache lookup.
+        top_k: Requested number of top indices per token.
+        quantization_granularity: Quantization granularity for the K cache.
+        mask_variant: The mask variant to use (NULL or CAUSAL_MASK).
+
+    Returns:
+        Output tensor of shape [total_seq_len, effective_k] containing top-k key
+        indices per token, where effective_k = min(top_k, max_num_keys).
+        Invalid positions are filled with -1.
+    """
+    _validate_argument_tensor(
+        "q", q, dtype=DType.float8_e4m3fn, rank=3, device_type=DeviceKind.GPU
+    )
+    _validate_argument_tensor(
+        "q_s", q_s, dtype=DType.float32, rank=2, device=q.device
+    )
+
+    _validate_argument_tensor(
+        "input_row_offsets",
+        input_row_offsets,
+        dtype=DType.uint32,
+        rank=1,
+        device=q.device,
+    )
+    _validate_argument_tensor(
+        "k_collection.blocks",
+        k_collection.blocks,
+        dtype=DType.float8_e4m3fn,
+        rank=6,
+        device=q.device,
+    )
+    assert k_collection.kv_scales is not None, (
+        "FP8 k_collection must have kv_scales"
+    )
+    _validate_argument_tensor(
+        "k_collection.kv_scales",
+        k_collection.kv_scales,
+        dtype=DType.float32,
+        rank=6,
+        device=q.device,
+    )
+
+    _validate_argument_tensor(
+        "layer_idx", layer_idx, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+    if top_k <= 0:
+        raise ValueError(f"top_k must be greater than 0, got {top_k}")
+
+    # Validate mask_variant is supported
+    if mask_variant not in (
+        MHAMaskVariant.NULL_MASK,
+        MHAMaskVariant.CAUSAL_MASK,
+    ):
+        raise ValueError(
+            f"mask_variant must be NULL_MASK or CAUSAL_MASK, got {mask_variant}"
+        )
+
+    mask_str = _mask_str(mask_variant)
+    result = ops.inplace_custom(
+        "mo.mla.indexer.ragged.float8.paged",
+        device=q.device,
+        values=[
+            q,
+            q_s,
+            input_row_offsets,
+            k_collection.blocks,
+            k_collection.cache_lengths,
+            k_collection.lookup_table,
+            k_collection.max_lengths,
+            k_collection.kv_scales,
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(q.shape[0], top_k),
+                device=q.device,
+            )
+        ],
+        parameters={
+            "num_heads": int(q.shape[1]),
+            "depth": int(q.shape[2]),
+            "k": top_k,
+            "quantization_granularity": quantization_granularity,
+            "mask_str": mask_str,
+        },
+    )[0].tensor
+
+    return result
 
 
 def flash_attention_gpu(
@@ -1675,13 +1820,9 @@ def flash_attention_gpu(
                 f"q batch size ({q.shape[0]})"
             )
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {}
-    parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
-    parameters["score_mod_str"] = (
-        mha_mask_config.positional_encoding_variant.value
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
     )
-    parameters["local_window_size"] = local_window_size
 
     op_name = "mo.mha.no_cache"
     values = [q, k, v]
@@ -1772,19 +1913,15 @@ def flash_attention_ragged(
             )
 
     cache_strategy_str = kernel_substring(kv_params.cache_strategy)
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
+    )
 
     # Select kernel based on whether sink_weights is provided
     op_name = f"mo.mha.ragged.{cache_strategy_str}"
 
     if sink_weights is not None:
         op_name += ".sink_weights"
-    parameters: dict[str, int | str | DType] = {
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-        "local_window_size": local_window_size,
-    }
-
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
@@ -1882,13 +2019,9 @@ def flash_attention_ragged_gpu(
             f"input_row_offsets must be rank 1, got {input_row_offsets.rank}"
         )
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {}
-    parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
-    parameters["score_mod_str"] = (
-        mha_mask_config.positional_encoding_variant.value
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
     )
-    parameters["local_window_size"] = local_window_size
 
     op_name = "mo.mha.ragged.no_cache"
     values = [q, k, v, input_row_offsets, max_seq_len]
@@ -1964,11 +2097,7 @@ def flare_mla_decode_ragged(
         )
 
     assert kv_params.page_size is not None
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
+    parameters = _mha_parameters(mask_variant)
 
     op_name = "mo.mla.decode.ragged.paged"
 
@@ -2060,11 +2189,7 @@ def flare_mla_prefill_ragged(
         )
 
     assert kv_params.page_size is not None
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
+    parameters = _mha_parameters(mask_variant)
 
     op_name = "mo.mla.prefill.ragged.paged"
 
@@ -2168,16 +2293,6 @@ def flare_mla_prefill_plan(
     )
 
     return results[0].tensor, results[1].tensor, results[2].tensor
-
-
-def _build_mla_mask_parameters(
-    mask_variant: MHAMaskVariant,
-) -> dict[str, int | str | DType]:
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    return {
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
 
 
 def _validate_mla_prefill_decode_graph_inputs(
@@ -2300,7 +2415,7 @@ def mla_prefill_graph(
         op_name="mla_prefill_graph",
         expected_dtype=kv_params.dtype,
     )
-    parameters = _build_mla_mask_parameters(mask_variant)
+    parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
         q,
@@ -2412,7 +2527,7 @@ def mla_decode_graph(
         op_name="mla_decode_graph",
         expected_dtype=kv_params.dtype,
     )
-    parameters = _build_mla_mask_parameters(mask_variant)
+    parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
         q,
@@ -2515,7 +2630,7 @@ def mla_prefill_decode_graph(
         op_name="mla_prefill_decode_graph",
         expected_dtype=kv_params.dtype,
     )
-    parameters = _build_mla_mask_parameters(mask_variant)
+    parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
         q,
@@ -2695,12 +2810,9 @@ def cross_attention_ragged(
             f"expected q_max_seq_len to be uint32 but got {q_max_seq_len.dtype}"
         )
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "local_window_size": local_window_size,
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
+    )
 
     cache_strategy_str = kernel_substring(kv_params.cache_strategy)
     op_name = f"mo.cross_attention.ragged.{cache_strategy_str}"

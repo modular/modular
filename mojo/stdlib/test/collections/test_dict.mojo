@@ -152,20 +152,6 @@ def test_dict_string_representation_int_int():
     )
 
 
-def test_dict_string_representation_custom_hasher():
-    var some_dict: Dict[Int, Int, default_comp_time_hasher] = {}
-    some_dict[1] = 10
-    some_dict[2] = 20
-
-    var dict_as_string = some_dict.__str__()
-
-    # Just check that __str__ is callable and produces something
-    assert_true(
-        some_dict._minimum_size_of_string_representation()
-        <= len(dict_as_string)
-    )
-
-
 def test_compact():
     var dict: Dict[String, Int] = {}
     for i in range(20):

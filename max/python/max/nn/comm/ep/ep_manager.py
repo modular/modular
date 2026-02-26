@@ -26,7 +26,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Accelerator, Buffer
+from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -673,15 +673,27 @@ class EPCommInitializer:
             f"Estimated EP memory usage per device: {to_human_readable_bytes(self.config.estimate_memory_usage())}"
         )
 
+        def _get_max_rcs() -> int:
+            """Return the maximum number of warps in a block."""
+            if accelerator_api() == "cuda":
+                return 32
+            elif accelerator_api() == "hip":
+                return 16
+            else:
+                raise ValueError(
+                    f"Unsupported accelerator API: {accelerator_api()}"
+                )
+
         # Skip setting NVSHMEM-specific env vars on single node.
         if self.config.n_nodes > 1 or os.getenv("NVSHMEM_DISABLE_P2P") == "1":
             # Set ENVs for NVSHMEM
             n_gpus = self.config.n_nodes * self.config.n_gpus_per_node
             num_experts_per_gpu = self.config.n_experts // n_gpus
+            n_rcs = min(num_experts_per_gpu, _get_max_rcs())
             os.environ["NVSHMEM_IB_ENABLE_IBGDA"] = "1"
             os.environ["NVSHMEM_IBGDA_NIC_HANDLER"] = "gpu"
             os.environ["NVSHMEM_IBGDA_RC_MAP_BY"] = "warp"
-            os.environ["NVSHMEM_IBGDA_NUM_RC_PER_PE"] = str(num_experts_per_gpu)
+            os.environ["NVSHMEM_IBGDA_NUM_RC_PER_PE"] = str(n_rcs)
 
             # TODO: Provide a way to let user manually map NICs to different GPU
             os.environ["NVSHMEM_ENABLE_NIC_PE_MAPPING"] = "1"

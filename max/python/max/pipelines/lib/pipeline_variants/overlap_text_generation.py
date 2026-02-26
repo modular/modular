@@ -75,7 +75,7 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, load_devices
+from max.driver import Buffer, DeviceEvent, DevicePinnedBuffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType, ops
@@ -99,7 +99,7 @@ from max.interfaces import (
 from max.interfaces.tokens import TokenBuffer
 from max.kv_cache import PagedKVCacheManager
 from max.nn import kernels
-from max.nn.kv_cache import KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputsSequence, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
@@ -168,6 +168,9 @@ class AsyncBatch(Generic[TextGenerationContextType]):
     This buffers has the same contents as `generated_tokens_device`.
     """
 
+    copy_event: DeviceEvent
+    """Event that tracks completion of the d2h copy."""
+
     _is_processed: bool = False
     """Whether the outputs have been already been processed."""
 
@@ -184,8 +187,8 @@ class AsyncBatch(Generic[TextGenerationContextType]):
             raise ValueError("Outputs have already been processed.")
         self._is_processed = True
 
-        # We assume that the call to `.to_numpy()` will insert a device
-        # synchronize to guarantee that the async d2h transfer is done.
+        # Synchronize on the copy event to ensure the async d2h transfer is done.
+        self.copy_event.synchronize()
         generated_tokens_np = self.generated_tokens_host.to_numpy()
 
         # Now that we have synced, it is safe to read the contents of the
@@ -280,13 +283,11 @@ class ScatterFutureTokenProcessor:
 
         # Prepare the scatter indices.
         prev_batch_size = prev_generated_tokens.shape[0]
-        future_tok_indices = Buffer(
+        future_tok_indices = DevicePinnedBuffer(
             shape=(prev_batch_size,),
             dtype=DType.int32,
             device=device,
-            pinned=True,
         )
-        future_tok_indices.disable_auto_sync()
         future_tok_indices_np = future_tok_indices.to_numpy()
 
         # Initialize the scatter indices with an oob_idx. These updates will be
@@ -412,8 +413,10 @@ class OverlapTextGenerationPipeline(
         )
 
         available_cache_memory = model_config.kv_cache._available_cache_memory
+        kv_params = self._pipeline_model.kv_params
+        assert isinstance(kv_params, KVCacheParams)
         self._kv_manager: PagedKVCacheManager = load_kv_manager(
-            params=self._pipeline_model.kv_params,
+            params=kv_params,
             max_batch_size=self._pipeline_config.max_batch_size,
             max_seq_len=self._pipeline_model.max_seq_len,
             session=session,
@@ -658,24 +661,22 @@ class OverlapTextGenerationPipeline(
         with Tracer("D2H generated_tokens"):
             # Allocate a pinned tensor on the host for faster async d2h transfer
             # speeds.
-            generated_tokens_host = Buffer(
+            generated_tokens_host = DevicePinnedBuffer(
                 shape=generated_tokens_device.shape,
                 dtype=generated_tokens_device.dtype,
                 device=device0,
-                pinned=True,
             )
-            generated_tokens_host.disable_auto_sync()
             generated_tokens_host.inplace_copy_from(generated_tokens_device)
-            # Record an event associated with the buffer to track the
-            # completion of the d2h copy.
-            # This will ensure that the subsequent call to `to_numpy()` will
+            # Record an event to track the completion of the d2h copy.
+            # This will ensure that the subsequent synchronize() call will
             # block until the d2h copy is complete, and no more.
-            generated_tokens_host.mark_as_ready()
+            copy_event = device0.default_stream.record_event()
 
         curr_batch = AsyncBatch(
             inputs=inputs,
             generated_tokens_device=generated_tokens_device,
             generated_tokens_host=generated_tokens_host,
+            copy_event=copy_event,
         )
         return curr_batch
 
@@ -719,7 +720,7 @@ class OverlapTextGenerationPipeline(
             # Run the entire forward pass and output processing if the batch has
             # at least one request.
             curr_batch = self._run_forward_and_sample_logits(inputs)
-        elif self.pipeline_config.execute_empty_batches:
+        elif self.pipeline_config.runtime.execute_empty_batches:
             # If the batch is empty and execute_empty_batches is True, we will
             # only run the forward pass to ensure that the barrier point is reached
             # for EP + DP. We skip all output processing.

@@ -62,7 +62,7 @@ comptime pm = platform_map[T=Int, ...]
 
 
 @fieldwise_init
-struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
+struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
     """Represents a error number from libc.
 
     This struct acts as an enum providing a wrapper around C library error codes,
@@ -430,6 +430,7 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
         var string = StringSlice(unsafe_from_utf8_ptr=ptr)
         string.write_to(writer)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns the human-readable error description as a string.
 

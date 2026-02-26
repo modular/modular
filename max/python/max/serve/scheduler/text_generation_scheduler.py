@@ -234,5 +234,5 @@ def load_text_generation_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        support_empty_batches=pipeline_config.execute_empty_batches,
+        support_empty_batches=pipeline_config.runtime.execute_empty_batches,
     )

@@ -53,7 +53,7 @@ def main():
 
 
 @fieldwise_init
-struct SourceLocation(Stringable, TrivialRegisterPassable, Writable):
+struct SourceLocation(TrivialRegisterPassable, Writable):
     """Type to carry file name, line, and column information.
 
     This struct stores source location data and provides utilities for formatting
@@ -87,6 +87,7 @@ struct SourceLocation(Stringable, TrivialRegisterPassable, Writable):
     var file_name: StaticString
     """The file name."""
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the source location.

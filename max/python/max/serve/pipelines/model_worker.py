@@ -27,7 +27,7 @@ from multiprocessing.synchronize import Event
 from typing import Any, Protocol, runtime_checkable
 
 import uvloop
-from max.driver import Buffer, Device
+from max.driver import Device, DevicePinnedBuffer
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.interfaces import (
@@ -85,9 +85,7 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
     """
     if device.is_host:
         return
-    pinned = Buffer(
-        shape=(bytes,), dtype=DType.int8, device=device, pinned=True
-    )
+    pinned = DevicePinnedBuffer(shape=(bytes,), dtype=DType.int8, device=device)
     del pinned
 
 
@@ -243,7 +241,7 @@ class ModelWorker:
             # Get the reset prefix cache backend.
             reset_prefix_cache_backend, kv_cache = (
                 get_reset_prefix_cache_backend(
-                    pipeline, pipeline_config.zmq_endpoint_base
+                    pipeline, pipeline_config.runtime.zmq_endpoint_base
                 )
             )
 

@@ -28,7 +28,7 @@ from collections.abc import Sequence
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 
 from .local_connector import LocalConnector
 from .null_connector import NullConnector
@@ -40,10 +40,9 @@ logger = logging.getLogger("max.pipelines")
 def create_connector(
     params: KVCacheParams,
     devices: Sequence[Device],
-    device_tensors: list[Buffer],
-    device_scale_tensors: list[Buffer] | None,
+    device_buffer: KVCacheBuffer,
     total_num_host_blocks: int,
-    total_num_blocks: int = 0,
+    total_num_blocks: int,
     session: InferenceSession | None = None,
 ) -> KVConnector:
     """Create a KV cache connector instance.
@@ -57,8 +56,7 @@ def create_connector(
     Args:
         params: KV cache parameters containing configuration.
         devices: Devices for the KV cache tensors.
-        device_tensors: Device tensors for KV cache (owned by manager).
-        device_scale_tensors: Device scale tensors for FP8, or None.
+        device_buffer: Device buffer for KV cache (owned by manager).
         total_num_host_blocks: Total number of host blocks for swapping.
         total_num_blocks: Total number of device blocks (required for LMCache).
         session: Optional inference session for loading custom kernels.
@@ -80,10 +78,8 @@ def create_connector(
         return LMCacheConnector(
             params=params,
             devices=devices,
-            device_tensors=device_tensors,
-            device_scale_tensors=device_scale_tensors,
-            total_num_blocks=total_num_blocks
-            or (device_tensors[0].shape[0] if device_tensors else 0),
+            device_buffer=device_buffer,
+            total_num_blocks=total_num_blocks,
             session=session,
         )
 
@@ -98,8 +94,7 @@ def create_connector(
             return TieredConnector(
                 params=params,
                 devices=devices,
-                device_tensors=device_tensors,
-                device_scale_tensors=device_scale_tensors,
+                device_buffer=device_buffer,
                 total_num_host_blocks=total_num_host_blocks,
                 disk_cache_dir=params.disk_offload_dir,
                 max_disk_size_gb=params.disk_offload_max_gb,
@@ -111,9 +106,7 @@ def create_connector(
             )
             return LocalConnector(
                 params=params,
-                devices=devices,
-                device_tensors=device_tensors,
-                device_scale_tensors=device_scale_tensors,
+                device_buffer=device_buffer,
                 total_num_host_blocks=total_num_host_blocks,
             )
 

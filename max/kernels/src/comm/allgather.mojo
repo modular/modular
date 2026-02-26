@@ -258,6 +258,7 @@ fn allgather[
         ctxs: List of device contexts for participating GPUs.
         _max_num_blocks: Maximum number of blocks for kernel launch (optional).
     """
+    comptime assert ngpus >= 2, "allgather requires at least 2 GPUs"
 
     # Return early, if all input buffers are empty
     var all_empty = True
@@ -300,5 +301,7 @@ fn allgather[
     This version uses the naive implementation since we can't allocate signal
     buffers with proper lifetime in this function.
     """
+    comptime assert ngpus >= 2, "allgather requires at least 2 GPUs"
+
     # Use naive implementation for backward compatibility.
     _allgather_naive(input_buffers, output_buffers, ctxs)

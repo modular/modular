@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import Model
 from max.interfaces import BatchProcessorInputs, TextGenerationContextType
@@ -62,17 +62,18 @@ def to_pinned_host_buffer(
     Returns:
         A buffer containing the values, with pinning if applicable.
     """
-    pinned = not device.is_host
-
-    buffer = Buffer(
-        shape=(len(values),),
-        dtype=dtype,
-        device=device,
-        pinned=pinned,
-    )
-
-    if pinned:
-        buffer.disable_auto_sync()
+    if device.is_host:
+        buffer = Buffer(
+            shape=(len(values),),
+            dtype=dtype,
+            device=device,
+        )
+    else:
+        buffer = DevicePinnedBuffer(
+            shape=(len(values),),
+            dtype=dtype,
+            device=device,
+        )
 
     buffer_np = buffer.to_numpy()
     buffer_np[:] = values
@@ -129,17 +130,20 @@ class FusedSamplingProcessor:
         # Allocate input and output tensors on pinned memory for faster async
         # h2d and d2h transfer speeds. If model is on host, then fall back to
         # normal pageable memory.
-        pinned = not device.is_host
 
         # generated_tokens is a tensor of shape (batch_size, 0)
-        self.generated_tokens = Buffer(
-            shape=(batch_size, 0),
-            dtype=DType.int64,
-            device=device,
-            pinned=pinned,
-        )
-        if pinned:
-            self.generated_tokens.disable_auto_sync()
+        if device.is_host:
+            self.generated_tokens = Buffer(
+                shape=(batch_size, 0),
+                dtype=DType.int64,
+                device=device,
+            )
+        else:
+            self.generated_tokens = DevicePinnedBuffer(
+                shape=(batch_size, 0),
+                dtype=DType.int64,
+                device=device,
+            )
 
         temperature_host = to_pinned_host_buffer(
             [context.sampling_params.temperature for context in context_batch],

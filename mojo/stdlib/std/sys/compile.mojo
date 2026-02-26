@@ -60,7 +60,7 @@ fn codegen_unreachable[cond: Bool, msg: StaticString, *extra: StaticString]():
 
 
 @fieldwise_init
-struct _OptimizationLevel(ImplicitlyCopyable, Intable, Stringable, Writable):
+struct _OptimizationLevel(ImplicitlyCopyable, Intable, Writable):
     """Represents the optimization level used during compilation.
 
     The optimization level is determined by the __OPTIMIZATION_LEVEL environment
@@ -85,6 +85,7 @@ struct _OptimizationLevel(ImplicitlyCopyable, Intable, Stringable, Writable):
         """Writes the optimization level to a writer."""
         writer.write(Self.level)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of the optimization level.
@@ -104,7 +105,7 @@ comptime OptimizationLevel = _OptimizationLevel()
 
 
 @fieldwise_init
-struct _DebugLevel(ImplicitlyCopyable, Stringable, Writable):
+struct _DebugLevel(ImplicitlyCopyable, Writable):
     """Represents the debug level used during compilation.
 
     The debug level is determined by the __DEBUG_LEVEL environment variable,
@@ -121,6 +122,7 @@ struct _DebugLevel(ImplicitlyCopyable, Stringable, Writable):
         """Writes the optimization level to a writer."""
         writer.write(Self.level)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of the debug level.

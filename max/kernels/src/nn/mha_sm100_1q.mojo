@@ -1869,6 +1869,7 @@ fn _mha_sm100_enqueue[
         Int32(config.num_threads[True]())
     )
 )
+@__llvm_metadata(`nvvm.minctasm`=Int(1))
 fn _mha_sm100[
     KVLUTType: MHAOperand,
     output_type: DType,

@@ -14,22 +14,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import Enum
 
 
 class MHAMaskVariant(str, Enum):
     CAUSAL_MASK = 0
-    CAUSAL_ALIBI_MASK = 1
     NULL_MASK = 2
     CHUNKED_CAUSAL_MASK = 3
     SLIDING_WINDOW_CAUSAL_MASK = 4
-
-
-@dataclass
-class MHAMaskConfig:
-    attention_mask_variant: AttentionMaskVariant
-    positional_encoding_variant: PositionalEncodingVariant
 
 
 class AttentionMaskVariant(str, Enum):
@@ -38,8 +30,3 @@ class AttentionMaskVariant(str, Enum):
     TENSOR_MASK = "tensor_mask"
     CHUNKED_CAUSAL_MASK = "chunked_causal"
     SLIDING_WINDOW_CAUSAL_MASK = "sliding_window_causal"
-
-
-class PositionalEncodingVariant(str, Enum):
-    NO_POS = "no_pos"
-    ALIBI_POS = "alibi_pos"

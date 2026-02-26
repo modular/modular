@@ -156,7 +156,7 @@ async def lifespan(
 
         lora_queue: LoRAQueue | None = (
             LoRAQueue(
-                serving_settings.pipeline_config.zmq_endpoint_base,
+                serving_settings.pipeline_config.runtime.zmq_endpoint_base,
                 serving_settings.pipeline_config.lora.lora_paths,
             )
             if serving_settings.pipeline_config.lora
@@ -291,7 +291,7 @@ def fastapi_app(
     app.add_api_route("/health", health)
 
     reset_prefix_cache_frontend = ResetPrefixCacheFrontend(
-        serving_settings.pipeline_config.zmq_endpoint_base
+        serving_settings.pipeline_config.runtime.zmq_endpoint_base
     )
 
     async def reset_prefix_cache() -> Response:

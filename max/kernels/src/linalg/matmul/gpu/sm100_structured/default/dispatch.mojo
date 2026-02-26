@@ -1472,17 +1472,31 @@ fn matmul_dispatch_sm100_bf16[
         Index(4096, 7168),
     ]
 
+    comptime DeepSeek_NK = [
+        Index(16384, 512),
+    ]
+
     comptime miscellaneous_NK = [
         Index(1536, 4096),
         Index(4096, 1536),
     ]
 
-    comptime if Index(static_N, static_K) in miscellaneous_NK:
+    comptime static_NK = Index(static_N, static_K)
+
+    comptime if static_NK in DeepSeek_NK:
         return heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
+            pdl_level = PDLLevel(1),
+        ](c, a, b, ctx)
+
+    comptime if static_NK in miscellaneous_NK:
+        return heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level = PDLLevel(1),
         ](c, a, b, ctx)
 
     comptime if Index(static_N, static_K) in llama3_8b_NK:

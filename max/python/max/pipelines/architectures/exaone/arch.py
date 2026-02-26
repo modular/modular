@@ -44,6 +44,7 @@ exaone_arch = SupportedArchitecture(
     context_type=TextContext,
     rope_type="neox",
     default_weights_format=WeightsFormat.gguf,
+    multi_gpu_supported=False,
     weight_adapters={
         WeightsFormat.safetensors: convert_exaone_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,

@@ -140,13 +140,13 @@ For example, the `repeat[]()` function in the previous section includes
 parameter of type `Int`, and an argument of type `String`. It's parameterized,
 but not generic. A generic function or struct is parameterized on *type*. For
 example, we could rewrite `repeat[]()` to take any type of argument that
-conforms to the [`Stringable`](/mojo/std/builtin/str/Stringable) trait:
+conforms to the [`Writable`](/mojo/std/format/Writable) trait:
 
 ```mojo
-fn repeat[MsgType: Stringable, //, count: Int](msg: MsgType):
+fn repeat[MsgType: Writable, //, count: Int](msg: MsgType):
     @parameter
     for i in range(count):
-        print(String(msg))
+        print(msg)
 
 
 def main():

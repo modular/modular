@@ -71,18 +71,13 @@ class NestedIterableDataclass(Generic[T]):
         return list(self)
 
 
-@runtime_checkable
-class InputSymbolInterface(Protocol):
-    def flatten(self) -> list[TensorType | BufferType]: ...
-
-
 IterableInputSymbols: TypeAlias = NestedIterableDataclass[
     TensorType | BufferType
 ]
 
 
 @dataclass
-class PagedCacheInputSymbols(IterableInputSymbols, InputSymbolInterface):
+class PagedCacheInputSymbols(IterableInputSymbols):
     kv_blocks: BufferType
     cache_lengths: TensorType
     lookup_table: TensorType
@@ -99,9 +94,19 @@ class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
     kv_scales: BufferValue | None = None  # KV scales for FP8 quantization
 
 
+@runtime_checkable
+class FlattenableInputSymbols(Protocol):
+    """A sequence-like collection of input symbols that can be flattened."""
+
+    def __iter__(self) -> Iterator[Any]: ...
+    def __getitem__(self, index: int | slice) -> Any: ...
+    def __len__(self) -> int: ...
+    def flatten(self) -> list[TensorType | BufferType]: ...
+
+
 @dataclass
 class PagedCacheInputSymbolsByReplica(
-    Sequence[PagedCacheInputSymbols], InputSymbolInterface
+    Sequence[PagedCacheInputSymbols], FlattenableInputSymbols
 ):
     """A class that holds the symbolic inputs for the paged ache for all replicas.
 
@@ -112,12 +117,6 @@ class PagedCacheInputSymbolsByReplica(
 
     def __iter__(self) -> Iterator[PagedCacheInputSymbols]:
         return iter(self.values)
-
-    @overload
-    def __getitem__(self, index: int) -> PagedCacheInputSymbols: ...
-
-    @overload
-    def __getitem__(self, index: slice) -> Sequence[PagedCacheInputSymbols]: ...
 
     def __getitem__(self, index: int | slice) -> Any:
         return self.values[index]
@@ -134,18 +133,12 @@ class PagedCacheInputSymbolsByReplica(
 
 @dataclass
 class MultiKVCacheInputSymbols(
-    Sequence[InputSymbolInterface], InputSymbolInterface
+    Sequence[PagedCacheInputSymbolsByReplica], FlattenableInputSymbols
 ):
-    values: list[InputSymbolInterface]
+    values: list[PagedCacheInputSymbolsByReplica]
 
-    def __iter__(self) -> Iterator[InputSymbolInterface]:
+    def __iter__(self) -> Iterator[PagedCacheInputSymbolsByReplica]:
         return iter(self.values)
-
-    @overload
-    def __getitem__(self, index: int) -> InputSymbolInterface: ...
-
-    @overload
-    def __getitem__(self, index: slice) -> Sequence[InputSymbolInterface]: ...
 
     def __getitem__(self, index: int | slice) -> Any:
         return self.values[index]

@@ -1263,12 +1263,10 @@ fn wgmma_async[
             )
         else:
             comptime assert False, String("the n value '", n, "' is not valid")
-            return c
         # fmt: on
 
     else:
         comptime assert False, "unsupported config"
-        return c
 
 
 @always_inline("nodebug")

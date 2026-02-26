@@ -14,8 +14,9 @@
 from sys import size_of
 from itertools import product
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout._tile_tensor import TileTensor
+from layout._layout import row_major
+from layout._coord import Coord, Idx
 from collections import Optional
 from comm import Signal, MAX_GPUS
 from comm.reducescatter import (
@@ -121,50 +122,51 @@ fn reducescatter_test[
         # Copy data to device
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
-    # Create input and output NDBuffers
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
-        fill={}
-    )
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
-        fill={}
-    )
-
-    for i in range(ngpus):
-        in_bufs[i] = NDBuffer[dtype, rank](
-            in_bufs_list[i].unsafe_ptr(), DimList(length)
-        )
-        out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
-        )
-
     # Synchronize all devices before reduce-scatter
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    # Copy-capture in registers since the lambda will be used on GPU.
-    var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
-    ](NDBuffer[dtype, rank, MutAnyOrigin]())
+    comptime InputTileType = type_of(
+        TileTensor[mut=False](
+            in_bufs_list[0].unsafe_ptr(), row_major(Idx(length))
+        )
+    )
+    var in_bufs = InlineArray[InputTileType, ngpus](uninitialized=True)
+
+    comptime OutputTileType = type_of(
+        TileTensor[mut=True](
+            out_bufs_list[0].unsafe_ptr(),
+            row_major(Idx(output_lengths[0])),
+        )
+    )
+    var out_bufs = StaticTuple[OutputTileType, ngpus]()
 
     for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
+        in_bufs[i] = InputTileType(
+            in_bufs_list[i].unsafe_ptr(),
+            row_major(Idx(length)),
+        )
+
+        out_bufs[i] = OutputTileType(
+            out_bufs_list[i].unsafe_ptr(),
+            row_major(Idx(output_lengths[i])),
         )
 
     # Custom epilogue that negates values to distinguish from default
     @always_inline
     @parameter
-    @__copy_capture(out_bufs_capture)
+    @__copy_capture(out_bufs)
     fn outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-        out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
-            rebind[IndexList[rank]](coords),
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
+        coords.flat_rank == 1
+    ):
+        out_bufs[input_index].store[width=_width, alignment=_alignment](
+            coords,
             rebind[SIMD[dtype, _width]](
                 -val
             ),  # Negate to distinguish from default

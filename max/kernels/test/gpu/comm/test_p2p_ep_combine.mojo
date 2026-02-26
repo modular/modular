@@ -675,7 +675,6 @@ def main():
     comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "Only NVIDIA and AMD GPUs are supported"
-    comptime n_local_experts = 32 if has_nvidia_gpu_accelerator() else 16
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
@@ -687,11 +686,15 @@ def main():
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
-        test_combine[
-            hidden_size=7168,
-            top_k=8,
-            n_experts = num_gpus * n_local_experts,
-            n_ranks=num_gpus,
-            n_slots=3,
-            n_tokens_per_rank=128,
-        ](ctx)
+        comptime for n_local_experts in [32, 64]:
+            comptime if num_gpus * n_local_experts > 256:
+                continue
+
+            test_combine[
+                hidden_size=7168,
+                top_k=8,
+                n_experts = num_gpus * n_local_experts,
+                n_ranks=num_gpus,
+                n_slots=1,
+                n_tokens_per_rank=128,
+            ](ctx)

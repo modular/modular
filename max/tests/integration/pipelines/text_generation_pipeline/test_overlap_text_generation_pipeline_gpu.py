@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from max.config import ConfigFileModel
-from max.driver import Accelerator, Buffer, DeviceSpec
+from max.driver import Accelerator, Buffer, DevicePinnedBuffer, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -147,10 +147,15 @@ class FakeModelConfig(ConfigFileModel):
     enable_echo: bool = False
 
 
+class FakeRuntimeConfig(ConfigFileModel):
+    execute_empty_batches: bool = False
+
+
 class FakePipelineConfig(ConfigFileModel):
     model: FakeModelConfig
     sampling: FakeSamplingConfig
-    execute_empty_batches: bool = False
+    runtime: FakeRuntimeConfig = FakeRuntimeConfig()
+    enable_echo: bool = False
     enable_overlap_scheduler: bool = False
     debug_verify_replay: bool = False
     max_batch_size: int = 999
@@ -271,35 +276,29 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
         )
         active_lengths = [ctx.tokens.active_length for ctx in batch]
         total_seq_len = sum(active_lengths)
-        tokens = Buffer(
+        tokens = DevicePinnedBuffer(
             shape=[total_seq_len],
             dtype=DType.int64,
             device=self.device,
-            pinned=True,
         )
-        tokens.disable_auto_sync()
         np.concatenate(
             [ctx.tokens.active for ctx in batch], out=tokens.to_numpy()
         )
-        input_row_offsets = Buffer(
+        input_row_offsets = DevicePinnedBuffer(
             shape=[len(batch) + 1],
             dtype=DType.int64,
             device=self.device,
-            pinned=True,
         )
-        input_row_offsets.disable_auto_sync()
         np.cumsum(
             [0] + active_lengths,
             dtype=np.int64,
             out=input_row_offsets.to_numpy(),
         )
-        arange = Buffer(
+        arange = DevicePinnedBuffer(
             dtype=DType.int64,
             shape=[batch_size],
             device=self.device,
-            pinned=True,
         )
-        arange.disable_auto_sync()
         arange.to_numpy()[:] = np.arange(
             start=0, stop=batch_size, dtype=np.int64
         )

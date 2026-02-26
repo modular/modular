@@ -80,7 +80,7 @@ def main():
     for ref value in values:
         if value % 2 != 0:
             value -= 1
-    print(values.__str__())
+    print(values)
 
     # from python import Python
 

@@ -68,6 +68,7 @@ class Llama3Config(ArchConfigWithKVCache):
     residual_multiplier: float
     devices: list[DeviceRef]
     clip_qkv: float | None = None
+    norm_elementwise_affine: bool = True
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE

@@ -30,7 +30,6 @@ struct AddressSpace(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -103,6 +102,7 @@ struct AddressSpace(
         """
         return self._value == other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __str__(self) -> String:
         """Gets a string representation of the AddressSpace.
@@ -201,7 +201,7 @@ struct Pointer[
     type: AnyType,
     origin: Origin[mut=mut],
     address_space: AddressSpace = AddressSpace.GENERIC,
-](Stringable, TrivialRegisterPassable, Writable):
+](TrivialRegisterPassable, Writable):
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
@@ -333,6 +333,7 @@ struct Pointer[
         """
         return not (self == rhs)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets a string representation of the Pointer.

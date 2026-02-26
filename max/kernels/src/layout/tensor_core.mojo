@@ -286,7 +286,6 @@ struct TensorCore[
             return [shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16]
         else:
             comptime assert False, "No valid shape of mma"
-            return [shape_null]
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
 
@@ -1411,7 +1410,6 @@ fn get_mma_shape[
             return shape_16x8x32
         else:
             comptime assert False, "Unsupported mma shape."
-            return shape_null
     else:
         comptime if _is_amd_rdna():
             comptime if _is_amd_rdna2_or_earlier():
@@ -1419,14 +1417,12 @@ fn get_mma_shape[
                     "RDNA1/RDNA2 tensor core support requires fallback"
                     " paths (not yet implemented)"
                 )
-                return shape_null
 
             comptime if accum_type == DType.float32 and input_type == DType.float32:
                 comptime assert False, (
                     "RDNA WMMA does not support FP32 inputs (only FP16/BF16"
                     " -> FP32)"
                 )
-                return shape_null
             elif accum_type == DType.float32 and input_type.is_half_float():
                 return shape_16x16x16
             elif (
@@ -1443,7 +1439,6 @@ fn get_mma_shape[
                 return shape_16x16x16
             else:
                 comptime assert False, "Unsupported RDNA mma shape."
-                return shape_null
         else:
             comptime if accum_type == DType.float32 and input_type == DType.float32:
                 return shape_16x16x4
@@ -1453,7 +1448,6 @@ fn get_mma_shape[
                 return shape_16x16x32
             else:
                 comptime assert False, "Unsupported CDNA mma shape."
-                return shape_null
 
 
 @always_inline

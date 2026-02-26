@@ -204,6 +204,9 @@ what we publish.
 - `comptime assert` no longer errors on always false conditions. The assertion
   will only trigger if its parent scope is concretized.
 
+- A statically False `comptime assert` now ends a scope. Any code following it
+  in the same scope is now a warning, and can be removed.
+
 ### Library changes
 
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
@@ -361,6 +364,11 @@ what we publish.
   - `Tuple`
   - `Variant`
   - `Optional`
+
+- The `stdlib` is beginning to remove support for the `Stringable` and `Representable`
+  traits in favor of the unified `Writable` trait. Most stdlib types have had their
+  conformance to `Stringable` and `Representable` removed and the associated `__str__()`
+  and `__repr__()` methods have been deprecated.
 
 - The `testing` module now provides `assert_equal` and `assert_not_equal`
   overloads for `Tuple`, enabling direct tuple-to-tuple comparisons in tests

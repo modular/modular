@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, ceildiv, exp, exp2, log
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
@@ -40,6 +40,13 @@ from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
+from layout._coord import RuntimeInt, coord_to_index_list
+from layout._layout import RowMajorLayout, row_major
+from layout._tile_tensor import (
+    TileTensor,
+    TensorLayout,
+    stack_allocation as tt_stack_allocation,
+)
 from layout.tensor_core import get_fragment_size
 from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
@@ -889,6 +896,185 @@ fn softmax[
             )
         else:
             comptime assert False, String("unsupported target ", target)
+
+
+# ===----------------------------------------------------------------------=== #
+# Softmax with temperature scaling (GPU only).
+# ===----------------------------------------------------------------------=== #
+
+
+fn _softmax_temperature_kernel[
+    BLOCK_SIZE: Int,
+    dtype: DType,
+    temp_dtype: DType,
+    InputLayoutType: TensorLayout,
+    input_origin: ImmutOrigin,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    input: TileTensor[dtype, InputLayoutType, input_origin],
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    batch_size: Int,
+    d: Int,
+    temperature: Scalar[temp_dtype],
+    # using UnsafePointer here because cant pass optional TileTensor
+    temperature_arr: UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin],
+):
+    """GPU kernel for softmax with per-row temperature scaling.
+
+    Computes softmax(logits / T) where T is resolved per row from
+    `temperature_arr` (if non-null) or the scalar `temperature` fallback.
+    """
+
+    comptime assert input.flat_rank == 2, "input must be rank 2"
+    comptime assert output.flat_rank == 2, "output must be rank 2"
+
+    var row_size = UInt(d)
+    var num_rows = UInt(batch_size)
+
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
+
+    var max_buf = tt_stack_allocation[
+        dtype=accum_type, address_space = AddressSpace.SHARED
+    ](row_major[1]())
+    var exp_sum_buf = tt_stack_allocation[
+        dtype=accum_type, address_space = AddressSpace.SHARED
+    ](row_major[1]())
+
+    @parameter
+    @always_inline
+    fn _max[
+        _dtype: DType, width: Int
+    ](x: SIMD[_dtype, width], y: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        return max(x, y)
+
+    @parameter
+    @always_inline
+    fn _sum[
+        _dtype: DType, width: Int
+    ](x: SIMD[_dtype, width], y: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        return x + y
+
+    var tid = thread_idx.x
+
+    for row_idx in range(block_idx.x, num_rows, grid_dim.x):
+        # Resolve per-row temperature, clamping to prevent division by zero.
+        var temp = temperature
+        if temperature_arr:
+            temp = temperature_arr[row_idx]
+        temp = max(temp, Scalar[temp_dtype](1e-6))
+
+        var r = Int(row_idx)
+
+        # Step 1: compute max in row.
+        var row_max = Scalar[accum_type].MIN
+        for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+            var v = input[r, Int(col)].cast[accum_type]()
+            row_max = max(row_max, v)
+
+        row_max = block_reduce[BLOCK_SIZE, _max](
+            row_max, Scalar[accum_type].MIN
+        )
+
+        if tid == 0:
+            max_buf[0] = row_max
+        barrier()
+
+        row_max = max_buf[0]
+
+        # Step 2: exp((x - max) / T) and accumulate sum.
+        var exp_sum = Scalar[accum_type](0)
+
+        for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+            var c = Int(col)
+            var logit = input[r, c].cast[accum_type]()
+            var val = exp((logit - row_max) / temp.cast[accum_type]())
+            output[r, c] = val.cast[dtype]()
+            exp_sum += val
+
+        var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](
+            exp_sum, Scalar[accum_type](0)
+        )
+
+        if tid == 0:
+            exp_sum_buf[0] = block_exp_sum
+        barrier()
+
+        # Step 3: normalize.
+        var recip = Scalar[accum_type](1) / exp_sum_buf[0]
+        for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+            var c = Int(col)
+            output[r, c] = (output[r, c].cast[accum_type]() * recip).cast[
+                dtype
+            ]()
+
+
+fn softmax_with_temperature[
+    dtype: DType,
+    temp_dtype: DType = DType.float32,
+    TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+](
+    ctx: DeviceContext,
+    input: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
+    temperature: Scalar[temp_dtype] = Float32(1.0),
+    temperature_arr: Optional[
+        TileTensor[temp_dtype, TempLayoutType, ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """GPU softmax with per-row temperature scaling.
+
+    Computes `softmax(logits / T)` where T can be a scalar or a per-row array.
+    When `temperature_arr` is provided, each row uses its own temperature value.
+    Falls back to the scalar `temperature` for rows without an array entry.
+
+    Args:
+        ctx: Device context for kernel execution.
+        input: Input logits tensor [batch_size, vocab_size].
+        output: Output probability tensor (same shape as input).
+        temperature: Scalar temperature fallback (default 1.0).
+        temperature_arr: Optional per-row temperature values [batch_size].
+    """
+    comptime assert input.rank == 2, "input must be rank 2"
+    comptime assert output.rank == 2, "output must be rank 2"
+
+    var shape = coord_to_index_list(input.layout.shape_coord())
+    var batch_size = shape[0]
+    var d = shape[1]
+
+    # Extract raw pointer for the kernel (null if not provided).
+    var temp_ptr = UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]()
+    if temperature_arr:
+        temp_ptr = temperature_arr.value().ptr
+
+    comptime BLOCK_SIZE = 128
+    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    comptime sm_overprovision_factor = 32
+    var num_blocks = min(batch_size, sm_overprovision_factor * sm_count)
+
+    comptime kernel = _softmax_temperature_kernel[
+        BLOCK_SIZE,
+        dtype,
+        temp_dtype,
+        input.LayoutType,
+        ImmutOrigin(input.origin),
+        output.LayoutType,
+        output.origin,
+    ]
+    ctx.enqueue_function[kernel, kernel](
+        input.as_immut(),
+        output,
+        batch_size,
+        d,
+        temperature,
+        temp_ptr,
+        grid_dim=num_blocks,
+        block_dim=BLOCK_SIZE,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
