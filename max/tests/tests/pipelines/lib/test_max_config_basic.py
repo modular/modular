@@ -298,7 +298,9 @@ class TestTokenizerMaxLengthResolution:
             def decode(self, *_args, **_kwargs) -> str:
                 return "x"
 
-        def _fake_from_pretrained(*_args, **kwargs):  # noqa: ANN202
+        def _fake_from_pretrained(
+            *_args: object, **kwargs: object
+        ) -> FakeTokenizer:
             recorded_kwargs.update(kwargs)
             return FakeTokenizer()
 
@@ -328,7 +330,9 @@ class TestTokenizerMaxLengthResolution:
             def decode(self, *_args, **_kwargs) -> str:
                 return "x"
 
-        def _fake_from_pretrained(*_args, **kwargs):  # noqa: ANN202
+        def _fake_from_pretrained(
+            *_args: object, **kwargs: object
+        ) -> FakeTokenizer:
             recorded_kwargs.update(kwargs)
             return FakeTokenizer()
 
@@ -359,14 +363,14 @@ class TestTokenizerMaxLengthResolution:
         fake_processor = SimpleNamespace(image_break_token_id=None)
 
         def _fake_auto_tokenizer_from_pretrained(
-            *_args, **kwargs
-        ):  # noqa: ANN202
+            *_args: object, **kwargs: object
+        ) -> FakeTokenizer:
             recorded_kwargs.update(kwargs)
             return FakeTokenizer()
 
         def _fake_auto_processor_from_pretrained(
-            *_args, **_kwargs
-        ):  # noqa: ANN202
+            *_args: object, **_kwargs: object
+        ) -> SimpleNamespace:
             return fake_processor
 
         monkeypatch.setattr(
