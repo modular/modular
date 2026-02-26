@@ -40,9 +40,7 @@ from verify_pipelines import (
 
 logger = logging.getLogger(__name__)
 
-SKIP_MODELS: set[str] = {
-    "huggingfacetb/smollm2-360m-instruct",  # TODO(GEX-3265)
-}
+SKIP_MODELS: set[str] = set()
 
 
 @dataclass
