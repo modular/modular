@@ -812,3 +812,111 @@ fn rebindResult():
         return V[42, width](0)
 
     callee[42](my_closure)
+
+
+# // -----
+
+# COM: Verify VariadicAttr matching: closure returning Tuple with parameterized
+# COM: elements requires recursive matching through #kgen.variadic param values.
+
+
+struct ToyIndex[size: Int](RegisterPassable):
+    var _v: Int
+
+    fn __init__(out self):
+        self._v = 0
+
+
+fn variadic_callee[
+    rank: Int,
+    map_fn: fn(ToyIndex[rank]) unified -> Tuple[
+        ToyIndex[rank],
+        ToyIndex[rank],
+    ],
+](closure: map_fn):
+    var point = ToyIndex[rank]()
+    var result = closure(point)
+
+
+# CHECK: lit.struct.decl @"fn(point: ToyIndex[2]) -> Tuple[ToyIndex[2], ToyIndex[2]]_{{.*}}"
+# CHECK: @"fn(ToyIndex[rank]) -> Tuple[ToyIndex[rank], ToyIndex[rank]]" {
+# CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
+# CHECK:   kgen.witness "rank" : !Int = {2}
+fn repro_variadic_attr():
+    var x = 10
+    fn my_map_fn(
+        point: ToyIndex[2],
+    ) unified {read x} -> Tuple[ToyIndex[2], ToyIndex[2]]:
+        return ToyIndex[2](), ToyIndex[2]()
+
+    variadic_callee[2, type_of(my_map_fn)](my_map_fn)
+
+
+# // -----
+
+# COM: Verify ParamOperatorAttr and LITStructAttr matching: Pair(tag, 0) lowers
+# COM: to #kgen.param.expr<apply, ...> containing #lit.struct constants, which
+# COM: requires recursive matching through both composite attr types.
+
+@fieldwise_init
+struct Pair(RegisterPassable):
+    var a: Int
+    var b: Int
+
+@fieldwise_init
+struct Container[p: Pair](RegisterPassable):
+    var value: Int
+
+
+fn struct_callee[
+    tag: Int,
+    F: fn() unified -> Container[Pair(tag, 0)],
+](closure: F):
+    var result = closure()
+
+
+# CHECK: lit.struct.decl @"fn() -> Container[Pair(2, 0)]_{{.*}}"
+# CHECK: kgen.conformance @"fn() -> Container[Pair(tag, 0)]" {
+# CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
+# CHECK:   kgen.witness "tag" : !Int = {2}
+fn repro_struct_attr():
+    var x = 10
+    fn my_fn() unified {read x} -> Container[Pair(2, 0)]:
+        return Container[Pair(2, 0)](x)
+
+    struct_callee[2, type_of(my_fn)](my_fn)
+
+
+# // -----
+
+# COM: Verify SymbolConstantAttr matching: closure returning a type
+# COM: parameterized by a function reference (exercises symbol recursion).
+
+
+struct Dispatch[F: fn(Int) -> Int]:
+    var data: Int
+
+    fn __init__(out self, data: Int):
+        self.data = data
+
+
+fn identity(x: Int) -> Int:
+    return x
+
+
+fn symbol_callee[
+    tag: Int,
+    C: fn() unified -> Dispatch[identity],
+](closure: C):
+    var result = closure()
+
+
+# CHECK: lit.struct.decl @"fn() -> Dispatch[identity]_{{.*}}"
+# CHECK: kgen.conformance @"fn() -> Dispatch[identity]" {
+# CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
+fn repro_symbol_attr():
+    var x = 10
+    fn my_fn() unified {read x} -> Dispatch[identity]:
+        return Dispatch[identity](x)
+
+    symbol_callee[1, type_of(my_fn)](my_fn)

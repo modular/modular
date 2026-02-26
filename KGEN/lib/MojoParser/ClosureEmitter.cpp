@@ -2963,23 +2963,94 @@ static bool canParamValueMatchTraitParamValue(
                                          shared, substitutions);
   }
 
-  auto expectedIndexRef = sugarDynCast<ParamIndexRefAttr>(expectedParam);
-  if (!expectedIndexRef)
-    return false;
+  if (auto expectedIndexRef = sugarDynCast<ParamIndexRefAttr>(expectedParam)) {
+    std::optional<AliasConstraintInfo> aliasConstraint =
+        getAliasConstraintForExpectedIndexRef(expectedIndexRef, ctx);
+    if (!aliasConstraint)
+      return false;
 
-  std::optional<AliasConstraintInfo> aliasConstraint =
-      getAliasConstraintForExpectedIndexRef(expectedIndexRef, ctx);
-  if (!aliasConstraint)
-    return false;
+    auto actualIndexRef = sugarDynCast<ParamIndexRefAttr>(actualParam);
+    if (!actualIndexRef)
+      return canValueConformToAliasConstraint(
+          actualParam, aliasConstraint->constraintType,
+          aliasConstraint->traitAliasName, shared, substitutions);
+    return tryRecordAliasFromActualIndexRef(
+        actualIndexRef, aliasConstraint->constraintType,
+        aliasConstraint->traitAliasName, ctx, shared, substitutions);
+  }
 
-  auto actualIndexRef = sugarDynCast<ParamIndexRefAttr>(actualParam);
-  if (!actualIndexRef)
-    return canValueConformToAliasConstraint(
-        actualParam, aliasConstraint->constraintType,
-        aliasConstraint->traitAliasName, shared, substitutions);
-  return tryRecordAliasFromActualIndexRef(
-      actualIndexRef, aliasConstraint->constraintType,
-      aliasConstraint->traitAliasName, ctx, shared, substitutions);
+  // Recursively match composite parameter values whose sub-elements may
+  // contain auxiliary parameter references.
+  if (auto actualVariadic = dyn_cast<VariadicAttr>(actualParam)) {
+    auto expectedVariadic = dyn_cast<VariadicAttr>(expectedParam);
+    if (!expectedVariadic)
+      return false;
+    ArrayRef<TypedAttr> actualVals = actualVariadic.getValues();
+    ArrayRef<TypedAttr> expectedVals = expectedVariadic.getValues();
+    if (actualVals.size() != expectedVals.size())
+      return false;
+    for (auto [a, e] : llvm::zip(actualVals, expectedVals)) {
+      if (!canParamValueMatchTraitParamValue(a, e, ctx, shared, substitutions))
+        return false;
+    }
+    return true;
+  }
+
+  if (auto actualSymbol = dyn_cast<SymbolConstantAttr>(actualParam)) {
+    auto expectedSymbol = dyn_cast<SymbolConstantAttr>(expectedParam);
+    if (!expectedSymbol)
+      return false;
+    if (actualSymbol.getSymbol() != expectedSymbol.getSymbol())
+      return false;
+    ArrayRef<TypedAttr> actualVals = actualSymbol.getParamValues();
+    ArrayRef<TypedAttr> expectedVals = expectedSymbol.getParamValues();
+    if (actualVals.size() != expectedVals.size())
+      return false;
+    for (auto [a, e] : llvm::zip(actualVals, expectedVals)) {
+      if (!canParamValueMatchTraitParamValue(a, e, ctx, shared, substitutions))
+        return false;
+    }
+    return true;
+  }
+
+  if (auto actualExpr = dyn_cast<ParamOperatorAttr>(actualParam)) {
+    auto expectedExpr = dyn_cast<ParamOperatorAttr>(expectedParam);
+    if (!expectedExpr)
+      return false;
+    if (actualExpr.getOpcode() != expectedExpr.getOpcode())
+      return false;
+    ArrayRef<TypedAttr> actualOps = actualExpr.getOperands();
+    ArrayRef<TypedAttr> expectedOps = expectedExpr.getOperands();
+    if (actualOps.size() != expectedOps.size())
+      return false;
+    for (auto [a, e] : llvm::zip(actualOps, expectedOps)) {
+      if (!canParamValueMatchTraitParamValue(a, e, ctx, shared, substitutions))
+        return false;
+    }
+    return true;
+  }
+
+  if (auto actualLitStruct = dyn_cast<LITStructAttr>(actualParam)) {
+    auto expectedLitStruct = dyn_cast<LITStructAttr>(expectedParam);
+    if (!expectedLitStruct)
+      return false;
+    auto actualVals = actualLitStruct.getValues();
+    auto expectedVals = expectedLitStruct.getValues();
+    if (actualVals.size() != expectedVals.size())
+      return false;
+    for (auto [a, e] : llvm::zip(actualVals, expectedVals)) {
+      auto &[aName, aVal] = a;
+      auto &[eName, eVal] = e;
+      if (aName != eName)
+        return false;
+      if (!canParamValueMatchTraitParamValue(aVal, eVal, ctx, shared,
+                                             substitutions))
+        return false;
+    }
+    return true;
+  }
+
+  return false;
 }
 
 /// Check if one function signature can implement another.
