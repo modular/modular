@@ -14,6 +14,7 @@
 from time import sleep, time_function
 
 from benchmark import Report, clobber_memory, keep, run
+from test_utils import check_write_to
 from testing import TestSuite, assert_true
 
 
@@ -151,6 +152,24 @@ def test_report():
     assert_true("Warmup Total: " in report_string)
     assert_true("Fastest Mean: " in report_string)
     assert_true("Slowest Mean: " in report_string)
+
+
+def test_report_writable():
+    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    check_write_to(report, contains="Benchmark Report (s)", is_repr=False)
+    check_write_to(report, contains="Mean:", is_repr=False)
+    check_write_to(report, contains="Total:", is_repr=False)
+    check_write_to(report, contains="Iters:", is_repr=False)
+    check_write_to(report, contains="Warmup Total:", is_repr=False)
+    check_write_to(report, contains="Fastest Mean:", is_repr=False)
+    check_write_to(report, contains="Slowest Mean:", is_repr=False)
+
+
+def test_report_writable_units():
+    var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
+    assert_true("Benchmark Report (ms)" in report.as_string("ms"))
+    assert_true("Benchmark Report (us)" in report.as_string("us"))
+    assert_true("Benchmark Report (ns)" in report.as_string("ns"))
 
 
 def main():
