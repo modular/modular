@@ -1080,6 +1080,25 @@ def test_list_can_infer_iterable_element_type():
     )
 
 
+def test_list_as_span():
+    var l = [1, 2, 3]
+    var s = l.as_span()
+    assert_equal(len(s), 3)
+    assert_equal(s[0], 1)
+    assert_equal(s[1], 2)
+    assert_equal(s[2], 3)
+
+    # Mutable span allows modification.
+    var m = l.as_span()
+    m[0] = 10
+    assert_equal(l[0], 10)
+
+    # Empty list.
+    var empty = List[Int]()
+    var es = empty.as_span()
+    assert_equal(len(es), 0)
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#

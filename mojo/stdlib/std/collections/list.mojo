@@ -1429,6 +1429,19 @@ struct List[T: Copyable](
             .address_space_cast[address_space]()
         )
 
+    fn as_span[
+        origin: Origin, //
+    ](ref[origin] self) -> Span[Self.T, origin]:
+        """Returns a `Span` over the elements of the `List`.
+
+        Parameters:
+            origin: The origin of the `List`.
+
+        Returns:
+            A `Span` pointing to the elements of this `List`.
+        """
+        return Span[Self.T, origin](ptr=self.unsafe_ptr(), length=len(self))
+
     @always_inline
     fn _unsafe_next_uninit_ptr(
         ref self,
