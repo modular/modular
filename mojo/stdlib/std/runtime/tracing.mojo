@@ -69,8 +69,7 @@ fn get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
 
 
 fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
-    @parameter
-    if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
+    comptime if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
         return None
     return env_get_int["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]()
 
@@ -219,8 +218,7 @@ fn is_profiling_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """
     comptime kProfilingTypeWidthBits = 3
 
-    @parameter
-    if level == TraceLevel.ALWAYS:
+    comptime if level == TraceLevel.ALWAYS:
         return True
 
     comptime max_profiling_level = _build_info_asyncrt_max_profiling_level()
@@ -274,8 +272,7 @@ fn _is_gpu_profiler_detailed_enabled[
 
 @always_inline
 fn _is_op_logging_enabled[level: TraceLevel]() -> Bool:
-    @parameter
-    if logger.DEFAULT_LEVEL == logger.Level.NOTSET:
+    comptime if logger.DEFAULT_LEVEL == logger.Level.NOTSET:
         return False
 
     return level <= TraceLevel.OP
@@ -453,12 +450,10 @@ struct Trace[
         # Always initialize the tracy context to zero: it's set in __enter__.
         self._tracy_ctx = 0
 
-        @parameter
-        if _is_gpu_profiler_enabled[Self.category, Self.level]():
+        comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
             self._name_value = _name_value^
 
-            @parameter
-            if _gpu_is_enabled_details():
+            comptime if _gpu_is_enabled_details():
                 self.detail = detail
             else:
                 self.detail = ""
@@ -470,8 +465,7 @@ struct Trace[
             self._name_value = _name_value^
             self.detail = detail
 
-            @parameter
-            if Self.target:
+            comptime if Self.target:
                 if self.detail:
                     self.detail += ";"
                 self.detail += String("target=", Self.target.value())
@@ -575,8 +569,7 @@ struct Trace[
             If the operation fails.
         """
 
-        @parameter
-        if _is_op_logging_enabled[Self.level]():
+        comptime if _is_op_logging_enabled[Self.level]():
             # Since Mojo does not support module-level globals yet, we need to
             # put this atomic counter variable in C++ code.
             self.event_id = external_call["KGEN_CompilerRT_GetNextOpId", Int]()
@@ -592,11 +585,8 @@ struct Trace[
             ](name_str.unsafe_ptr(), len(name_str), color_val)
             return
 
-        @parameter
-        if _is_gpu_profiler_enabled[Self.category, Self.level]():
-
-            @parameter
-            if _gpu_is_enabled_details():
+        comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
+            comptime if _gpu_is_enabled_details():
                 # Convert to String since nvtx range APIs copy messages anyway.
                 # TODO(KERN-1052): optimize by exposing explicit string
                 # registration.
@@ -620,8 +610,7 @@ struct Trace[
                 )
             return
 
-        @parameter
-        if is_profiling_disabled[Self.category, Self.level]():
+        comptime if is_profiling_disabled[Self.category, Self.level]():
             return
 
         # The tracing builtins below expect the string to live beyond begin/end
@@ -682,8 +671,7 @@ struct Trace[
         This finishes recording of the trace event.
         """
 
-        @parameter
-        if _is_op_logging_enabled[Self.level]():
+        comptime if _is_op_logging_enabled[Self.level]():
             self._emit_op_log("COMPLETE")
             return
 
@@ -694,16 +682,14 @@ struct Trace[
             )
             return
 
-        @parameter
-        if _is_gpu_profiler_enabled[Self.category, Self.level]():
+        comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
             try:
                 _end_gpu_range(gpu_tracing.RangeID(self.event_id))
             except:
                 abort("GPU tracing failure")
             return
 
-        @parameter
-        if is_profiling_disabled[Self.category, Self.level]():
+        comptime if is_profiling_disabled[Self.category, Self.level]():
             return
         if self.event_id == 0:
             return
@@ -724,12 +710,10 @@ struct Trace[
             If the operation fails.
         """
 
-        @parameter
-        if _is_gpu_profiler_enabled[Self.category, Self.level]():
+        comptime if _is_gpu_profiler_enabled[Self.category, Self.level]():
             var message = self.name()
 
-            @parameter
-            if _gpu_is_enabled_details():
+            comptime if _gpu_is_enabled_details():
                 if self.detail:
                     message += String("/", self.detail)
 
@@ -753,8 +737,7 @@ struct Trace[
         """Return the detail str when tracing is enabled and an empty string otherwise.
         """
 
-        @parameter
-        if (
+        comptime if (
             is_profiling_enabled[Self.category, Self.level]()
             or _is_gpu_profiler_detailed_enabled[Self.category, Self.level]()
         ):
@@ -813,8 +796,7 @@ fn get_current_trace_id[level: TraceLevel]() -> Int:
         The ID of the current trace if profiling is enabled, otherwise 0.
     """
 
-    @parameter
-    if _is_mojo_profiling_enabled[level]():
+    comptime if _is_mojo_profiling_enabled[level]():
         return external_call[
             "KGEN_CompilerRT_TimeTraceProfilerGetCurrentId", Int
         ]()

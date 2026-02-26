@@ -70,8 +70,7 @@ def do_test[
         LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin]
     ] = None
 
-    @parameter
-    if scale_dtype == DType.float8_e4m3fn:
+    comptime if scale_dtype == DType.float8_e4m3fn:
         # Use the same shape as the blocks
         var scales_ptr = alloc[Scalar[scale_dtype]](shape.flattened_length())
         scales = LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](

@@ -27,6 +27,7 @@ from pathlib import Path
 from types import SimpleNamespace, UnionType
 from typing import (
     Any,
+    Literal,
     TypeGuard,
     TypeVar,
     Union,
@@ -43,6 +44,7 @@ from max.pipelines.lib import (
     LoRAConfig,
     MAXModelConfig,
     PipelineConfig,
+    PipelineRuntimeConfig,
     ProfilingConfig,
     SamplingConfig,
     SpeculativeConfig,
@@ -109,6 +111,9 @@ def validate_field_type(field_type: Any) -> bool:
     if get_origin(test_type) is dict:
         return True
 
+    if get_origin(test_type) is Literal:
+        return True
+
     for valid_type in VALID_CONFIG_TYPES:
         if valid_type == test_type:
             return True
@@ -133,6 +138,10 @@ def get_field_type(field_type: Any):  # noqa: ANN201
         field_type = click.Path(path_type=pathlib.Path)
     elif get_origin(field_type) is dict or field_type is dict:
         field_type = JSONType()
+    elif get_origin(field_type) is Literal:
+        field_type = click.Choice(
+            [str(v) for v in get_args(field_type)], case_sensitive=False
+        )
     elif inspect.isclass(field_type):
         if issubclass(field_type, Enum):
             field_type = click.Choice(list(field_type), case_sensitive=False)
@@ -249,7 +258,19 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
                 "profiling",
                 "lora",
                 "speculative",
+                "runtime",
             }
+        )
+    elif cls is PipelineRuntimeConfig:
+        # Skip fields that are still duplicated on PipelineConfig to avoid
+        # generating duplicate CLI flags.  As fields are migrated from
+        # PipelineConfig to PipelineRuntimeConfig and removed from
+        # PipelineConfig, they will automatically start being generated
+        # from PipelineRuntimeConfig instead.
+        skip_fields.update(
+            field_name
+            for field_name in cls.model_fields
+            if field_name in PipelineConfig.model_fields
         )
     elif cls is MAXModelConfig:
         skip_fields.add("kv_cache")
@@ -350,6 +371,7 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     # The order of these decorators must be preserved - ie. PipelineConfig
     # must be applied only after KVCacheConfig, ProfilingConfig etc.
     @config_to_flag(PipelineConfig)
+    @config_to_flag(PipelineRuntimeConfig)
     @config_to_flag(MAXModelConfig)
     @config_to_flag(MAXModelConfig, prefix="draft")
     @config_to_flag(KVCacheConfig)

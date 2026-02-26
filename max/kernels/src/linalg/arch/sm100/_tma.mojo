@@ -53,7 +53,7 @@ struct TMADescriptor[
         self.tensormap = tensormap
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """
         Copy initializes this `TMADescriptor` from another instance.
 
@@ -190,13 +190,11 @@ struct TMALoad[
         comptime shape = repeat_pattern.shape
         comptime stride = repeat_pattern.stride
 
-        @parameter
-        for i in range(len(shape)):
+        comptime for i in range(len(shape)):
             comptime current_shape = product(shape[i])
             comptime current_stride = product(stride[i]) * size_of[Self.dtype]()
 
-            @parameter
-            if current_shape > 1 and current_stride % Self.smem_alignment != 0:
+            comptime if current_shape > 1 and current_stride % Self.smem_alignment != 0:
                 return False
 
         return True
@@ -346,8 +344,7 @@ fn copy[
     the shared memory layout but in row major order.
     """
 
-    @parameter
-    for i in range(num_copies):
+    comptime for i in range(num_copies):
         # The index i represents the tile we want to operate on.
         # We plug i into the repeat pattern to get the starting offset
         # of the desired tile.
@@ -390,8 +387,7 @@ fn to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    @parameter
-    if mode in (
+    comptime if mode in (
         SwizzleMode._128B,
         SwizzleMode._64B,
         SwizzleMode._32B,
@@ -399,5 +395,4 @@ fn to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
     ):
         return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
     else:
-        constrained[False, "Only support 32B, 64B, 128B, or no swizzle"]()
-        return Swizzle(0, 0, 0)
+        comptime assert False, "Only support 32B, 64B, 128B, or no swizzle"

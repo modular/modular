@@ -26,8 +26,8 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
@@ -36,7 +36,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
     upper_bounded_default,
 )
 from transformers import AutoConfig
@@ -58,8 +57,6 @@ class BertPipelineModel(PipelineModel[TextContext]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -69,8 +66,6 @@ class BertPipelineModel(PipelineModel[TextContext]):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -86,12 +81,12 @@ class BertPipelineModel(PipelineModel[TextContext]):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Bert, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e

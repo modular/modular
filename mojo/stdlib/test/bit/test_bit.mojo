@@ -542,8 +542,7 @@ def test_log2_floor():
     assert_equal(log2_floor(UInt(2**63)), 63)
 
     # test dtypes
-    @parameter
-    for dtype in [
+    comptime for dtype in [
         DType.int8,
         DType.uint8,
         DType.int16,
@@ -563,8 +562,7 @@ def test_log2_floor():
 
         assert_equal(value, log2_floor(Scalar[dtype](0)), String(dtype))
 
-        @parameter
-        if dtype.is_signed():
+        comptime if dtype.is_signed():
             assert_equal(value, log2_floor(Scalar[dtype](-1)))
             assert_equal(value, log2_floor(Scalar[dtype](-2)))
             assert_equal(value, log2_floor(Scalar[dtype](-3)))

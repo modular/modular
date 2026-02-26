@@ -33,11 +33,22 @@ trait CoordLike(
     """Trait for unified layout handling of compile-time and runtime indices."""
 
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike]
+    """The variadic element types for tuple coordinates."""
+
     comptime static_value: Int
+    """The compile-time value if statically known, -1 otherwise."""
+
     comptime is_static_value = False
+    """True if the value is known at compile time."""
+
     comptime is_tuple = False
+    """True if this is a tuple type (Coord), False for scalar values."""
+
     comptime is_value = not Self.is_tuple
+    """True if this is a scalar value, False for tuple types."""
+
     comptime DTYPE = DType.invalid
+    """The data type for runtime values, or invalid for compile-time values."""
 
     # Note that unlike the __len__() from Sized, this is a static method.
     @staticmethod
@@ -50,18 +61,30 @@ trait CoordLike(
         ...
 
     fn __repr__(self) -> String:
-        """Get the string representation of this type."""
+        """Get the string representation of this type.
+
+        Returns:
+            A string representation of the value.
+        """
         ...
 
     fn value(self) -> Int:
-        """Get the value of this type.
-        Only valid for value types.
+        """Get the integer value of this coordinate.
+
+        Only valid for value types (not tuples).
+
+        Returns:
+            The integer value.
         """
         ...
 
     fn tuple(var self) -> Coord[*Self.VariadicType]:
-        """Get the value of this type.
+        """Get this coordinate as a Coord tuple.
+
         Only valid for tuple types.
+
+        Returns:
+            The coordinate as a Coord tuple.
         """
         ...
 
@@ -92,9 +115,16 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Tuple[
         Self
     ].element_types
+    """The variadic element types (Self for scalar types)."""
+
     comptime static_value: Int = Self.val
+    """The compile-time value."""
+
     comptime DTYPE = DType.int
+    """The data type (int for compile-time integers)."""
+
     comptime is_static_value = True
+    """True, indicating this is a compile-time known value."""
 
     fn __init__(out self):
         """Initialize a compile-time integer with the specified value."""
@@ -103,27 +133,56 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     @staticmethod
     @always_inline("nodebug")
     fn __len__() -> Int:
+        """Get the length (always 1 for scalar types).
+
+        Returns:
+            Always returns 1.
+        """
         return 1
 
     fn __repr__(self) -> String:
+        """Get the string representation of this compile-time integer.
+
+        Returns:
+            A string in the format "ComptimeInt[value]()".
+        """
         return String("ComptimeInt[", self.value(), "]()")
 
     @always_inline("nodebug")
     fn product(self) -> Int:
+        """Calculate the product (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
         return self.value()
 
     @always_inline("nodebug")
     fn sum(self) -> Int:
+        """Calculate the sum (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
         return self.value()
 
     @always_inline("nodebug")
     fn value(self) -> Int:
+        """Get the integer value.
+
+        Returns:
+            The compile-time integer value.
+        """
         return Self.val
 
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
-        constrained[False, "ComptimeInt is not a tuple type"]()
-        return rebind[Coord[*Self.VariadicType]](self)
+        """Get as a tuple (not valid for ComptimeInt).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
+        comptime assert False, "ComptimeInt is not a tuple type"
 
 
 struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
@@ -136,13 +195,19 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Tuple[
         Self
     ].element_types
+    """The variadic element types (Self for scalar types)."""
+
     comptime static_value: Int = -1
+    """Always -1 for runtime values (not statically known)."""
+
     comptime DTYPE = Self.dtype
+    """The data type for the runtime integer value."""
 
     var _value: Scalar[Self.dtype]
     """The runtime scalar value."""
 
     fn __init__(out self):
+        """Initialize a runtime integer with value 0."""
         self._value = 0
 
     fn __init__(out self, value: Scalar[Self.dtype]):
@@ -156,28 +221,57 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
     @staticmethod
     @always_inline("nodebug")
     fn __len__() -> Int:
+        """Get the length (always 1 for scalar types).
+
+        Returns:
+            Always returns 1.
+        """
         return 1
 
     @always_inline("nodebug")
     fn __repr__(self) -> String:
+        """Get the string representation of this runtime integer.
+
+        Returns:
+            A string in the format "RuntimeInt(value)".
+        """
         return String("RuntimeInt(", self.value(), ")")
 
     @always_inline("nodebug")
     fn product(self) -> Int:
+        """Calculate the product (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
         return self.value()
 
     @always_inline("nodebug")
     fn sum(self) -> Int:
+        """Calculate the sum (returns the value for scalar types).
+
+        Returns:
+            The integer value.
+        """
         return self.value()
 
     @always_inline("nodebug")
     fn value(self) -> Int:
+        """Get the integer value.
+
+        Returns:
+            The runtime integer value as an Int.
+        """
         return Int(self._value)
 
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
-        constrained[False, "RuntimeInt is not a tuple type"]()
-        return rebind[Coord[*Self.VariadicType]](self)
+        """Get as a tuple (not valid for RuntimeInt).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
+        comptime assert False, "RuntimeInt is not a tuple type"
 
 
 fn Idx(value: Int) -> RuntimeInt[DType.int]:
@@ -235,12 +329,13 @@ fn Idx(
 fn Idx(
     value: Scalar,
 ) -> RuntimeInt[value.dtype] where value.dtype.is_integral():
-    """Helper to create runtime indices.
+    """Create a runtime index from a scalar value.
+
     Args:
         value: The integer value for the runtime index.
+
     Returns:
         A `RuntimeInt` instance with the specified value.
-    Usage: Idx(5) creates a RuntimeInt with value 5.
     """
     return RuntimeInt[value.dtype](value)
 
@@ -254,12 +349,25 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     """
 
     comptime VariadicType: Variadic.TypesOfTrait[CoordLike] = Self.element_types
+    """The variadic element types of this Coord."""
+
     comptime static_value: Int = -1
+    """Always -1 for tuple types (value not applicable)."""
+
     comptime is_tuple = True
+    """True, indicating this is a tuple type."""
+
     comptime all_dims_known = _AllStatic[*Self.element_types]
+    """True if all dimensions are statically known at compile time."""
+
     comptime static_product = _StaticProduct[*Self.element_types]
+    """The product of all static dimensions, or -1 if any are dynamic."""
+
     comptime rank = Variadic.size(Self.element_types)
+    """The number of top-level elements in this Coord."""
+
     comptime flat_rank = Variadic.size(_Flattened[*Self.element_types])
+    """The total number of leaf elements after flattening nested Coords."""
 
     var _storage: _RegTuple[*Self.element_types]
     """The underlying MLIR storage for the tuple elements."""
@@ -270,8 +378,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         """
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        @parameter
-        for i in range(self.rank):
+        comptime for i in range(self.rank):
             self[i] = Self.element_types[i]()
 
     fn __init__[
@@ -280,10 +387,18 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         out self: Coord[*_Splatted[RuntimeInt[dtype], rank]],
         index_list: std.utils.IndexList[rank, element_type=dtype],
     ):
+        """Construct a Coord from an IndexList.
+
+        Parameters:
+            rank: The number of elements in the index list.
+            dtype: The data type of the index list elements.
+
+        Args:
+            index_list: The IndexList to convert to a Coord.
+        """
         self = type_of(self)()
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             UnsafePointer(to=self[i]).init_pointee_copy(
                 rebind[type_of(self[i])](
                     RuntimeInt[dtype](Scalar[dtype](index_list[i]))
@@ -300,8 +415,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         """
         var count = 0
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             comptime T = Self.element_types[i]
             count += T.__len__()
 
@@ -320,10 +434,14 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     fn __repr__(self) -> String:
+        """Get the string representation of this Coord.
+
+        Returns:
+            A string in the format "Coord(elem1, elem2, ...)".
+        """
         var result = String("Coord(")
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             result += self[i].__repr__()
             if i < Self.__len__() - 1:
                 result += String(", ")
@@ -356,8 +474,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         """
         self = Self()
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             self._storage[i] = tuple[i]
 
     @always_inline("nodebug")
@@ -401,28 +518,40 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @always_inline("nodebug")
     fn product(self) -> Int:
+        """Calculate the product of all elements recursively.
+
+        Returns:
+            The product of all leaf values in the Coord.
+        """
         var result = 1
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             result *= self[i].product()
 
         return result
 
     @always_inline("nodebug")
     fn sum(self) -> Int:
+        """Calculate the sum of all elements recursively.
+
+        Returns:
+            The sum of all leaf values in the Coord.
+        """
         var result = 0
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             result += self[i].sum()
 
         return result
 
     @always_inline("nodebug")
     fn value(self) -> Int:
-        constrained[False, "Coord is not a value type"]()
-        abort()
+        """Get the value (not valid for Coord tuples).
+
+        Returns:
+            Never returns; aborts at compile time.
+        """
+        comptime assert False, "Coord is not a value type"
 
     @always_inline("nodebug")
     fn inner_product(self, t: IntTuple) -> Int:
@@ -445,13 +574,11 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             ") must match",
         )
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             comptime T = Self.element_types[i]
             var t_elem = t[i]
 
-            @parameter
-            if T.is_tuple:
+            comptime if T.is_tuple:
                 debug_assert(
                     t_elem.is_tuple(),
                     "Type mismatch: expected tuple in t[",
@@ -493,25 +620,20 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         )
         var result = 0
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             comptime T = Self.element_types[i]
             comptime U = other_types[i]
 
-            @parameter
-            if T.is_tuple and U.is_tuple:
+            comptime if T.is_tuple and U.is_tuple:
                 result += Coord(self[i]).inner_product(Coord(other[i]))
             elif T.is_value and U.is_value:
                 result += self[i].value() * other[i].value()
             else:
-                constrained[
-                    False,
-                    String(
-                        "Element ",
-                        i,
-                        " of Coord must both be a tuple or both be a value",
-                    ),
-                ]()
+                comptime assert False, String(
+                    "Element ",
+                    i,
+                    " of Coord must both be a tuple or both be a value",
+                )
 
         return result
 
@@ -519,7 +641,16 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     fn __eq__[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Bool:
-        """Check if this tuple's elements are equal to the other tuple's elements.
+        """Check if this Coord equals another.
+
+        Parameters:
+            other_types: The element types of the other Coord.
+
+        Args:
+            other: The Coord to compare with.
+
+        Returns:
+            True if all elements are equal, False otherwise.
         """
 
         comptime assert Self.__len__() == Coord[*other_types].__len__(), (
@@ -530,28 +661,23 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             + ") must match"
         )
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             comptime T = Self.element_types[i]
             comptime U = other_types[i]
 
-            @parameter
-            if T.is_tuple and U.is_tuple:
+            comptime if T.is_tuple and U.is_tuple:
                 if Coord(self[i]) != Coord(other[i]):
                     return False
             elif T.is_value and U.is_value:
                 if self[i].value() != other[i].value():
                     return False
             else:
-                constrained[
-                    False,
-                    String(
-                        "Element ",
-                        i,
-                        " of Coord must both be a tuple or both be",
-                        " a value",
-                    ),
-                ]()
+                comptime assert False, String(
+                    "Element ",
+                    i,
+                    " of Coord must both be a tuple or both be",
+                    " a value",
+                )
 
         return True
 
@@ -559,14 +685,35 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     fn __ne__[
         *other_types: CoordLike
     ](self, other: Coord[*other_types]) -> Bool:
+        """Check if this Coord is not equal to another.
+
+        Parameters:
+            other_types: The element types of the other Coord.
+
+        Args:
+            other: The Coord to compare with.
+
+        Returns:
+            True if any elements differ, False if all are equal.
+        """
         return not self == other
 
     @always_inline("nodebug")
     fn tuple(var self) -> Coord[*Self.VariadicType]:
+        """Get this Coord as a tuple.
+
+        Returns:
+            This Coord (identity operation for tuple types).
+        """
         return rebind[Coord[*Self.VariadicType]](self)
 
     @always_inline("nodebug")
     fn reverse(var self) -> Coord[*Variadic.reverse[*Self.element_types]]:
+        """Reverse the order of elements in this Coord.
+
+        Returns:
+            A new Coord with elements in reverse order.
+        """
         return Coord[*Variadic.reverse[*Self.element_types]](
             rebind[_RegTuple[*Variadic.reverse[*Self.element_types]]](
                 self._storage.reverse()
@@ -579,6 +726,17 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     ](var self, var other: Coord[*other_element_types]) -> Coord[
         *Variadic.concat_types[Self.element_types, other_element_types]
     ]:
+        """Concatenate this Coord with another.
+
+        Parameters:
+            other_element_types: The element types of the other Coord.
+
+        Args:
+            other: The Coord to append.
+
+        Returns:
+            A new Coord containing elements from both Coords.
+        """
         return Coord[
             *Variadic.concat_types[Self.element_types, other_element_types]
         ](
@@ -622,12 +780,10 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         )
 
         # Use _get_flattened to access each element by flat index
-        @parameter
-        for i in range(flat_size):
+        comptime for i in range(flat_size):
             comptime FlatType = FlatTypes[i]
 
-            @parameter
-            if FlatType.is_static_value:
+            comptime if FlatType.is_static_value:
                 # Compile-time known value
                 UnsafePointer(to=flat_tuple[i]).init_pointee_copy(
                     rebind[FlatType](ComptimeInt[FlatType.static_value]())
@@ -669,8 +825,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
             __get_mvalue_as_litref(result)
         )
 
-        @parameter
-        for i in range(Self.__len__()):
+        comptime for i in range(Self.__len__()):
             # Convert all elements to RuntimeInt[dtype]
             UnsafePointer(to=result[i]).init_pointee_copy(
                 rebind[ResultTypes[i]](
@@ -681,19 +836,20 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return result
 
     fn write_to(self, mut w: Some[Writer]):
+        """Write this Coord to a Writer.
+
+        Args:
+            w: The writer to output to.
+        """
         w.write("(")
 
-        @parameter
-        for i in range(Self.rank):
-
-            @parameter
-            if Self.element_types[i].is_tuple:
+        comptime for i in range(Self.rank):
+            comptime if Self.element_types[i].is_tuple:
                 self[i].tuple().write_to(w)
             else:
                 w.write(self[i].value())
 
-            @parameter
-            if i < Self.rank - 1:
+            comptime if i < Self.rank - 1:
                 w.write(", ")
         w.write(")")
 
@@ -723,8 +879,7 @@ fn _crd2idx_flat[
     var result: Scalar[out_type] = 0
     comptime flat_len = type_of(crd_t).__len__()
 
-    @parameter
-    for i in range(flat_len):
+    comptime for i in range(flat_len):
         result += Scalar[out_type](crd_t[i].value() * flat_stride[i].value())
 
     return result
@@ -737,28 +892,39 @@ fn crd2idx[
     Stride: CoordLike,
     out_type: DType = DType.int64,
 ](crd: Index, shape: Shape, stride: Stride) -> Scalar[out_type]:
-    """Calculate the index from a coordinate tuple."""
+    """Calculate the linear index from a coordinate tuple.
+
+    Parameters:
+        Index: The coordinate type (must be CoordLike).
+        Shape: The shape type (must be CoordLike).
+        Stride: The stride type (must be CoordLike).
+        out_type: The output scalar type.
+
+    Args:
+        crd: The multi-dimensional coordinate.
+        shape: The shape of the tensor.
+        stride: The stride of the tensor.
+
+    Returns:
+        The linear index corresponding to the coordinate.
+    """
     comptime shape_len = Shape.__len__()
     comptime stride_len = Stride.__len__()
     comptime crd_len = Index.__len__()
 
-    @parameter
-    if Shape.is_tuple and Stride.is_tuple and shape_len == stride_len:
+    comptime if Shape.is_tuple and Stride.is_tuple and shape_len == stride_len:
         var shape_t = shape.tuple()
         var stride_t = stride.tuple()
 
         var result: Scalar[out_type] = 0
 
-        @parameter
-        if crd_len > 1:  # tuple tuple tuple
+        comptime if crd_len > 1:  # tuple tuple tuple
             var crd_t = crd.tuple()
 
             # Check if crd structure matches shape structure
-            @parameter
-            if crd_len == shape_len:
+            comptime if crd_len == shape_len:
                 # Hierarchical indexing: crd elements map 1:1 to shape elements
-                @parameter
-                for i in range(shape_len):
+                comptime for i in range(shape_len):
                     result += crd2idx[out_type=out_type](
                         crd_t[i], shape_t[i], stride_t[i]
                     )
@@ -771,16 +937,14 @@ fn crd2idx[
         else:  # "int" tuple tuple
             var crd_int: Int
 
-            @parameter
-            if Index.is_tuple:
+            comptime if Index.is_tuple:
                 crd_int = 0 if crd_len == 0 else crd.tuple()[0].value()
             else:
                 crd_int = 0 if crd_len == 0 else crd.value()
 
             comptime last_elem_idx = shape_len - 1
 
-            @parameter
-            for i in range(last_elem_idx):
+            comptime for i in range(last_elem_idx):
                 var quotient, remainder = divmod(crd_int, shape_t[i].product())
                 result += crd2idx[out_type=out_type](
                     Idx(remainder), shape_t[i], stride_t[i]
@@ -790,26 +954,35 @@ fn crd2idx[
                 Idx(crd_int), shape_t[last_elem_idx], stride_t[last_elem_idx]
             )
     else:
-
-        @parameter
-        if crd_len > 1:
+        comptime if crd_len > 1:
             abort("crd is a tuple but shape and stride are not")
         else:
             return Scalar[out_type](crd.value() * stride.value())
 
 
-# Implementation based off crd2idx - computes the inverse operation
+# Implementation based off crd2idx - computes the inverse operation.
+# Uses the per-element formula: coord[i] = (idx // stride[i]) % shape[i]
 fn idx2crd[
     Shape: CoordLike,
     Stride: CoordLike,
     out_dtype: DType = DType.int64,
 ](idx: Int, shape: Shape, stride: Stride) -> Coord[
-    *_Splatted[RuntimeInt[out_dtype], Shape.__len__()]
+    *_Idx2CrdResultTypes[
+        out_dtype,
+        RuntimeInt[out_dtype],
+        Stride.VariadicType,
+        Shape.VariadicType,
+    ]
 ]:
     """Calculate the coordinate tuple from a linear index.
 
     This is the inverse of crd2idx - given a linear index, shape, and stride,
-    it computes the multi-dimensional coordinates.
+    it computes the multi-dimensional coordinates using the per-element formula:
+    ``coord[i] = (idx // stride[i]) % shape[i]``.
+
+    When a shape dimension is statically known to be 1, the corresponding
+    output coordinate is a ComptimeInt[0]. Otherwise, coordinates are
+    RuntimeInt[out_dtype].
 
     Parameters:
         Shape: The shape type (must be CoordLike).
@@ -823,6 +996,8 @@ fn idx2crd[
 
     Returns:
         A Coord containing the coordinate values for each dimension.
+        Dimensions with static shape 1 produce ComptimeInt[0], others
+        produce RuntimeInt[out_dtype].
 
     Examples:
         For a 2D tensor with shape (3, 4) and row-major strides (4, 1):
@@ -843,38 +1018,153 @@ fn idx2crd[
         ")",
     )
 
-    comptime Result = Coord[*_Splatted[RuntimeInt[out_dtype], shape_len]]
+    comptime ResultTypes = _Idx2CrdResultTypes[
+        out_dtype,
+        RuntimeInt[out_dtype],
+        Stride.VariadicType,
+        Shape.VariadicType,
+    ]
+    comptime Result = Coord[*ResultTypes]
     var result = Result()
 
-    @parameter
-    if Shape.is_tuple and Stride.is_tuple and shape_len == stride_len:
+    comptime if Shape.is_tuple and Stride.is_tuple and shape_len == stride_len:
+        var shape_t = shape.tuple()
         var stride_t = stride.tuple()
-        var remaining_idx = idx
 
-        # Process dimensions in order of decreasing stride
-        # For each dimension, compute coordinate = remaining_idx // stride
-        # then update remaining_idx = remaining_idx % stride
-        @parameter
-        for i in range(shape_len):
-            var stride_val = stride_t[i].value()
-            var coord_val = remaining_idx // stride_val
-            remaining_idx = remaining_idx % stride_val
-            UnsafePointer(to=result[i]).init_pointee_copy(
-                rebind[Result.element_types[i]](
-                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+        comptime for i in range(shape_len):
+            comptime if (
+                Shape.VariadicType[i].is_static_value
+                and Shape.VariadicType[i].static_value == 1
+            ):
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
-            )
+            else:
+                var stride_val = stride_t[i].value()
+                var shape_val = shape_t[i].value()
+                var coord_val = (idx // stride_val) % shape_val
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](
+                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                    )
+                )
     else:
-        # Single dimension case
-        var coord_val = idx // stride.value()
-
-        @parameter
-        for i in range(shape_len):
-            UnsafePointer(to=result[i]).init_pointee_copy(
-                rebind[Result.element_types[i]](
-                    RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
-                )
+        comptime if Shape.is_static_value and Shape.static_value == 1:
+            UnsafePointer(to=result[0]).init_pointee_copy(
+                rebind[ResultTypes[0]](ComptimeInt[0]())
             )
+        else:
+            var coord_val = (idx // stride.value()) % shape.value()
+
+            comptime for i in range(shape_len):
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](
+                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                    )
+                )
+
+    return result
+
+
+fn idx2crd[
+    Index: CoordLike,
+    Shape: CoordLike,
+    Stride: CoordLike,
+    out_dtype: DType = DType.int64,
+](idx: Index, shape: Shape, stride: Stride) -> Coord[
+    *_Idx2CrdResultTypes[
+        out_dtype, Index, Stride.VariadicType, Shape.VariadicType
+    ]
+]:
+    """Calculate the coordinate tuple from a CoordLike linear index.
+
+    This overload accepts a CoordLike index, enabling compile-time result
+    computation when the index, shape, and stride are all statically known.
+    Uses the per-element formula: ``coord[i] = (idx // stride[i]) % shape[i]``.
+
+    Parameters:
+        Index: The index type (must be CoordLike).
+        Shape: The shape type (must be CoordLike).
+        Stride: The stride type (must be CoordLike).
+        out_dtype: The output data type for coordinate values.
+
+    Args:
+        idx: The CoordLike linear index to convert.
+        shape: The shape of the tensor.
+        stride: The stride of the tensor.
+
+    Returns:
+        A Coord containing the coordinate values for each dimension.
+        When idx, shape, and stride are all compile-time known, produces
+        ComptimeInt results. Otherwise produces RuntimeInt[out_dtype].
+    """
+    comptime shape_len = Shape.__len__()
+    comptime stride_len = Stride.__len__()
+
+    debug_assert(
+        shape_len == stride_len,
+        "Shape length (",
+        shape_len,
+        ") must match stride length (",
+        stride_len,
+        ")",
+    )
+
+    comptime ResultTypes = _Idx2CrdResultTypes[
+        out_dtype, Index, Stride.VariadicType, Shape.VariadicType
+    ]
+    comptime Result = Coord[*ResultTypes]
+    var result = Result()
+
+    comptime if Shape.is_tuple and Stride.is_tuple and shape_len == stride_len:
+        var shape_t = shape.tuple()
+        var stride_t = stride.tuple()
+
+        comptime for i in range(shape_len):
+            comptime if (
+                Shape.VariadicType[i].is_static_value
+                and Shape.VariadicType[i].static_value == 1
+            ):
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](ComptimeInt[0]())
+                )
+            elif (
+                Index.is_static_value
+                and Shape.VariadicType[i].is_static_value
+                and Stride.VariadicType[i].is_static_value
+            ):
+                # All static: result is ComptimeInt, already default-initialized.
+                pass
+            else:
+                var stride_val = stride_t[i].value()
+                var shape_val = shape_t[i].value()
+                var coord_val = (idx.value() // stride_val) % shape_val
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](
+                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                    )
+                )
+    else:
+        comptime if Shape.is_static_value and Shape.static_value == 1:
+            UnsafePointer(to=result[0]).init_pointee_copy(
+                rebind[ResultTypes[0]](ComptimeInt[0]())
+            )
+        elif (
+            Index.is_static_value
+            and Shape.is_static_value
+            and Stride.is_static_value
+        ):
+            # All static: result is ComptimeInt, already default-initialized.
+            pass
+        else:
+            var coord_val = (idx.value() // stride.value()) % shape.value()
+
+            comptime for i in range(shape_len):
+                UnsafePointer(to=result[i]).init_pointee_copy(
+                    rebind[ResultTypes[i]](
+                        RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
+                    )
+                )
 
     return result
 
@@ -899,12 +1189,10 @@ fn coord_to_int_tuple[
     """
     var result = IntTuple()
 
-    @parameter
-    for i in range(Coord[*element_types].__len__()):
+    comptime for i in range(Coord[*element_types].__len__()):
         comptime T = element_types[i]
 
-        @parameter
-        if T.is_tuple:
+        comptime if T.is_tuple:
             # Recursively convert nested tuples
             result.append(coord_to_int_tuple(value[i].tuple()))
         else:
@@ -931,8 +1219,7 @@ fn coord_to_index_list[
     """
     var result = std.utils.IndexList[value.rank]()
 
-    @parameter
-    for i in range(Coord[*element_types].__len__()):
+    comptime for i in range(Coord[*element_types].__len__()):
         result[i] = value[i].value()
 
     return result
@@ -953,18 +1240,14 @@ fn coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
     """
     var result = IntTuple()
 
-    @parameter
-    for i in range(Variadic.size(element_types)):
+    comptime for i in range(Variadic.size(element_types)):
         comptime T = element_types[i]
 
-        @parameter
-        if T.is_tuple:
+        comptime if T.is_tuple:
             # Recursively convert nested tuples
             result.append(coord_to_int_tuple[element_types[i]]())
         else:
-
-            @parameter
-            if T.is_static_value:
+            comptime if T.is_static_value:
                 result.append(IntTuple(T.static_value))
             else:
                 result.append(layout.UNKNOWN_VALUE)
@@ -977,22 +1260,23 @@ fn coord[
 ](var values: Tuple[*element_types]) -> Coord[
     *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
 ] where _AllEqual[Int, *element_types]:
-    """Helper to create a Coord from a variadic pack of integers.
+    """Create a Coord from a tuple of integers with specified dtype.
+
     Parameters:
         dtype: The data type for the runtime integer values.
-        rank: The number of elements in the tuple.
+        element_types: The types of elements in the input tuple.
+
     Args:
-        values: The run-time integer values.
+        values: The runtime integer values.
+
     Returns:
-        A `Coord` instance containing `ComptimeInt` elements for each value.
-    Usage: coord[5, 3, 2]() creates Coord(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+        A Coord instance containing RuntimeInt elements for each value.
     """
     var tuple = Coord[
         *_Splatted[RuntimeInt[dtype], type_of(values).__len__()]
     ]()
 
-    @parameter
-    for i in range(type_of(values).__len__()):
+    comptime for i in range(type_of(values).__len__()):
         UnsafePointer(to=tuple[i]).init_pointee_copy(
             rebind[type_of(tuple[i])](
                 RuntimeInt[dtype](Scalar[dtype](rebind[Int](values[i])))
@@ -1002,12 +1286,13 @@ fn coord[
 
 
 fn coord[*values: Int]() -> Coord[*_IntToComptimeInt[*values]]:
-    """Helper to create a Coord from a variadic pack of integers.
+    """Create a Coord from compile-time integer values.
+
     Parameters:
         values: The compile-time integer values.
+
     Returns:
-        A `Coord` instance containing `ComptimeInt` elements for each value.
-    Usage: coord[5, 3, 2]() creates Coord(ComptimeInt[5](), ComptimeInt[3](), ComptimeInt[2]()).
+        A Coord instance containing ComptimeInt elements for each value.
     """
     # values is a ZST since all elements are comptime
     var tuple = Coord[*_IntToComptimeInt[*values]]()
@@ -1108,28 +1393,22 @@ fn _get_flattened_helper[
 ](tuple: Coord[*element_types]) -> Int:
     """Helper function to recursively access flattened elements."""
 
-    @parameter
-    if i >= Coord[*element_types].__len__():
-        constrained[False, "flat_idx out of bounds"]()
-        abort()
+    comptime if i >= Coord[*element_types].__len__():
+        comptime assert False, "flat_idx out of bounds"
 
     comptime T = element_types[i]
 
-    @parameter
-    if T.is_tuple:
+    comptime if T.is_tuple:
         comptime count = Variadic.size(_Flattened[*T.VariadicType])
 
-        @parameter
-        if flat_idx >= current_offset and flat_idx < current_offset + count:
+        comptime if flat_idx >= current_offset and flat_idx < current_offset + count:
             return _get_flattened[flat_idx - current_offset](tuple[i].tuple())
         else:
             return _get_flattened_helper[
                 flat_idx, current_offset + count, i + 1
             ](tuple)
     else:
-
-        @parameter
-        if flat_idx == current_offset:
+        comptime if flat_idx == current_offset:
             return tuple[i].value()
         else:
             return _get_flattened_helper[flat_idx, current_offset + 1, i + 1](
@@ -1436,6 +1715,74 @@ Example:
 """
 
 
+# ===-----------------------------------------------------------------------===#
+# idx2crd result type computation
+# ===-----------------------------------------------------------------------===#
+
+
+comptime _Idx2CrdResultMapper[
+    out_dtype: DType,
+    idx_type: CoordLike,
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+    Prev: Variadic.TypesOfTrait[CoordLike],
+    From: Variadic.TypesOfTrait[CoordLike],
+    i: Int,
+] = Variadic.concat_types[
+    Prev,
+    # shape == 1: always ComptimeInt[0]
+    Variadic.types[T=CoordLike, ComptimeInt[0]] if From[i].is_static_value
+    and From[i].static_value == 1
+    # all three (idx, shape, stride) static: compute at compile time
+    else Variadic.types[
+        T=CoordLike,
+        ComptimeInt[
+            (idx_type.static_value // stride_types[i].static_value)
+            % From[i].static_value
+        ],
+    ] if idx_type.is_static_value
+    and From[i].is_static_value
+    and stride_types[i].is_static_value
+    # otherwise: runtime
+    else Variadic.types[T=CoordLike, RuntimeInt[out_dtype]],
+]
+"""Maps a shape element type to an idx2crd result type.
+
+Considers shape, stride, and index to determine the result type:
+- If shape is statically 1, produces ComptimeInt[0].
+- If all of idx, shape, and stride are statically known, produces
+  ComptimeInt[(idx // stride) % shape].
+- Otherwise produces RuntimeInt[out_dtype].
+"""
+
+
+comptime _Idx2CrdResultTypes[
+    out_dtype: DType,
+    idx_type: CoordLike,
+    stride_types: Variadic.TypesOfTrait[CoordLike],
+    shape_types: Variadic.TypesOfTrait[CoordLike],
+] = _ReduceVariadicAndIdxToVariadic[
+    BaseVal = Variadic.empty_of_trait[CoordLike],
+    VariadicType=shape_types,
+    Reducer = _Idx2CrdResultMapper[out_dtype, idx_type, stride_types],
+]
+"""Computes the result types for idx2crd based on shape, stride, and index.
+
+For each dimension:
+- If shape is statically 1, the result is ComptimeInt[0]
+- If idx, shape, and stride are all statically known, the result is
+  ComptimeInt[(idx // stride) % shape]
+- Otherwise, the result is RuntimeInt[out_dtype]
+
+Example:
+    ```mojo
+    from layout._coord import _Idx2CrdResultTypes, ComptimeInt, RuntimeInt
+    comptime stride_t = Variadic.types[T=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]
+    comptime shape_t = Variadic.types[T=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]
+    comptime types = _Idx2CrdResultTypes[DType.int64, RuntimeInt[DType.int64], stride_t, shape_t]
+    ```
+"""
+
+
 struct _RegTuple[*element_types: TrivialRegisterPassable](
     ImplicitlyCopyable, Sized, TrivialRegisterPassable
 ):
@@ -1554,8 +1901,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
             __get_mvalue_as_litref(self._mlir_value)
         )
 
-        @parameter
-        for i in range(type_of(self).__len__()):
+        comptime for i in range(type_of(self).__len__()):
             UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
 
     @always_inline
@@ -1587,12 +1933,10 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
-        @parameter
-        if self_len != other_len:
+        comptime if self_len != other_len:
             return False
 
-        @parameter
-        for i in range(type_of(self).__len__()):
+        comptime for i in range(type_of(self).__len__()):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
             comptime assert _type_is_eq[
@@ -1642,14 +1986,12 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
-        @parameter
-        if other_len == 0:
+        comptime if other_len == 0:
             return 1 if self_len > 0 else 0
 
         comptime min_length = min(self_len, other_len)
 
-        @parameter
-        for i in range(min_length):
+        comptime for i in range(min_length):
             comptime self_type = type_of(self[i])
             comptime other_type = type_of(other[i])
             comptime assert _type_is_eq[self_type, other_type](), String(
@@ -1662,8 +2004,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
             if rebind[self_type](other[i]) < self[i]:
                 return 1
 
-        @parameter
-        if self_len < other_len:
+        comptime if self_len < other_len:
             return -1
         elif self_len > other_len:
             return 1
@@ -1800,8 +2141,7 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
             __get_mvalue_as_litref(result)
         )
 
-        @parameter
-        for i in range(type_of(result).__len__()):
+        comptime for i in range(type_of(result).__len__()):
             UnsafePointer(to=result[i]).init_pointee_copy(
                 rebind[type_of(result[i])](
                     self[Variadic.size(Self.element_types) - 1 - i]
@@ -1844,14 +2184,12 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
 
         comptime self_len = Self.__len__()
 
-        @parameter
-        for i in range(self_len):
+        comptime for i in range(self_len):
             UnsafePointer(to=result[i]).init_pointee_copy(
                 rebind[type_of(result[i])](self[i])
             )
 
-        @parameter
-        for i in range(type_of(other).__len__()):
+        comptime for i in range(type_of(other).__len__()):
             UnsafePointer(to=result[self_len + i]).init_pointee_copy(
                 rebind[type_of(result[self_len + i])](other[i])
             )
@@ -1878,11 +2216,8 @@ struct _RegTuple[*element_types: TrivialRegisterPassable](
             True if the value is in the tuple, False otherwise.
         """
 
-        @parameter
-        for i in range(type_of(self).__len__()):
-
-            @parameter
-            if _type_is_eq[Self.element_types[i], T]():
+        comptime for i in range(type_of(self).__len__()):
+            comptime if _type_is_eq[Self.element_types[i], T]():
                 if rebind[T](self[i]) == value:
                     return True
 

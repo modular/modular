@@ -19,9 +19,9 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
-from max.pipelines.lib.config_enums import PipelineRole
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
@@ -121,9 +121,8 @@ class DeepseekV2Config(ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        page_size: int = 128,
     ) -> KVCacheParams:
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             # n_kv_heads should always be 1 because we only cache a single latent vector
             # in LatentAttention
@@ -131,12 +130,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             head_dim=huggingface_config.kv_lora_rank
             + huggingface_config.qk_rope_head_dim,
             num_layers=DeepseekV2Config.get_num_layers(huggingface_config),
-            cache_strategy=KVCacheStrategy.PAGED,
             devices=devices,
-            page_size=page_size,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             is_mla=True,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
@@ -172,16 +166,16 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             cache_dtype=cache_dtype,
         )
 
-        if pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+        if pipeline_config.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+        elif pipeline_config.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"
 
         max_seq_len = upper_bounded_default(
             upper_bound=huggingface_config.max_position_embeddings,
-            default=pipeline_config.max_length,
+            default=pipeline_config.model.max_length,
         )
 
         return cls(
@@ -223,7 +217,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             use_cache=huggingface_config.use_cache,
             v_head_dim=huggingface_config.v_head_dim,
             vocab_size=huggingface_config.vocab_size,
-            dtype=quantization_encoding.dtype,
+            dtype=supported_encoding_dtype(quantization_encoding),
             kv_params=kv_params,
             devices=devices,
             graph_mode=graph_mode,

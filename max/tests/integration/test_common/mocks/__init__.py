@@ -14,18 +14,11 @@
 
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Optional, Union
 
 import hf_repo_lock
 from max.driver import DeviceSpec, scan_available_devices
-from max.engine import GPUProfilingMode
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedEncoding,
-    TextGenerationPipeline,
-    generate_local_model_path,
-)
+from max.pipelines.lib import TextGenerationPipeline, generate_local_model_path
 
 from .pipeline_config import (
     DummyMAXModelConfig,
@@ -69,8 +62,8 @@ def retrieve_mock_text_generation_pipeline(
         max_length=max_length,
         max_batch_size=None,
         device_specs=device_specs,
-        quantization_encoding=SupportedEncoding.float32,
-        kv_cache_strategy=KVCacheStrategy.PAGED,
+        quantization_encoding="float32",
+        kv_cache_strategy="paged",
         eos_prob=eos_prob,
         vocab_size=vocab_size,
         eos_token=eos_token,

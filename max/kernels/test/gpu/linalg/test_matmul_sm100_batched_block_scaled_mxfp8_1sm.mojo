@@ -412,13 +412,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    constrained[
-        a_type != DType.float8_e4m3fn or transpose_b,
-        (
-            "Testing is only supported for transposed_b==True when"
-            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
-        ),
-    ]()
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        "Testing is only supported for transposed_b==True when"
+        " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+    )
 
     @parameter
     fn _reshape_to_2d[layout: Layout]() -> Layout:
@@ -451,8 +448,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         tensor.origin,
         address_space = tensor.address_space,
     ]:
-        @parameter
-        if tensor.rank == 3:
+        comptime if tensor.rank == 3:
             return LayoutTensor[
                 dtype, reshape_layout, address_space = tensor.address_space
             ](
@@ -556,11 +552,8 @@ def main():
         comptime BK = (swizzle.bytes() // size_of[dtype]())
         comptime MMA_K = 32
 
-        @parameter
-        for bm in [128]:
-
-            @parameter
-            for bn in [128, 256]:
+        comptime for bm in [128]:
+            comptime for bn in [128, 256]:
                 comptime block_tile_shape = Index(bm, bn, BK)
                 comptime umma_shape = Index(
                     cta_group * bm, cta_group * bn, MMA_K

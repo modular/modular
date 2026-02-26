@@ -39,9 +39,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Defaultable,
     Equatable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A container for counting hashable items.
@@ -231,6 +229,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return Bool(len(self))
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns a string representation of a `Counter`.
@@ -238,8 +237,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A string representation of the Counter.
         """
-        return self.__str__()
+        return String.write(self)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of a `Counter`.
@@ -268,17 +268,17 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """Write `my_counter.__str__()` to a `Writer`.
 
         Constraints:
-            `V` must conform to `Representable`.
+            `V` must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
         _constrained_conforms_to[
-            conforms_to(Self.V, Representable),
+            conforms_to(Self.V, Writable),
             Parent=Self,
             Element = Self.V,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
+            ParentConformsTo="Writable",
+            ElementConformsTo="Writable",
         ]()
 
         writer.write("Counter({")
@@ -288,7 +288,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             ref item = items[i]
             # Access the value and count from CountTuple
             ref value = item._value
-            ref key = trait_downcast[Representable](value)
+            ref key = trait_downcast[Writable](value)
             var count = item._count
             writer.write(repr(key), ": ", repr(count))
             if i < len(items) - 1:

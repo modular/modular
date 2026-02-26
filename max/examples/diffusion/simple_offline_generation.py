@@ -33,8 +33,6 @@ import os
 from io import BytesIO
 from typing import cast
 
-import numpy as np
-import numpy.typing as npt
 from max.driver import DeviceSpec
 from max.examples.diffusion.profiler import profile_execute
 from max.interfaces import (
@@ -48,10 +46,13 @@ from max.interfaces.provider_options import (
 )
 from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import (
+    InputImageContent,
+    InputTextContent,
     OpenResponsesRequestBody,
     OutputImageContent,
+    UserMessage,
 )
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
+from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
@@ -149,6 +150,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Profile timings of the pipeline.",
     )
+    parser.add_argument(
+        "--num-warmups",
+        type=int,
+        default=3,
+        help="Number of warmups to run before profiling.",
+    )
+    parser.add_argument(
+        "--num-profile-iterations",
+        type=int,
+        default=3,
+        help="Number of iterations to run for profiling.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -188,11 +201,35 @@ def save_image(image_data: str, output_path: str) -> None:
         print(f"Base64 data length: {len(image_data)} chars")
 
 
-def load_image(image_path: str | None) -> npt.NDArray[np.uint8] | None:
-    """Load an image from a file."""
+def load_image_as_data_uri(image_path: str | None) -> str | None:
+    """Load an image from a file and convert to base64 data URI.
+
+    Args:
+        image_path: Path to the image file.
+
+    Returns:
+        Base64 data URI string, or None if no path provided.
+    """
     if image_path is None:
         return None
-    return np.array(Image.open(image_path), dtype=np.uint8)
+
+    # Load image
+    image = Image.open(image_path)
+
+    # Convert to bytes
+    buffer = BytesIO()
+    image_format = image.format or "PNG"
+    image.save(buffer, format=image_format)
+    image_bytes = buffer.getvalue()
+
+    # Encode as base64
+    base64_data = base64.b64encode(image_bytes).decode("utf-8")
+
+    # Determine MIME type
+    mime_type = f"image/{image_format.lower()}"
+
+    # Return as data URI
+    return f"data:{mime_type};base64,{base64_data}"
 
 
 async def generate_image(args: argparse.Namespace) -> None:
@@ -205,13 +242,15 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Step 1: Initialize pipeline configuration
     config = PipelineConfig(
-        model_path=args.model,
-        device_specs=[DeviceSpec.accelerator()],
-        use_legacy_module=False,
+        model=MAXModelConfig(
+            model_path=args.model,
+            device_specs=[DeviceSpec.accelerator()],
+        ),
+        prefer_module_v3=True,
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.model.huggingface_weight_repo,
-        use_legacy_module=config.use_legacy_module,
+        prefer_module_v3=config.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
     assert arch is not None, (
@@ -276,22 +315,58 @@ async def generate_image(args: argparse.Namespace) -> None:
     print(f"Generating image for prompt: '{args.prompt}'")
 
     # Step 4: Create an OpenResponsesRequest
-    body = OpenResponsesRequestBody(
-        model=args.model,
-        input=args.prompt,
-        seed=args.seed,
-        provider_options=ProviderOptions(
-            image=ImageProviderOptions(
-                negative_prompt=args.negative_prompt,
-                height=args.height,
-                width=args.width,
-                steps=args.num_inference_steps,
-                guidance_scale=args.guidance_scale,
-            )
-        ),
-    )
+    # Load input image if provided and convert to data URI
+    input_image_data_uri = load_image_as_data_uri(args.input_image)
+
+    # Create request with structured message if image is provided
+    if input_image_data_uri:
+        # Image-to-image: Use structured message with InputImageContent + InputTextContent
+        body = OpenResponsesRequestBody(
+            model=args.model,
+            input=[
+                UserMessage(
+                    role="user",
+                    content=[
+                        InputImageContent(
+                            type="input_image",
+                            image_url=input_image_data_uri,
+                        ),
+                        InputTextContent(
+                            type="input_text",
+                            text=args.prompt,
+                        ),
+                    ],
+                )
+            ],
+            seed=args.seed,
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    negative_prompt=args.negative_prompt,
+                    height=args.height,
+                    width=args.width,
+                    steps=args.num_inference_steps,
+                    guidance_scale=args.guidance_scale,
+                )
+            ),
+        )
+    else:
+        # Text-to-image: Use simple string prompt
+        body = OpenResponsesRequestBody(
+            model=args.model,
+            input=args.prompt,
+            seed=args.seed,
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    negative_prompt=args.negative_prompt,
+                    height=args.height,
+                    width=args.width,
+                    steps=args.num_inference_steps,
+                    guidance_scale=args.guidance_scale,
+                )
+            ),
+        )
+
     request = OpenResponsesRequest(request_id=RequestID(), body=body)
-    input_image = load_image(args.input_image)
 
     print(
         f"Parameters: steps={args.num_inference_steps}, guidance={args.guidance_scale}"
@@ -300,7 +375,8 @@ async def generate_image(args: argparse.Namespace) -> None:
     # Step 5: Create a PixelContext object from the request
     # The tokenizer handles prompt tokenization, timestep scheduling,
     # latent initialization, and all other preprocessing
-    context = await tokenizer.new_context(request, input_image=input_image)
+    # Image is now extracted from the message content automatically
+    context = await tokenizer.new_context(request)
 
     print(
         f"Context created: {context.height}x{context.width}, {context.num_inference_steps} steps"
@@ -312,13 +388,47 @@ async def generate_image(args: argparse.Namespace) -> None:
         batch={context.request_id: context}
     )
 
+    # Step 6-1: Prepare warmup input
+    if args.profile_timings:
+        body_warmup = OpenResponsesRequestBody(
+            model=args.model,
+            input="warmup",
+            seed=args.seed,
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    negative_prompt=args.negative_prompt,
+                    height=args.height,
+                    width=args.width,
+                    steps=args.num_inference_steps,
+                    guidance_scale=args.guidance_scale,
+                )
+            ),
+        )
+        request_warmup = OpenResponsesRequest(
+            request_id=RequestID(), body=body_warmup
+        )
+        input_image = Image.open(args.input_image) if args.input_image else None
+        context_warmup = await tokenizer.new_context(
+            request_warmup, input_image=input_image
+        )
+        inputs_warmup = PixelGenerationInputs[PixelContext](
+            batch={context_warmup.request_id: context_warmup}
+        )
+
     # Step 7: Execute the pipeline
     print("Running diffusion model...")
     if args.profile_timings:
+        for i in range(args.num_warmups):
+            print(f"Running warmup {i + 1} of {args.num_warmups}")
+            pipeline.execute(inputs_warmup)
         with profile_execute(
             pipeline, patch_concat=True, patch_tensor_ops=True
         ) as prof:
-            outputs = pipeline.execute(inputs)
+            for i in range(args.num_profile_iterations):
+                print(
+                    f"Running inference {i + 1} of {args.num_profile_iterations}"
+                )
+                outputs = pipeline.execute(inputs)
         print(f"Method timings:\n{prof.report(unit='ms')}")
         print(f"Module timings:\n{prof.report_modules(unit='ms')}")
     else:

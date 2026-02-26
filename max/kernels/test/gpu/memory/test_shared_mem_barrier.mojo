@@ -28,8 +28,7 @@ fn test_shared_mem_barrier():
         alignment=8,
     ]()
 
-    @parameter
-    for i in range(10):
+    comptime for i in range(10):
         mbar[i].init()
 
 

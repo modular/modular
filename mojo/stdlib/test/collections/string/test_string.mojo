@@ -210,16 +210,16 @@ def test_string_join():
     #   arguments, somehow?
     # assert_equal(sep.join(1, "abc", 3), "1,abc,3")
 
-    var s2 = ",".join(Span[UInt8]([1, 2, 3]))
+    var s2 = ",".join(Span([UInt8(1), 2, 3]))
     assert_equal(s2, "1,2,3")
 
-    var s3 = ",".join(Span[UInt8]([1, 2, 3, 4, 5, 6, 7, 8, 9]))
+    var s3 = ",".join(Span([UInt8(1), 2, 3, 4, 5, 6, 7, 8, 9]))
     assert_equal(s3, "1,2,3,4,5,6,7,8,9")
 
     var s4 = ",".join(List[UInt8]())
     assert_equal(s4, "")
 
-    var s5 = ",".join(Span[UInt8]([1]))
+    var s5 = ",".join(Span([UInt8(1)]))
     assert_equal(s5, "1")
 
     var s6 = ",".join(Span[String](["1", "2", "3"]))
@@ -807,12 +807,12 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(unsafe_from_utf8=Span[Byte]([0xC2, 0x85]))
+    var next_line = String(unsafe_from_utf8=Span([Byte(0xC2), 0x85]))
     var unicode_line_sep = String(
-        unsafe_from_utf8=Span[Byte]([0xE2, 0x80, 0xA8])
+        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA8])
     )
     var unicode_paragraph_sep = String(
-        unsafe_from_utf8=Span[Byte]([0xE2, 0x80, 0xA9])
+        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA9])
     )
 
     for u in [next_line^, unicode_line_sep^, unicode_paragraph_sep^]:
@@ -1594,8 +1594,7 @@ def test_copyinit():
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    @parameter
-    for sizes_index in range(len(sizes)):
+    comptime for sizes_index in range(len(sizes)):
         comptime current_size = sizes[sizes_index]
         x = ""
         for i in range(current_size):

@@ -22,6 +22,7 @@ from complex import ComplexSIMD
 import math
 from math.math import _Expable
 from sys import llvm_intrinsic
+from format._utils import FormatStruct
 
 comptime ComplexScalar = ComplexSIMD[size=1]
 """Represents a scalar complex value."""
@@ -38,7 +39,7 @@ comptime ComplexFloat64 = ComplexScalar[DType.float64]
 
 
 struct ComplexSIMD[dtype: DType, size: Int](
-    Equatable, Stringable, TrivialRegisterPassable, Writable, _Expable
+    Equatable, TrivialRegisterPassable, Writable, _Expable
 ):
     """Represents a complex SIMD value.
 
@@ -107,6 +108,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the complex as a string.
@@ -124,28 +126,9 @@ struct ComplexSIMD[dtype: DType, size: Int](
             writer: The object to write to.
         """
 
-        # TODO(MSTDL-700):
-        #   Add a Writer.reserve() method, to afford writer implementations
-        #   to request reservation of additional space from `Writer`
-        #   implementations that support that. Then use the logic below to
-        #   call that method here.
-
-        # Reserve space for opening and closing brackets, plus each element and
-        # its trailing commas.
-        # var initial_buffer_size = 2
-        # for i in range(size):
-        #     initial_buffer_size += (
-        #         _calc_initial_buffer_size(self.re[i])
-        #         + _calc_initial_buffer_size(self.im[i])
-        #         + 4  # for the ' + i' suffix on the imaginary
-        #         + 2
-        #     )
-        # buf.reserve(initial_buffer_size)
-
         # Print an opening `[`.
-        @parameter
-        if Self.size > 1:
-            writer.write("[")
+        comptime if Self.size > 1:
+            writer.write_string("[")
 
         # Print each element.
         for i in range(Self.size):
@@ -153,7 +136,7 @@ struct ComplexSIMD[dtype: DType, size: Int](
             var im = self.im[i]
             # Print separators between each element.
             if i != 0:
-                writer.write(", ")
+                writer.write_string(", ")
 
             writer.write(re)
 
@@ -161,9 +144,20 @@ struct ComplexSIMD[dtype: DType, size: Int](
                 writer.write(" + ", im, "i")
 
         # Print a closing `]`.
-        @parameter
-        if Self.size > 1:
-            writer.write("]")
+        comptime if Self.size > 1:
+            writer.write_string("]")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Formats the complex value for debug representation.
+
+        Args:
+            writer: The Writer to write the representation to.
+        """
+        FormatStruct(writer, "ComplexSIMD").params(
+            Self.dtype,
+            Self.size,
+        ).fields(self)
 
     @always_inline
     fn __abs__(self) -> SIMD[Self.dtype, Self.size]:

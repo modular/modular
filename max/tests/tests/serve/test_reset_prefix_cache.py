@@ -72,7 +72,7 @@ def app(mock_pipeline_config: PipelineConfig) -> Generator[FastAPI, None, None]:
         tokenizer=MockTokenizer(),
     )
     app = fastapi_app(
-        Settings(api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False),
+        Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
         serving_settings,
     )
     yield app

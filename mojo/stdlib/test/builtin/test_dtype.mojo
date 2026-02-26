@@ -68,28 +68,12 @@ fn test_stringable() raises:
     assert_equal(String(DType.float32), "float32")
 
 
-fn _test_repr(value: DType, expected: String) raises:
-    assert_equal(value.__repr__(), expected)
-    var string = String()
-    value.write_repr_to(string)
-    assert_equal(string, expected)
-
-
-fn test_representable() raises:
-    _test_repr(DType.bool, "DType.bool")
-    _test_repr(DType.int, "DType.int")
-    _test_repr(DType.uint, "DType.uint")
-    _test_repr(DType.int64, "DType.int64")
-    _test_repr(DType.float32, "DType.float32")
-
-
 fn test_is_xxx() raises:
     fn _is_category[
         test: fn(DType) -> Bool,
         true_dtypes: List[DType],
     ]() raises:
-        @parameter
-        for dt in all_dtypes:
+        comptime for dt in all_dtypes:
             comptime res = dt in true_dtypes
             assert_equal(test(dt), res)
 
@@ -121,18 +105,8 @@ def test_from_str():
     assert_equal(DType._from_str("blahblah"), DType.invalid)
     assert_equal(DType._from_str("DType.blahblah"), DType.invalid)
 
-    @parameter
-    for dt in all_dtypes:
+    comptime for dt in all_dtypes:
         assert_equal(DType._from_str(String(dt)), dt)
-
-
-def test_get_dtype():
-    @parameter
-    for dt in all_dtypes:
-
-        @parameter
-        for i in range(6):
-            assert_equal(DType.get_dtype[SIMD[dt, 2**i], 2**i](), dt)
 
 
 def main():

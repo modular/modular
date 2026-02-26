@@ -49,7 +49,6 @@ ignore = [
   "B028", # No explicit `stacklevel` keyword argument found
   "D100", # TODO: Enable missing docstrings in public modules
   "D101", # TODO: Enable missing docstrings in public classes
-  "D104", # TODO: Enable missing docstrings in public packages
   "D105", # undocumented-magic-method
   "D107", # Missing docstring in __init__ (constructor args go in class docstring)
   "E402", # TODO: import top of file
@@ -99,7 +98,7 @@ convention = "google"
 "max/python/max/entrypoints/**/*" = ["D"]
 "max/python/max/kv_cache/connectors/**/*" = ["D"]
 "max/python/max/mlir/**/*" = ["D"]
-"max/python/max/nn/legacy/**/*" = ["D"]
+"max/python/max/nn/**/*" = ["D"]
 "max/python/max/pipelines/architectures/**/*" = ["D"]
 "max/python/max/pipelines/pipelines.py" = ["D"]
 "max/python/max/serve/**/*" = ["D"]
@@ -143,11 +142,13 @@ module = "absl.*"
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
+module = "lmcache.*"
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
 module = "max.*"
 disallow_any_generics = true
 
-# TODO: Ideally there would be no exception for max.experimental, but, well, it
-# is experimental...  Hopefully it graduates soon.
-[[tool.mypy.overrides]]
-module = "max.experimental.*"
-disallow_any_generics = false
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true

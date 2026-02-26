@@ -19,18 +19,16 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    SupportedEncoding,
 )
-from transformers import AutoConfig
 
-from ..llama3_legacy.model import Llama3Inputs, LlamaModelBase
+from ..llama3.model import Llama3Inputs, LlamaModelBase
 from .eagle_llama3 import EagleLlama3
 from .model_config import Llama3Config
 
@@ -44,8 +42,6 @@ class EagleLlama3Model(LlamaModelBase):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -56,8 +52,6 @@ class EagleLlama3Model(LlamaModelBase):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,

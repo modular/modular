@@ -66,7 +66,7 @@ expression, in addition to a statement modifier.
 
 - When emitting a function call like `foo(x, y, z)` when in a runtime context,
   if all of the arguments are comptime-PValues and any argument
-  is non-materializable, we should emit a nice error + fixit hint to rewrite to
+  is , we should emit a nice error + fixit hint to rewrite to
   `comptime foo(x, y, z)`
 
 - When combined with the fixes to remove `ImplicitlyCopyable` from GPU types

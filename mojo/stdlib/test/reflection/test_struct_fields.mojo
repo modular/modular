@@ -268,8 +268,7 @@ fn safe_field_count[T: AnyType]() -> Int:
     be evaluated at compile time to guard compile-time reflection APIs.
     """
 
-    @parameter
-    if is_struct_type[T]():
+    comptime if is_struct_type[T]():
         return struct_field_count[T]()
     else:
         return -1
@@ -309,12 +308,10 @@ def test_is_struct_type_guard_with_mlir_types():
     var non_struct_field_count_found = 0
 
     # StructWithMLIRField has one Mojo struct field and one MLIR type field
-    @parameter
-    for i in range(struct_field_count[StructWithMLIRField]()):
+    comptime for i in range(struct_field_count[StructWithMLIRField]()):
         comptime field_type = struct_field_types[StructWithMLIRField]()[i]
 
-        @parameter
-        if is_struct_type[field_type]():
+        comptime if is_struct_type[field_type]():
             struct_field_count_found += 1
         else:
             non_struct_field_count_found += 1
@@ -376,8 +373,7 @@ def test_struct_field_iteration():
     # Test iterating over struct fields with @parameter for
     var count = 0
 
-    @parameter
-    for i in range(struct_field_count[SimpleStruct]()):
+    comptime for i in range(struct_field_count[SimpleStruct]()):
         comptime field_type = struct_field_types[SimpleStruct]()[i]
         comptime field_name = struct_field_names[SimpleStruct]()[i]
         _ = field_type
@@ -561,8 +557,7 @@ struct GenericTestPoint:
 fn generic_field_info_printer[T: AnyType]():
     """Generic function that uses magic functions to introspect any struct."""
 
-    @parameter
-    for i in range(struct_field_count[T]()):
+    comptime for i in range(struct_field_count[T]()):
         comptime field_name = struct_field_names[T]()[i]
         comptime field_type = struct_field_types[T]()[i]
         # Just verify we can access them - the types are correct if this compiles
@@ -780,8 +775,9 @@ def test_iterate_parametric_field_types_no_crash():
     """
     var count = 0
 
-    @parameter
-    for i in range(struct_field_count[StructWithMultipleParametricFields]()):
+    comptime for i in range(
+        struct_field_count[StructWithMultipleParametricFields]()
+    ):
         comptime field_type = struct_field_types[
             StructWithMultipleParametricFields
         ]()[i]
@@ -870,7 +866,7 @@ def test_reflection_on_nonetype():
 # Test struct with various trait-conforming types
 struct TraitTestStruct:
     var copyable_field: Int  # Int is Copyable
-    var stringable_field: String  # String is Stringable
+    var writable_field: String  # String is Writable
 
 
 def test_conforms_to_with_field_types():
@@ -880,20 +876,18 @@ def test_conforms_to_with_field_types():
     # Int conforms to Copyable
     assert_true(comptime (conforms_to(types[0], Copyable)))
 
-    # String conforms to Stringable
-    assert_true(comptime (conforms_to(types[1], Stringable)))
+    # String conforms to Writable
+    assert_true(comptime (conforms_to(types[1], Writable)))
 
 
 def test_conforms_to_field_iteration():
     """Test iterating over field types and checking trait conformance."""
     var copyable_count = 0
 
-    @parameter
-    for i in range(struct_field_count[SimpleStruct]()):
+    comptime for i in range(struct_field_count[SimpleStruct]()):
         comptime field_type = struct_field_types[SimpleStruct]()[i]
 
-        @parameter
-        if conforms_to(field_type, Copyable):
+        comptime if conforms_to(field_type, Copyable):
             copyable_count += 1
 
     # Both Int and Float64 are Copyable
@@ -904,12 +898,10 @@ fn count_copyable_fields[T: AnyType]() -> Int:
     """Generic function that counts fields conforming to Copyable."""
     var count = 0
 
-    @parameter
-    for i in range(struct_field_count[T]()):
+    comptime for i in range(struct_field_count[T]()):
         comptime field_type = struct_field_types[T]()[i]
 
-        @parameter
-        if conforms_to(field_type, Copyable):
+        comptime if conforms_to(field_type, Copyable):
             count += 1
 
     return count
@@ -938,7 +930,7 @@ struct NonCopyableValue:
     fn __init__(out self, data: Int):
         self.data = data
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         # If this is called, we have a bug!
         print("ERROR: NonCopyableValue was copied!")
         self.data = copy.data
@@ -1055,8 +1047,7 @@ fn print_struct_debug[T: AnyType](ref s: T):
     comptime count = struct_field_count[T]()
 
     # Test that __struct_field_ref works with parametric indices
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         _ = names[i]
         # Access the field by parametric index - this tests support for
         # parametric indices in struct field reflection
@@ -1198,8 +1189,7 @@ def test_offset_iteration_with_parameter_for():
     """Test iterating over field offsets with @parameter for."""
     var offsets = InlineArray[Int, 4](uninitialized=True)
 
-    @parameter
-    for i in range(struct_field_count[OffsetTestStruct]()):
+    comptime for i in range(struct_field_count[OffsetTestStruct]()):
         offsets[i] = offset_of[OffsetTestStruct, index=i]()
 
     assert_equal(offsets[0], 0)
@@ -1266,8 +1256,7 @@ fn get_all_offsets_generically[T: AnyType]() -> InlineArray[Int, 4]:
     var offsets = InlineArray[Int, 4](fill=0)
     comptime count = struct_field_count[T]()
 
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         offsets[i] = offset_of[T, index=i]()
 
     return offsets^

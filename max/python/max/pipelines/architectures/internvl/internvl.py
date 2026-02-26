@@ -32,17 +32,20 @@ from max.graph import (
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
-from max.nn.legacy.attention import TensorParallelAttentionWithRope
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kernels import flash_attention_gpu
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module, Shardable
-from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.norm import LayerNorm, RMSNorm
-from max.nn.legacy.rotary_embedding import DynamicRotaryEmbedding
-from max.pipelines.architectures.llama3_legacy.model_config import (
+from max.nn.attention import TensorParallelAttentionWithRope
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.comm import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kernels import flash_attention_gpu
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import LayerList, Module, Shardable
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.rotary_embedding import DynamicRotaryEmbedding
+from max.nn.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
+)
+from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
@@ -220,7 +223,7 @@ class InternVLDecoderLayer(Module):
         return hs
 
 
-class InternVLLanguageModel(Module):
+class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
     """Implements the language model component of InternVL.
 
     This model is based on Qwen2.5 architecture and is designed to process
@@ -311,13 +314,15 @@ class InternVLLanguageModel(Module):
             quantization_encoding=None,
         )
 
+        self.return_logits = config.llm_config.return_logits
+
         # Store image context token ID.
         self.image_context_token_id = image_context_token_id
 
     def __call__(
         self,
         tokens: TensorValue,
-        signal_buffers: Iterable[BufferValue],
+        signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
@@ -369,27 +374,9 @@ class InternVLLanguageModel(Module):
                 input_row_offsets=input_row_offsets,
             )
 
-        # Get last token logits only (no variable logits support).
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        last_token_h = [
-            ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices, strict=True)
-        ]
-        last_logits = ops.cast(
-            # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(
-                [
-                    norm_shard(h)
-                    for norm_shard, h in zip(
-                        self.norm_shards, last_token_h, strict=True
-                    )
-                ],
-                signal_buffers,
-            )[0],
-            DType.float32,
+        return self._postprocess_logits(
+            h, input_row_offsets, return_n_logits, signal_buffers
         )
-
-        return (last_logits,)
 
 
 class InternVisionEmbeddings(Module, Shardable):

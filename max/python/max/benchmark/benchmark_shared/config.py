@@ -345,12 +345,14 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Maximum output length per request."""
 
-    temperature: float = field(
-        default=0.0, metadata={"group": "Output Control"}
+    temperature: float | None = field(
+        default=None, metadata={"group": "Output Control"}
     )
     """Temperature for sampling."""
 
-    top_p: float = field(default=1.0, metadata={"group": "Output Control"})
+    top_p: float | None = field(
+        default=None, metadata={"group": "Output Control"}
+    )
     """Top-p for sampling."""
 
     top_k: int | None = field(

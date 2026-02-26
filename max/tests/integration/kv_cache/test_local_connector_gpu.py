@@ -19,7 +19,7 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.kv_cache.connectors.local_connector import LocalConnector
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -45,7 +45,7 @@ def create_local_connector(
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=True,
         host_kvcache_swap_space_gb=999,
@@ -54,7 +54,7 @@ def create_local_connector(
     )
 
     # Create device tensors required by the connector
-    device_tensors = [
+    device_values = [
         Buffer(
             shape=[num_device_blocks, *kv_params.shape_per_block],
             dtype=kv_params.dtype,
@@ -64,9 +64,9 @@ def create_local_connector(
 
     return LocalConnector(
         params=kv_params,
-        devices=[device],
-        device_tensors=device_tensors,
-        device_scale_tensors=None,
+        device_buffer=KVCacheBuffer(
+            total_num_pages=num_device_blocks, values=device_values
+        ),
         total_num_host_blocks=num_host_blocks,
     )
 
@@ -75,15 +75,6 @@ def test_connector_name() -> None:
     """Verify LocalConnector has correct name."""
     connector = create_local_connector()
     assert connector.name == "LocalConnector"
-
-
-def test_host_tensors_are_pinned() -> None:
-    """Verify host tensors are pinned for efficient DMA transfers."""
-    connector = create_local_connector()
-    assert connector.host_tensors is not None
-
-    for tensor in connector.host_tensors:
-        assert tensor.pinned, "Host tensors should be pinned memory"
 
 
 def test_num_host_blocks() -> None:
@@ -182,7 +173,7 @@ def test_load_returns_hashes_for_loaded_blocks() -> None:
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
     connector.lookup(ctx, [100, 200])
 
-    loaded_hashes = connector.load(ctx, [10, 11], [])
+    loaded_hashes = connector.load(ctx, [10, 11])
 
     assert loaded_hashes == [100, 200]
 
@@ -192,7 +183,7 @@ def test_load_without_lookup_returns_empty() -> None:
     connector = create_local_connector()
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
-    loaded_hashes = connector.load(ctx, [0, 1], [])
+    loaded_hashes = connector.load(ctx, [0, 1])
 
     assert loaded_hashes == []
 
@@ -231,11 +222,11 @@ def test_load_for_one_context_does_not_affect_another() -> None:
     connector.lookup(ctx1, [100, 200])
     connector.lookup(ctx2, [300, 400])
 
-    loaded1 = connector.load(ctx1, [10, 11], [])
+    loaded1 = connector.load(ctx1, [10, 11])
     assert loaded1 == [100, 200]
 
     assert str(ctx2.request_id) in connector._pending_loads
-    loaded2 = connector.load(ctx2, [12, 13], [])
+    loaded2 = connector.load(ctx2, [12, 13])
     assert loaded2 == [300, 400]
 
 
@@ -258,7 +249,7 @@ def test_on_request_complete_only_affects_target_context() -> None:
     assert str(ctx1.request_id) not in connector._pending_loads
     assert str(ctx2.request_id) in connector._pending_loads
 
-    loaded2 = connector.load(ctx2, [10], [])
+    loaded2 = connector.load(ctx2, [10])
     assert loaded2 == [200]
 
 
@@ -275,7 +266,7 @@ def test_prefix_cache_hit_full_sequence() -> None:
     tokens = connector.lookup(ctx, [100, 200, 300])
     assert tokens == 3 * page_size
 
-    loaded_hashes = connector.load(ctx, [10, 11, 12], [])
+    loaded_hashes = connector.load(ctx, [10, 11, 12])
     assert loaded_hashes == [100, 200, 300]
 
     assert connector.num_used_host_blocks == 3
@@ -293,7 +284,7 @@ def test_prefix_cache_partial_hit() -> None:
     tokens = connector.lookup(ctx, [100, 200, 300])
     assert tokens == 2 * page_size
 
-    loaded_hashes = connector.load(ctx, [10, 11], [])
+    loaded_hashes = connector.load(ctx, [10, 11])
     assert loaded_hashes == [100, 200]
 
 
@@ -309,7 +300,7 @@ def test_prefix_cache_miss_at_start() -> None:
     tokens = connector.lookup(ctx, [100, 200, 300])
     assert tokens == 0
 
-    loaded_hashes = connector.load(ctx, [], [])
+    loaded_hashes = connector.load(ctx, [])
     assert loaded_hashes == []
 
 
@@ -354,3 +345,106 @@ def test_shutdown_clears_pending_state() -> None:
 
     assert len(connector._pending_saves) == 0
     assert len(connector._pending_loads) == 0
+
+
+# -- ref_cnt leak fix (Change 2: free_block after H2D) --
+
+
+def test_load_releases_host_blocks_after_h2d() -> None:
+    """Verify host blocks return to free queue after lookup+load cycle.
+
+    Before the fix, touch() in lookup() incremented ref_cnt but load()
+    never called free_block() to balance it, causing a permanent leak.
+    """
+    connector = create_local_connector(num_host_blocks=32)
+
+    free_before = connector._host_block_pool.free_block_queue.num_free_blocks
+
+    # Save 3 blocks
+    connector.save([0, 1, 2], [100, 200, 300])
+    connector.flush()
+
+    # After flush: alloc_block (removes from free) + commit + free_block
+    # Net: blocks are in both prefix cache AND free queue (ref_cnt=0)
+    free_after_flush = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_flush == free_before
+
+    # Lookup touches blocks (ref_cnt 0→1, removed from free queue)
+    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
+    tokens = connector.lookup(ctx, [100, 200, 300])
+    assert tokens == 3 * 16
+
+    free_after_lookup = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_lookup == free_before - 3
+
+    # Load should release blocks back (ref_cnt 1→0, back in free queue)
+    loaded = connector.load(ctx, [10, 11, 12])
+    assert loaded == [100, 200, 300]
+
+    free_after_load = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_load == free_before, (
+        "Host blocks should return to free queue after load()"
+    )
+
+
+def test_repeated_lookup_load_does_not_leak() -> None:
+    """Verify N rounds of lookup+load don't accumulate leaked blocks."""
+    connector = create_local_connector(num_host_blocks=32)
+
+    # Save a block
+    connector.save([0], [100])
+    connector.flush()
+
+    free_baseline = connector._host_block_pool.free_block_queue.num_free_blocks
+
+    # Do 5 lookup+load cycles on the same block
+    for _i in range(5):
+        ctx = create_text_context(np.array([1], dtype=np.int64))
+        tokens = connector.lookup(ctx, [100])
+        assert tokens == 16
+        loaded = connector.load(ctx, [10])
+        assert loaded == [100]
+
+    free_after_cycles = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_cycles == free_baseline, (
+        f"Free block count should be stable after repeated lookup+load "
+        f"cycles: expected {free_baseline}, got {free_after_cycles}"
+    )
+
+
+def test_on_request_complete_releases_unconsumed_blocks() -> None:
+    """Verify on_request_complete frees blocks that lookup() pinned but load() didn't consume."""
+    connector = create_local_connector(num_host_blocks=32)
+
+    connector.save([0, 1], [100, 200])
+    connector.flush()
+
+    free_before = connector._host_block_pool.free_block_queue.num_free_blocks
+
+    # Lookup pins 2 blocks (touch → ref_cnt=1)
+    ctx = create_text_context(np.array([1, 2], dtype=np.int64))
+    tokens = connector.lookup(ctx, [100, 200])
+    assert tokens == 2 * 16
+
+    free_after_lookup = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_lookup == free_before - 2
+
+    # DON'T call load() — simulate a cancelled request
+    connector.on_request_complete(ctx.request_id, [0, 1])
+
+    free_after_complete = (
+        connector._host_block_pool.free_block_queue.num_free_blocks
+    )
+    assert free_after_complete == free_before, (
+        "on_request_complete should release blocks that load() never consumed"
+    )

@@ -100,7 +100,7 @@ struct KeysContainer[KeyEndType: DType = DType.uint32](
         self.count = 0
         self.capacity = capacity
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.allocated_bytes = copy.allocated_bytes
         self.count = copy.count
         self.capacity = copy.capacity
@@ -215,8 +215,7 @@ struct StringDict[
             )
         self.keys = KeysContainer[Self.KeyOffsetType](capacity)
 
-        @parameter
-        if Self.caching_hashes:
+        comptime if Self.caching_hashes:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
         else:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](0)
@@ -224,20 +223,18 @@ struct StringDict[
         self.slot_to_index = alloc[Scalar[Self.KeyCountType]](self.capacity)
         memset_zero(self.slot_to_index, self.capacity)
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             self.deleted_mask = alloc[UInt8](self.capacity >> 3)
             memset_zero(self.deleted_mask, self.capacity >> 3)
         else:
             self.deleted_mask = alloc[UInt8](0)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.count = copy.count
         self.capacity = copy.capacity
         self.keys = copy.keys
 
-        @parameter
-        if Self.caching_hashes:
+        comptime if Self.caching_hashes:
             self.key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
             memcpy(
                 dest=self.key_hashes,
@@ -254,8 +251,7 @@ struct StringDict[
             count=self.capacity,
         )
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             self.deleted_mask = alloc[UInt8](self.capacity >> 3)
             memcpy(
                 dest=self.deleted_mask,
@@ -289,8 +285,7 @@ struct StringDict[
             if key_index == 0:
                 self.keys.add(key)
 
-                @parameter
-                if Self.caching_hashes:
+                comptime if Self.caching_hashes:
                     self.key_hashes.store(slot, key_hash)
                 self.values.append(value.copy())
                 self.count += 1
@@ -299,8 +294,7 @@ struct StringDict[
                 )
                 return
 
-            @parameter
-            if Self.caching_hashes:
+            comptime if Self.caching_hashes:
                 var other_key_hash = self.key_hashes[slot]
                 if other_key_hash == key_hash:
                     var other_key = self.keys[key_index - 1]
@@ -308,8 +302,7 @@ struct StringDict[
                         # replace value
                         self.values[key_index - 1] = value.copy()
 
-                        @parameter
-                        if Self.destructive:
+                        comptime if Self.destructive:
                             if self._is_deleted(key_index - 1):
                                 self.count += 1
                                 self._not_deleted(key_index - 1)
@@ -320,8 +313,7 @@ struct StringDict[
                     # replace value
                     self.values[key_index - 1] = value.copy()
 
-                    @parameter
-                    if Self.destructive:
+                    comptime if Self.destructive:
                         if self._is_deleted(key_index - 1):
                             self.count += 1
                             self._not_deleted(key_index - 1)
@@ -362,12 +354,10 @@ struct StringDict[
 
         var key_hashes = self.key_hashes
 
-        @parameter
-        if Self.caching_hashes:
+        comptime if Self.caching_hashes:
             key_hashes = alloc[Scalar[Self.KeyCountType]](self.capacity)
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             var deleted_mask = alloc[UInt8](mask_capacity)
             memset_zero(deleted_mask, mask_capacity)
             memcpy(
@@ -384,8 +374,7 @@ struct StringDict[
                 continue
             var key_hash = Scalar[Self.KeyCountType](0)
 
-            @parameter
-            if Self.caching_hashes:
+            comptime if Self.caching_hashes:
                 key_hash = self.key_hashes[i]
             else:
                 key_hash = hash(self.keys[Int(old_slot_to_index[i] - 1)]).cast[
@@ -406,12 +395,10 @@ struct StringDict[
                 else:
                     slot = (slot + 1) & modulo_mask
 
-            @parameter
-            if Self.caching_hashes:
+            comptime if Self.caching_hashes:
                 key_hashes[slot] = key_hash
 
-        @parameter
-        if Self.caching_hashes:
+        comptime if Self.caching_hashes:
             self.key_hashes.free()
             self.key_hashes = key_hashes
         old_slot_to_index.free()
@@ -421,15 +408,13 @@ struct StringDict[
         if key_index == 0:
             return default.copy()
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             if self._is_deleted(key_index - 1):
                 return default.copy()
         return self.values[key_index - 1].copy()
 
     fn delete(mut self, key: StringSlice):
-        @parameter
-        if not Self.destructive:
+        comptime if not Self.destructive:
             return
 
         var key_index = self._find_key_index(key)
@@ -451,8 +436,7 @@ struct StringDict[
         else:
             key_index -= 1
 
-            @parameter
-            if Self.destructive:
+            comptime if Self.destructive:
                 if self._is_deleted(key_index):
                     self.count += 1
                     self._not_deleted(key_index)
@@ -466,8 +450,7 @@ struct StringDict[
         self.keys.clear()
         memset_zero(self.slot_to_index, self.capacity)
 
-        @parameter
-        if Self.destructive:
+        comptime if Self.destructive:
             memset_zero(self.deleted_mask, self.capacity >> 3)
         self.count = 0
 
@@ -482,8 +465,7 @@ struct StringDict[
             if key_index == 0:
                 return key_index
 
-            @parameter
-            if Self.caching_hashes:
+            comptime if Self.caching_hashes:
                 var other_key_hash = self.key_hashes[slot]
                 if key_hash == other_key_hash:
                     var other_key = self.keys[key_index - 1]

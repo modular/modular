@@ -235,17 +235,13 @@ def main():
     with DeviceContext() as ctx:
         comptime dtype = DType.bfloat16
 
-        @parameter
-        for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+        comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
             comptime BK = (swizzle.bytes() // size_of[dtype]())
             comptime MMA_K = 16
 
             # we support all range of bn in range(8, 128+1, 8) but the test will time out so we only test a subset
-            @parameter
-            for bm in [64, 128]:
-
-                @parameter
-                for bn in [
+            comptime for bm in [64, 128]:
+                comptime for bn in [
                     8,
                     16,
                     32,
@@ -278,8 +274,7 @@ def main():
                         static[1024 + 16](),
                     )
 
-                    @parameter
-                    for swapAB in [False, True]:
+                    comptime for swapAB in [False, True]:
                         test_blackwell_matmul_tma_umma_warp_specialized[
                             dtype,
                             dtype,

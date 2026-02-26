@@ -532,7 +532,7 @@ def test_list_extend_non_trivial():
     # Tests three things:
     #   - extend() for non-plain-old-data types
     #   - extend() with mixed-length self and other lists
-    #   - extend() using optimal number of __moveinit__() calls
+    #   - extend() using optimal number of move constructor calls
 
     # Preallocate with enough capacity to avoid reallocation making the
     # move count checks below flaky.
@@ -569,7 +569,7 @@ def test_list_extend_trivial_copy_nontrivial_move():
 
     v1.extend(v2^)
 
-    # `extend()` should call __moveinit__, not perform even a trivially copy.
+    # `extend()` should call move constructor, not perform any copies.
     assert_equal(v1[0].move_count, 2)
 
 
@@ -638,7 +638,7 @@ def test_no_extra_copies_with_sugared_set_by_field():
     assert_equal(0, list[0][1].counter.copy_count)
 
 
-# Ensure correct behavior of __copyinit__
+# Ensure correct behavior of copy ctor
 # as reported in GH issue 27875 internally and
 # https://github.com/modular/modular/issues/1493
 def test_list_copy_constructor():
@@ -794,7 +794,7 @@ def test_list_realloc_trivial_copy_nontrivial_move():
 
     lst.reserve(10)
 
-    # Reallocating the list should call __moveinit__(), not perform a copy.
+    # Reallocating the list should call move constructor, not perform any copies.
     assert_equal(lst[0].move_count, 2)
 
 
@@ -830,23 +830,23 @@ def test_list_add():
     # check that original values aren't modified
     assert_equal(len(a), 3)
     assert_equal(len(b), 3)
-    assert_equal(c.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(c), "[1, 2, 3, 4, 5, 6]")
 
     a += b.copy()
     assert_equal(len(a), 6)
-    assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(a), "[1, 2, 3, 4, 5, 6]")
     assert_equal(len(b), 3)
 
     a = [1, 2, 3]
     a += b^
     assert_equal(len(a), 6)
-    assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(a), "[1, 2, 3, 4, 5, 6]")
 
     var d = [1, 2, 3]
     var e = [4, 5, 6]
     var f = d + e^
     assert_equal(len(f), 6)
-    assert_equal(f.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(f), "[1, 2, 3, 4, 5, 6]")
 
     var l = [1, 2, 3]
     l += []
@@ -857,13 +857,13 @@ def test_list_mult():
     var a = [1, 2, 3]
     var b = a * 2
     assert_equal(len(b), 6)
-    assert_equal(b.__str__(), "[1, 2, 3, 1, 2, 3]")
+    assert_equal(String(b), "[1, 2, 3, 1, 2, 3]")
     b = a * 3
     assert_equal(len(b), 9)
-    assert_equal(b.__str__(), "[1, 2, 3, 1, 2, 3, 1, 2, 3]")
+    assert_equal(String(b), "[1, 2, 3, 1, 2, 3, 1, 2, 3]")
     a *= 2
     assert_equal(len(a), 6)
-    assert_equal(a.__str__(), "[1, 2, 3, 1, 2, 3]")
+    assert_equal(String(a), "[1, 2, 3, 1, 2, 3]")
 
     var l = [1, 2]
     l *= 1
@@ -1025,8 +1025,7 @@ def _test_copyinit_trivial_types[dt: DType]():
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    @parameter
-    for sizes_index in range(len(sizes)):
+    comptime for sizes_index in range(len(sizes)):
         comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
@@ -1053,8 +1052,7 @@ def test_copyinit_trivial_types_dtypes():
         DType.bool,
     )
 
-    @parameter
-    for index_dtype in range(len(dtypes)):
+    comptime for index_dtype in range(len(dtypes)):
         _test_copyinit_trivial_types[dtypes[index_dtype]]()
 
 

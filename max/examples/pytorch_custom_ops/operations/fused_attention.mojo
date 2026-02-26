@@ -89,7 +89,7 @@ struct FusedAttention:
         value: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
-        constrained[rank == 2, "rank must be 2"]()
+        comptime assert rank == 2, "rank must be 2"
 
         # Query tensor
         Q = query.to_layout_tensor()
@@ -100,8 +100,7 @@ struct FusedAttention:
         # Attention output tensor
         O = output.to_layout_tensor()
 
-        @parameter
-        if target == "cpu":
+        comptime if target == "cpu":
             print("Running on CPU")
             fused_attention_cpu[BN, BD](Q, K, V, O)
         else:
@@ -146,15 +145,11 @@ fn matmul_b_transpose(
 ):
     res = type_of(res).stack_allocation()
 
-    @parameter
-    for m in range(lhs.shape[0]()):
-
-        @parameter
-        for n in range(rhs.shape[0]()):
+    comptime for m in range(lhs.shape[0]()):
+        comptime for n in range(rhs.shape[0]()):
             res[m, n] = 0.0
 
-            @parameter
-            for k in range(lhs.shape[1]()):
+            comptime for k in range(lhs.shape[1]()):
                 res[m, n] += rebind[res.element_type](
                     lhs[m, k].cast[res.dtype]()
                 ) * rebind[res.element_type](rhs[n, k].cast[res.dtype]())
@@ -190,12 +185,10 @@ fn fused_attention_cpu[
     comptime N = K.shape[0]()
     comptime D = K.shape[1]()
 
-    @parameter
-    for tile_n in range(N // BN):
+    comptime for tile_n in range(N // BN):
         Q_tile = Q.tile[BN, D](tile_n, 0)
 
-        @parameter
-        for tile_d in range(D // BD):
+        comptime for tile_d in range(D // BD):
             m_1 = (
                 LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutAnyOrigin]
                 .stack_allocation()
@@ -216,8 +209,7 @@ fn fused_attention_cpu[
                 .fill(0)
             )
 
-            @parameter
-            for tile_n_idx in range(N // BN):
+            comptime for tile_n_idx in range(N // BN):
                 K_tile = K.tile[BN, D](tile_n_idx, 0)
                 V_tile = V.tile[BN, BD](tile_n_idx, tile_d)
 
@@ -254,18 +246,12 @@ fn matmul[
 ):
     res = type_of(res).stack_allocation()
 
-    @parameter
-    if target == "cpu":
-
-        @parameter
-        for m in range(lhs.shape[0]()):
-
-            @parameter
-            for n in range(rhs.shape[1]()):
+    comptime if target == "cpu":
+        comptime for m in range(lhs.shape[0]()):
+            comptime for n in range(rhs.shape[1]()):
                 res[m, n] = 0.0
 
-                @parameter
-                for k in range(lhs.shape[1]()):
+                comptime for k in range(lhs.shape[1]()):
                     res[m, n] += rebind[res.element_type](
                         lhs[m, k].cast[res.dtype]()
                     ) * rebind[res.element_type](rhs[k, n].cast[res.dtype]())
@@ -283,7 +269,7 @@ fn matmul[
 
         comptime BK = 8
 
-        constrained[K % 8 == 0, "K needs to be a multiple of 8"]()
+        comptime assert K % 8 == 0, "K needs to be a multiple of 8"
 
         mma_b_t = TensorCore[
             lhs.dtype, res.dtype, Index(M, N, BK), transpose_b
@@ -291,14 +277,12 @@ fn matmul[
 
         c_reg = mma_b_t.c_reg_tile_type.stack_allocation().fill(0)
 
-        @parameter
-        for k_i in range(K // BK):
+        comptime for k_i in range(K // BK):
             a_reg = mma_b_t.load_a(lhs.tile[M, BK](0, k_i))
 
             b_reg = mma_b_t.load_b(rhs.tile[BK, N](k_i, 0))
 
-            @parameter
-            if transpose_b:
+            comptime if transpose_b:
                 b_reg = rebind[type_of(b_reg)](
                     mma_b_t.load_b(rhs.tile[N, BK](0, k_i))
                 )

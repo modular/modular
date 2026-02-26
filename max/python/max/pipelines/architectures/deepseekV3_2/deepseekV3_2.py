@@ -31,27 +31,27 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy.attention.multi_latent_attention import (
+from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
     MLAPrefillMetadata,
 )
-from max.nn.legacy.attention.multi_latent_attention_fp8 import (
+from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.ep import EPBatchManager
-from max.nn.legacy.data_parallelism import split_batch_replicated
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import MLP, ColumnParallelLinear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import (
+from max.nn.comm import Signals
+from max.nn.comm.ep import EPBatchManager
+from max.nn.data_parallelism import split_batch_replicated
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.layer import LayerList, Module
+from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 
@@ -586,12 +586,10 @@ class DeepseekV3_2(Module):
                 last_token_per_dev, signal_buffers
             )
         else:
-            h0 = h[0]
-            last_token_indices = input_row_offsets_[0][1:] - 1
-            last_token_h = ops.gather(h0, last_token_indices, axis=0)
-            last_token_distributed = ops.distributed_broadcast(
-                last_token_h, signal_buffers
-            )
+            last_token_distributed = [
+                ops.gather(h_i, offsets_i[1:] - 1, axis=0)
+                for h_i, offsets_i in zip(h, input_row_offsets_, strict=True)
+            ]
 
         # Apply norm to each shard
         norm_last_token = forward_sharded_layers(
@@ -661,7 +659,7 @@ class DeepseekV3_2(Module):
             hidden_states = h[0] if isinstance(h, list) else h
             ret_val += (hidden_states,)
         elif self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_token_h,)
+            ret_val += (last_token_distributed[0],)
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
             norm_h = forward_sharded_layers(self.norm_shards, h)[0]
             ret_val += (norm_h,)
@@ -671,7 +669,7 @@ class DeepseekV3_2(Module):
         return ret_val
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model

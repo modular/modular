@@ -24,6 +24,7 @@ from memory import (
     memcpy,
 )
 from ffi import external_call
+import format._utils as fmt
 from sys import is_gpu
 from sys.info import size_of, align_of
 
@@ -33,7 +34,7 @@ from sys.info import size_of, align_of
 # ===-----------------------------------------------------------------------===#
 
 
-struct StackTrace(Copyable, Movable, Stringable, Writable):
+struct StackTrace(Copyable, Movable, Writable):
     """Holds a stack trace captured at a specific location.
 
     A `StackTrace` instance always contains a valid stack trace. Use the
@@ -64,7 +65,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             unsafe_from_raw_pointer=unsafe_from_raw_pointer
         )
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy constructor - copies the stack trace string.
 
         Args:
@@ -77,7 +78,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Move constructor.
 
         Args:
@@ -104,8 +105,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             succeeded, or `None` if disabled or unavailable.
         """
 
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             return None
 
         if depth < 0:
@@ -121,6 +121,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
 
         return StackTrace(unsafe_from_raw_pointer=buffer)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the StackTrace to string representation.
 
@@ -155,8 +156,6 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
 
 struct Error(
     Copyable,
-    Representable,
-    Stringable,
     Writable,
 ):
     """This type represents an Error."""
@@ -232,6 +231,7 @@ struct Error(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Converts the Error to string representation.
@@ -239,7 +239,7 @@ struct Error(
         Returns:
             A String of the error message.
         """
-        return String(self._error)
+        return self._error
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -252,13 +252,26 @@ struct Error(
         self._error.write_to(writer)
 
     @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """
+        Formats this error to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Error").fields(fmt.Repr(self._error))
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
+    @no_inline
     fn __repr__(self) -> String:
         """Converts the Error to printable representation.
 
         Returns:
             A printable representation of the error message.
         """
-        return String("Error('", self._error, "')")
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     # ===-------------------------------------------------------------------===#
     # Methods

@@ -103,8 +103,7 @@ fn rope_q_proj[
 
     var val: SIMD[dtype, width]
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         val = q_proj.load[width=width](coord)
     else:
         val = rebind[SIMD[dtype, width]](
@@ -115,8 +114,7 @@ fn rope_q_proj[
 
     var res = _rope(val, freq_val)
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         output.store(coord, res)
     else:
         output_re, output_im = res.deinterleave()
@@ -144,8 +142,7 @@ fn rope_k_cache[
 
     var val: SIMD[accum_type, width]
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         val = k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx).cast[
             accum_type
         ]()
@@ -162,8 +159,7 @@ fn rope_k_cache[
 
     var res = _rope(val, freq_val).cast[cache_type]()
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         k_cache.store(b_idx, h_idx, s_idx, d_idx, res)
     else:
         output_re, output_im = res.deinterleave()
@@ -224,8 +220,7 @@ fn fused_qk_rope[
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 4, "Invalid rank passed to rope kernel"
 
-        @parameter
-        if width == 1:
+        comptime if width == 1:
             return
         else:
             var idx = rebind[IndexList[4]](idx_arg)
@@ -281,8 +276,7 @@ fn fused_qk_rope[
     )
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
             launch_shape
         )
@@ -375,8 +369,7 @@ fn fused_qk_rope_ragged[
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 3, "Invalid rank passed to rope kernel"
 
-        @parameter
-        if width == 1:
+        comptime if width == 1:
             return
         else:
             var idx = rebind[IndexList[3]](idx_arg)
@@ -400,12 +393,10 @@ fn fused_qk_rope_ragged[
                 comptime PIdTensor = type_of(position_ids.value())
                 comptime assert PIdTensor.flat_rank == 2
 
-                @parameter
-                if mrope_section:
+                comptime if mrope_section:
                     var section_idx = 0
 
-                    @parameter
-                    for i in range(len(mrope_section.value())):
+                    comptime for i in range(len(mrope_section.value())):
                         comptime val = mrope_section.value()[i].value()
                         if head_dim_idx < val:
                             section_idx = i
@@ -425,8 +416,7 @@ fn fused_qk_rope_ragged[
 
             var f_c_temp: SIMD[freq_dtype, width]
 
-            @parameter
-            if has_nope:
+            comptime if has_nope:
                 if is_unroped_region:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
@@ -443,9 +433,7 @@ fn fused_qk_rope_ragged[
                     q_proj, output, idx, f_c_temp, q_head_size
                 )
             else:
-
-                @parameter
-                if has_nope:
+                comptime if has_nope:
                     if is_unroped_region:
                         return
 
@@ -473,19 +461,15 @@ fn fused_qk_rope_ragged[
     comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
-    @parameter
-    if mrope_section:
-
-        @parameter
-        for i in range(len(mrope_section.value())):
+    comptime if mrope_section:
+        comptime for i in range(len(mrope_section.value())):
             comptime assert (
                 Int(mrope_section.value()[i].value()) % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
             launch_shape
         )

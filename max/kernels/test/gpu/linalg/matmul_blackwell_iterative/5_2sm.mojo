@@ -43,6 +43,7 @@ from layout import (
     RuntimeTuple,
     RuntimeLayout,
 )
+from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
@@ -247,12 +248,10 @@ fn kernel_5[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
+    comptime for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -294,8 +293,7 @@ fn kernel_5[
                 + block_idx.y * UInt(MMA_N)
             )
 
-            @parameter
-            for j in range(BK // 64):
+            comptime for j in range(BK // 64):
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
@@ -397,8 +395,7 @@ fn kernel_5[
         Int(split_coord_x), 0
     )
 
-    @parameter
-    for tma_n in range(NUM_ST_MATRIX):
+    comptime for tma_n in range(NUM_ST_MATRIX):
         var c_smem_iter = c_smem_split.tile[BM, TMA_BN](tma_n, 0)
         var c_smem_warp_tile = c_smem_iter.tile[32, TMA_BN](
             Int(warp_id() % 2 if MMA_M == 128 else warp_id()), 0
@@ -406,8 +403,7 @@ fn kernel_5[
         var upper = c_smem_warp_tile.tile[16, TMA_BN](0, 0)
         var lower = c_smem_warp_tile.tile[16, TMA_BN](1, 0)
 
-        @parameter
-        for i in range(TMA_BN // 16):
+        comptime for i in range(TMA_BN // 16):
             var d_reg_upper = c_frag_upper.slice[
                 8, offset = (i + tma_n * (TMA_BN // 16)) * 8
             ]().cast[DType.bfloat16]()
@@ -622,8 +618,8 @@ def test_blackwell_kernel_5[
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
+    var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
 
     var a_device = ctx.enqueue_create_buffer[a_type](M * K)
     var a_device_lt = LayoutTensor[a_type, a_layout](a_device.unsafe_ptr())
@@ -646,15 +642,15 @@ def test_blackwell_kernel_5[
                 b_type
             ]()
     for i in range(M * N):
-        c_host_ptr[i] = Scalar[c_type](0)
-        c_host_ref_ptr[i] = Scalar[c_type](0)
+        c_host.tensor[update=False]().ptr[i] = Scalar[c_type](0)
+        c_host_ref.tensor[update=False]().ptr[i] = Scalar[c_type](0)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device, c_host_ptr)
-    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
+    ctx.enqueue_copy(c_device, c_host.tensor[update=False]().ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref.tensor[update=False]().ptr)
 
     blackwell_kernel_5[
         transpose_b=transpose_b,
@@ -722,15 +718,15 @@ def test_blackwell_kernel_5[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host_ptr, c_device)
-        ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+        ctx.enqueue_copy(c_host.tensor[update=False]().ptr, c_device)
+        ctx.enqueue_copy(c_host_ref.tensor[update=False]().ptr, c_device_ref)
         ctx.synchronize()
 
         comptime rtol = 1e-2
 
         assert_almost_equal(
-            c_host_ptr,
-            c_host_ref_ptr,
+            c_host.tensor[update=False]().ptr,
+            c_host_ref.tensor[update=False]().ptr,
             M * N,
             atol=0.0001,
             rtol=rtol,
@@ -740,12 +736,6 @@ def test_blackwell_kernel_5[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 fn get_dic_of_shapes(
@@ -779,8 +769,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     comptime block_tile_shape = Index(128, 128, 64)
     comptime umma_shape = Index(256, 256, 16)
 
-    @parameter
-    for i in range(len(dic_of_shapes)):
+    comptime for i in range(len(dic_of_shapes)):
         comptime shape = get_dic_of_shapes(i, dic_of_shapes)
         print(
             "Benchmarking shape: [",

@@ -20,7 +20,10 @@ from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext
+from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 from testing import assert_equal, assert_true
+from utils.index import IndexList
 
 
 def all_gather_test[
@@ -92,7 +95,7 @@ def all_gather_test[
         out_bufs_list.append(device_outputs^)
 
     # Create input NDBuffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+    var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
         fill={}
     )
 
@@ -184,7 +187,6 @@ def all_gather_test[
     # Clean up.
     for i in range(ngpus):
         host_buffers[i].free()
-    _ = signal_buffers^
 
 
 fn _verify_results[
@@ -201,7 +203,15 @@ fn _verify_results[
     for device_idx in range(ngpus):
         for input_idx in range(ngpus):
             var length = lengths[input_idx]
-            var host_output = alloc[Scalar[dtype]](length)
+            var host_output_managed = ManagedLayoutTensor[
+                dtype, Layout(UNKNOWN_VALUE)
+            ](
+                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                    IndexList[1](length)
+                ),
+                list_of_ctx[device_idx],
+            )
+            var host_output = host_output_managed.tensor[update=False]().ptr
 
             # Copy output back to host.
             list_of_ctx[device_idx].enqueue_copy(
@@ -231,8 +241,6 @@ fn _verify_results[
                     )
                     raise e^
 
-            host_output.free()
-
 
 def main() -> None:
     assert_true(
@@ -258,8 +266,7 @@ def main() -> None:
         [0, 8 * 1024],
     ]
 
-    @parameter
-    for test_idx in range(len(test_lengths)):
+    comptime for test_idx in range(len(test_lengths)):
         comptime lengths = test_lengths[test_idx]
         comptime num_gpus = len(lengths)
 

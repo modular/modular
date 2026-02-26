@@ -249,8 +249,8 @@ fn apple_gemv[
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    a: NDBuffer[mut=False, _, 2, _, _],
+    b: NDBuffer[mut=False, _, 2, _, _],
 ) raises:
     # Recall:
     # if b_packed=True, this will be called AFTER pack shape and actual packing
@@ -263,17 +263,16 @@ fn apple_gemv[
 
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).
-    @parameter
-    if b_packed == False and not transpose_b:
+    comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
         transposed_b_ptr = alloc[Scalar[b.type]](b.num_elements())
-        transposed_b = NDBuffer[b.type, 2](transposed_b_ptr, transposed_b_shape)
+        transposed_b = NDBuffer[b.type, 2, MutAnyOrigin](
+            transposed_b_ptr, transposed_b_shape
+        )
 
         pack_b_ndbuffer[
             a.type,
             a.shape,
-            b.type,
-            b.shape,
             c.type,
             c.shape,
         ](b, transposed_b)
@@ -282,8 +281,7 @@ fn apple_gemv[
     # to adjust K accordingly.
     # We will also need to use the original B instead of transposed_b in the
     # calculations further below.
-    @parameter
-    if b_packed == False and transpose_b == True:
+    comptime if b_packed == False and transpose_b == True:
         K = b.dim(1)
 
     comptime simd_width = simd_width_of[c.type]()
@@ -306,8 +304,7 @@ fn apple_gemv[
                     ](n, k).cast[c.type]()
                 )
 
-                @parameter
-                if width == 1:
+                comptime if width == 1:
                     acc_scalar = fma(
                         rebind[Scalar[c.type]](a_val),
                         rebind[Scalar[c.type]](b_val),
@@ -324,8 +321,7 @@ fn apple_gemv[
 
             var val = acc_vector.reduce_add() + acc_scalar
 
-            @parameter
-            if elementwise_lambda_fn:
+            comptime if elementwise_lambda_fn:
                 comptime func = elementwise_lambda_fn.value()
                 func[c.type, 1](Index(0, n), val)
             else:
@@ -357,8 +353,7 @@ fn apple_matmul[
     a: NDBuffer,
     b: NDBuffer,
 ) raises:
-    @parameter
-    if a.type == b.type == c.type == DType.float32:
+    comptime if a.type == b.type == c.type == DType.float32:
         var m = Int32(a.dim[0]())
         var n = Int32(b.dim[0]() if transpose_b else b.dim[1]())
         var k = Int32(a.dim[1]())
@@ -397,8 +392,7 @@ fn apple_matmul[
             ](b.data),
         )
 
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             var m = c.dim[0]()
             var n = c.dim[1]()
             comptime epilogue = elementwise_lambda_fn.value()
@@ -416,7 +410,7 @@ fn apple_matmul[
             elementwise[epilogue_on_col_chunk, simd_size](IndexList[2](m, n))
         return
     else:
-        constrained[False, "unsupported type in apple accelerate"]()
+        comptime assert False, "unsupported type in apple accelerate"
 
 
 # apple_matmul used by all matmuls except apple_batched_matmul
@@ -426,8 +420,7 @@ fn apple_matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[matmul_elementwise_epilogue_type] = None,
 ](c: NDBuffer[mut=True, ...], a: NDBuffer, b: NDBuffer) raises:
-    @parameter
-    if a.type == b.type == c.type == DType.float32:
+    comptime if a.type == b.type == c.type == DType.float32:
         var cblas_gemm = get_cblas_f32_function()
 
         apple_matmul[
@@ -436,7 +429,7 @@ fn apple_matmul[
 
         return
     else:
-        constrained[False, "unsupported type in apple accelerate"]()
+        comptime assert False, "unsupported type in apple accelerate"
 
 
 # ===-----------------------------------------------------------------------===#

@@ -93,15 +93,14 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    constrained[transpose_b, "Only support transposed B"]()
-    constrained[num_threads == 128]()
+    comptime assert transpose_b, "Only support transposed B"
+    comptime assert num_threads == 128
 
     comptime accum_type = get_accum_type[a_type]()
 
-    constrained[
-        b_scales_type == a_scales_type == accum_type == DType.float32,
-        "Only support float32 for a_scales and b_scales",
-    ]()
+    comptime assert (
+        b_scales_type == a_scales_type == accum_type == DType.float32
+    ), "Only support float32 for a_scales and b_scales"
 
     comptime N = c_layout.shape[1].value()
     comptime K = a_layout.shape[2].value()
@@ -117,11 +116,10 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
-    constrained[N % BN == 0, "N must be divisible by BN"]()
-    constrained[
-        BN <= BK or gcd(BN, BK) == BN - BK,
-        "BN <= BK or gcd(BN, BK) == BN - BK",
-    ]()
+    comptime assert N % BN == 0, "N must be divisible by BN"
+    comptime assert (
+        BN <= BK or gcd(BN, BK) == BN - BK
+    ), "BN <= BK or gcd(BN, BK) == BN - BK"
 
     # make sure A and B scales are compatible
     comptime b_scales_n = b_scales_layout.shape[0].value()
@@ -203,16 +201,15 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime b_size = b_smem_layout.size()
     comptime a_scales_size = a_scales_smem_layout.size()
 
-    constrained[
-        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((b_size * size_of[b_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((a_scales_size * size_of[a_scales_type]()) % 16) == 0,
-        "preserve alignment",
-    ]()
+    comptime assert (
+        (a_size * size_of[a_type]()) % 128
+    ) == 0, "preserve alignment"
+    comptime assert (
+        (b_size * size_of[b_type]()) % 128
+    ) == 0, "preserve alignment"
+    comptime assert (
+        (a_scales_size * size_of[a_scales_type]()) % 16
+    ) == 0, "preserve alignment"
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
     var a_scales_smem = (b_smem + b_size).bitcast[Scalar[a_scales_type]]()
@@ -282,9 +279,9 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime repeat = 1  # a higher repeat will probably get us better performance, but it will increase register pressure
     comptime temp_cfrags_size = 4 * repeat
 
-    constrained[
-        total_repeat % repeat == 0, "total_repeat must be divisible by repeat"
-    ]()
+    comptime assert (
+        total_repeat % repeat == 0
+    ), "total_repeat must be divisible by repeat"
     var c_frag_temp = SIMD[accum_type, temp_cfrags_size]()
 
     for k_iter in range(num_iters):
@@ -341,8 +338,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
 
-        @parameter
-        for ld_iter in range(total_repeat // repeat):
+        comptime for ld_iter in range(total_repeat // repeat):
             c_frag_temp = tcgen05_ld[
                 datapaths=16,
                 bits=256,
@@ -355,8 +351,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
             var b_scale: Scalar[b_scales_type]
 
-            @parameter
-            if BN != BK:
+            comptime if BN != BK:
                 var global_n = block_idx.x * UInt(BN)
 
                 var begin_n = min(BN, BK - Int(global_n % UInt(BK)))
@@ -382,8 +377,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             var m_offset = (warp_id * 16) + (lane_id() // 4)
 
             # TODO: this is an ugly way to calculate the m offset, need to rethink how we can make this more efficient
-            @parameter
-            for j in range(temp_cfrags_size // 2):
+            comptime for j in range(temp_cfrags_size // 2):
                 var local_m = m_offset + UInt((j % 2) * 8)
                 var a_scale = a_scales_smem_tile_2D_view[0, local_m]
 
@@ -410,11 +404,8 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     )
     comptime c_coord_type = type_of(ctile_coords)
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
@@ -437,18 +428,19 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
             comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
             comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
+            comptime c_row_stride = c.layout.stride[0].value()
+            comptime assert (
+                c.layout.stride[1].value() == 1
+            ), "the last dim's stride must be 1"
 
-            @parameter
-            for n_vec in range(num_vecs_n):
-
-                @parameter
-                for m_vec in range(num_vecs_m):
+            comptime for n_vec in range(num_vecs_n):
+                comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
                     comptime dst_idx = type_of(c_gmem_frag).layout(
                         IntTuple(m_vec, n_vec)
                     )
-                    comptime dst_m_offset = dst_idx // N
-                    comptime dst_n_offset = dst_idx % N
+                    comptime dst_m_offset = dst_idx // c_row_stride
+                    comptime dst_n_offset = dst_idx % c_row_stride
                     var m = UInt32(c_gmem_frag_coords[0] + dst_m_offset)
                     var n = UInt32(c_gmem_frag_coords[1] + dst_n_offset)
 
@@ -457,8 +449,7 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                             c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                         ).cast[c_type]()
 
-                        @parameter
-                        if elementwise_lambda_fn:
+                        comptime if elementwise_lambda_fn:
                             comptime alignment = align_of[SIMD[c_type, 2]]()
                             comptime epilogue = elementwise_lambda_fn.value()
                             epilogue[alignment=alignment](
@@ -572,20 +563,15 @@ fn matmul_sm100_blockwise_scaled_fp8[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    comptime assert transpose_b, "Only support transposed B"
 
-    constrained[
-        a_type == b_type and a_type == DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
+    comptime assert (
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
 
-    constrained[
-        a_scales_type == b_scales_type and a_scales_type == DType.float32,
-        "Only support float32 for scales",
-    ]()
+    comptime assert (
+        a_scales_type == b_scales_type and a_scales_type == DType.float32
+    ), "Only support float32 for scales"
 
     comptime a_layout_tensor_3D = LayoutTensor[
         a_type,
@@ -648,7 +634,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    constrained[BK == 128, "blockwise scaled fp8 only works with BK = 128"]()
+    comptime assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
 
     var M = c.dim(0)
     var N = c.dim(1)

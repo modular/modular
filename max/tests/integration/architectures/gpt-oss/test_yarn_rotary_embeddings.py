@@ -17,7 +17,7 @@ import torch
 from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
-from max.nn.legacy import YarnRotaryEmbedding, YarnScalingParams
+from max.nn import YarnRotaryEmbedding, YarnScalingParams
 from transformers.models.gpt_oss.configuration_gpt_oss import (
     GptOssConfig as PytorchGptOssConfig,
 )

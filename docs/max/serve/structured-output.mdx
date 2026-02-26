@@ -1,0 +1,304 @@
+---
+title: Structured output
+description: Enable structured output with your GenAI deployments for predictable responses
+---
+
+import MDXListing from '@site/src/components/Listing/MDXListing';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+MAX supports the generation of structured output using
+[llguidance](https://github.com/guidance-ai/llguidance) as a backend.
+Structured output, also sometimes referred to as constrained decoding, allows
+users to enforce specific output formats, ensuring structured and predictable
+responses from a model.
+
+:::note
+
+Structured output is compatible with GPU deployments and MAX models only.
+Support for PyTorch models and CPU deployments is in progress.
+
+:::
+
+## When to use structured output
+
+If you want to structure a model's output when it responds to a user, then you
+should use a structured output `response_format`.
+
+If you are connecting a model to tools, functions, data, or other systems, then
+you should use [function calling](/max/serve/function-calling) instead of
+structured outputs.
+
+## How structured output works
+
+To use structured output, include the `--enable-structured-output` flag when
+serving your model with the [`max` CLI](/max/cli).
+
+```bash
+max serve \
+  --model "google/gemma-3-27b-it" \
+  --enable-structured-output
+```
+
+:::note
+
+The examples on this page use image input with a multimodal model. For
+environment setup and additional image input options (including local files),
+see [Image to text](/max/inference/image-to-text).
+
+:::
+
+Both the
+[`/chat/completions`](/max/api/serve#operation/createChatCompletion) and
+[`/completions`](/max/api/serve#operation/createCompletion) API endpoints are
+compatible with structured output.
+
+You can define your structured output response format in two ways:
+
+1. [JSON schema](#json-schema): Specify the schema directly in your request.
+2. [Pydantic](#pydantic): Use Pydantic to define and validate your schema as a
+  Python class.
+
+We recommend testing your structured output responses thoroughly as they are
+sensitive to the way the model was trained.
+
+### JSON schema
+
+To specify structured output within your inference request, use the following
+format:
+
+:::note
+
+You can increase the accuracy of structured output responses by mentioning JSON
+output specifications in your system prompt.
+
+:::
+
+<Tabs>
+
+<TabItem value="python" label="Python">
+
+```python title="structured-image-description.py"
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+response = client.chat.completions.create(
+    model="google/gemma-3-27b-it",
+    messages=[
+        {
+            "role": "system",
+            "content": "You are an assistant that analyzes images and returns structured descriptions."
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Analyze this image and describe what you see."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+                    }
+                }
+            ]
+        }
+    ],
+    max_tokens=300,
+    response_format={
+        "type": "json_schema",
+        "json_schema": {
+            "name": "ImageAnalysis",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string"},
+                    "subjects": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    },
+                    "colors": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    },
+                    "setting": {"type": "string"},
+                    "mood": {"type": "string"}
+                },
+                "required": ["description", "subjects", "colors", "setting", "mood"],
+                "additionalProperties": False
+            }
+        }
+    }
+)
+
+print(response.choices[0].message.content)
+```
+
+</TabItem>
+<TabItem value="curl" label="curl">
+
+```bash
+ curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "google/gemma-3-27b-it",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are an assistant that analyzes images and returns structured descriptions."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Analyze this image and describe what you see."
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+            }
+          }
+        ]
+      }
+    ],
+    "max_tokens": 300,
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "ImageAnalysis",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "description": { "type": "string" },
+            "subjects": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "colors": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "setting": { "type": "string" },
+            "mood": { "type": "string" }
+          },
+          "required": ["description", "subjects", "colors", "setting", "mood"],
+          "additionalProperties": false
+        }
+      }
+    }
+  }'
+```
+
+</TabItem>
+</Tabs>
+
+Instead of a typical text response from the model, the `response_format` schema
+defined above results in a JSON-formatted structured output such as the following:
+
+```output
+{
+  "description": "A full-body shot of Peter Rabbit, the fictional character, standing on a dirt path. He is dressed in a blue jacket with brass buttons over a white shirt and a small yellow tie. He also wears brown pants and appears to be holding a small basket. The background consists of a rustic stone house with a thatched roof, a winding dirt road, green fields, and rolling hills under a bright sky. Wildflowers in shades of purple and white line the path in the foreground.",
+  "subjects": [
+    "rabbit",
+    "house",
+    "path",
+    "fields",
+    "hills",
+    "flowers",
+    "basket"
+  ],
+  "colors": [
+    "blue",
+    "brown",
+    "green",
+    "white",
+    "yellow",
+    "purple"
+  ],
+  "setting": "Rural countryside",
+  "mood": "Whimsical, charming, idyllic"
+}
+```
+
+### Pydantic
+
+For production Python code, you can define your structured output using
+[Pydantic](https://docs.pydantic.dev/latest/install/). This gives you type-safe
+attribute access and automatic validation instead of manually parsing JSON
+strings.
+
+Here's an example using a Pydantic
+[`BaseModel`](https://docs.pydantic.dev/latest/api/base_model/) to analyze an
+image and return a validated response:
+
+```python title="structured-image-analysis.py"
+from pydantic import BaseModel
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+class ImageAnalysis(BaseModel):
+    description: str
+    subjects: list[str]
+    colors: list[str]
+    setting: str
+    mood: str
+
+completion = client.chat.completions.parse(
+    model="google/gemma-3-27b-it",
+    messages=[
+        {
+            "role": "system",
+            "content": "You are an assistant that analyzes images and returns structured descriptions."
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Analyze this image and describe what you see."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+                    }
+                }
+            ]
+        }
+    ],
+    max_tokens=300,
+    response_format=ImageAnalysis,
+)
+
+analysis = completion.choices[0].message.parsed
+print(analysis)
+```
+
+### Supported models
+
+All text generation models support structured output with MAX. As new models are
+added, they will also be compatible with structured output. This functionality
+is implemented at the pipeline level, ensuring consistency across different
+models.
+
+However, structured output currently doesn't support PyTorch models or
+CPU deployments—only [MAX models](/max/model-formats#max-graph) deployed
+on GPUs.
+
+## Next steps
+
+Next, try processing local image files, running batch inference offline, or
+deploying to the cloud.
+
+export const docs = [
+  '../../inference/image-to-text.mdx',
+  '../../serve/offline-inference.mdx',
+  '../../deploy/local-to-cloud.mdx',
+];
+
+<MDXListing mdxList={docs} />

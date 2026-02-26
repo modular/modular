@@ -20,11 +20,12 @@ from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
-from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
+    PipelineRuntimeConfig,
     SupportedEncoding,
 )
 from transformers import AutoConfig
@@ -62,7 +63,7 @@ class DummyPipelineConfig(PipelineConfig):
         max_length: int | None,
         pdl_level: str = "1",
         device_specs: list[DeviceSpec] | None = None,
-        kv_cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT,
+        kv_cache_strategy: KVCacheStrategy = "model_default",
         # TODO(AITLIB-328): These values do not belong in PipelineConfig,
         # but are somehow used by MockPipelineModel in pipeline_model.py.
         eos_prob: float | None = None,
@@ -83,10 +84,12 @@ class DummyPipelineConfig(PipelineConfig):
         # Seed `self` with a real (but unvalidated) PipelineConfig instance, so
         # we keep pydantic-internal state consistent while still avoiding full
         # validation / resolution.
+        runtime = PipelineRuntimeConfig.model_construct(
+            pdl_level=pdl_level,
+        )
         base = PipelineConfig.model_construct(
             max_batch_size=max_batch_size,
-            max_length=max_length,
-            pdl_level=pdl_level,
+            runtime=runtime,
         )
         self.__dict__.update(base.__dict__)
         for attr in (
@@ -101,6 +104,7 @@ class DummyPipelineConfig(PipelineConfig):
             model_path=model_path,
             device_specs=device_specs,
             quantization_encoding=quantization_encoding,
+            max_length=max_length,
         )
         model_config.kv_cache = KVCacheConfig(
             cache_strategy=kv_cache_strategy,

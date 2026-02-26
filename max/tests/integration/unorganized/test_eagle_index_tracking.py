@@ -13,13 +13,14 @@
 """Unit tests for EAGLE index tracking through update_contexts,
 _prepare_draft_batch, and reserve_token_space_for_batch.
 
-Verifies that TokenBuffer indices and _draft_kv_start_idx stay correct
+Verifies that TokenBuffer indices and ``_draft_kv_start_idx`` stay correct
 across all acceptance/rejection scenarios. No model loading or GPU required.
 """
 
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 import numpy.typing as npt
@@ -47,7 +48,7 @@ class MockKVManager:
     ) -> None:
         pass
 
-    def get_runtime_inputs(
+    def runtime_inputs(
         self, replica_batches: list[list[TextContext]], num_steps: int
     ) -> list[Any]:
         return []
@@ -55,7 +56,7 @@ class MockKVManager:
 
 class MockModel:
     def __init__(self) -> None:
-        self.kv_manager = MockKVManager()
+        self.kv_params = MagicMock()
 
     def prepare_initial_token_inputs(self, **kwargs: Any) -> ModelInputs:
         return ModelInputs()
@@ -68,7 +69,8 @@ class EAGLEIndexTracker:
         self._draft_kv_start_idx: dict[RequestID, int] = {}
         self._last_verified_token: dict[RequestID, int] = {}
         self._metrics = SpeculativeDecodingMetrics()
-        self._draft_input_hidden_states = None
+        self._draft_kv_manager = MagicMock()
+        self._target_kv_manager = MagicMock()
 
     def update_contexts(
         self,
@@ -91,10 +93,20 @@ class EAGLEIndexTracker:
             data_parallel_splits=data_parallel_splits,
         )
 
+    def _seek_processing_position(
+        self,
+        context: TextContext,
+        target_position: int,
+    ) -> None:
+        EAGLESpeculativeDecodingPipeline._seek_processing_position(
+            self,  # type: ignore[arg-type]
+            context,
+            target_position,
+        )
+
     def prepare_draft_batch(
         self,
         batch: list[TextContext],
-        needs_ce: bool,
         num_steps: int = 3,
         return_n_logits: int = 1,
     ) -> None:
@@ -107,7 +119,6 @@ class EAGLEIndexTracker:
             num_steps=num_steps,
             return_n_logits=return_n_logits,
             hidden_states=None,  # type: ignore[arg-type]
-            needs_ce=needs_ce,
         )
 
 
@@ -167,7 +178,7 @@ def setup_single_context() -> tuple[TextContext, EAGLEIndexTracker]:
 
 def setup_post_target_context() -> tuple[TextContext, EAGLEIndexTracker]:
     """Same as setup_single_context but without draft_kv_start_idx set
-    (for needs_ce=True tests)."""
+    (simulates first draft call for a new request)."""
     ctx = make_context([10, 11, 12, 13])
     ctx.update(50)
     tracker = EAGLEIndexTracker()
@@ -350,15 +361,15 @@ class TestMetrics:
 
 
 class TestPrepareDraftBatchFullCycle:
-    """End-to-end: target → prepare_draft(ce) → update(all accepted) →
-    prepare_draft(no ce) → update(partial). Covers needs_ce=True,
-    needs_ce=False after all-accepted, and needs_ce=False after partial."""
+    """End-to-end: target → prepare_draft(new) → update(all accepted) →
+    prepare_draft(existing) → update(partial). Covers new request,
+    existing request after all-accepted, and after partial."""
 
     def test_two_iterations(self) -> None:
         ctx, tracker = setup_post_target_context()
 
-        # --- prepare_draft_batch(needs_ce=True) ---
-        tracker.prepare_draft_batch(batch=[ctx], needs_ce=True)
+        # --- prepare_draft_batch (new request, not in _draft_kv_start_idx) ---
+        tracker.prepare_draft_batch(batch=[ctx])
         assert_state(ctx, processed=4, active=1, position=5, generated=1)
         assert tracker._draft_kv_start_idx[ctx.request_id] == 4
 
@@ -374,8 +385,8 @@ class TestPrepareDraftBatchFullCycle:
         assert_state(ctx, processed=8, active=4, position=12, generated=5)
         assert tracker._draft_kv_start_idx[ctx.request_id] == 4
 
-        # --- prepare_draft_batch(needs_ce=False) ---
-        tracker.prepare_draft_batch(batch=[ctx], needs_ce=False)
+        # --- prepare_draft_batch (existing request) ---
+        tracker.prepare_draft_batch(batch=[ctx])
         assert_state(ctx, processed=8, active=1, position=9, generated=5)
         assert tracker._draft_kv_start_idx[ctx.request_id] == 8
 
@@ -395,7 +406,7 @@ class TestPrepareDraftBatchFullCycle:
 
 class TestPrepareDraftBatchMixedBatch:
     """Two contexts with different rejection histories go through
-    _prepare_draft_batch(needs_ce=False) together."""
+    _prepare_draft_batch together."""
 
     def test_two_contexts_different_kv_idx(self) -> None:
         ctx0, _ = setup_single_context()
@@ -424,7 +435,7 @@ class TestPrepareDraftBatchMixedBatch:
             num_draft_tokens_generated=3,
         )
 
-        tracker.prepare_draft_batch(batch=[ctx0, ctx1], needs_ce=False)
+        tracker.prepare_draft_batch(batch=[ctx0, ctx1])
 
         # ctx0: kv_idx += active(4) → 8, offset reset → active=1
         assert_state(ctx0, processed=8, active=1, position=9, generated=5)

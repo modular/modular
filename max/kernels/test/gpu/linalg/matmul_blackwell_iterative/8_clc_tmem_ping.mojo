@@ -56,6 +56,7 @@ from layout import (
     LayoutTensor,
     RuntimeTuple,
 )
+from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
@@ -336,8 +337,7 @@ fn stsm_helper[
     var stsm_lane_offset = (lane & 15) * UInt(stride0) + (lane >> 4) * 8
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
-    @parameter
-    for i in range(shape0 // stsmx4_row_size):
+    comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_row_size
         var offset = swizzle(Int(stsm_lane_offset + UInt(n_offset)))
         var v = vec.slice[
@@ -426,8 +426,7 @@ fn multi_stage_store_C[
     # this is the column offset for all the stages of THIS load, where one load takes (num_stages iterations)
     var tmem_offset = index * UInt32(stage_stride_cols) + tmem_addr
 
-    @parameter
-    for stage in range(num_stages):
+    comptime for stage in range(num_stages):
         # column offset, moving right by 32 columns each time, since each num_stage stores two, 16 column submatrices
         # MMA has result in 32 rows per warp's data paths.
         # upper_frag is for rows 0-15, lower is for 16-31.
@@ -450,8 +449,7 @@ fn multi_stage_store_C[
 
         tcgen05_load_wait()
 
-        @parameter
-        if stage == num_stages - 1:
+        comptime if stage == num_stages - 1:
             umma_arrive_leader_cta(accum_empty_mbar + index)
 
         # Assume double-buffer for shared memory packing
@@ -482,15 +480,13 @@ fn multi_stage_store_C[
             # c_tma_op.wait_group[0]()
 
             # Keep one tma store in fly
-            @parameter
-            if stage < num_stages - 1:
+            comptime if stage < num_stages - 1:
                 c_tma_op.wait_group[1]()
             # Last stage guard all tma store to finish
             else:
                 c_tma_op.wait_group[0]()
 
-        @parameter
-        if stage > 0 and stage < num_stages - 1:
+        comptime if stage > 0 and stage < num_stages - 1:
             # Guard the tma read from shared memory is done.
             # E.g. stage = 1, this guards the TMA store using buffer 0 is done.
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
@@ -686,23 +682,20 @@ fn kernel_8[
         b_tma_op.prefetch_descriptor()
         c_tma_op.prefetch_descriptor()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
                 cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
             )
 
-        @parameter
-        for i in range(num_accum_pipeline_stages):
+        comptime for i in range(num_accum_pipeline_stages):
             accum_full_mbar[i].init(accum_pipeline_producer_arv_count)
             accum_empty_mbar[i].init(Int32(accum_pipeline_consumer_arv_count))
 
         tmem_dealloc_mbar[].init(Int32(EPILOGUE_THREADS * cta_group))
 
-    @parameter
-    for i in range(num_clc_pipeline_stages):
+    comptime for i in range(num_clc_pipeline_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
         clc_empty_mbar[i].init(clc_consumer_arv_count)
         clc_throttle_full_mbar[i].init(Int32(clc_throttle_producer_arv_count))
@@ -773,13 +766,11 @@ fn kernel_8[
     var b_multicast_mask: UInt16 = 0x0
 
     # TODO: find a generic way to calculate multicast mask
-    @parameter
-    for i in range(CLUSTER_N):
+    comptime for i in range(CLUSTER_N):
         a_multicast_mask |= UInt16(1 << (i * CLUSTER_M))
     # they all have the same v and m, but different n,
 
-    @parameter
-    for i in range(CLUSTER_M // cta_group):
+    comptime for i in range(CLUSTER_M // cta_group):
         b_multicast_mask |= UInt16(1 << (i * cta_group))
 
     a_multicast_mask <<= UInt16(rank_m)
@@ -834,8 +825,7 @@ fn kernel_8[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-        @parameter
-        for i in range(num_pipeline_stages):
+        comptime for i in range(num_pipeline_stages):
             mma_mbar[producer_phase.index()].wait(producer_phase.phase())
             producer_phase.step()
 
@@ -865,8 +855,7 @@ fn kernel_8[
             clc_pipe_consumer_state.step()
 
         # make sure all pipes are empty before kernel exit
-        @parameter
-        for i in range(num_clc_pipeline_stages):
+        comptime for i in range(num_clc_pipeline_stages):
             clc_empty_mbar[clc_pipe_producer_state.index()].wait(
                 clc_pipe_producer_state.phase()
             )
@@ -1197,10 +1186,10 @@ def test_blackwell_kernel_8[
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host = LayoutTensor[c_type, c_layout](c_host_ptr)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host_ref = LayoutTensor[c_type, c_layout](c_host_ref_ptr)
+    var c_host_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host = c_host_managed.tensor[update=False]()
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host_ref = c_host_ref_managed.tensor[update=False]()
 
     # Device memory allocation
     var a_device = ctx.enqueue_create_buffer[a_type](M * K)
@@ -1228,8 +1217,8 @@ def test_blackwell_kernel_8[
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device, c_host_ptr)
-    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
+    ctx.enqueue_copy(c_device, c_host.ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref.ptr)
 
     blackwell_kernel_8[
         transpose_b=transpose_b,
@@ -1246,8 +1235,7 @@ def test_blackwell_kernel_8[
         ctx,
     )
 
-    @parameter
-    if benchmark:
+    comptime if benchmark:
         comptime num_runs = 10000
         comptime num_warmup = 100
 
@@ -1305,14 +1293,14 @@ def test_blackwell_kernel_8[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host_ptr, c_device)
-        ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+        ctx.enqueue_copy(c_host.ptr, c_device)
+        ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
         ctx.synchronize()
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host_ptr,
-            c_host_ref_ptr,
+            c_host.ptr,
+            c_host_ref.ptr,
             M * N,
             atol=0.0001,
             rtol=rtol,
@@ -1321,12 +1309,6 @@ def test_blackwell_kernel_8[
 
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 fn get_dic_of_shapes(
@@ -1348,8 +1330,7 @@ fn make_dic_of_shapes() -> (
 
 
 fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
-    @parameter
-    for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+    comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
         print("Benchmarking blackwell_matmul_tma_umma_kernel")
         print("============================================")
         print("dtype, M, N, K, time(ms), TFLOPS")
@@ -1364,8 +1345,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
         comptime c_type = DType.bfloat16
         comptime dic_of_shapes = make_dic_of_shapes()
 
-        @parameter
-        for i in range(len(dic_of_shapes)):
+        comptime for i in range(len(dic_of_shapes)):
             comptime shape = get_dic_of_shapes(i, dic_of_shapes)
             try:
                 test_blackwell_kernel_8[

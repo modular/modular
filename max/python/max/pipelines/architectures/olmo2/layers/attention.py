@@ -20,21 +20,22 @@ from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.legacy.kernels import (
+from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
+    uses_opaque,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.layer import Module
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import RotaryEmbedding
 
 
 class Olmo2Attention(Module):
@@ -93,7 +94,7 @@ class Olmo2Attention(Module):
 
         self.qk_norm_eps = rms_norm_eps
 
-        if not self.kv_params.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_params.cache_strategy):
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy, not supported"
                 " in Attention layer."

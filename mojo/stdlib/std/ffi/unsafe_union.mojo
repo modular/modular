@@ -44,11 +44,8 @@ fn _all_types_unique[*Ts: AnyType]() -> Bool:
     Returns True if no type appears more than once, False otherwise.
     """
 
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        for j in range(i + 1, Variadic.size(Ts)):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime for j in range(i + 1, Variadic.size(Ts)):
             if _type_is_eq[Ts[i], Ts[j]]():
                 return False
     return True
@@ -57,11 +54,8 @@ fn _all_types_unique[*Ts: AnyType]() -> Bool:
 fn _all_trivial_del[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial destructors."""
 
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], ImplicitlyDestructible):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
         else:
@@ -72,12 +66,9 @@ fn _all_trivial_del[*Ts: AnyType]() -> Bool:
 fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial copy constructors."""
 
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copyinit__is_trivial:
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Copyable):
+            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
                 return False
         else:
             return False
@@ -87,12 +78,9 @@ fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
     """Check if all types have trivial move constructors."""
 
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__moveinit__is_trivial:
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Movable):
+            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
                 return False
         else:
             return False
@@ -188,8 +176,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # Union uses bitwise copy/move and has no destructor, so all operations
     # are trivial regardless of element types.
     comptime __del__is_trivial = True
-    comptime __copyinit__is_trivial = True
-    comptime __moveinit__is_trivial = True
+    comptime __copy_ctor_is_trivial = True
+    comptime __move_ctor_is_trivial = True
 
     # Use pop.union directly for C-compatible memory layout
     comptime _union_type = __mlir_type[
@@ -236,7 +224,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         ](), "type is not a union element type"
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a bitwise copy of the union.
 
         Args:
@@ -246,7 +234,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._storage = copy._storage
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Move initializer for the union.
 
         Args:
@@ -280,7 +268,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn unsafe_get_ref[T: AnyType](ref self) -> ref[self] T:
+    @always_inline("nodebug")
+    fn unsafe_get[T: AnyType](ref self) -> ref[self] T:
         """Get a reference to the stored value as type T.
 
         Parameters:
@@ -297,7 +286,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
         ```mojo
         var u = UnsafeUnion[Int32, Float32](Int32(42))
-        ref val = u.unsafe_get_ref[Int32]()
+        ref val = u.unsafe_get[Int32]()
         print(val)  # => 42
         ```
         """
@@ -338,32 +327,6 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
-
-    @always_inline("nodebug")
-    fn unsafe_get[T: ImplicitlyCopyable](self) -> T:
-        """Get a copy of the stored value interpreted as type T.
-
-        Parameters:
-            T: The type to interpret the stored value as. Must be one of the
-                union's element types and must be `ImplicitlyCopyable`.
-
-        Returns:
-            A copy of the storage interpreted as type T.
-
-        Safety:
-            Reading as the wrong type is undefined behavior.
-
-        Example:
-
-        ```mojo
-        var u = UnsafeUnion[Int32, Float32](Int32(42))
-        var val = u.unsafe_get[Int32]()  # => 42
-        ```
-        """
-        comptime assert Self._is_element[
-            T
-        ](), "type is not a union element type"
-        return self._get_ptr[T]()[]
 
     @always_inline("nodebug")
     fn unsafe_take[T: Movable](mut self) -> T:

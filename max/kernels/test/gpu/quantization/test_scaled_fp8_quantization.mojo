@@ -187,8 +187,8 @@ fn test_dynamic_fp8_quant[
     quantize_dynamic_scaled_fp8[
         input_fn, group_size_or_per_token, in_ndbuffer.shape.get[1]()
     ](
-        out_ndbuffer,
-        scales_ndbuffer,
+        out_ndbuffer.make_dims_unknown(),
+        scales_ndbuffer.make_dims_unknown(),
         1200.0,
         ctx,
         in_ndbuffer.dim[0](),
@@ -209,8 +209,7 @@ fn test_dynamic_fp8_quant[
 
             var scale_factor: Scalar[scales_dtype]
 
-            @parameter
-            if scales_dtype == DType.float8_e8m0fnu:
+            comptime if scales_dtype == DType.float8_e8m0fnu:
                 scale_factor = max(
                     group_max.cast[accum_dtype]()
                     / Scalar[out_dtype].MAX_FINITE.cast[accum_dtype](),
@@ -339,7 +338,14 @@ fn test_batched_dynamic_fp8_quant[
         input_fn=input_fn,
         group_size_or_per_token=group_size_or_per_token,
         num_cols = in_ndbuffer.shape.get[2](),
-    ](out_ndbuffer, scales_ndbuffer, 1200.0, ctx, num_rows=m, batch_size=bs)
+    ](
+        out_ndbuffer.make_dims_unknown(),
+        scales_ndbuffer.make_dims_unknown(),
+        1200.0,
+        ctx,
+        num_rows=m,
+        batch_size=bs,
+    )
 
     ctx.enqueue_copy(out_host_ptr, out_device)
     ctx.enqueue_copy(scales_host_ptr, scales_device)
@@ -534,8 +540,7 @@ def main():
         ](ctx, 128, 1024, 544)
 
         # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             test_dynamic_fp8_quant[
                 DType.float8_e4m3fn,
                 DType.bfloat16,

@@ -80,29 +80,24 @@ fn mma_rdna[
         a_tile: A operand register buffer.
         b_tile: B operand buffer (loaded to shared memory).
     """
-    constrained[b_buffer_type._num_stages == 2, "b_tile.num_stages must be 2"]()
+    comptime assert (
+        b_buffer_type._num_stages == 2
+    ), "b_tile.num_stages must be 2"
 
     # For RDNA, group_size is always 1, so num_k_mmas2 is simpler
     comptime num_k_mmas2 = ceildiv(
         BK, tensor_core_mma.shape[2] * tensor_core_mma.group_size
     )
 
-    @parameter
-    if not prefetched_b_tile:
+    comptime if not prefetched_b_tile:
         b_tile.load_from_dram()
 
-    @parameter
-    for i in range(beg_iter, beg_iter + num_iters):
-
-        @parameter
-        if i < beg_iter + num_iters - 1:
+    comptime for i in range(beg_iter, beg_iter + num_iters):
+        comptime if i < beg_iter + num_iters - 1:
             b_tile.load_from_dram()
 
-            @parameter
-            if i == beg_iter + num_iters - 2:
-
-                @parameter
-                if prefetch_function:
+            comptime if i == beg_iter + num_iters - 2:
+                comptime if prefetch_function:
                     comptime prefetch_func = prefetch_function.value()
                     prefetch_func()
 
@@ -114,8 +109,7 @@ fn mma_rdna[
 
         barrier()
 
-        @parameter
-        for k_mma in range(num_k_mmas2):
+        comptime for k_mma in range(num_k_mmas2):
             var a_reg_tile = a_tile.get_mma_tile[i, k_mma]()
 
             b_tile.load_from_shared[k_mma,]()
@@ -133,11 +127,8 @@ fn mma_rdna[
             comptime num_m_mmas = a_vec.shape[0]()
             comptime num_n_mmas = b_vec.shape[0]()
 
-            @parameter
-            for m_mma in range(num_m_mmas):
-
-                @parameter
-                for n_mma in range(num_n_mmas):
+            comptime for m_mma in range(num_m_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     # C register indexing: n_mma * num_m_mmas + m_mma
                     # regardless of swap_a_b. The swap only changes which
                     # operand goes to which MMA argument position.
@@ -145,8 +136,7 @@ fn mma_rdna[
                         IntTuple(m_mma, n_mma)
                     )
 
-                    @parameter
-                    if swap_a_b:
+                    comptime if swap_a_b:
                         _mma_intrinsic(
                             c_vec[c_idx, 0],
                             b_vec[n_mma, 0],

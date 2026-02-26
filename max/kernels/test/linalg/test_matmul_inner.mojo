@@ -60,8 +60,7 @@ fn _matmul_inner_loop[
 ):
     comptime kernel_id = select_inner_kernel[a.dtype, b_packed.dtype, c.dtype]()
 
-    @parameter
-    if kernel_id == InnerKernelID.DEFAULT:
+    comptime if kernel_id == InnerKernelID.DEFAULT:
         Inner_matmul_default().__inner_matmul__[
             kernel_rows, kernel_cols, simd_size
         ](
@@ -110,7 +109,7 @@ fn _matmul_inner_loop[
             skip_boundary_check,
         )
     else:
-        constrained[False, "no _run_inner_loop implementation"]()
+        comptime assert False, "no _run_inner_loop implementation"
 
 
 fn matmul_inner_loop[

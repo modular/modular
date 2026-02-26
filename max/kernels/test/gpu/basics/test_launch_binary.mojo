@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""This test showcases how one can launch a precompile device binary from Mojo."""
+"""This test showcases how one can launch a precompiled device binary from Mojo."""
 
 from gpu import *
 from gpu.host import DeviceContext

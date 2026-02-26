@@ -17,7 +17,7 @@ Expert Parallelism (EP) Communication Kernel.
 
 
 import compiler_internal as compiler
-from comm.sync import can_enable_p2p
+from comm.sync import is_p2p_enabled
 from gpu.primitives.grid_controls import pdl_launch_attributes
 from gpu.host import DeviceBuffer, get_gpu_target
 from gpu.host.info import is_gpu
@@ -27,7 +27,7 @@ from collections import OptionalReg
 
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from sys.info import align_of, simd_width_of, size_of
+from sys.info import align_of, simd_width_of, size_of, has_amd_gpu_accelerator
 from tensor import InputTensor, OutputTensor
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
@@ -37,7 +37,8 @@ from tensor.managed_tensor_slice import (
 )
 
 from shmem import (
-    shmem_init_thread,
+    shmem_init_thread_mpi,
+    shmem_init_thread_tcp,
     shmem_malloc,
     shmem_my_pe,
 )
@@ -133,8 +134,7 @@ struct Struct_ep_init:
         var dispatch_msg_size: Int
 
         # Infer message sizes for dispatch phases
-        @parameter
-        if dispatch_fmt_str == "BlockwiseFP8":
+        comptime if dispatch_fmt_str == "BlockwiseFP8":
             comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
@@ -213,10 +213,13 @@ struct Struct_ep_init:
         var combine_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
         var combine_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
-        @parameter
-        if n_nodes > 1:
+        comptime if n_nodes > 1:
             # Initialize the SHMEM library for this GPU
-            shmem_init_thread(gpu_ctx, n_gpus_per_node)
+            @parameter
+            if has_amd_gpu_accelerator():
+                shmem_init_thread_tcp(gpu_ctx, gpus_per_node=n_gpus_per_node)
+            else:
+                shmem_init_thread_mpi(gpu_ctx, gpus_per_node=n_gpus_per_node)
 
             # Allocate SHMEM buffers for dispatch phase
             dispatch_send_p = shmem_malloc[DType.uint8](
@@ -233,7 +236,7 @@ struct Struct_ep_init:
             combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
 
         else:
-            if not can_enable_p2p():
+            if not is_p2p_enabled():
                 raise Error("P2P is not supported on this system.")
             dispatch_send_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
                 dispatch_send_size
@@ -280,8 +283,7 @@ struct Struct_ep_init:
         # Store current device's rank
         var my_rank: Int32
 
-        @parameter
-        if n_nodes > 1:
+        comptime if n_nodes > 1:
             my_rank = Int32(shmem_my_pe())
         else:
             my_rank = Int32(gpu_ctx.id())
@@ -322,8 +324,7 @@ struct Struct_ep_dispatch_async:
         transferred in either Blockwise FP8 or BF16 format.
         """
 
-        @parameter
-        if dispatch_fmt_str == "BlockwiseFP8":
+        comptime if dispatch_fmt_str == "BlockwiseFP8":
             comptime token_fmt_type = BlockwiseFP8TokenFormat[
                 fp8_dtype=dispatch_dtype,
                 scales_dtype = DType.float32,

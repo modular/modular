@@ -59,8 +59,7 @@ fn memcpy_or_fuse[
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:
-    @parameter
-    if not epilogue_fn:
+    comptime if not epilogue_fn:
         memcpy(dest=dest_data + out_byte_offset, src=src_data, count=n)
     else:
         comptime func = epilogue_fn.value()
@@ -414,8 +413,7 @@ fn _check_input_consistency[
     //,
     dtype: DType,
 ](axis: Int, inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],):
-    @parameter
-    if not is_debug_build():
+    comptime if not is_debug_build():
         return
     # check inputs have same rank and same dims except for axis dim
     for i in range(len(inputs)):
@@ -503,8 +501,7 @@ fn _concat_small[
                 comptime assert coord.flat_rank == input.flat_rank
                 var load = input.load[width=simd_width](coord)
 
-                @parameter
-                if epilogue_fn:
+                comptime if epilogue_fn:
                     comptime func = epilogue_fn.value()
                     func[dtype, rank, simd_width](out_index, load)
                 else:
@@ -557,8 +554,7 @@ fn _concat_cpu[
     axis: Int,
     inputs: List[TileTensor[dtype, InputLayoutType, input_origin]],
 ) raises:
-    @parameter
-    if single_thread_blocking_override:
+    comptime if single_thread_blocking_override:
         return _concat_small[dtype, epilogue_fn](output, axis, inputs)
 
     _check_input_consistency[dtype](axis, inputs)
@@ -674,9 +670,7 @@ fn concat[
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(context)
     ):
-
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             var inputVec = List[
                 TileTensor[dtype, InputLayoutType, input_origin]
             ](capacity=len(inputs))
@@ -729,15 +723,13 @@ fn _concat_inner_most_single_dim[
     var in_coord = Coord(index)
     comptime assert in_coord.flat_rank == inputs.element_type.flat_rank
 
-    @parameter
-    for i in range(num_inputs):
+    comptime for i in range(num_inputs):
         var out_index = rebind[IndexList[output.rank]](index.canonicalize())
         out_index[output.rank - 1] = i
         var out_coord = Coord(out_index)
         comptime assert out_coord.flat_rank == output.flat_rank
 
-        @parameter
-        if epilogue_fn:
+        comptime if epilogue_fn:
             comptime func = epilogue_fn.value()
             func[dtype, output.rank, 1](
                 out_index, inputs[i].load[width=1](in_coord)
@@ -766,8 +758,7 @@ fn _concat_gpu_elementwise[
     ctx: DeviceContext,
 ) raises:
     # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
-    @parameter
-    for i in range(output.rank):
+    comptime for i in range(output.rank):
         if i == axis:
             return _concat_gpu_elementwise[axis=i, epilogue_fn=epilogue_fn](
                 output, inputs, ctx
@@ -803,8 +794,7 @@ fn _concat_gpu_elementwise[
         var out_coord = Coord(out_index)
         comptime assert out_coord.flat_rank == output.flat_rank
 
-        @parameter
-        for i in range(num_inputs):
+        comptime for i in range(num_inputs):
             var input = inputs[i]
             var input_shape = coord_to_index_list(input.layout.shape_coord())
 
@@ -812,8 +802,7 @@ fn _concat_gpu_elementwise[
                 var in_coord = Coord(in_index)
                 comptime assert in_coord.flat_rank == input.flat_rank
 
-                @parameter
-                if epilogue_fn:
+                comptime if epilogue_fn:
                     comptime func = epilogue_fn.value()
                     func[dtype, _rank, simd_width](
                         out_index,
@@ -865,8 +854,7 @@ fn _concat_gpu[
     fn _concat_buffers_contiguously() raises:
         var input_size = 0
 
-        @parameter
-        for i in range(num_inputs):
+        comptime for i in range(num_inputs):
             # Skip empty inputs.
             if inputs[i].numel() > 0:
                 # TODO: Owning = True or False?
@@ -891,8 +879,7 @@ fn _concat_gpu[
 
     # If outer_dims are ones and it is not a fused kernel, use device-to-device
     # copies.
-    @parameter
-    if not epilogue_fn:
+    comptime if not epilogue_fn:
         if outer_dims == 1:
             return _concat_buffers_contiguously()
 
@@ -946,8 +933,7 @@ fn _fused_concat_cpu[
 ) raises:
     var offset = 0
 
-    @parameter
-    for i in range(input_shapes.size):
+    comptime for i in range(input_shapes.size):
         var input_shape = input_shapes[i]
 
         @parameter
@@ -999,8 +985,7 @@ fn _fused_concat_inner_most_single_dim[
         idx, coord_to_index_list(output.layout.shape_coord())
     )
 
-    @parameter
-    for i in range(num_inputs):
+    comptime for i in range(num_inputs):
         var out_index = index
         out_index[rank - 1] = i
 
@@ -1037,8 +1022,7 @@ fn _fused_concat_gpu_elementwise[
         var in_index = out_index
         in_index[axis] = out_index[axis]
 
-        @parameter
-        for i in range(num_inputs):
+        comptime for i in range(num_inputs):
             var input_shape = input_shapes[i]
 
             if in_index[axis] < input_shape[axis]:
@@ -1113,8 +1097,7 @@ fn _fused_concat_gpu[
             )
 
     # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         if i == axis:
             return _fused_concat_gpu_elementwise[
                 i,
@@ -1147,9 +1130,7 @@ fn fused_concat[
     with Trace[TraceLevel.OP, target=target](
         "concat", task_id=get_safe_task_id(ctx)
     ):
-
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             return _fused_concat_cpu[
                 rank,
                 dtype,

@@ -24,14 +24,14 @@ from gpu.compute.mma import _str_iota  # TODO: move to a string module
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
 from memory import bitcast
 
-comptime check_blackwell_constraint = constrained[
-    _has_blackwell_tcgen05(),
-    (
+
+@always_inline("nodebug")
+fn check_blackwell_constraint():
+    """Compile-time constraint ensuring Blackwell hardware is targeted."""
+    comptime assert _has_blackwell_tcgen05(), (
         "The tcgen05 instructions are only applicable on nVidia Blackwell"
         " (sm_100a, sm_101a) hardware."
-    ),
-]
-"""Compile-time constraint ensuring Blackwell hardware is targeted."""
+    )
 
 
 struct TensorMemory(TrivialRegisterPassable):
@@ -234,8 +234,7 @@ fn tcgen05_ld[
         return UnsafePointer(to=r).bitcast[SIMD[dtype, width]]()[]
 
     # fmt: off
-    @parameter
-    if width == 1:
+    comptime if width == 1:
         return call_ld_intrinsic[UInt32]()
     elif width == 2:
         return call_ld_intrinsic[
@@ -296,8 +295,7 @@ fn tcgen05_ld[
             ]
         ]()
     else:
-        constrained[False, "width must be a power of 2 in the range [1, 128]."]()
-        abort()
+        comptime assert False, "width must be a power of 2 in the range [1, 128]."
     # fmt: on
 
 
@@ -387,8 +385,7 @@ fn tcgen05_st[
     )
 
     # fmt: off
-    @parameter
-    if width == 1:
+    comptime if width == 1:
         inlined_assembly[asm_str, NoneType, constraints=constraints_str, has_side_effect=True](
             data[0],
             tmem_addr)

@@ -241,17 +241,13 @@ def main():
 
     # Test functional behavior
     with DeviceContext() as ctx:
-
-        @parameter
-        for width in [1, 2, 4, 8]:
+        comptime for width in [1, 2, 4, 8]:
             test_buffer[DType.bfloat16, width](ctx)
 
-        @parameter
-        for width in [1, 2, 4, 8, 16]:
+        comptime for width in [1, 2, 4, 8, 16]:
             test_buffer[DType.int8, width](ctx)
 
         test_buffer_lds[DType.float32, 1](ctx)
 
-        @parameter
-        if ctx.default_device_info == MI355X:
+        comptime if ctx.default_device_info == MI355X:
             test_buffer_lds[DType.bfloat16, 8](ctx)

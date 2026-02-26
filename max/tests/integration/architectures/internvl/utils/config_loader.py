@@ -25,14 +25,13 @@ from internvl_impl.configuration_intern_vit import (
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights.weights import WeightData
-from max.nn.legacy import ReturnLogits
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.architectures.internvl.model_config import (
     InternVLConfig,
     VisionConfig,
 )
-from max.pipelines.architectures.llama3_legacy.model_config import (
-    DistributedGemmConfig,
+from max.pipelines.architectures.llama3.model_config import (
     Llama3Config,
 )
 
@@ -110,7 +109,7 @@ class ConfigLoader:
             // llm_config["num_attention_heads"],
             num_layers=llm_config["num_hidden_layers"],
             page_size=16,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             enable_prefix_caching=False,
             enable_kvcache_swapping_to_host=False,
             host_kvcache_swap_space_gb=0,
@@ -146,7 +145,6 @@ class ConfigLoader:
             devices=[DeviceRef.GPU()],
             clip_qkv=None,
             float8_config=None,
-            dist_gemm_config=DistributedGemmConfig.generate(),
         )
 
     def create_internvl_config(

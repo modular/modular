@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Buffer as Buffer
+from max._core.driver import DevicePinnedBuffer as DevicePinnedBuffer
 from max.dtype import DType
 
 from .driver import CPU
@@ -71,6 +72,9 @@ def inplace_copy_from(self: Buffer, src: Buffer) -> None:
     These buffers may be on different devices.
     Requires that both buffers are contiguous and have same size.
     """
+    if self is src:
+        return
+
     # check that both buffers are contiguous
     if not self.is_contiguous:
         raise ValueError("Cannot copy from non-contiguous buffer")

@@ -145,8 +145,7 @@ fn memcmp[
     """
     var byte_count = count * size_of[type]()
 
-    @parameter
-    if size_of[type]() % size_of[DType.int32]() == 0:
+    comptime if size_of[type]() % size_of[DType.int32]() == 0:
         return _memcmp_impl(
             s1.bitcast[Int32](),
             s2.bitcast[Int32](),
@@ -178,8 +177,7 @@ fn _memcpy_impl(
     fn copy[width: Int](offset: Int) unified {mut}:
         dest_data.store(offset, src_data.load[width=width](offset))
 
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         vectorize[simd_bit_width()](n, copy)
 
         return
@@ -235,23 +233,6 @@ fn _memcpy_impl(
     vectorize[32](n, copy)
 
 
-@doc_private
-@always_inline
-@deprecated(
-    "`memcpy` without keyword arguments is deprecated. Please use the"
-    " keyword-only arguments version instead."
-)
-fn memcpy[
-    T: AnyType,
-    __disambiguate: NoneType = None,
-](
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=False, T],
-    count: Int,
-):
-    memcpy(dest=dest, src=src, count=count)
-
-
 @always_inline
 fn memcpy[
     T: AnyType
@@ -261,7 +242,10 @@ fn memcpy[
     src: UnsafePointer[mut=False, T],
     count: Int,
 ):
-    """Copies a memory area.
+    """Copy `count * size_of[T]()` bytes from src to dest.
+
+    The dest and src memory must **not** overlap. For potentially
+    overlapping memory regions, use `memmove`.
 
     Parameters:
         T: The element type.
@@ -281,6 +265,46 @@ fn memcpy[
         )
     else:
         _memcpy_impl(dest.bitcast[Byte](), src.bitcast[Byte](), n)
+
+
+# ===-----------------------------------------------------------------------===#
+# memmove
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn memmove[
+    T: AnyType
+](
+    *,
+    dest: UnsafePointer[mut=True, T],
+    src: UnsafePointer[mut=False, T],
+    count: Int,
+):
+    """Copy `count * size_of[T]()` bytes from src to dest.
+
+    Unlike `memcpy`, the memory regions are allowed to overlap.
+
+    Parameters:
+        T: The element type.
+
+    Args:
+        dest: The destination pointer.
+        src: The source pointer.
+        count: The number of elements to copy.
+    """
+    var n = count * size_of[T]()
+    if is_compile_time():
+        for i in range(n):
+            (dest.bitcast[Byte]() + i).store((src.bitcast[Byte]() + i).load())
+    else:
+        llvm_intrinsic["llvm.memmove", NoneType](
+            # <dest>, <src>, <len>, <isvolatile>
+            dest.bitcast[Byte](),
+            src.bitcast[Byte](),
+            n,
+            False,
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -341,8 +365,7 @@ fn memset_zero[
         ptr: UnsafePointer to the beginning of the memory block to fill.
     """
 
-    @parameter
-    if count > 128:
+    comptime if count > 128:
         return memset_zero(ptr, count)
 
     fn fill[width: Int](offset: Int) unified {mut}:
@@ -411,14 +434,12 @@ fn stack_allocation[
         A data pointer of the given type pointing to the allocated space.
     """
 
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         # On NVGPU, SHARED and CONSTANT address spaces lower to global memory.
 
         comptime global_name = name.value() if name else "_global_alloc"
 
-        @parameter
-        if address_space == AddressSpace.SHARED:
+        comptime if address_space == AddressSpace.SHARED:
             return __mlir_op.`pop.global_alloc`[
                 name = _get_kgen_string[global_name](),
                 count = count._mlir_value,
@@ -486,8 +507,7 @@ fn _malloc[
         address_space = AddressSpace.GENERIC,
     ],
 ):
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         comptime enable_gpu_malloc = env_get_string[
             "ENABLE_GPU_MALLOC", "true"
         ]()
@@ -517,8 +537,172 @@ fn _malloc[
 
 @always_inline
 fn _free(ptr: UnsafePointer[mut=True, ...]):
-    @parameter
-    if is_gpu():
+    comptime if is_gpu():
         libc.free(ptr.bitcast[NoneType]())
     else:
         __mlir_op.`pop.aligned_free`(ptr.address)
+
+
+# ===-----------------------------------------------------------------------===#
+# Uninitialized Memory Ops
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn uninit_move_n[
+    T: Movable,
+    //,
+    *,
+    overlapping: Bool,
+](
+    *,
+    dest: UnsafePointer[mut=True, T],
+    src: UnsafePointer[mut=True, T],
+    count: Int,
+):
+    """Move `count` values from `src` into memory at `dest`.
+
+    This function transfers ownership of `count` values from the source memory
+    to the destination memory. After this call, the source values should be
+    treated as uninitialized, and the destination values are valid and
+    initialized.
+
+    For types with trivial move constructors, this is optimized to a single
+    `memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise, it
+    manually moves each element.
+
+    The destination memory is treated as a raw span of bits to write to. Any
+    existing values at `dest` are silently overwritten without being destroyed.
+    For types with non-trivial destructors, this can cause memory leaks. Call
+    `destroy_n()` on the destination region first if it contains initialized
+    values that need cleanup. For trivial types like `Int`, this is not a
+    concern.
+
+    Parameters:
+        T: The type of values to move, which must be `Movable`.
+        overlapping: If False, the function assumes `src` and `dest` do not
+            overlap and uses `memcpy`. If True, the function assumes `src` and
+            `dest` may overlap and uses `memmove` to handle this safely.
+
+    Args:
+        dest: Pointer to the destination memory region.
+        src: Pointer to the source memory region. Must point to initialized
+            values.
+        count: The number of elements to move.
+
+    Safety:
+
+    - `dest` must point to a valid memory region with space for at least
+        `count` elements of type `T`.
+    - `src` must point to a valid memory region containing at least `count`
+        **initialized** elements of type `T`.
+    - If `overlapping=False`, the `src` and `dest` memory regions must **not**
+        overlap. Overlapping regions with `overlapping=False` is undefined
+        behavior.
+    """
+
+    comptime if T.__move_ctor_is_trivial:
+        comptime if overlapping:
+            memmove(dest=dest, src=src, count=count)
+        else:
+            memcpy(dest=dest, src=src, count=count)
+    else:
+        for i in range(count):
+            (dest + i).init_pointee_move_from(src + i)
+
+
+@always_inline
+fn uninit_copy_n[
+    T: Copyable,
+    //,
+    *,
+    overlapping: Bool,
+](
+    *,
+    dest: UnsafePointer[mut=True, T],
+    src: UnsafePointer[mut=False, T],
+    count: Int,
+):
+    """Copy `count` values from `src` into memory at `dest`.
+
+    This function creates copies of `count` values from the source memory in the
+    destination memory. After this call, both source and destination values are
+    valid and initialized.
+
+    For types with trivial copy constructors, this is optimized to a single
+    `memcpy` (or `memmove` when `overlapping=True`) operation. Otherwise, it
+    calls `init_pointee_copy()` on each element.
+
+    The destination memory is treated as a raw span of bits to write to. Any
+    existing values at `dest` are silently overwritten without being destroyed.
+    For types with non-trivial destructors, this can cause memory leaks. Call
+    `destroy_n()` on the destination region first if it contains initialized
+    values that need cleanup. For trivial types like `Int`, this is not a
+    concern.
+
+    Parameters:
+        T: The type of values to copy, which must be `Copyable`.
+        overlapping: If False, the function assumes `src` and `dest` do not
+            overlap and uses `memcpy`. If True, the function assumes `src` and
+            `dest` may overlap and uses `memmove` to handle this safely.
+
+    Args:
+        dest: Pointer to the destination memory region.
+        src: Pointer to the source memory region. Must point to initialized
+            values.
+        count: The number of elements to copy.
+
+    Safety:
+
+    - `dest` must point to a valid memory region with space for at least
+        `count` elements of type `T`.
+    - `src` must point to a valid memory region containing at least `count`
+        **initialized** elements of type `T`.
+    - If `overlapping=False`, the `src` and `dest` memory regions must **not**
+        overlap. Overlapping regions with `overlapping=False` is undefined
+        behavior.
+    """
+
+    comptime if T.__copy_ctor_is_trivial:
+        comptime if overlapping:
+            memmove(dest=dest, src=src, count=count)
+        else:
+            memcpy(dest=dest, src=src, count=count)
+    else:
+        for i in range(count):
+            (dest + i).init_pointee_copy((src + i)[])
+
+
+@always_inline
+fn destroy_n[
+    T: ImplicitlyDestructible
+](pointer: UnsafePointer[mut=True, T], count: Int):
+    """Destroy `count` initialized values at `pointer`.
+
+    This function runs the destructor for each of the `count` values, leaving
+    the memory uninitialized.
+
+    For types with trivial destructors, this is a no-op and generates no code.
+    Otherwise, it calls `destroy_pointee()` on each element.
+
+    Parameters:
+        T: The type of values to destroy, which must be `ImplicitlyDestructible`.
+
+    Args:
+        pointer: Pointer to the memory region containing values to destroy.
+        count: The number of elements to destroy.
+
+    Safety:
+
+    - `pointer` must point to a valid memory region containing at least `count`
+        **initialized** elements of type `T`.
+    - After this call, the values at `pointer[0:count]` are uninitialized and
+        must not be read or destroyed again until re-initialized.
+    """
+
+    comptime if T.__del__is_trivial:
+        # Trivial destructors don't need to be called!
+        pass
+    else:
+        for i in range(count):
+            (pointer + i).destroy_pointee()

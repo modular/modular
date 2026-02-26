@@ -766,19 +766,17 @@ struct BlackwellBlockScaledMatmulKernel[
     @staticmethod
     fn validate_config():
         """Validate configuration constraints at compile time."""
-        constrained[Self.transpose_b, "Only support transposed B"]()
-        constrained[
-            Self.sfa_dtype == Self.sfb_dtype,
-            "sfa_dtype and sfb_dtype must match",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
-        constrained[
-            Self.config.k_group_size == 1,
-            "Only support k_group_size == 1 for block-scaled",
-        ]()
+        comptime assert Self.transpose_b, "Only support transposed B"
+        comptime assert (
+            Self.sfa_dtype == Self.sfb_dtype
+        ), "sfa_dtype and sfb_dtype must match"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
+        comptime assert (
+            Self.config.k_group_size == 1
+        ), "Only support k_group_size == 1 for block-scaled"
 
     # ========== Kernel Entry Point ==========
 
@@ -880,8 +878,7 @@ struct BlackwellBlockScaledMatmulKernel[
             )
 
             # Initialize CLC barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages):
+            comptime for i in range(Self.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
@@ -912,9 +909,7 @@ struct BlackwellBlockScaledMatmulKernel[
         # ===== TMA LOAD WARP =====
         if WarpRole.is_main_load():
             with MatmulProfilerType[0](workspace, 0):
-
-                @parameter
-                if Self.pdl_level > PDLLevel.OFF:
+                comptime if Self.pdl_level > PDLLevel.OFF:
                     wait_on_dependent_grids()
 
                 with input_pipeline.producer() as producer:
@@ -952,17 +947,13 @@ struct BlackwellBlockScaledMatmulKernel[
 
         # ===== SCHEDULER WARP =====
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-
-            @parameter
-            if Self.num_clc_pipeline_stages == 0:
+            comptime if Self.num_clc_pipeline_stages == 0:
                 return
 
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
-
-                @parameter
-                if Self.pdl_level > PDLLevel.OFF:
+                comptime if Self.pdl_level > PDLLevel.OFF:
                     wait_on_dependent_grids()
 
                 while sched_iter.has_work():
@@ -1018,8 +1009,7 @@ struct BlackwellBlockScaledMatmulKernel[
                                                     0,
                                                 )
 
-                    @parameter
-                    if Self.pdl_level > PDLLevel.OFF:
+                    comptime if Self.pdl_level > PDLLevel.OFF:
                         launch_dependent_grids()
 
         # ===== EPILOGUE WARPS =====

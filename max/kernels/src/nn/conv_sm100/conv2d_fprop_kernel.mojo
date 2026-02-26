@@ -484,9 +484,7 @@ struct Conv2dFpropKernel[
         var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
 
         if elect_one_sync():
-
-            @parameter
-            for j in range(Self.config.k_group_size):
+            comptime for j in range(Self.config.k_group_size):
                 var act_tile, filter_tile = tiles.payload().get_tile[
                     Self.config.k_group_size
                 ](tiles.stage(), j)
@@ -551,8 +549,7 @@ struct Conv2dFpropKernel[
             )
 
             # Initialize CLC barriers
-            @parameter
-            for i in range(Self.config.num_clc_pipeline_stages):
+            comptime for i in range(Self.config.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
@@ -634,8 +631,7 @@ struct Conv2dFpropKernel[
 
             var barrier = tiles.barrier()
 
-            @parameter
-            for j in range(Self.config.k_group_size):
+            comptime for j in range(Self.config.k_group_size):
                 var act_tile, filter_tile = tiles.payload().get_tile[
                     Self.config.k_group_size
                 ](tiles.stage(), j)
@@ -907,9 +903,7 @@ struct Conv2dFpropKernel[
                 producer.drain()
 
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-
-            @parameter
-            if Self.config.num_clc_pipeline_stages == 0:
+            comptime if Self.config.num_clc_pipeline_stages == 0:
                 return
 
             var sched_iter = scheduler.scheduler_iterator()
@@ -927,8 +921,7 @@ struct Conv2dFpropKernel[
                 with work_iter.next() as current:
                     load_order_barrier.wait_and_step()
 
-                    @parameter
-                    if has_residual:
+                    comptime if has_residual:
                         # Produce C tile into SMEM via epi_load_pipeline
                         epi_load_pipeline.wait_consumer()
                         if elect_one_sync():
@@ -1001,9 +994,7 @@ struct Conv2dFpropKernel[
                 while work_iter.has_work():
                     with work_iter.next() as current:
                         with epi_ctx.output_pipeline.consumer() as output_stage:
-
-                            @parameter
-                            if has_residual:
+                            comptime if has_residual:
                                 # Wait for epilogue load warp to fill C tile
                                 epi_load_pipeline.wait_producer()
                                 var src_stage_idx = (

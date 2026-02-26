@@ -27,10 +27,11 @@ from max.interfaces import (
     SamplingParams,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import KVCacheStrategy, RaggedKVCacheInputs
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, SupportedEncoding
+from max.nn.kv_cache import RaggedKVCacheInputs
+from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
-from max.pipelines.lib.speculative_config import SpeculativeMethod
+from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -53,21 +54,28 @@ class SpeculativeDecodingSetup:
 
 
 @pytest.fixture(scope="function")
-def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
+def setup_speculative_decoding_pipeline(num_steps: int = 1):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
-        model_path=model_name,
-        quantization_encoding=SupportedEncoding.float32,
-        device_specs=[DeviceSpec.accelerator()],
-        draft_model_path=model_name,
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
+        model=MAXModelConfig(
+            model_path=model_name,
+            quantization_encoding="float32",
+            device_specs=[DeviceSpec.accelerator()],
+            max_length=1024,
+        ),
+        draft_model=MAXModelConfig(
+            model_path=model_name,
+            device_specs=[DeviceSpec.accelerator()],
+        ),
+        speculative=SpeculativeConfig(
+            speculative_method="standalone",
+            num_speculative_tokens=10,
+        ),
         max_batch_size=4,
         max_num_steps=num_steps,
-        max_length=1024,
     )
-    pipeline_config.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
@@ -112,7 +120,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     pipeline_request = {req_id1: context1, req_id2: context2}
     context_batch = [context1, context2]
 
-    target_kv_manager = pipeline.kv_managers[-1]
+    target_kv_manager = pipeline.kv_manager
     target_kv_manager.claim(req_id1, replica_idx=0)
     target_kv_manager.claim(req_id2, replica_idx=0)
     target_kv_manager.alloc(context1, replica_idx=0, num_steps=num_steps)
@@ -141,10 +149,14 @@ def test_config__validate_device_and_encoding_combinations(
 
     # Valid device/encoding combinations
     config = PipelineConfig(
-        model_path=smollm_135m_local_path,
-        quantization_encoding=SupportedEncoding.float32,
-        device_specs=[DeviceSpec.cpu()],
-        draft_model_path=smollm_135m_local_path,
+        model=MAXModelConfig(
+            model_path=smollm_135m_local_path,
+            quantization_encoding="float32",
+            device_specs=[DeviceSpec.cpu()],
+        ),
+        draft_model=MAXModelConfig(
+            model_path=smollm_135m_local_path,
+        ),
     )
 
 
@@ -166,10 +178,14 @@ def test_config__validate_target_and_draft_architecture(
         # Test that when the target & draft architectures are different
         # we raise an error.
         config = PipelineConfig(
-            model_path=smollm_135m_local_path,
-            device_specs=[DeviceSpec.accelerator()],
-            draft_model_path=gemma_3_1b_it_local_path,
-            draft_device_specs=[DeviceSpec.accelerator()],
+            model=MAXModelConfig(
+                model_path=smollm_135m_local_path,
+                device_specs=[DeviceSpec.accelerator()],
+            ),
+            draft_model=MAXModelConfig(
+                model_path=gemma_3_1b_it_local_path,
+                device_specs=[DeviceSpec.accelerator()],
+            ),
         )
 
     with pytest.raises(
@@ -179,16 +195,20 @@ def test_config__validate_target_and_draft_architecture(
         # Test that the target & draft architectures are the same,
         # but the tokenizers are different
         config = PipelineConfig(
-            model_path=deepseek_r1_distill_llama_8b_local_path,
-            quantization_encoding=SupportedEncoding.q6_k,
-            device_specs=[DeviceSpec.accelerator()],
-            weight_path=[
-                Path(
-                    lmstudio_deepseek_r1_distill_llama_8b_local_path,
-                    "DeepSeek-R1-Distill-Llama-8B-Q6_K.gguf",
-                )
-            ],
-            draft_model_path=smollm_135m_local_path,
+            model=MAXModelConfig(
+                model_path=deepseek_r1_distill_llama_8b_local_path,
+                quantization_encoding="q6_k",
+                device_specs=[DeviceSpec.accelerator()],
+                weight_path=[
+                    Path(
+                        lmstudio_deepseek_r1_distill_llama_8b_local_path,
+                        "DeepSeek-R1-Distill-Llama-8B-Q6_K.gguf",
+                    )
+                ],
+            ),
+            draft_model=MAXModelConfig(
+                model_path=smollm_135m_local_path,
+            ),
         )
 
 
@@ -203,25 +223,30 @@ def test_draft_model_encoding_selection() -> None:
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     # Test 1: When draft_model.quantization_encoding is specified explicitly
     pipeline_config = PipelineConfig(
-        model_path=model_name,
-        quantization_encoding=SupportedEncoding.float32,
-        device_specs=[DeviceSpec.accelerator()],
-        draft_model_path=model_name,
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
+        model=MAXModelConfig(
+            model_path=model_name,
+            quantization_encoding="float32",
+            device_specs=[DeviceSpec.accelerator()],
+            max_length=1024,
+        ),
+        draft_model=MAXModelConfig(
+            model_path=model_name,
+            device_specs=[DeviceSpec.accelerator()],
+        ),
+        speculative=SpeculativeConfig(
+            speculative_method="standalone",
+            num_speculative_tokens=10,
+        ),
         max_batch_size=4,
-        max_num_steps=5,
-        max_length=1024,
+        max_num_steps=1,
     )
-    pipeline_config.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
     # Set draft model quantization encoding explicitly
     assert pipeline_config.draft_model is not None
-    pipeline_config.draft_model.quantization_encoding = (
-        SupportedEncoding.float32
-    )
+    pipeline_config.draft_model.quantization_encoding = "float32"
 
     _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
     assert isinstance(pipeline, StandaloneSpeculativeDecodingPipeline)
@@ -229,17 +254,24 @@ def test_draft_model_encoding_selection() -> None:
     # Test 2: When draft_model.quantization_encoding is None (fallback to first supported)
     # This test verifies that the fallback mechanism works when no explicit encoding is set
     pipeline_config2 = PipelineConfig(
-        model_path=model_name,
-        quantization_encoding=SupportedEncoding.float32,
-        device_specs=[DeviceSpec.accelerator()],
-        draft_model_path=model_name,
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
+        model=MAXModelConfig(
+            model_path=model_name,
+            quantization_encoding="float32",
+            device_specs=[DeviceSpec.accelerator()],
+            max_length=1024,
+        ),
+        draft_model=MAXModelConfig(
+            model_path=model_name,
+            device_specs=[DeviceSpec.accelerator()],
+        ),
+        speculative=SpeculativeConfig(
+            speculative_method="standalone",
+            num_speculative_tokens=10,
+        ),
         max_batch_size=4,
-        max_num_steps=5,
-        max_length=1024,
+        max_num_steps=1,
     )
-    pipeline_config2.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config2.model.kv_cache.cache_strategy = "paged"
     pipeline_config2.model.kv_cache.kv_cache_page_size = 128
     pipeline_config2.model.kv_cache.device_memory_utilization = 0.3
 
@@ -263,17 +295,24 @@ def test_kv_cache_claiming_protocol() -> None:
 
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     pipeline_config = PipelineConfig(
-        model_path=model_name,
-        quantization_encoding=SupportedEncoding.float32,
-        device_specs=[DeviceSpec.accelerator()],
-        draft_model_path=model_name,
-        speculative_method=SpeculativeMethod.STANDALONE,
-        num_speculative_tokens=10,
+        model=MAXModelConfig(
+            model_path=model_name,
+            quantization_encoding="float32",
+            device_specs=[DeviceSpec.accelerator()],
+            max_length=1024,
+        ),
+        draft_model=MAXModelConfig(
+            model_path=model_name,
+            device_specs=[DeviceSpec.accelerator()],
+        ),
+        speculative=SpeculativeConfig(
+            speculative_method="standalone",
+            num_speculative_tokens=10,
+        ),
         max_batch_size=4,
-        max_num_steps=5,
-        max_length=1024,
+        max_num_steps=1,
     )
-    pipeline_config.model.kv_cache.cache_strategy = KVCacheStrategy.PAGED
+    pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
@@ -293,7 +332,7 @@ def test_kv_cache_claiming_protocol() -> None:
     # Mock the KV cache manager to track method calls
     mock_kv_manager = Mock()
     mock_kv_manager.contains.return_value = False  # Simulate new request
-    mock_kv_manager.get_runtime_inputs.return_value = []
+    mock_kv_manager.runtime_inputs.return_value = []
 
     # Track call order
     call_order: list[
@@ -303,21 +342,19 @@ def test_kv_cache_claiming_protocol() -> None:
     def track_claim(request_id: RequestID, replica_idx: int) -> None:
         call_order.append(("claim", request_id))
 
-    def track_get_runtime_inputs(
+    def track_runtime_inputs(
         batches: list[list[TextContext]], num_steps: int
     ) -> Sequence[RaggedKVCacheInputs]:
         request_ids = [ctx.request_id for batch in batches for ctx in batch]
-        call_order.append(("get_runtime_inputs", request_ids, num_steps))
+        call_order.append(("runtime_inputs", request_ids, num_steps))
         return []
 
     mock_kv_manager.claim.side_effect = track_claim
-    mock_kv_manager.get_runtime_inputs.side_effect = track_get_runtime_inputs
+    mock_kv_manager.runtime_inputs.side_effect = track_runtime_inputs
 
     # Replace the KV manager in both models
-    with patch.object(pipeline._draft_model, "kv_manager", mock_kv_manager):
-        with patch.object(
-            pipeline._target_model, "kv_manager", mock_kv_manager
-        ):
+    with patch.object(pipeline, "_draft_kv_manager", mock_kv_manager):
+        with patch.object(pipeline, "_target_kv_manager", mock_kv_manager):
             # Call prepare_batch for draft model
             pipeline.prepare_batch(
                 pipeline._draft_model,
@@ -328,7 +365,7 @@ def test_kv_cache_claiming_protocol() -> None:
                 is_draft=True,
             )
 
-            # Verify that claim was called before get_runtime_inputs
+            # Verify that claim was called before runtime_inputs
             assert len(call_order) >= 2, (
                 f"Expected at least 2 calls, got {len(call_order)}: {call_order}"
             )
@@ -342,12 +379,12 @@ def test_kv_cache_claiming_protocol() -> None:
                 f"claim should be called with request_id {context.request_id}, got {first_call[1]}"
             )
 
-            # Check that get_runtime_inputs was called after claim
-            get_runtime_inputs_calls = [
-                call for call in call_order if call[0] == "get_runtime_inputs"
+            # Check that runtime_inputs was called after claim
+            runtime_inputs_calls = [
+                call for call in call_order if call[0] == "runtime_inputs"
             ]
-            assert len(get_runtime_inputs_calls) > 0, (
-                "get_runtime_inputs should have been called"
+            assert len(runtime_inputs_calls) > 0, (
+                "runtime_inputs should have been called"
             )
 
             # Verify contains was called to check if request was already claimed

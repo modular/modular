@@ -19,14 +19,14 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
-from max import functional as F
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental import functional as F
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy import ReturnLogits
-from max.nn.legacy.kv_cache import (
+from max.nn import ReturnLogits
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
@@ -35,12 +35,10 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -69,7 +67,7 @@ class Olmo3Inputs(ModelInputs):
     """Number of logits to return."""
 
 
-class Olmo3Model(PipelineModel[TextContext], KVCacheMixin):
+class Olmo3Model(PipelineModelWithKVCache[TextContext]):
     """An Olmo3 pipeline model for text generation.
 
     This class integrates the Olmo3 architecture with the MAX Engine pipeline
@@ -81,8 +79,6 @@ class Olmo3Model(PipelineModel[TextContext], KVCacheMixin):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -93,10 +89,6 @@ class Olmo3Model(PipelineModel[TextContext], KVCacheMixin):
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
                 run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
@@ -110,8 +102,6 @@ class Olmo3Model(PipelineModel[TextContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -228,13 +218,11 @@ class Olmo3Model(PipelineModel[TextContext], KVCacheMixin):
             return_logits=self.return_logits,
         )
         with F.lazy():
-            nn_model = Olmo3(model_config, self.kv_manager)
+            nn_model = Olmo3(model_config, self.kv_params)
             nn_model.to(self.devices[0])
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         timer.mark_build_complete()
         compiled_model = nn_model.compile(

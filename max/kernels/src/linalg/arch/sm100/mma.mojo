@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from sys import size_of
+from math import align_up
 
 from gpu.primitives.cluster import cluster_mask_base
 from gpu.host._tensormap import SwizzleMode
@@ -73,8 +74,7 @@ fn max_contiguous_tile_shape[
 
     comptime assert rank == 2, "Only 2D tensors are supported!"
 
-    @parameter
-    if major == Major.K:
+    comptime if major == Major.K:
         # Tile shape is (MN, K), max K is based on swizzle.
         return IntTuple(tile_shape[0], swizzle_mode.bytes() // size_of[dtype]())
     elif major == Major.MN:
@@ -85,8 +85,7 @@ fn max_contiguous_tile_shape[
         # TODO: for MN = swizzle_bytes // sizeof,  tile_shape[0] may be the max
         return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
     else:
-        constrained[False, "Invalid major"]()
-        return IntTuple()
+        comptime assert False, "Invalid major"
 
 
 # TODO: add create method to mma_operand trait and unify this with
@@ -195,8 +194,7 @@ struct MmaOpSM100_SS[
         # Here we compute the mask inside mma object to hide the complexity.
         # We may get better asm if the mask if computed outside from TMA masks,
         # and passed to `commit`, need to verify.
-        @parameter
-        if product(Self.cluster_shape) > 1:
+        comptime if product(Self.cluster_shape) > 1:
             comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
             comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
 
@@ -217,8 +215,7 @@ struct MmaOpSM100_SS[
             #             x x x x
             #             o x o o
             #             o x o o
-            @parameter
-            if Self.cta_group == 2:
+            comptime if Self.cta_group == 2:
                 self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
     @always_inline
@@ -253,8 +250,7 @@ struct MmaOpSM100_SS[
         var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
 
-        @parameter
-        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
                 Self.a_type
             ]()
@@ -359,8 +355,7 @@ struct MmaOpSM100_SS[
         var a_desc = _create_mma_desc[a_canonical_layout, Self.a_swizzle](a.ptr)
         var b_desc = _create_mma_desc[b_canonical_layout, Self.b_swizzle](b.ptr)
 
-        @parameter
-        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
                 Self.a_type
             ]()
@@ -385,8 +380,7 @@ struct MmaOpSM100_SS[
         self,
         ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, ...],
     ):
-        @parameter
-        if product(Self.cluster_shape) == 1:
+        comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
         else:
             mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
@@ -397,19 +391,17 @@ struct MmaOpSM100_SS[
 
     @staticmethod
     fn _get_umma_kind[dtype: DType]() -> UMMAKind:
-        @parameter
-        if dtype == DType.float32:
+        comptime if dtype == DType.float32:
             return UMMAKind.KIND_TF32
         elif dtype in (DType.float16, DType.bfloat16):
             return UMMAKind.KIND_F16
         elif dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
             return UMMAKind.KIND_F8F6F4
         else:
-            constrained[
-                False,
+            comptime assert False, String(
                 "Unsupported/not implemented operand type for UMMA: ",
                 String(dtype),
-            ]()
+            )
 
         return UMMAKind(-1)
 
@@ -480,8 +472,7 @@ struct MmaOpSM100_BlockScaled_SS[
         # Here we compute the mask inside mma object to hide the complexity.
         # We may get better asm if the mask if computed outside from TMA masks,
         # and passed to `commit`, need to verify.
-        @parameter
-        if product(Self.cluster_shape) > 1:
+        comptime if product(Self.cluster_shape) > 1:
             comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
             comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
 
@@ -502,8 +493,7 @@ struct MmaOpSM100_BlockScaled_SS[
             #             x x x x
             #             o x o o
             #             o x o o
-            @parameter
-            if Self.cta_group == 2:
+            comptime if Self.cta_group == 2:
                 self.mask |= dim1_mask << UInt16((block_id_in_cluster.x ^ 1))
 
     @always_inline
@@ -517,6 +507,7 @@ struct MmaOpSM100_BlockScaled_SS[
         sfa_tmem: UInt32,
         sfb_tmem: UInt32,
         init_c: Bool,
+        work_tile_coord: Tuple[UInt, UInt],
     ):
         """MMA input tiles.
 
@@ -547,17 +538,18 @@ struct MmaOpSM100_BlockScaled_SS[
         ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
 
         # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
-        @parameter
-        if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+        comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
             self.copy_sf_to_tmem[
                 Self.sfa_dtype, sfa_smem.layout, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
             self.copy_sf_to_tmem[
-                Self.sfb_dtype, sfb_smem.layout, Self.mma_shape[1], 0
+                Self.sfb_dtype,
+                sfb_smem.layout,
+                align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                0,
             ](sfb_smem, sfb_tmem)
 
-        @parameter
-        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a.layout(IntTuple(0, k)) * size_of[
                 Self.a_type
             ]()
@@ -569,9 +561,23 @@ struct MmaOpSM100_BlockScaled_SS[
                 1
             )
 
+            comptime sf_idx = k // Self.mma_shape[2]
+
+            @always_inline
             @parameter
-            if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
-                comptime sf_idx = k // Self.mma_shape[2]
+            fn _get_sfb_tmem_offset[
+                mma_n: Int,
+            ](sfb_tmem: UInt32, work_tile_coord: Tuple[UInt, UInt],) -> UInt32:
+                comptime if mma_n in (64, 192):
+                    return sfb_tmem + UInt32(work_tile_coord[1] % 2) * 2
+                else:
+                    return sfb_tmem
+
+            var sfb_tmem_offset = _get_sfb_tmem_offset[Self.mma_shape[1]](
+                sfb_tmem, work_tile_coord
+            )
+
+            comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
                 var runtime_desc = UMMAInsDescriptor[
                     Self.scaling_kind
                 ].update_desc_with_sf_id[UInt32(sf_idx)](
@@ -583,12 +589,10 @@ struct MmaOpSM100_BlockScaled_SS[
                     c_tmem,
                     runtime_desc,
                     sfa_tmem,
-                    sfb_tmem,
+                    sfb_tmem_offset,
                     c_scale=c_scale,
                 )
             else:
-                comptime sf_idx = k // Self.mma_shape[2]
-                # when scaling kind is MXFP4NVF4, four scale tiles cover the whole [BM,BK] and [MMA_N,BK] tiles so we need to load one scale tile for each k iteration.
                 self.copy_sf_to_tmem[
                     Self.sfa_dtype,
                     sfa_smem.layout,
@@ -596,7 +600,10 @@ struct MmaOpSM100_BlockScaled_SS[
                     sf_idx,
                 ](sfa_smem, sfa_tmem)
                 self.copy_sf_to_tmem[
-                    Self.sfb_dtype, sfb_smem.layout, Self.mma_shape[1], sf_idx
+                    Self.sfb_dtype,
+                    sfb_smem.layout,
+                    align_up(Self.mma_shape[1], SF_MN_GROUP_SIZE),
+                    sf_idx,
                 ](sfb_smem, sfb_tmem)
 
                 mma[Self.cta_group](
@@ -605,7 +612,7 @@ struct MmaOpSM100_BlockScaled_SS[
                     c_tmem,
                     self.idesc,
                     sfa_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
-                    sfb_tmem + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
+                    sfb_tmem_offset + UInt32(sf_idx * (SF_MN_GROUP_SIZE // 32)),
                     c_scale=c_scale,
                 )
 
@@ -804,8 +811,7 @@ struct MmaOpSM100_BlockScaled_SS[
         ), "block_tile_shape[2] must be 128 and mma_shape[2] must be 32"
 
         # when scaling kind is MXF8F6F4, one scale tile covers the whole [BM,BK] and [MMA_N,BK] tiles so we load it once.
-        @parameter
-        if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+        comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
             self._copy_sf_to_tmem_tt[
                 Self.sfa_dtype, sfa_layout, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
@@ -813,8 +819,7 @@ struct MmaOpSM100_BlockScaled_SS[
                 Self.sfb_dtype, sfb_layout, Self.mma_shape[1], 0
             ](sfb_smem, sfb_tmem)
 
-        @parameter
-        for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
+        comptime for k in range(0, Self.block_tile_shape[2], Self.mma_shape[2]):
             comptime a_offset = a_layout(IntTuple(0, k)) * size_of[
                 Self.a_type
             ]()
@@ -826,8 +831,7 @@ struct MmaOpSM100_BlockScaled_SS[
                 1
             )
 
-            @parameter
-            if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
+            comptime if Self.scaling_kind == UMMAKind.KIND_MXF8F6F4:
                 comptime sf_idx = k // Self.mma_shape[2]
                 var runtime_desc = UMMAInsDescriptor[
                     Self.scaling_kind
@@ -871,8 +875,7 @@ struct MmaOpSM100_BlockScaled_SS[
         self,
         ptr_mbar: UnsafePointer[address_space = AddressSpace.SHARED, ...],
     ):
-        @parameter
-        if product(Self.cluster_shape) == 1:
+        comptime if product(Self.cluster_shape) == 1:
             mma_arrive[Self.cta_group](ptr_mbar)
         else:
             mma_arrive_multicast[Self.cta_group](ptr_mbar, self.mask)
@@ -894,8 +897,7 @@ struct MmaOpSM100_BlockScaled_SS[
     ):
         comptime sf_smem_size = sf_smem_layout.size()
 
-        @parameter
-        for i in range(TILE_MN // SF_MN_GROUP_SIZE):
+        comptime for i in range(TILE_MN // SF_MN_GROUP_SIZE):
             comptime idx = IntTuple(
                 i * SF_ATOM_M[0], tile_k_idx * SF_ATOM_M[1] * SF_ATOM_K
             )
@@ -929,8 +931,7 @@ struct MmaOpSM100_BlockScaled_SS[
         """TileTensor overload for copying scale factors to TMEM."""
         comptime sf_smem_size = sf_smem_layout.size()
 
-        @parameter
-        for i in range(TILE_MN // SF_MN_GROUP_SIZE):
+        comptime for i in range(TILE_MN // SF_MN_GROUP_SIZE):
             comptime idx = IntTuple(
                 i * SF_ATOM_M[0], tile_k_idx * SF_ATOM_M[1] * SF_ATOM_K
             )

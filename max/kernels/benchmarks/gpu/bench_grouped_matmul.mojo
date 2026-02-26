@@ -139,6 +139,7 @@ fn bench_grouped_matmul[
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
+    AB_swapped: Bool = False,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -199,8 +200,7 @@ fn bench_grouped_matmul[
         a_scale_dim0 += ceildiv(num_tokens, SF_MN_GROUP_SIZE)
         expert_ids_host_ptr[i] = Int32(expert_ids_input[i])
 
-        @parameter
-        if in_type == DType.float8_e4m3fn:
+        comptime if in_type == DType.float8_e4m3fn:
             comptime a_scale_alignment = 16 // size_of[DType.float32]()
             if num_tokens % a_scale_alignment != 0:
                 abort(
@@ -260,8 +260,7 @@ fn bench_grouped_matmul[
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         var new_val = val
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             new_val[i] = test_epilogue(idx[0], idx[1] + i, val[i])
 
         c_dev.store[width=width, alignment=alignment](
@@ -274,12 +273,10 @@ fn bench_grouped_matmul[
     var a_offsets = from_ndbuffer_row_major(a_offsets_dev)
     var expert_ids = from_ndbuffer_row_major(expert_ids_dev)
 
-    @parameter
-    if is_fp4e2m1:
-        constrained[
-            scaling_kind_str == "nvfp4",
-            "Only support nvfp4 scaling kind for float4-e2m1fn",
-        ]()
+    comptime if is_fp4e2m1:
+        comptime assert (
+            scaling_kind_str == "nvfp4"
+        ), "Only support nvfp4 scaling kind for float4-e2m1fn"
 
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
             DType.uint32
@@ -398,8 +395,7 @@ fn bench_grouped_matmul[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                @parameter
-                if use_vendor_blas:
+                comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
@@ -419,7 +415,7 @@ fn bench_grouped_matmul[
                         mma_shape=umma_shape,
                         block_swizzle_size=8,
                         cta_group=1,
-                        AB_swapped=False,
+                        AB_swapped=AB_swapped,
                         k_group_size=1,
                         num_accum_pipeline_stages=2,
                     )
@@ -471,10 +467,9 @@ fn bench_grouped_matmul[
         expert_scales_host_ptr.free()
 
     elif in_type == DType.float8_e4m3fn:
-        constrained[
-            scaling_kind_str == "1d2d",
-            "Only support 1d2d scaling kind for float8_e4m3fn",
-        ]()
+        comptime assert (
+            scaling_kind_str == "1d2d"
+        ), "Only support 1d2d scaling kind for float8_e4m3fn"
         comptime BLOCK_SCALE_K = 128
         comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
         var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
@@ -538,8 +533,7 @@ fn bench_grouped_matmul[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                @parameter
-                if use_vendor_blas:
+                comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
@@ -552,7 +546,7 @@ fn bench_grouped_matmul[
                         cluster_shape=Index(1, 1, 1),
                         mma_shape=umma_shape,
                         cta_group=1,
-                        AB_swapped=False,
+                        AB_swapped=AB_swapped,
                         k_group_size=1,
                     )
                     grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
@@ -620,8 +614,7 @@ fn bench_grouped_matmul[
             @parameter
             @always_inline
             fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-                @parameter
-                if use_vendor_blas:
+                comptime if use_vendor_blas:
                     # TODO: Implement vendor grouped matmul
                     pass
 
@@ -689,6 +682,7 @@ fn create_grouped_matmul_bench[
     use_vendor_blas: Bool = False,
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
+    AB_swapped: Bool = False,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -705,6 +699,7 @@ fn create_grouped_matmul_bench[
         use_vendor_blas=use_vendor_blas,
         has_epilogue=has_epilogue,
         scaling_kind_str=scaling_kind_str,
+        AB_swapped=AB_swapped,
     ](
         ctx,
         bench,
@@ -748,6 +743,7 @@ def main():
     )
     comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
     comptime has_epilogue = env_get_bool["has_epilogue", False]()
+    comptime AB_swapped = env_get_bool["AB_swapped", False]()
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -761,6 +757,7 @@ def main():
             use_vendor_blas=use_vendor_blas,
             has_epilogue=has_epilogue,
             scaling_kind_str=scaling_kind_str,
+            AB_swapped=AB_swapped,
         ](
             ctx,
             b,

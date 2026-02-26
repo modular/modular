@@ -21,11 +21,9 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.kv_cache import _fused_qkv_matmul_kv_cache_impl
 from testing import assert_almost_equal
 
@@ -66,20 +64,6 @@ def execute_fused_qkv_matmul[
         ")",
     )
 
-    # Compute sizes
-    var hidden_state_size = batch_size * prompt_len * hidden_size
-    var weight_size = fused_hidden_size * hidden_size
-    var ref_output_size = batch_size * prompt_len * fused_hidden_size
-    var test_output_size = batch_size * prompt_len * hidden_size
-    var kv_block_size = (
-        num_blocks
-        * 2
-        * num_layers
-        * max_seq_len
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
-    )
-
     # Define layouts
     comptime hidden_state_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, hidden_size
@@ -107,83 +91,63 @@ def execute_fused_qkv_matmul[
     )
 
     # Initialize hidden state
-    var hidden_state_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        hidden_state_size
+    var hidden_state = ManagedLayoutTensor[dtype, hidden_state_layout](
+        RuntimeLayout[hidden_state_layout].row_major(hidden_state_shape), ctx
     )
-    var hidden_state_host = LayoutTensor[dtype, hidden_state_layout](
-        hidden_state_host_ptr,
-        RuntimeLayout[hidden_state_layout].row_major(hidden_state_shape),
-    )
+    var hidden_state_host = hidden_state.tensor()
     random(hidden_state_host)
 
-    var hidden_state_device = ctx.enqueue_create_buffer[dtype](
-        hidden_state_size
-    )
-    ctx.enqueue_copy(hidden_state_device, hidden_state_host_ptr)
     var hidden_state_device_2d = NDBuffer[
         dtype, 2, MutAnyOrigin, DimList(Dim(), hidden_size)
     ](
-        hidden_state_device.unsafe_ptr(),
+        hidden_state.device_tensor().ptr,
         IndexList[2](batch_size * prompt_len, hidden_size),
     )
 
-    # Initialize the weights
-    var weight_host_ptr = UnsafePointer[Scalar[dtype]].alloc(weight_size)
-    var weight_host = LayoutTensor[dtype, weight_layout](
-        weight_host_ptr,
-        RuntimeLayout[weight_layout].row_major(weight_shape),
+    # Keep matmul weights on a direct device buffer; _matmul_gpu expects this
+    # static layout path and currently does not compose well with managed views.
+    var weight_device = ctx.enqueue_create_buffer[dtype](
+        weight_shape.flattened_length()
     )
-    random(weight_host)
-
-    var weight_device = ctx.enqueue_create_buffer[dtype](weight_size)
-    ctx.enqueue_copy(weight_device, weight_host_ptr)
+    with weight_device.map_to_host() as weight_host_ptr:
+        var weight_host = LayoutTensor[dtype, weight_layout](
+            weight_host_ptr,
+            RuntimeLayout[weight_layout].row_major(weight_shape),
+        )
+        random(weight_host)
 
     # Initialize reference output
-    var ref_output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        ref_output_size
+    var ref_output = ManagedLayoutTensor[dtype, ref_output_layout](
+        RuntimeLayout[ref_output_layout].row_major(ref_output_shape), ctx
     )
-    var ref_output_host = LayoutTensor[dtype, ref_output_layout](
-        ref_output_host_ptr,
-        RuntimeLayout[ref_output_layout].row_major(ref_output_shape),
-    )
-    var ref_output_device = ctx.enqueue_create_buffer[dtype](ref_output_size)
 
     # Initialize test output
-    var test_output_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        test_output_size
+    var test_output = ManagedLayoutTensor[dtype, test_output_layout](
+        RuntimeLayout[test_output_layout].row_major(test_output_shape), ctx
     )
-    var test_output_host = LayoutTensor[dtype, test_output_layout](
-        test_output_host_ptr,
-        RuntimeLayout[test_output_layout].row_major(test_output_shape),
-    )
-    var test_output_device = ctx.enqueue_create_buffer[dtype](test_output_size)
 
     # Initialize our KVCache
     var is_context_encoding = True
-    var cache_lengths_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        batch_size
+    var cache_lengths = ManagedLayoutTensor[DType.uint32, cache_len_layout](
+        RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
+        ctx,
     )
+    var cache_lengths_host = cache_lengths.tensor[update=False]()
     for i in range(batch_size):
-        cache_lengths_host_ptr[i] = UInt32(cache_sizes[i])
-        if cache_lengths_host_ptr[i] != 0:
+        cache_lengths_host[i] = UInt32(cache_sizes[i])
+        if cache_lengths_host[i] != 0:
             is_context_encoding = False
 
-    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
-    ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host_ptr)
+    var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
+        RuntimeLayout[kv_block_layout].row_major(kv_block_shape), ctx
+    )
+    var kv_block_host = kv_block.tensor()
 
-    var kv_block_host_ptr = UnsafePointer[Scalar[dtype]].alloc(kv_block_size)
-    var kv_block_host = LayoutTensor[dtype, kv_block_layout](
-        kv_block_host_ptr,
-        RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
+    var lookup_table = ManagedLayoutTensor[DType.uint32, cache_len_layout](
+        RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
+        ctx,
     )
-    var kv_block_device = ctx.enqueue_create_buffer[dtype](kv_block_size)
-
-    var lookup_table_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        batch_size
-    )
-    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
+    var lookup_table_host = lookup_table.tensor[update=False]()
 
     # Hacky way to get random block indices
     var block_idx_set = Set[Int]()
@@ -193,90 +157,38 @@ def execute_fused_qkv_matmul[
         if randval in block_idx_set:
             continue
         block_idx_set.add(randval)
-        lookup_table_host_ptr[idx] = UInt32(randval)
+        lookup_table_host[idx] = UInt32(randval)
         idx += 1
 
-    ctx.enqueue_copy(lookup_table_device, lookup_table_host_ptr)
-
-    # Create runtime layouts for KV collection
-    var kv_block_runtime = RuntimeLayout[kv_block_layout].row_major(
-        kv_block_shape
-    )
-    var cache_len_runtime = RuntimeLayout[cache_len_layout].row_major(
-        IndexList[1](batch_size)
-    )
-
     var kv_collection_device = CollectionType(
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
-            kv_block_device.unsafe_ptr(),
-            kv_block_runtime,
-        ),
-        LayoutTensor[DType.uint32, cache_len_layout, ImmutAnyOrigin](
-            cache_lengths_dev.unsafe_ptr(),
-            cache_len_runtime,
-        ),
-        LayoutTensor[DType.uint32, cache_len_layout, ImmutAnyOrigin](
-            lookup_table_device.unsafe_ptr(),
-            cache_len_runtime,
-        ),
-        UInt32(max_seq_len),
-        UInt32(0 if is_context_encoding else max_seq_len),
-    )
-    var kv_collection_host = CollectionType(
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
-            kv_block_host_ptr,
-            kv_block_runtime,
-        ),
-        LayoutTensor[DType.uint32, cache_len_layout, ImmutAnyOrigin](
-            cache_lengths_host_ptr,
-            cache_len_runtime,
-        ),
-        LayoutTensor[DType.uint32, cache_len_layout, ImmutAnyOrigin](
-            lookup_table_host_ptr,
-            cache_len_runtime,
-        ),
+        kv_block.device_tensor(),
+        cache_lengths.device_tensor(),
+        lookup_table.device_tensor(),
         UInt32(max_seq_len),
         UInt32(0 if is_context_encoding else max_seq_len),
     )
 
     # Create device tensors for kernel calls
-    var hidden_state_device_tensor = LayoutTensor[
-        dtype, hidden_state_layout, MutAnyOrigin
-    ](
-        hidden_state_device.unsafe_ptr(),
-        RuntimeLayout[hidden_state_layout].row_major(hidden_state_shape),
-    )
+    var hidden_state_device_tensor = hidden_state.device_tensor()
     var weight_device_tensor = LayoutTensor[dtype, weight_layout, MutAnyOrigin](
         weight_device.unsafe_ptr(),
         RuntimeLayout[weight_layout].row_major(weight_shape),
     )
-    var test_output_device_tensor = LayoutTensor[
-        dtype, test_output_layout, MutAnyOrigin
-    ](
-        test_output_device.unsafe_ptr(),
-        RuntimeLayout[test_output_layout].row_major(test_output_shape),
-    )
+    var test_output_device_tensor = test_output.device_tensor()
 
     # Create valid_lengths - all sequences have full prompt_len valid
-    var valid_lengths_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        batch_size
-    )
-    for i in range(batch_size):
-        valid_lengths_host_ptr[i] = UInt32(prompt_len)
-
-    var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
-        batch_size
-    )
-    ctx.enqueue_copy(valid_lengths_device, valid_lengths_host_ptr)
-
-    var valid_lengths_tensor = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    var valid_lengths = ManagedLayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
     ](
-        valid_lengths_device.unsafe_ptr(),
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
             IndexList[1](batch_size)
         ),
+        ctx,
     )
+    var valid_lengths_host = valid_lengths.tensor[update=False]()
+    for i in range(batch_size):
+        valid_lengths_host[i] = UInt32(prompt_len)
+    var valid_lengths_tensor = valid_lengths.device_tensor()
 
     _fused_qkv_matmul_kv_cache_impl[target="gpu"](
         hidden_state_device_tensor,
@@ -291,7 +203,7 @@ def execute_fused_qkv_matmul[
     var ref_output_device_ndbuffer = NDBuffer[
         dtype, 2, MutAnyOrigin, DimList(Dim(), fused_hidden_size)
     ](
-        ref_output_device.unsafe_ptr(),
+        ref_output.device_tensor().ptr,
         ref_output_shape,
     )
     var weight_device_ndbuffer = NDBuffer[
@@ -308,10 +220,16 @@ def execute_fused_qkv_matmul[
         ctx,
     )
 
-    ctx.enqueue_copy(kv_block_host_ptr, kv_block_device)
-    ctx.enqueue_copy(test_output_host_ptr, test_output_device)
-    ctx.enqueue_copy(ref_output_host_ptr, ref_output_device)
-    ctx.synchronize()
+    var kv_block_host_after = kv_block.tensor()
+    var test_output_host = test_output.tensor()
+    var ref_output_host = ref_output.tensor()
+    var kv_collection_host = CollectionType(
+        kv_block_host_after,
+        cache_lengths_host,
+        lookup_table_host,
+        UInt32(max_seq_len),
+        UInt32(0 if is_context_encoding else max_seq_len),
+    )
 
     k_cache_host = kv_collection_host.get_key_cache(layer_idx)
     v_cache_host = kv_collection_host.get_value_cache(layer_idx)
@@ -354,32 +272,11 @@ def execute_fused_qkv_matmul[
                     ),
                 )
 
-    # Cleanup host memory
-    hidden_state_host_ptr.free()
-    weight_host_ptr.free()
-    ref_output_host_ptr.free()
-    test_output_host_ptr.free()
-    cache_lengths_host_ptr.free()
-    kv_block_host_ptr.free()
-    lookup_table_host_ptr.free()
-    valid_lengths_host_ptr.free()
-
-    # Cleanup device buffers
-    _ = hidden_state_device^
-    _ = weight_device^
-    _ = ref_output_device^
-    _ = test_output_device^
-    _ = cache_lengths_dev^
-    _ = kv_block_device^
-    _ = lookup_table_device^
-    _ = valid_lengths_device^
-
 
 def execute_fused_matmul_suite(ctx: DeviceContext):
     comptime dtypes = (DType.float32, DType.bfloat16)
 
-    @parameter
-    for dtype_idx in range(2):
+    comptime for dtype_idx in range(2):
         comptime dtype = dtypes[dtype_idx]
         for bs in [1, 16]:
             ce_cache_sizes = List[Int]()

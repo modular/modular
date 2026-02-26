@@ -105,19 +105,15 @@ fn copy_local_to_dram2[
     comptime M = src.layout.shape[0].value()
     comptime N = src.layout.shape[1].value()
 
-    @parameter
-    for n in range(N):
-
-        @parameter
-        for m in range(M):
+    comptime for n in range(N):
+        comptime for m in range(M):
             comptime src_idx = 4 * n + 16 * m
             comptime i = 4 * m + n
 
             comptime dst_static_idx = dst_fragments.layout(i)
             var dst_idx = dst_frag_offset
 
-            @parameter
-            if dst_fragments.layout.all_dims_known():
+            comptime if dst_fragments.layout.all_dims_known():
                 dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
             else:
                 dst_idx += dst_fragments.runtime_layout(i)
@@ -131,16 +127,13 @@ fn copy_local_to_dram2[
                 1
             ].value()
 
-            @parameter
-            if element_stride == 1:
+            comptime if element_stride == 1:
                 buffer.store(
                     Int32(dst_idx),
                     src_element.element_data.cast[dst.dtype](),
                 )
             else:
-
-                @parameter
-                for i in range(dst_fragments.element_layout.size()):
+                comptime for i in range(dst_fragments.element_layout.size()):
                     comptime element_offset = dst_fragments.element_layout(i)
                     var src = src_element.element_data[i].cast[dst.dtype]()
                     buffer.store(
@@ -593,8 +586,7 @@ fn copy_dram_to_sram_lds[
 
     var lds_ptr = lds_base_ptr
 
-    @parameter
-    for n_tile, m_tile, m_sub_tile in product(
+    comptime for n_tile, m_tile, m_sub_tile in product(
         range(N // BN), range(M // BM), range(BM // BM_SUB)
     ):
         var dst_partitions = dst.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
@@ -676,7 +668,7 @@ fn copy_dram_to_sram_lds[
 
 
 @always_inline
-fn load_b_[
+fn load_b_tile[
     mma_shape: IndexList[3], swizzle: Optional[Swizzle], k_tile_idx: Int
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
@@ -692,8 +684,7 @@ fn load_b_[
     )
     var offset = dist.distance(src.ptr)
 
-    @parameter
-    if swizzle:
+    comptime if swizzle:
         offset = swizzle.value()(
             offset // Scalar[src.linear_idx_type](simd_width)
         ) * Scalar[src.linear_idx_type](simd_width)
@@ -737,9 +728,8 @@ fn load_b[
     comptime N = src.shape[1]() // MMA_K
     var output_vectorized = output.vectorize[1, 8]()
 
-    @parameter
-    for i, j in product(range(M), range(N)):
-        var out_reg = load_b_[mma_shape, swizzle, j](
+    comptime for i, j in product(range(M), range(N)):
+        var out_reg = load_b_tile[mma_shape, swizzle, j](
             src.tile[MMA_M, src.shape[1]()](i, 0)
         )
         output_vectorized[i + j * M, 0] = rebind[

@@ -48,8 +48,7 @@ fn coord_transform[
 ](out_coord: Int, in_dim: Int, out_dim: Int, scale: Float32) -> Float32:
     var out_coord_f32 = Float32(out_coord)
 
-    @parameter
-    if mode == CoordinateTransformationMode.HalfPixel:
+    comptime if mode == CoordinateTransformationMode.HalfPixel:
         # note: coordinates are for the CENTER of the pixel
         # - 0.5 term at the end is so that when we round to the nearest integer
         # coordinate, we get the coordinate whose center is closest
@@ -73,8 +72,7 @@ fn coord_transform[
     elif mode == CoordinateTransformationMode.Asymmetric:
         return out_coord_f32 / scale
     else:
-        constrained[False, "coordinate_transformation_mode not implemented"]()
-        return 0
+        comptime assert False, "coordinate_transformation_mode not implemented"
 
 
 struct RoundMode(ImplicitlyCopyable):
@@ -119,21 +117,17 @@ struct Interpolator[mode: InterpolationMode](
     @staticmethod
     @always_inline
     fn filter_length() -> Int:
-        @parameter
-        if Self.mode == InterpolationMode.Linear:
+        comptime if Self.mode == InterpolationMode.Linear:
             return 1
         else:
-            constrained[False, "InterpolationMode not supported"]()
-            return -1
+            comptime assert False, "InterpolationMode not supported"
 
     @always_inline
     fn filter(self, x: Float32) -> Float32:
-        @parameter
-        if Self.mode == InterpolationMode.Linear:
+        comptime if Self.mode == InterpolationMode.Linear:
             return linear_filter(x)
         else:
-            constrained[False, "InterpolationMode not supported"]()
-            return -1
+            comptime assert False, "InterpolationMode not supported"
 
 
 fn resize_nearest_neighbor[
@@ -156,8 +150,7 @@ fn resize_nearest_neighbor[
     @parameter
     @always_inline
     fn round[dtype: DType](val: Scalar[dtype]) -> Scalar[dtype]:
-        @parameter
-        if round_mode == RoundMode.HalfDown:
+        comptime if round_mode == RoundMode.HalfDown:
             return ceil(val - 0.5)
         elif round_mode == RoundMode.HalfUp:
             return floor(val + 0.5)
@@ -166,8 +159,7 @@ fn resize_nearest_neighbor[
         elif round_mode == RoundMode.Ceil:
             return ceil(val)
         else:
-            constrained[False, "round_mode not implemented"]()
-            return val
+            comptime assert False, "round_mode not implemented"
 
     @__copy_capture(scales)
     @parameter
@@ -176,8 +168,7 @@ fn resize_nearest_neighbor[
     ](out_coords: IndexList[_rank]):
         var in_coords = IndexList[input.rank](0)
 
-        @parameter
-        for i in range(input.rank):
+        comptime for i in range(input.rank):
             in_coords[i] = min(
                 Int(
                     round(

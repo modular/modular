@@ -88,8 +88,6 @@ struct Optional[T: Movable](
     ImplicitlyCopyable,
     Iterable,
     Iterator,
-    Representable,
-    Stringable,
     Writable,
 ):
     """A type modeling a value which may or may not be present.
@@ -103,6 +101,18 @@ struct Optional[T: Movable](
 
     Currently T is required to be a `Copyable` so we can implement
     copy/move for Optional and allow it to be used in collections itself.
+
+    ## Layout
+
+    The layout of `Optional` is not guaranteed and may change at any time.
+    The implementation may apply niche optimizations (for example, storing the
+    `None` sentinel inside spare bits of `T`) that alter the resulting layout.
+    Do not rely on `size_of[Optional[T]]()` or `align_of[Optional[T]]()` being
+    stable across compiler versions. The only guarantee is that the size and
+    alignment will be at least as large as those of `T` itself.
+
+    If you need to inspect the current size or alignment, use `size_of` and
+    `align_of`, but treat the results as non-stable implementation details.
 
     Examples:
 
@@ -404,39 +414,26 @@ struct Optional[T: Movable](
             raise EmptyOptionalError[Self.T]()
         return self.unsafe_value()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self: Self) -> String:
         """Return the string representation of the value of the `Optional`.
 
         Returns:
             A string representation of the `Optional`.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Stringable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Stringable",
-        ]()
+        var output = String()
+        self.write_to(output)
+        return output^
 
-        if self:
-            return trait_downcast[Stringable](self.value()).__str__()
-        else:
-            return "None"
-
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self: Self) -> String:
         """Returns the verbose string representation of the `Optional`.
 
         Returns:
             A verbose string representation of the `Optional`.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Representable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Representable",
-        ]()
-
         var output = String()
-        output.write("Optional(", self, ")")
+        self.write_repr_to(output)
         return output^
 
     @always_inline("nodebug")
@@ -462,9 +459,7 @@ struct Optional[T: Movable](
         ]()
 
         if self:
-
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 trait_downcast[Writable](self.value()).write_repr_to(writer)
             else:
                 trait_downcast[Writable](self.value()).write_to(writer)

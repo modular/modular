@@ -184,9 +184,7 @@ struct Int(
     IntervalElement,
     KeyElement,
     Powable,
-    Representable,
     Roundable,
-    Stringable,
     TrivialRegisterPassable,
     Truncable,
     Writable,
@@ -923,6 +921,8 @@ struct Int(
     fn __abs__(self) -> Self:
         """Return the absolute value of the Int value.
 
+        The absolute value of Int.MIN is Int.MIN.
+
         Returns:
             The absolute value.
         """
@@ -1027,7 +1027,7 @@ struct Int(
             writer: The object to write to.
             width: The amount to pad to the left.
         """
-        var int_width = self._decimal_digit_count()
+        var int_width = self._decimal_digit_count() + (1 if self < 0 else 0)
 
         # TODO: Assumes user wants right-aligned content.
         if int_width < width:
@@ -1036,6 +1036,7 @@ struct Int(
 
         writer.write(self)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the integer as a string.
@@ -1046,6 +1047,7 @@ struct Int(
 
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Get the integer as a string. Returns the same `String` as `__str__`.
@@ -1129,8 +1131,7 @@ struct Int(
 
         var n = abs(self)
 
-        @parameter
-        if is_32bit():
+        comptime if is_32bit():
             return _calc_initial_buffer_size_int32(n)
 
         # The value only has low-bits.

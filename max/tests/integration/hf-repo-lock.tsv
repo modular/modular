@@ -25,6 +25,7 @@ Qwen/Qwen2.5-VL-3B-Instruct	66285546d2b821cf421d4f5eb2576359d3770cd3
 Qwen/Qwen2.5-VL-7B-Instruct	cc594898137f460bfe9f0759e9844b3ce807cfb5
 Qwen/Qwen3-30B-A3B	f0abbbee7f4db139f64a2c3be5dc133fd7328acb
 Qwen/Qwen3-30B-A3B-Instruct-2507	0d7cf23991f47feeb3a57ecb4c9cee8ea4a17bfe
+Qwen/Qwen3-30B-A3B-Instruct-2507-FP8	5a5a776300a41aaa681dd7ff0106608ef2bc90db
 Qwen/Qwen3-32B	d47b0d4ae4b48fde975756bf360a63a9cca8d470
 Qwen/Qwen3-8B	895c8d171bc03c30e113cd7a28c02494b5e068b7
 Qwen/Qwen3-Embedding-0.6B	c54f2e6e80b2d7b7de06f51cec4959f6b3e03418
@@ -56,6 +57,8 @@ allenai/Olmo-3-7B-Instruct	096bb5469fe34348bc88d851a69edb3bf6f40df4
 allenai/olmOCR-2-7B-1025-FP8	19133a8e683f7203f37c49000377c11a896c8d9b
 bartowski/Meta-Llama-3-8B-Instruct-GGUF	4ebc4aa83d60a5d6f9e1e1e9272a4d6306d770c1
 bartowski/Meta-Llama-3.1-8B-Instruct-GGUF	bf5b95e96dac0462e2a09145ec66cae9a3f12067
+black-forest-labs/FLUX.1-dev	3de623fc3c33e44ffbe2bad470d0f45bccf2eb21
+black-forest-labs/FLUX.2-dev	26afe3a78bb242c0a8bb181dcc8937bb16e5c66c
 deepseek-ai/DeepSeek-R1	56d4cbbb4d29f4355bab4b9a39ccb717a14ad5ad
 deepseek-ai/DeepSeek-R1-0528	4236a6af538feda4548eca9ab308586007567f52
 deepseek-ai/DeepSeek-R1-Distill-Llama-8B	6a6f4aa4197940add57724a7707d069478df56b1
@@ -88,6 +91,7 @@ modularai/llama-3	04d5a76d896e71429f2d042bdb2e5956c649cb41
 modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
 neubla/tiny-random-LlamaForCausalLM	1c81a3fba044af78df253edc66bdbab183184932
 nvidia/DeepSeek-R1-0528-NVFP4-v2	25a138f28f49022958b9f2d205f9b7de0cdb6e18
+nvidia/DeepSeek-V3.1-NVFP4	68b4a17cce1482e94030ca00dacda3dec4c6359d
 nvidia/Llama-3.1-405B-Instruct-NVFP4	8ddfc523e75da0cd52d8d486895aa984282f6db9
 nvidia/Llama-3.1-8B-Instruct-NVFP4	bdb54e24298451af785c0ac63c1b485e9b7400a2
 openai/whisper-large-v3	06f233fe06e710322aca913c1bc4249a0d71fce1

@@ -449,8 +449,7 @@ comptime assert StaticString(target_arch)
 Then add the mapping in the `@parameter` block:
 
 ```mojo
-@parameter
-if target_arch == "52":
+comptime if target_arch == "52":
     return materialize[GTX970]()
 elif target_arch == "90a":  # Add your mapping here
     return materialize[YourGPU]()
@@ -1123,7 +1122,7 @@ fn _get_jetson_thor_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_110", `,
-        `features = "+ptx85,+sm_110", `,
+        `features = "+ptx90,+sm_110", `,
         `tune_cpu = "sm_110", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
@@ -1158,7 +1157,7 @@ fn _get_dgx_spark_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_121", `,
-        `features = "+ptx86,+sm_121", `,
+        `features = "+ptx88,+sm_121", `,
         `tune_cpu = "sm_121", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
@@ -1384,7 +1383,7 @@ fn _get_rtx5090_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_120a", `,
-        `features = "+ptx86,+sm_120a", `,
+        `features = "+ptx87,+sm_120a", `,
         `tune_cpu = "sm_120a", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
@@ -2267,8 +2266,7 @@ fn _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 
     var prefix: String
 
-    @parameter
-    if target_arch == "":
+    comptime if target_arch == "":
         prefix = "Unknown GPU architecture detected."
     else:
         prefix = String(
@@ -2385,8 +2383,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         StaticString(target_arch) in _all_targets
     ), _build_unsupported_arch_error[target_arch0]()
 
-    @parameter
-    if target_arch == "sm_52":
+    comptime if target_arch == "sm_52":
         return materialize[GTX970]()
     elif target_arch == "sm_60":
         return materialize[TeslaP100]()

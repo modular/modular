@@ -46,8 +46,7 @@ from ..os import sep
 
 @always_inline
 fn _get_stat_st_mode(var path: String) raises -> Int:
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return Int(_stat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_stat_linux_arm(path^).st_mode)
@@ -57,8 +56,7 @@ fn _get_stat_st_mode(var path: String) raises -> Int:
 
 @always_inline
 fn _get_lstat_st_mode(var path: String) raises -> Int:
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return Int(_lstat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_lstat_linux_arm(path^).st_mode)
@@ -234,7 +232,9 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
+fn realpath[
+    PathLike: os.PathLike & ImplicitlyDestructible, //
+](path: PathLike) raises -> String:
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a
     canonicalized absolute pathname.The resulting path will have no symbolic
@@ -270,16 +270,19 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     """
     var string = String(capacity=MAX_PATH)
 
+    # Bind the fspath result to a variable so its buffer stays alive
+    # through the libc_realpath call (avoids use-after-free).
+    var fspath = path.__fspath__()
     var returned_path_ptr = libc_realpath(
-        path.__fspath__().unsafe_ptr().bitcast[c_char](),
-        string._ptr_or_data.bitcast[Int8](),
+        fspath.as_c_string_slice().unsafe_ptr(),
+        string.unsafe_ptr_mut().bitcast[c_char](),
     )
     if not returned_path_ptr:
         raise Error("realpath failed to resolve: ", get_errno())
 
     # We wrote the data directly into the String buffer
     # now we need to figure out the length
-    string.set_byte_length(Int(_unsafe_strlen(string._ptr_or_data)))
+    string.set_byte_length(Int(_unsafe_strlen(string.unsafe_ptr())))
     string._set_nul_terminated()
 
     return string^

@@ -69,9 +69,17 @@ def test_write_int_padded():
 
     assert_equal(s1, "    5")
 
+    Int(-5).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5")
+
     Int(123).write_padded(s1, width=5)
 
-    assert_equal(s1, "    5  123")
+    assert_equal(s1, "    5   -5  123")
+
+    Int(0).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5  123    0")
 
     # ----------------------------------
     # Test writing int larger than width
@@ -82,6 +90,76 @@ def test_write_int_padded():
     Int(12345).write_padded(s2, width=3)
 
     assert_equal(s2, "12345")
+
+    Int(-1).write_padded(s2, width=1)
+
+    assert_equal(s2, "12345-1")
+
+    Int(-1).write_padded(s2, width=0)
+
+    assert_equal(s2, "12345-1-1")
+
+
+def test_write_simd_padded():
+    # ----------------------------------
+    # Test writing scalar Int32
+    # ----------------------------------
+    var s1 = String()
+
+    Int32(5).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5")
+
+    # Test negative integers - note that negative signs aren't counted
+    Int32(-5).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5")
+
+    Int32(123).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5  123")
+
+    # ----------------------------------
+    # Test writing scalar Int32 larger than width
+    # ----------------------------------
+
+    var s2 = String()
+
+    Int32(12345).write_padded(s2, width=3)
+
+    assert_equal(s2, "12345")
+
+    Int32(-1).write_padded(s2, width=1)
+
+    assert_equal(s2, "12345-1")
+
+    Int32(-1).write_padded(s2, width=0)
+
+    assert_equal(s2, "12345-1-1")
+
+    # ----------------------------------
+    # Test writing vector Int32
+    # ----------------------------------
+
+    var s3 = String()
+    SIMD[DType.int32, 2](12345).write_padded(s3, width=3)
+    assert_equal(s3, "[12345,12345]")
+
+    s3 = String()
+    SIMD[DType.int32, 2](12345).write_padded(s3, width=5)
+    assert_equal(s3, "[12345,12345]")
+
+    s3 = String()
+    SIMD[DType.int32, 2](12345).write_padded(s3, width=6)
+    assert_equal(s3, "[ 12345, 12345]")
+
+    s3 = String()
+    SIMD[DType.int32, 2](-12345).write_padded(s3, width=7)
+    assert_equal(s3, "[ -12345, -12345]")
+
+    s3 = String()
+    SIMD[DType.int8, 4](127, 1, 10, 0).write_padded(s3, width=6)
+    assert_equal(s3, "[   127,     1,    10,     0]")
 
 
 def test_hex_digits_to_hex_chars():

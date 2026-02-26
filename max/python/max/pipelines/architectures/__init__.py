@@ -40,17 +40,19 @@ def register_all_models() -> None:
     from .deepseekV3_nextn import deepseekV3_nextn_arch
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
+    from .exaone_modulev3 import exaone_modulev3_arch
     from .flux1 import flux1_arch
     from .flux2 import flux2_arch
     from .gemma3 import gemma3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gpt_oss import gpt_oss_arch
-    from .gpt_oss_legacy import gpt_oss_legacy_arch
+    from .gpt_oss_modulev3 import gpt_oss_modulev3_arch
     from .granite import granite_arch
+    from .granite_modulev3 import granite_modulev3_arch
     from .idefics3 import idefics3_arch
     from .internvl import internvl_arch
     from .llama3 import llama_arch
-    from .llama3_legacy import llama_legacy_arch
+    from .llama3_modulev3 import llama_modulev3_arch
     from .llama4 import llama4_arch
     from .mistral import mistral_arch
     from .mistral3 import mistral3_arch
@@ -58,7 +60,9 @@ def register_all_models() -> None:
     from .olmo import olmo_arch
     from .olmo2 import olmo2_arch
     from .olmo3 import olmo3_arch
+    from .olmo_modulev3 import olmo_modulev3_arch
     from .phi3 import phi3_arch
+    from .phi3_modulev3 import phi3_modulev3_arch
     from .pixtral import pixtral_arch
     from .qwen2 import qwen2_arch
     from .qwen2_5vl import qwen2_5_vl_arch
@@ -68,6 +72,7 @@ def register_all_models() -> None:
 
     architectures = [
         exaone_arch,
+        exaone_modulev3_arch,
         deepseekV2_arch,
         deepseekV3_arch,
         deepseekV3_2_arch,
@@ -78,21 +83,24 @@ def register_all_models() -> None:
         gemma3_arch,
         gemma3_multimodal_arch,
         granite_arch,
+        granite_modulev3_arch,
         gpt_oss_arch,
-        gpt_oss_legacy_arch,
+        gpt_oss_modulev3_arch,
         internvl_arch,
         idefics3_arch,
         llama_arch,
-        llama_legacy_arch,
+        llama_modulev3_arch,
         llama4_arch,
         bert_arch,
         mistral_arch,
         mistral3_arch,
         mpnet_arch,
         olmo_arch,
+        olmo_modulev3_arch,
         olmo2_arch,
         olmo3_arch,
         phi3_arch,
+        phi3_modulev3_arch,
         pixtral_arch,
         qwen2_arch,
         qwen2_5_vl_arch,

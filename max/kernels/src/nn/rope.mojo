@@ -84,8 +84,7 @@ fn apply_rope[
 
     var val: SIMD[dtype, width]
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         var coord = Coord(idx)
         comptime assert coord.flat_rank == x.flat_rank
         val = x.load[width=width](coord)
@@ -102,8 +101,7 @@ fn apply_rope[
 
     var res = _rope(val, freq_val)
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         output_fn[alignment=alignment](idx, res)
     else:
         output_re, output_im = res.deinterleave()
@@ -169,9 +167,16 @@ fn rope_ragged[
     ](idx_arg: IndexList[rank]):
         comptime assert rank == 3, "Invalid rank passed to rope kernel"
 
-        @parameter
-        if width == 1:
-            # constrained[False, "ROPE SIMD_WIDTH=1, We should never be here"]()
+        comptime if width == 1:
+            debug_assert(
+                False,
+                (
+                    "RoPE kernel called with simd width = 1, We should never be"
+                    " here. This is indicative of an uneven last dimension of"
+                    " the rope tensor. Ensure the model's head_size is"
+                    " divisible by the simd width of your target hardware."
+                ),
+            )
             return
         else:
             var idx = rebind[IndexList[3]](idx_arg)
@@ -191,13 +196,10 @@ fn rope_ragged[
 
             var position_ids_idx = Int(post_seq_idx)
             if position_ids:
-
-                @parameter
-                if mrope_section:
+                comptime if mrope_section:
                     var section_idx = 0
 
-                    @parameter
-                    for i in range(len(mrope_section.value())):
+                    comptime for i in range(len(mrope_section.value())):
                         comptime val = mrope_section.value()[i].value()
                         if head_dim_idx < val:
                             section_idx = i
@@ -216,8 +218,7 @@ fn rope_ragged[
 
             var f_c_temp: SIMD[freq_dtype, width]
 
-            @parameter
-            if has_nope:
+            comptime if has_nope:
                 if is_unroped_region:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
@@ -240,8 +241,7 @@ fn rope_ragged[
 
     var launch_shape_index_list = IndexList[x.rank]()
 
-    @parameter
-    for i in range(x.rank):
+    comptime for i in range(x.rank):
         launch_shape_index_list[i] = Int(x.dim(i))
 
     comptime compile_target = _current_target() if is_cpu[
@@ -250,19 +250,21 @@ fn rope_ragged[
     comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
-    @parameter
-    if mrope_section:
-
-        @parameter
-        for i in range(len(mrope_section.value())):
+    comptime if mrope_section:
+        comptime for i in range(len(mrope_section.value())):
             comptime assert (
                 mrope_section.value()[i].static_value % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
-    comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
+    comptime assert (
+        kernel_simd_width >= 2 and rope_dim % kernel_simd_width == 0
+    ), (
+        "Rope kernel simd width must be between 2 and rope_dim and divisible by"
+        " rope_dim. Ensure the model's head_size is divisible by the simd width"
+        " of your target hardware."
+    )
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
             launch_shape_index_list
         )

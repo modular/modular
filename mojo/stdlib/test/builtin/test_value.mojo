@@ -40,34 +40,31 @@ struct ConditionalTriviality[
         self.add_event(EVENT_INIT)
 
     fn __del__(deinit self):
-        @parameter
-        if Self.T.__del__is_trivial:
+        comptime if Self.T.__del__is_trivial:
             self.add_event(EVENT_DEL | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_DEL)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.events = copy.events
 
-        @parameter
-        if Self.T.__copyinit__is_trivial:
+        comptime if Self.T.__copy_ctor_is_trivial:
             self.add_event(EVENT_COPY | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_COPY)
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         self.events = take.events
 
-        @parameter
-        if Self.T.__moveinit__is_trivial:
+        comptime if Self.T.__move_ctor_is_trivial:
             self.add_event(EVENT_MOVE | EVENT_TRIVIAL)
         else:
             self.add_event(EVENT_MOVE)
 
 
 struct StructInheritTriviality[T: Copyable & ImplicitlyDestructible](Copyable):
-    comptime __moveinit__is_trivial = Self.T.__moveinit__is_trivial
-    comptime __copyinit__is_trivial = Self.T.__copyinit__is_trivial
+    comptime __move_ctor_is_trivial = Self.T.__move_ctor_is_trivial
+    comptime __copy_ctor_is_trivial = Self.T.__copy_ctor_is_trivial
     comptime __del__is_trivial = Self.T.__del__is_trivial
 
 

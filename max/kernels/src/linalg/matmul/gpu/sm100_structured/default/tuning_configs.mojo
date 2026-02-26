@@ -129,6 +129,28 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
 fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
     return [
         TuningConfigSM100(
+            M=2048,
+            M_end=2048 + 64,
+            N=16384,
+            K=512,
+            mma_shape=Index(256, 256, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=4,
+            rasterize_order=RasterOrder(0),
+        ),
+        TuningConfigSM100(
+            M=2048 + 64,
+            M_end=74368 + 64,
+            N=16384,
+            K=512,
+            mma_shape=Index(256, 256, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
+        ),
+        TuningConfigSM100(
             M=3456,
             M_end=3456 + 64,
             N=43008,
@@ -1494,5 +1516,47 @@ fn _get_tuning_list_sm100_fp8[mma_k: Int, bk: Int]() -> List[TuningConfigSM100]:
         ),
     ]
     # ----------------END-TUNING-LIST-SM100-FP8----------------
+
+    return materialize[config_list]()
+
+
+fn _get_tuning_list_sm100_nvfp4() -> List[TuningConfigSM100]:
+    comptime config_list = [
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=7168,
+            K=16384,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+    ]
+
+    return materialize[config_list]()
+
+
+fn _get_tuning_list_sm100_mxfp8() -> List[TuningConfigSM100]:
+    comptime config_list = [
+        TuningConfigSM100(
+            M=1,
+            M_end=2,
+            N=7168,
+            K=16384,
+            mma_shape=Index(256, 64, 32),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            num_accum_pipeline_stages=2,
+            num_clc_pipeline_stages=0,
+        ),
+    ]
 
     return materialize[config_list]()

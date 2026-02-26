@@ -85,8 +85,7 @@ fn pack_ptrs_array[
         UnsafePointer[Scalar[ptr_type], MutExternalOrigin], n_gpus_per_node
     ](fill={})
 
-    @parameter
-    for i in range(n_gpus_per_node):
+    comptime for i in range(n_gpus_per_node):
         ptr_arr[i] = UnsafePointer[Scalar[ptr_type], MutExternalOrigin](
             unsafe_from_address=Int(_ptrs[i])
         )
@@ -161,8 +160,7 @@ fn ep_dispatch_async_kernel_api[
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
-    @parameter
-    if n_nodes > 1:
+    comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
     comptime dispatch_async = dispatch_async_kernel[
@@ -202,8 +200,7 @@ fn ep_dispatch_async_kernel_api[
     ):
         var func = gpu_ctx.compile_function[dispatch_async, dispatch_async]()
 
-        @parameter
-        if use_shmem:
+        comptime if use_shmem:
             var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -308,14 +305,11 @@ fn ep_dispatch_wait_kernel_api[
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
-    @parameter
-    if n_nodes > 1:
+    comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
     comptime n_ranks = n_gpus_per_node * n_nodes
     comptime hw_info = gpu_ctx.default_device_info
-
-    comptime expert_m_padding = token_fmt_type.expert_m_padding
 
     comptime dispatch_wait = dispatch_wait_kernel[
         hw_info.max_thread_block_size,
@@ -328,7 +322,6 @@ fn ep_dispatch_wait_kernel_api[
         max_token_per_rank,
         token_fmt_type,
         fused_shared_expert=fused_shared_expert,
-        expert_m_padding=expert_m_padding,
         input_scales_wrapper=input_scales_wrapper,
     ]
 
@@ -460,13 +453,11 @@ fn ep_fused_dispatch_kernel_api[
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
-    @parameter
-    if n_nodes > 1:
+    comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
     comptime n_ranks = n_gpus_per_node * n_nodes
-    comptime expert_m_padding = token_fmt_type.expert_m_padding
 
     comptime fused_dispatch = dispatch_kernel[
         dispatch_dtype,
@@ -482,7 +473,6 @@ fn ep_fused_dispatch_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,  # p2p world size
         token_fmt_type,
-        expert_m_padding=expert_m_padding,
         fused_shared_expert=fused_shared_expert,
         input_scales_wrapper=input_scales_wrapper,
         use_shmem=use_shmem,
@@ -509,8 +499,7 @@ fn ep_fused_dispatch_kernel_api[
     ):
         var func = gpu_ctx.compile_function[fused_dispatch, fused_dispatch]()
 
-        @parameter
-        if use_shmem:
+        comptime if use_shmem:
             var cached_module_key = String(
                 "EP_FUSED_DISPATCH_INITED_DEV_", gpu_id
             )
@@ -630,8 +619,7 @@ fn ep_combine_async_kernel_api[
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
-    @parameter
-    if n_nodes > 1:
+    comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
@@ -677,8 +665,7 @@ fn ep_combine_async_kernel_api[
     ):
         var func = gpu_ctx.compile_function[combine_async, combine_async]()
 
-        @parameter
-        if use_shmem:
+        comptime if use_shmem:
             var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
 
             # Don't initialize the module repeatedly
@@ -783,8 +770,7 @@ fn ep_combine_wait_kernel_api[
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
-    @parameter
-    if n_nodes > 1:
+    comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
@@ -929,8 +915,7 @@ fn ep_fused_combine_kernel_api[
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
 
-    @parameter
-    if n_nodes > 1:
+    comptime if n_nodes > 1:
         my_rank = Int32(shmem_my_pe())
 
     comptime hw_info = gpu_ctx.default_device_info
@@ -979,8 +964,7 @@ fn ep_fused_combine_kernel_api[
     ):
         var func = gpu_ctx.compile_function[fused_combine, fused_combine]()
 
-        @parameter
-        if use_shmem:
+        comptime if use_shmem:
             var cached_module_key = String(
                 "EP_FUSED_COMBINE_INITED_DEV_", gpu_id
             )

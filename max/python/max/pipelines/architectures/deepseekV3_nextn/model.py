@@ -18,15 +18,17 @@ import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
+from typing import cast
 
 import numpy as np
-from max.driver import Buffer
+from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
-from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams
+from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn.comm.ep import EPCommInitializer
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -35,7 +37,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.config_enums import PipelineRole
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -46,7 +48,6 @@ from ..deepseekV2.model import DeepseekV2Model
 from ..deepseekV3.model import (
     DeepseekV3Inputs,
     DeepseekV3Model,
-    _choose_correct_data_parallel_degree,
 )
 from .deepseekV3_nextn import DeepseekV3NextN
 from .model_config import DeepseekV3NextNConfig
@@ -66,12 +67,45 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Finalizes the pipeline configuration."""
-        _choose_correct_data_parallel_degree(
-            pipeline_config, len(pipeline_config.model.device_specs)
+    supports_shared_weights = True
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: WeightsAdapter | None = None,
+        return_logits: ReturnLogits = ReturnLogits.ALL,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        shared_weights: dict[str, DLPackArray] | None = None,
+        shared_ep_comm_initializer: EPCommInitializer | None = None,
+    ) -> None:
+        self._shared_weights = shared_weights
+        self._shared_ep_comm_initializer = shared_ep_comm_initializer
+        super().__init__(
+            pipeline_config,
+            session,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_logits,
+            return_hidden_states,
         )
+
+    def _apply_shared_weights(self, state_dict: dict[str, WeightData]) -> None:
+        if not self._shared_weights:
+            return
+        for key, value in self._shared_weights.items():
+            if key in state_dict:
+                state_dict[key] = cast(WeightData, value)
+            else:
+                logger.debug(
+                    "Shared weight '%s' not found in NextN state_dict; skipping",
+                    key,
+                )
 
     @classmethod
     def get_kv_params(
@@ -113,34 +147,34 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         )
         encoding = draft_model_config.quantization_encoding
         assert encoding is not None
-        dtype_bytes = encoding.dtype.size_in_bytes
+        dtype_bytes = supported_encoding_dtype(encoding).size_in_bytes
         config = draft_model_config.huggingface_config
         assert config is not None
         n_gpus_per_node = len(draft_model_config.device_specs)
 
-        # Check if weights are shared (EAGLE or MTP mode)
-        # In these modes, embed_tokens and lm_head are shared with the target model
-        weights_are_shared = pipeline_config.speculative is not None and (
+        total_size = 0
+
+        sharing_enabled = pipeline_config.speculative is not None and (
             pipeline_config.speculative.is_eagle()
             or pipeline_config.speculative.is_mtp()
         )
 
-        total_size = 0
-
-        # 1. Embedding and LM head (only if not shared)
-        # These are always in BF16
-        if not weights_are_shared:
-            embedding_size = (
-                config.vocab_size
-                * config.hidden_size
-                * DType.bfloat16.size_in_bytes
-            )
-            lm_head_size = embedding_size
+        # 1. Embedding and LM head (always in BF16 unless shared with target)
+        # In EAGLE/MTP, embedding and lm_head are shared with the target model.
+        embedding_size = (
+            config.vocab_size
+            * config.hidden_size
+            * DType.bfloat16.size_in_bytes
+        )
+        lm_head_size = embedding_size
+        if not sharing_enabled:
             total_size += embedding_size + lm_head_size
 
         # 2. NextN-specific norms (enorm, hnorm, shared_head_norm) - always BF16
         norm_size = config.hidden_size * DType.bfloat16.size_in_bytes
-        total_size += 3 * norm_size
+        total_size += 2 * norm_size
+        if not sharing_enabled:
+            total_size += norm_size
 
         # 3. eh_proj: Linear(hidden_size * 2, hidden_size)
         eh_proj_size = config.hidden_size * 2 * config.hidden_size * dtype_bytes
@@ -218,91 +252,6 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         )
 
         return total_size
-
-    @classmethod
-    def estimate_activation_memory(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
-    ) -> int:
-        """Estimates the activation memory required for DeepseekV3 NextN model.
-
-        This accounts for temporary memory buffers used during model execution,
-        such as intermediate activations and working buffers. The NextN model
-        has a single decoder layer, so activation memory is proportionally smaller.
-
-        Args:
-            pipeline_config: Pipeline configuration
-            huggingface_config: HuggingFace model configuration (from draft_model)
-
-        Returns:
-            Estimated activation memory in bytes
-        """
-        draft_model_config = pipeline_config.draft_model
-        assert draft_model_config is not None, (
-            "draft_model must be set for NextN"
-        )
-        encoding = draft_model_config.quantization_encoding
-        assert encoding is not None
-
-        mla_activation_memory: int = 0
-        moe_activation_memory: int = 0
-
-        if pipeline_config.pipeline_role != PipelineRole.DecodeOnly:
-            max_kv_length: int = 0
-
-            if pipeline_config.max_batch_total_tokens is None:
-                # If max_batch_total_tokens is not set, we use max_length.
-                max_kv_length = pipeline_config.max_length or 0
-            else:
-                max_kv_length = pipeline_config.max_batch_total_tokens
-
-            # MLA prefill activation for KV up-projection
-            mla_activation_memory += (
-                draft_model_config.data_parallel_degree
-                * 2  # K and V
-                * max_kv_length
-                * huggingface_config.num_attention_heads
-                * huggingface_config.qk_nope_head_dim
-                * draft_model_config.kv_cache.cache_dtype.size_in_bytes
-            )
-
-        # Estimate activation memory during Expert Parallel MoE
-        if pipeline_config.ep_size > 1:
-            n_gpus_per_node = len(draft_model_config.device_specs)
-            max_input_len_per_rank = pipeline_config.max_batch_input_tokens
-
-            # Maximum tokens a rank may receive during all-to-all routing
-            max_recv_tokens_per_rank = (
-                max_input_len_per_rank * huggingface_config.n_routed_experts
-            )
-
-            # Input for grouped_matmul: [max_recv_tokens_per_rank, moe_intermediate_size]
-            moe_activation_memory += (
-                max_recv_tokens_per_rank
-                * huggingface_config.moe_intermediate_size
-                * encoding.dtype.size_in_bytes
-            )
-
-            # Output: [max_recv_tokens_per_rank, hidden_size]
-            moe_activation_memory += (
-                max_recv_tokens_per_rank
-                * huggingface_config.hidden_size
-                * DType.bfloat16.size_in_bytes  # output is always bfloat16
-            )
-
-            # Misc overhead (FP8 scalars, etc.)
-            moe_activation_memory += 256 * 1024 * 1024
-
-            moe_activation_memory *= n_gpus_per_node
-
-        # MLA and MoE execute sequentially, so take the max
-        activation_memory = max(mla_activation_memory, moe_activation_memory)
-
-        if activation_memory != 0:
-            logger.info(
-                f"Estimated NextN activation memory: {to_human_readable_bytes(activation_memory)}"
-            )
-
-        return activation_memory
 
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
@@ -384,12 +333,25 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 key: value.data() for key, value in self.weights.items()
             }
 
+        self._apply_shared_weights(state_dict)
         config = self._create_model_config(state_dict)
 
         self.ep_comm_initializer: EPCommInitializer | None = None
         if config.ep_config is not None:
-            self.ep_comm_initializer = EPCommInitializer(config.ep_config)
-            self.ep_comm_initializer.ep_init(session)
+            if self._shared_ep_comm_initializer is not None:
+                # Reuse target model's EP buffers (NVSHMEM symmetric memory).
+                # Target and draft execute sequentially in the EAGLE pipeline,
+                # so sharing is safe and avoids duplicating ~85 GiB of buffers.
+                self.ep_comm_initializer = self._shared_ep_comm_initializer
+                # Propagate node_id from the shared initializer since NextN
+                # constructs its own EPConfig with node_id=-1.
+                config.ep_config.node_id = (
+                    self._shared_ep_comm_initializer.config.node_id
+                )
+                logger.info("Reusing target model's EP communication buffers.")
+            else:
+                self.ep_comm_initializer = EPCommInitializer(config.ep_config)
+                self.ep_comm_initializer.ep_init(session)
             if config.ep_config.node_id == -1:
                 raise ValueError(
                     "EP node ID is not set. Please check if the EP initialization is successful."
@@ -562,7 +524,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # If we are not in decode only mode, we need to create a list of
         # tensors containing the context length of each batch. Needed by MLA prefill.
-        if self.pipeline_config.pipeline_role is not PipelineRole.DecodeOnly:
+        if self.pipeline_config.pipeline_role != "decode_only":
             for i, batch in enumerate(replica_batches):
                 curr_length = sum([ctx.tokens.active_length for ctx in batch])
                 self._batch_context_lengths_prealloc_cpu[i][0] = curr_length

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides a utility function for calculating the maximum number of tokens to generate."""
+
 
 def max_tokens_to_generate(
     prompt_size: int,

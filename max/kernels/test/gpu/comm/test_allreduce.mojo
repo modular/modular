@@ -61,7 +61,6 @@ fn allreduce_test[
     ngpus: Int,
     *,
     use_multimem: Bool,
-    use_quickreduce: Bool = False,
     use_custom_epilogue: Bool = False,
 ](list_of_ctx: List[DeviceContext], length: Int) raises:
     # Using multimem with zero length raises CUDA_ERROR_INVALID_VALUE
@@ -123,9 +122,9 @@ fn allreduce_test[
             list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[dtype, rank, ImmutAnyOrigin], num_buffers
+    ](fill={})
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
@@ -192,15 +191,13 @@ fn allreduce_test[
 
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         allreduce[
             ngpus=ngpus,
             output_lambda = Optional[elementwise_epilogue_type](
                 outputs_lambda[input_index=i]
             ) if use_custom_epilogue else None,
             use_multimem=use_multimem,
-            use_quickreduce=use_quickreduce,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
     group_end()
 
@@ -208,8 +205,7 @@ fn allreduce_test[
         list_of_ctx[i].synchronize()
 
     # Vendor RCCL comparison (non-multimem path only and only if available).
-    @parameter
-    if not use_multimem and has_amd_gpu_accelerator():
+    comptime if not use_multimem and has_amd_gpu_accelerator():
         try:
             # Prepare distinct outputs for vendor path to avoid aliasing.
             var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -226,9 +222,7 @@ fn allreduce_test[
 
             # Test RCCL.
             with vendor_ccl.group():
-
-                @parameter
-                for i in range(ngpus):
+                comptime for i in range(ngpus):
                     vendor_ccl.allreduce[ngpus=ngpus](
                         in_bufs,
                         out_bufs_vendor[i],
@@ -272,19 +266,14 @@ fn allreduce_test[
     # Cleanup
     for i in range(ngpus):
         host_buffers[i].free()
-    _ = signal_buffers^
-    _ = in_bufs_list^
-    _ = out_bufs_list^
 
 
 fn _get_test_str[
     dtype: DType,
     use_multimem: Bool,
-    use_quickreduce: Bool = False,
     use_custom_epilogue: Bool = False,
 ](ngpus: Int, length: Int) -> String:
     var multimem_tag = "-multimem" if use_multimem else ""
-    var quickreduce_tag = "-quickreduce" if use_quickreduce else ""
     var epilogue_tag = "-custom_epilogue" if use_custom_epilogue else ""
     return String(
         "====allreduce-",
@@ -292,7 +281,6 @@ fn _get_test_str[
         "-",
         ngpus,
         multimem_tag,
-        quickreduce_tag,
         epilogue_tag,
         "-",
         human_readable_size(size_of[dtype]() * length),
@@ -368,8 +356,7 @@ def allreduce_naive_test() -> None:
         )
 
     # Launch naive allreduce per device
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         _allreduce_naive_single[
             dtype = DType.float32,
             rank=1,
@@ -395,12 +382,9 @@ def allreduce_naive_test() -> None:
 
 
 @parameter
-fn run_allreduce_sweep[
-    use_multimem: Bool, use_quickreduce: Bool = False
-]() raises:
+fn run_allreduce_sweep[use_multimem: Bool]() raises:
     # Run tests for each configuration.
-    @parameter
-    for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
+    comptime for gpu_idx, dtype_idx, length_idx, epilogue_idx in product(
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),
@@ -421,18 +405,14 @@ fn run_allreduce_sweep[
 
         # Some checks for raggedness
         comptime simd_width = simd_width_of[dtype, get_gpu_target()]()
-        constrained[
-            length % simd_width == 0, "Length must be multiple of simd_width"
-        ]()
-        comptime quickreduce_tile_shape = simd_width * 8 * 256
-        if use_quickreduce and (length % quickreduce_tile_shape != 0):
-            # Quickreduce requires full tiles (a quickreduce specific concept)
-            continue
+        comptime assert (
+            length % simd_width == 0
+        ), "Length must be multiple of simd_width"
 
         print(
-            _get_test_str[
-                dtype, use_multimem, use_quickreduce, use_custom_epilogue
-            ](num_gpus, length)
+            _get_test_str[dtype, use_multimem, use_custom_epilogue](
+                num_gpus, length
+            )
         )
         try:
             allreduce_test[
@@ -440,7 +420,6 @@ fn run_allreduce_sweep[
                 rank=1,
                 ngpus=num_gpus,
                 use_multimem=use_multimem,
-                use_quickreduce=use_quickreduce,
                 use_custom_epilogue=use_custom_epilogue,
             ](ctx, length)
         except e:
@@ -450,7 +429,6 @@ fn run_allreduce_sweep[
                     _get_test_str[
                         dtype,
                         use_multimem,
-                        use_quickreduce,
                         use_custom_epilogue,
                     ](num_gpus, length),
                 )
@@ -476,4 +454,3 @@ def main():
 
     # Standard (non-multimem) sweep
     run_allreduce_sweep[use_multimem=False]()
-    run_allreduce_sweep[use_multimem=False, use_quickreduce=True]()

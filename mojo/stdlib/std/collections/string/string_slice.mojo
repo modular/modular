@@ -157,8 +157,7 @@ struct CodepointSliceIter[
         if len(self._slice) <= 0:
             raise StopIteration()
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             return self.next().value()
         else:
             return self.next_back().value()
@@ -473,9 +472,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     IntableRaising,
     KeyElement,
     PathLike,
-    Representable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -738,6 +735,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert this StringSlice to a String.
@@ -756,6 +754,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         memcpy(dest=result.unsafe_ptr_mut(), src=self.unsafe_ptr(), count=len)
         return result^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of this string slice.
 
@@ -884,7 +883,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
           The file system path representation as a string.
         """
-        return self.__str__()
+        return String(self)
 
     @always_inline
     fn __getitem__(self, span: ContiguousSlice) -> Self:
@@ -1140,15 +1139,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             An iterator of references to the string elements.
         """
         return self.codepoint_slices()
-
-    @deprecated("Use `str.codepoint_slices_reversed()` instead.")
-    fn __reversed__(self) -> CodepointSliceIter[Self.origin, False]:
-        """Iterate backwards over the string, returning immutable references.
-
-        Returns:
-            A reversed iterator of references to the string elements.
-        """
-        return self.codepoint_slices_reversed()
 
     fn __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
@@ -2031,8 +2021,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 return ptr[0] == 0xE2 and ptr[1] == 0x80 and last_byte
             return False
 
-        @parameter
-        if single_character:
+        comptime if single_character:
             return _is_space_char(self)
         else:
             for s in self.codepoint_slices():
@@ -2155,8 +2144,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         var ptr = self.unsafe_ptr()
         var length = self.byte_length()
 
-        @parameter
-        if single_character:
+        comptime if single_character:
             return length != 0 and _is_newline_char_utf8[include_r_n=True](
                 ptr, 0, ptr[0], UInt(length)
             )
@@ -2224,8 +2212,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 # When keep=False it is much faster because the previous
                 # character is stored in a variable instead of having to deref a
                 # pointer
-                @parameter
-                if keep:
+                comptime if keep:
                     var is_r = unlikely(b0 == `\r`)
                     var may_be_r_n = is_r and likely(line_end < UInt(length))
                     var is_r_n = UInt(
@@ -2884,8 +2871,7 @@ fn _split[
     comptime prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
-    @parameter
-    if has_maxsplit:
+    comptime if has_maxsplit:
         amnt = maxsplit + 1 if maxsplit < prealloc else prealloc
     output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
@@ -2901,8 +2887,7 @@ fn _split[
         # if not found go to the end
         rhs += is_negative(rhs) & (str_byte_len + 1)
 
-        @parameter
-        if has_maxsplit:
+        comptime if has_maxsplit:
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 
@@ -2922,8 +2907,7 @@ fn _split[
     comptime prealloc = 32  # guessing, Python's implementation uses 12
     var amnt = prealloc
 
-    @parameter
-    if has_maxsplit:
+    comptime if has_maxsplit:
         amnt = maxsplit + 1 if maxsplit < prealloc else prealloc
     output = {capacity = amnt}
     var str_byte_len = src_str.byte_length()
@@ -2953,8 +2937,7 @@ fn _split[
                 break
             rhs += s.byte_length()
 
-        @parameter
-        if has_maxsplit:
+        comptime if has_maxsplit:
             rhs += splat(items == maxsplit) & (str_byte_len - rhs)
             items += 1
 

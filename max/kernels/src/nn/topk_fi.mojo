@@ -178,8 +178,7 @@ fn TopKMaskLogitsKernel[
                 var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
                 var probs_gt_pivot_1_count = SIMD[DType.int32, vec_size]()
 
-                @parameter
-                for j in range(vec_size):
+                comptime for j in range(vec_size):
                     # Calculate the global index for this element in the row.
                     # Will only count if the index is within the valid range [0, d).
                     var idx = (i * block_size + tx) * vec_size + j
@@ -320,8 +319,7 @@ fn topk_mask_logits[
         )
 
     # Runtime dispatch to compile-time parameter.
-    @parameter
-    for param_vec_size in [16, 8, 4, 2, 1]:
+    comptime for param_vec_size in [16, 8, 4, 2, 1]:
         if vec_size == param_vec_size:
             return launch_kernel[param_vec_size]()
 
@@ -355,8 +353,7 @@ fn device_sampling_from_prob[
     var prob_gt_threshold = SIMD[DType.float32, vec_size]()
     var valid = SIMD[DType.bool, vec_size]()
 
-    @parameter
-    for j in range(vec_size):
+    comptime for j in range(vec_size):
         var idx = (i * block_size + tx) * vec_size + j
         var passes_pred = prob_vec[j] > Float32(low)
         prob_gt_threshold[j] = prob_vec[j] if passes_pred else 0.0
@@ -376,8 +373,7 @@ fn device_sampling_from_prob[
         # Intra-SIMD prefix sum using shift operations.
         var local_inclusive_cdf = prob_gt_threshold  # Start with the values
 
-        @parameter
-        for i in range(log2_floor(vec_size)):
+        comptime for i in range(log2_floor(vec_size)):
             # Shift right by 2^i positions (filling with zeros)
             # and add to accumulate prefix sums.
             local_inclusive_cdf += local_inclusive_cdf.shift_right[2**i]()
@@ -396,8 +392,7 @@ fn device_sampling_from_prob[
         )
 
         # Step 7: Find first index where cumulative > u using atomic min.
-        @parameter
-        for j in range(vec_size):
+        comptime for j in range(vec_size):
             var idx = (i * block_size + tx) * vec_size + j
             if (global_inclusive_cdf[j] + aggregate > u) and valid[j]:
                 # Atomic min to ensure we get the smallest index across all threads.
@@ -409,8 +404,7 @@ fn device_sampling_from_prob[
     # Step 8: Update last valid index using atomic max.
     var max_valid_idx = -1
 
-    @parameter
-    for j in range(vec_size):
+    comptime for j in range(vec_size):
         var idx = (i * block_size + tx) * vec_size + j
         if valid[j]:
             max_valid_idx = idx
@@ -482,8 +476,7 @@ fn _warp_reduce_value_count[T: DType](val: ValueCount[T]) -> ValueCount[T]:
     comptime limit = log2_floor(WARP_SIZE)
 
     # Reduce across warp lanes using shuffle_down.
-    @parameter
-    for i in reversed(range(limit)):
+    comptime for i in reversed(range(limit)):
         comptime offset = 1 << i
         result.value += warp.shuffle_down(result.value, UInt32(offset))
         result.count += warp.shuffle_down(result.count, UInt32(offset))
@@ -563,8 +556,7 @@ fn _block_reduce_value_count[
     # Perform final warp-level reduction.
     var result = _warp_reduce_value_count(block_accum)
 
-    @parameter
-    if broadcast:
+    comptime if broadcast:
         if thread_idx.x == 0:
             value_sram[0] = result.value
             count_sram[0] = result.count
@@ -645,11 +637,8 @@ fn TopKSamplingFromProbKernel[
     var q: Float32 = 1.0
     var low = 0.0
     var high = 1.0
-    var round = 0
 
     while low < high:
-        round += 1
-
         if tx == 0:
             sampled_id_sram[0] = d
             last_valid_id_sram[0] = -1
@@ -709,8 +698,7 @@ fn TopKSamplingFromProbKernel[
             var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
             var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
 
-            @parameter
-            for j in range(vec_size):
+            comptime for j in range(vec_size):
                 var idx = (i * block_size + tx) * vec_size + j
                 var is_valid = idx < d
 
@@ -878,12 +866,355 @@ fn topk_sampling_from_prob[
     # Runtime dispatch to compile-time parameter.
     @parameter
     fn dispatch_vec_size[deterministic: Bool]() raises:
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
+            if vec_size == param_vec_size:
+                return launch_kernel[param_vec_size, deterministic]()
+
+    # Dispatch on deterministic flag.
+    if deterministic:
+        dispatch_vec_size[True]()
+    else:
+        dispatch_vec_size[False]()
+
+
+fn TopKTopPSamplingFromProbKernel[
+    ProbsLayoutType: TensorLayout,
+    probs_origin: ImmutOrigin,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    block_size: Int,
+    vec_size: Int,
+    dtype: DType,
+    out_idx_type: DType,
+    deterministic: Bool,
+](
+    probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
+    output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
+    indices: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    top_k_val: Int,
+    top_p_arr: UnsafePointer[Float32, MutExternalOrigin],
+    top_p_val: Float32,
+    d: Int,
+    rng_seed: UnsafePointer[UInt64, MutExternalOrigin],
+    rng_offset: UInt64,
+):
+    """Kernel for joint top-k + top-p sampling from probability distribution.
+
+    Identical to TopKSamplingFromProbKernel but additionally enforces a nucleus
+    (top-p) constraint: a token is accepted only when both the count of tokens
+    above the pivot is less than k AND the cumulative probability of those
+    tokens is less than p.
+
+    When top_p_val = 1.0 and top_p_arr is null, this degrades to top-k-only
+    with zero overhead since sum < 1.0 is always true.
+
+    Args:
+        probs: Input probability distribution [batch_size, d].
+        output: Output sampled indices [batch_size].
+        indices: Optional row indices for batch indexing [batch_size].
+        top_k_arr: Optional per-row top_k values [batch_size].
+        top_k_val: Default top_k value if top_k_arr is null.
+        top_p_arr: Optional per-row top_p values [batch_size].
+        top_p_val: Default top_p value if top_p_arr is null.
+        d: Vocabulary size.
+        rng_seed: Pointer to seed value. If non-null, rng_seed[0] is used
+            as the seed. If null, defaults to 0.
+        rng_offset: Random offset for Random number generator.
+    """
+    comptime assert output.flat_rank == 1
+
+    var bx = Int(block_idx.x)
+    var tx = Int(thread_idx.x)
+
+    var sampled_id_sram = stack_allocation[
+        1, Int, address_space = AddressSpace.SHARED
+    ]()
+    var last_valid_id_sram = stack_allocation[
+        1, Int, address_space = AddressSpace.SHARED
+    ]()
+
+    var seed_val = UInt64(0)
+    if rng_seed:
+        seed_val = rng_seed[0]
+    var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
+    var k = top_k_val
+    if top_k_arr:
+        k = Int(top_k_arr.load(bx))
+    var row_idx = bx
+    if indices:
+        row_idx = Int(indices.load(bx))
+    var p = top_p_val
+    if top_p_arr:
+        p = top_p_arr[row_idx]
+
+    var probs_ptr = probs.ptr + row_idx * d
+    var probs_row = TileTensor(probs_ptr, row_major((Idx[1](), Idx(d))))
+
+    var probs_vec: SIMD[DType.float32, vec_size]
+    var aggregate: Float32
+    var sampled_id = 0
+    var q: Float32 = 1.0
+    var low = 0.0
+    var high = 1.0
+
+    while low < high:
+        if tx == 0:
+            sampled_id_sram[0] = d
+            last_valid_id_sram[0] = -1
+        barrier()
+
+        var u = generator.step_uniform()[0] * q
+        aggregate = 0.0
+
+        for i in range(ceildiv(d, block_size * vec_size)):
+            probs_vec = 0
+            if (i * block_size + tx) * vec_size < d:
+                probs_vec = probs_row.load[width=vec_size](
+                    (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                ).cast[DType.float32]()
+
+            aggregate = device_sampling_from_prob[
+                vec_size, block_size, dtype, deterministic
+            ](
+                i,
+                d,
+                low,
+                u,
+                probs_vec,
+                aggregate,
+                sampled_id_sram,
+                last_valid_id_sram,
+            )
+            if aggregate > u:
+                break
+
+        barrier()
+
+        sampled_id = sampled_id_sram[0]
+        if sampled_id == d:
+            sampled_id = last_valid_id_sram[0]
+
+        var pivot_0 = Float64(
+            probs_row.load[width=1]((Idx[0](), Idx(sampled_id)))
+        )
+        var pivot_1 = (pivot_0 + high) / 2.0
+
+        var aggregate_gt_pivot_0 = ValueCount[DType.float32](0.0, 0)
+        var aggregate_gt_pivot_1 = ValueCount[DType.float32](0.0, 0)
+
+        for i in range(ceildiv(d, block_size * vec_size)):
+            probs_vec = 0
+            if (i * block_size + tx) * vec_size < d:
+                probs_vec = probs_row.load[width=vec_size](
+                    (Idx[0](), Idx((i * block_size + tx) * vec_size))
+                ).cast[DType.float32]()
+
+            var probs_gt_pivot_0_values = SIMD[DType.float32, vec_size]()
+            var probs_gt_pivot_0_counts = SIMD[DType.int32, vec_size]()
+            var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
+            var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
+
+            @parameter
+            for j in range(vec_size):
+                var idx = (i * block_size + tx) * vec_size + j
+                var is_valid = idx < d
+
+                var gt_pivot_0 = probs_vec[j] > Float32(pivot_0)
+                probs_gt_pivot_0_values[j] = probs_vec[j] if gt_pivot_0 else 0.0
+                probs_gt_pivot_0_counts[j] = Int32(1) if (
+                    gt_pivot_0 and is_valid
+                ) else Int32(0)
+
+                var gt_pivot_1 = probs_vec[j] > Float32(pivot_1)
+                probs_gt_pivot_1_values[j] = probs_vec[j] if gt_pivot_1 else 0.0
+                probs_gt_pivot_1_counts[j] = Int32(1) if (
+                    gt_pivot_1 and is_valid
+                ) else Int32(0)
+
+            var thread_value_0 = probs_gt_pivot_0_values.reduce_add()
+            var thread_count_0 = probs_gt_pivot_0_counts.reduce_add()
+            var thread_value_1 = probs_gt_pivot_1_values.reduce_add()
+            var thread_count_1 = probs_gt_pivot_1_counts.reduce_add()
+
+            var thread_vc_0 = ValueCount[DType.float32](
+                thread_value_0, thread_count_0
+            )
+            var thread_vc_1 = ValueCount[DType.float32](
+                thread_value_1, thread_count_1
+            )
+
+            var block_vc_0 = _block_reduce_value_count[
+                DType.float32, broadcast=True
+            ](thread_vc_0)
+            var block_vc_1 = _block_reduce_value_count[
+                DType.float32, broadcast=True
+            ](thread_vc_1)
+
+            aggregate_gt_pivot_0 += block_vc_0
+            aggregate_gt_pivot_1 += block_vc_1
+
+        if (
+            aggregate_gt_pivot_0.count < Int32(k)
+            and aggregate_gt_pivot_0.value < p
+        ):
+            # Case 1: pivot_0 accepted - count below k AND prob mass below p.
+            break
+
+        if (
+            aggregate_gt_pivot_1.count < Int32(k)
+            and aggregate_gt_pivot_1.value < p
+        ):
+            # Case 2: pivot_0 rejected, pivot_1 accepted.
+            low = pivot_0
+            high = pivot_1
+            q = aggregate_gt_pivot_0.value
+        else:
+            # Case 3: both pivots rejected.
+            low = pivot_1
+            q = aggregate_gt_pivot_1.value
+
+    barrier()
+
+    if tx == 0:
+        output[bx] = Scalar[out_idx_type](sampled_id)
+
+
+fn topk_topp_sampling_from_prob[
+    dtype: DType,
+    out_idx_type: DType,
+    block_size: Int = 1024,
+    TopKArrLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
+    ],
+    IndicesLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
+    ],
+    TopPArrLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
+    ],
+    SeedLayoutType: TensorLayout = Layout[
+        shape_types = Variadic.types[RuntimeInt[DType.int64]],
+        stride_types = Variadic.types[ComptimeInt[1]],
+    ],
+](
+    ctx: DeviceContext,
+    probs: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, out_idx_type, ...],
+    top_k_val: Int,
+    top_p_val: Float32 = 1.0,
+    deterministic: Bool = False,
+    rng_seed: Optional[
+        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+    ] = None,
+    rng_offset: UInt64 = 0,
+    indices: Optional[
+        TileTensor[out_idx_type, IndicesLayoutType, ImmutAnyOrigin]
+    ] = None,
+    top_k_arr: Optional[
+        TileTensor[out_idx_type, TopKArrLayoutType, ImmutAnyOrigin]
+    ] = None,
+    top_p_arr: Optional[
+        TileTensor[DType.float32, TopPArrLayoutType, ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """Joint top-k + top-p sampling from probability distribution.
+
+    Performs stochastic sampling considering only tokens that satisfy both the
+    top-k count constraint AND the top-p nucleus constraint. When top_p_val is
+    1.0 (default) this behaves identically to topk_sampling_from_prob.
+
+    Args:
+        ctx: Device context for kernel execution.
+        probs: Input probability distribution [batch_size, d].
+        output: Output sampled indices [batch_size].
+        top_k_val: Default top-k value (number of top tokens to consider).
+        top_p_val: Default top-p value (nucleus probability threshold).
+        deterministic: Whether to use deterministic sampling.
+        rng_seed: Optional seed tensor. If provided, rng_seed[0] is used
+            as the seed. If None, defaults to 0.
+        rng_offset: Random offset for Random number generator.
+        indices: Optional row indices for batch indexing [batch_size].
+        top_k_arr: Optional per-row top-k values [batch_size].
+        top_p_arr: Optional per-row top-p values [batch_size].
+
+    Raises:
+        Error: If tensor ranks or shapes are invalid.
+    """
+
+    comptime assert probs.rank == 2, "probs rank must be 2"
+    comptime assert output.rank == 1, "output rank must be 1"
+
+    var shape = coord_to_index_list(probs.layout.shape_coord())
+    var batch_size = shape[0]
+    var d = shape[1]
+
+    var out_shape = coord_to_index_list(output.layout.shape_coord())
+    if out_shape[0] != batch_size:
+        raise Error("output batch size must match probs batch size")
+
+    var vec_size = gcd(16 // size_of[dtype](), d)
+
+    var indices_buf: DeviceBuffer[out_idx_type]
+    if indices:
+        indices_buf = indices.value().to_device_buffer(ctx)
+    else:
+        indices_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+    var top_k_buf: DeviceBuffer[out_idx_type]
+    if top_k_arr:
+        top_k_buf = top_k_arr.value().to_device_buffer(ctx)
+    else:
+        top_k_buf = DeviceBuffer[out_idx_type](ctx, {}, 0, owning=False)
+    var top_p_buf: DeviceBuffer[DType.float32]
+    if top_p_arr:
+        top_p_buf = top_p_arr.value().to_device_buffer(ctx)
+    else:
+        top_p_buf = DeviceBuffer[DType.float32](ctx, {}, 0, owning=False)
+    var seed_buf: DeviceBuffer[DType.uint64]
+    if rng_seed:
+        seed_buf = rng_seed.value().to_device_buffer(ctx)
+    else:
+        seed_buf = DeviceBuffer[DType.uint64](ctx, {}, 0, owning=False)
+
+    @parameter
+    fn launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+        comptime kernel = TopKTopPSamplingFromProbKernel[
+            probs.LayoutType,
+            ImmutOrigin(probs.origin),
+            output.LayoutType,
+            output.origin,
+            block_size,
+            vec_size,
+            dtype,
+            out_idx_type,
+            deterministic,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            probs.as_immut(),
+            output,
+            indices_buf,
+            top_k_buf,
+            top_k_val,
+            top_p_buf,
+            top_p_val,
+            d,
+            seed_buf,
+            rng_offset,
+            grid_dim=batch_size,
+            block_dim=block_size,
+            attributes=pdl_launch_attributes(),
+        )
+
+    @parameter
+    fn dispatch_vec_size[deterministic: Bool]() raises:
         @parameter
         for param_vec_size in [16, 8, 4, 2, 1]:
             if vec_size == param_vec_size:
                 return launch_kernel[param_vec_size, deterministic]()
 
-    # Dispatch on deterministic flag.
     if deterministic:
         dispatch_vec_size[True]()
     else:
@@ -985,8 +1316,7 @@ fn TopKSoftmaxSampleKernel[
                 var probs_gt_pivot_0_count = SIMD[DType.int32, vec_size]()
                 var probs_gt_pivot_1_count = SIMD[DType.int32, vec_size]()
 
-                @parameter
-                for j in range(vec_size):
+                comptime for j in range(vec_size):
                     var idx = (i * block_size + tx) * vec_size + j
 
                     probs_gt_pivot_0_count[j] = Int32(1) if (
@@ -1231,7 +1561,6 @@ fn topk_softmax_sample[
         )
 
     # Runtime dispatch to compile-time parameter.
-    @parameter
-    for param_vec_size in [16, 8, 4, 2, 1]:
+    comptime for param_vec_size in [16, 8, 4, 2, 1]:
         if vec_size == param_vec_size:
             return launch_kernel[param_vec_size]()

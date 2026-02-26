@@ -13,22 +13,19 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
-from ..llama3_legacy import weight_adapters as llama3_weight_adapters
+from ..llama3 import weight_adapters as llama3_weight_adapters
 from . import weight_adapters
 from .model import Olmo2Model
 from .model_config import Olmo2Config
 
 olmo2_arch = SupportedArchitecture(
-    name="Olmo2ForCausalLM_Legacy",
+    name="Olmo2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "allenai/OLMo-2-0425-1B-Instruct",
@@ -38,15 +35,15 @@ olmo2_arch = SupportedArchitecture(
         "allenai/OLMo-2-1124-7B-GGUF",
     ],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
+        "bfloat16": ["paged"],
+        "float32": ["paged"],
     },
     pipeline_model=Olmo2Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: llama3_weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,

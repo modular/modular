@@ -32,24 +32,22 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
 )
 from transformers.models.auto.configuration_auto import AutoConfig
 
@@ -186,7 +184,7 @@ def assert_image_embeddings_invariant(
 
 
 class InternVLModel(
-    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextAndVisionContext]
 ):
     """An InternVL pipeline model for multimodal text generation."""
 
@@ -205,8 +203,6 @@ class InternVLModel(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -216,8 +212,6 @@ class InternVLModel(
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -235,7 +229,7 @@ class InternVLModel(
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculates the maximum sequence length for the InternVL model."""
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
 
@@ -312,7 +306,7 @@ class InternVLModel(
 
         # Note: Each image can use up to max_dynamic_patch patches (default 12)
         # plus 1 for thumbnail if applicable.
-        if not pipeline_config.enable_chunked_prefill:
+        if not pipeline_config.runtime.enable_chunked_prefill:
             # When there's no chunked prefill, the number of images may overhang
             # by the maximum in a single request.
             # Since we only support a single image per request for now,
@@ -519,9 +513,7 @@ class InternVLModel(
         ]
 
         # Flatten kv types for each device
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)

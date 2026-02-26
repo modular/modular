@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import Optional
 from math import align_up, ceildiv
-from sys import (
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-    simd_width_of,
-)
+from sys import simd_width_of
 
 import gpu.primitives.warp as warp
 from algorithm.reduction import _reduce_generator
@@ -37,10 +33,8 @@ from gpu.host import (
     DeviceAttribute,
     DeviceBuffer,
     DeviceContext,
-    LaunchAttribute,
     get_gpu_target,
 )
-from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import load
 from gpu.primitives.grid_controls import (
     PDLLevel,
@@ -48,7 +42,6 @@ from gpu.primitives.grid_controls import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.host.info import H100
 
 # layout imports
 from layout import (
@@ -155,8 +148,7 @@ fn gemv_kernel[
 
     var accum = Scalar[s_type](0)
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # Every warp processes a single row of the resultant vector
@@ -171,9 +163,7 @@ fn gemv_kernel[
     accum = warp.sum(accum)
 
     if lane_id == 0:
-
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
                 reverse_idx[transpose_b](Int(global_warp_id), 0),
@@ -182,8 +172,7 @@ fn gemv_kernel[
         else:
             c[global_warp_id] = accum.cast[c_type]()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
 
 
@@ -224,8 +213,7 @@ fn gemv_kernel_vector[
 
     comptime local_accum_type = type_of(local_accum)
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     for i in range(ceildiv(k // Int(simd_width), WARP_SIZE)):
@@ -246,24 +234,19 @@ fn gemv_kernel_vector[
     var accum = warp.sum(local_accum)
 
     if lane_id == 0:
-
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
                 reverse_idx[transpose_b](global_warp_id, 0),
                 accum.cast[c_type](),
             )
         else:
-
-            @parameter
-            if transpose_b:
+            comptime if transpose_b:
                 c[0, global_warp_id] = accum.cast[c_type]()
             else:
                 c[global_warp_id, 0] = accum.cast[c_type]()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
 
 
@@ -277,10 +260,10 @@ fn gemv_split_k[
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
-    simd_width: UInt,
-    tile_m: UInt,
-    tile_n: UInt,
-    num_threads: UInt,
+    simd_width: Int,
+    tile_m: Int,
+    tile_n: Int,
+    num_threads: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
     check_bounds: Bool = True,
@@ -304,13 +287,13 @@ fn gemv_split_k[
     # Nvidia vectorized load is 16B.
     comptime tile_k = simd_width * num_threads
     # which rows of the activation matrix each thread will process
-    var tile_id_m = block_idx.x * tile_m
+    var tile_id_m = Int(block_idx.x) * tile_m
     # which rows of the weight matrix each thread will process
-    var tile_id_n = block_idx.y * tile_n
-    var tid = thread_idx.x
+    var tile_id_n = Int(block_idx.y) * tile_n
+    var tid = Int(thread_idx.x)
     var tile_w = LayoutTensor[
         b_type,
-        Layout.row_major(Int(tile_n), Int(simd_width)),
+        Layout.row_major(tile_n, simd_width),
         MutAnyOrigin,
         address_space = AddressSpace.LOCAL,
     ].stack_allocation()
@@ -319,99 +302,80 @@ fn gemv_split_k[
     var acc = (
         LayoutTensor[
             s_type,
-            Layout.row_major(Int(tile_m), Int(tile_n)),
+            Layout.row_major(tile_m, tile_n),
             MutAnyOrigin,
             address_space = AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
     )
-    var output_idx = tile_id_m * UInt(n) + tile_id_n
+    var output_idx = tile_id_m * n + tile_id_n
     var iteration = 0
-    comptime WeightVecType = SIMD[b_type, Int(simd_width)]
+    comptime WeightVecType = SIMD[b_type, simd_width]
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # Each thread sums local data in K.
     for _ in range(tid * simd_width, k, tile_k):
-        var weight_tile = weight.tile[Int(tile_n), Int(tile_k)](
+        var weight_tile = weight.tile[tile_n, tile_k](
             Int(block_idx.y), iteration
         )
-        var act_tile = act.tile[Int(tile_m), Int(tile_k)](
-            Int(block_idx.x), iteration
-        )
+        var act_tile = act.tile[tile_m, tile_k](Int(block_idx.x), iteration)
 
-        @parameter
-        for i in range(tile_n):
+        comptime for i in range(tile_n):
             # Here we load data @ thread_idx.x from the weight matrix
             # and store it into tile_w. We skip this if if the current
             # row we are reading from (i + tile_id_n) is greater than the number
             # of rows in the weight matrix.
-            @parameter
-            if check_bounds:
-                if i + tile_id_n >= UInt(n):
+            comptime if check_bounds:
+                if i + tile_id_n >= n:
                     continue
-            var b_vec = weight_tile.vectorize[1, Int(simd_width)]()[
-                i, thread_idx.x
-            ]
-            tile_w.store[Int(simd_width)](
-                Int(i), 0, rebind[WeightVecType](b_vec)
-            )
+            var b_vec = weight_tile.vectorize[1, simd_width]()[i, thread_idx.x]
+            tile_w.store(i, 0, rebind[WeightVecType](b_vec))
 
-        @parameter
-        for i in range(tile_m):
+        comptime for i in range(tile_m):
             # Here we load data @ thread_idx.x from the activation matrix
             # and store it into tile_a. We skip this if if the current
             # row we are reading from (i + tile_id_m) is greater than the number
             # of rows in the activation matrix. This should never be the case if
             # tile_m is 1.
-            @parameter
-            if check_bounds:
-                if i + tile_id_m >= UInt(m):
+            comptime if check_bounds:
+                if i + tile_id_m >= m:
                     continue
-            var act_vec = act_tile.vectorize[1, Int(simd_width)]()[
-                i, thread_idx.x
-            ]
+            var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
 
             # Now we multiply tile_a by tile_w and store the partials
             # in acc
-            @parameter
-            for j in range(tile_n):
-                var weight_vec = tile_w.vectorize[1, Int(simd_width)]()[j, 0]
+            comptime for j in range(tile_n):
+                var weight_vec = tile_w.vectorize[1, simd_width]()[j, 0]
 
                 var local_accum = rebind[Scalar[s_type]](acc[i, j])
 
-                @parameter
-                for l in range(simd_width):
+                comptime for l in range(simd_width):
                     local_accum += (
-                        act_vec[Int(l)].cast[s_type]()
-                        * weight_vec[Int(l)].cast[s_type]()
+                        act_vec[l].cast[s_type]() * weight_vec[l].cast[s_type]()
                     )
 
-                acc.store[1](Int(i), Int(j), local_accum)
+                acc.store(i, j, local_accum)
 
         iteration += 1
 
     # Warps are arranged along K.
-    comptime k_warp_num = num_threads // UInt(WARP_SIZE)
-    var warp_id = warp_id()
+    comptime k_warp_num = num_threads // WARP_SIZE
+    var warp_id = Int(warp_id())
     var lane_id = lane_id()
     var shmem = LayoutTensor[
         s_type,
-        Layout.row_major(1, Int(tile_m * tile_n * k_warp_num)),
+        Layout.row_major(1, tile_m * tile_n * k_warp_num),
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     # Each warp sums across its threads and stages results in shared memory.
     # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
-    @parameter
-    for mi in range(tile_m):
-
-        @parameter
-        for ni in range(tile_n):
+    comptime for mi in range(tile_m):
+        comptime for ni in range(tile_n):
             var val = warp.sum(acc[mi, ni])
             if lane_id == 0:
                 shmem[0, mi * tile_n + ni + warp_id * tile_m * tile_n] = val
@@ -424,31 +388,29 @@ fn gemv_split_k[
         var val = Scalar[s_type]()
         comptime ValType = type_of(val)
 
-        @parameter
-        for jj in range(k_warp_num):
+        comptime for jj in range(k_warp_num):
             val += rebind[ValType](shmem[0, jj * tile_m * tile_n + ii])
 
-        @parameter
-        if elementwise_lambda_fn:
-            comptime elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](
-                Index(0, output_idx + mid * UInt(n) + nid), val.cast[c_type]()
-            )
-        else:
-            var idx = output_idx + mid * UInt(n) + nid
+        var idx = output_idx + mid * n + nid
 
-            @parameter
-            if check_bounds:
-                if idx >= UInt(n):
-                    continue
+        comptime if check_bounds:
+            if idx >= n:
+                continue
+
+        comptime if elementwise_lambda_fn:
+            comptime elementwise_lambda = elementwise_lambda_fn.value()
+            elementwise_lambda(Index(0, idx), val.cast[c_type]())
+        else:
             output[0, idx] = val.cast[c_type]()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
 
 
 # Row Vector-Matrix multiplication
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_size))
+)
 fn gevm_kernel[
     c_type: DType,
     a_type: DType,
@@ -466,13 +428,12 @@ fn gevm_kernel[
     n: Int,
     k: Int,
 ):
-    var warps_per_block = block_dim.x // UInt(WARP_SIZE)
-    var warp_id = warp_id()
-    var lane_id = lane_id()
-    var accum = Scalar[s_type]()
-    var col = block_idx.x * UInt(WARP_SIZE) + lane_id
-    var tid = global_idx.x
-    var global_warp_id = tid // UInt(WARP_SIZE)
+    comptime warps_per_block = tile_size // WARP_SIZE
+
+    var warp_id = Int(warp_id())
+    var lane_id = Int(lane_id())
+    var col = Int(block_idx.x) * WARP_SIZE + lane_id
+    var global_warp_id = Int(global_idx.x) // warps_per_block
 
     var x_shared = stack_allocation[
         tile_size,
@@ -480,36 +441,33 @@ fn gevm_kernel[
         address_space = AddressSpace.SHARED,
     ]()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
+    var accum = Scalar[s_type]()
+
     # Every block computes warp size length of output values
-    for i in range(ceildiv(UInt(k), warps_per_block)):
+    for i in range(ceildiv(k, warps_per_block)):
         var row = i * warps_per_block + warp_id
-        var lhs = a.load(row)
-        var rhs = b.load(row * UInt(n) + col)
+        var lhs = a[row]
+        var rhs = b[row * n + col]
         accum += lhs.cast[s_type]() * rhs.cast[s_type]()
 
-    x_shared[lane_id * UInt(WARP_SIZE) + warp_id] = accum
+    x_shared[lane_id * warps_per_block + warp_id] = accum
     barrier()
 
-    var total = x_shared.load(thread_idx.x).cast[s_type]()
-    total = warp.sum(total)
+    var total = warp.lane_group_sum[num_lanes=warps_per_block](
+        x_shared[thread_idx.x]
+    )
 
-    if lane_id == 0:
-
-        @parameter
-        if elementwise_lambda_fn:
+    if lane_id % warps_per_block == 0:
+        comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](
-                Index(0, global_warp_id), total.cast[c_type]()
-            )
+            elementwise_lambda(Index(0, global_warp_id), total.cast[c_type]())
         else:
             c[global_warp_id] = total.cast[c_type]()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
 
 
@@ -554,10 +512,10 @@ fn gemv_gpu_dispatch[
             c_tensor.layout,
             a_tensor.layout,
             b_tensor.layout,
-            simd_width = UInt(simd_width),
-            tile_m = UInt(tile_m),
-            tile_n = UInt(tile_n),
-            num_threads = UInt(num_threads),
+            simd_width=simd_width,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            num_threads=num_threads,
             elementwise_lambda_fn=elementwise_lambda_fn,
             check_bounds=check_bounds,
             pdl_level=pdl_level,
@@ -582,9 +540,7 @@ fn gemv_gpu_dispatch[
             WARP_SIZE * WARPS_PER_BLOCK,
         )
         if n == 1:
-
-            @parameter
-            if transpose_b:
+            comptime if transpose_b:
                 comptime kernel = gemv_kernel_vector[
                     c.type,
                     a.type,
@@ -637,82 +593,29 @@ fn gemv_gpu_dispatch[
                     address_space = aligned_b.address_space,
                 ](aligned_b, b_runtime_layout)
 
-                @parameter
-                if has_nvidia_gpu_accelerator():
-                    var max_access_policy_window_size = ctx.get_attribute(
-                        DeviceAttribute.MAX_ACCESS_POLICY_WINDOW_SIZE
-                    )
-
-                    var launch_attributes: List[LaunchAttribute] = [
-                        LaunchAttribute(
-                            AccessPolicyWindow(
-                                base_ptr=a.data,
-                                count=min(
-                                    a.size(), max_access_policy_window_size
-                                ),
-                                hit_ratio=1,
-                                hit_prop=AccessProperty.PERSISTING,
-                                miss_prop=AccessProperty.STREAMING,
-                            )
-                        ),
-                    ]
-
-                    comptime pdl_attribute_list = pdl_launch_attributes(
-                        pdl_level
-                    )
-
-                    @parameter
-                    if len(pdl_attribute_list) > 0:
-                        comptime pdl_attribute = pdl_attribute_list[0]
-                        launch_attributes.append(pdl_attribute)
-
-                    comptime kernel = gemv_kernel_vector[
-                        c.type,
-                        a.type,
-                        b.type,
-                        c_tensor.layout,
-                        a_tensor.layout,
-                        b_layout_template,
-                        simd_width = UInt(simd_width),
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                        pdl_level=pdl_level,
-                    ]
-                    ctx.enqueue_function[kernel, kernel](
-                        c_tensor,
-                        a_tensor,
-                        b_tensor_n_major,
-                        m,
-                        n,
-                        k,
-                        grid_dim=ceildiv(m, block_dim // WARP_SIZE),
-                        block_dim=block_dim,
-                        attributes=launch_attributes^,
-                    )
-                else:
-                    comptime kernel = gemv_kernel_vector[
-                        c.type,
-                        a.type,
-                        b.type,
-                        c_tensor.layout,
-                        a_tensor.layout,
-                        b_layout_template,
-                        simd_width = UInt(simd_width),
-                        transpose_b=transpose_b,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                        pdl_level=pdl_level,
-                    ]
-                    ctx.enqueue_function[kernel, kernel](
-                        c_tensor,
-                        a_tensor,
-                        b_tensor_n_major,
-                        m,
-                        n,
-                        k,
-                        grid_dim=ceildiv(m, block_dim // WARP_SIZE),
-                        block_dim=block_dim,
-                        attributes=pdl_launch_attributes(pdl_level),
-                    )
+                comptime kernel = gemv_kernel_vector[
+                    c.type,
+                    a.type,
+                    b.type,
+                    c_tensor.layout,
+                    a_tensor.layout,
+                    b_layout_template,
+                    simd_width = UInt(simd_width),
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    pdl_level=pdl_level,
+                ]
+                ctx.enqueue_function[kernel, kernel](
+                    c_tensor,
+                    a_tensor,
+                    b_tensor_n_major,
+                    m,
+                    n,
+                    k,
+                    grid_dim=ceildiv(m, block_dim // WARP_SIZE),
+                    block_dim=block_dim,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
         elif m == 1:
             comptime kernel = gemv_kernel_vector[
                 c.type,
@@ -880,9 +783,7 @@ fn gemv_gpu[
     var kernel_func: GEMVAlgorithm
 
     if n == 1:
-
-        @parameter
-        if a.type == DType.bfloat16:
+        comptime if a.type == DType.bfloat16:
             if k % simd_width == 0:
                 kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
             else:
@@ -891,9 +792,7 @@ fn gemv_gpu[
             kernel_func = GEMVAlgorithm.GEMV_KERNEL
 
     elif m == 1 and transpose_b == True:
-
-        @parameter
-        if a.type == DType.bfloat16:
+        comptime if a.type in (DType.bfloat16, DType.float8_e4m3fn):
             if k % simd_width == 0:
                 if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
@@ -908,11 +807,6 @@ fn gemv_gpu[
 
     elif m == 1 and n % WARP_SIZE == 0 and k % WARP_SIZE == 0:
         kernel_func = GEMVAlgorithm.GEVM_KERNEL
-
-        # GEVM_KERNEL does not work with AMDGPU yet
-        @parameter
-        if has_amd_gpu_accelerator():
-            kernel_func = GEMVAlgorithm.MATMUL_NAIVE
 
     else:
         kernel_func = GEMVAlgorithm.MATMUL_NAIVE
@@ -929,18 +823,19 @@ fn gemv_gpu[
 
 @always_inline
 fn gemv[
-    parallelize: Bool,
-    c_size: Dim,
+    c_size: DimList,
     c_type: DType,
     a_shape: DimList,
     a_type: DType,
-    b_size: Dim,
+    b_size: DimList,
     b_type: DType,
+    //,
+    parallelize: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buf: NDBuffer[mut=True, c_type, 1, _, c_size],
-    a_buf: NDBuffer[a_type, 2, _, a_shape],
-    b_buf: NDBuffer[b_type, 1, _, b_size],
+    a_buf: NDBuffer[mut=False, a_type, 2, _, a_shape],
+    b_buf: NDBuffer[mut=False, b_type, 1, _, b_size],
 ) raises:
     comptime simd_width = simd_width_of[c_type]()
 
@@ -962,12 +857,10 @@ fn gemv[
     fn output_fn[
         out_type: DType, width: Int, rank: Int
     ](idx: IndexList[rank], value: SIMD[out_type, width]):
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime func = elementwise_lambda_fn.value()
 
-            @parameter
-            for i in range(width):
+            comptime for i in range(width):
                 func[out_type, 1]((idx[0] + i, 0), value[i])
         else:
             c_buf.store[width=width](IndexList[1](idx[0]), value.cast[c_type]())

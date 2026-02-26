@@ -71,8 +71,7 @@ fn _reshape_to_3d[layout: LegacyLayout]() -> LegacyLayout:
     """Reshape 2D layout to 3D by prepending batch dimension of 1."""
     comptime rank = len(layout.shape)
 
-    @parameter
-    if rank == 3:
+    comptime if rank == 3:
         return materialize[layout]()
     else:
         return LegacyLayout.row_major(
@@ -131,7 +130,7 @@ fn _to_batched_3d(
     The input must be rank 2. Shape types (static/dynamic) are preserved.
     """
     comptime L = type_of(tensor).LayoutType
-    constrained[L.rank == 2, "expected rank-2 TileTensor"]()
+    comptime assert L.rank == 2, "expected rank-2 TileTensor"
     return tensor.reshape(
         row_major(
             Coord(
@@ -391,8 +390,7 @@ fn _create_tma_and_launch[
     # Profiling workspace
     var workspace: Span[UInt64, MutAnyOrigin]
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         workspace = MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles
         ].get_workspace(ctx)
@@ -423,8 +421,7 @@ fn _create_tma_and_launch[
         attributes=pdl_launch_attributes(pdl_level),
     )
 
-    @parameter
-    if enable_profiling:
+    comptime if enable_profiling:
         ctx.synchronize()
         MatmulWarpSpecializationWorkSpaceManager[
             max_profiled_tiles
@@ -485,8 +482,7 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         If configuration constraints are violated.
     """
 
-    @parameter
-    if config.AB_swapped:
+    comptime if config.AB_swapped:
         # When both A and B are K-major, C = A @ B'.
         # If we swap A and B: D = B @ A', and D' = (B @ A')' = A @ B' = C.
         # So swapping + transposing the output gives the same result.
@@ -590,8 +586,7 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # ===== Reshape and create TMA descriptors =====
     # Non-batched: reshape 2D→3D and 5D→5D (prepend batch=1).
     # Batched: 3D pass-through and 6D→5D (merge atom dims).
-    @parameter
-    if is_batched_matmul:
+    comptime if is_batched_matmul:
         _create_tma_and_launch[
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,

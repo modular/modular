@@ -209,8 +209,7 @@ struct NVSHMEMXUniqueID:
 
 
 fn _get_prefix[scope: SHMEMScope]() -> StaticString:
-    @parameter
-    if scope == SHMEMScope.default:
+    comptime if scope == SHMEMScope.default:
         return "nvshmem_"
     else:
         return "nvshmemx_"
@@ -260,8 +259,7 @@ fn _dtype_to_nvshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    @parameter
-    if dtype == DType.float16:
+    comptime if dtype == DType.float16:
         return get_static_string[prefix, "half", suffix, scope]()
     elif dtype == DType.bfloat16:
         return get_static_string[prefix, "bfloat16", suffix, scope]()
@@ -392,8 +390,7 @@ fn nvshmemx_init_status() -> c_int:
 
 
 fn nvshmem_my_pe() -> c_int:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return external_call["nvshmem_my_pe", c_int]()
     else:
         return _get_nvshmem_function[
@@ -403,8 +400,7 @@ fn nvshmem_my_pe() -> c_int:
 
 
 fn nvshmem_n_pes() -> c_int:
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return external_call["nvshmem_n_pes", c_int]()
     else:
         return _get_nvshmem_function[
@@ -603,8 +599,7 @@ fn nvshmem_sync_all():
 
 
 fn nvshmem_barrier_all():
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         external_call["nvshmem_barrier_all", NoneType]()
     else:
         _get_nvshmem_function[

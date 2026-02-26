@@ -43,8 +43,7 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
     fn heap_down(mut self) -> None:
         var current_index = 0
 
-        @parameter
-        for level in range(Self.levels - 1):
+        comptime for level in range(Self.levels - 1):
             # Must ensure:
             # arr[cur] < arr[left] && arr[cur] < arr[right]
             var left_index = current_index * 2 + 1
@@ -107,8 +106,7 @@ fn compute_log_probabilities_1tok[
 
     var post_heap_idx: Int
 
-    @parameter
-    if levels <= 0:
+    comptime if levels <= 0:
         post_heap_idx = 0
     else:
         var heap = FixedHeightMinHeap[token_dtype, logit_dtype, levels](
@@ -155,8 +153,7 @@ struct LogProbabilitiesRagged:
         if lp_tokens.shape()[1] != 2**levels:
             raise Error("Axis 1 of lp_tokens inconsistent with level setting")
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
 
             @parameter
             fn lp_idx_kernel(output_token_index: Int) -> None:
@@ -200,7 +197,7 @@ struct LogProbabilitiesRagged:
                 block_dim=block_size,
             )
         else:
-            constrained[False, "unsupported target"]()
+            comptime assert False, "unsupported target"
 
     @staticmethod
     fn shape[

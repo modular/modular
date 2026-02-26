@@ -294,8 +294,8 @@ fn gemm_kernel_amd[
         b: Input matrix B (must be transposed).
     """
     # Validate input constraints
-    constrained[transpose_b, "Transpose b must be true"]()
-    constrained[a_type == b_type, "a and b must have same type"]()
+    comptime assert transpose_b, "Transpose b must be true"
+    comptime assert a_type == b_type, "a and b must have same type"
 
     # Type and shape aliases
     comptime accum_type = get_accum_type[a_type]()
@@ -339,19 +339,19 @@ fn gemm_kernel_amd[
     var M = a.dim[0]()
 
     comptime N = b.shape[0]() if transpose_b else b.shape[1]()
-    constrained[N != UNKNOWN_VALUE, "N should be known at compile time"]()
+    comptime assert N != UNKNOWN_VALUE, "N should be known at compile time"
 
     var K = b.dim[1 if transpose_b else 0]()
 
     comptime stride = b.stride[0]() if transpose_b else b.stride[1]()
-    constrained[
-        stride != UNKNOWN_VALUE, "stride should be known at compile time"
-    ]()
+    comptime assert (
+        stride != UNKNOWN_VALUE
+    ), "stride should be known at compile time"
 
     comptime c_stride = c.stride[0]()
-    constrained[
-        c_stride != UNKNOWN_VALUE, "c_stride should be known at compile time"
-    ]()
+    comptime assert (
+        c_stride != UNKNOWN_VALUE
+    ), "c_stride should be known at compile time"
 
     # Thread and warp indices
     var warp_id = Int(warp_id())
@@ -563,15 +563,13 @@ fn gemm_kernel_amd[
         comptime mmas_per_smem_store = num_remaining_mma_ops // num_smem_store_ops
         comptime mmas_per_smem_store_extra = num_remaining_mma_ops % num_smem_store_ops
 
-        @parameter
-        for i in range(num_mn_mmas * (num_k_tiles - 1)):
+        comptime for i in range(num_mn_mmas * (num_k_tiles - 1)):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
             schedule_group_barrier(
                 AMDScheduleBarrierMask.MFMA, Int32(mmas_per_smem_load), 0
             )
 
-        @parameter
-        for i in range(num_smem_store_ops):
+        comptime for i in range(num_smem_store_ops):
             comptime mmas_this_smem_store = (
                 mmas_per_smem_store + 1
             ) if i < mmas_per_smem_store_extra else mmas_per_smem_store
@@ -587,8 +585,7 @@ fn gemm_kernel_amd[
                 0,
             )
 
-        @parameter
-        for i in range(num_mn_mmas):
+        comptime for i in range(num_mn_mmas):
             schedule_group_barrier(AMDScheduleBarrierMask.DS_READ, 1, 0)
             schedule_group_barrier(
                 AMDScheduleBarrierMask.MFMA, Int32(mmas_per_smem_load), 0
@@ -618,9 +615,7 @@ fn gemm_kernel_amd[
 
     # Stage 3: Main computation loop - Pipelined execution with double buffering
     for _ in range(2, K // BK):
-
-        @parameter
-        for k_tile_idx in range(1, num_k_tiles):
+        comptime for k_tile_idx in range(1, num_k_tiles):
             mma_op.load_tile_fragment[k_tile_idx](
                 a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
             )
@@ -632,8 +627,7 @@ fn gemm_kernel_amd[
         copy_tiles_to_smem()
         load_tiles_from_dram()
 
-        @parameter
-        for k_tile_idx in range(1, num_k_tiles):
+        comptime for k_tile_idx in range(1, num_k_tiles):
             mma_op.mma[k_tile_idx]()
 
         barrier()
@@ -646,8 +640,7 @@ fn gemm_kernel_amd[
 
     schedule_barrier()
 
-    @parameter
-    for k_tile_idx in range(1, num_k_tiles):
+    comptime for k_tile_idx in range(1, num_k_tiles):
         mma_op.load_tile_fragment[k_tile_idx](
             a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
         )
@@ -656,29 +649,25 @@ fn gemm_kernel_amd[
 
     copy_tiles_to_smem()
 
-    @parameter
-    for k_tile_idx in range(0, num_k_tiles):
+    comptime for k_tile_idx in range(0, num_k_tiles):
         mma_op.mma[k_tile_idx]()
 
     schedule_barrier()
 
     barrier()
 
-    @parameter
-    for k_tile_idx in range(0, num_k_tiles):
+    comptime for k_tile_idx in range(0, num_k_tiles):
         mma_op.load_tile_fragment[k_tile_idx](
             a_tiles.smem_warp_tile, b_tiles.smem_warp_tile
         )
 
-    @parameter
-    for k_tile_idx in range(0, num_k_tiles):
+    comptime for k_tile_idx in range(0, num_k_tiles):
         mma_op.mma[k_tile_idx]()
 
     schedule_barrier()
 
     # Accumulate the warp-k tiles via shared memory.
-    @parameter
-    if num_warps_k > 1:
+    comptime if num_warps_k > 1:
         warp_split_k_reduction[
             BM, BN, Int(config.num_threads() // UInt(num_warps_k)), num_warps_k
         ](warp_k, mma_op.out_reg_tile, reduction_smem.ptr)
@@ -696,13 +685,11 @@ fn gemm_kernel_amd[
         MMA_M, MMA_N // c_frag_size
     )
 
-    constrained[
-        c_warp_tile.layout.all_dims_known(),
-        "c_warp_tile layout must be fully static",
-    ]()
+    comptime assert (
+        c_warp_tile.layout.all_dims_known()
+    ), "c_warp_tile layout must be fully static"
 
-    @parameter
-    if Bool(elementwise_lambda_fn) or (N % BN != 0):
+    comptime if Bool(elementwise_lambda_fn) or (N % BN != 0):
         # 3D view on the output register fragments, see FIXME note on out_reg_layout
         comptime out_frag_layout = Layout(
             IntTuple(num_m_mmas, num_n_mmas, c_frag_size),
@@ -801,19 +788,18 @@ fn write_output_fragments[
     comptime frag_height = c_gmem_fragment.layout.shape[0].value()
     comptime frag_width = c_gmem_fragment.layout.shape[1].value()
 
-    @parameter
-    for frag_m, frag_n in product(range(frag_height), range(frag_width)):
+    comptime for frag_m, frag_n in product(
+        range(frag_height), range(frag_width)
+    ):
         if frag_m < max_valid_frag_m and frag_n < max_valid_frag_n:
             # Load result vector, cast to output tensor data type
             var result_vec = c_reg_fragment[frag_m, frag_n, 0].cast[c_type]()
 
-            @parameter
-            if elementwise_lambda_fn:
+            comptime if elementwise_lambda_fn:
                 # Apply custom elementwise operation to each output element
-                constrained[
-                    elementwise_lambda_fn is not None,
-                    "elementwise_lambda_fn is not valid",
-                ]()
+                comptime assert (
+                    elementwise_lambda_fn is not None
+                ), "elementwise_lambda_fn is not valid"
                 comptime epilogue_fn = elementwise_lambda_fn.value()
 
                 # Compute global coordinates

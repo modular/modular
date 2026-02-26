@@ -554,8 +554,7 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     """
     comptime type_size = size_of[dtype]()
 
-    @parameter
-    if mode in (
+    comptime if mode in (
         TensorMapSwizzle.SWIZZLE_128B,
         TensorMapSwizzle.SWIZZLE_64B,
         TensorMapSwizzle.SWIZZLE_32B,
@@ -563,8 +562,7 @@ fn make_swizzle[dtype: DType, mode: TensorMapSwizzle]() -> Swizzle:
     ):
         return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
     else:
-        constrained[False, "Only support 32B, 64B, 128B, or no swizzle"]()
-        return Swizzle(0, 0, 0)
+        comptime assert False, "Only support 32B, 64B, 128B, or no swizzle"
 
 
 # ===-----------------------------------------------------------------------===#
@@ -611,7 +609,7 @@ struct ComposedLayout[
         self.layout_b = layout_b^
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy constructor for ComposedLayout.
 
         Args:
@@ -702,13 +700,11 @@ fn eval_composed[
     var b_idx = 0
 
     # layout or composed layout
-    @parameter
-    if composed_layout.layout_a.has_shape:
+    comptime if composed_layout.layout_a.has_shape:
         comptime shape_a = flatten(composed_layout.layout_a.shape)
         comptime stride_a = flatten(composed_layout.layout_a.stride)
 
-        @parameter
-        for i in range(len(stride_a)):
+        comptime for i in range(len(stride_a)):
             comptime s = shape_a[i].value()
             comptime st = stride_a[i].value()
             a_idx, coord_i = divmod(a_idx, UInt(s))

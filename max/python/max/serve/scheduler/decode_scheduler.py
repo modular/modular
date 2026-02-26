@@ -94,8 +94,9 @@ class DecodeScheduler(Scheduler):
 
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
+            # TODO: Also support scales tensors
             tensors=[
-                self.kv_cache.get_device_tensors(replica_idx)
+                self.kv_cache.get_device_buffer(replica_idx).values
                 for replica_idx in range(self.kv_cache.num_replicas)
             ],
             # Assume all replicas have the same number of pages.
@@ -422,16 +423,10 @@ def load_decode_scheduler(
         pipeline_config
     )
 
-    if len(pipeline.kv_managers) != 1:
-        raise ValueError(
-            "Expected exactly one KV cache manager in pipeline for PrefillScheduler, found: "
-            f"{len(pipeline.kv_managers)}"
-        )
-
     return DecodeScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        kv_cache=pipeline.kv_managers[0],
+        kv_cache=pipeline.kv_manager,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

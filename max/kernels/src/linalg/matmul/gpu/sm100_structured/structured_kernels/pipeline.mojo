@@ -288,8 +288,7 @@ struct ProducerConsumerPipeline[num_stages: Int](TrivialRegisterPassable):
         This function must be called by a single thread and must be called before any the pipeline object is used.
         """
 
-        @parameter
-        for i in range(Self.num_stages):
+        comptime for i in range(Self.num_stages):
             self.full[i].init(producer_arrive_count)
             self.empty[i].init(consumer_arrive_count)
 

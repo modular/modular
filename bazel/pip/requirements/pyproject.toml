@@ -24,6 +24,7 @@ dependencies = [
   "exceptiongroup",
   "expandvars",
   "fastapi[standard]>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
+  "flask",
   "fire ", # For mistral-evals.
   "filelock",
   "gguf",
@@ -95,15 +96,15 @@ dependencies = [
   "tqdm",
   "transformers>=4.57",
   "types-aioboto3[essential]",
-  "types-boto3[essential]",
+  "types-boto3[essential,sts]",
   "typing-extensions",
   "uvloop>=0.21.0",
   "uvicorn",
   "wheel",
 
   # modeltool
-  "google-auth==2.29.0",
-  "google-cloud-bigquery==3.22.0",
+  "google-auth>=2.48.0",
+  "google-cloud-bigquery>=3.40.1",
   "pandas>=1.4.2",
   "requests>=2.28.0",
   "rich>=12.4.4",
@@ -173,6 +174,7 @@ amd = [
   "timm",
   "torchmetrics",
   "qwen-vl-utils",
+  "lmcache>=0.3.10; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
 ]
 
 cpu = [
@@ -208,7 +210,7 @@ nvidia = [
   "lm-eval[api,ifeval,math]>=0.4.9.1",
   "mteb",
   "optimum",
-  "peft", # For LoRA adapter support
+  "peft>=0.17.0", # For LoRA adapter support
   "sentence-transformers",
   "timm",
   "torchmetrics",
@@ -216,6 +218,7 @@ nvidia = [
 
   "nvidia-cudnn-frontend>=1.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "nvidia-cutlass-dsl>=4.3.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "lmcache>=0.3.10; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
 ]
 
 [tool.uv]
@@ -234,7 +237,9 @@ environments = [
 ]
 
 override-dependencies = [
-  "numba==0.63.1"
+  "numba==0.63.1",
+  # Override lmcache's numpy<=2.2.6 constraint to allow our numpy>=2.3.0
+  "numpy>=2.2.0",
 ]
 
 [tool.uv.sources]

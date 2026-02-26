@@ -27,9 +27,9 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.kv_cache import KVCacheParams, KVCacheStrategy
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.config_enums import SupportedEncoding
+from max.pipelines.lib.config.config_enums import SupportedEncoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfig,
     ArchConfigWithAttentionKVCache,
@@ -53,10 +53,9 @@ class ConcreteArchConfig(ArchConfigWithAttentionKVCache):
 
 
 def create_mock_pipeline_config(
-    quantization_encoding: SupportedEncoding
-    | None = SupportedEncoding.bfloat16,
+    quantization_encoding: SupportedEncoding | None = "bfloat16",
     kv_cache_page_size: int = 128,
-    cache_strategy: KVCacheStrategy = KVCacheStrategy.PAGED,
+    cache_strategy: KVCacheStrategy = "paged",
     enable_prefix_caching: bool = True,
     enable_kvcache_swapping_to_host: bool = False,
     host_kvcache_swap_space_gb: float = 50.0,
@@ -65,13 +64,13 @@ def create_mock_pipeline_config(
 ) -> NonCallableMock:
     """Create a mock PipelineConfig for testing."""
     mock_config = NonCallableMock(spec=PipelineConfig)
-    mock_config.max_length = max_length
 
     # Create mock model config
     mock_model = NonCallableMock(spec=MAXModelConfig)
     mock_model.quantization_encoding = quantization_encoding
     mock_model.data_parallel_degree = data_parallel_degree
     mock_model.device_specs = []
+    mock_model.max_length = max_length
 
     # Create mock kv_cache_config
     mock_kv_cache_config = NonCallableMock(spec=KVCacheConfig)
@@ -155,7 +154,7 @@ class TestArchConfigWithAttentionKVCache:
     def test_initialize_succeeds_with_valid_quantization_encoding(self) -> None:
         """Test that initialize succeeds with valid quantization encoding."""
         mock_config = create_mock_pipeline_config(
-            quantization_encoding=SupportedEncoding.bfloat16
+            quantization_encoding="bfloat16"
         )
         result = ConcreteArchConfig.initialize(mock_config)
         assert isinstance(result, ConcreteArchConfig)
@@ -165,9 +164,7 @@ class TestArchConfigWithAttentionKVCache:
 
         # Test with encoding that maps to different dtype/config
 
-        mock_config = create_mock_pipeline_config(
-            quantization_encoding=SupportedEncoding.q4_k
-        )
+        mock_config = create_mock_pipeline_config(quantization_encoding="q4_k")
         result = ConcreteArchConfig.initialize(mock_config)
         assert result.dtype == DType.uint8
         assert result.cache_dtype == DType.bfloat16
@@ -237,7 +234,7 @@ class TestArchConfigWithAttentionKVCache:
         """Test that get_kv_params method correctly constructs KVCacheParams."""
         custom_kv_config = KVCacheConfig(
             kv_cache_page_size=256,
-            cache_strategy=KVCacheStrategy.PAGED,
+            cache_strategy="paged",
             enable_prefix_caching=True,
             enable_kvcache_swapping_to_host=True,
             host_kvcache_swap_space_gb=100.0,
@@ -257,7 +254,7 @@ class TestArchConfigWithAttentionKVCache:
         assert kv_params.head_dim == 64  # from ConcreteArchConfig
         assert kv_params.num_layers == 12  # from ConcreteArchConfig
         assert kv_params.page_size == 256
-        assert kv_params.cache_strategy == KVCacheStrategy.PAGED
+        assert kv_params.cache_strategy == "paged"
         assert kv_params.enable_prefix_caching is True
         assert kv_params.enable_kvcache_swapping_to_host is True
         assert kv_params.host_kvcache_swap_space_gb == 100.0

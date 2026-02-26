@@ -27,12 +27,12 @@ from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.legacy.float8_config import (
+from max.nn import AttentionWithRope, Linear, RotaryEmbedding
+from max.nn.float8_config import (
     Float8Config,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.pipelines.architectures.llama3_legacy.model_config import (
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
 from max.pipelines.lib.float8 import parse_float8_config
@@ -245,6 +245,7 @@ def generate_max_outputs_fp4(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Build graph with context manager
@@ -286,7 +287,7 @@ def generate_max_outputs_fp4(
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0)
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs(
+        kv_manager.runtime_inputs(
             cast(list[list[TextGenerationContext]], [batch])
         )[0]
     )

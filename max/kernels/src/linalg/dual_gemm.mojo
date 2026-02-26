@@ -214,8 +214,7 @@ fn multistage_dual_mma[
 
     # Prefetch (num_pipeline_stages - 1) stages.
 
-    @parameter
-    for stage in range(num_pipeline_stages - 1):
+    comptime for stage in range(num_pipeline_stages - 1):
         var a_smem_tile = a_smem_iter.next_unsafe(
             a_smem_iter.linear_uint_type(stage)
         )[]
@@ -333,8 +332,7 @@ fn multistage_dual_mma[
         a_type, a_warp_tile.stride[0]()
     ]() if swizzle_a else Optional[Swizzle]()
 
-    @parameter
-    for i in range(k_group_size):
+    comptime for i in range(k_group_size):
         mma_op.load_a[swizzle_a_pattern](
             a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
         )
@@ -354,18 +352,14 @@ fn multistage_dual_mma[
 
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
-        @parameter
-        for k_mma0 in range(num_k_mma_iters):
-
-            @parameter
-            for k_mma1 in range(k_group_size):
+        comptime for k_mma0 in range(num_k_mma_iters):
+            comptime for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 comptime current = k_mma % num_reg_tiles
                 comptime k_mma_next = k_mma + UInt32(k_group_size)
                 comptime next = Int(k_mma_next % UInt32(num_reg_tiles))
 
-                @parameter
-                if k_mma_next == UInt32(num_k_mmas):
+                comptime if k_mma_next == UInt32(num_k_mmas):
                     var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
 
                     # Prefetch one k tile (if valid) from global memory to current
@@ -452,8 +446,7 @@ fn multistage_dual_mma[
                     UInt(warp_x),
                 )
 
-            @parameter
-            for k_mma1 in range(k_group_size):
+            comptime for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 comptime current = k_mma % UInt32(num_reg_tiles)
                 mma_op.mma(
@@ -657,8 +650,7 @@ fn multistage_dual_gemm_kernel[
     var c0_vec = c0_reg_tile.vectorize[1, c_frag_size]()
     var c1_vec = c1_reg_tile.vectorize[1, c_frag_size]()
 
-    @parameter
-    for n_mma in range(c0_vec.layout.size()):
+    comptime for n_mma in range(c0_vec.layout.size()):
         c0_vec[n_mma, 0] = binary_lambda_fn(c0_vec[n_mma, 0], c1_vec[n_mma, 0])
 
     # Map global memory tile down to thread.
@@ -669,8 +661,7 @@ fn multistage_dual_gemm_kernel[
     # Each thread's fragment has 2x2 fp32 values. Casting to half float and
     # directly storing to global memory results in 2 4B writes. Following cutlass,
     # we stage the fragments in shared memory so that each thread can store 16B.
-    @parameter
-    if c_type.is_half_float():
+    comptime if c_type.is_half_float():
         comptime swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size=HWN, access_size=MMA_N
         ]()
@@ -696,8 +687,7 @@ fn multistage_dual_gemm_kernel[
         # Vectorized copy from shared to global memory, during which every 2 FP32
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             comptime warp_layout = Layout.row_major(
                 WARP_SIZE * simd_size // HWN, HWN // simd_size
@@ -715,8 +705,7 @@ fn multistage_dual_gemm_kernel[
                 accum_smem_warp_tile.ptr
             )
 
-            @parameter
-            for i in range(num_stores_per_thread):
+            comptime for i in range(num_stores_per_thread):
                 comptime src_idx = type_of(c_smem_frag).layout(i)
                 comptime src_idx_base = src_idx % swizzle.size()
                 comptime src_idx_diff = src_idx - src_idx_base
@@ -728,8 +717,7 @@ fn multistage_dual_gemm_kernel[
                 comptime dst_static_idx = type_of(c_gmem_frag).layout(i)
                 var dst_idx: Int
 
-                @parameter
-                if c_layout.all_dims_known():
+                comptime if c_layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
@@ -757,9 +745,7 @@ fn multistage_dual_gemm_kernel[
 
     # Store FP32 results to FP32 buffer in global memory.
     else:
-
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
@@ -767,14 +753,12 @@ fn multistage_dual_gemm_kernel[
             var c_reg_frag = c0_reg_tile.vectorize[1, 2]().transpose()
             var thread_offset = c_gmem_frag.distance(c.ptr)
 
-            @parameter
-            for i in range(type_of(c_gmem_frag).layout.size()):
+            comptime for i in range(type_of(c_gmem_frag).layout.size()):
                 comptime src_idx = c_reg_frag.layout(i)
                 comptime dst_static_idx = UInt(type_of(c_gmem_frag).layout(i))
                 var dst_idx: Int
 
-                @parameter
-                if c_layout.all_dims_known():
+                comptime if c_layout.all_dims_known():
                     dst_idx = Int(dst_static_idx)
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
@@ -967,9 +951,9 @@ fn dual_gemm[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     # TODO: Autotune. Currently, these are a copy+paste of `_matmul_gpu`.
@@ -1005,8 +989,7 @@ fn dual_gemm[
     if multi_gemm_cond:
         comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
-        @parameter
-        if is_defined["AUTOTUNING_MODE"]():
+        comptime if is_defined["AUTOTUNING_MODE"]():
             multistage_dual_gemm[
                 transpose_b=transpose_b,
                 config = kernels.tuning_config,
@@ -1021,8 +1004,7 @@ fn dual_gemm[
             return
 
         # Allow caller to overwrite dispatch heuristic with their own config.
-        @parameter
-        if config:
+        comptime if config:
             multistage_dual_gemm[
                 transpose_b=transpose_b,
                 config = config.value(),
@@ -1036,8 +1018,7 @@ fn dual_gemm[
             )
             return
 
-        @parameter
-        if (
+        comptime if (
             a_type == b_type
             and a_type.is_half_float()
             and ctx.default_device_info == A100
@@ -1047,8 +1028,7 @@ fn dual_gemm[
             comptime static_N = c_shape.get[1]()
             comptime warp_shape = Index(64, 64, _bk_base[a_type]())
 
-            @parameter
-            if static_N == 28672 and static_K == 4096:
+            comptime if static_N == 28672 and static_K == 4096:
                 if M <= 128:
                     comptime M128_N28672_K4096_config = config_in_smem[
                         max_smem
@@ -1255,36 +1235,29 @@ fn dual_gemv_kernel[
 
     # Each thread sums local data in K.
     for idxK in range(tid * simd_width, k, tile_k):
-
-        @parameter
-        for i in range(tile_n_per_B):
+        comptime for i in range(tile_n_per_B):
             var b0_vec = b0.data.load[
                 width = Int(simd_width), alignment=align_weight
             ](weight_idx + i * k + idxK)
 
             tile_b0.store[alignment=align_weight](i * simd_width, b0_vec)
 
-        @parameter
-        for i in range(tile_n_per_B):
+        comptime for i in range(tile_n_per_B):
             var b1_vec = b1.data.load[
                 width = Int(simd_width), alignment=align_weight
             ](weight_idx + i * k + idxK)
 
             tile_b1.store[alignment=align_weight](i * simd_width, b1_vec)
 
-        @parameter
-        for i in range(tile_m):
+        comptime for i in range(tile_m):
             var a_vec = a.data.load[
                 width = Int(simd_width), alignment=align_act
             ](act_idx + i * k + idxK)
 
             tile_a.store[alignment=align_act](i * simd_width, a_vec)
 
-            @parameter
-            for j in range(tile_n):
-
-                @parameter
-                for l in range(simd_width):
+            comptime for j in range(tile_n):
+                comptime for l in range(simd_width):
                     acc[i * tile_n + j] += (
                         tile_a[l].cast[s_type]()
                         * tile_w[j * simd_width + l].cast[s_type]()
@@ -1302,11 +1275,8 @@ fn dual_gemv_kernel[
 
     # Each warp sums across its threads and stages results in shared memory.
     # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
-    @parameter
-    for mi in range(tile_m):
-
-        @parameter
-        for ni in range(tile_n):
+    comptime for mi in range(tile_m):
+        comptime for ni in range(tile_n):
             var val = warp.sum(acc[mi * tile_n + ni])
             if lane_id == 0:
                 shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
@@ -1320,8 +1290,7 @@ fn dual_gemv_kernel[
         var val0 = Scalar[s_type]()
         var val1 = Scalar[s_type]()
 
-        @parameter
-        for jj in range(k_warp_num):
+        comptime for jj in range(k_warp_num):
             val0 += shmem[jj * tile_m * tile_n + mid * tile_n + nid]
             val1 += shmem[
                 jj * tile_m * tile_n + mid * tile_n + nid + tile_n_per_B
@@ -1329,8 +1298,7 @@ fn dual_gemv_kernel[
 
         val0 = binary_lambda_fn(val0, val1)
 
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime elementwise_lambda = elementwise_lambda_fn.value()
             elementwise_lambda[c_type, 1](
                 Index(0, output_idx + mid * n + nid), val0.cast[c_type]()
@@ -1352,9 +1320,9 @@ fn dual_gemv[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim(0)
@@ -1398,19 +1366,12 @@ fn dual_gemv[
 @register_internal("swishGLU")
 @always_inline
 fn swishGLU[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    //,
     target: StaticString = "cpu",
 ](
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[_, 2, ImmutAnyOrigin, _],
+    b0: NDBuffer[_, 2, ImmutAnyOrigin, _],
+    b1: NDBuffer[_, 2, ImmutAnyOrigin, _],
+    c: NDBuffer[_, 2, MutAnyOrigin, _],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -1445,4 +1406,6 @@ fn swishGLU[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(ctx),
     ):
-        dual_gemm[transpose_b=True](c, a, b0, b1, ctx=ctx.get_device_context())
+        dual_gemm[transpose_b=True](
+            c, a, b0, rebind[type_of(b0)](b1), ctx=ctx.get_device_context()
+        )

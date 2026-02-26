@@ -13,11 +13,10 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.pipelines.architectures.llama3_legacy import weight_adapters
+from max.pipelines.architectures.llama3 import weight_adapters
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -25,17 +24,17 @@ from .model import Qwen3EmbeddingModel
 from .model_config import Qwen3EmbeddingConfig
 
 qwen3_embedding_arch = SupportedArchitecture(
-    name="Qwen3ForCausalLM_Legacy",
+    name="Qwen3ForCausalLM",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "Qwen/Qwen3-Embedding-0.6B",
         "Qwen/Qwen3-Embedding-4B",
         "Qwen/Qwen3-Embedding-8B",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: [],
-        SupportedEncoding.bfloat16: [],
+        "float32": [],
+        "bfloat16": [],
     },
     pipeline_model=Qwen3EmbeddingModel,
     tokenizer=TextTokenizer,

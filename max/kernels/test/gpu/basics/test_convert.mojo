@@ -66,8 +66,7 @@ def test_convert_asm():
 fn convert_kernel[
     src_type: DType, dst_type: DType, size: Int
 ](dst_ptr: UnsafePointer[Scalar[dst_type]]):
-    @parameter
-    for i in range(0, size, 2):
+    comptime for i in range(0, size, 2):
         var src_vec = SIMD[src_type, 2](
             Scalar[src_type](i), Scalar[src_type](i + 1)
         )

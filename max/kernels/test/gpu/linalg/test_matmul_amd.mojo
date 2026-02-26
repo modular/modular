@@ -281,8 +281,7 @@ def test_block_k(ctx: DeviceContext):
 
     comptime block_ks: List[Int] = [32, 64, 128, 256]
 
-    @parameter
-    for i in range(len(block_ks)):
+    comptime for i in range(len(block_ks)):
         test_block_k[DType.bfloat16, DType.bfloat16, block_ks[i], 1024, 1024](
             192, 1024, 1024
         )
@@ -324,8 +323,7 @@ def test_warp_k_partitions(ctx: DeviceContext):
             ),
         ]
 
-        @parameter
-        for i in range(len(configs)):
+        comptime for i in range(len(configs)):
             test[configs[i], N = Int(N), K = Int(K)](ctx, m, n, k)
 
     test_warp_k_partitions[DType.bfloat16, DType.bfloat16, 2048, 2048](
@@ -348,11 +346,8 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
 
     comptime block_sizes = [16, 32, 64, 96, 128, 160, 192, 224, 256]
 
-    @parameter
-    for block_m in block_sizes:
-
-        @parameter
-        for block_n in block_sizes:
+    comptime for block_m in block_sizes:
+        comptime for block_n in block_sizes:
 
             @parameter
             def test_block_shape[block_m: Int, block_n: Int, k: Int]():
@@ -370,18 +365,15 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
                     ctx, m_val, n_val, k
                 )
 
-            @parameter
-            if block_m <= 32 and block_n <= 32:
+            comptime if block_m <= 32 and block_n <= 32:
                 # Exercise the warp_k partitioning where the number of partitions
                 # depends on breaking K into even chunks.
-                @parameter
-                for k in [256, 384, 512, 768, 1024]:
+                comptime for k in [256, 384, 512, 768, 1024]:
                     test_block_shape[block_m, block_n, k]()
             else:
                 # Exercise the logic where block_k is increased, but only if K is
                 # multiple of the increased block size.
-                @parameter
-                for k in [320, 768]:
+                comptime for k in [320, 768]:
                     test_block_shape[block_m, block_n, k]()
 
 
@@ -389,8 +381,7 @@ def main():
     with DeviceContext() as ctx:
         test_bf16(ctx)
 
-        @parameter
-        if ctx.default_device_info == MI355X:
+        comptime if ctx.default_device_info == MI355X:
             test_float8[DType.float8_e4m3fn](ctx)
             test_float8[DType.float8_e5m2](ctx)
         else:

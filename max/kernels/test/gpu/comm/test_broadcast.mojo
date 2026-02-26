@@ -17,11 +17,14 @@ from itertools import product
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
+from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
 from testing import assert_true
+from utils import IndexList
 
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast
-from comm.sync import can_enable_p2p
+from comm.sync import enable_p2p
 
 
 @always_inline
@@ -85,19 +88,22 @@ fn broadcast_test[
     root_self_copy: Bool,
 ](list_of_ctxs: List[DeviceContext], length: Int, root: Int) raises:
     var root_ctx = list_of_ctxs[root]
+    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # Create input buffer on root GPU
-    var input_dev = root_ctx.enqueue_create_buffer[dtype](length)
+    var input = ManagedLayoutTensor[dtype, layout_1d](
+        RuntimeLayout[layout_1d].row_major(IndexList[1](length)), root_ctx
+    )
+    var input_dev = input.device_data.value()
     var in_buf = NDBuffer[dtype, rank, ImmutAnyOrigin](
         input_dev.unsafe_ptr(), DimList(length)
     )
 
     # Initialize input buffer with position-based test data on host and copy to device
-    var host_input = alloc[Scalar[dtype]](length)
+    var host_input = input.tensor[update=False]()
     for j in range(length):
         host_input[j] = _input_value[dtype](root, j)
-    root_ctx.enqueue_copy(input_dev, host_input)
-    root_ctx.synchronize()
+    _ = input.device_tensor()
 
     # Create output buffers for all GPUs
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -152,8 +158,7 @@ fn broadcast_test[
         list_of_ctxs[i].synchronize()
 
     # Launch broadcast per device
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         broadcast[ngpus,](in_buf, out_bufs[i], rank_sigs, list_of_ctxs[i], root)
 
     # Synchronize all GPUs
@@ -182,17 +187,13 @@ fn broadcast_test[
                 )
 
     # Cleanup
-    host_input.free()
     host_output.free()
-    _ = signal_buffers^
-    _ = out_dev_list^
 
 
 @parameter
 fn run_broadcast_sweep[]() raises:
     # Run tests for each configuration.
-    @parameter
-    for gpu_idx, dtype_idx, length_idx, root_self_copy in product(
+    comptime for gpu_idx, dtype_idx, length_idx, root_self_copy in product(
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),
@@ -229,7 +230,7 @@ def main():
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
-    if not can_enable_p2p():
+    if not enable_p2p():
         print("P2P not enabled, skipping test.")
         return
     run_broadcast_sweep[]()

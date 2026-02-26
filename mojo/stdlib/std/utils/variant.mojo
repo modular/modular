@@ -123,14 +123,27 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
             print("Boolean:", item[Bool])
     ```
 
+    ## Layout
+
+    The layout of `Variant` is not guaranteed and may change at any time. The
+    implementation may apply niche optimizations (for example, encoding the
+    discriminant inside spare bits of one of the types in `Ts`) that alter the
+    resulting layout. Do not rely on `size_of[Variant[...]]()` or
+    `align_of[Variant[...]]()` being stable across language versions. The only
+    guarantee is that the size and alignment will be at least as large as those
+    of the largest type among `Ts`.
+
+    If you need to inspect the current size or alignment, use `size_of` and
+    `align_of`, but treat the results as non-stable implementation details.
+
     Parameters:
         Ts: The possible types that this variant can hold. All types must
             implement `Copyable`.
     """
 
     comptime __del__is_trivial = _all_trivial_del[*Self.Ts]()
-    comptime __copyinit__is_trivial = _all_trivial_copyinit[*Self.Ts]()
-    comptime __moveinit__is_trivial = _all_trivial_moveinit[*Self.Ts]()
+    comptime __copy_ctor_is_trivial = _all_trivial_copyinit[*Self.Ts]()
+    comptime __move_ctor_is_trivial = _all_trivial_moveinit[*Self.Ts]()
 
     # Fields
     comptime _sentinel: Int = -1
@@ -167,7 +180,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         self._get_discr() = UInt8(idx)
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a deep copy of an existing variant.
 
         Args:
@@ -177,8 +190,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         self = Self(unsafe_uninitialized=())
         self._get_discr() = copy._get_discr()
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Copyable),
@@ -192,7 +204,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
                 self._get_ptr[T]().init_pointee_copy(copy._get_ptr[T]()[])
                 return
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Move initializer for the variant.
 
         Args:
@@ -201,8 +213,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._get_discr() = take._get_discr()
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, Movable),
@@ -213,15 +224,14 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
             comptime T = downcast[TUnknown, Movable]
 
             if self._get_discr() == UInt8(i):
-                # Calls the correct __moveinit__
+                # Calls the correct move constructor
                 self._get_ptr[T]().init_pointee_move_from(take._get_ptr[T]())
                 return
 
     fn __del__(deinit self):
         """Destroy the variant."""
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime TUnknown = Self.Ts[i]
             _constrained_conforms_to[
                 conforms_to(TUnknown, ImplicitlyDestructible),
@@ -267,14 +277,12 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     fn _write_value_to[*, is_repr: Bool](self, mut writer: Some[Writer]):
         constrained_conforms_to_writable[*Self.Ts, Parent=Self]()
 
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             comptime T = Self.Ts[i]
             if self.isa[T]():
                 ref value = trait_downcast[Writable](self.unsafe_get[T]())
 
-                @parameter
-                if is_repr:
+                comptime if is_repr:
                     value.write_repr_to(writer)
                 else:
                     value.write_to(writer)
@@ -479,8 +487,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
 
     @staticmethod
     fn _check[T: AnyType]() -> Int:
-        @parameter
-        for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Variadic.size(Self.Ts)):
             if _type_is_eq[Self.Ts[i], T]():
                 return i
         return Self._sentinel
@@ -548,11 +555,8 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
 
 
 fn _all_trivial_del[*Ts: AnyType]() -> Bool:
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], ImplicitlyDestructible):
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], ImplicitlyDestructible):
             if not downcast[Ts[i], ImplicitlyDestructible].__del__is_trivial:
                 return False
         else:
@@ -561,12 +565,9 @@ fn _all_trivial_del[*Ts: AnyType]() -> Bool:
 
 
 fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Copyable):
-            if not downcast[Ts[i], Copyable].__copyinit__is_trivial:
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Copyable):
+            if not downcast[Ts[i], Copyable].__copy_ctor_is_trivial:
                 return False
         else:
             return False
@@ -575,12 +576,9 @@ fn _all_trivial_copyinit[*Ts: AnyType]() -> Bool:
 
 
 fn _all_trivial_moveinit[*Ts: AnyType]() -> Bool:
-    @parameter
-    for i in range(Variadic.size(Ts)):
-
-        @parameter
-        if conforms_to(Ts[i], Movable):
-            if not downcast[Ts[i], Movable].__moveinit__is_trivial:
+    comptime for i in range(Variadic.size(Ts)):
+        comptime if conforms_to(Ts[i], Movable):
+            if not downcast[Ts[i], Movable].__move_ctor_is_trivial:
                 return False
         else:
             return False

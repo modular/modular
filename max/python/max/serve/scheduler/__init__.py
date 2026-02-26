@@ -41,7 +41,6 @@ from max.pipelines.core import TextContext, TTSContext
 from max.pipelines.lib import (
     EmbeddingsPipelineType,
     PipelineConfig,
-    PipelineRole,
     TextGenerationPipeline,
 )
 from max.pipelines.lib.audio_generator_pipeline import (
@@ -143,25 +142,26 @@ def load_scheduler(
     elif pipeline.__class__.__name__ == "AudioGeneratorPipeline":
         assert hasattr(pipeline, "kv_manager")
         kv_cache = pipeline.kv_manager
-        assert isinstance(kv_cache, PagedKVCacheManager)
 
-        assert pipeline_config.ce_delay_ms is not None
-        assert pipeline_config.enable_prioritize_first_decode is not None
-        assert pipeline_config.max_length is not None
+        assert pipeline_config.runtime.ce_delay_ms is not None
+        assert (
+            pipeline_config.runtime.enable_prioritize_first_decode is not None
+        )
+        assert pipeline_config.model.max_length is not None
 
         token_gen_config = AudioGenerationSchedulerConfig(
             max_batch_size=pipeline_config.max_batch_size,
             max_forward_steps_tg=pipeline_config.max_num_steps
             if pipeline_config.max_num_steps != -1
             else 1,
-            max_seq_len=pipeline_config.max_length,
+            max_seq_len=pipeline_config.model.max_length,
             target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,
-            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
-            max_queue_size_tg=pipeline_config.max_queue_size_tg,
-            min_batch_size_tg=pipeline_config.min_batch_size_tg,
-            ce_delay_ms=pipeline_config.ce_delay_ms,
-            enable_prioritize_first_decode=pipeline_config.enable_prioritize_first_decode,
+            enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
+            enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
+            max_queue_size_tg=pipeline_config.runtime.max_queue_size_tg,
+            min_batch_size_tg=pipeline_config.runtime.min_batch_size_tg,
+            ce_delay_ms=pipeline_config.runtime.ce_delay_ms,
+            enable_prioritize_first_decode=pipeline_config.runtime.enable_prioritize_first_decode,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
         audio_pipeline = cast(AudioGeneratorPipelineType, pipeline)
@@ -178,7 +178,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             kv_cache=kv_cache,
         )
-    elif pipeline_config.pipeline_role == PipelineRole.PrefillAndDecode:
+    elif pipeline_config.pipeline_role == "prefill_and_decode":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_text_generation_scheduler(
             text_pipeline,
@@ -192,7 +192,7 @@ def load_scheduler(
             ),
             cancel_queue=cancel_queue,
         )
-    elif pipeline_config.pipeline_role == PipelineRole.DecodeOnly:
+    elif pipeline_config.pipeline_role == "decode_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_decode_scheduler(
             text_pipeline,
@@ -207,7 +207,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             settings=settings,
         )
-    elif pipeline_config.pipeline_role == PipelineRole.PrefillOnly:
+    elif pipeline_config.pipeline_role == "prefill_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
     else:

@@ -40,9 +40,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(
-    Comparable, ImplicitlyCopyable, Intable, Movable, Stringable, Writable
-):
+struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -293,6 +291,7 @@ struct Codepoint(
         """
         return Int(self._scalar_value)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Formats this `Codepoint` as a single-character string.
@@ -312,7 +311,10 @@ struct Codepoint(
         Args:
             w: The object to write to.
         """
-        w.write(self.__str__())
+        var char_len = self.utf8_byte_length()
+        var result = String(unsafe_uninit_length=char_len)
+        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
+        w.write_string(result)
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -529,12 +531,10 @@ struct Codepoint(
 
         var num_bytes = self.utf8_byte_length()
 
-        @parameter
-        if not branchless:
+        comptime if not branchless:
             var is_ascii: Bool
 
-            @parameter
-            if optimize_ascii:
+            comptime if optimize_ascii:
                 is_ascii = likely(num_bytes == 1)
             else:
                 is_ascii = num_bytes == 1
@@ -563,9 +563,7 @@ struct Codepoint(
                 ptr[2] = Byte(((c >> 6) & cont_mask) | cont_marker)
                 ptr[3] = Byte((c & cont_mask) | cont_marker)
         else:
-
-            @parameter
-            if optimize_ascii:
+            comptime if optimize_ascii:
                 if likely(num_bytes == 1):
                     ptr[0] = UInt8(c)
                     return 1

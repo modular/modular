@@ -14,8 +14,9 @@
 from sys import size_of
 from itertools import product
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout._tile_tensor import TileTensor
+from layout._layout import row_major
+from layout._coord import Coord, Idx
 from collections import Optional
 from comm import Signal, MAX_GPUS
 from comm.reducescatter import (
@@ -57,8 +58,8 @@ fn reducescatter_test[
     Each GPU receives 1/ngpus of the reduced data in its output partition.
     When use_custom_epilogue is True, tests with a negating epilogue.
     """
-    constrained[ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"]()
-    constrained[rank == 1, "this test code currently assumes rank 1"]()
+    comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
+    comptime assert rank == 1, "this test code currently assumes rank 1"
 
     print(
         String(
@@ -121,58 +122,58 @@ fn reducescatter_test[
         # Copy data to device
         list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
-    # Create input and output NDBuffers
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
-        fill={}
-    )
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
-        fill={}
-    )
-
-    for i in range(ngpus):
-        in_bufs[i] = NDBuffer[dtype, rank](
-            in_bufs_list[i].unsafe_ptr(), DimList(length)
-        )
-        out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
-        )
-
     # Synchronize all devices before reduce-scatter
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
 
-    # Copy-capture in registers since the lambda will be used on GPU.
-    var out_bufs_capture = StaticTuple[
-        NDBuffer[dtype, rank, MutAnyOrigin], ngpus
-    ](NDBuffer[dtype, rank, MutAnyOrigin]())
+    comptime InputTileType = type_of(
+        TileTensor[mut=False](
+            in_bufs_list[0].unsafe_ptr(), row_major(Idx(length))
+        )
+    )
+    var in_bufs = InlineArray[InputTileType, ngpus](uninitialized=True)
+
+    comptime OutputTileType = type_of(
+        TileTensor[mut=True](
+            out_bufs_list[0].unsafe_ptr(),
+            row_major(Idx(output_lengths[0])),
+        )
+    )
+    var out_bufs = StaticTuple[OutputTileType, ngpus]()
 
     for i in range(ngpus):
-        out_bufs_capture[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(output_lengths[i])
+        in_bufs[i] = InputTileType(
+            in_bufs_list[i].unsafe_ptr(),
+            row_major(Idx(length)),
+        )
+
+        out_bufs[i] = OutputTileType(
+            out_bufs_list[i].unsafe_ptr(),
+            row_major(Idx(output_lengths[i])),
         )
 
     # Custom epilogue that negates values to distinguish from default
     @always_inline
     @parameter
-    @__copy_capture(out_bufs_capture)
+    @__copy_capture(out_bufs)
     fn outputs_lambda[
         input_index: Int,
         _dtype: DType,
-        _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-        out_bufs_capture[input_index].store[width=_width, alignment=_alignment](
-            rebind[IndexList[rank]](coords),
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
+        coords.flat_rank == 1
+    ):
+        out_bufs[input_index].store[width=_width, alignment=_alignment](
+            coords,
             rebind[SIMD[dtype, _width]](
                 -val
             ),  # Negate to distinguish from default
         )
 
     # Perform reduce-scatter
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         reducescatter[
             ngpus=ngpus,
             output_lambda = Optional[elementwise_epilogue_type](
@@ -202,8 +203,7 @@ fn reducescatter_test[
             var accum = Scalar[accum_t](0)
             var global_idx = rs_config.rank_start(gpu_idx) + j
 
-            @parameter
-            for k in range(ngpus):
+            comptime for k in range(ngpus):
                 var term_dtype = test_value_for_gpu_element[dtype](
                     k, global_idx
                 )
@@ -245,8 +245,7 @@ fn run_reducescatter_sweep[
     for i in range(DeviceContext.number_of_devices()):
         list_of_ctx.append(DeviceContext(i))
 
-    @parameter
-    for dtype_idx, ngpus_idx, length_idx, epilogue_idx in product(
+    comptime for dtype_idx, ngpus_idx, length_idx, epilogue_idx in product(
         range(len(test_dtypes)),
         range(len(test_gpu_counts)),
         range(len(test_lengths)),

@@ -40,7 +40,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
-    can_enable_p2p,
+    is_p2p_enabled,
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
 
@@ -79,12 +79,10 @@ fn broadcast_multimem_kernel[
     # Stride equals total threads in grid dimension for grid-strided loops.
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -136,8 +134,7 @@ fn broadcast_multimem_kernel[
         # Handle any remaining sub-chunk elements with an overlapping
         # write that re-stores the last min_mm_width elements of the
         # buffer.  The overlap is harmless because the data is identical.
-        @parameter
-        if min_mm_width > 1:
+        comptime if min_mm_width > 1:
             if (
                 tail_count % min_mm_width != 0
                 and global_tid == 0
@@ -178,12 +175,10 @@ fn broadcast_pull_1stage_kernel[
     # Stride equals total threads in grid dimension for grid-strided loops.
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -273,12 +268,10 @@ fn broadcast_pull_2stage_kernel[
     var thr_local_start = global_tid * simd_width
     var elem_stride = stride * simd_width  # Stride in elements, not threads
 
-    @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # Get payload buffers from signal pointers (skip Signal header)
@@ -287,8 +280,7 @@ fn broadcast_pull_2stage_kernel[
         UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         payloads[i] = (
             rank_sigs[i].address_space_cast[AddressSpace.GENERIC]() + 1
         ).bitcast[Scalar[dtype]]()
@@ -353,9 +345,7 @@ fn broadcast_pull_2stage_kernel[
         )
 
         for idx in range(thr_local_start, max_aligned_chunk_size, elem_stride):
-
-            @parameter
-            for offset in range(1, ngpus):
+            comptime for offset in range(1, ngpus):
                 # Round-robin: each GPU gathers from other peers
                 var src_rank = (my_rank + offset) % ngpus
 
@@ -434,8 +424,7 @@ fn _should_use_2stage[ngpus: Int](num_bytes: Int) -> Bool:
     - 8 GPUs: 2-stage wins for >= 2 MiB
     """
 
-    @parameter
-    if ngpus == 2:
+    comptime if ngpus == 2:
         return False
     elif ngpus == 4:
         return num_bytes >= 6 * 1024 * 1024  # 6 MiB
@@ -462,6 +451,8 @@ fn broadcast[
     root: Int,
     _max_num_blocks: Optional[Int] = None,
 ) raises:
+    comptime assert ngpus >= 2, "broadcast requires at least 2 GPUs"
+
     var my_rank: Int = Int(ctx.id())
 
     var num_elements = output_buffer.num_elements()
@@ -476,7 +467,7 @@ fn broadcast[
         "Buffer shapes don't match",
     )
 
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         raise Error("Broadcast currently requires P2P access between GPUs")
 
     comptime BLOCK_SIZE = 256
@@ -492,8 +483,7 @@ fn broadcast[
         ceildiv(ceildiv(num_elements, simd_width), BLOCK_SIZE),
     )
 
-    @parameter
-    if use_multimem:
+    comptime if use_multimem:
         comptime bcast_kernel = broadcast_multimem_kernel[
             dtype,
             rank,

@@ -115,11 +115,6 @@ trait Writer(ImplicitlyDestructible):
     ```
     """
 
-    @deprecated("Writer only supports valid UTF-8, use `write_string` instead")
-    @doc_private
-    fn write_bytes(mut self, bytes: Span[Byte]):
-        self.write_string(StringSlice(unsafe_from_utf8=bytes))
-
     fn write_string(mut self, string: StringSlice):
         """
         Write a `StringSlice` to this `Writer`.
@@ -139,8 +134,7 @@ trait Writer(ImplicitlyDestructible):
             args: Sequence of arguments to write to this Writer.
         """
 
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             args[i].write_to(self)
 
 
@@ -270,8 +264,7 @@ fn _reflection_write_to[
     writer.write_string(type_name)
     writer.write_string("(")
 
-    @parameter
-    for i in range(names.size):
+    comptime for i in range(names.size):
         comptime FieldType = types[i]
         _constrained_field_conforms_to[
             conforms_to(FieldType, Writable),
@@ -280,8 +273,7 @@ fn _reflection_write_to[
             ParentConformsTo="Writable",
         ]()
 
-        @parameter
-        if i > 0:
+        comptime if i > 0:
             writer.write_string(", ")
         writer.write_string(materialize[names[i]]())
         writer.write_string("=")

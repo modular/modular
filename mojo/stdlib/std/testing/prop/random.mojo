@@ -117,8 +117,7 @@ struct Rng(Movable):
         if min == max:
             return min
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             return rebind[Scalar[dtype]](Scalar[DType.bool](self.rand_bool()))
         elif dtype.is_integral():
             var offset = UInt64(0) - UInt64(Scalar[dtype].MIN)
@@ -132,10 +131,9 @@ struct Rng(Movable):
             var result = Float64(min) * (1.0 - f) + Float64(max) * f
             return Scalar[dtype](result)
         else:
-            constrained[
-                False, "rand_scalar expected bool, integral, or floating point"
-            ]()
-            return 0
+            comptime assert (
+                False
+            ), "rand_scalar expected bool, integral, or floating point"
 
     # TODO (MSTDL-1185): Can remove when UInt and SIMD are unified.
     fn rand_uint(

@@ -100,8 +100,7 @@ fn simd_store_into_managed_tensor_slice[
     @parameter
     @always_inline
     fn store_stride1():
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             var v = value.cast[DType.uint8]()
             tensor._ptr.bitcast[UInt8]().store(flat_index, v)
         else:
@@ -111,8 +110,7 @@ fn simd_store_into_managed_tensor_slice[
     @parameter
     @always_inline
     fn store_strided(stride: Int):
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             var v = value.cast[DType.uint8]()
             strided_store(
                 v,
@@ -122,8 +120,7 @@ fn simd_store_into_managed_tensor_slice[
         else:
             return strided_store(value, tensor._ptr + flat_index, stride)
 
-    @parameter
-    if static_stride.is_dynamic():
+    comptime if static_stride.is_dynamic():
         var stride = tensor._runtime_strides[rank - 1]
         # Dynamic stride
         if stride == 0:
@@ -134,8 +131,7 @@ fn simd_store_into_managed_tensor_slice[
             store_strided(stride)
     else:
         # static stride
-        @parameter
-        if static_stride.get() == 0:
+        comptime if static_stride.get() == 0:
             tensor._ptr.store[alignment=max_alignment](0, value)
         elif static_stride.get() == 1:
             store_stride1()
@@ -263,8 +259,7 @@ fn simd_load_from_managed_tensor_slice[
     @parameter
     @always_inline
     fn load_stride1() -> SIMD[dtype, simd_width]:
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             var v = tensor._ptr.bitcast[UInt8]().load[
                 width=simd_width,
                 invariant=invariant,
@@ -279,8 +274,7 @@ fn simd_load_from_managed_tensor_slice[
     @parameter
     @always_inline
     fn load_strided(stride: Int) -> SIMD[dtype, simd_width]:
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             var v = strided_load[simd_width, invariant=invariant](
                 tensor._ptr.bitcast[UInt8]() + flat_index,
                 stride,
@@ -291,8 +285,7 @@ fn simd_load_from_managed_tensor_slice[
                 tensor._ptr + flat_index, stride
             )
 
-    @parameter
-    if static_stride.is_dynamic():
+    comptime if static_stride.is_dynamic():
         var stride = tensor._runtime_strides[rank - 1]
         # Dynamic stride
         if stride == 0:
@@ -303,8 +296,7 @@ fn simd_load_from_managed_tensor_slice[
             return load_strided(stride)
     else:
         # Static stride
-        @parameter
-        if static_stride.get() == 0:
+        comptime if static_stride.get() == 0:
             return tensor._ptr.load[invariant=invariant](flat_index)
         elif static_stride.get() == 1:
             return load_stride1()
@@ -753,8 +745,7 @@ struct ManagedTensorSlice[
 
         var strides = IndexList[Self.rank]()
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             strides[i] = step[i] * slicer_strides[i]
 
         self = Self(ptr + start_offset, slice_spec, strides)
@@ -907,8 +898,7 @@ struct ManagedTensorSlice[
             The size of the tensor slice in the given dimension.
         """
 
-        @parameter
-        if Self._static_shape.at[index]().is_dynamic():
+        comptime if Self._static_shape.at[index]().is_dynamic():
             return self._spec.shape[index]
         else:
             return Self._static_shape.get[index]()
@@ -949,8 +939,7 @@ struct ManagedTensorSlice[
             The size of the tensor slice in the given dimension.
         """
 
-        @parameter
-        if Self._static_strides.at[index]().is_dynamic():
+        comptime if Self._static_strides.at[index]().is_dynamic():
             return self._runtime_strides[index]
         else:
             return Self._static_strides.get[index]()
@@ -964,8 +953,7 @@ struct ManagedTensorSlice[
         """
         var product: Int = 1
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             product *= self.dim_size[i]()
 
         return product
@@ -1034,8 +1022,7 @@ struct ManagedTensorSlice[
         comptime address_space = Self.static_spec.address_space
         comptime strides = Self.static_spec.strides
 
-        @parameter
-        if in_lambda:
+        comptime if in_lambda:
             comptime in_fn = in_lambda.value()
             return in_fn[width, element_alignment](ridx)
         else:
@@ -1059,25 +1046,20 @@ struct ManagedTensorSlice[
 
     @always_inline
     fn _compute_offset(self, index: IndexList[Self.rank]) -> Int:
-        @parameter
-        if Self.rank == 0:
+        comptime if Self.rank == 0:
             return 0
 
         # Special case for NVidia GPU on shared memory.
         # We can do the offset computation in int32 instead.
-        @parameter
-        if is_gpu() and Self.address_space in (
+        comptime if is_gpu() and Self.address_space in (
             AddressSpace.SHARED,
             AddressSpace.LOCAL,
             AddressSpace.CONSTANT,
         ):
             var offset: Int32 = 0
 
-            @parameter
-            for i in range(Self.rank):
-
-                @parameter
-                if Self._static_strides.at[i]().is_dynamic():
+            comptime for i in range(Self.rank):
+                comptime if Self._static_strides.at[i]().is_dynamic():
                     offset = fma(
                         Int32(index[i]), Int32(self._runtime_strides[i]), offset
                     )
@@ -1091,11 +1073,8 @@ struct ManagedTensorSlice[
 
         var offset = 0
 
-        @parameter
-        for i in range(Self.rank):
-
-            @parameter
-            if Self._static_strides.at[i]().is_dynamic():
+        comptime for i in range(Self.rank):
+            comptime if Self._static_strides.at[i]().is_dynamic():
                 offset = fma(index[i], self._runtime_strides[i], offset)
             else:
                 offset = fma(index[i], Self._static_strides.get[i](), offset)
@@ -1155,8 +1134,7 @@ struct ManagedTensorSlice[
         comptime address_space = Self.static_spec.address_space
         comptime strides = Self.static_spec.strides
 
-        @parameter
-        if out_lambda:
+        comptime if out_lambda:
             comptime out_fn = out_lambda.value()
             out_fn[width, element_alignment](ridx, val)
         else:
@@ -1201,8 +1179,7 @@ struct ManagedTensorSlice[
 
         comptime out_compute_lambda = Self.static_spec.out_compute_lambda
 
-        @parameter
-        if out_compute_lambda:
+        comptime if out_compute_lambda:
             comptime out_fn = out_compute_lambda.value()
             return out_fn[width](ridx, val)
         else:
@@ -1259,12 +1236,11 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        constrained[
+        comptime assert (
             not Self.static_spec.in_lambda
             and not Self.static_spec.out_lambda
-            and not Self.static_spec.out_compute_lambda,
-            "The tensor is already bound to a lambda",
-        ]()
+            and not Self.static_spec.out_compute_lambda
+        ), "The tensor is already bound to a lambda"
         return {self._ptr, self._spec, self._runtime_strides}
 
     @doc_private
@@ -1282,12 +1258,11 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        constrained[
+        comptime assert (
             not Self.static_spec.in_lambda
             and not Self.static_spec.out_lambda
-            and not Self.static_spec.out_compute_lambda,
-            "The tensor is already bound to a lambda",
-        ]()
+            and not Self.static_spec.out_compute_lambda
+        ), "The tensor is already bound to a lambda"
         return {self._ptr, self._spec, self._runtime_strides}
 
     @doc_private
@@ -1305,12 +1280,11 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        constrained[
+        comptime assert (
             not Self.static_spec.in_lambda
             and not Self.static_spec.out_lambda
-            and not Self.static_spec.out_compute_lambda,
-            "The tensor is already bound to a lambda",
-        ]()
+            and not Self.static_spec.out_compute_lambda
+        ), "The tensor is already bound to a lambda"
         return {self._ptr, self._spec, self._runtime_strides}
 
     @doc_private
@@ -1328,12 +1302,11 @@ struct ManagedTensorSlice[
             ),
         ],
     ):
-        constrained[
+        comptime assert (
             not Self.static_spec.in_lambda
             and not Self.static_spec.out_lambda
-            and not Self.static_spec.out_compute_lambda,
-            "The tensor is already bound to a lambda",
-        ]()
+            and not Self.static_spec.out_compute_lambda
+        ), "The tensor is already bound to a lambda"
         return {self._ptr, self._spec, self._runtime_strides}
 
     @always_inline
@@ -1379,17 +1352,13 @@ struct ManagedTensorSlice[
         var shape = self.shape()
         var stride = self.strides()
 
-        @parameter
-        for i in range(Self.rank):
-
-            @parameter
-            if not shape_tuple.element_types[i].is_static_value:
+        comptime for i in range(Self.rank):
+            comptime if not shape_tuple.element_types[i].is_static_value:
                 shape_tuple[i] = rebind[shape_tuple.element_types[i]](
                     Scalar[coord_dtype](shape[i])
                 )
 
-            @parameter
-            if not stride_tuple.element_types[i].is_static_value:
+            comptime if not stride_tuple.element_types[i].is_static_value:
                 stride_tuple[i] = rebind[stride_tuple.element_types[i]](
                     Scalar[coord_dtype](stride[i])
                 )
@@ -1450,15 +1419,11 @@ struct ManagedTensorSlice[
 
 
 fn _is_consistent[static_info: DimList](runtime_info: IndexList) -> Bool:
-    @parameter
-    if len(static_info) != runtime_info.size:
+    comptime if len(static_info) != runtime_info.size:
         return False
 
-    @parameter
-    for i in range(runtime_info.size):
-
-        @parameter
-        if not static_info.has_value[i]():
+    comptime for i in range(runtime_info.size):
+        comptime if not static_info.has_value[i]():
             continue
 
         if static_info.at[i]() != runtime_info[i]:
@@ -1576,12 +1541,10 @@ fn get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     used per load/store instruction.
     """
 
-    @parameter
-    if _is_gpu[target]():
+    comptime if _is_gpu[target]():
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        @parameter
-        if CompilationTarget[get_gpu_target()]._is_arch["sm_100a"]():
+        comptime if CompilationTarget[get_gpu_target()]._is_arch["sm_100a"]():
             return 32 // size_of[dtype]()
 
         return simd_width_of[dtype, target = get_gpu_target()]()
@@ -1793,12 +1756,10 @@ fn view_copy_impl[
 
 
 fn _compatible_with[x: DimList, y: DimList]() -> Bool:
-    @parameter
-    if len(x) != len(y):
+    comptime if len(x) != len(y):
         return False
 
-    @parameter
-    for i in range(len(x)):
+    comptime for i in range(len(x)):
         if x.has_value[i]() and y.has_value[i]() and x.at[i]() != y.at[i]():
             return False
 

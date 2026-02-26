@@ -34,9 +34,8 @@ from memory import bitcast
 struct Consistency(
     Equatable,
     ImplicitlyCopyable,
-    Representable,
-    Stringable,
     TrivialRegisterPassable,
+    Writable,
 ):
     """Represents the consistency model for atomic operations.
 
@@ -106,6 +105,7 @@ struct Consistency(
         """
         return self._value != other._value
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a string representation of a `Consistency`.
 
@@ -114,6 +114,7 @@ struct Consistency(
         """
         return self.as_string_slice()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of a `Consistency`.
 
@@ -147,6 +148,23 @@ struct Consistency(
             return "Consistency.SEQUENTIAL"
 
         return "Consistency.UNKNOWN"
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the string representation of this `Consistency` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        comptime prefix_len = len("Consistency.")
+        writer.write_string(self.as_string_slice()[prefix_len:])
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Consistency` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write_string(self.as_string_slice())
 
     @always_inline("nodebug")
     fn __mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
@@ -523,8 +541,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             expected = ptr[]
             return False
 
-        @parameter
-        if Self.dtype.is_integral():
+        comptime if Self.dtype.is_integral():
             return _compare_exchange_integral_impl[
                 scope = Self.scope,
                 failure_ordering=failure_ordering,
@@ -775,8 +792,7 @@ fn _max_impl[
     scope: StaticString,
     ordering: Consistency,
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
-    @parameter
-    if is_nvidia_gpu() and dtype.is_floating_point():
+    comptime if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
@@ -802,8 +818,7 @@ fn _min_impl[
     scope: StaticString,
     ordering: Consistency,
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
-    @parameter
-    if is_nvidia_gpu() and dtype.is_floating_point():
+    comptime if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:

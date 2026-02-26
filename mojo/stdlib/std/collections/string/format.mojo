@@ -139,8 +139,7 @@ fn _comptime_list_to_span[
     fn list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
         var array = InlineArray[T, len(list)](uninitialized=True)
 
-        @parameter
-        for i in range(len(list)):
+        comptime for i in range(len(list)):
             UnsafePointer(to=array[i]).init_pointee_copy(materialize[list]()[i])
         return array^
 
@@ -259,8 +258,7 @@ struct _FormatUtils:
             format
         )
 
-        @parameter
-        if result.isa[Error]():
+        comptime if result.isa[Error]():
             comptime assert not result.isa[Error](), String(result[Error])
         else:
             comptime entries = result[type_of(result).Ts[0]]
@@ -601,8 +599,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         # alias a_value = UInt8(ord("a")) # TODO
 
         fn _format(idx: Int) unified {read self, read args, mut writer}:
-            @parameter
-            for i in range(len_pos_args):
+            comptime for i in range(len_pos_args):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0

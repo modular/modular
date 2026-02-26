@@ -70,17 +70,12 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         comptime note_text = String(" Note: ", note.value() if note else "")
         comptime msg = "Current compilation target does not support"
 
-        @parameter
-        if operation:
-            constrained[
-                False,
-                String(msg, " operation: ", operation.value(), ".", note_text),
-            ]()
+        comptime if operation:
+            comptime assert False, String(
+                msg, " operation: ", operation.value(), ".", note_text
+            )
         else:
-            constrained[
-                False,
-                String(msg, " this operation.", note_text),
-            ]()
+            comptime assert False, String(msg, " this operation.", note_text)
 
         os.abort()
 
@@ -167,8 +162,7 @@ struct CompilationTarget[value: _TargetType = _current_target()](
             The string of default compile options for the compilation target.
         """
 
-        @parameter
-        if is_triple["nvptx64-nvidia-cuda", Self.value]():
+        comptime if is_triple["nvptx64-nvidia-cuda", Self.value]():
             # TODO: use `is_nvidia_gpu` when moved to into this struct.
             return "nvptx-short-ptr=true"
         else:
@@ -396,8 +390,7 @@ fn platform_map[
     ```
     """
 
-    @parameter
-    if CompilationTarget.is_macos() and macos:
+    comptime if CompilationTarget.is_macos() and macos:
         return macos.value().copy()
     elif CompilationTarget.is_linux() and linux:
         return linux.value().copy()
@@ -706,8 +699,7 @@ fn _cdna_version() -> Int:
         _is_amd_mi300x() or _is_amd_mi355x()
     ), "querying the cdna version is only supported on AMD hardware"
 
-    @parameter
-    if _is_amd_mi300x():
+    comptime if _is_amd_mi300x():
         return 3
     else:
         return 4
@@ -715,16 +707,14 @@ fn _cdna_version() -> Int:
 
 @always_inline("nodebug")
 fn _cdna_3_or_newer() -> Bool:
-    @parameter
-    if _is_amd_cdna():
+    comptime if _is_amd_cdna():
         return _cdna_version() >= 3
     return False
 
 
 @always_inline("nodebug")
 fn _cdna_4_or_newer() -> Bool:
-    @parameter
-    if _is_amd_cdna():
+    comptime if _is_amd_cdna():
         return _cdna_version() >= 4
     return False
 

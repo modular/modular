@@ -417,11 +417,6 @@ comptime REPR_MAPPINGS = [
 ]
 
 
-def test_slice_repr():
-    for item in materialize[REPR_MAPPINGS]():
-        assert_equal(StringSlice.__repr__(item[0]), item[1])
-
-
 def test_slice_write_repr_to():
     for item in materialize[REPR_MAPPINGS]():
         var string = String()
@@ -706,12 +701,12 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(unsafe_from_utf8=Span[Byte]([0xC2, 0x85]))
+    var next_line = String(unsafe_from_utf8=Span([Byte(0xC2), 0x85]))
     var unicode_line_sep = String(
-        unsafe_from_utf8=Span[Byte]([0xE2, 0x80, 0xA8])
+        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA8])
     )
     var unicode_paragraph_sep = String(
-        unsafe_from_utf8=Span[Byte]([0xE2, 0x80, 0xA9])
+        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA9])
     )
 
     for ref u in [next_line, unicode_line_sep, unicode_paragraph_sep]:
@@ -1097,7 +1092,7 @@ def test_replace():
 def test_join():
     # TODO(MOCO-2908): This explicit origin should not be necessary; the
     #   compiler ought to infer some default "bottom" origin.
-    assert_equal(StaticString("").join(Span[String, ImmutAnyOrigin]([])), "")
+    assert_equal(StaticString("").join(Span[String, ImmutAnyOrigin]()), "")
     assert_equal(StaticString("").join(Span(["a", "b", "c"])), "abc")
     assert_equal(StaticString(" ").join(Span(["a", "b", "c"])), "a b c")
     assert_equal(StaticString(" ").join(Span(["a", "b", "c", ""])), "a b c ")
@@ -1111,16 +1106,16 @@ def test_join():
     #   arguments, somehow?
     # assert_equal(sep.join(Span([1, "abc", 3])), "1,abc,3")
 
-    var s2 = StaticString(",").join(Span[Byte]([1, 2, 3]))
+    var s2 = StaticString(",").join(Span([Byte(1), 2, 3]))
     assert_equal(s2, "1,2,3")
 
-    var s3 = StaticString(",").join(Span[Byte]([1, 2, 3, 4, 5, 6, 7, 8, 9]))
+    var s3 = StaticString(",").join(Span([Byte(1), 2, 3, 4, 5, 6, 7, 8, 9]))
     assert_equal(s3, "1,2,3,4,5,6,7,8,9")
 
-    var s4 = StaticString(",").join(List[UInt8]())
+    var s4 = StaticString(",").join(List[Byte]())
     assert_equal(s4, "")
 
-    var s5 = StaticString(",").join(Span[Byte]([1]))
+    var s5 = StaticString(",").join(Span([Byte(1)]))
     assert_equal(s5, "1")
 
 

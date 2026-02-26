@@ -28,7 +28,7 @@ from os import abort
 from sys import size_of
 from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from memory import Pointer, memcpy
+from memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
 from builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -70,8 +70,7 @@ struct _ListIter[
     fn __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             if self.index >= len(self.src[]):
                 raise StopIteration()
             self.index += 1
@@ -86,8 +85,7 @@ struct _ListIter[
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             iter_len = len(self.src[]) - self.index
         else:
             iter_len = self.index
@@ -101,9 +99,7 @@ struct List[T: Copyable](
     Defaultable,
     Equatable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A dynamically-allocated and resizable list.
@@ -410,7 +406,7 @@ struct List[T: Copyable](
         self._annotate_increase(unsafe_uninit_length)
         self._len = unsafe_uninit_length
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a deep copy of the given list.
 
         Args:
@@ -430,10 +426,7 @@ struct List[T: Copyable](
         ]()
         comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
 
-        @parameter
-        if not TDestructible.__del__is_trivial:
-            for i in range(len(self)):
-                (self._data + i).bitcast[TDestructible]().destroy_pointee()
+        destroy_n(self._data.bitcast[TDestructible](), count=len(self))
         self._annotate_delete()
         self._data.free()
 
@@ -642,6 +635,7 @@ struct List[T: Copyable](
         """
         return len(self) > 0
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of a `List`.
@@ -655,6 +649,7 @@ struct List[T: Copyable](
         self.write_to(output)
         return output^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns a string representation of a `List`.
@@ -727,12 +722,9 @@ struct List[T: Copyable](
     fn _realloc(mut self, new_capacity: Int):
         var new_data = alloc[Self.T](new_capacity)
 
-        @parameter
-        if Self.T.__moveinit__is_trivial:
-            memcpy(dest=new_data, src=self._data, count=len(self))
-        else:
-            for i in range(len(self)):
-                (new_data + i).init_pointee_move_from(self._data + i)
+        uninit_move_n[overlapping=False](
+            dest=new_data, src=self._data, count=len(self)
+        )
 
         if self._data:
             self._annotate_delete()
@@ -831,14 +823,9 @@ struct List[T: Copyable](
         var src_ptr = other.unsafe_ptr()
         self._annotate_increase(other_len)
 
-        @parameter
-        if Self.T.__moveinit__is_trivial:
-            memcpy(dest=dest_ptr, src=src_ptr, count=other_len)
-        else:
-            for _ in range(other_len):
-                dest_ptr.init_pointee_move_from(src_ptr)
-                src_ptr += 1
-                dest_ptr += 1
+        uninit_move_n[overlapping=False](
+            dest=dest_ptr, src=src_ptr, count=other_len
+        )
 
         # Update the size now since all elements have been moved into this list.
         self._len = final_size
@@ -860,7 +847,7 @@ struct List[T: Copyable](
         numbers = [1, 2, 3]
         more = [4, 5, 6]
         numbers.extend(Span(more))
-        print(numbers.__str__())   # [1, 2, 3, 4, 5, 6]
+        print(numbers)   # [1, 2, 3, 4, 5, 6]
         ```
         """
         var elements_len = len(elements)
@@ -873,17 +860,11 @@ struct List[T: Copyable](
         var i = self._len
         self._len = new_num_elts
 
-        @parameter
-        if Self.T.__copyinit__is_trivial:
-            memcpy(
-                dest=self.unsafe_ptr() + i,
-                src=elements.unsafe_ptr(),
-                count=elements_len,
-            )
-        else:
-            for elt in elements:
-                UnsafePointer(to=self[i]).init_pointee_copy(elt)
-                i += 1
+        uninit_copy_n[overlapping=False](
+            dest=self.unsafe_ptr() + i,
+            src=elements.unsafe_ptr(),
+            count=elements_len,
+        )
 
     fn extend[
         dtype: DType, //
@@ -976,15 +957,18 @@ struct List[T: Copyable](
         value = numbers.pop(-2); print(value) # 2, negative index
         ```
         """
-        var normalized_idx = normalize_index["List", assert_always=False](
-            i, UInt(len(self))
+        var normalized_idx = Int(
+            normalize_index["List", assert_always=False](i, UInt(len(self)))
         )
 
-        debug_assert(Int(normalized_idx) < self._len, "pop index out of range")
+        debug_assert(normalized_idx < self._len, "pop index out of range")
 
         var ret_val = (self._data + normalized_idx).take_pointee()
-        for j in range(normalized_idx + 1, self._len):
-            (self._data + j - 1).init_pointee_move_from(self._data + j)
+        uninit_move_n[overlapping=True](
+            dest=self._data + normalized_idx,
+            src=self._data + normalized_idx + 1,
+            count=len(self) - normalized_idx - 1,
+        )
         self._len -= 1
         self._annotate_shrink(self._len + 1)
         return ret_val^
@@ -1108,10 +1092,8 @@ struct List[T: Copyable](
                 " size is smaller than the current size."
             )
 
-        @parameter
-        if not _T.__del__is_trivial:
-            for i in range(new_size, len(self)):
-                (self._data + i).destroy_pointee()
+        destroy_n(self._data + new_size, count=len(self) - new_size)
+
         var old_size: Int = self._len
         self._len = new_size
         self._annotate_shrink(old_size)
@@ -1219,8 +1201,7 @@ struct List[T: Copyable](
         print(len(list))  # 0
         ```
         """
-        for i in range(self._len):
-            (self._data + i).destroy_pointee()
+        destroy_n(self._data, count=self._len)
         var old_size: Int = self._len
         self._len = 0
         self._annotate_shrink(old_size)

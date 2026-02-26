@@ -208,13 +208,10 @@ fn vectorize[
     var unrolled_end = align_down(UInt(size), UInt(unrolled_simd_width))
 
     for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
-
-        @parameter
-        for idx in range(unroll_factor):
+        comptime for idx in range(unroll_factor):
             closure[simd_width](unrolled_idx + idx * simd_width)
 
-    @parameter
-    if unroll_factor > 1:
+    comptime if unroll_factor > 1:
         for simd_idx in range(unrolled_end, simd_end, simd_width):
             closure[simd_width](simd_idx)
 
@@ -336,13 +333,10 @@ fn vectorize[
     var unrolled_end = Int(align_down(UInt(size), UInt(unrolled_simd_width)))
 
     for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
-
-        @parameter
-        for idx in range(unroll_factor):
+        comptime for idx in range(unroll_factor):
             closure[simd_width](unrolled_idx + idx * simd_width, simd_width)
 
-    @parameter
-    if unroll_factor > 1:
+    comptime if unroll_factor > 1:
         for simd_idx in range(unrolled_end, simd_end, simd_width):
             closure[simd_width](simd_idx, simd_width)
 
@@ -441,28 +435,19 @@ fn vectorize[
     comptime simd_end = align_down(size, simd_width)
     comptime unrolled_end = align_down(size, unrolled_simd_width)
 
-    @parameter
-    for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
-
-        @parameter
-        for idx in range(unroll_factor):
+    comptime for unrolled_idx in range(0, unrolled_end, unrolled_simd_width):
+        comptime for idx in range(unroll_factor):
             closure[simd_width](unrolled_idx + idx * simd_width)
 
-    @parameter
-    if unroll_factor > 1:
+    comptime if unroll_factor > 1:
         for simd_idx in range(unrolled_end, simd_end, simd_width):
             closure[simd_width](simd_idx)
 
-    @parameter
-    if size > simd_end:
-
-        @parameter
-        if (size - simd_end).is_power_of_two():
+    comptime if size > simd_end:
+        comptime if (size - simd_end).is_power_of_two():
             closure[size - simd_end](simd_end)
         else:
-
-            @parameter
-            for i in range(simd_end, size):
+            comptime for i in range(simd_end, size):
                 closure[1](i)
 
 
@@ -668,8 +653,7 @@ fn tile[
     # Initialize where to start on the overall work load.
     var current_offset: Int = offset
 
-    @parameter
-    for tile_size in tile_size_list:
+    comptime for tile_size in tile_size_list:
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
         while current_offset <= upperbound - tile_size:
@@ -744,8 +728,7 @@ fn tile[
     var work_idx = offset
     comptime num_tiles = len(secondary_tile_size_list)
 
-    @parameter
-    for i in range(num_tiles):
+    comptime for i in range(num_tiles):
         comptime secondary_tile_size = secondary_tile_size_list[i]
         var primary_tile_size = primary_tile_size_list[i]
 
@@ -799,13 +782,11 @@ fn tile[
     # Initialize where to start on the overall work load.
     var current_offset_y: Int = offset_y
 
-    @parameter
-    for tile_size_y in tile_sizes_y:
+    comptime for tile_size_y in tile_sizes_y:
         while current_offset_y <= upperbound_y - tile_size_y:
             var current_offset_x = offset_x
 
-            @parameter
-            for tile_size_x in tile_sizes_x:
+            comptime for tile_size_x in tile_sizes_x:
                 while current_offset_x <= upperbound_x - tile_size_x:
                     workgroup_function[tile_size_x, tile_size_y](
                         current_offset_x, current_offset_y
@@ -1010,8 +991,7 @@ fn tile_and_unswitch[
     var current_offset = offset
     var remaining = upperbound - offset
 
-    @parameter
-    for tile_size in tile_size_list:
+    comptime for tile_size in tile_size_list:
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
         while remaining >= tile_size:
@@ -1124,8 +1104,7 @@ fn tile_middle_unswitch_boundaries[
         offset += left_tile_size
 
     # Middle
-    @parameter
-    for tile_size in middle_tile_sizes:
+    comptime for tile_size in middle_tile_sizes:
         while offset <= right_boundary_start - tile_size:
             work_fn[tile_size, False](offset)
             offset += tile_size
@@ -1163,8 +1142,7 @@ fn tile_middle_unswitch_boundaries[
 
     # Tile size covers the entire range, e.g., using 14x2 register tile for
     # 14x14 image. Both sides of the tile has boundary conditions.
-    @parameter
-    if size <= tile_size:
+    comptime if size <= tile_size:
         work_fn[size, True, True](0)
     else:
         # Set bounds of tile sizes on boundaries. E.g. for 7x7 image and
@@ -1261,25 +1239,21 @@ fn _get_start_indices_of_nth_subvolume[
     comptime assert subvolume_rank >= 0, "subvolume rank must be non-negative"
 
     # fast impls for common cases
-    @parameter
-    if rank == 2 and subvolume_rank == 1:
+    comptime if rank == 2 and subvolume_rank == 1:
         return {n, 0}
 
-    @parameter
-    if rank - 1 == subvolume_rank:
+    comptime if rank - 1 == subvolume_rank:
         res = {0}
         res[0] = n
         return
 
-    @parameter
-    if rank == subvolume_rank:
+    comptime if rank == subvolume_rank:
         return {0}
 
     res = {}
     var curr_index = n
 
-    @parameter
-    for i in reversed(range(rank - subvolume_rank)):
+    comptime for i in reversed(range(rank - subvolume_rank)):
         res[i] = curr_index._positive_rem(shape[i])
         curr_index = curr_index / shape[i]
 
@@ -1539,9 +1513,7 @@ fn elementwise[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-
-        @parameter
-        if is_gpu[target]():
+        comptime if is_gpu[target]():
             _elementwise_impl_gpu[func, simd_width = UInt(simd_width)](
                 shape, context[]
             )
@@ -1564,8 +1536,7 @@ fn _elementwise_impl[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
 ](shape: IndexList[rank, ...], context: DeviceContext) raises:
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         _elementwise_impl_cpu[
             func, simd_width, use_blocking_impl=use_blocking_impl
         ](shape)
@@ -1622,8 +1593,7 @@ fn _elementwise_impl_cpu_1d[
 
     var problem_size = shape.flattened_length()
 
-    @parameter
-    if use_blocking_impl:
+    comptime if use_blocking_impl:
 
         @always_inline
         fn blocking_task_fun[simd_width: Int](idx: Int) unified {read}:
@@ -1680,6 +1650,10 @@ fn _elementwise_impl_cpu_nd[
     """
     comptime assert rank > 1, "Specialization for ND where N > 1"
 
+    # If we know we won't do any work, return early
+    if shape[rank - 1] == 0:
+        return
+
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
     # Strategy: we parallelize over all dimensions except the innermost and
@@ -1690,8 +1664,7 @@ fn _elementwise_impl_cpu_nd[
     # the dimensions we split across.
     var total_size: Int = shape.flattened_length()
 
-    @parameter
-    if use_blocking_impl:
+    comptime if use_blocking_impl:
 
         @always_inline
         @parameter
@@ -1821,12 +1794,10 @@ fn _elementwise_impl_gpu[
         # process the packed region
         var tid = thread_idx.x + block_size * block_idx.x
 
-        @parameter
-        if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
+        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_BEGINNING:
             launch_dependent_grids()
 
-        @parameter
-        if PDLLevel() > PDLLevel.OFF:
+        comptime if PDLLevel() > PDLLevel.OFF:
             wait_on_dependent_grids()
 
         for idx in range(
@@ -1838,12 +1809,9 @@ fn _elementwise_impl_gpu[
                 idx * simd_width, shape
             )
 
-            @parameter
-            if handle_uneven_simd:
+            comptime if handle_uneven_simd:
                 if start_indices[rank - 1] + Int(simd_width) >= shape[rank - 1]:
-
-                    @parameter
-                    for off in range(Int(simd_width)):
+                    comptime for off in range(Int(simd_width)):
                         func[1, rank](
                             _get_start_indices_of_nth_subvolume_uint[0](
                                 idx * simd_width + UInt(off),
@@ -1866,8 +1834,7 @@ fn _elementwise_impl_gpu[
             ).canonicalize()
             func[1, rank](index_tup)
 
-        @parameter
-        if PDLLevel() == PDLLevel.OVERLAP_AT_END:
+        comptime if PDLLevel() == PDLLevel.OVERLAP_AT_END:
             launch_dependent_grids()
 
     if shape[rank - 1] % Int(simd_width) == 0:
@@ -1908,6 +1875,10 @@ fn parallelize_over_rows[
         axis: Rows are slices along the axis dimension of shape.
         grain_size: The minimum number of elements to warrant using an additional thread.
     """
+    # If we know we will have no work, return early
+    if shape[axis] == 0:
+        return
+
     var total_size = shape.flattened_length()
     var num_rows = total_size // shape[axis]
 
@@ -2002,6 +1973,10 @@ fn _stencil_impl_cpu[
     comptime assert (
         stencil_axis[0] == 1 and stencil_axis[1] == 2
     ), "Only stencil spatial axes [1, 2] are supported"
+
+    # If we know we will have no work, return early
+    if shape[rank - 1] == 0:
+        return
 
     var total_size = shape.flattened_length()
 

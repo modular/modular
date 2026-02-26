@@ -32,9 +32,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     Hashable,
     Iterable,
     KeyElement,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A set data type.
@@ -236,7 +234,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             True if the set is a strict superset of the `other` set, False otherwise.
         """
-        return self >= other and self != other
+        return len(self) > len(other) and other.issubset(self)
 
     fn __lt__(self, other: Self) -> Bool:
         """Overloads the < operator for strict subset comparison of sets.
@@ -247,7 +245,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Returns:
             True if the set is a strict subset of the `other` set, False otherwise.
         """
-        return self <= other and self != other
+        return len(self) < len(other) and self.issubset(other)
 
     fn __xor__(self, other: Self) -> Self:
         """Overloads the ^ operator for sets. Works like as `symmetric_difference` method.
@@ -308,6 +306,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             hash_value ^= hash(e)
         hasher.update(hash_value)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of the set.
@@ -319,6 +318,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self.write_to(output)
         return output
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns the string representation of the set.
@@ -339,8 +339,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         fn iterate(mut w: Some[Writer]) raises StopIteration:
             ref element = iterator.__next__()
 
-            @parameter
-            if is_repr:
+            comptime if is_repr:
                 trait_downcast[Writable](element).write_repr_to(w)
             else:
                 trait_downcast[Writable](element).write_to(w)
@@ -419,9 +418,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     fn pop(mut self) raises -> Self.T:
         """Remove any one item from the set, and return it.
 
-        As an implementation detail this will remove the first item
-        according to insertion order. This is practically useful
-        for breadth-first search implementations.
+        As an implementation detail this will remove the last item
+        according to insertion order.
 
         Returns:
             The element which was removed from the set.
@@ -429,12 +427,10 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         Raises:
             If the set is empty.
         """
-        if not self:
+        try:
+            return self._data.popitem().key.copy()
+        except:
             raise "Pop on empty set"
-        var iter = self.__iter__()
-        var first = iter.__next__().copy()
-        self.remove(first)
-        return first^
 
     fn union(self, other: Self) -> Self:
         """Set union.
@@ -622,14 +618,4 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         This method modifies the set in-place, removing all of its elements.
         After calling this method, the set will be empty.
         """
-        for _ in range(len(self)):
-            # Can't fail from an empty set
-            try:
-                _ = self.pop()
-            except:
-                pass
-
-        #! This code below (without using range function) won't pass tests
-        #! It leaves set with one remaining item. Is this a bug?
-        # for _ in self:
-        #     var a = self.pop()
+        self._data.clear()

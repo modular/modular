@@ -76,8 +76,6 @@ struct Bool(
     ImplicitlyCopyable,
     Indexer,
     Intable,
-    Representable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -105,8 +103,8 @@ struct Bool(
     # ===-------------------------------------------------------------------===#
 
     comptime __del__is_trivial: Bool = True
-    comptime __moveinit__is_trivial: Bool = True
-    comptime __copyinit__is_trivial: Bool = True
+    comptime __move_ctor_is_trivial: Bool = True
+    comptime __copy_ctor_is_trivial: Bool = True
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -194,6 +192,7 @@ struct Bool(
         """
         return self._mlir_value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the bool as a string.
@@ -228,6 +227,7 @@ struct Bool(
         """
         self.write_to(writer)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Get the bool as a string.
 

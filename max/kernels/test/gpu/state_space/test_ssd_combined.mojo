@@ -13,7 +13,7 @@
 
 from memory import LegacyUnsafePointer
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, *_, **_]
+comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from gpu.host import DeviceContext
 from layout import (
     UNKNOWN_VALUE,
@@ -67,7 +67,7 @@ fn run_ssd_combined_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     """Test SSD combined GPU kernel against CPU reference."""
-    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= 16, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups

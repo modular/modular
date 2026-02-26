@@ -29,24 +29,23 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
+    uses_opaque,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.layer import Module
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.profiler import traced
@@ -76,7 +75,7 @@ class MistralInputs(ModelInputs):
     return_n_logits: Buffer
 
 
-class MistralModel(PipelineModel[TextContext], KVCacheMixin):
+class MistralModel(PipelineModelWithKVCache[TextContext]):
     model: Model
     """Compiled and initialized model ready for inference."""
 
@@ -87,30 +86,21 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        text_huggingface_config: AutoConfig | None = None,
     ) -> None:
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
             adapter,
             return_logits,
         )
-        # Override the huggingface_config to use the text huggingface_config if provided
-        if text_huggingface_config is not None:
-            self.huggingface_config = text_huggingface_config
-
         self.model = self.load_model(session)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
@@ -153,7 +143,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
 
         context_batch = replica_batches[0]
 
-        if not self.kv_cache_config.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_cache_config.cache_strategy):
             # TODO(MODELS-407): Consider deleting the padded path entirely.
             raise ValueError("Mistral unsupported for padded token batches")
 
@@ -188,7 +178,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
     ) -> MistralInputs:
         assert isinstance(prev_model_inputs, MistralInputs)
 
-        if not self.kv_cache_config.cache_strategy.uses_opaque():
+        if not uses_opaque(self.kv_cache_config.cache_strategy):
             # TODO(MODELS-407): Consider deleting the padded path entirely.
             raise ValueError("multistep unsupported for padded token batches")
 
@@ -227,12 +217,12 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Mistral, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
@@ -242,11 +232,13 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
     ) -> dict[str, WeightData]:
-        huggingface_config = self.huggingface_config
+        text_config = getattr(
+            self.huggingface_config, "text_config", self.huggingface_config
+        )
         if self.adapter:
             state_dict = self.adapter(
                 dict(self.weights.items()),
-                huggingface_config=huggingface_config,
+                huggingface_config=text_config,
                 pipeline_config=self.pipeline_config,
             )
         else:
@@ -319,7 +311,10 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         state_dict = self._get_state_dict(weights, adapter)
 
         model_config = MistralConfig.initialize_from_config(
-            self.pipeline_config, self.huggingface_config
+            self.pipeline_config,
+            getattr(
+                self.huggingface_config, "text_config", self.huggingface_config
+            ),
         )
         model_config.return_logits = self.return_logits
 
@@ -396,7 +391,7 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         self,
         session: InferenceSession,
     ) -> Model:
-        if self.pipeline_config.enable_echo:
+        if self.pipeline_config.model.enable_echo:
             raise ValueError(
                 "Mistral model does not currently implement enable echo."
             )

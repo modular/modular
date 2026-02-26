@@ -13,12 +13,9 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -37,17 +34,23 @@ llama_arch = SupportedArchitecture(
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="q4_k",
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "gptq": ["paged"],
+        "q4_k": ["paged"],
+        "q4_0": ["paged"],
+        "q6_k": ["paged"],
+        "float32": ["paged"],
+        "bfloat16": ["paged"],
+        "float8_e4m3fn": ["paged"],
+        "float4_e2m1fnx2": ["paged"],
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,

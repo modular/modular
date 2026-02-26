@@ -26,24 +26,22 @@ from max.engine.api import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheParams,
+    KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.layer import Module
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.pipelines.lib.log_probabilities import (
@@ -77,13 +75,11 @@ class DeepseekV2Inputs(ModelInputs):
     return_n_logits: Buffer = field(kw_only=True)
 
 
-class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
+class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -97,8 +93,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -197,7 +191,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
+    ) -> KVCacheParamInterface:
         return DeepseekV2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -213,12 +207,12 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for DeepseekV2, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_seq_len "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e

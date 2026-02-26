@@ -20,16 +20,15 @@ from typing import Any
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.kernels import (
+from max.nn.kernels import (
     block_scales_interleave,
     dynamic_block_scaled_matmul_fp4,
     fused_qkv_ragged_matmul_scaled_float4,
     grouped_dynamic_scaled_nvfp4_matmul,
     quantize_dynamic_block_scaled_fp4,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
 
@@ -95,7 +94,7 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )

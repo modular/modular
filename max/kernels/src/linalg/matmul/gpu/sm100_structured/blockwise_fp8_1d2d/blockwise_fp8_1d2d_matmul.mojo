@@ -89,19 +89,18 @@ fn grouped_matmul_1d2d_blockwise_fp8[
         num_active_experts: Number of active experts.
         ctx: Device context.
     """
-    constrained[transpose_b, "Only support transposed B"]()
-    constrained[
-        a_type == b_type and a_type == DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
-    constrained[
-        a_scales_type == b_scales_type,
-        "a_scales_type and b_scales_type must match",
-    ]()
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
-    constrained[not config.AB_swapped, "Swapped AB is not supported"]()
+    comptime assert transpose_b, "Only support transposed B"
+    comptime assert (
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
+    comptime assert (
+        a_scales_type == b_scales_type
+    ), "a_scales_type and b_scales_type must match"
+    comptime assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
+    comptime assert not config.AB_swapped, "Swapped AB is not supported"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -111,7 +110,7 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[BK == 128, "Only support BK = 128"]()
+    comptime assert BK == 128, "Only support BK = 128"
 
     comptime num_experts = type_of(b_device).LayoutType.static_shape[0]
     comptime N = type_of(c_device).LayoutType.static_shape[1]

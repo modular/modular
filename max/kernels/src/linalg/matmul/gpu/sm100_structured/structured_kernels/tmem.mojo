@@ -547,8 +547,7 @@ struct TmemFragments[
             Self.dtype, width, Self.data_paths, Self.bits, repeat
         ]()
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             result.lower = tmem.load_lower[
                 Self.dtype, width, Self.data_paths, Self.bits, repeat
             ]()
@@ -571,8 +570,7 @@ struct TmemFragments[
             Self.dtype, Self.frag_size, Self.data_paths, Self.bits, repeat
         ](self.upper)
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             tmem.store_lower[
                 Self.dtype, Self.frag_size, Self.data_paths, Self.bits, repeat
             ](self.lower)
@@ -591,8 +589,7 @@ struct TmemFragments[
         ]()
         result.upper = self.upper.cast[target_dtype]()
 
-        @parameter
-        if Self.is_lower_required:
+        comptime if Self.is_lower_required:
             result.lower = self.lower.cast[target_dtype]()
 
         return result
@@ -755,19 +752,17 @@ struct BlockScaledTmem[
     @always_inline
     fn __init__(out self, base_addr: Int):
         """Create TMEM region view at the given base address."""
-        constrained[
-            Self.used_cols <= Self.total_cols,
-            "Block-scaled TMEM region exceeds capacity",
-        ]()
+        comptime assert (
+            Self.used_cols <= Self.total_cols
+        ), "Block-scaled TMEM region exceeds capacity"
         self.base_addr = base_addr
 
     @always_inline
     fn __init__(out self, addr: TmemAddress):
         """Create TMEM region view from a TmemAddress."""
-        constrained[
-            Self.used_cols <= Self.total_cols,
-            "Block-scaled TMEM region exceeds capacity",
-        ]()
+        comptime assert (
+            Self.used_cols <= Self.total_cols
+        ), "Block-scaled TMEM region exceeds capacity"
         self.base_addr = Int(addr.addr)
 
     @always_inline
@@ -775,10 +770,9 @@ struct BlockScaledTmem[
         cta: Int, max_cols: Int
     ](out self, alloc: TmemAllocation[cta, max_cols]):
         """Create TMEM region view from a TmemAllocation."""
-        constrained[
-            Self.used_cols <= Self.total_cols,
-            "Block-scaled TMEM region exceeds capacity",
-        ]()
+        comptime assert (
+            Self.used_cols <= Self.total_cols
+        ), "Block-scaled TMEM region exceeds capacity"
         self.base_addr = Int(alloc.addr)
 
     @always_inline

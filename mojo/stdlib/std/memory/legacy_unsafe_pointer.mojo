@@ -30,7 +30,7 @@ from format._utils import (
 )
 from memory import memcpy
 from memory.memory import _free, _malloc
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from memory import UnsafeMaybeUninit
 from os import abort
 from python import PythonObject
 
@@ -56,7 +56,9 @@ struct LegacyUnsafePointer[
     _mlir_origin: _lit_origin_type_of_mut[mut] = AnyOrigin[
         mut=mut
     ]._mlir_origin,
-    origin: Origin[mut=mut, _mlir_origin=_mlir_origin] = Origin[_mlir_origin](),
+    origin: Origin[mut=mut, _mlir_origin=_mlir_origin] = Origin[
+        _mlir_origin=_mlir_origin
+    ](),
 ](
     Boolable,
     Comparable,
@@ -64,7 +66,6 @@ struct LegacyUnsafePointer[
     DevicePassable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -486,6 +487,7 @@ struct LegacyUnsafePointer[
         """
         return Int(mlir_value=__mlir_op.`pop.pointer_to_index`(self.address))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets a string representation of the pointer.
@@ -528,8 +530,7 @@ struct LegacyUnsafePointer[
 
     @staticmethod
     fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
-        @parameter
-        if Self.mut:
+        comptime if Self.mut:
             return Variadic.contains[
                 T,
                 Variadic.types[
@@ -631,8 +632,7 @@ struct LegacyUnsafePointer[
               of `T`.
         """
 
-        @parameter
-        if U.__moveinit__is_trivial:
+        comptime if U.__move_ctor_is_trivial:
             # If `moveinit` is trivial, we can avoid the branch introduced from
             # checking if the pointers are equal by using temporary stack
             # values.
@@ -645,8 +645,8 @@ struct LegacyUnsafePointer[
             # code with only 2 loads and 2 stores. Whereas with only 1 temporary
             # and a memcpy between the pointers it produces 3 load and 3 stores.
 
-            var self_tmp = UnsafeMaybeUninitialized[U]()
-            var other_tmp = UnsafeMaybeUninitialized[U]()
+            var self_tmp = UnsafeMaybeUninit[U]()
+            var other_tmp = UnsafeMaybeUninit[U]()
             memcpy(dest=self_tmp.unsafe_ptr(), src=UnsafePointer(self), count=1)
             memcpy(
                 dest=other_tmp.unsafe_ptr(), src=UnsafePointer(other), count=1
@@ -725,8 +725,9 @@ struct LegacyUnsafePointer[
             not volatile or volatile ^ invariant
         ), "both volatile and invariant cannot be set at the same time"
 
-        @parameter
-        if is_nvidia_gpu() and size_of[dtype]() == 1 and alignment == 1:
+        comptime if is_nvidia_gpu() and size_of[
+            dtype
+        ]() == 1 and alignment == 1:
             # LLVM lowering to PTX incorrectly vectorizes loads for 1-byte types
             # regardless of the alignment that is passed. This causes issues if
             # this method is called on an unaligned pointer.
@@ -968,8 +969,7 @@ struct LegacyUnsafePointer[
             alignment > 0
         ), "alignment must be a positive integer value"
 
-        @parameter
-        if dtype == DType.bool and width > 1:
+        comptime if dtype == DType.bool and width > 1:
             # Bool (i1) is sub-byte, so a vector store of SIMD[bool, N]
             # packs bits. Cast to uint8 and store so each element
             # occupies its own byte boundary.
@@ -1346,7 +1346,7 @@ struct LegacyUnsafePointer[
         The pointer must not be null, and the pointer memory location is assumed
         to contain a valid initialized instance of `type`.  This is equivalent to
         `_ = self.take_pointee()` but doesn't require `Movable` and is
-        more efficient because it doesn't invoke `__moveinit__`.
+        more efficient because it doesn't invoke the move constructor.
 
         Parameters:
             T: Pointee type that can be destroyed implicitly (without
@@ -1469,7 +1469,7 @@ struct LegacyUnsafePointer[
         `init_pointee_*()` operation.
 
         This transfers the value out of `src` and into `self` using at most one
-        `__moveinit__()` call.
+        move constructor call.
 
         ### Example
 
@@ -1506,52 +1506,6 @@ struct LegacyUnsafePointer[
         __get_address_as_uninit_lvalue(
             self.address
         ) = __get_address_as_owned_value(src.address)
-
-    @deprecated(
-        "Use `lhs_ptr.init_pointee_move_from(rhs_ptr)` instead, which uses "
-        "`LHS = RHS` argument ordering for readability."
-    )
-    @always_inline
-    fn move_pointee_into[
-        T: Movable,
-        //,
-    ](
-        self: LegacyUnsafePointer[
-            mut=True, T, address_space = AddressSpace.GENERIC, ...
-        ],
-        dst: LegacyUnsafePointer[
-            mut=True, T, address_space = AddressSpace.GENERIC, ...
-        ],
-    ):
-        """Moves the value `self` points to into the memory location pointed to by
-        `dst`.
-
-        This performs a consuming move (using `__moveinit__()`) out of the
-        memory location pointed to by `self`. Subsequent reads of this
-        pointer are not valid unless and until a new, valid value has been
-        moved into this pointer's memory location using `init_pointee_move()`.
-
-        This transfers the value out of `self` and into `dest` using at most one
-        `__moveinit__()` call.
-
-        **Safety:**
-
-        * `self` must be non-null
-        * `self` must contain a valid, initialized instance of `T`
-        * `dst` must not be null
-        * The contents of `dst` should be uninitialized. If `dst` was
-            previously written with a valid value, that value will be be
-            overwritten and its destructor will NOT be run.
-
-        Parameters:
-            T: The type the pointer points to, which must be `Movable`.
-
-        Args:
-            dst: Destination pointer that the value will be moved into.
-        """
-        __get_address_as_uninit_lvalue(
-            dst.address
-        ) = __get_address_as_owned_value(self.address)
 
 
 comptime LegacyOpaquePointer = LegacyUnsafePointer[

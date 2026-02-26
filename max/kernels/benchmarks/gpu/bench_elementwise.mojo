@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.string import StaticString
-from math import align_up, erf, exp, rsqrt, log, sin, sqrt, tanh
+from math import erf, exp, rsqrt, log, sin, sqrt, tanh
 from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
 from sys.intrinsics import strided_load
 
@@ -22,7 +22,7 @@ from buffer import NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200
-from internal_utils import arg_parse, parse_shape
+from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
 from memory import LegacyUnsafePointer
 
@@ -47,8 +47,7 @@ fn simd_sqrt(x: SIMD) -> type_of(x):
 fn _simd_load_internal[
     simd_width: Int
 ](buffer: NDBuffer, index: Int) -> SIMD[buffer.type, simd_width]:
-    @parameter
-    if buffer.type == DType.bool:
+    comptime if buffer.type == DType.bool:
         var v = buffer.data.bitcast[UInt8]().load[width=simd_width](index)
         return v.cast[buffer.type]()
     return buffer.data.load[width=simd_width](index)
@@ -92,8 +91,7 @@ fn simd_store[
     var flat_index = _compute_ndbuffer_offset(buffer, index)
 
     # We have to cast bools into their runtime storage type.
-    @parameter
-    if buffer.type == DType.bool:
+    comptime if buffer.type == DType.bool:
         buffer.data.bitcast[UInt8]().store(flat_index, val.cast[DType.uint8]())
     else:
         buffer.data.store(flat_index, val)
@@ -129,47 +127,38 @@ fn run_elementwise[
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 
-    # Choose a size larger than the two times the L2 cache
-    # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
-    var stride = align_up(N, pack_size)
-    var N_cache = (
-        align_up(128 * 1024 * 1024, stride * size_of[dtype]())
-        // size_of[dtype]()
-    )
+    # Cache busting buffers: sized to exceed 2x GPU cache.
+    var cb_in = CacheBustingBuffer[dtype](N, pack_size, ctx)
+    var cb_out = CacheBustingBuffer[dtype](N, pack_size, ctx)
 
     var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        N_cache, alignment=align
+        cb_in.alloc_size(), alignment=align
     )
     var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        N_cache, alignment=align
+        cb_out.alloc_size(), alignment=align
     )
 
     var in_host = NDBuffer[dtype, rank](in_host_ptr, dims)
     var out_host = NDBuffer[dtype, rank](out_host_ptr, dims)
 
-    for i in range(N_cache):
+    for i in range(cb_in.alloc_size()):
         in_host_ptr[i] = Scalar[dtype](i)
 
-    var in_buffer = ctx.enqueue_create_buffer[dtype](N_cache)
-    var out_buffer = ctx.enqueue_create_buffer[dtype](N_cache)
-
-    ctx.enqueue_copy(in_buffer, in_host.data)
+    ctx.enqueue_copy(cb_in.device_buffer(), in_host.data)
 
     @parameter
-    @__copy_capture(stride, N_cache)
+    @__copy_capture(cb_in, cb_out)
     @always_inline
     fn bench_func(mut b: Bencher):
         @parameter
-        @__copy_capture(N, stride)
+        @__copy_capture(N)
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            # cycle through chunks of N_cache to ensure the tensor is not in the cache each iteration
-            var offset = (iteration * stride) % N_cache
             var in_tensor = NDBuffer[dtype, rank](
-                in_buffer.unsafe_ptr() + offset, dims
+                cb_in.offset_ptr(iteration), dims
             )
             var out_tensor = NDBuffer[dtype, rank](
-                out_buffer.unsafe_ptr() + offset, dims
+                cb_out.offset_ptr(iteration), dims
             )
 
             @always_inline
@@ -180,8 +169,7 @@ fn run_elementwise[
             ](idx0: IndexList[rank_]):
                 var idx = rebind[IndexList[rank]](idx0)
 
-                @parameter
-                if emulate_graph_compiler:
+                comptime if emulate_graph_compiler:
                     # In this mode we use the simd_store / simd_load that are copied
                     # from MOGG.mojo. This is used to emulate what the graph compiler
                     # would generate for the elementwise operations.
@@ -227,10 +215,10 @@ fn run_elementwise[
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy(out_host.data, out_buffer)
+    ctx.enqueue_copy(out_host.data, cb_out.device_buffer())
 
-    _ = in_buffer
-    _ = out_buffer
+    _ = cb_in
+    _ = cb_out
     in_host_ptr.free()
     out_host_ptr.free()
 
@@ -238,8 +226,7 @@ fn run_elementwise[
 fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 
-    @parameter
-    for i in range(len(x)):
+    comptime for i in range(len(x)):
         comptime xi = x[i]
         t[i] = xi
     return t
@@ -262,9 +249,7 @@ def main():
 
     var m = Bench()
     with DeviceContext() as ctx:
-
-        @parameter
-        if emulate_graph_compiler and aligned_memory_config:
+        comptime if emulate_graph_compiler and aligned_memory_config:
             # The graph compiler simd_load and store are not
             # compatible with aligned load/store since it
             # does a dynamic check on the stride.

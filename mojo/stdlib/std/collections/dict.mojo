@@ -40,6 +40,7 @@ See the `Dict` docs for more details.
 from builtin.constrained import _constrained_conforms_to
 from compile import get_type_name
 from hashlib import Hasher, default_comp_time_hasher, default_hasher
+import format._utils as fmt
 from sys.intrinsics import is_compile_time, likely
 
 from bit import count_trailing_zeros, next_power_of_two
@@ -149,8 +150,7 @@ struct _Group(Copyable, Movable):
         if is_compile_time():
             var result = UInt16(0)
 
-            @parameter
-            for i in range(_GROUP_WIDTH):
+            comptime for i in range(_GROUP_WIDTH):
                 if self.ctrl[i] >= _CTRL_DELETED:
                     result |= UInt16(1) << UInt16(i)
             return result
@@ -174,8 +174,7 @@ struct _Group(Copyable, Movable):
         """
         var result = UInt16(0)
 
-        @parameter
-        for i in range(_GROUP_WIDTH):
+        comptime for i in range(_GROUP_WIDTH):
             if ctrl[i] == target:
                 result |= UInt16(1) << UInt16(i)
         return result
@@ -203,7 +202,17 @@ struct DictKeyError[K: KeyElement](ImplicitlyCopyable, Writable):
         Args:
             writer: The writer to write to.
         """
-        writer.write("DictKeyError[", get_type_name[Self.K](), "]")
+        self.write_repr_to(writer)
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the error to the writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        fmt.FormatStruct(writer, "DictKeyError").params(
+            fmt.TypeNames[Self.K]()
+        ).fields()
 
 
 @fieldwise_init
@@ -211,12 +220,20 @@ struct EmptyDictError(ImplicitlyCopyable, Writable):
     """A custom error type for when a `Dict` is empty."""
 
     fn write_to(self, mut writer: Some[Writer]):
-        """This always writes "EmptyDictError".
+        """Write the error to the writer.
 
         Args:
             writer: The writer to write to.
         """
-        writer.write("EmptyDictError")
+        self.write_repr_to(writer)
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the error to the writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        fmt.FormatStruct(writer, "EmptyDictError").fields()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -277,8 +294,7 @@ struct _DictEntryIter[
         while 0 <= self.index < len(self.src[]._order):
             var idx = self.index
 
-            @parameter
-            if Self.forward:
+            comptime if Self.forward:
                 self.index += 1
             else:
                 self.index -= 1
@@ -521,9 +537,7 @@ struct Dict[
     Copyable,
     Defaultable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A container that stores key-value pairs.
@@ -843,6 +857,14 @@ struct Dict[
 
         Returns:
             The new dictionary.
+
+        Example:
+
+        ```mojo
+        var keys = ["a", "b", "c"]
+        var dict = Dict.fromkeys(keys, 0)
+        print(dict.__str__())  # => {"a": 0, "b": 0, "c": 0}
+        ```
         """
         var my_dict = Dict[Self.K, Self.V, Self.H]()
         for key in keys:
@@ -864,7 +886,7 @@ struct Dict[
         """
         return Dict[Self.K, Optional[Self.V], Self.H].fromkeys(keys, value)
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy an existing dictiontary.
 
         Args:
@@ -1006,6 +1028,7 @@ struct Dict[
         """
         return len(self).__bool__()
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns a string representation of a `Dict`.
@@ -1013,9 +1036,12 @@ struct Dict[
         Returns:
             A string representation of the Dict.
         """
-        return self.__str__()
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of a `Dict`.
 
@@ -1030,7 +1056,7 @@ struct Dict[
         my_dict[2] = 2.2
         dict_as_string = String(my_dict)
         print(dict_as_string)
-        # prints "{1: 1.1, 2: 2.2}"
+        # prints {1: 1.1, 2: 2.2}
         ```
         """
         var minimum_capacity = self._minimum_size_of_string_representation()
@@ -1038,43 +1064,56 @@ struct Dict[
         self.write_to(output)
         return output^
 
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
-        """Write `my_list.__str__()` to a `Writer`.
+    fn _write_dict_body[
+        f_key: fn(Self.K, mut Some[Writer]), f_val: fn(Self.V, mut Some[Writer])
+    ](self, mut writer: Some[Writer]):
+        fmt.constrained_conforms_to_writable[Self.K, Parent=Self]()
+        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
 
-        Constraints:
-            `K` must conform to `Representable`.
-            `V` must conform to `Representable`.
-
-        Args:
-            writer: The object to write to.
-        """
-        _constrained_conforms_to[
-            conforms_to(Self.K, Representable),
-            Parent=Self,
-            Element = Self.K,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.V, Representable),
-            Parent=Self,
-            Element = Self.V,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-
-        writer.write("{")
+        writer.write_string("{")
 
         var i = 0
-        for key_entry in self.items():
-            ref key = trait_downcast[Representable](key_entry.key)
-            ref val = trait_downcast[Representable](key_entry.value)
-            writer.write(repr(key), ": ", repr(val))
-            if i < len(self) - 1:
-                writer.write(", ")
+        for entry in self.items():
+            if i > 0:
+                writer.write_string(", ")
             i += 1
-        writer.write("}")
+
+            f_key(entry.key, writer)
+            writer.write(": ")
+            f_val(entry.value, writer)
+
+        writer.write_string("}")
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write this `Dict` to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+        self._write_dict_body[
+            f_key = fmt.write_to[Self.K],
+            f_val = fmt.write_to[Self.V],
+        ](writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write this `Dict`'s representation to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_dict_body[
+                f_key = fmt.write_repr_to[Self.K],
+                f_val = fmt.write_repr_to[Self.V],
+            ](w)
+
+        fmt.FormatStruct(writer, "Dict").params(
+            fmt.TypeNames[Self.K, Self.V](),
+        ).fields[FieldsFn=write_fields]()
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -1099,6 +1138,18 @@ struct Dict[
         Returns:
             An optional value containing a copy of the value if it was present,
             otherwise an empty Optional.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.find("a")
+        print(value.__str__())  # => 1
+        var missing_value = my_dict.find("c")
+        print(missing_value.__str__())  # => None
+        ```
         """
 
         try:
@@ -1139,6 +1190,22 @@ struct Dict[
         Returns:
             An optional value containing a copy of the value if it was present,
             otherwise an empty Optional.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.get("a")
+        print(value.__str__())  # => 1
+
+        var missing_value = my_dict.get("c")
+        print(missing_value.__str__())  # => -1
+
+        from testing import assert_true
+        assert_true(my_dict["a"] == my_dict.get("a").or_else(Int.MAX))
+        ```
         """
         return self.find(key)
 
@@ -1151,6 +1218,22 @@ struct Dict[
 
         Returns:
             A copy of the value if it was present, otherwise default.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.get("a", Int.MAX)
+        print(value.__str__())  # => 1
+
+        var missing_value = my_dict.get("c", -1)
+        print(missing_value.__str__())  # => -1
+
+        from testing import assert_true
+        assert_true(my_dict["a"] == my_dict.get("a", Int.MAX))
+        ```
         """
         return self.find(key).or_else(default^)
 
@@ -1165,6 +1248,18 @@ struct Dict[
         Returns:
             The value associated with the key, if it was in the dictionary.
             If it wasn't, return the provided default value instead.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.pop("a", 99)
+        print(value.__str__())  # => 1
+        var missing_value = my_dict.pop("c", 99)
+        print(missing_value.__str__())  # => 99
+        ```
         """
         try:
             return self.pop(key)
@@ -1183,6 +1278,18 @@ struct Dict[
 
         Raises:
             `DictKeyError` if the key was not present in the dictionary.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        var value = my_dict.pop("a", 99)
+        print(value.__str__())  # => 1
+        var missing_value = my_dict.pop("c", 99)
+        print(missing_value.__str__())  # => 99
+        ```
         """
         var hash = hash[HasherType = Self.H](key)
         var found, slot_idx = self._find_slot(hash, key)
@@ -1213,6 +1320,19 @@ struct Dict[
             destructively iterate over a dictionary, as often used in set
             algorithms. If the dictionary is empty, calling popitem() raises a
             EmptyDictError.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        print(len(my_dict))  # => 2
+
+        var item = my_dict.popitem()
+        print(item.key, item.value)  # => Either "b", 2 or "a", 1
+        print(len(my_dict))  # => 1
+        ```
         """
 
         var i = len(self._order) - 1
@@ -1232,6 +1352,17 @@ struct Dict[
 
         Returns:
             An iterator of immutable references to the dictionary keys.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        for key in my_dict.keys():
+            print(key) # prints a then b or b then a
+            # All keys will be printed, but order is not guaranteed
+        ```
         """
         return Self.__iter__(self)
 
@@ -1242,6 +1373,17 @@ struct Dict[
 
         Returns:
             An iterator of references to the dictionary values.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        for value in my_dict.values():
+            print(value) # prints 1 then 2 or 2 then 1
+            # All values will be printed, but order is not guaranteed
+        ```
         """
         return _DictValueIter(_DictEntryIter(0, 0, self))
 
@@ -1260,8 +1402,9 @@ struct Dict[
         my_dict["a"] = 1
         my_dict["b"] = 2
 
-        for e in my_dict.items():
-            print(e.key, e.value)
+        for item in my_dict.items():
+            print(item.key, item.value) # prints a 1 then b 2 or b 2 then a 1
+            # All entries will be printed, but order is not guaranteed
         ```
 
         Notes:
@@ -1288,7 +1431,8 @@ struct Dict[
         my_dict["b"] = 2
 
         for entry in my_dict.take_items():
-            print(entry.key, entry.value)
+            print(entry.key, entry.value) # prints a 1 then b 2 or b 2 then a 1
+            # All entries will be printed, but order is not guaranteed
 
         print(len(my_dict))
         # prints 0
@@ -1305,12 +1449,37 @@ struct Dict[
 
         Notes:
             The argument must be positional only.
+
+        Example:
+
+        ```mojo
+        var dict1 = Dict[String, Int]()
+        dict1["a"] = 1
+        dict1["b"] = 2
+        var dict2 = Dict[String, Int]()
+        dict2["b"] = 3
+        dict2["c"] = 4
+        dict1.update(dict2)
+        print(dict1.__str__())  # => {"a": 1, "b": 3, "c": 4}
+        ```
         """
         for entry in other.items():
             self[entry.key.copy()] = entry.value.copy()
 
     fn clear(mut self):
-        """Remove all elements from the dictionary."""
+        """Remove all elements from the dictionary.
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        my_dict["b"] = 2
+        print(len(my_dict))  # => 2
+        my_dict.clear()
+        print(len(my_dict))  # => 0
+        ```
+        """
         # Destroy all occupied entries
         for i in range(self._capacity):
             if _is_occupied(self._ctrl[i]):
@@ -1337,6 +1506,20 @@ struct Dict[
         Returns:
             The value associated with the key, or the default value if it wasn't
             present.
+
+
+        Example:
+
+        ```mojo
+        var my_dict = Dict[String, Int]()
+        my_dict["a"] = 1
+        var value1 = my_dict.setdefault("a", 99)
+        print(value1.__str__())  # => 1
+
+        var value2 = my_dict.setdefault("b", 99)
+        print(value2.__str__())  # => 99
+        print(my_dict.__str__())  # => {"a": 1, "b": 99}
+        ```
         """
         self._maybe_resize()
         var h = hash[HasherType = Self.H](key)
@@ -1365,8 +1548,7 @@ struct Dict[
     fn _insert[
         safe_context: Bool = False
     ](mut self, var entry: DictEntry[Self.K, Self.V, Self.H]):
-        @parameter
-        if not safe_context:
+        comptime if not safe_context:
             self._maybe_resize()
         var found, slot_idx = self._find_slot(entry.hash, entry.key)
 

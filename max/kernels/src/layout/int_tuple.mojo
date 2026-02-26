@@ -147,7 +147,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = size
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Initialize by copying an existing `IntArray`.
 
         For owned arrays, this performs a deep copy of the data.
@@ -644,7 +644,7 @@ struct IntTuple(
             self.append(tup)
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Initialize by copying an existing `IntTuple`.
 
         Creates a deep copy of the provided `IntTuple`, copying all its data
@@ -702,7 +702,7 @@ struct IntTuple(
         """Create a deep copy of this `IntTuple` with its own memory ownership.
 
         This method creates a completely independent copy of the `IntTuple` with
-        newly allocated memory. Unlike `__copyinit__`, this method can be called
+        newly allocated memory. Unlike copy init, this method can be called
         on an existing instance to create a separate copy.
 
         Returns:
@@ -2348,8 +2348,7 @@ fn shape_div[check: Bool = False](a: IntTuple, b: IntTuple) -> IntTuple:
             if va == UNKNOWN_VALUE or vb == UNKNOWN_VALUE:
                 return UNKNOWN_VALUE
 
-            @parameter
-            if check:
+            comptime if check:
                 debug_assert(
                     va % vb == 0 or vb % va == 0,
                     "Incompatible shape values: ",

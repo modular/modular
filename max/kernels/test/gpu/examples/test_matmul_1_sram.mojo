@@ -89,8 +89,7 @@ fn matmul_sram(
         # Load A tile into shared memory.
         var a_val: Float32
 
-        @parameter
-        if not full_tile:
+        comptime if not full_tile:
             a_val = a[Int(row), offset + Int(localCol)] if (
                 row < UInt(M) and offset + Int(localCol) < K
             ) else 0.0
@@ -103,8 +102,7 @@ fn matmul_sram(
         # Load B tile into shared memory.
         var b_val: Float32
 
-        @parameter
-        if not full_tile:
+        comptime if not full_tile:
             b_val = b[offset + Int(localRow), Int(col)] if (
                 col < UInt(N) and offset + Int(localRow) < K
             ) else 0.0

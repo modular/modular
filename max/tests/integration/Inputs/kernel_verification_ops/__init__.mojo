@@ -132,8 +132,7 @@ struct VariadicInputToOutput:
         bias: InputTensor[dtype=dtype, rank=1],
         input: InputVariadicTensors[dtype, rank=1, size=size],
     ):
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             for j in range(input[i].size()):
                 output[i][j] = input[i][j]
             output[i][0] += bias[0]
@@ -153,8 +152,7 @@ struct VariadicAdd:
         for i in range(output.size()):
             output[i] = bias[i]
 
-            @parameter
-            for j in range(size):
+            comptime for j in range(size):
                 output[i] += input[j][i]
 
 
@@ -251,7 +249,7 @@ struct ExternalCubinVecAdd:
         rhs: InputTensor[dtype = output.dtype, rank = output.rank],
         ctx: DeviceContextPtr,
     ):
-        constrained[target == "gpu"]()
+        comptime assert target == "gpu"
         gpu_ctx = ctx.get_device_context()
 
         with open(getenv("CUBIN_PATH"), "r") as file:

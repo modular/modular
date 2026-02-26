@@ -26,16 +26,16 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kv_cache import (
     PagedCacheValues,
 )
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import MLP, ColumnParallelLinear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.layer import LayerList, Module
+from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer import ReturnLogits
 
 from .layers.attention import Llama4TextAttention
 from .layers.moe import Llama4MoE, Llama4MoEGate
@@ -243,9 +243,13 @@ class Llama4TextModel(Module):
 
         input_row_offsets = kwargs["input_row_offsets"]
         cache_positions = TensorValue(cache_positions)
-        distributed_cache_positions = [
-            cache_positions.to(device) for device in self.devices
-        ]
+        if not cache_positions.device == self.devices[0]:
+            raise ValueError(
+                f"cache_positions must be located on {self.devices[0]}"
+            )
+        distributed_cache_positions = ops.distributed_broadcast(
+            cache_positions, signal_buffers
+        )
         for _, layer in enumerate(self.layers):
             h = layer(
                 h,

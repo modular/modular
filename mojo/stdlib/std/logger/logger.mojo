@@ -63,7 +63,6 @@ comptime DEFAULT_LEVEL = Level._from_str(
 struct Level(
     Comparable,
     ImplicitlyCopyable,
-    Stringable,
     Writable,
 ):
     """Represents logging severity levels.
@@ -188,6 +187,7 @@ struct Level(
         elif self == Self.CRITICAL:
             writer.write("CRITICAL")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of this level.
@@ -198,6 +198,7 @@ struct Level(
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns the detailed string representation of this level.
@@ -257,8 +258,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
             True if logging at the target level is disabled, False otherwise.
         """
 
-        @parameter
-        if Self.level == Level.NOTSET:
+        comptime if Self.level == Level.NOTSET:
             return True
         return Self.level > target_level
 
@@ -286,8 +286,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.TRACE
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -319,8 +318,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.DEBUG
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -352,8 +350,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.INFO
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -385,8 +382,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.WARNING
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -418,8 +414,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.ERROR
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -452,8 +447,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         """
         comptime target_level = Level.CRITICAL
 
-        @parameter
-        if not Self._is_disabled[target_level]():
+        comptime if not Self._is_disabled[target_level]():
             self._write_out[target_level](
                 values,
                 sep=sep,
@@ -488,12 +482,10 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
 
         comptime length = values.__len__()
 
-        @parameter
-        for i in range(length):
+        comptime for i in range(length):
             values[i].write_to(buffer)
 
-            @parameter
-            if i < length - 1:
+            comptime if i < length - 1:
                 buffer.write(sep)
 
         buffer.write(end)

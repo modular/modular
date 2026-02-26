@@ -282,22 +282,19 @@ def test_grouped_tensormap_update[
     a_ptrs_host[0, 0] = ptr_a0
     b_ptrs_host[0, 0] = ptr_b0
 
-    @parameter
-    if num_groups >= 2:
+    comptime if num_groups >= 2:
         var ptr_a1 = UInt64(Int(src_a1.device_tensor().ptr))
         var ptr_b1 = UInt64(Int(src_b1.device_tensor().ptr))
         a_ptrs_host[1, 0] = ptr_a1
         b_ptrs_host[1, 0] = ptr_b1
 
-    @parameter
-    if num_groups >= 3:
+    comptime if num_groups >= 3:
         var ptr_a2 = UInt64(Int(src_a2.device_tensor().ptr))
         var ptr_b2 = UInt64(Int(src_b2.device_tensor().ptr))
         a_ptrs_host[2, 0] = ptr_a2
         b_ptrs_host[2, 0] = ptr_b2
 
-    @parameter
-    if num_groups >= 4:
+    comptime if num_groups >= 4:
         var ptr_a3 = UInt64(Int(src_a3.device_tensor().ptr))
         var ptr_b3 = UInt64(Int(src_b3.device_tensor().ptr))
         a_ptrs_host[3, 0] = ptr_a3
@@ -322,11 +319,16 @@ def test_grouped_tensormap_update[
     )
 
     # Create GMEM tensormap arrays (one entry per block)
-    var device_tensormaps_a = ctx.enqueue_create_buffer[DType.uint8](
-        128 * num_blocks
+    comptime tensormap_layout = Layout.row_major(128 * num_blocks)
+    var device_tensormaps_a = ManagedLayoutTensor[
+        DType.uint8, tensormap_layout
+    ](
+        ctx,
     )
-    var device_tensormaps_b = ctx.enqueue_create_buffer[DType.uint8](
-        128 * num_blocks
+    var device_tensormaps_b = ManagedLayoutTensor[
+        DType.uint8, tensormap_layout
+    ](
+        ctx,
     )
 
     var tma_array_a = TMATensorTileArray[
@@ -334,29 +336,26 @@ def test_grouped_tensormap_update[
         type_of(template_tma_a).dtype,
         type_of(template_tma_a).layout,
         type_of(template_tma_a).desc_layout,
-    ](device_tensormaps_a)
+    ](device_tensormaps_a.device_data.value())
 
     var tma_array_b = TMATensorTileArray[
         num_blocks,
         type_of(template_tma_b).dtype,
         type_of(template_tma_b).layout,
         type_of(template_tma_b).desc_layout,
-    ](device_tensormaps_b)
+    ](device_tensormaps_b.device_data.value())
 
     # Initialize all block tensormaps from templates
-    var tensormaps_host_a = stack_allocation[num_blocks * 128, UInt8]()
-    var tensormaps_host_b = stack_allocation[num_blocks * 128, UInt8]()
+    var tensormaps_host_a = device_tensormaps_a.tensor[update=False]()
+    var tensormaps_host_b = device_tensormaps_b.tensor[update=False]()
 
-    @parameter
-    for blk in range(num_blocks):
+    comptime for blk in range(num_blocks):
         for j in range(128):
             tensormaps_host_a[blk * 128 + j] = template_tma_a.descriptor.data[j]
             tensormaps_host_b[blk * 128 + j] = template_tma_b.descriptor.data[j]
 
-    ctx.enqueue_copy(device_tensormaps_a, tensormaps_host_a)
-    ctx.enqueue_copy(device_tensormaps_b, tensormaps_host_b)
-
-    ctx.synchronize()
+    _ = device_tensormaps_a.device_tensor()
+    _ = device_tensormaps_b.device_tensor()
 
     # Launch kernel
     comptime kernel = test_grouped_tensormap_update_kernel[
@@ -440,18 +439,6 @@ def test_grouped_tensormap_update[
         print("  FAILED:", errors, "mismatches")
 
     # Cleanup
-    _ = dst_a^
-    _ = dst_b^
-    _ = a_ptrs^
-    _ = b_ptrs^
-    _ = src_a0^
-    _ = src_b0^
-    _ = src_a1^
-    _ = src_b1^
-    _ = src_a2^
-    _ = src_b2^
-    _ = src_a3^
-    _ = src_b3^
 
 
 def main():

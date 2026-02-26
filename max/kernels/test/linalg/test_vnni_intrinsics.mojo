@@ -171,21 +171,17 @@ def test_i16_to_i32():
         var c_start = SIMD[DType.int32, width]()
         var c_golden = SIMD[DType.int32, width]()
 
-        @parameter
-        for i in range(width * 2):
+        comptime for i in range(width * 2):
             a[i] = i * 17 - 191
             b[i] = i * 19 + 155
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             c_start[i] = i * 233 - 322
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             c_golden[i] = c_start[i]
 
-            @parameter
-            for j in range(2):
+            comptime for j in range(2):
                 var a_val = a[i * 2 + j].cast[DType.int32]()
                 var b_val = b[i * 2 + j].cast[DType.int32]()
                 c_golden[i] += a_val * b_val
@@ -196,8 +192,7 @@ def test_i16_to_i32():
         var c_x86 = dot_i16_to_i32_x86(c_start, a, b)
         assert_equal(c_golden, c_x86)
 
-    @parameter
-    if CompilationTarget.has_avx512f():
+    comptime if CompilationTarget.has_avx512f():
         test_simd_width[16]()
 
     test_simd_width[8]()

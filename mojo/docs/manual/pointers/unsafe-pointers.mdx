@@ -246,7 +246,7 @@ str_ptr[] += " pointers" # Works now
 
 The [`take_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#take_pointee)
 method moves a pointee from the memory location pointed to by `ptr`. This is
-a consuming move. It invokes `__moveinit__()` on the destination value. It leaves
+a consuming move. It invokes `__init__(take=)` on the destination value. It leaves
 the memory location uninitialized.
 
 The [`destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)

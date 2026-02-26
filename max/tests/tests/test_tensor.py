@@ -16,12 +16,11 @@ import asyncio
 
 import numpy as np
 import pytest
-from max import functional as F
-from max import random
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Graph
-from max.tensor import (
+from max.experimental import functional as F
+from max.experimental import random
+from max.experimental.tensor import (
     Tensor,
     TensorType,
     _default_device,
@@ -31,6 +30,7 @@ from max.tensor import (
     defaults_like,
     driver_tensor_type,
 )
+from max.graph import BufferValue, DeviceRef, Graph
 
 
 def test_tensor_basic() -> None:

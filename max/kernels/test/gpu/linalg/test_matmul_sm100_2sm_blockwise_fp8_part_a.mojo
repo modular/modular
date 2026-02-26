@@ -317,8 +317,7 @@ def main():
         comptime out_dtype = DType.bfloat16
 
         # Part A: mma_m_scale = 1 only (128x16N MMA shapes for 2SM)
-        @parameter
-        for mma_n_scale in [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16]:
+        comptime for mma_n_scale in [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 16]:
             comptime block_tile_shape = Index(64, 8 * mma_n_scale, BK)
             comptime umma_shape = Index(128, 16 * mma_n_scale, MMA_K)
 

@@ -18,9 +18,8 @@ from typing import Any
 import pytest
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
-from max.pipelines.lib.config_enums import RopeType, SupportedEncoding
+from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
 from test_common.mocks import mock_pipeline_config_hf_dependencies
@@ -51,11 +50,13 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
 
     with pytest.raises(ValueError):
         config = PipelineConfig(
-            model_path="GSAI-ML/LLaDA-8B-Instruct",
-            # This forces it to fail if we dont have it.
+            model=MAXModelConfig(
+                model_path="GSAI-ML/LLaDA-8B-Instruct",
+                # This forces it to fail if we dont have it.
+                trust_remote_code=True,
+                max_length=1,
+            ),
             max_batch_size=1,
-            max_length=1,
-            trust_remote_code=True,
         )
 
 
@@ -71,10 +72,12 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
         ValueError, match="MAX-optimized architecture not available"
     ):
         config = PipelineConfig(
-            model_path="GSAI-ML/LLaDA-8B-Instruct",
+            model=MAXModelConfig(
+                model_path="GSAI-ML/LLaDA-8B-Instruct",
+                trust_remote_code=True,
+                max_length=1,
+            ),
             max_batch_size=1,
-            max_length=1,
-            trust_remote_code=True,
         )
 
     @prepare_registry
@@ -82,10 +85,10 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
     def test_registry__retrieve_pipeline_task_returns_text_generation() -> None:
         PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
         config = PipelineConfig(
-            model_path="some-model",
+            model=MAXModelConfig(
+                model_path="some-model", trust_remote_code=True, max_length=1
+            ),
             max_batch_size=1,
-            max_length=1,
-            trust_remote_code=True,
         )
         task = PIPELINE_REGISTRY.retrieve_pipeline_task(config)
         assert task == PipelineTask.TEXT_GENERATION
@@ -102,10 +105,10 @@ def test_supported_architecture__eq__method() -> None:
     arch1 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-            SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
+            "q4_k": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -113,7 +116,7 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type=RopeType.normal,
+        rope_type="normal",
         weight_adapters={
             WeightsFormat.safetensors: simple_adapter,
             WeightsFormat.gguf: simple_adapter,
@@ -125,10 +128,10 @@ def test_supported_architecture__eq__method() -> None:
     arch2 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-            SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
+            "q4_k": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -136,7 +139,7 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type=RopeType.normal,
+        rope_type="normal",
         weight_adapters={
             WeightsFormat.safetensors: simple_adapter,
             WeightsFormat.gguf: simple_adapter,
@@ -161,9 +164,9 @@ def test_supported_architecture__eq__method() -> None:
     arch3 = SupportedArchitecture(
         name="DifferentModel",  # Different name
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -178,9 +181,9 @@ def test_supported_architecture__eq__method() -> None:
     arch4 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["different/repo"],  # Different repo IDs
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -195,9 +198,9 @@ def test_supported_architecture__eq__method() -> None:
     arch5 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.q4_k,  # Different encoding
+        default_encoding="q4_k",  # Different encoding
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -212,9 +215,9 @@ def test_supported_architecture__eq__method() -> None:
     arch6 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
             # Missing q4_k encoding
         },
         pipeline_model=DummyPipelineModel,
@@ -230,9 +233,9 @@ def test_supported_architecture__eq__method() -> None:
     arch7 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DUMMY_GEMMA_ARCH.pipeline_model,  # Different model
         config=DummyLlamaArchConfig,
@@ -247,9 +250,9 @@ def test_supported_architecture__eq__method() -> None:
     arch8 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -264,9 +267,9 @@ def test_supported_architecture__eq__method() -> None:
     arch9 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -281,9 +284,9 @@ def test_supported_architecture__eq__method() -> None:
     arch10 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -298,9 +301,9 @@ def test_supported_architecture__eq__method() -> None:
     arch11 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -308,7 +311,7 @@ def test_supported_architecture__eq__method() -> None:
         tokenizer=TextTokenizer,
         context_type=TextContext,
         default_weights_format=WeightsFormat.safetensors,
-        rope_type=RopeType.none,  # Different rope type
+        rope_type="none",  # Different rope type
     )
     assert arch1 != arch11
 
@@ -319,9 +322,9 @@ def test_supported_architecture__eq__method() -> None:
     arch12 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -339,9 +342,9 @@ def test_supported_architecture__eq__method() -> None:
     arch13 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -356,9 +359,9 @@ def test_supported_architecture__eq__method() -> None:
     arch14 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -374,9 +377,9 @@ def test_supported_architecture__eq__method() -> None:
     arch15 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -389,9 +392,9 @@ def test_supported_architecture__eq__method() -> None:
     arch16 = SupportedArchitecture(
         name="TestModel",
         example_repo_ids=["test/repo1", "test/repo2"],
-        default_encoding=SupportedEncoding.bfloat16,
+        default_encoding="bfloat16",
         supported_encodings={
-            SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+            "bfloat16": ["paged"],
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,

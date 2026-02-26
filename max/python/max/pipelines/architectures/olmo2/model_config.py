@@ -21,13 +21,13 @@ from typing import Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
-from ..llama3_legacy.model_config import Llama3Config
+from ..llama3.model_config import Llama3Config
 
 
 @dataclass(kw_only=True)
@@ -63,16 +63,11 @@ class Olmo2Config(Llama3Config):
             raise ValueError(
                 "Data parallelism is not supported for Olmo2 models"
             )
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=getattr(huggingface_config, "num_key_value_heads"),  # noqa: B009
             head_dim=Olmo2Config.get_head_dim(huggingface_config),
             num_layers=Olmo2Config.get_num_layers(huggingface_config),
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
             data_parallel_degree=data_parallel_degree,
         )
@@ -191,7 +186,6 @@ class Olmo2Config(Llama3Config):
             devices=base_config.devices,
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
-            dist_gemm_config=base_config.dist_gemm_config,
             lora_config=base_config.lora_config,
             logits_scaling=base_config.logits_scaling,
             data_parallel_degree=base_config.data_parallel_degree,

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from testing import assert_equal, TestSuite
+from test_utils import check_write_to
 
 
 def raise_an_error():
@@ -32,6 +33,11 @@ def test_from_and_to_string():
 
     assert_equal(String(Error("bad")), "bad")
     assert_equal(repr(Error("err")), "Error('err')")
+
+
+def test_error_write_to():
+    check_write_to(Error("err"), expected="err", is_repr=False)
+    check_write_to(Error("err"), expected="Error('err')", is_repr=True)
 
 
 def main():

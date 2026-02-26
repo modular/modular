@@ -14,33 +14,34 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
-from max import functional as F
+import numpy.typing as npt
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import DeviceRef, TensorType
+from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, Value
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
+    PagedCacheValues,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -58,18 +59,24 @@ class GptOssInputs(ModelInputs):
     execution.
     """
 
-    tokens: Buffer
-    """Buffer containing the input token IDs."""
+    tokens: npt.NDArray[np.integer[Any]] | Buffer
+    """Tensor containing the input token IDs."""
 
-    input_row_offsets: Buffer
-    """Buffer containing the offsets for each row in the ragged input sequence.
-    """
+    input_row_offsets: npt.NDArray[np.integer[Any]] | Buffer | list[Buffer]
+    """Tensor containing the offsets for each row in the ragged input sequence,
+    or the attention mask for the padded input sequence. For distributed execution,
+    this can be a list of tensors, one per device."""
+
+    signal_buffers: list[Buffer]
+    """Device buffers used for synchronization in communication collectives."""
 
     return_n_logits: Buffer
     """Number of logits to return."""
 
 
-class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
+class GptOssModel(
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextContext]
+):
     """A GPT OSS pipeline model for text generation.
 
     This class integrates the GPT OSS architecture with the MAX Engine pipeline
@@ -77,12 +84,13 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
     for inference.
     """
 
+    model: Model
+    """The compiled and initialized MAX Engine model ready for inference."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -93,10 +101,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
             devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
                 run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
@@ -110,8 +114,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -119,7 +121,20 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             return_logits,
         )
 
-        self.model = self.load_model()
+        self.model = self.load_model(session)
+
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        del pipeline_config, huggingface_config  # Unused.
+
+        # FIXME GEX-3248: This is a workaround for a MemoryManager fragmentation
+        # issue. In #77700 we swapped the order of model weight loading and kv
+        # cache loading. This affected memory fragmentation and led to CUDA OOM
+        # when running `br smoke-test -- unsloth/gpt-oss-20b-bf16` on 1xH100.
+        # We reduce the kv cache size slightly to avoid this.
+        return 6 * 1024 * 1024 * 1024  # 6 GiB
 
     @staticmethod
     def calculate_max_seq_len(
@@ -139,7 +154,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.max_position_embeddings
@@ -178,7 +193,7 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             cache_dtype,
         )
 
-    def load_model(self) -> Callable[..., Any]:
+    def load_model(self, session: InferenceSession) -> Model:
         """Loads the compiled GPT OSS model into the MAX Engine session.
 
         Args:
@@ -187,7 +202,6 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         Returns:
             The loaded MAX Engine model object.
         """
-
         assert self.pipeline_config.max_batch_size, (
             "Expected max_batch_size to be set"
         )
@@ -196,6 +210,36 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         ).to(self.devices[0])
 
         timer = CompilationTimer("model")
+        graph = self._build_graph()
+        timer.mark_build_complete()
+        model = session.load(graph, weights_registry=self.state_dict)
+        timer.done()
+
+        return model
+
+    def _unflatten_kv_inputs(
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
+        n_devices = self.kv_params.n_devices
+        fetch_types = self.kv_params.get_symbolic_inputs()[0]
+        len_of_kv_tuple_per_dev = len(list(fetch_types))
+        kv_caches_per_dev: list[PagedCacheValues] = []
+        for i in range(n_devices):
+            start_idx = i * len_of_kv_tuple_per_dev
+            kv_caches_per_dev.append(
+                PagedCacheValues(
+                    kv_blocks=kv_inputs_flat[start_idx].buffer,
+                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                )
+            )
+        return kv_caches_per_dev
+
+    # For text-only models, we should be using all the weights.
+    _strict_state_dict_loading = True
+
+    def _build_graph(self):  # noqa: ANN202
         device0 = self.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -203,13 +247,19 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         )
         # NOTE: input_row_offsets_len should be batch_size + 1.
         # Create input_row_offsets_type for each device
-        input_row_offsets_type = TensorType(
-            DType.uint32,
-            shape=["input_row_offsets_len"],
-            device=device0,
-        )
+        input_row_offsets_types = [
+            TensorType(
+                DType.uint32,
+                shape=["input_row_offsets_len"],
+                device=DeviceRef(device.label, device.id),
+            )
+            for device in self.devices
+        ]
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+        signals = Signals(
+            devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
         huggingface_config = self.huggingface_config
@@ -229,26 +279,59 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             state_dict=state_dict,
             return_logits=self.return_logits,
         )
-        with F.lazy():
-            nn_model = GptOss(model_config, self.kv_manager)
-            nn_model.to(self.devices[0])
+        nn_model = GptOss(model_config)
+        nn_model.load_state_dict(
+            state_dict,
+            weight_alignment=1,
+            strict=self._strict_state_dict_loading,
+        )
+        self.state_dict = nn_model.state_dict(auto_initialize=False)
+
+        # Create signal types for distributed communication
+        signals = Signals(
+            devices=(DeviceRef(d.label, d.id) for d in self.devices)
+        )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
-        timer.mark_build_complete()
-        compiled_model = nn_model.compile(
-            tokens_type,
-            return_n_logits_type,
-            input_row_offsets_type,
-            *flattened_kv_types,
-            weights=state_dict,
-        )
-        timer.done()
+        with Graph(
+            getattr(self.huggingface_config, "model_type", "GptOss"),
+            input_types=[
+                tokens_type,
+                return_n_logits_type,
+                *input_row_offsets_types,
+                *signals.input_types(),
+                *flattened_kv_types,
+            ],
+        ) as graph:
+            # Unpack inputs following InternVL pattern
+            tokens, return_n_logits, *variadic_args = graph.inputs
 
-        return compiled_model
+            # Extract input_row_offsets (one per device)
+            input_row_offsets = [
+                v.tensor for v in variadic_args[: len(self.devices)]
+            ]
+            variadic_args = variadic_args[len(self.devices) :]
+
+            # Extract signal buffers (one per device)
+            signal_buffers = [
+                v.buffer for v in variadic_args[: len(self.devices)]
+            ]
+            variadic_args = variadic_args[len(self.devices) :]
+
+            # Extract KV cache inputs
+            kv_cache = self._unflatten_kv_inputs(variadic_args)
+
+            outputs = nn_model(
+                tokens=tokens.tensor,
+                signal_buffers=signal_buffers,
+                kv_cache_inputs_per_dev=kv_cache,
+                return_n_logits=return_n_logits.tensor,
+                input_row_offsets=input_row_offsets,
+            )
+            graph.output(*outputs)
+        return graph
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the GPT OSS model with the prepared inputs.
@@ -263,31 +346,41 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         model_inputs = cast(GptOssInputs, model_inputs)
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
 
-        # For backward compatibility, distribute the single tensor to all devices
-        if isinstance(model_inputs.input_row_offsets, np.ndarray):
-            # Convert numpy array to tensor first
-            tensor = Buffer.from_numpy(model_inputs.input_row_offsets)
-            input_row_offsets = tensor.to(self.devices[0])
+        # Check if input_row_offsets is a list or a single tensor
+        if isinstance(model_inputs.input_row_offsets, list):
+            input_row_offsets_list = model_inputs.input_row_offsets
         else:
-            # Already a tensor
-            input_row_offsets = model_inputs.input_row_offsets
+            # For backward compatibility, distribute the single tensor to all devices
+            if isinstance(model_inputs.input_row_offsets, np.ndarray):
+                # Convert numpy array to tensor first
+                tensor = Buffer.from_numpy(model_inputs.input_row_offsets)
+                input_row_offsets_list = [
+                    tensor.to(device) for device in self.devices
+                ]
+            else:
+                # Already a tensor
+                input_row_offsets_list = [
+                    model_inputs.input_row_offsets.to(device)
+                    for device in self.devices
+                ]
 
-        model_outputs = self.model(
+        model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.return_n_logits,
-            input_row_offsets,
+            *input_row_offsets_list,
+            *model_inputs.signal_buffers,
             *curr_kv_cache_inputs,
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
+                logits=cast(Buffer, model_outputs[1]),
+                next_token_logits=cast(Buffer, model_outputs[0]),
+                logit_offsets=cast(Buffer, model_outputs[2]),
             )
         else:
             return ModelOutputs(
-                logits=cast(Buffer, model_outputs[0].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                logits=cast(Buffer, model_outputs[0]),
+                next_token_logits=cast(Buffer, model_outputs[0]),
             )
 
     def prepare_initial_token_inputs(
@@ -299,8 +392,8 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         """Prepares the initial inputs for the first execution pass of the GPT OSS model.
 
         Args:
-            replica_batches: A sequence of sequences of :obj:`TextContext` objects representing
-                the input prompts for each replica.
+            context_batch: A sequence of :obj:`TextContext` objects representing
+                the input prompts.
             kv_cache_inputs: Optional inputs required by the KV cache manager.
 
         Returns:
@@ -324,17 +417,19 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
         # Create a ragged token vector of length: sum(len(t) for t in tokens).
         tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
-        # Create input_row_offsets
-        input_row_offsets_tensor = Buffer.from_numpy(input_row_offsets).to(
-            self.devices[0]
-        )
+        # Create input_row_offsets for each device
+        input_row_offsets_tensors = [
+            Buffer.from_numpy(input_row_offsets).to(device)
+            for device in self.devices
+        ]
 
         return GptOssInputs(
             tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=input_row_offsets_tensor,
+            input_row_offsets=input_row_offsets_tensors,
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
+            signal_buffers=self.signal_buffers,
             kv_cache_inputs=kv_cache_inputs,
         )
 
@@ -351,15 +446,18 @@ class GptOssModel(PipelineModel[TextContext], KVCacheMixin):
             The prepared :obj:`ModelInputs` object for the next execution step.
         """
         prev_model_inputs = cast(GptOssInputs, prev_model_inputs)
-        row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
 
-        next_row_offsets = self._input_row_offsets_prealloc[
-            :row_offsets_size
-        ].to(self.devices[0])
+        row_offsets_size = prev_model_inputs.input_row_offsets[0].shape[0]
+
+        next_row_offsets = [
+            self._input_row_offsets_prealloc[:row_offsets_size].to(device)
+            for device in self.devices
+        ]
 
         return GptOssInputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             return_n_logits=prev_model_inputs.return_n_logits,
+            signal_buffers=self.signal_buffers,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )

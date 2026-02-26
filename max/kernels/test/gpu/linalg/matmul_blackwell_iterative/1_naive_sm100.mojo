@@ -86,8 +86,7 @@ def test_kernel_1[
     ) if transpose_b else Layout.row_major(K, N)
     var b_vendor = ManagedLayoutTensor[b_type, b_vendor_layout](ctx)
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         var b_tensor = b.tensor[update=False]()
         var b_vendor_tensor = b_vendor.tensor[update=True]()
         for k in range(K):
@@ -170,12 +169,6 @@ def test_kernel_1[
                     msg=String(m) + ", " + String(n),
                 )
         print("TEST PASSED")
-
-    _ = a^
-    _ = b^
-    _ = c^
-    _ = c_ref^
-    _ = b_vendor^
 
 
 def main():

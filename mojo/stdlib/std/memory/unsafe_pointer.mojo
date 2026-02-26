@@ -31,7 +31,7 @@ from compile import get_type_name
 from format._utils import FormatStruct, Named, TypeNames
 from memory import memcpy
 from memory.memory import _free, _malloc
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+from memory import UnsafeMaybeUninit
 from os import abort
 from python import PythonObject
 
@@ -186,7 +186,6 @@ struct UnsafePointer[
     DevicePassable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -359,7 +358,7 @@ struct UnsafePointer[
             caller must ensure the address is valid before writing to it, and
             that the memory is initialized before reading from it. The caller
             must also ensure the pointer's origin and mutability is valid for
-            the address, failure to to do may result in undefined behavior.
+            the address, failure to do may result in undefined behavior.
         """
         comptime assert (
             size_of[type_of(self)]() == size_of[Int]()
@@ -906,6 +905,7 @@ struct UnsafePointer[
         """
         return self._as_legacy().__int__()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets a string representation of the pointer.
@@ -913,7 +913,7 @@ struct UnsafePointer[
         Returns:
             The string representation of the pointer.
         """
-        return self._as_legacy().__str__()
+        return String.write(self)
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -1592,7 +1592,7 @@ struct UnsafePointer[
         The pointer must not be null, and the pointer memory location is assumed
         to contain a valid initialized instance of `type`.  This is equivalent to
         `_ = self.take_pointee()` but doesn't require `Movable` and is
-        more efficient because it doesn't invoke `__moveinit__`.
+        more efficient because it doesn't invoke a move constructor.
 
         Parameters:
             T: Pointee type that can be destroyed implicitly (without
@@ -1715,7 +1715,7 @@ struct UnsafePointer[
         `init_pointee_*()` operation.
 
         This transfers the value out of `src` and into `self` using at most one
-        `__moveinit__()` call.
+        move constructor call.
 
         Example:
 

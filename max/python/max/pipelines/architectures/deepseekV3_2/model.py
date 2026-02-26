@@ -21,12 +21,14 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph
+from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.pipelines.lib import CompilationTimer
-from max.pipelines.lib.config_enums import PipelineRole
+from max.nn.comm.ep import EPCommInitializer, EPConfig
+from max.nn.kv_cache import KVCacheParamInterface
+from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import is_float4_encoding
 from max.pipelines.lib.float8 import parse_float8_config
+from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Model
@@ -39,6 +41,26 @@ logger = logging.getLogger("max.pipelines")
 class DeepseekV3_2Model(DeepseekV3Model):
     """A DeepseekV3.2 model."""
 
+    @classmethod
+    def get_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParamInterface:
+        encoding = pipeline_config.model.quantization_encoding
+        if encoding is not None and is_float4_encoding(encoding):
+            cache_dtype = DType.bfloat16
+        return DeepseekV3_2Config.construct_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+
     def _create_model_config(
         self, state_dict: dict[str, WeightData]
     ) -> DeepseekV3_2Config:
@@ -49,14 +71,14 @@ class DeepseekV3_2Model(DeepseekV3Model):
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
-        if self.pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+        if self.pipeline_config.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif self.pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+        elif self.pipeline_config.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"
 
-        dtype = self.encoding.dtype
+        dtype = self.dtype
         if dtype == DType.float8_e4m3fn:
             float8_config = parse_float8_config(config, state_dict, dtype)
         else:

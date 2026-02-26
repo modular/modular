@@ -70,8 +70,7 @@ fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
 
     ref cpython = Python().cpython()
 
-    @parameter
-    if do_parallelize:
+    comptime if do_parallelize:
         # Save the current thread state to avoid holding the GIL for the parallel loop.
         with GILReleased(Python(cpython)):
             parallelize[calc_max](num_cores)

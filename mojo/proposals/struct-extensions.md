@@ -291,7 +291,7 @@ struct List[T: AnyType]:
     ...
 
 extension List(Copyable) requires T: Copyable:
-    fn __copyinit__(out self, existing: Self, /):
+    fn __init__(out self, *, copy: Self, /):
     self = List(capacity=len(other))
     # ...
 ```
@@ -314,7 +314,7 @@ struct Foo[T: AnyType](
 too:
 
 ```mojo
-    fn __copyinit__(out self, existing: Self, /) requires T: Copyable:
+    fn __init__(out self, *, copy: Self, /) requires T: Copyable:
     self = List(capacity=len(other))
     # ...
 ```
@@ -327,7 +327,7 @@ If the extension conforms to trait, like this:
 
 ```mojo
 extension List(Copyable) requires T: Copyable:
-    fn __copyinit__(out self, existing: Self, /):
+    fn __init__(out self, *, copy: Self, /):
         self = List(capacity=len(other))
         # ...
 ```
@@ -752,10 +752,7 @@ Recommended: yes let’s allow it. Don’t see much reason not to.
 
 ```mojo
 extension List(Copyable) requires T: Copyable:
-    fn copy(out self, other: Self):
-        ...
-
-    fn __copyinit__(out self, existing: Self, /):
+    fn __init__(out self, *, copy: Self):
         ...
 ```
 

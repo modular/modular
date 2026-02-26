@@ -16,11 +16,6 @@ from builtin.range import _ZeroStartingRange
 from reflection import struct_field_names, struct_field_types
 
 
-@deprecated(use=Equatable)
-comptime EqualityComparable = Equatable
-"""Deprecated alias for `Equatable`."""
-
-
 trait Equatable(ImplicitlyDestructible):
     """A type which can be compared for equality with other instances of itself.
 
@@ -66,8 +61,7 @@ trait Equatable(ImplicitlyDestructible):
         comptime names = struct_field_names[Self]()
         comptime types = struct_field_types[Self]()
 
-        @parameter
-        for i in range(names.size):
+        comptime for i in range(names.size):
             comptime T = types[i]
             _constrained_field_conforms_to[
                 conforms_to(T, Equatable),

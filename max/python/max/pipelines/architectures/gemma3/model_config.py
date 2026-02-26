@@ -18,11 +18,12 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.rotary_embedding import LinearScalingParams
-from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, RopeType
+from max.nn.float8_config import Float8Config
+from max.nn.kv_cache import KVCacheParams
+from max.nn.rotary_embedding import LinearScalingParams
+from max.nn.transformer import ReturnLogits
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -148,16 +149,11 @@ class Gemma3Config(ArchConfigWithKVCache):
         Returns:
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
             num_layers=Gemma3Config.get_num_layers(huggingface_config),
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
@@ -191,7 +187,7 @@ class Gemma3Config(ArchConfigWithKVCache):
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.max_position_embeddings
@@ -234,13 +230,13 @@ class Gemma3Config(ArchConfigWithKVCache):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         _weights_format = weights_format(pipeline_config.model.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == RopeType.normal
+            and pipeline_config.model.rope_type == "normal"
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)

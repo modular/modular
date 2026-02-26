@@ -69,16 +69,14 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
         The index positions.
     """
 
-    @parameter
-    if buf.rank == 0:
+    comptime if buf.rank == 0:
         return IndexList[buf.rank](0)
 
     var result = IndexList[buf.rank]()
 
     var curr_index = index
 
-    @parameter
-    for i in reversed(range(buf.rank)):
+    comptime for i in reversed(range(buf.rank)):
         var dim = buf.dim[i]()
         result[i] = curr_index._positive_rem(dim)
         curr_index = curr_index / dim
@@ -103,16 +101,13 @@ fn _compute_ndbuffer_offset(
 
     comptime rank = buf.rank
 
-    @parameter
-    if buf.rank == 0:
+    comptime if buf.rank == 0:
         return 0
 
-    @parameter
-    if _use_32bit_indexing[buf.address_space]():
+    comptime if _use_32bit_indexing[buf.address_space]():
         var result: Int32 = 0
 
-        @parameter
-        for i in range(buf.rank):
+        comptime for i in range(buf.rank):
             result = fma(Int32(buf.stride[i]()), Int32(index[i]), result)
 
         return Int(result)
@@ -120,8 +115,7 @@ fn _compute_ndbuffer_offset(
     else:
         var result: Int = 0
 
-        @parameter
-        for i in range(buf.rank):
+        comptime for i in range(buf.rank):
             result = fma(buf.stride[i](), index[i], result)
 
         return result
@@ -144,16 +138,13 @@ fn _compute_ndbuffer_offset(
 
     comptime rank = buf.rank
 
-    @parameter
-    if rank == 0:
+    comptime if rank == 0:
         return 0
 
-    @parameter
-    if _use_32bit_indexing[buf.address_space]():
+    comptime if _use_32bit_indexing[buf.address_space]():
         var result: Int32 = 0
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             result = fma(Int32(buf.stride[i]()), Int32(index[i]), result)
 
         return Int(result)
@@ -161,8 +152,7 @@ fn _compute_ndbuffer_offset(
     else:
         var result: Int = 0
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             result = fma(buf.stride[i](), index[i], result)
 
         return result
@@ -203,15 +193,13 @@ fn _compute_ndbuffer_stride[
     """
     comptime assert rank > 0
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         return {1}
 
     var stride = shape
     stride[rank - 1] = 1
 
-    @parameter
-    for i in reversed(range(1, rank)):
+    comptime for i in reversed(range(1, rank)):
         stride[i - 1] = shape[i] * stride[i]
 
     return stride
@@ -324,7 +312,7 @@ struct NDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        other: NDBuffer,
+        other: NDBuffer[mut=True, ...],
         out self: NDBuffer[
             other.dtype,
             other.rank,
@@ -348,56 +336,20 @@ struct NDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        out self,
-        # For functions
-        other: NDBuffer[Self.dtype, Self.rank, ...],
+        other: NDBuffer,
+        out self: NDBuffer[
+            other.dtype,
+            other.rank,
+            other.origin,
+            other.shape,
+        ],
     ):
-        """Converts NDBuffers between different variants which do not effect
-        the underlying memory representation.
-
-        E.g. this allows implicit conversion between
-
-        `NDBuffer[dtype, rank, DimList(1, 2, 3), DimList(6, 6, 1), alignment=16]`
-          to
-        `NDBuffer[dtype, rank, DimList(1, 2, 3), DimList.create_unknown[rank](), alignment=4]`
+        """Rebinds the NDBuffer to one with unknown strides.
 
         Args:
-            other: The other NDBuffer type.
+            other: The source NDBuffer to rebind.
         """
-        # It is probably unsafe to convert between address spaces
-        comptime assert (
-            other.address_space == Self.address_space
-        ), "cannot convert between buffer types with different address spaces"
-
-        # We can only downgrade our alignment
-        comptime assert (
-            other.alignment2 >= Self.alignment2
-            and other.alignment2 % Self.alignment2 == 0
-        ), "cannot convert between buffers with incompatible alignments"
-
-        # Exclusivity can only be lost
-        comptime assert (
-            other.exclusive == Self.exclusive or not Self.exclusive
-        ), (
-            "Cannot convert a non-exclusive buffer to an exclusive buffer."
-            " This is caused by passing a non-exclusive NDBuffer to a"
-            " function which requires an exclusive NDBuffer. Consider"
-            " unbinding the exclusive parameter for the function if it does"
-            " not require an exclusive buffer for correctness."
-        )
-
-        # We can lose information about shape/stride, but not gain information
-        comptime unknown_dim_list = DimList.create_unknown[Self.rank]()
-        comptime assert (
-            other.shape == Self.shape or Self.shape == unknown_dim_list
-        ), "cannot convert between buffers with incompatible shapes"
-        comptime assert (
-            other.strides == Self.strides or Self.strides == unknown_dim_list
-        ), "cannot convert between buffers with incompatible strides"
-
-        self.data = rebind[type_of(self.data)](other.data)
-        self.dynamic_shape = other.dynamic_shape
-        self.dynamic_stride = other.dynamic_stride
+        return rebind[type_of(self)](other)
 
     @always_inline
     fn __init__(
@@ -697,8 +649,7 @@ struct NDBuffer[
         """
         var res = IndexList[Self.rank]()
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             res[i] = self.dim[i]()
         return res
 
@@ -711,8 +662,7 @@ struct NDBuffer[
         """
         var res = IndexList[Self.rank]()
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             res[i] = self.stride[i]()
         return res
 
@@ -755,8 +705,7 @@ struct NDBuffer[
         """
         var product: Int = 1
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             product *= self.dim(i)
 
         return product
@@ -911,8 +860,7 @@ struct NDBuffer[
         var offset = 0
         var dyn_shape = IndexList[Self.rank]()
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             comptime tile_size_i = tile_sizes[i].get()
             dyn_shape[i] = tile_size_i
             var coord_i = tile_coords[i]
@@ -1182,8 +1130,7 @@ struct NDBuffer[
         # meta constant or an unknown.
         comptime static_dim_value = Self.shape.at[index]()
 
-        @parameter
-        if static_dim_value.has_value():
+        comptime if static_dim_value.has_value():
             return static_dim_value.get()
         return self.dynamic_shape[index]
 
@@ -1213,8 +1160,7 @@ struct NDBuffer[
         # meta constant or an unknown.
         comptime static_stride_value = Self.strides.at[index]()
 
-        @parameter
-        if static_stride_value.has_value():
+        comptime if static_stride_value.has_value():
             return static_stride_value.get()
         return self.dynamic_stride[index]
 
@@ -1302,8 +1248,7 @@ struct NDBuffer[
             self.is_contiguous(), "Function requires contiguous buffer."
         )
 
-        @parameter
-        if Self.shape.all_known[Self.rank]():
+        comptime if Self.shape.all_known[Self.rank]():
             comptime count = Int(Self.shape.product())
             memset_zero[count=count](self.data)
         else:
@@ -1335,8 +1280,7 @@ struct NDBuffer[
             val: The value to store.
         """
 
-        @parameter
-        if Self.rank > 1:
+        comptime if Self.rank > 1:
             if val == 0:
                 self.zero()
                 return
@@ -1362,7 +1306,7 @@ struct NDBuffer[
         Raises:
             If the operation fails.
         """
-        with open(path.__str__(), "w") as f:
+        with open(String(path), "w") as f:
             var ptr = self.data.bitcast[UInt8]()
             f._write(ptr, self.bytecount())
 
@@ -1576,8 +1520,7 @@ fn prod_dims[start_dim: Int, end_dim: Int](x: NDBuffer) -> Int:
 
     var product: Int = 1
 
-    @parameter
-    for i in range(start_dim, end_dim):
+    comptime for i in range(start_dim, end_dim):
         product *= x.dim[i]()
 
     return product

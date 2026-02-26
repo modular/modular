@@ -84,7 +84,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         self.value = value
         self.actions.unsafe_mut_cast[True]()[0].append("__init__")
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Moves from an existing instance and records the operation.
 
         Args:
@@ -92,7 +92,7 @@ struct ObservableMoveOnly[actions_origin: ImmutOrigin](Movable):
         """
         self.actions = take.actions
         self.value = take.value
-        self.actions.unsafe_mut_cast[True]()[0].append("__moveinit__")
+        self.actions.unsafe_mut_cast[True]()[0].append("move ctor")
 
     fn __del__(deinit self):
         """Destroys the instance and records the operation."""
@@ -122,7 +122,7 @@ struct ExplicitCopyOnly(Copyable):
         self.value = value
         self.copy_count = 0
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copies from another instance and increments the count.
 
         Args:
@@ -155,7 +155,7 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
         self.value = value
         self.copy_count = 0
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copies from another instance and increments the count.
 
         Args:
@@ -170,14 +170,19 @@ struct ImplicitCopyOnly(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
-    ImplicitlyCopyable, Writable
-):
+struct CopyCounter[
+    T: ImplicitlyCopyable & Writable & Defaultable = NoneType,
+    *,
+    trivial_copy: Bool = False,
+](ImplicitlyCopyable, Writable):
     """Counts the number of copies performed on a value.
 
     Parameters:
         T: The type of value to wrap and count copies for.
+        trivial_copy: Weather the copy constructor should be considered trivial.
     """
+
+    comptime __copy_ctor_is_trivial = Self.trivial_copy
 
     var value: Self.T
     """The wrapped value."""
@@ -194,10 +199,16 @@ struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
         Args:
             s: The value to wrap.
         """
+        comptime assert (
+            Self.T.__copy_ctor_is_trivial or not Self.trivial_copy
+        ), (
+            "You cannot override CopyCounter's trivial copy construct when T"
+            " does not have one"
+        )
         self.value = s
         self.copy_count = 0
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copies from another instance and increments the count.
 
         Args:
@@ -222,12 +233,17 @@ struct CopyCounter[T: ImplicitlyCopyable & Writable & Defaultable = NoneType](
 
 # TODO: This type should not be Copyable, but has to be to satisfy
 #       Copyable at the moment.
-struct MoveCounter[T: Copyable & ImplicitlyDestructible](Copyable):
+struct MoveCounter[
+    T: Copyable & ImplicitlyDestructible, *, trivial_move: Bool = False
+](Copyable):
     """Counts the number of moves performed on a value.
 
     Parameters:
         T: The type of value to wrap and count moves for.
+        trivial_move: Weather the move constructor should be treated as trivial.
     """
+
+    comptime __move_ctor_is_trivial = Self.trivial_move
 
     var value: Self.T
     """The wrapped value."""
@@ -241,10 +257,16 @@ struct MoveCounter[T: Copyable & ImplicitlyDestructible](Copyable):
         Args:
             value: The value to wrap.
         """
+        comptime assert (
+            Self.T.__move_ctor_is_trivial or not Self.trivial_move
+        ), (
+            "You cannot override MoveCounter's trivial move construct when T"
+            " does not have one"
+        )
         self.value = value^
         self.move_count = 0
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Moves from an existing instance and increments the count.
 
         Args:
@@ -272,7 +294,7 @@ struct MoveCopyCounter(ImplicitlyCopyable):
         self.copied = 0
         self.moved = 0
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copies from another instance and increments the copy count.
 
         Args:
@@ -281,7 +303,7 @@ struct MoveCopyCounter(ImplicitlyCopyable):
         self.copied = copy.copied + 1
         self.moved = copy.moved
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Moves from an existing instance and increments the move count.
 
         Args:
@@ -299,7 +321,7 @@ struct MoveCopyCounter(ImplicitlyCopyable):
 @fieldwise_init
 struct TriviallyCopyableMoveCounter(Copyable):
     """Type used for testing that collections still perform moves and not copies
-    when a type has a custom __moveinit__() but is also trivially copyable.
+    when a type has a custom move constructor but is also trivially copyable.
 
     Types with this property are rare in practice, but its still important to
     get the modeling right. If a type author wants their type to be moved
@@ -309,9 +331,9 @@ struct TriviallyCopyableMoveCounter(Copyable):
     """Number of times this instance has been moved."""
 
     # Copying this type is trivial, it doesn't care to track copies.
-    comptime __copyinit__is_trivial = True
+    comptime __copy_ctor_is_trivial = True
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Moves from an existing instance and increments the count.
 
         Args:
@@ -341,14 +363,6 @@ struct DelRecorder[recorder_origin: ImmutOrigin](ImplicitlyCopyable):
     fn __del__(deinit self):
         """Records this instance's value when destroyed."""
         self.destructor_recorder.unsafe_mut_cast[True]()[].append(self.value)
-
-    fn copy(self) -> Self:
-        """Creates a copy of this instance.
-
-        Returns:
-            A new instance with the same value and recorder.
-        """
-        return Self(self.value, self.destructor_recorder)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -482,7 +496,7 @@ struct AbortOnCopy(ImplicitlyCopyable):
     Used to test that implicit copies do not occur in certain scenarios.
     """
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Aborts the program if called.
 
         Args:
@@ -532,7 +546,7 @@ struct Observable[
         self._moves = moves^
         self._dels = dels^
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy initialize the Observable and increment the copy count.
 
         Args:
@@ -544,7 +558,7 @@ struct Observable[
         if self._copies:
             self._copies.value()[] += 1
 
-    fn __moveinit__(out self, deinit take: Self):
+    fn __init__(out self, *, deinit take: Self):
         """Move initialize the Observable and increment the move count.
 
         Args:
@@ -583,8 +597,8 @@ struct ConfigureTrivial[
     """
 
     comptime __del__is_trivial = Self.del_is_trivial
-    comptime __copyinit__is_trivial = Self.copyinit_is_trivial
-    comptime __moveinit__is_trivial = Self.moveinit_is_trivial
+    comptime __copy_ctor_is_trivial = Self.copyinit_is_trivial
+    comptime __move_ctor_is_trivial = Self.moveinit_is_trivial
 
 
 # ===----------------------------------------------------------------------=== #

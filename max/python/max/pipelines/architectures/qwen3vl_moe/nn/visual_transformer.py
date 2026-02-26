@@ -25,12 +25,12 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kernels import spatial_merge
-from max.nn.legacy.layer import LayerList, Module, Shardable
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import LayerNorm
+from max.nn.comm import Allreduce
+from max.nn.embedding import Embedding
+from max.nn.kernels import spatial_merge
+from max.nn.layer import LayerList, Module, Shardable
+from max.nn.linear import Linear
+from max.nn.norm import LayerNorm
 
 from ...qwen2_5vl.nn.vision_attention import DistributedVisionWindowAttention
 from ..model_config import VisionConfig

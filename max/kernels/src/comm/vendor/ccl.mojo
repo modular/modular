@@ -89,8 +89,7 @@ comptime NCCL_LIBRARY_PATHS: List[Path] = [
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)
 fn _init_ccl_dylib() -> OwnedDLHandle:
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         return _find_dylib["RCCL"](materialize[RCCL_LIBRARY_PATHS]())
     else:
         return _find_dylib["NCCL"](materialize[NCCL_LIBRARY_PATHS]())
@@ -219,8 +218,7 @@ fn _ccl_broadcast(
 
 @always_inline
 fn _ccl_stream_ptr(ctx: DeviceContext) raises -> OpaquePointer:
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         return HIP(ctx.stream()).bitcast[NoneType]()
     else:
         return CUDA(ctx.stream()).bitcast[NoneType]()
@@ -231,14 +229,13 @@ struct Communicators(ImplicitlyCopyable):
     var ngpus: Int
     var comms: InlineArray[ncclComm_t, MAX_GPUS]
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         self.ngpus = copy.ngpus
         self.comms = copy.comms.copy()
 
 
 fn _dtype_to_ccl[dtype: DType]() raises -> ncclDataType_t:
-    @parameter
-    if dtype == DType.float32:
+    comptime if dtype == DType.float32:
         return ncclDataType_t.ncclFloat32
     elif dtype == DType.bfloat16:
         return ncclDataType_t.ncclBfloat16
@@ -299,10 +296,9 @@ fn allreduce[
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
-    use_quickreduce: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[
@@ -310,7 +306,6 @@ fn allreduce[
     ],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
-    iteration: Int = 0,
 ) raises:
     """Per-GPU allreduce for use in multi-threaded contexts.
 
@@ -323,9 +318,6 @@ fn allreduce[
     comptime assert (
         not use_multimem
     ), "vendor_ccl allreduce does not support multimem path"
-    comptime assert (
-        not use_quickreduce
-    ), "vendor_ccl allreduce does not support quickreduce path"
     # Determine this device's rank from its context id.
     var device_rank = Int(ctx.id())
     var count = input_buffers[0].num_elements()
@@ -379,7 +371,7 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    inputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    inputs: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     outputs: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus],
     list_of_ctx: List[DeviceContext],
 ) raises:

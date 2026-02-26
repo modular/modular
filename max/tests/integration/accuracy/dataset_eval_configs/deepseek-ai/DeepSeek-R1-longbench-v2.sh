@@ -18,15 +18,13 @@ batch_size=64
 max_length=128000
 
 extra_pipelines_args=(
-  --device-memory-utilization=0.8
+  --device-memory-utilization=0.95
   --ep-size 8
   --data-parallel-degree 8
   --max-batch-input-tokens 1024
 )
 extra_longbench_v2_args=(
-  # Optional flags
-  --cot  # Enable chain-of-thought reasoning
-  --cot_max_new_tokens 8192
+  --max_new_tokens 8192
   --max_samples=100  # Limit samples for testing
   --max_context_length=100000 # https://github.com/THUDM/LongBench/issues/134
   --client_timeout=5000

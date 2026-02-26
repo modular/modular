@@ -93,17 +93,18 @@ For the naive allreduce (no P2P) per-device flow and staging details, see the
 
 from collections import InlineArray
 from math import ceildiv
-from sys import align_of, is_amd_gpu, simd_width_of, size_of
+from sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
+from layout._tile_tensor import TileTensor
+from layout._layout import row_major
+from layout._coord import Coord, Idx
 from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     block_dim,
-    block_idx,
     global_idx,
     grid_dim,
-    thread_idx,
 )
 from gpu.primitives.grid_controls import (
     PDLLevel,
@@ -112,14 +113,6 @@ from gpu.primitives.grid_controls import (
     wait_on_dependent_grids,
 )
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-
-from gpu.intrinsics import (
-    store_release,
-    load_relaxed,
-    Scope,
-    AMDBufferResource,
-)
-from gpu.memory import CacheOperation
 
 from utils import IndexList, StaticTuple
 from utils.numerics import get_accum_type
@@ -137,7 +130,7 @@ from .sync import (
     MAX_NUM_BLOCKS_UPPER_BOUND,
     Signal,
     _multi_gpu_barrier,
-    can_enable_p2p,
+    is_p2p_enabled,
 )
 from .device_query import get_sm_version, _dispatch_max_num_blocks
 
@@ -392,12 +385,10 @@ fn _allreduce_2stage_kernel[
 
     var rs_config = ReduceScatterConfig[dtype, ngpus](num_elements, stride)
 
-    @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     # --- Define tmp buffers by offseting for Signal struct ---
@@ -405,8 +396,7 @@ fn _allreduce_2stage_kernel[
         uninitialized=True
     )
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         # Round-robin access pattern to balance NVLink traffic across GPUs.
         var target = (my_rank + i) % ngpus
         # Skip Signal header.
@@ -423,8 +413,7 @@ fn _allreduce_2stage_kernel[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
-    @parameter
-    for i in range(num_buffers):
+    comptime for i in range(num_buffers):
         var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
         ptrs[i] = src_ptrs[target]
 
@@ -436,24 +425,27 @@ fn _allreduce_2stage_kernel[
 
     # TODO(KERN-2273): Remove this once temporary buffers removed
     # Output lambda for reduce-scatter: write to scratch buffer
-    var tmp_buff = NDBuffer[dtype, 1, MutAnyOrigin](
-        tmp_out,
-        rs_config.rank_part(my_rank),
+    var tmp_buff = TileTensor[mut=True, dtype](
+        tmp_out, row_major(Idx(rs_config.rank_part(my_rank)))
     )
 
     @always_inline
     @parameter
-    @__copy_capture(tmp_out)
+    @__copy_capture(tmp_buff)
     fn rs_output_lambda[
         _dtype: DType,
-        _rank: Int,
         _width: Int,
         *,
         _alignment: Int,
-    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-        tmp_out.address_space_cast[_target_address_space]().store[
-            alignment=_alignment
-        ](coords[0], val.cast[dtype]())
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
+        coords.flat_rank == tmp_buff.flat_rank
+    ):
+        tmp_buff.address_space_cast[_target_address_space]().store[
+            width=_width, alignment=_alignment
+        ](
+            coords,
+            val.cast[dtype](),
+        )
 
     _reduce_scatter_impl[
         ngpus, output_lambda=rs_output_lambda, use_multimem=use_multimem
@@ -473,10 +465,8 @@ fn _allreduce_2stage_kernel[
     comptime alignment = rs_config.alignment
 
     # Ragged handling:
-    # When there are ragged elements (rs_config.remainder > 0), GPU-0 has the
-    # largest partition and GPU-(ngpus - 1) has the smallest partition
-    # (at most 1 SIMD vector smaller). When remainder == 0, all GPUs have
-    # equal partition sizes.
+    # GPU-0 is guaranteed to have largest partition
+    # GPU-ngpus-1 has smallest partition (only 1 simd vector smaller)
 
     # Main loop - only process unragged elements (no bounds check)
     for idx in range(
@@ -484,9 +474,7 @@ fn _allreduce_2stage_kernel[
         rs_config.rank_part(ngpus - 1),
         rs_config.stride,
     ):
-
-        @parameter
-        for gpu_idx in range(ngpus):
+        comptime for gpu_idx in range(ngpus):
             var peer_rank = (my_rank + gpu_idx) % ngpus
 
             var dst_idx = rs_config.rank_start(peer_rank) + idx
@@ -571,8 +559,7 @@ fn _allreduce_1stage_kernel[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
-    @parameter
-    for i in range(num_buffers):
+    comptime for i in range(num_buffers):
         var target = 0 if num_buffers == 1 else (my_rank + i) % num_buffers
         ptrs[i] = src_ptrs[target]
 
@@ -604,17 +591,15 @@ fn _allreduce_p2p[
     ngpus: Int,
     output_lambda: elementwise_epilogue_type,
     pdl_level: PDLLevel = PDLLevel(),
-    use_quickreduce: Bool = False,
     use_multimem: Bool = False,
 ](
     list_of_in_bufs: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
     ],
     out_buf: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     max_num_blocks: Int,
     ctx: DeviceContext,
-    iteration: Int,
 ) raises:
     """
     Performs allreduce using peer-to-peer access for a single GPU.
@@ -625,7 +610,6 @@ fn _allreduce_p2p[
         ngpus: Number of GPUs participating.
         output_lambda: An output elementwise lambda.
         pdl_level: Control PDL behavior for the kernel.
-        use_quickreduce: If True, prefer the quickreduce 2-stage path when eligible.
         use_multimem: If True, use multi-memory space buffers for input.
 
     Args:
@@ -634,9 +618,6 @@ fn _allreduce_p2p[
         rank_sigs: Signal pointers for synchronization
         max_num_blocks: Maximum number of thread blocks to launch.
         ctx: Device context for THIS GPU
-        iteration: Monotonic per-call counter used to color quickreduce flags.
-            The caller is responsible for incrementing this value between launches.
-            The default value of 0 is only suitable for single-use scenarios.
 
     Launches P2P reduction kernel on the current GPU to perform direct reduction.
     """
@@ -660,8 +641,7 @@ fn _allreduce_p2p[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_buffers
     ](uninitialized=True)
 
-    @parameter
-    for i in range(num_buffers):
+    comptime for i in range(num_buffers):
         list_of_in_ptrs[i] = list_of_in_bufs[i].data
 
     comptime BLOCK_SIZE = 256
@@ -697,71 +677,33 @@ fn _allreduce_p2p[
             block_dim=BLOCK_SIZE,
         )
     else:
+        # Define grid size for 2-stage, which processes 1/ngpus of the
+        # number of elements.
+        var grid_size = min(
+            max_num_blocks,
+            ceildiv(num_elements // (simd_width * ngpus), BLOCK_SIZE),
+        )
 
-        @parameter
-        if use_quickreduce:
-            # Define grid size for stage1 push using fixed tiles over the full vector space.
-            comptime atom_size = 8
-            # Compute tiles once here and pass to kernel
-            comptime tile_vectors = 256 * atom_size
-            var num_simd_vectors_total = num_elements // simd_width
-            var num_tiles_total = ceildiv(num_simd_vectors_total, tile_vectors)
-
-            if num_simd_vectors_total % tile_vectors != 0:
-                raise Error("Quickreduce allreduce requires full tiles")
-
-            var grid_size = min(max_num_blocks, num_tiles_total)
-
-            comptime kernel = allreduce_2stage_quickreduce[
-                dtype,
-                rank,
-                ngpus,
-                BLOCK_SIZE=BLOCK_SIZE,
-                output_lambda=output_lambda,
-                atom_size=atom_size,
-            ]
-
-            ctx.enqueue_function[kernel, kernel](
-                out_buf,
-                DeviceBuffer[dtype](
-                    ctx, list_of_in_ptrs[ctx.id()], num_elements, owning=False
-                ),
-                rank_sigs,
-                num_elements,
-                Int(ctx.id()),
-                iteration,
-                num_tiles_total,
-                grid_dim=grid_size,
-                block_dim=BLOCK_SIZE,
-            )
-        else:
-            # Define grid size for 2-stage, which processes 1/ngpus of the
-            # number of elements.
-            var grid_size = min(
-                max_num_blocks,
-                ceildiv(num_elements // (simd_width * ngpus), BLOCK_SIZE),
-            )
-
-            # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
-            comptime kernel = _allreduce_2stage_kernel[
-                dtype,
-                rank,
-                ngpus,
-                BLOCK_SIZE=BLOCK_SIZE,
-                output_lambda=output_lambda,
-                pdl_level=pdl_level,
-                use_multimem=use_multimem,
-            ]
-            ctx.enqueue_function[kernel, kernel](
-                out_buf,
-                list_of_in_ptrs,
-                rank_sigs,
-                num_elements,
-                Int(ctx.id()),
-                grid_dim=grid_size,
-                block_dim=BLOCK_SIZE,
-                attributes=pdl_launch_attributes(pdl_level),
-            )
+        # Otherwise, use 2-stage allreduce for the bandwidth bound regime.
+        comptime kernel = _allreduce_2stage_kernel[
+            dtype,
+            rank,
+            ngpus,
+            BLOCK_SIZE=BLOCK_SIZE,
+            output_lambda=output_lambda,
+            pdl_level=pdl_level,
+            use_multimem=use_multimem,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            out_buf,
+            list_of_in_ptrs,
+            rank_sigs,
+            num_elements,
+            Int(ctx.id()),
+            grid_dim=grid_size,
+            block_dim=BLOCK_SIZE,
+            attributes=pdl_launch_attributes(pdl_level),
+        )
 
 
 @parameter
@@ -773,16 +715,14 @@ fn allreduce[
     pdl_level: PDLLevel = PDLLevel(),
     *,
     use_multimem: Bool = False,
-    use_quickreduce: Bool = False,
 ](
     input_buffers: InlineArray[
-        NDBuffer[dtype, rank, MutAnyOrigin], 1 if use_multimem else ngpus
+        NDBuffer[dtype, rank, ImmutAnyOrigin], 1 if use_multimem else ngpus
     ],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
     _max_num_blocks: Optional[Int] = None,
-    iteration: Int = 0,
 ) raises:
     """Per-device allreduce: one instance per GPU builds its own output.
 
@@ -817,7 +757,6 @@ fn allreduce[
         output_lambda: Elementwise epilogue applied on the device result.
         pdl_level: Controls PDL behavior for P2P kernels.
         use_multimem: Whether to use multimem mode for improved performance.
-        use_quickreduce: If True, prefer the quickreduce 2-stage path when eligible.
 
     Args:
         input_buffers: Inputs from ALL GPUs (for P2P, these must be peer accessible).
@@ -826,9 +765,6 @@ fn allreduce[
             for the P2P 2-stage path.
         ctx: Device context for THIS GPU (device id → rank).
         _max_num_blocks: Optional grid limit (dispatch selects a default otherwise).
-        iteration: Monotonic per-call counter used to color quickreduce flags.
-            Increment each launch; ensures barrier flags are unique across
-            iterations to prevent reuse hazards when reusing the same signal buffers.
 
     Notes:
       - Inputs must have identical shape/dtype across GPUs.
@@ -837,11 +773,8 @@ fn allreduce[
       - The naive path is automatically selected if P2P cannot be enabled.
       - The `use_multimem` parameter requires P2P access between GPUs to be enabled.
     """
+    comptime assert ngpus >= 2, "allreduce requires at least 2 GPUs"
 
-    constrained[
-        not (use_multimem and use_quickreduce),
-        "Quickreduce is incompatible with multimem.",
-    ]()
     # Return early, if the input buffer is empty
     var num_elements = input_buffers[0].num_elements()
     if num_elements == 0:
@@ -879,10 +812,8 @@ fn allreduce[
         )
 
     # Check P2P availability.
-    if not can_enable_p2p():
-
-        @parameter
-        if use_multimem:
+    if not is_p2p_enabled():
+        comptime if use_multimem:
             raise Error(
                 "Allreduce with multimem requires P2P access between GPUs"
             )
@@ -903,365 +834,5 @@ fn allreduce[
         ngpus=ngpus,
         output_lambda=actual_output_lambda,
         pdl_level=pdl_level,
-        use_quickreduce=use_quickreduce,
         use_multimem=use_multimem,
-    ](input_buffers, output_buffer, rank_sigs, max_num_blocks, ctx, iteration)
-
-
-fn allreduce_2stage_quickreduce_tile[
-    dtype: DType,
-    rank: Int,
-    ngpus: Int,
-    *,
-    BLOCK_SIZE: Int,
-    output_lambda: elementwise_epilogue_type,
-    atom_size: Int,
-    use_bufferio: Bool,
-](
-    result: NDBuffer[dtype, rank, MutAnyOrigin],
-    local_src: UnsafePointer[
-        Scalar[dtype],
-        ImmutAnyOrigin,
-        address_space=_target_address_space,
-    ],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    num_elements: Int,
-    my_rank: Int,
-    tile: Int,
-    num_tiles: Int,
-    iteration: Int,
-):
-    comptime rank_atoms = atom_size // ngpus
-    comptime simd_width = simd_width_of[dtype]()
-    comptime alignment = align_of[SIMD[dtype, simd_width]]()
-    comptime atom_stride = 256 * simd_width
-    # 32 KiB = 256*8*16 bytes
-    comptime tile_elems = 256 * atom_size * simd_width
-    comptime accum_type = get_accum_type[dtype]()
-    comptime rank_tile_elems = 256 * rank_atoms * simd_width
-
-    # Per-tile byte offsets matching CUDA pattern
-    comptime flag_t = Signal.flag_t
-    comptime bytes_per_elem = size_of[Scalar[dtype]]()
-    comptime flag_t_bytes = size_of[Scalar[flag_t]]()
-    # Note: In the C++ reference implementation, data_offset is a 64-bit long.
-    var data_offset: Int = (
-        2 * num_tiles * ngpus * flag_t_bytes // bytes_per_elem
-    )
-    # Element-indexed offsets
-    var comm_data0_offset = data_offset + tile * tile_elems
-    var comm_data1_offset = comm_data0_offset + num_tiles * tile_elems
-    var comm_flags0_offset = tile * ngpus
-    var comm_flags1_offset = comm_flags0_offset + num_tiles * ngpus
-
-    var flag_color = iteration + 1
-
-    var tA = InlineArray[SIMD[dtype, simd_width], atom_size](uninitialized=True)
-    var tR = InlineArray[SIMD[dtype, simd_width], atom_size](uninitialized=True)
-    var tR_acc = InlineArray[SIMD[accum_type, simd_width], atom_size](fill=0)
-
-    # Build typed views from rank_sigs once
-    var flag_buf = InlineArray[
-        UnsafePointer[
-            Scalar[flag_t],
-            MutAnyOrigin,
-            address_space=_target_address_space,
-        ],
-        ngpus,
-    ](uninitialized=True)
-
-    var data_buf = InlineArray[
-        UnsafePointer[
-            Scalar[dtype],
-            MutAnyOrigin,
-            address_space=_target_address_space,
-        ],
-        ngpus,
-    ](uninitialized=True)
-
-    @parameter
-    for rr in range(ngpus):
-        var payload_generic = (
-            (rank_sigs[rr].address_space_cast[AddressSpace.GENERIC]() + 1)
-            .bitcast[Scalar[DType.uint8]]()
-            .address_space_cast[_target_address_space]()
-        )
-        flag_buf[rr] = payload_generic.bitcast[Scalar[flag_t]]()
-        data_buf[rr] = payload_generic.bitcast[Scalar[dtype]]()
-
-    @parameter
-    fn wait_for_flag(
-        ptr: UnsafePointer[
-            Scalar[flag_t],
-            MutAnyOrigin,
-            address_space=_target_address_space,
-        ],
-        expected: Scalar[flag_t],
-    ):
-        # Spin using relaxed atomic loads for minimal latency. Using relaxed atomics
-        # ensures correct visibility with minimal overhead: producers publish with
-        # release stores, and a barrier follows the poll to establish ordering for
-        # subsequent reads.
-        while load_relaxed(ptr) != expected:
-            pass
-
-    @parameter
-    @always_inline
-    fn send(
-        r: Int,
-        base_index: Int,
-        tA: InlineArray[SIMD[dtype, simd_width], atom_size],
-        tile_offset: Int,
-    ):
-        @parameter
-        for i in range(rank_atoms):
-            var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
-            var atom_data = tA[tile_offset + i]
-
-            @parameter
-            if use_bufferio:
-                AMDBufferResource(data_buf[r]).store[
-                    dtype,
-                    width=simd_width,
-                    cache_policy = CacheOperation.STREAMING,
-                ](Int32(base_index + atom_idx), atom_data)
-            else:
-                data_buf[r].store[alignment=alignment](
-                    base_index + atom_idx, atom_data
-                )
-
-    @parameter
-    @always_inline
-    fn recv(
-        recv_ptr: UnsafePointer[
-            Scalar[dtype], address_space=_target_address_space
-        ],
-        base_index: Int,
-        tile_offset: Int,
-    ):
-        @parameter
-        for i in range(rank_atoms):
-            var atom_idx = Int(thread_idx.x) * simd_width + atom_stride * i
-
-            @parameter
-            if use_bufferio:
-                tA[tile_offset + i] = AMDBufferResource(recv_ptr).load[
-                    dtype,
-                    width=simd_width,
-                    cache_policy = CacheOperation.STREAMING,
-                ](Int32(base_index + atom_idx))
-            else:
-                tA[tile_offset + i] = recv_ptr.load[
-                    width=simd_width, alignment=alignment, invariant=True
-                ](base_index + atom_idx)
-
-    @parameter
-    @always_inline
-    fn phase1a_scatter():
-        # Load this GPU's tile slice: offset by tile index and lane within the tile.
-        var src_offset = tile * tile_elems + Int(thread_idx.x) * simd_width
-
-        @parameter
-        if use_bufferio:
-
-            @parameter
-            for i in range(atom_size):
-                tA[i] = AMDBufferResource(local_src).load[
-                    dtype, width=simd_width
-                ](Int32(src_offset + i * atom_stride))
-        else:
-
-            @parameter
-            for i in range(atom_size):
-                tA[i] = local_src.load[
-                    width=simd_width, alignment=alignment, invariant=True
-                ](src_offset + i * atom_stride)
-
-        @parameter
-        for r in range(ngpus):
-            send(
-                r,
-                comm_data0_offset + my_rank * rank_tile_elems,
-                tA,
-                r * rank_atoms,
-            )
-        barrier()
-
-        if thread_idx.x < UInt(ngpus):
-            store_release(
-                flag_buf[thread_idx.x] + comm_flags0_offset + my_rank,
-                UInt32(flag_color),
-            )
-        # No additional barrier: the next phase waits on all flags and then
-        # synchronizes the block.
-
-    phase1a_scatter()
-
-    @parameter
-    @always_inline
-    fn phase1b_reduce():
-        if thread_idx.x == UInt(0):
-
-            @parameter
-            for r in range(ngpus):
-                wait_for_flag(
-                    flag_buf[my_rank] + comm_flags0_offset + r,
-                    UInt32(flag_color),
-                )
-        barrier()
-
-        @parameter
-        for r in range(ngpus):
-            recv(
-                data_buf[my_rank],
-                comm_data0_offset + r * rank_tile_elems,
-                0,
-            )
-
-            @parameter
-            for i_red in range(rank_atoms):
-                tR_acc[i_red] += tA[i_red].cast[accum_type]()
-
-        @parameter
-        for i_red in range(rank_atoms):
-            tR[i_red] = tR_acc[i_red].cast[dtype]()
-
-    phase1b_reduce()
-
-    @parameter
-    @always_inline
-    fn phase2_allgather():
-        @parameter
-        for r in range(ngpus):
-            send(
-                r,
-                comm_data1_offset + my_rank * rank_tile_elems,
-                tR,
-                0,
-            )
-        barrier()
-
-        if thread_idx.x < UInt(ngpus):
-            store_release(
-                flag_buf[thread_idx.x] + comm_flags1_offset + my_rank,
-                UInt32(flag_color),
-            )
-        # No additional barrier: thread 0 will wait on all flags below and
-        # a barrier after the wait will synchronize the block.
-
-        if thread_idx.x == UInt(0):
-
-            @parameter
-            for r in range(ngpus):
-                wait_for_flag(
-                    flag_buf[my_rank] + comm_flags1_offset + r,
-                    UInt32(flag_color),
-                )
-        barrier()
-
-        @parameter
-        for r in range(ngpus):
-            recv(
-                data_buf[my_rank],
-                comm_data1_offset + r * rank_tile_elems,
-                r * rank_atoms,
-            )
-
-    phase2_allgather()
-
-    var dst_offset = tile * tile_elems + Int(thread_idx.x) * simd_width
-
-    @parameter
-    for i in range(atom_size):
-        var elem_idx_out = dst_offset + i * atom_stride
-        output_lambda[width=simd_width, alignment=alignment](
-            result.get_nd_index(elem_idx_out), tA[i]
-        )
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
-)
-fn allreduce_2stage_quickreduce[
-    dtype: DType,
-    rank: Int,
-    ngpus: Int,
-    *,
-    BLOCK_SIZE: Int,
-    output_lambda: elementwise_epilogue_type,
-    atom_size: Int,
-](
-    result: NDBuffer[dtype, rank, MutAnyOrigin],
-    local_src: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
-    num_elements: Int,
-    my_rank: Int,
-    iteration: Int,
-    num_tiles_total: Int,
-):
-    # Quickreduce 2-stage allreduce ("push" in stage 1)
-    #
-
-    # Based on https://github.com/mk1-project/quickreduce
-    # Specifically the code
-    # https://github.com/mk1-project/quickreduce/blob/main/csrc/core/allreduce.h
-    #
-    # Relationship to the default 2-stage kernel `_allreduce_2stage_kernel` ("pull" in stage 1):
-    # - Both are two-shot kernels: stage 1 (reduce-scatter) then stage 2 (all-gather).
-    # - Stage 1 semantics differ:
-    #   - Default (pull): rank r reads peers' partitions destined for r and reduces locally.
-    #   - Quickreduce (push): each rank writes its partition contribution for r into r's payload; r reduces received data.
-    # - Stage 2 is the same (all-gather of the reduced partitions into the final result via `output_lambda`).
-    #
-    # Quickreduce high-level sketch (from the algorithm description):
-    #   1) Partition the problem into segments; assign segment r to rank r.
-    #   2) Push contributions: every rank sends its segment data to the responsible rank.
-    #   3) Target rank reduces its received segment (stage 1 done).
-    #   4) All ranks gather the reduced segments back (stage 2).
-    comptime simd_width = simd_width_of[dtype]()
-    comptime alignment = align_of[SIMD[dtype, simd_width]]()
-
-    comptime bytes_per_elem = size_of[Scalar[dtype]]()
-    comptime flag_t_bytes = size_of[Scalar[Signal.flag_t]]()
-    comptime tile_elems = 256 * atom_size * simd_width
-    comptime INT32_MAX = 2147483647
-
-    var data_offset_elems = (
-        2 * num_tiles_total * ngpus * flag_t_bytes
-    ) // bytes_per_elem
-    var max_index_elems = (
-        data_offset_elems + 2 * num_tiles_total * tile_elems - 1
-    )
-    var amd_index_fits = max_index_elems <= (INT32_MAX // bytes_per_elem)
-
-    @parameter
-    @always_inline
-    fn dispatch_on_bufferio[use_bufferio: Bool]():
-        for tile in range(block_idx.x, num_tiles_total, grid_dim.x):
-            allreduce_2stage_quickreduce_tile[
-                dtype,
-                rank,
-                ngpus,
-                BLOCK_SIZE=BLOCK_SIZE,
-                output_lambda=output_lambda,
-                atom_size=atom_size,
-                use_bufferio=use_bufferio,
-            ](
-                result,
-                local_src.address_space_cast[_target_address_space](),
-                rank_sigs,
-                num_elements,
-                my_rank,
-                tile,
-                num_tiles_total,
-                iteration,
-            )
-
-    @parameter
-    if is_amd_gpu():
-        if amd_index_fits:
-            dispatch_on_bufferio[True]()
-        else:
-            dispatch_on_bufferio[False]()
-    else:
-        dispatch_on_bufferio[False]()
+    ](input_buffers, output_buffer, rank_sigs, max_num_blocks, ctx)

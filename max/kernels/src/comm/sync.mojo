@@ -64,17 +64,18 @@ fn _p2p_cache_init_wrapper() -> MutOpaquePointer[MutExternalOrigin]:
         )
 
 
-fn can_enable_p2p() raises -> Bool:
-    """
-    If peer-to-peer access is supported, enables it between all GPU pairs.
+fn enable_p2p() raises -> Bool:
+    """Enables peer-to-peer access between all GPU pairs if supported.
+
+    Must be called before any collective operations that require P2P access.
+    The result is cached globally; subsequent calls return the cached value.
 
     Returns:
-        True if P2P access is possible between all GPU pairs, False otherwise.
+        True if P2P access was successfully enabled, False otherwise.
     """
     comptime p2p_not_available = Scalar[DType.int](1)
     comptime p2p_available = Scalar[DType.int](2)
 
-    # Initialize once per process via indexed global, then reuse the tag.
     var cached = external_call[
         "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
         MutOpaquePointer[MutExternalOrigin],
@@ -86,6 +87,26 @@ fn can_enable_p2p() raises -> Bool:
 
     var tag = Scalar[DType.int](Int(cached))
     return tag == p2p_available
+
+
+fn is_p2p_enabled() raises -> Bool:
+    """Checks whether P2P access is available between GPUs.
+
+    Intended as a read-only status check for use in kernels and ops.
+    Callers should ensure `enable_p2p()` is called during initialization
+    (e.g., during model setup) before relying on this function.
+
+    The underlying global is initialized lazily, so if `enable_p2p()` has
+    not yet been called, this function will trigger initialization as a
+    fallback. However, explicit `enable_p2p()` calls at startup are
+    preferred to avoid side effects during kernel execution.
+
+    Returns:
+        True if P2P access is available between all GPU pairs, False otherwise.
+    """
+
+    # NOTE: Transitional workaround, soon this will be a read-only check.
+    return enable_p2p()
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
@@ -184,8 +205,7 @@ fn _multi_gpu_barrier[
         ngpus <= MAX_GPUS
     ), "too many GPUs for barrier implementation"
 
-    @parameter
-    if not is_start:
+    comptime if not is_start:
         barrier()
 
     comptime assert not (
@@ -235,8 +255,7 @@ fn _multi_gpu_barrier[
 
         # Write the expected counter value to peer and wait for correct value from
         # peer.
-        @parameter
-        if need_fence:
+        comptime if need_fence:
             # broadcast the value to all peers that I reached the barrier
             store_release(peer_counter_ptr, val)
             while load_acquire(self_counter_ptr) != val:
@@ -246,6 +265,5 @@ fn _multi_gpu_barrier[
             while self_counter_ptr.load[volatile=True]() != val:
                 pass
 
-    @parameter
-    if is_start or need_fence:
+    comptime if is_start or need_fence:
         barrier()

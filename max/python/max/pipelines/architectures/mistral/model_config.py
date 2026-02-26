@@ -19,9 +19,10 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParams
+from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -66,24 +67,20 @@ class MistralConfig(ArchConfigWithKVCache):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
-            page_size=kv_cache_config.kv_cache_page_size,
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=(
-                getattr(huggingface_config, "head_dim", None)
-                or (
-                    huggingface_config.hidden_size
-                    // huggingface_config.num_attention_heads
-                )
-            ),
+            head_dim=MistralConfig.get_head_dim(huggingface_config),
             num_layers=MistralConfig.get_num_layers(huggingface_config),
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        )
+
+    @staticmethod
+    def get_head_dim(huggingface_config: AutoConfig) -> int:
+        return getattr(huggingface_config, "head_dim", None) or (
+            huggingface_config.hidden_size
+            // huggingface_config.num_attention_heads
         )
 
     @staticmethod
@@ -95,7 +92,7 @@ class MistralConfig(ArchConfigWithKVCache):
         pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
         """Calculates the maximum sequence length for the model."""
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.max_position_embeddings
@@ -131,7 +128,7 @@ class MistralConfig(ArchConfigWithKVCache):
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
         cache_dtype = pipeline_config.model.kv_cache.cache_dtype
 
         device_refs = [

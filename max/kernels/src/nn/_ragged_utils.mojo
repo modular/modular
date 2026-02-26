@@ -170,8 +170,7 @@ fn merge_ragged_tensors[
             a_row_offsets[batch_id]
         )
 
-        @parameter
-        for i in range(1, rank):
+        comptime for i in range(1, rank):
             if idx[i] != 0:
                 is_first_element = False
 

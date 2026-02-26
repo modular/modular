@@ -212,8 +212,8 @@ fn assert_equal[
 
     if lhs != rhs_origin_casted:
         raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
+            String(lhs),
+            String(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -240,8 +240,8 @@ fn assert_equal(
     """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
+            String(lhs),
+            String(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )
@@ -478,8 +478,7 @@ fn assert_almost_equal[
     if not all(almost_equal):
         var err = String(lhs, " is not close to ", rhs)
 
-        @parameter
-        if dtype.is_integral() or dtype.is_floating_point():
+        comptime if dtype.is_integral() or dtype.is_floating_point():
             err += String(" with a diff of ", abs(lhs - rhs))
 
         if msg:

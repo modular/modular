@@ -37,6 +37,7 @@ from sys import simd_width_of, bit_width_of
 
 from algorithm import vectorize
 from bit import log2_floor, pop_count
+from format._utils import FormatStruct
 from memory import pack_bits
 
 from .inline_array import InlineArray
@@ -88,9 +89,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
 # ===-----------------------------------------------------------------------===#
 
 
-struct BitSet[size: Int](
-    Boolable, Copyable, Defaultable, Sized, Stringable, Writable
-):
+struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     """A grow-only set storing non-negative integers efficiently using bits.
 
     Parameters:
@@ -131,8 +130,7 @@ struct BitSet[size: Int](
         self._words = type_of(self._words)(uninitialized=True)
         comptime step = min(init.size, _WORD_BITS)
 
-        @parameter
-        for i in range(Self._words_size):
+        comptime for i in range(Self._words_size):
             self._words.unsafe_get(i) = pack_bits(
                 init.slice[step, offset = i * step]()
             ).cast[DType.int64]()
@@ -154,8 +152,7 @@ struct BitSet[size: Int](
         """
         var total = 0
 
-        @parameter
-        for i in range(self._words_size):
+        comptime for i in range(self._words_size):
             total += Int(pop_count(self._words.unsafe_get(i)))
 
         return total
@@ -246,15 +243,13 @@ struct BitSet[size: Int](
         """Toggles (inverts) all bits in the set up to the compile-time `size`.
         """
 
-        @parameter
-        for i in range(self._words_size):
+        comptime for i in range(self._words_size):
             self._words.unsafe_get(i) ^= ~0
 
     fn set_all(mut self):
         """Sets all bits in the set up to the compile-time `size`."""
 
-        @parameter
-        for i in range(self._words_size):
+        comptime for i in range(self._words_size):
             self._words.unsafe_get(i) = ~0
 
     # --------------------------------------------------------------------- #
@@ -306,8 +301,7 @@ struct BitSet[size: Int](
             var right_vec = SIMD[DType.int64, simd_width]()
 
             # Load a batch of words from both bitsets into SIMD vectors
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 left_vec[i] = left._words.unsafe_get(offset + i)
                 right_vec[i] = right._words.unsafe_get(offset + i)
 
@@ -316,20 +310,17 @@ struct BitSet[size: Int](
             var result_vec = func(left_vec, right_vec)
 
             # Store the results back into the result bitset
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 res._words.unsafe_get(offset + i) = result_vec[i]
 
         # Choose between vectorized or scalar implementation based on word count
-        @parameter
-        if Self._words_size >= simd_width:
+        comptime if Self._words_size >= simd_width:
             # If we have enough words, use SIMD vectorization for better
             # performance
             vectorize[simd_width](Self._words_size, _intersect)
         else:
             # For small bitsets, use a simple scalar implementation
-            @parameter
-            for i in range(Self._words_size):
+            comptime for i in range(Self._words_size):
                 res._words.unsafe_get(i) = func(
                     left._words.unsafe_get(i),
                     right._words.unsafe_get(i),
@@ -457,6 +448,16 @@ struct BitSet[size: Int](
 
         writer.write("}")
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the `BitSet` to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+        FormatStruct(writer, "BitSet").params(Self.size).fields(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a developer-friendly string representation of the bitset.
 
@@ -467,6 +468,7 @@ struct BitSet[size: Int](
         """
         return String(self)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a user-friendly string representation of the bitset.
 

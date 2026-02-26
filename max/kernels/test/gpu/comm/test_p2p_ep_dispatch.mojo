@@ -31,7 +31,7 @@ from benchmark import (
     Report,
     ThroughputMeasure,
 )
-from comm.sync import can_enable_p2p
+from comm.sync import enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
@@ -1021,8 +1021,7 @@ fn test_dispatch_common[
 
     # We don't enable e2e benchmarking by default because it would hang
     # if AsyncRT has less than n_ranks worker threads.
-    @parameter
-    if bench_e2e:
+    comptime if bench_e2e:
         for dev_i in range(n_ranks):
             clean_up(dev_i)
             list_of_ctx[dev_i].synchronize()
@@ -1297,7 +1296,7 @@ def test_dispatch_nvfp4[
 def main():
     comptime test_gpu_counts = (2, 4, 8)
 
-    if can_enable_p2p():
+    if enable_p2p():
         print("Enabled P2P Mem Access on all GPUs.")
     else:
         raise Error("Cannot enable P2P Mem Access!")
@@ -1305,10 +1304,8 @@ def main():
     comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "Only NVIDIA and AMD GPUs are supported"
-    comptime n_local_experts = 32 if has_nvidia_gpu_accelerator() else 16
 
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
@@ -1318,36 +1315,39 @@ def main():
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
-        test_dispatch_bf16[
-            hidden_size=3584,  # equivalent to send 7168 FP8s.
-            top_k=8,
-            n_experts = num_gpus * n_local_experts,
-            n_ranks=num_gpus,
-            n_slots=3,
-            n_tokens_per_rank=64,
-            bench_e2e=False,
-        ](ctx)
+        comptime for n_local_experts in [32, 64]:
+            comptime if num_gpus * n_local_experts > 256:
+                continue
 
-        test_dispatch_blockwise_fp8[
-            hidden_size=7168,
-            top_k=8,
-            n_experts = num_gpus * n_local_experts,
-            n_ranks=num_gpus,
-            n_slots=3,
-            n_tokens_per_rank=64,
-            bench_e2e=False,
-        ](ctx)
+            test_dispatch_bf16[
+                hidden_size=3584,  # equivalent to send 7168 FP8s.
+                top_k=8,
+                n_experts = num_gpus * n_local_experts,
+                n_ranks=num_gpus,
+                n_slots=1,
+                n_tokens_per_rank=64,
+                bench_e2e=False,
+            ](ctx)
 
-        comptime device_info = DeviceContext.default_device_info
-
-        @parameter
-        if has_nvidia_gpu_accelerator() and device_info == B200:
-            test_dispatch_nvfp4[
+            test_dispatch_blockwise_fp8[
                 hidden_size=7168,
                 top_k=8,
                 n_experts = num_gpus * n_local_experts,
                 n_ranks=num_gpus,
-                n_slots=3,
+                n_slots=1,
                 n_tokens_per_rank=64,
                 bench_e2e=False,
             ](ctx)
+
+            comptime device_info = DeviceContext.default_device_info
+
+            comptime if has_nvidia_gpu_accelerator() and device_info == B200:
+                test_dispatch_nvfp4[
+                    hidden_size=7168,
+                    top_k=8,
+                    n_experts = num_gpus * n_local_experts,
+                    n_ranks=num_gpus,
+                    n_slots=1,
+                    n_tokens_per_rank=64,
+                    bench_e2e=False,
+                ](ctx)

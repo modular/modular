@@ -35,7 +35,7 @@ from collections import Optional
 from math import ceildiv
 from sys import size_of
 
-from gpu.host import DeviceContext, FuncAttribute
+from gpu.host import DeviceContext, Dim, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
@@ -102,10 +102,7 @@ fn grouped_matmul_1d1d_nvfp4[
         num_active_experts: Number of active experts.
         ctx: Device context.
     """
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    comptime assert transpose_b, "Only support transposed B"
 
     comptime assert (
         sfa_dtype == sfb_dtype
@@ -115,8 +112,6 @@ fn grouped_matmul_1d1d_nvfp4[
         NVFP4_SF_DTYPE,
     ), "Only support MXFP8_SF_DTYPE or NVFP4_SF_DTYPE for scales"
 
-    constrained[not config.AB_swapped, "swap AB is not supported"]()
-
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
     comptime MMA_K = config.mma_shape[2]
@@ -125,24 +120,18 @@ fn grouped_matmul_1d1d_nvfp4[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
+    comptime assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
 
-    constrained[
-        config.k_group_size == 1,
-        "Only support k_group_size == 1",
-    ]()
+    comptime assert config.k_group_size == 1, "Only support k_group_size == 1"
 
-    constrained[
-        config.num_split_k == 1,
-        "Only support split_k == 1",
-    ]()
+    comptime assert config.num_split_k == 1, "Only support split_k == 1"
 
-    constrained[
-        config.num_pipeline_stages % config.k_group_size == 0,
-        "num_pipeline_stages must be a multiple of k_group_size",
-    ]()
+    comptime assert (
+        config.num_pipeline_stages % config.k_group_size == 0
+    ), "num_pipeline_stages must be a multiple of k_group_size"
 
     # Extract static dimensions from TileTensor types.
     # B is (num_experts, N, K), C is (M_dynamic, N), A is (M_dynamic, K).
@@ -161,27 +150,25 @@ fn grouped_matmul_1d1d_nvfp4[
         row_major(Coord(Idx[num_experts * N](), Idx[K]()))
     )
 
-    @parameter
-    if config.cta_group == 2:
-        constrained[
-            MMA_M == 256 and MMA_N in (128, 256),
-            "Only support cta_group == 2 with MMA_M == 256",
-        ]()
+    comptime if config.cta_group == 2:
+        comptime assert MMA_M == 256 and MMA_N in (
+            128,
+            256,
+        ), "Only support cta_group == 2 with MMA_M == 256"
+        comptime assert (
+            config.AB_swapped
+        ), "cta_group == 2 requires AB_swapped for scheduler alignment"
     else:
-        constrained[
-            MMA_M == 128 and MMA_N in (128, 256),
-            (
-                "Only support MMA_M == 128 and MMA_N in (128, 256) when"
-                " cta_group == 1"
-            ),
-        ]()
+        comptime assert MMA_M == 128 and MMA_N in (128, 256), (
+            "Only support MMA_M == 128 and MMA_N in (128, 256) when"
+            " cta_group == 1"
+        )
 
     comptime cluster_shape = config.cluster_shape
 
-    constrained[
-        ceildiv(K, BK) % config.k_group_size == 0,
-        "K iterations must be a multiple of k_group_size",
-    ]()
+    comptime assert (
+        ceildiv(K, BK) % config.k_group_size == 0
+    ), "K iterations must be a multiple of k_group_size"
 
     # Instantiate kernel -- c_device_layout derived from caller's TileTensor
     # so types match by construction in enqueue_function.
@@ -211,26 +198,6 @@ fn grouped_matmul_1d1d_nvfp4[
     # B200 SMEM limit
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
-    # Create TMA descriptors using kernel-derived layout types.
-    # create_tma_tile has a TileTensor overload (Pattern 13).
-    var a_tma_op = create_tma_tile[
-        KernelType.ATmaTile.tile_layout,
-        KernelType.ATmaTile.desc_layout,
-        Index(BM // cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
-    ](ctx, a_device)
-
-    var b_tma_op = create_tma_tile[
-        KernelType.BTmaTile.tile_layout,
-        KernelType.BTmaTile.desc_layout,
-        Index(
-            BN // (cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (cluster_shape[0] // config.cta_group)
-        ),
-        swizzle_mode = config.b_swizzle,
-    ](ctx, b_device)
-
     comptime c_tma_tile_shape_mma128 = Index(
         64, config.output_tile_shape[1]
     ) if not config.AB_swapped else Index(config.output_tile_shape[0], 64)
@@ -238,19 +205,21 @@ fn grouped_matmul_1d1d_nvfp4[
         MMA_M == 256 or config.cta_group == 1
     ) else c_tma_tile_shape_mma128
 
-    constrained[
-        (not config.AB_swapped) or config.c_swizzle.bytes() == 128,
-        "Only support 128B swizzle mode when AB_swapped is True",
-    ]()
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    var c_tma_op = create_tma_tile[
-        KernelType.CTmaTile.tile_layout,
-        KernelType.CTmaTile.desc_layout,
-        c_tma_tile_shape if not config.AB_swapped else Index(
-            c_tma_tile_shape[0], c_tma_tile_shape_1
-        ),
-        swizzle_mode = config.c_swizzle,
-    ](ctx, c_device)
+
+    comptime sfa_tma_tile_shape = Index(
+        BM // SF_MN_GROUP_SIZE,
+        config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
+
+    comptime sfb_tma_tile_shape = Index(
+        MMA_N // SF_MN_GROUP_SIZE,
+        config.num_sf_k_tiles,
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
 
     # Reshape scale tensors from 5D to 4D for TMA.
     # a_scales: (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
@@ -283,34 +252,6 @@ fn grouped_matmul_1d1d_nvfp4[
             )
         )
     )
-
-    comptime sfa_tma_tile_shape = Index(
-        BM // SF_MN_GROUP_SIZE,
-        config.num_sf_k_tiles,
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
-    )
-
-    var sfa_tma_op = create_tma_tile[
-        KernelType.SFATmaTile.tile_layout,
-        KernelType.SFATmaTile.desc_layout,
-        sfa_tma_tile_shape,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-    ](ctx, sfa_4d)
-
-    comptime sfb_tma_tile_shape = Index(
-        MMA_N // SF_MN_GROUP_SIZE,
-        config.num_sf_k_tiles,
-        SF_ATOM_M[0],
-        SF_ATOM_M[1] * SF_ATOM_K,
-    )
-
-    var sfb_tma_op = create_tma_tile[
-        KernelType.SFBTmaTile.tile_layout,
-        KernelType.SFBTmaTile.desc_layout,
-        sfb_tma_tile_shape,
-        swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
-    ](ctx, sfb_4d)
 
     # Define kernel function
     comptime kernel = matmul_kernel.run
@@ -348,26 +289,124 @@ fn grouped_matmul_1d1d_nvfp4[
             layout=GMEMLayout1D(shape, stride),
         )
 
-    ctx.enqueue_function[kernel, kernel](
-        a_tma_op,
-        b_tma_op,
-        c_tma_op,
-        sfa_tma_op,
-        sfb_tma_op,
-        _to_1d[DType.uint32](a_offsets),
-        _to_1d[DType.uint32](a_scale_offsets),
-        _to_1d[DType.int32](expert_ids),
-        _to_1d[DType.float32](expert_scales),
-        c_device,  # Types match: kernel param derived from same layout
-        num_active_experts,
-        UInt32(K),
-        grid_dim=grid_dim,
-        block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
-        ),
-    )
+    # When AB_swapped, swap A/B operands and their scale factors for TMA
+    # and kernel launch. The @parameter if ensures compile-time branching.
+    comptime if config.AB_swapped:
+        var a_tma_op = create_tma_tile[
+            KernelType.ATmaTile.tile_layout,
+            KernelType.ATmaTile.desc_layout,
+            Index(BM // cluster_shape[1], BK),
+            swizzle_mode = config.a_swizzle,
+        ](ctx, b_device)
+        var b_tma_op = create_tma_tile[
+            KernelType.BTmaTile.tile_layout,
+            KernelType.BTmaTile.desc_layout,
+            Index(
+                BN // (cluster_shape[0] // config.cta_group), BK
+            ) if transpose_b else Index(
+                BK, BN // (cluster_shape[0] // config.cta_group)
+            ),
+            swizzle_mode = config.b_swizzle,
+        ](ctx, a_device)
+        var c_tma_op = create_tma_tile[
+            KernelType.CTmaTile.tile_layout,
+            KernelType.CTmaTile.desc_layout,
+            Index(c_tma_tile_shape[0], c_tma_tile_shape_1),
+            swizzle_mode = config.c_swizzle,
+        ](ctx, c_device)
+        var sfa_tma_op = create_tma_tile[
+            KernelType.SFATmaTile.tile_layout,
+            KernelType.SFATmaTile.desc_layout,
+            sfa_tma_tile_shape,
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        ](ctx, sfb_4d)
+        var sfb_tma_op = create_tma_tile[
+            KernelType.SFBTmaTile.tile_layout,
+            KernelType.SFBTmaTile.desc_layout,
+            sfb_tma_tile_shape,
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        ](ctx, sfa_4d)
+        ctx.enqueue_function[kernel, kernel](
+            a_tma_op,
+            b_tma_op,
+            c_tma_op,
+            sfa_tma_op,
+            sfb_tma_op,
+            _to_1d[DType.uint32](a_offsets),
+            _to_1d[DType.uint32](a_scale_offsets),
+            _to_1d[DType.int32](expert_ids),
+            _to_1d[DType.float32](expert_scales),
+            c_device,
+            num_active_experts,
+            UInt32(K),
+            grid_dim=grid_dim,
+            block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
+            cluster_dim=Dim(
+                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            ),
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(b200_smem)
+            ),
+        )
+    else:
+        var a_tma_op = create_tma_tile[
+            KernelType.ATmaTile.tile_layout,
+            KernelType.ATmaTile.desc_layout,
+            Index(BM // cluster_shape[1], BK),
+            swizzle_mode = config.a_swizzle,
+        ](ctx, a_device)
+        var b_tma_op = create_tma_tile[
+            KernelType.BTmaTile.tile_layout,
+            KernelType.BTmaTile.desc_layout,
+            Index(
+                BN // (cluster_shape[0] // config.cta_group), BK
+            ) if transpose_b else Index(
+                BK, BN // (cluster_shape[0] // config.cta_group)
+            ),
+            swizzle_mode = config.b_swizzle,
+        ](ctx, b_device)
+        var c_tma_op = create_tma_tile[
+            KernelType.CTmaTile.tile_layout,
+            KernelType.CTmaTile.desc_layout,
+            c_tma_tile_shape,
+            swizzle_mode = config.c_swizzle,
+        ](ctx, c_device)
+        var sfa_tma_op = create_tma_tile[
+            KernelType.SFATmaTile.tile_layout,
+            KernelType.SFATmaTile.desc_layout,
+            sfa_tma_tile_shape,
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        ](ctx, sfa_4d)
+        var sfb_tma_op = create_tma_tile[
+            KernelType.SFBTmaTile.tile_layout,
+            KernelType.SFBTmaTile.desc_layout,
+            sfb_tma_tile_shape,
+            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+        ](ctx, sfb_4d)
+        ctx.enqueue_function[kernel, kernel](
+            a_tma_op,
+            b_tma_op,
+            c_tma_op,
+            sfa_tma_op,
+            sfb_tma_op,
+            _to_1d[DType.uint32](a_offsets),
+            _to_1d[DType.uint32](a_scale_offsets),
+            _to_1d[DType.int32](expert_ids),
+            _to_1d[DType.float32](expert_scales),
+            c_device,
+            num_active_experts,
+            UInt32(K),
+            grid_dim=grid_dim,
+            block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
+            cluster_dim=Dim(
+                cluster_shape[0], cluster_shape[1], cluster_shape[2]
+            ),
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(b200_smem)
+            ),
+        )
 
 
 fn grouped_matmul_dynamic_scaled_nvfp4[

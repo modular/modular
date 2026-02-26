@@ -35,9 +35,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """Implements a double-ended queue.
@@ -186,7 +184,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         # Remember how many elements we have.
         self._tail = args_length
 
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a deep copy of the given deque.
 
         Args:
@@ -450,6 +448,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             fmt.TypeNames[Self.ElementType](),
         ).fields[FieldsFn=write_fields]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of a `Deque`.
@@ -461,6 +460,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self.write_to(output)
         return output^
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns a string representation of a `Deque`.
@@ -1015,8 +1015,7 @@ struct _DequeIter[
     fn __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             if self.index >= len(self.src[]):
                 raise StopIteration()
 
@@ -1033,8 +1032,7 @@ struct _DequeIter[
     fn bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             iter_len = len(self.src[]) - self.index
         else:
             iter_len = self.index

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 import numpy as np
@@ -31,19 +31,18 @@ from max.graph import (
     ops,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention.attention_with_rope import (
+from max.nn.attention.attention_with_rope import (
     AttentionWithRope,
     AttentionWithRopeNoOpaque,
     Module,
     PagedKVCacheTensorsNoOpaque,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     NestedIterableDataclass,
     PagedCacheValues,
 )
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
 AttentionFn = Callable[
@@ -67,7 +66,7 @@ def build_and_execute_graph(
     device: Device,
     attention_fn: AttentionFn,
     model: Module,
-    kv_inputs: PagedKVCacheTensorsNoOpaque,
+    kv_inputs: Sequence[Buffer],
     kv_input_symbols: NestedIterableDataclass,
 ) -> npt.NDArray[np.floating[Any]]:
     device_ref = DeviceRef.from_device(device)
@@ -136,7 +135,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         dtype=DType.float32,
         num_layers=1,
         page_size=page_size,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         devices=[DeviceRef.from_device(device)],
     )
 
@@ -179,6 +178,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         kv_params,
         total_num_pages=32,
         session=session,
+        max_batch_size=128,
     )
 
     # Create contexts and claim seq_ids in cache.
@@ -191,9 +191,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
-    kv_inputs = PagedKVCacheTensorsNoOpaque(
-        *kv_manager.get_runtime_inputs([batch])[0]
-    )
+    kv_inputs = list(kv_manager.runtime_inputs([batch])[0])
     kv_input_symbols = kv_params.get_symbolic_inputs()[0]
 
     def reference_attention_fn(

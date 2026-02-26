@@ -13,7 +13,6 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.core.context_validators import (
     validate_only_one_image,
@@ -21,7 +20,6 @@ from max.pipelines.core.context_validators import (
 )
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextAndVisionTokenizer,
 )
 
@@ -30,12 +28,12 @@ from .model import PixtralModel
 from .model_config import PixtralConfig
 
 pixtral_arch = SupportedArchitecture(
-    name="LlavaForConditionalGeneration_Legacy",
+    name="LlavaForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistral-community/pixtral-12b"],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "bfloat16": ["paged"],
     },
     pipeline_model=PixtralModel,
     tokenizer=TextAndVisionTokenizer,

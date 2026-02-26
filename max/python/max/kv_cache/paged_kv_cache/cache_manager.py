@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the :class:`PagedKVCacheManager` for managing paged KV cache with data and tensor parallelism."""
+
 from __future__ import annotations
 
 import logging
@@ -18,13 +20,13 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-from max.driver import Buffer, Device
+from max.driver import Device
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
 from .increment_cache_lengths import IncrementCacheLengthsProcessor
@@ -47,7 +49,7 @@ class PagedKVCacheManager:
         kv_manager.alloc(ctx2, replica_idx=1, num_steps=10)
 
         # Get KVCache inputs to feed to graph
-        kv_cache_inputs = kv_manager.get_runtime_inputs(
+        kv_cache_inputs = kv_manager.runtime_inputs(
             [[ctx1, ctx2]], num_steps=10
         )
 
@@ -71,6 +73,8 @@ class PagedKVCacheManager:
         total_num_pages: int,
         total_num_host_pages: int = 0,
         enable_runtime_checks: bool = False,
+        *,
+        max_batch_size: int,
     ) -> None:
         """Initialize the multi-device paged KV cache manager.
 
@@ -79,8 +83,13 @@ class PagedKVCacheManager:
             session: The MAX Engine inference session
             total_num_pages: The total number of pages to allocate
             total_num_host_pages: The total number of host pages to allocate
+            max_batch_size: Maximum runtime batch size used to preallocate
+                per-replica runtime lookup-table/cache-length row capacity.
             enable_runtime_checks: Whether to enable runtime checks
         """
+        if max_batch_size < 1:
+            raise ValueError("max_batch_size must be positive")
+
         self.params = params
         self.devices = [d.to_device() for d in params.devices]
 
@@ -93,15 +102,16 @@ class PagedKVCacheManager:
         )
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
-        dp_1_params = params.copy_as_dp_1()
-        for devices in self.devices_per_replica:
+        for replica_idx, devices in enumerate(self.devices_per_replica):
+            replica_params = params.copy_as_dp_1(replica_idx=replica_idx)
             self._replica_managers.append(
                 _TPPagedKVCacheManager(
-                    params=dp_1_params,
+                    params=replica_params,
                     total_num_pages=total_num_pages,
                     total_num_host_pages=total_num_host_pages,
                     devices=devices,
                     session=session,
+                    max_batch_size=max_batch_size,
                     enable_runtime_checks=enable_runtime_checks,
                 )
             )
@@ -164,10 +174,12 @@ class PagedKVCacheManager:
         """
         return self._replica_managers[replica_idx].alloc(data, num_steps)
 
-    def get_runtime_inputs(
+    def runtime_inputs(
         self,
         batches: Sequence[Sequence[TextGenerationContext]],
         num_steps: int = 1,
+        *,
+        max_cache_length: int | None = None,
     ) -> list[RaggedKVCacheInputs]:
         """Gets the graph inputs for per-replica batches of requests.
 
@@ -177,10 +189,18 @@ class PagedKVCacheManager:
         Args:
             batches: Per-replica batches of requests
             num_steps: Number of steps to run for
+            max_cache_length: Optional explicit max cache length to size LUT
+                views. If not provided, uses request-derived runtime length.
         """
         ret_list: list[RaggedKVCacheInputs] = []
         for replica, ctxs in zip(self._replica_managers, batches, strict=True):
-            ret_list.extend(replica.get_runtime_inputs(ctxs, num_steps))
+            ret_list.extend(
+                replica.runtime_inputs(
+                    ctxs,
+                    num_steps,
+                    max_cache_length=max_cache_length,
+                )
+            )
         return ret_list
 
     def release(self, request_id: RequestID, replica_idx: int) -> None:
@@ -300,6 +320,6 @@ class PagedKVCacheManager:
         """Returns number of used host pages for the replica."""
         return self._replica_managers[replica_idx].num_used_host_pages
 
-    def get_device_tensors(self, replica_idx: int) -> list[Buffer]:
-        """Returns device tensors for the replica."""
-        return self._replica_managers[replica_idx].device_tensors
+    def get_device_buffer(self, replica_idx: int) -> KVCacheBuffer:
+        """Returns device buffer for the replica."""
+        return self._replica_managers[replica_idx].device_buffer

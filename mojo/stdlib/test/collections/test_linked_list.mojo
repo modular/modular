@@ -96,6 +96,18 @@ def test_reverse():
     assert_equal(l1[2], 1)
 
 
+def test_reverse_prev_pointers():
+    var l1 = LinkedList[Int](1, 2, 3)
+    l1.reverse()
+
+    # After reverse, forward order is [3, 2, 1].
+    # Backward iteration via __reversed__ should yield [1, 2, 3].
+    var riter = l1.__reversed__()
+    assert_equal(riter.__next__(), 1)
+    assert_equal(riter.__next__(), 2)
+    assert_equal(riter.__next__(), 3)
+
+
 def test_pop():
     var l1 = LinkedList[Int](1, 2, 3)
     assert_equal(l1.pop(), 3)
@@ -146,16 +158,6 @@ def test_setitem():
     assert_equal(l1[0], 4)
     assert_equal(l1[1], 2)
     assert_equal(l1[2], 5)
-
-
-def test_str():
-    var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(l1.__str__(), "[1, 2, 3]")
-
-
-def test_repr():
-    var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(l1.__repr__(), "LinkedList[Int]([Int(1), Int(2), Int(3)])")
 
 
 def test_pop_on_empty_list():
@@ -402,7 +404,7 @@ def test_list_extend_non_trivial():
     # Tests three things:
     #   - extend() for non-plain-old-data types
     #   - extend() with mixed-length self and other lists
-    #   - extend() using optimal number of __moveinit__() calls
+    #   - extend() using optimal number of move constructor calls
     var v1 = LinkedList[MoveCounter[String]]()
     v1.append(MoveCounter[String]("Hello"))
     v1.append(MoveCounter[String]("World"))

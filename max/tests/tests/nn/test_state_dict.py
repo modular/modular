@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Weight
-from max.nn.legacy.layer.layer import Module
+from max.nn.layer.layer import Module
 
 
 # Dummy module for testing load_state_dict

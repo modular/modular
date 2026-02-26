@@ -13,7 +13,6 @@
 
 from math import ceildiv
 from random import randn, seed
-from sys import has_nvidia_gpu_accelerator
 
 import gpu.primitives.warp as warp
 from buffer import NDBuffer
@@ -22,23 +21,19 @@ from gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
 from linalg.matmul.gpu import matmul_kernel
 
-from utils import IndexList
-from utils.index import Index
+from utils import Index, IndexList
 from utils.numerics import isnan
 from internal_utils import assert_almost_equal
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
     print("== run_matvec kernel")
 
     var iterations = 100
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_naive = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_naive = alloc[Float32](M * N)
 
     for i in range(M * K):
         a_host[i] = Float32(i)
@@ -188,17 +183,16 @@ fn run_matvec_with_epilogue_fn(
     comptime seed_val = 42
 
     var iterations = 100
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
 
     seed(seed_val)
 
     # over-allocate C to simulate a view tensor
-    var c_host = UnsafePointer[Float32].alloc(M * N * c_stride)
-    var c_host_naive = UnsafePointer[Float32].alloc(M * N * c_stride)
+    var c_host = alloc[Float32](M * N * c_stride)
+    var c_host_naive = alloc[Float32](M * N * c_stride)
 
     randn(a_host, M * K)
-
     randn(b_host, K * N)
 
     for i in range(M * N * c_stride):
@@ -371,6 +365,5 @@ def main():
         run_matvec(4096, 1, 4096, ctx=ctx)
         run_matvec_with_epilogue_fn(4096, 1, 4096, ctx=ctx)
         # gevm for vector matrix multiply
-        if has_nvidia_gpu_accelerator():
-            run_matvec(1, 4096, 4096, ctx=ctx)
-            run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)
+        run_matvec(1, 4096, 4096, ctx=ctx)
+        run_matvec_with_epilogue_fn(1, 4096, 4096, ctx=ctx)

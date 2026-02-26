@@ -69,13 +69,11 @@ fn _compute_kv_cache_dynamic_shape_strides[
     var out_index = kv_cache_rank - 1
     var stride = 1
 
-    @parameter
-    for i in reversed(range(blocks.rank)):
+    comptime for i in reversed(range(blocks.rank)):
         var dim = blocks.dim[i]()
 
         # Skip dimensions in the drop list (kv_idx and layer_idx).
-        @parameter
-        if i not in drop_list:
+        comptime if i not in drop_list:
             kv_cache_shape[out_index] = dim
             kv_cache_strides[out_index] = stride
             out_index = out_index - 1
@@ -118,6 +116,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
     comptime page_size_: Int
     comptime scale_dtype: DType = DType.invalid
     comptime quantization_enabled: Bool = False
+    comptime quantization_granularity: Int = 1
 
     fn cache_lengths_nd(
         self,
@@ -232,6 +231,18 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         """Returns a pointer to the scales block at the requested indices."""
         ...
 
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        """Returns the base pointer to the scales tensor.
+
+        For PagedKVCache with quantization enabled, this returns the raw
+        base pointer of the scales LayoutTensor. For caches without
+        quantization, returns a null pointer.
+        """
+        ...
+
     @staticmethod
     fn max_tile_size() -> Int:
         """Returns the maximum tile size for the KVCache."""
@@ -304,6 +315,7 @@ struct ContinuousBatchingKVCache[
     comptime page_size_ = 0
     # Note: quantization not supported for `ContinuousBatchingKVCache`.
     comptime scale_dtype = DType.float32
+    comptime quantization_granularity = 1
     # Shape is [num_blocks, max_seq_len, num_heads, head_size].
     comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
@@ -541,10 +553,9 @@ struct ContinuousBatchingKVCache[
         swizzle_mode,
     ]:
         """Creates a TMA tile for this KV cache."""
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
-            "BK must be a multiple of swizzle granularity",
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
         # The continuous cache is laid out as [num_blocks, num_layers, seq_len, num_heads, head_size]
         # We create a view of the data as a flattened 2D tensor
         var total_blocks = self.blocks.dim[0]()
@@ -587,10 +598,9 @@ struct ContinuousBatchingKVCache[
             BN=BK,
         ],
     ) raises:
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
-            "BK must be a multiple of swizzle granularity",
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
         var total_blocks = self.blocks.dim[0]()
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             self.blocks.dim[1]()
@@ -634,13 +644,21 @@ struct ContinuousBatchingKVCache[
         """
         return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
 
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        """Returns a null pointer. ContinuousBatchingKVCache does not support
+        quantization."""
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
+
 
 struct PagedKVCache[
     dtype_: DType,
     kv_params_: KVCacheStaticParams,
     page_size: Int,
     scale_dtype_: DType = DType.invalid,
-    quantization_granularity: Int = 1,
+    quantization_granularity_: Int = 1,
 ](KVCacheT, TrivialRegisterPassable):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
@@ -656,7 +674,7 @@ struct PagedKVCache[
         kv_params_: The kv-cache static parameters.
         page_size: The size of the page.
         scale_dtype_: Dtype of the quantization scales (if quantization enabled).
-        quantization_granularity:  Block size used for quantization (e.g. 128).
+        quantization_granularity_:  Block size used for quantization (e.g. 128).
     """
 
     comptime dtype = Self.dtype_
@@ -664,6 +682,7 @@ struct PagedKVCache[
     comptime page_size_ = Self.page_size
     comptime scale_dtype = Self.scale_dtype_
     comptime quantization_enabled = Self.scale_dtype_ != DType.invalid
+    comptime quantization_granularity = Self.quantization_granularity_
 
     # Shape is [total_num_blocks, page_size, num_heads, head_size].
     # This tensor is a view of a 6D parent tensor with shape
@@ -705,6 +724,7 @@ struct PagedKVCache[
     #   max(cache_lengths[i] + prompt_lengths[i] for i in range(batch_size)
     var max_cache_length: UInt32
 
+    # Number of quantization scale values per token.
     comptime head_dim_granularity = ceildiv(
         Int(Self.kv_params.head_size),
         Self.quantization_granularity,
@@ -714,7 +734,7 @@ struct PagedKVCache[
         UNKNOWN_VALUE,  # num_blocks
         Self.page_size,  # page_size
         Int(Self.kv_params.num_heads),  # num_heads
-        Self.head_dim_granularity,  # block size
+        Self.head_dim_granularity,  # scales per token
     )
     comptime scales_layout = Layout.row_major(Self.scales_shape)
     comptime scales_block_type = LayoutTensor[
@@ -826,10 +846,9 @@ struct PagedKVCache[
         swizzle_mode,
     ]:
         """Creates a TMA tile for this KV cache."""
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
-            "BK must be a multiple of swizzle granularity",
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
         # Paged cache collection is (where `$idx` means subsetting that idx):
         # [total_num_blocks, $kv_idx, $layer_idx, page_size, num_heads, head_size]
         #
@@ -874,10 +893,9 @@ struct PagedKVCache[
             BN=BK,
         ],
     ) raises:
-        constrained[
-            (BK % swizzle_granularity[Self.dtype, swizzle_mode]()) == 0,
-            "BK must be a multiple of swizzle granularity",
-        ]()
+        comptime assert (
+            BK % swizzle_granularity[Self.dtype, swizzle_mode]()
+        ) == 0, "BK must be a multiple of swizzle granularity"
         var total_blocks = self.blocks.dim[0]()
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             Self.page_size
@@ -974,8 +992,7 @@ struct PagedKVCache[
     ]:
         """Loads an element from the given index."""
 
-        @parameter
-        if Self.quantization_enabled:
+        comptime if Self.quantization_enabled:
             comptime assert output_dtype != Self.dtype, (
                 "Output type should not be FP8 when KVCache quantization is"
                 " disabled"
@@ -983,8 +1000,7 @@ struct PagedKVCache[
 
         var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
 
-        @parameter
-        if Self.quantization_enabled:
+        comptime if Self.quantization_enabled:
             var quantized_val = self.blocks.load[width=width](idx)
             var scale = self.load_scale[width=1](
                 bs, head_idx, tok_idx, head_dim_idx
@@ -1044,8 +1060,7 @@ struct PagedKVCache[
     ):
         """Stores the quantization scales at the given index."""
 
-        @parameter
-        if Self.quantization_enabled:
+        comptime if Self.quantization_enabled:
             comptime assert (
                 Self.scale_dtype != DType.invalid
             ), "Valid quantization scale data type needed"
@@ -1136,6 +1151,18 @@ struct PagedKVCache[
             full_scale_block_idx
         )
         return scales_ptr
+
+    @always_inline
+    fn scales_raw_ptr(
+        self,
+    ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
+        """Returns the base pointer to the scales tensor, or null if scales
+        are not set."""
+
+        @parameter
+        if Self.quantization_enabled:
+            return self.scales.value().ptr
+        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
 
 
 trait KVCollectionT(ImplicitlyCopyable):
@@ -1269,13 +1296,18 @@ struct PagedKVCacheCollection[
     kv_params_: KVCacheStaticParams,
     page_size: Int,
     scale_dtype_: DType = DType.invalid,
+    quantization_granularity_: Int = 1,
 ](KVCollectionT):
     comptime name_str = "paged"
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
     comptime scale_dtype = Self.scale_dtype_
     comptime CacheType = PagedKVCache[
-        Self.dtype, Self.kv_params, Self.page_size, Self.scale_dtype
+        Self.dtype,
+        Self.kv_params,
+        Self.page_size,
+        Self.scale_dtype,
+        Self.quantization_granularity_,
     ]
 
     # Shape is [total_num_blocks, 2, num_layers, page_size, num_heads, head_size].
@@ -1294,6 +1326,7 @@ struct PagedKVCacheCollection[
         Self.dtype, Self.blocks_layout, MutAnyOrigin
     ]
 
+    # Match PagedKVCache.head_dim_granularity.
     comptime head_dim_granularity = ceildiv(
         Int(Self.kv_params.head_size),
         Self.CacheType.quantization_granularity,
@@ -1305,7 +1338,7 @@ struct PagedKVCacheCollection[
         UNKNOWN_VALUE,  # num_layers
         Self.page_size,  # page_size
         Int(Self.kv_params.num_heads),  # num_heads
-        Self.head_dim_granularity,  # block size
+        Self.head_dim_granularity,  # scales per token
     )
     comptime scales_layout = Layout.row_major(Self.scales_shape)
     comptime scales_type = LayoutTensor[
@@ -1390,8 +1423,7 @@ struct PagedKVCacheCollection[
             ]
         ] = None
 
-        @parameter
-        if Self.CacheType.quantization_enabled:
+        comptime if Self.CacheType.quantization_enabled:
             if self.scales is not None:
                 scales_block = Self.CacheType.scales_block_type(
                     self.scales.value().ptr

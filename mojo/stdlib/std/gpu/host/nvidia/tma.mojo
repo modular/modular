@@ -96,8 +96,7 @@ struct TensorMapDataType(TrivialRegisterPassable):
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
-        @parameter
-        if dtype == DType.float32:
+        comptime if dtype == DType.float32:
             return Self.FLOAT32
         elif dtype == DType.float16:
             return Self.FLOAT16
@@ -302,7 +301,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         self.data = StaticTuple[UInt8, 128]()
 
     @always_inline
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Creates a copy of a TMA descriptor.
 
         Args:
@@ -375,8 +374,7 @@ fn create_tma_descriptor[
     var box_dim_arg = InlineArray[Int32, rank](uninitialized=True)
     var element_stride_arg = InlineArray[Int32, rank](fill=1)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         global_dim_arg[i] = Int64(global_shape[rank - i - 1])
         global_strides_arg[i] = Int64(
             global_strides[rank - i - 1] * size_of[dtype]()

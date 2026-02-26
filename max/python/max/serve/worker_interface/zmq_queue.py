@@ -35,10 +35,7 @@ T = TypeVar("T")
 Request = TypeVar("Request")
 Reply = TypeVar("Reply")
 
-DEFAULT_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder(
-    use_shared_memory=True,
-    shared_memory_threshold=0,
-)
+DEFAULT_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder(use_shared_memory=True)
 
 NON_SHARED_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder()
 

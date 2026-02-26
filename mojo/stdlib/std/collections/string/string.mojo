@@ -55,9 +55,7 @@ struct String(
     IntableRaising,
     KeyElement,
     PathLike,
-    Representable,
     Sized,
-    Stringable,
     Writable,
     Writer,
 ):
@@ -352,14 +350,6 @@ struct String(
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
-
-    @deprecated(
-        "Strings must contain valid utf8, use `String(unsafe_from_utf8=...)`"
-        " instead"
-    )
-    @doc_private
-    fn __init__(out self, *, bytes: Span[Byte, ...]):
-        self = Self(unsafe_from_utf8=bytes)
 
     fn __init__(out self, *, unsafe_from_utf8: Span[Byte]):
         """Construct a string by copying the data. This constructor is explicit
@@ -664,7 +654,7 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     @always_inline("nodebug")
-    fn __copyinit__(out self, copy: Self):
+    fn __init__(out self, *, copy: Self):
         """Copy initialize the string from another string.
 
         Args:
@@ -931,22 +921,6 @@ struct String(
         (self.unsafe_ptr_mut() + length).init_pointee_move(byte)
         self.set_byte_length(length + 1)
 
-    @deprecated(
-        "Appending arbitrary bytes can create invalid UTF-8, breaking String's"
-        " safety guarantees. Use `append(Codepoint)` instead."
-    )
-    fn append_byte(mut self, byte: Byte):
-        """Append a byte to the string.
-
-        Args:
-            byte: The byte to append.
-        """
-        self._clear_nul_terminator()
-        var len = self.byte_length()
-        self.reserve(len + 1)
-        self.unsafe_ptr_mut()[len] = byte
-        self.set_byte_length(len + 1)
-
     fn append(mut self, codepoint: Codepoint):
         """Append a codepoint to the string.
 
@@ -1063,6 +1037,7 @@ struct String(
         """
         return self.byte_length()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __str__(self) -> String:
         """Gets the string itself.
@@ -1075,13 +1050,14 @@ struct String(
         """
         return self
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of the `String` instance.
 
         Returns:
             A new representation of the string.
         """
-        return StringSlice(self).__repr__()
+        return repr(StringSlice(self))
 
     @always_inline("nodebug")
     fn __fspath__(self) -> String:
@@ -1318,26 +1294,6 @@ struct String(
 
         # Safety: we ensure the string is null-terminated above.
         return CStringSlice(unsafe_from_ptr=self.unsafe_ptr().bitcast[c_char]())
-
-    @deprecated("Use `String.as_c_string_slice()` instead.")
-    fn unsafe_cstr_ptr(
-        mut self,
-    ) -> UnsafePointer[c_char, ImmutOrigin(origin_of(self))]:
-        """Retrieves a C-string-compatible pointer to the underlying memory.
-
-        The returned pointer is guaranteed to be null, or NUL terminated.
-
-        Returns:
-            The pointer to the underlying memory.
-        """
-        # Add a nul terminator, making the string mutable if not already
-        if not self._has_nul_terminator():
-            var ptr = self.unsafe_ptr_mut(capacity=len(self) + 1)
-            var len = self.byte_length()
-            ptr[len] = 0
-            self._capacity_or_data |= Self.FLAG_HAS_NUL_TERMINATOR
-
-        return self.unsafe_ptr().bitcast[c_char]()
 
     fn as_bytes(self) -> Span[Byte, origin_of(self)]:
         """Returns a contiguous slice of the bytes owned by this string.
@@ -2509,8 +2465,7 @@ fn _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:
 
 
 fn _atof_error[reason: StaticString = ""](str_ref: StringSlice) -> Error:
-    @parameter
-    if reason:
+    comptime if reason:
         return Error(
             "String is not convertible to float: '",
             str_ref,
@@ -2617,7 +2572,7 @@ fn _calc_initial_buffer_size_int64(n0: UInt64) -> Int:
 
 
 fn _calc_initial_buffer_size(n0: Int) -> Int:
-    var sign = 0 if n0 > 0 else 1
+    var sign = 0 if n0 >= 0 else 1
 
     # Add 1 for the terminator
     return sign + n0._decimal_digit_count() + 1
@@ -2628,13 +2583,11 @@ fn _calc_initial_buffer_size(n: Float64) -> Int:
 
 
 fn _calc_initial_buffer_size[dtype: DType](n0: Scalar[dtype]) -> Int:
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         var n = abs(n0)
-        var sign = 0 if n0 > 0 else 1
+        var sign = 0 if n0 >= 0 else 1
 
-        @parameter
-        if is_32bit() or bit_width_of[dtype]() <= 32:
+        comptime if is_32bit() or bit_width_of[dtype]() <= 32:
             return sign + _calc_initial_buffer_size_int32(Int(n)) + 1
         else:
             return (
@@ -2654,8 +2607,7 @@ fn _calc_format_buffer_size[dtype: DType]() -> Int:
     # TODO:
     #   Use a smaller size based on the `dtype`, e.g. we don't need as much
     #   space to store a formatted int8 as a float64.
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         return 64 + 1
     else:
         return 128 + 1  # Add 1 for the terminator

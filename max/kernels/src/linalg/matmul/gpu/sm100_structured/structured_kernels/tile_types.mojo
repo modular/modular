@@ -34,7 +34,6 @@ from sys import size_of
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import LayoutTensor
 from layout import Layout as LegacyLayout, UNKNOWN_VALUE
 from layout.int_tuple import IntTuple
 from layout.tma_async import (
@@ -307,8 +306,7 @@ fn _to_legacy_layout[L: TensorLayout]() -> LegacyLayout:
     var shape = IntTuple()
     var stride = IntTuple()
 
-    @parameter
-    for i in range(L.rank):
+    comptime for i in range(L.rank):
         shape.append(L.static_shape[i])
         stride.append(L.static_stride[i])
 
@@ -641,17 +639,13 @@ fn lt_to_tt[
     var shape = Coord[*ShapeTypes]()
     var stride = Coord[*StrideTypes]()
 
-    @parameter
-    for i in range(2):
-
-        @parameter
-        if not shape.element_types[i].is_static_value:
+    comptime for i in range(2):
+        comptime if not shape.element_types[i].is_static_value:
             shape[i] = rebind[shape.element_types[i]](
                 Scalar[DType.int64](lt.runtime_layout.shape.value[i])
             )
 
-        @parameter
-        if not stride.element_types[i].is_static_value:
+        comptime if not stride.element_types[i].is_static_value:
             stride[i] = rebind[stride.element_types[i]](
                 Scalar[DType.int64](lt.runtime_layout.stride.value[i])
             )

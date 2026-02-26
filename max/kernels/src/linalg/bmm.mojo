@@ -103,8 +103,7 @@ fn _get_batch_dims[
     res = {}
     var curr_index = flat_index
 
-    @parameter
-    for idx in range(rank - 2):
+    comptime for idx in range(rank - 2):
         # Count from the back, skipping last two dims.
         comptime i = rank - idx - 3
         res[i] = curr_index % shape[i]
@@ -131,8 +130,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
 
     var batch_size = 1
 
-    @parameter
-    for i in range(rank - 2):
+    comptime for i in range(rank - 2):
         batch_size *= buffer.dim[i]()
 
     var matrix_shape = IndexList[3](
@@ -244,16 +242,14 @@ fn _reshape_tile_tensor_with_batch_to_3d(
     var shape = Tuple[*out_shape_types]()
     var strides = Tuple[*out_stride_types]()
 
-    @parameter
-    for i in range(3):
+    comptime for i in range(3):
         comptime idx = rank - 3 + i
 
         # copy the stride
         var stride_ptr = UnsafePointer(to=strides[i])
         comptime StrideType = out_stride_types[i]
 
-        @parameter
-        if StrideType.is_static_value:
+        comptime if StrideType.is_static_value:
             stride_ptr.init_pointee_copy(
                 rebind[StrideType](Idx[StrideType.static_value]())
             )
@@ -271,19 +267,15 @@ fn _reshape_tile_tensor_with_batch_to_3d(
         var shape_ptr = UnsafePointer(to=shape[i])
         comptime ShapeType = out_shape_types[i]
 
-        @parameter
-        if ShapeType.is_static_value:
+        comptime if ShapeType.is_static_value:
             shape_ptr.init_pointee_copy(
                 rebind[ShapeType](Idx[ShapeType.static_value]())
             )
         else:
             var shape_val = tensor.layout.shape[idx]().value()
 
-            @parameter
-            if i == 0:
-
-                @parameter
-                for batch_idx in range(rank - 3):
+            comptime if i == 0:
+                comptime for batch_idx in range(rank - 3):
                     shape_val *= tensor.layout.shape[batch_idx]().value()
 
             shape_ptr.init_pointee_copy(
@@ -314,8 +306,7 @@ fn _reshape_nd_buffer_with_batch_to_2d(
 
     var batch_size = 1
 
-    @parameter
-    for i in range(rank - 1):
+    comptime for i in range(rank - 1):
         batch_size *= buffer.dim[i]()
 
     var matrix_shape = IndexList[2](batch_size, buffer.dim[rank - 1]())
@@ -374,8 +365,7 @@ fn _small_batched_matmul[
             fn output_fn[
                 out_type: DType, width: Int, r: Int
             ](i: IndexList[r], value: SIMD[out_type, width]):
-                @parameter
-                if elementwise_epilogue_fn:
+                comptime if elementwise_epilogue_fn:
                     comptime func = elementwise_epilogue_fn.value()
                     func[out_type, width, rank](indices.canonicalize(), value)
                 else:
@@ -437,8 +427,7 @@ fn _small_batched_matmul[
 
                     vectorize[simd_width, unroll_factor=2](N, compute_fn)
 
-            @parameter
-            if elementwise_epilogue_fn:
+            comptime if elementwise_epilogue_fn:
                 for m in range(M):
                     indices[rank - 2] = m
 
@@ -470,8 +459,8 @@ fn batched_matmul[
     target: StaticString = "cpu",
 ](
     c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
-    a_buf: NDBuffer[a_type, rank, _, _, _],
-    b_buf: NDBuffer[b_type, rank, _, _, _],
+    a_buf: NDBuffer[mut=False, a_type, rank, _, _, _],
+    b_buf: NDBuffer[mut=False, b_type, rank, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -496,8 +485,7 @@ fn batched_matmul[
         task_id=get_safe_task_id(context),
     ):
         # TODO: generalize to > rank 3
-        @parameter
-        if (
+        comptime if (
             single_thread_blocking_override
             and not transpose_b
             and is_cpu[target]()
@@ -508,7 +496,11 @@ fn batched_matmul[
                 b_type,
                 c_type,
                 elementwise_epilogue_fn,
-            ](c_buf, a_buf, b_buf)
+            ](
+                c_buf.make_dims_unknown(),
+                a_buf.make_dims_unknown(),
+                b_buf.make_dims_unknown(),
+            )
 
         batched_matmul[
             transpose_b=transpose_b,
@@ -538,8 +530,7 @@ fn _batched_matmul_cpu[
 
     # Batched matmul calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
     # directed to the special Apple-specific implementation.
-    @parameter
-    if use_apple_accelerate_lib[c_type, a_type, b_type]():
+    comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
         apple_batched_matmul[
             transpose_b=transpose_b,
             elementwise_epilogue_fn=elementwise_epilogue_fn,
@@ -663,8 +654,7 @@ fn _batched_matmul_cpu[
                 # the caller provided the elementwise epilogue fn over the original
                 # buffer rank, not the collapsed buffer rank
                 # so un-collapse the batch dims here
-                @parameter
-                if elementwise_epilogue_fn:
+                comptime if elementwise_epilogue_fn:
                     batch_coords[rank - 1] = out_coords[1]
                     batch_coords[rank - 2] = out_coords[0]
 
@@ -745,8 +735,7 @@ fn naive_batched_matmul_kernel[
         var b_val = b_tensor[z, x, ki] if transpose_b else b_tensor[z, ki, x]
         val += a_tensor[z, y, ki].cast[accum_type]() * b_val.cast[accum_type]()
 
-    @parameter
-    if elementwise_lambda_fn:
+    comptime if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         var nd_corrds = _get_start_indices_of_nth_subvolume_uint[2](
             UInt(z), c_buff_nd_shape
@@ -810,16 +799,14 @@ fn batched_matmul_kernel_gpu[
     fn elementwise_epilogue_fn_wrapper[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
             var batch_coords = IndexList[3](Int(block_idx.z))
             batch_coords[2] = out_coords[1]
             batch_coords[1] = out_coords[0]
             elementwise_epilogue(batch_coords, val)
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         multistage_gemm_kernel[
             config=config,
             elementwise_lambda_fn = Optional[matmul_elementwise_epilogue_type](
@@ -841,8 +828,7 @@ fn get_shape_index_list[
 ](tensor: LayoutTensor[dtype, layout, ...]) -> IndexList[rank]:
     var index_list = IndexList[rank](0)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         index_list[i] = tensor.dim(i)
     return index_list
 
@@ -893,8 +879,7 @@ fn _batched_matmul_gpu[
         with Trace[TraceLevel.OP]("batched_matmul_via_matmul"):
             # If the batch size is 1, then this is just a matmul and we can use the
             # matmul kernel directly.
-            @parameter
-            if elementwise_epilogue_fn:
+            comptime if elementwise_epilogue_fn:
                 comptime elementwise_epilogue = elementwise_epilogue_fn.value()
 
                 @parameter
@@ -942,8 +927,7 @@ fn _batched_matmul_gpu[
         and ctx.default_device_info.compute >= A100.compute
     )
 
-    @parameter
-    if has_static_NK and use_A100_kernels and multistage_gemm_cond:
+    comptime if has_static_NK and use_A100_kernels and multistage_gemm_cond:
         comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
         comptime batched_matmul_type = batched_matmul_kernel_gpu[
@@ -1082,13 +1066,16 @@ fn batched_matmul[
 ) raises:
     comptime assert is_valid_target[target](), "unsupported target"
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         _batched_matmul_cpu[
             transpose_b=transpose_b,
             elementwise_epilogue_fn=elementwise_epilogue_fn,
             saturated_vnni=saturated_vnni,
-        ](c_buf, a_buf, b_buf)
+        ](
+            c_buf.make_dims_unknown(),
+            a_buf.make_dims_unknown(),
+            b_buf.make_dims_unknown(),
+        )
     else:
         comptime assert (
             saturated_vnni == False
@@ -1234,8 +1221,7 @@ fn _bmm_sm100_blockwise_scaled_fp8_kernel[
     fn elementwise_epilogue_fn_wrapper[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
             var batch_coords = IndexList[3](Int(block_idx.z))
             batch_coords[2] = out_coords[1]
@@ -1597,8 +1583,7 @@ fn batched_matmul_dynamic_scaled_fp8[
         and weight_scale_granularity == "block"
     ), "Only support block-wise scale granularity"
 
-    @parameter
-    if ctx.default_device_info == B200:
+    comptime if ctx.default_device_info == B200:
         comptime umma_shape = Index(64, 64, 32)
         comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B

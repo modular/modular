@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import align_down, ceildiv, exp, exp2, log
-from collections import OptionalReg
+from collections import Optional, OptionalReg
 
 from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
@@ -40,6 +40,13 @@ from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
+from layout._coord import RuntimeInt, coord_to_index_list
+from layout._layout import RowMajorLayout, row_major
+from layout._tile_tensor import (
+    TileTensor,
+    TensorLayout,
+    stack_allocation as tt_stack_allocation,
+)
 from layout.tensor_core import get_fragment_size
 from memory import stack_allocation
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
@@ -68,8 +75,7 @@ fn reduce_add_simd[
     between iterations as in vectorize.
     """
 
-    @parameter
-    if step_simd_width == 1:
+    comptime if step_simd_width == 1:
         # When the step_simd_width is 1, then we add to the scalar value.
         scalar += val[0]
     else:
@@ -483,8 +489,7 @@ fn softmax_3_pass[
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime assert output.rank == 1
 
-    @parameter
-    if logsoftmax:
+    comptime if logsoftmax:
         _softmax_3_pass_base[
             simd_width,
             dtype,
@@ -721,8 +726,7 @@ fn softmax_kernel[
     for row_idx in range(block_idx.x, num_rows, grid_dim.x):
         var sink_val = Scalar[accum_type].MIN
 
-        @parameter
-        if sink:
+        comptime if sink:
             sink_val = sink_weights[row_idx % UInt(sink_weights.dim[0]())][
                 0
             ].cast[accum_type]()
@@ -741,8 +745,7 @@ fn softmax_kernel[
             accum_type=accum_type,
         ](row_coords, axis, Scalar[dtype].MIN, Int(row_size))
 
-        @parameter
-        if sink:
+        comptime if sink:
             row_max = max(row_max, sink_val)
 
         if tid == 0:
@@ -774,8 +777,7 @@ fn softmax_kernel[
             exp_sum_buf[0] = block_exp_sum
         barrier()
 
-        @parameter
-        if sink:
+        comptime if sink:
             block_exp_sum += exp(sink_val - row_max)
 
         # Step 3: Normalize output (and apply log for logsoftmax)
@@ -787,8 +789,7 @@ fn softmax_kernel[
                 * block_exp_sum_recip.cast[dtype]()
             )
 
-            @parameter
-            if logsoftmax:
+            comptime if logsoftmax:
                 normalized = log(normalized)
 
             output.store(row_coords, normalized)
@@ -871,9 +872,7 @@ fn softmax[
         "softmax",
         Trace[TraceLevel.OP]._get_detail_str[trace_information](),
     ):
-
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             _softmax_cpu[
                 dtype,
                 simd_width,
@@ -896,7 +895,186 @@ fn softmax[
                 context.get_device_context(),
             )
         else:
-            constrained[False, "unsupported target ", target]()
+            comptime assert False, String("unsupported target ", target)
+
+
+# ===----------------------------------------------------------------------=== #
+# Softmax with temperature scaling (GPU only).
+# ===----------------------------------------------------------------------=== #
+
+
+fn _softmax_temperature_kernel[
+    BLOCK_SIZE: Int,
+    dtype: DType,
+    temp_dtype: DType,
+    InputLayoutType: TensorLayout,
+    input_origin: ImmutOrigin,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    accum_type: DType = get_accum_type[dtype](),
+](
+    input: TileTensor[dtype, InputLayoutType, input_origin],
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    batch_size: Int,
+    d: Int,
+    temperature: Scalar[temp_dtype],
+    # using UnsafePointer here because cant pass optional TileTensor
+    temperature_arr: UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin],
+):
+    """GPU kernel for softmax with per-row temperature scaling.
+
+    Computes softmax(logits / T) where T is resolved per row from
+    `temperature_arr` (if non-null) or the scalar `temperature` fallback.
+    """
+
+    comptime assert input.flat_rank == 2, "input must be rank 2"
+    comptime assert output.flat_rank == 2, "output must be rank 2"
+
+    var row_size = UInt(d)
+    var num_rows = UInt(batch_size)
+
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    comptime assert (
+        accum_type.is_floating_point()
+    ), "accum_type must be floating point"
+
+    var max_buf = tt_stack_allocation[
+        dtype=accum_type, address_space = AddressSpace.SHARED
+    ](row_major[1]())
+    var exp_sum_buf = tt_stack_allocation[
+        dtype=accum_type, address_space = AddressSpace.SHARED
+    ](row_major[1]())
+
+    @parameter
+    @always_inline
+    fn _max[
+        _dtype: DType, width: Int
+    ](x: SIMD[_dtype, width], y: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        return max(x, y)
+
+    @parameter
+    @always_inline
+    fn _sum[
+        _dtype: DType, width: Int
+    ](x: SIMD[_dtype, width], y: SIMD[_dtype, width]) -> SIMD[_dtype, width]:
+        return x + y
+
+    var tid = thread_idx.x
+
+    for row_idx in range(block_idx.x, num_rows, grid_dim.x):
+        # Resolve per-row temperature, clamping to prevent division by zero.
+        var temp = temperature
+        if temperature_arr:
+            temp = temperature_arr[row_idx]
+        temp = max(temp, Scalar[temp_dtype](1e-6))
+
+        var r = Int(row_idx)
+
+        # Step 1: compute max in row.
+        var row_max = Scalar[accum_type].MIN
+        for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+            var v = input[r, Int(col)].cast[accum_type]()
+            row_max = max(row_max, v)
+
+        row_max = block_reduce[BLOCK_SIZE, _max](
+            row_max, Scalar[accum_type].MIN
+        )
+
+        if tid == 0:
+            max_buf[0] = row_max
+        barrier()
+
+        row_max = max_buf[0]
+
+        # Step 2: exp((x - max) / T) and accumulate sum.
+        var exp_sum = Scalar[accum_type](0)
+
+        for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+            var c = Int(col)
+            var logit = input[r, c].cast[accum_type]()
+            var val = exp((logit - row_max) / temp.cast[accum_type]())
+            output[r, c] = val.cast[dtype]()
+            exp_sum += val
+
+        var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](
+            exp_sum, Scalar[accum_type](0)
+        )
+
+        if tid == 0:
+            exp_sum_buf[0] = block_exp_sum
+        barrier()
+
+        # Step 3: normalize.
+        var recip = Scalar[accum_type](1) / exp_sum_buf[0]
+        for col in range(tid, row_size, UInt(BLOCK_SIZE)):
+            var c = Int(col)
+            output[r, c] = (output[r, c].cast[accum_type]() * recip).cast[
+                dtype
+            ]()
+
+
+fn softmax_with_temperature[
+    dtype: DType,
+    temp_dtype: DType = DType.float32,
+    TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+](
+    ctx: DeviceContext,
+    input: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
+    temperature: Scalar[temp_dtype] = Float32(1.0),
+    temperature_arr: Optional[
+        TileTensor[temp_dtype, TempLayoutType, ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """GPU softmax with per-row temperature scaling.
+
+    Computes `softmax(logits / T)` where T can be a scalar or a per-row array.
+    When `temperature_arr` is provided, each row uses its own temperature value.
+    Falls back to the scalar `temperature` for rows without an array entry.
+
+    Args:
+        ctx: Device context for kernel execution.
+        input: Input logits tensor [batch_size, vocab_size].
+        output: Output probability tensor (same shape as input).
+        temperature: Scalar temperature fallback (default 1.0).
+        temperature_arr: Optional per-row temperature values [batch_size].
+    """
+    comptime assert input.rank == 2, "input must be rank 2"
+    comptime assert output.rank == 2, "output must be rank 2"
+
+    var shape = coord_to_index_list(input.layout.shape_coord())
+    var batch_size = shape[0]
+    var d = shape[1]
+
+    # Extract raw pointer for the kernel (null if not provided).
+    var temp_ptr = UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]()
+    if temperature_arr:
+        temp_ptr = temperature_arr.value().ptr
+
+    comptime BLOCK_SIZE = 128
+    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    comptime sm_overprovision_factor = 32
+    var num_blocks = min(batch_size, sm_overprovision_factor * sm_count)
+
+    comptime kernel = _softmax_temperature_kernel[
+        BLOCK_SIZE,
+        dtype,
+        temp_dtype,
+        input.LayoutType,
+        ImmutOrigin(input.origin),
+        output.LayoutType,
+        output.origin,
+    ]
+    ctx.enqueue_function[kernel, kernel](
+        input.as_immut(),
+        output,
+        batch_size,
+        d,
+        temperature,
+        temp_ptr,
+        grid_dim=num_blocks,
+        block_dim=BLOCK_SIZE,
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -983,8 +1161,7 @@ fn _online_softmax_kernel[
     comptime simdwidth_row = fragment_layout.shape[0].value()
     comptime simdwidth_col = fragment_layout.shape[1].value()
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         p.vectorize[1, 2]().transpose().copy_from(
             input_warp_tile0.vectorize[1, 2]().distribute[warp_layout](lane_id)
         )
@@ -1031,8 +1208,7 @@ fn _online_softmax_kernel[
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
-    @parameter
-    for i in range(0, frag_num_rows * num_m_mmas, frag_num_rows):
+    comptime for i in range(0, frag_num_rows * num_m_mmas, frag_num_rows):
         rowmax.store(i, SIMD[dtype, frag_num_rows](min_or_neg_inf[dtype]()))
         rowsum.store(i, SIMD[dtype, frag_num_rows](0))
 
@@ -1047,8 +1223,7 @@ fn _online_softmax_kernel[
     # P has the softmax numerator for the first half, save it in q.
     o.copy_from(p)
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         p.vectorize[1, 2]().transpose().copy_from(
             input_warp_tile1.vectorize[1, 2]().distribute[warp_layout](lane_id)
         )
@@ -1070,17 +1245,10 @@ fn _online_softmax_kernel[
     # o, p has the correct softmax numerator for the 1st and 2nd half.
     # rowsum has the correct sum. Ready for correction.
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
-
-            @parameter
-            for i in range(frag_size // mma_fragment_groups):
-
-                @parameter
-                if is_nvidia_gpu():
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
+            comptime for i in range(frag_size // mma_fragment_groups):
+                comptime if is_nvidia_gpu():
                     p[n_mma * num_m_mmas + m_mma, i] /= rowsum[2 * m_mma]
                     p[n_mma * num_m_mmas + m_mma, i + frag_size // 2] /= rowsum[
                         2 * m_mma + 1
@@ -1100,8 +1268,7 @@ fn _online_softmax_kernel[
                         m_mma, 0 if fragment_transpose else i
                     ]
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         output_warp_tile0.vectorize[1, 2]().distribute[warp_layout](
             lane_id
         ).copy_from(o.vectorize[1, 2]().transpose())
@@ -1194,11 +1361,8 @@ fn _online_softmax_iter_for_mma_output[
     ](rowsum)
 
     # Initialize local max with the running max, and local sum with zero.
-    @parameter
-    for col_tile in range(num_colwise_tiles):
-
-        @parameter
-        for row in range(frag_num_rows):
+    comptime for col_tile in range(num_colwise_tiles):
+        comptime for row in range(frag_num_rows):
             score_frag_rowmax[col_tile, row] = rowmax_tensor[col_tile, row]
             score_frag_rowsum[col_tile, row] = 0
 
@@ -1211,36 +1375,28 @@ fn _online_softmax_iter_for_mma_output[
     comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
     # Online softmax
-    @parameter
-    for col_tile in range(num_colwise_tiles):
-
-        @parameter
-        for row_tile in range(num_rowwise_tiles):
+    comptime for col_tile in range(num_colwise_tiles):
+        comptime for row_tile in range(num_rowwise_tiles):
             comptime tile_id = col_tile + row_tile * num_colwise_tiles
 
             # Assume this is a rowwise vector for now see above constraint.
             var frag = score_reg_tile[tile_id, 0]
 
-            @parameter
-            for row in range(frag_num_rows):
-
-                @parameter
-                for col in range(frag_num_cols):
+            comptime for row in range(frag_num_rows):
+                comptime for col in range(frag_num_cols):
                     score_frag_rowmax[col_tile, row] = max(
                         score_frag_rowmax[col_tile, row],
                         frag[col if frag_is_row_vector else row],
                     )
 
-        @parameter
-        if warp_split_k:
+        comptime if warp_split_k:
             # HACK: this makes a test failure go away for some reason
             barrier()
 
         # Every four threads have elements on the same row.
         # Reduce max for T0-T3, T4-T7, etc for nvidia
         #                T0-T15, T16-T31, etc for amd
-        @parameter
-        for row in range(frag_num_rows):
+        comptime for row in range(frag_num_rows):
             score_frag_rowmax[
                 col_tile, row
             ] = warp.lane_group_max_and_broadcast[
@@ -1255,16 +1411,11 @@ fn _online_softmax_iter_for_mma_output[
 
     # If a row is split across multiple warps, communicate via shared memory
     # to achieve the rowwise max.
-    @parameter
-    if num_rowwise_warps > 1 and not warp_split_k:
+    comptime if num_rowwise_warps > 1 and not warp_split_k:
         # Write per warp rowmax to shared memory.
         if lane_contains_first_column:
-
-            @parameter
-            for col_tile in range(num_colwise_tiles):
-
-                @parameter
-                for row in range(frag_num_rows):
+            comptime for col_tile in range(num_colwise_tiles):
+                comptime for row in range(frag_num_rows):
                     var score_row_idx = (
                         UInt32(col_tile)
                         * num_colwise_lanes
@@ -1283,12 +1434,8 @@ fn _online_softmax_iter_for_mma_output[
 
         # Reduce the warpwise rowmax.
         if lane_contains_first_column:
-
-            @parameter
-            for col_tile in range(num_colwise_tiles):
-
-                @parameter
-                for row in range(frag_num_rows):
+            comptime for col_tile in range(num_colwise_tiles):
+                comptime for row in range(frag_num_rows):
                     var score_row_idx = (
                         UInt32(col_tile)
                         * num_colwise_lanes
@@ -1297,8 +1444,7 @@ fn _online_softmax_iter_for_mma_output[
                         + UInt32(row)
                     )
 
-                    @parameter
-                    for row_warp in range(num_rowwise_warps):
+                    comptime for row_warp in range(num_rowwise_warps):
                         score_frag_rowmax[col_tile, row] = max(
                             rebind[Scalar[dtype]](
                                 score_frag_rowmax[col_tile, row]
@@ -1310,14 +1456,10 @@ fn _online_softmax_iter_for_mma_output[
 
     # TODO: We can let all threads read shared memory in the above so that
     # we don't need to use warp shuffling.
-    @parameter
-    for col_tile in range(num_colwise_tiles):
+    comptime for col_tile in range(num_colwise_tiles):
         # Broadcast to 4 threads in the same row.
-        @parameter
-        if num_rowwise_warps > 1 and not warp_split_k:
-
-            @parameter
-            for row in range(frag_num_rows):
+        comptime if num_rowwise_warps > 1 and not warp_split_k:
+            comptime for row in range(frag_num_rows):
                 score_frag_rowmax[
                     col_tile, row
                 ] = warp.lane_group_max_and_broadcast[
@@ -1327,19 +1469,16 @@ fn _online_softmax_iter_for_mma_output[
                 )
 
         # Corrention since previous max may be updated.
-        @parameter
-        for row in range(frag_num_rows):
+        comptime for row in range(frag_num_rows):
             correction[col_tile, row] = exp_function(
                 rowmax_tensor[col_tile, row] - score_frag_rowmax[col_tile, row]
             )
 
         # Softmax numerator based on mma results.
-        @parameter
-        for row_tile in range(num_rowwise_tiles):
+        comptime for row_tile in range(num_rowwise_tiles):
             comptime tile_id = col_tile + num_colwise_tiles * row_tile
 
-            @parameter
-            if frag_is_row_vector:
+            comptime if frag_is_row_vector:
                 score_reg_tile[tile_id, 0] = exp_function(
                     score_reg_tile[tile_id, 0]
                     - rebind[frag_type](
@@ -1349,31 +1488,24 @@ fn _online_softmax_iter_for_mma_output[
                     )
                 )
             else:
-
-                @parameter
-                for row in range(frag_num_rows):
+                comptime for row in range(frag_num_rows):
                     score_reg_tile[tile_id, 0][row] = exp_function(
                         score_reg_tile[tile_id, 0][row]
                         - score_frag_rowmax[col_tile, row][0]
                     )
 
         # Sum softmax numerator from a thread's fragments.
-        @parameter
-        for row_tile in range(num_rowwise_tiles):
+        comptime for row_tile in range(num_rowwise_tiles):
             comptime tile_id = col_tile + num_colwise_tiles * row_tile
             var frag = score_reg_tile[tile_id, 0]
 
-            @parameter
-            for row in range(frag_num_rows):
-
-                @parameter
-                for col in range(frag_num_cols):
+            comptime for row in range(frag_num_rows):
+                comptime for col in range(frag_num_cols):
                     score_frag_rowsum[col_tile, row] += frag[
                         col if frag_is_row_vector else row
                     ]
 
-        @parameter
-        for row in range(frag_num_rows):
+        comptime for row in range(frag_num_rows):
             score_frag_rowsum[
                 col_tile, row
             ] = warp.lane_group_sum_and_broadcast[
@@ -1384,16 +1516,11 @@ fn _online_softmax_iter_for_mma_output[
 
     # Reduce rowsum via shared memory.
 
-    @parameter
-    if num_rowwise_warps > 1 and not warp_split_k:
+    comptime if num_rowwise_warps > 1 and not warp_split_k:
         # Write per warp rowmax to shared memory.
         if lane_contains_first_column:
-
-            @parameter
-            for col_tile in range(num_colwise_tiles):
-
-                @parameter
-                for row in range(frag_num_rows):
+            comptime for col_tile in range(num_colwise_tiles):
+                comptime for row in range(frag_num_rows):
                     # Each thread handle two rows in the mma output.
                     var score_row_idx = (
                         UInt32(col_tile)
@@ -1412,12 +1539,8 @@ fn _online_softmax_iter_for_mma_output[
 
         # Reduce the warpwise rowsum.
         if lane_contains_first_column:
-
-            @parameter
-            for col_tile in range(num_colwise_tiles):
-
-                @parameter
-                for row in range(frag_num_rows):
+            comptime for col_tile in range(num_colwise_tiles):
+                comptime for row in range(frag_num_rows):
                     var score_row_idx = (
                         UInt32(col_tile)
                         * num_colwise_lanes
@@ -1429,8 +1552,7 @@ fn _online_softmax_iter_for_mma_output[
                     score_frag_rowsum[col_tile, row] = 0
 
                     # Reduce rowmax. Warps in the same row do the same reduction.
-                    @parameter
-                    for row_warp in range(num_rowwise_warps):
+                    comptime for row_warp in range(num_rowwise_warps):
                         score_frag_rowsum[col_tile, row] += rebind[
                             Scalar[dtype]
                         ](
@@ -1441,11 +1563,8 @@ fn _online_softmax_iter_for_mma_output[
 
             # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
 
-        @parameter
-        for col_tile in range(num_colwise_tiles):
-
-            @parameter
-            for row in range(frag_num_rows):
+        comptime for col_tile in range(num_colwise_tiles):
+            comptime for row in range(frag_num_rows):
                 # Broadcast to 4 threads in the same row.
                 score_frag_rowsum[
                     col_tile, row
@@ -1466,40 +1585,30 @@ fn _online_softmax_iter_for_mma_output[
     )
 
     # if num_output_replications
-    @parameter
-    for k in range(num_output_replications):
+    comptime for k in range(num_output_replications):
         # Correct previous result
-        @parameter
-        for col_tile in range(num_colwise_tiles):
-
-            @parameter
-            for row_tile in range(num_rowwise_tiles):
+        comptime for col_tile in range(num_colwise_tiles):
+            comptime for row_tile in range(num_rowwise_tiles):
                 comptime tile_id = col_tile + row_tile * num_colwise_tiles + k * num_colwise_tiles * num_rowwise_tiles
 
                 comptime output_frag_type = type_of(
                     output_reg_tile
                 ).element_type
 
-                @parameter
-                if frag_is_row_vector:
+                comptime if frag_is_row_vector:
                     output_reg_tile[tile_id, 0] = output_reg_tile[
                         tile_id, 0
                     ] * output_frag_type(correction[col_tile, 0][0])
                 else:
-
-                    @parameter
-                    for row in range(frag_num_rows):
+                    comptime for row in range(frag_num_rows):
                         output_reg_tile[tile_id, 0][row] = (
                             output_reg_tile[tile_id, 0][row]
                             * correction[col_tile, row][0]
                         )
 
     # Save current rowmax and rowsum
-    @parameter
-    for col_tile in range(num_colwise_tiles):
-
-        @parameter
-        for row in range(frag_num_rows):
+    comptime for col_tile in range(num_colwise_tiles):
+        comptime for row in range(frag_num_rows):
             rowmax_tensor[col_tile, row] = score_frag_rowmax[col_tile, row]
             rowsum_tensor[col_tile, row] = (
                 rowsum_tensor[col_tile, row] * correction[col_tile, row]
@@ -1569,8 +1678,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     comptime num_lanes_m = UInt32(warp_layout.shape[0].value())
     comptime num_lanes_n = UInt32(warp_layout.shape[1].value())
 
-    @parameter
-    if num_warps_n == 1:
+    comptime if num_warps_n == 1:
         return
     # Note that MHA cut the frag size in half:
     # var output_reg_vecs = output_reg_tile.tile[
@@ -1654,12 +1762,8 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     # corrections across warps
     # Write per warp rowmax to shared memory.
     if lane % num_lanes_n == 0:
-
-        @parameter
-        for col_tile in range(num_m_mmas):
-
-            @parameter
-            for row in range(frag_num_rows):
+        comptime for col_tile in range(num_m_mmas):
+            comptime for row in range(frag_num_rows):
                 var score_row_idx = (
                     UInt32(col_tile) * num_lanes_m
                     + (lane // num_lanes_n) * UInt32(frag_num_rows)
@@ -1675,12 +1779,8 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     # Reduce the warpwise rowmax.
     if lane % num_lanes_n == 0:
-
-        @parameter
-        for col_tile in range(num_m_mmas):
-
-            @parameter
-            for row in range(frag_num_rows):
+        comptime for col_tile in range(num_m_mmas):
+            comptime for row in range(frag_num_rows):
                 var score_row_idx = (
                     UInt32(col_tile) * num_lanes_m
                     + (lane // num_lanes_n) * UInt32(frag_num_rows)
@@ -1691,8 +1791,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                     warp_scratch[num_warps_n, Int(score_row_idx)]
                 )
 
-                @parameter
-                for row_warp in range(1, num_warps_n):
+                comptime for row_warp in range(1, num_warps_n):
                     interwarp_frag_rowmax[col_tile, row] = max(
                         rebind[Scalar[dtype]](
                             interwarp_frag_rowmax[col_tile, row]
@@ -1704,14 +1803,10 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                         ),
                     )
 
-    @parameter
-    for col_tile in range(num_m_mmas):
+    comptime for col_tile in range(num_m_mmas):
         # Broadcast to 4 threads in the same row.
-        @parameter
-        if num_warps_n > 1:
-
-            @parameter
-            for row in range(frag_num_rows):
+        comptime if num_warps_n > 1:
+            comptime for row in range(frag_num_rows):
                 interwarp_frag_rowmax[
                     col_tile, row
                 ] = warp.lane_group_max_and_broadcast[Int(num_lanes_n)](
@@ -1719,20 +1814,15 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                 )
 
         # Corrention since previous max may be updated.
-        @parameter
-        for row in range(frag_num_rows):
+        comptime for row in range(frag_num_rows):
             correction[col_tile, row] = exp_function(
                 rowmax_tensor[col_tile, row]
                 - interwarp_frag_rowmax[col_tile, row]
             )
 
     if lane % num_lanes_n == 0:
-
-        @parameter
-        for col_tile in range(num_m_mmas):
-
-            @parameter
-            for row in range(frag_num_rows):
+        comptime for col_tile in range(num_m_mmas):
+            comptime for row in range(frag_num_rows):
                 var score_row_idx = (
                     UInt32(col_tile) * num_lanes_m
                     + (lane // num_lanes_n) * UInt32(frag_num_rows)
@@ -1747,12 +1837,8 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     # Reduce the warpwise rowsum.
     if lane % num_lanes_n == 0:
-
-        @parameter
-        for col_tile in range(num_m_mmas):
-
-            @parameter
-            for row in range(frag_num_rows):
+        comptime for col_tile in range(num_m_mmas):
+            comptime for row in range(frag_num_rows):
                 var score_row_idx = (
                     UInt32(col_tile) * num_lanes_m
                     + (lane // num_lanes_n) * UInt32(frag_num_rows)
@@ -1763,19 +1849,15 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
                 )
 
                 # Reduce rowmax. Warps in the same row do the same reduction.
-                @parameter
-                for row_warp in range(1, num_warps_n):
+                comptime for row_warp in range(1, num_warps_n):
                     interwarp_frag_rowsum[col_tile, row] += rebind[
                         Scalar[dtype]
                     ](warp_scratch[row_warp, Int(score_row_idx)])
 
         # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
 
-    @parameter
-    for col_tile in range(num_m_mmas):
-
-        @parameter
-        for row in range(frag_num_rows):
+    comptime for col_tile in range(num_m_mmas):
+        comptime for row in range(frag_num_rows):
             # Broadcast to 4 threads in the same row.
             interwarp_frag_rowsum[
                 col_tile, row
@@ -1788,44 +1870,33 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     var output = output_reg_tile.split[num_warps_n, axis=0]()
 
-    @parameter
-    for col_tile in range(num_m_mmas):
-
-        @parameter
-        for row in range(frag_num_rows):
+    comptime for col_tile in range(num_m_mmas):
+        comptime for row in range(frag_num_rows):
             # correction[col_tile, row] /= interwarp_frag_rowsum[col_tile, row]
             rowsum_tensor[col_tile, row] = interwarp_frag_rowsum[col_tile, row]
 
     # var ort00 = output_reg_tile[0,0]
     # scale output reg
-    @parameter
-    for col_tile in range(num_m_mmas):
-
-        @parameter
-        for row_tile in range(num_n_mmas):
+    comptime for col_tile in range(num_m_mmas):
+        comptime for row_tile in range(num_n_mmas):
             comptime tile_id = col_tile + row_tile * num_m_mmas
             comptime output_frag_type = type_of(output_reg_tile).element_type
 
-            @parameter
-            for row in range(frag_num_rows):
+            comptime for row in range(frag_num_rows):
                 var c = correction[col_tile, row][0]
 
-                @parameter
-                for warp_tile in range(num_warps_n):
+                comptime for warp_tile in range(num_warps_n):
                     output[warp_tile][tile_id, 0] = (
                         0.0 if c == 0.0 else output[warp_tile][tile_id, 0] * c
                     )
 
     # reduce
-    @parameter
-    for warp_n in range(num_warps_n):
+    comptime for warp_n in range(num_warps_n):
         var reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](
             warp_n, 0
         )
         if warp_n == Int(warp_x):
-
-            @parameter
-            if warp_n > 0:
+            comptime if warp_n > 0:
                 # we want `output_reg_tile[0,:,:]` to be the real output reg tile.
                 out_reg_tile.copy_from(
                     reg_tile.as_any_origin()
@@ -1870,8 +1941,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
     barrier()
 
     # Perform the reduction.
-    @parameter
-    for warp_n in range(num_warps_n - 1):
+    comptime for warp_n in range(num_warps_n - 1):
         var row = warp_x
         comptime col = warp_n
         var o_smem_ptr_reduce = (
@@ -1888,8 +1958,7 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
             .distribute[Layout.row_major(WARP_SIZE, 1)](UInt(lane))
         )
 
-        @parameter
-        for i in range(o_smem_reduce.layout.size()):
+        comptime for i in range(o_smem_reduce.layout.size()):
             out_reg_tile[i] += rebind[SIMD[dtype, frag_size]](o_smem_reduce[i])
 
 
@@ -1953,30 +2022,25 @@ fn _rowmax_online_softmax[
     comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
     # Online softmax
-    @parameter
-    for col_tile in range(num_colwise_tiles):
+    comptime for col_tile in range(num_colwise_tiles):
         # Initialize local max with the running max.
         score_frag_rowmax[col_tile] = score_reg_tile[col_tile, 0].reduce_max[
             frag_num_rows
         ]()
 
-        @parameter
-        for row_tile in range(1, num_rowwise_tiles):
+        comptime for row_tile in range(1, num_rowwise_tiles):
             score_frag_rowmax[col_tile] = max(
                 score_frag_rowmax[col_tile],
                 score_reg_tile[col_tile, row_tile].reduce_max[frag_num_rows](),
             )
     if not init_rowmax:
-
-        @parameter
-        for col_tile in range(num_colwise_tiles):
+        comptime for col_tile in range(num_colwise_tiles):
             score_frag_rowmax[col_tile] = max(
                 score_frag_rowmax[col_tile],
                 rowmax_tensor[col_tile],
             )
 
-    @parameter
-    for col_tile in range(num_colwise_tiles):
+    comptime for col_tile in range(num_colwise_tiles):
         # Every four threads have elements on the same row.
         # Reduce max for  T0-T3,  T4-T7, etc for nvidia
         #                T0-T15, T16-T31, etc for amd
@@ -1985,12 +2049,10 @@ fn _rowmax_online_softmax[
         ](score_frag_rowmax[col_tile])
 
         # Softmax numerator based on mma results.
-        @parameter
-        for row_tile in range(num_rowwise_tiles):
+        comptime for row_tile in range(num_rowwise_tiles):
             var sfm: SIMD[dtype, frag_size]
 
-            @parameter
-            if accum_frag_layout.size() == 1:
+            comptime if accum_frag_layout.size() == 1:
                 sfm = {rebind[Scalar[dtype]](score_frag_rowmax[col_tile])}
             else:
                 sfm = rebind[SIMD[dtype, frag_size]](
@@ -2038,26 +2100,21 @@ fn _rowsum[
     score_frag_rowsum = type_of(score_frag_rowsum).stack_allocation()
 
     # Initialize sum with first column
-    @parameter
-    for col_tile in range(num_colwise_tiles):
+    comptime for col_tile in range(num_colwise_tiles):
         score_frag_rowsum[col_tile] = score_reg_tile[col_tile, 0].reduce_add[
             frag_num_rows
         ]()
 
     comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
-    @parameter
-    for row_tile in range(1, num_rowwise_tiles):
-
-        @parameter
-        for col_tile in range(num_colwise_tiles):
+    comptime for row_tile in range(1, num_rowwise_tiles):
+        comptime for col_tile in range(num_colwise_tiles):
             score_frag_rowsum[col_tile] = (
                 score_frag_rowsum[col_tile]
                 + score_reg_tile[col_tile, row_tile].reduce_add[frag_num_rows]()
             )
 
-    @parameter
-    for col_tile in range(num_colwise_tiles):
+    comptime for col_tile in range(num_colwise_tiles):
         score_frag_rowsum[col_tile] = warp.lane_group_sum_and_broadcast[
             Int(num_rowwise_lanes)
         ](score_frag_rowsum[col_tile])
@@ -2089,8 +2146,7 @@ fn _online_softmax_correction[
     comptime num_colwise_tiles = row_accum_layout.size()
     comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
-    @parameter
-    for col_tile in range(num_colwise_tiles):
+    comptime for col_tile in range(num_colwise_tiles):
         # Corrention since previous max may be updated.
         sfr = score_frag_rowmax[col_tile]
         score_frag_rowmax[col_tile] = exp_function(

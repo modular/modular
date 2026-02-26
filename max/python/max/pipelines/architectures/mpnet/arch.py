@@ -16,7 +16,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
@@ -25,15 +24,15 @@ from .model import MPNetPipelineModel
 from .model_config import MPNetConfig
 
 mpnet_arch = SupportedArchitecture(
-    name="MPNetForMaskedLM_Legacy",
+    name="MPNetForMaskedLM",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "sentence-transformers/all-mpnet-base-v2",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: [],
-        SupportedEncoding.bfloat16: [],
+        "float32": [],
+        "bfloat16": [],
     },
     pipeline_model=MPNetPipelineModel,
     tokenizer=TextTokenizer,

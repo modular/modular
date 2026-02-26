@@ -262,8 +262,7 @@ fn kernel_4[
         if elect_one_thread:
             tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            @parameter
-            for j in range(BK // 64):
+            comptime for j in range(BK // 64):
                 comptime k = 64 * j
                 comptime a_offset = a_smem_layout(IntTuple(0, k))
                 comptime b_offset = b_smem_layout(IntTuple(0, k))
@@ -292,9 +291,7 @@ fn kernel_4[
         tma_phase ^= 1
 
         if elect_one_thread:
-
-            @parameter
-            for j in range(num_k_mmas):
+            comptime for j in range(num_k_mmas):
                 comptime idx = IntTuple(0, MMA_K * j)
                 comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
                 comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
@@ -340,14 +337,9 @@ fn kernel_4[
 
     comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
 
-    @parameter
-    for tma_n in range(BN // TMA_BN):
-
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for i in range(TMA_BN // 16):
+    comptime for tma_n in range(BN // TMA_BN):
+        comptime for m_mma in range(num_m_mmas):
+            comptime for i in range(TMA_BN // 16):
                 var d_reg = c_frag.slice[
                     8, offset = (i + tma_n * (TMA_BN // 16)) * 8
                 ]().cast[DType.bfloat16]()
@@ -524,8 +516,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("transpose_b:", transpose_b)
     print()
 
-    @parameter
-    for i in range(len(dict_of_shapes)):
+    comptime for i in range(len(dict_of_shapes)):
         comptime shape = get_dict_of_shapes(i, dict_of_shapes)
         try:
             print(
@@ -580,8 +571,8 @@ def test_blackwell_kernel_4[
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
+    var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
 
     var a_device = ctx.enqueue_create_buffer[a_type](M * K)
     var a_device_lt = LayoutTensor[a_type, a_layout](a_device.unsafe_ptr())
@@ -604,16 +595,16 @@ def test_blackwell_kernel_4[
                 b_type
             ]()
     for i in range(M * N):
-        c_host_ptr[i] = Scalar[c_type](0)
-        c_host_ref_ptr[i] = Scalar[c_type](0)
+        c_host.tensor[update=False]().ptr[i] = Scalar[c_type](0)
+        c_host_ref.tensor[update=False]().ptr[i] = Scalar[c_type](0)
 
     # Move operands to the Device
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device, c_host_ptr)
-    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
+    ctx.enqueue_copy(c_device, c_host.tensor[update=False]().ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref.tensor[update=False]().ptr)
 
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
@@ -680,14 +671,14 @@ def test_blackwell_kernel_4[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host_ptr, c_device)
-        ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+        ctx.enqueue_copy(c_host.tensor[update=False]().ptr, c_device)
+        ctx.enqueue_copy(c_host_ref.tensor[update=False]().ptr, c_device_ref)
         ctx.synchronize()
         comptime rtol = 1e-2
 
         assert_almost_equal(
-            c_host_ptr,
-            c_host_ref_ptr,
+            c_host.tensor[update=False]().ptr,
+            c_host_ref.tensor[update=False]().ptr,
             M * N,
             atol=0.0001,
             rtol=rtol,
@@ -696,12 +687,6 @@ def test_blackwell_kernel_4[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 def main():

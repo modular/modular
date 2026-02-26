@@ -60,6 +60,192 @@ comptime _FULL_MASK = UInt(2**WARP_SIZE - 1)
 # shfl.sync.up.b32 prepares this mask differently from other shuffle intrinsics
 comptime _WIDTH_MASK_SHUFFLE_UP = 0
 
+# Common function type for binary SIMD reduction operations (add, max, min).
+comptime _ReduceFn = fn[dtype: DType, width: Int](
+    SIMD[dtype, width], SIMD[dtype, width]
+) capturing -> SIMD[dtype, width]
+
+
+# ===-----------------------------------------------------------------------===#
+# AMD DPP (Data Parallel Primitives) intrinsics
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _dpp_update_i32[
+    dpp_ctrl: Int,
+    row_mask: Int = 0xF,
+    bank_mask: Int = 0xF,
+    bound_ctrl: Bool = True,
+](old: Int32, src: Int32) -> Int32:
+    """Performs a DPP (Data Parallel Primitives) cross-lane operation on AMD GPUs.
+
+    This wraps llvm.amdgcn.update.dpp.i32 to move data between lanes at
+    register-level bandwidth, avoiding LDS-based ds_bpermute.
+
+    Parameters:
+        dpp_ctrl: DPP control word specifying the cross-lane pattern.
+        row_mask: 4-bit mask selecting which rows (of 16 lanes) participate.
+        bank_mask: 4-bit mask selecting which banks (of 4 lanes) participate.
+        bound_ctrl: If True, out-of-range source lanes produce 0 instead of
+            old.
+
+    Args:
+        old: Fallback value for masked-out or out-of-range lanes.
+        src: Source value to read from neighboring lanes via DPP.
+
+    Returns:
+        The value read from the source lane specified by dpp_ctrl, or the
+        fallback value.
+    """
+    return llvm_intrinsic[
+        "llvm.amdgcn.update.dpp.i32",
+        Int32,
+    ](
+        old,
+        src,
+        Int32(dpp_ctrl),
+        Int32(row_mask),
+        Int32(bank_mask),
+        bound_ctrl,
+    )
+
+
+@always_inline
+fn _dpp_move[
+    dtype: DType, simd_width: Int, //, dpp_ctrl: Int
+](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    """Returns a neighboring lane's value via a DPP cross-lane operation.
+
+    This is the pure data-movement primitive: it applies the DPP control word
+    and returns the value from the source lane without combining it with the
+    current value. The caller applies its own reduction function.
+
+    Since this uses bound_ctrl=True, out-of-range sources return 0. For the
+    rotation-based reduction pattern (quad_perm, row_ror) all sources are
+    always in-range so the fallback is never reached.
+
+    Parameters:
+        dtype: The data type of the SIMD elements.
+        simd_width: The number of elements in the SIMD vector.
+        dpp_ctrl: DPP control word specifying the cross-lane pattern.
+
+    Args:
+        val: The value whose neighboring lane copy is requested.
+
+    Returns:
+        The value from the source lane specified by dpp_ctrl.
+    """
+    comptime if size_of[SIMD[dtype, simd_width]]() == 4:
+        var src = bitcast[DType.int32, 1](val)
+        var neighbor = _dpp_update_i32[dpp_ctrl](Int32(0), src)
+        return bitcast[dtype, simd_width](neighbor)
+    elif bit_width_of[dtype]() == 16 and simd_width == 1:
+        var splatted = SIMD[dtype, 2](val._refine[new_size=1]())
+        var result = _dpp_move[dpp_ctrl](splatted)
+        return result[0]
+    elif bit_width_of[dtype]() == 64 and simd_width == 1:
+        var parts = bitcast[DType.int32, 2](val)
+        var lo = _dpp_update_i32[dpp_ctrl](Int32(0), parts[0])
+        var hi = _dpp_update_i32[dpp_ctrl](Int32(0), parts[1])
+        return bitcast[dtype, 1](SIMD[DType.int32, 2](lo, hi))
+    else:
+        comptime assert False, "unsupported type for DPP move"
+
+
+@always_inline
+fn _dpp_reduce_and_broadcast[
+    dtype: DType,
+    simd_width: Int,
+    //,
+    func: _ReduceFn,
+    num_lanes: Int = WARP_SIZE,
+](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+    """Performs a DPP-based reduction and broadcast on AMD GPUs.
+
+    Uses AMD DPP instructions for intra-row (16-lane) reduction and shuffle_xor
+    for cross-row reduction. This is significantly lower latency compared to
+    ds_bpermute-based shuffles for the intra-row portion.
+
+    The reduction uses a rotation-based pattern where all source lanes are
+    always in-range, so this works correctly for any associative+commutative
+    reduction (sum, max, min, etc.):
+    1. Quad permutations give all lanes 2-wide then 4-wide partial results.
+    2. Row rotations (ror:4, ror:8) give all lanes 16-wide row results.
+       Rotation wraps within each 16-lane row, so every lane accumulates
+       the full row result without needing a separate broadcast step.
+    3. Shuffle XOR handles cross-row communication for 32 and 64-wide
+       results.
+
+    For sub-warp sizes the chain is truncated: num_lanes=2 uses 1 DPP step,
+    num_lanes=4 uses 2, num_lanes=8 uses 3, etc.
+
+    Parameters:
+        dtype: The data type of the SIMD elements.
+        simd_width: The number of elements in the SIMD vector.
+        func: Binary reduction function (e.g. add, max, min).
+        num_lanes: Number of lanes in the reduction group (must be power of 2,
+            2..WARP_SIZE).
+
+    Args:
+        val: The value to reduce across the lane group.
+
+    Returns:
+        The reduction result across the lane group, broadcast to every lane
+        in the group.
+    """
+    comptime assert (
+        num_lanes >= 2 and num_lanes.is_power_of_two()
+    ), "num_lanes must be a power of 2 >= 2"
+
+    comptime assert num_lanes <= WARP_SIZE, "num_lanes cannot exceed WARP_SIZE"
+
+    # DPP control constants for the reduction pattern.
+    comptime _DPP_QUAD_PERM_1032 = 0xB1  # quad_perm:[1,0,3,2] - swap pairs
+    comptime _DPP_QUAD_PERM_2301 = 0x4E  # quad_perm:[2,3,0,1] - swap halves
+    comptime _DPP_ROW_HALF_MIRROR = 0x141  # row_half_mirror - mirror within 8-lane halves
+    comptime _DPP_ROW_ROR_8 = 0x128  # row_ror:8 - rotate right by 8 within row
+
+    var out = val
+
+    # Step 1: quad_perm swap pairs → 2-wide results.
+    out = func(out, _dpp_move[_DPP_QUAD_PERM_1032](out))
+
+    # Step 2: quad_perm swap halves → 4-wide results.
+    comptime if num_lanes >= 4:
+        out = func(out, _dpp_move[_DPP_QUAD_PERM_2301](out))
+
+    # Steps 3-4: Intra-row reduction.
+    # row_half_mirror mirrors within each 8-lane half, producing 8-wide
+    # results. For num_lanes >= 16, an additional row_ror:8 yields the
+    # full 16-wide row result.
+    comptime if num_lanes >= 8:
+        out = func(out, _dpp_move[_DPP_ROW_HALF_MIRROR](out))
+    comptime if num_lanes >= 16:
+        out = func(out, _dpp_move[_DPP_ROW_ROR_8](out))
+
+    # Steps 5-6: Cross-row reduction.
+    # On CDNA4+ use permlane_shuffle (register-level) instead of
+    # shuffle_xor (ds_bpermute through LDS). permlane_shuffle only
+    # supports 32-bit operands, so fall back to shuffle_xor for wider types.
+    @always_inline
+    fn _cross_row_step[
+        shuffle_width: Int
+    ](v: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+        comptime if _cdna_4_or_newer() and size_of[
+            SIMD[dtype, simd_width]
+        ]() == 4:
+            return func(v, permlane_shuffle[shuffle_width](v))
+        else:
+            return func(v, shuffle_xor(v, UInt32(shuffle_width)))
+
+    comptime if num_lanes >= 32:
+        out = _cross_row_step[16](out)
+    comptime if num_lanes >= 64:
+        out = _cross_row_step[32](out)
+
+    return out
+
 
 # ===-----------------------------------------------------------------------===#
 # utilities
@@ -80,8 +266,7 @@ fn _shuffle[
         dtype.is_half_float() or simd_width == 1
     ), "Unsupported simd_width"
 
-    @parameter
-    if dtype == DType.float32:
+    comptime if dtype == DType.float32:
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
@@ -101,9 +286,7 @@ fn _shuffle[
         var result = shuffle1.interleave(shuffle2)
         return bitcast[dtype, simd_width](result)
     elif dtype.is_half_float():
-
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             # splat and recurse to meet 32 bitwidth requirements
             var splatted_val = SIMD[dtype, 2](val._refine[new_size=1]())
             return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
@@ -124,16 +307,14 @@ fn _shuffle[
         ).cast[dtype]()
 
     else:
-        constrained[False, "unhandled shuffle dtype"]()
-        return 0
+        comptime assert False, "unhandled shuffle dtype"
 
 
 @always_inline
 fn _shuffle_amd_helper[
     dtype: DType, simd_width: Int
 ](dst_lane: UInt32, val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    @parameter
-    if size_of[SIMD[dtype, simd_width]]() == 4:
+    comptime if size_of[SIMD[dtype, simd_width]]() == 4:
         # Handle int32, float32, float16x2, etc.
         var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
             dst_lane * 4, bitcast[DType.int32, 1](val)
@@ -142,8 +323,7 @@ fn _shuffle_amd_helper[
     else:
         comptime assert simd_width == 1, "Unsupported simd width"
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             return _shuffle_amd_helper(dst_lane, val.cast[DType.int32]()).cast[
                 dtype
             ]()
@@ -158,8 +338,7 @@ fn _shuffle_amd_helper[
             var result = shuffle1.interleave(shuffle2)
             return bitcast[dtype, simd_width](result)
         else:
-            constrained[False, "unhandled shuffle dtype"]()
-            return 0
+            comptime assert False, "unhandled shuffle dtype"
 
 
 @always_inline
@@ -186,8 +365,7 @@ fn _shuffle_apple_helper[
 
     var arg = UInt16(offset)  # AIR intrinsics use 16-bit offsets
 
-    @parameter
-    if dtype in (DType.int64, DType.uint64):
+    comptime if dtype in (DType.int64, DType.uint64):
         var bits = bitcast[DType.uint32, simd_width * 2](val)
         var half1, half2 = bits.deinterleave()
 
@@ -209,9 +387,7 @@ fn _shuffle_apple_helper[
     elif (
         dtype == DType.bfloat16
     ):  # bfloat16 is declared in MSL but actually causes a backend error.
-
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             var pair = SIMD[dtype, 2](val._refine[new_size=1]())
             var pair_i32 = bitcast[DType.int32, 1](pair)
             var y_i32 = _shuffle_apple_helper[op, DType.int32, 1](
@@ -328,8 +504,7 @@ fn shuffle_idx[
         ```
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return _shuffle[
             "idx",
             WIDTH_MASK = Int32(_WIDTH_MASK),
@@ -428,8 +603,7 @@ fn shuffle_up[
         threads not in the mask.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return _shuffle["up", WIDTH_MASK=_WIDTH_MASK_SHUFFLE_UP](
             mask, val, offset
         )
@@ -528,8 +702,7 @@ fn shuffle_down[
         or where the corresponding mask bit is not set.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return _shuffle["down", WIDTH_MASK = Int32(_WIDTH_MASK)](
             mask, val, offset
         )
@@ -631,8 +804,7 @@ fn shuffle_xor[
         ```
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return _shuffle["bfly", WIDTH_MASK = Int32(_WIDTH_MASK)](
             mask, val, offset
         )
@@ -662,9 +834,7 @@ fn lane_group_reduce[
     shuffle: fn[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
-    func: fn[dtype: DType, width: Int](
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing -> SIMD[dtype, width],
+    func: _ReduceFn,
     num_lanes: Int,
     *,
     stride: Int = 1,
@@ -707,8 +877,7 @@ fn lane_group_reduce[
 
     comptime limit = log2_floor(num_lanes)
 
-    @parameter
-    for i in reversed(range(limit)):
+    comptime for i in reversed(range(limit)):
         comptime offset = 1 << i
         res = func(res, shuffle(res, UInt32(offset * stride)))
 
@@ -723,9 +892,7 @@ fn reduce[
     shuffle: fn[dtype: DType, simd_width: Int](
         val: SIMD[dtype, simd_width], offset: UInt32
     ) -> SIMD[dtype, simd_width],
-    func: fn[dtype: DType, width: Int](
-        SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing -> SIMD[dtype, width],
+    func: _ReduceFn,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Performs a generic warp-wide reduction operation using shuffle operations.
 
@@ -837,19 +1004,24 @@ fn lane_group_sum_and_broadcast[
     fn _reduce_add(x: SIMD, y: type_of(x)) -> type_of(x):
         return x + y
 
-    @parameter
-    if (
+    comptime if (
         num_lanes == WARP_SIZE // stride
         and stride in (16, 32)
         and _cdna_4_or_newer()
     ):
         var out = _reduce_add(val, permlane_shuffle[32](val))
 
-        @parameter
-        if stride == 16:
+        comptime if stride == 16:
             out = _reduce_add(out, permlane_shuffle[16](out))
 
         return out
+    elif (
+        stride == 1
+        and num_lanes >= 2
+        and num_lanes.is_power_of_two()
+        and is_amd_gpu()
+    ):
+        return _dpp_reduce_and_broadcast[_reduce_add, num_lanes=num_lanes](val)
     else:
         return lane_group_reduce[
             shuffle_xor, _reduce_add, num_lanes=num_lanes, stride=stride
@@ -924,15 +1096,13 @@ fn prefix_sum[
 
     var lane = lane_id()
 
-    @parameter
-    for i in range(log2_floor(WARP_SIZE)):
+    comptime for i in range(log2_floor(WARP_SIZE)):
         comptime offset = 1 << i
         var n = shuffle_up(res, UInt32(offset))
         if lane >= UInt(offset):
             res += n
 
-    @parameter
-    if exclusive:
+    comptime if exclusive:
         res = shuffle_up(res, 1)
         if lane == 0:
             res = 0
@@ -989,8 +1159,7 @@ fn lane_group_max[
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
-    @parameter
-    if (
+    comptime if (
         _has_redux_f32_support[val_type, simd_width]()
         and num_lanes == WARP_SIZE
     ):
@@ -1033,8 +1202,7 @@ fn lane_group_max_and_broadcast[
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
-    @parameter
-    if (
+    comptime if (
         _has_redux_f32_support[val_type, simd_width]()
         and num_lanes == WARP_SIZE
     ):
@@ -1044,19 +1212,24 @@ fn lane_group_max_and_broadcast[
     fn _reduce_max(x: SIMD, y: type_of(x)) -> type_of(x):
         return _max(x, y)
 
-    @parameter
-    if (
+    comptime if (
         num_lanes == WARP_SIZE // stride
         and stride in (16, 32)
         and _cdna_4_or_newer()
     ):
         var out = _reduce_max(val, permlane_shuffle[32](val))
 
-        @parameter
-        if stride == 16:
+        comptime if stride == 16:
             out = _reduce_max(out, permlane_shuffle[16](out))
 
         return out
+    elif (
+        stride == 1
+        and num_lanes >= 2
+        and num_lanes.is_power_of_two()
+        and is_amd_gpu()
+    ):
+        return _dpp_reduce_and_broadcast[_reduce_max, num_lanes=num_lanes](val)
     else:
         return lane_group_reduce[
             shuffle_xor, _reduce_max, num_lanes=num_lanes, stride=stride
@@ -1113,8 +1286,7 @@ fn lane_group_min[
         Non-participating lanes (lane_id >= num_lanes) retain their original values.
     """
 
-    @parameter
-    if (
+    comptime if (
         _has_redux_f32_support[val_type, simd_width]()
         and num_lanes == WARP_SIZE
     ):
@@ -1256,8 +1428,7 @@ fn vote[ret_type: DType](val: Bool) -> Scalar[ret_type]:
         A mask containing the vote of all threads in the warp.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime assert ret_type == DType.uint32, "Unsupported return type"
         return rebind[Scalar[ret_type]](_vote_nvidia_helper(val))
     elif is_amd_gpu():

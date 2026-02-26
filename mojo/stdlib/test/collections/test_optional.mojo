@@ -147,17 +147,7 @@ def test_optional_explicit_copy():
 
 
 def test_optional_conformance():
-    assert_true(conforms_to(Optional[Int], Representable))
-    assert_true(conforms_to(Optional[Int], Stringable))
     assert_true(conforms_to(Optional[Int], Writable))
-
-
-def test_optional_str_repr():
-    var o = Optional(10)
-    assert_equal(o.__str__(), "10")
-    assert_equal(o.__repr__(), "Optional(10)")
-    assert_equal(Optional[Int](None).__str__(), "None")
-    assert_equal(Optional[Int](None).__repr__(), "Optional(None)")
 
 
 def test_optional_write_to():
@@ -210,9 +200,9 @@ def test_optional_unwrap():
 
 def test_optional_repr_wrap():
     var o = Optional(10)
-    assert_equal(repr(o), "Optional(10)")
+    assert_equal(repr(o), "Optional[Int](Int(10))")
     o = None
-    assert_equal(repr(o), "Optional(None)")
+    assert_equal(repr(o), "Optional[Int](None)")
 
 
 def test_optional_iter():

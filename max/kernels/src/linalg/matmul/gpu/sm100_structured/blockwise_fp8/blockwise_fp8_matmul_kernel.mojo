@@ -614,16 +614,15 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     @staticmethod
     fn validate_config():
         """Validate configuration constraints at compile time."""
-        constrained[Self.transpose_b, "Only support transposed B"]()
-        constrained[
-            Self.a_scales_type == Self.b_scales_type,
-            "a_scales_type and b_scales_type must match",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
-        constrained[Self.BK == 128, "Only support BK = 128"]()
+        comptime assert Self.transpose_b, "Only support transposed B"
+        comptime assert (
+            Self.a_scales_type == Self.b_scales_type
+        ), "a_scales_type and b_scales_type must match"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
+        comptime assert Self.BK == 128, "Only support BK = 128"
 
     # ========== Kernel Entry Point ==========
 
@@ -712,8 +711,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 Int32(Self.EPILOGUE_THREADS * Self.cta_group)
             )
 
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages):
+            comptime for i in range(Self.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
@@ -779,9 +777,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
         # ===== SCHEDULER WARP =====
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-
-            @parameter
-            if Self.num_clc_pipeline_stages == 0:
+            comptime if Self.num_clc_pipeline_stages == 0:
                 return
 
             var sched_iter = scheduler.scheduler_iterator()

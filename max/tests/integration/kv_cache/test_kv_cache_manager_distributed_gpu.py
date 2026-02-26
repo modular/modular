@@ -23,9 +23,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     RaggedKVCacheInputs,
 )
 from test_common.context_utils import create_text_context
@@ -47,7 +46,7 @@ def _create_kv_manager(
         n_kv_heads=8,
         head_dim=32,
         num_layers=10,
-        cache_strategy=KVCacheStrategy.PAGED,
+        cache_strategy="paged",
         page_size=32,
         devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         data_parallel_degree=data_parallel_degree,
@@ -56,6 +55,7 @@ def _create_kv_manager(
         params=params,
         session=InferenceSession(devices=devices),
         total_num_pages=8,
+        max_batch_size=128,
     )
     assert isinstance(manager, PagedKVCacheManager)
     return manager
@@ -128,7 +128,7 @@ def test_step() -> None:
             kv_manager.alloc(
                 ctx, replica_idx=i % data_parallel_degree, num_steps=1
             )
-        kv_manager.get_runtime_inputs(batches_by_replica)
+        kv_manager.runtime_inputs(batches_by_replica)
         for ctx in batch:
             ctx.update(42)
         kv_manager.step(batches_by_replica)
@@ -145,11 +145,11 @@ def test_step() -> None:
             )
 
 
-def test_get_runtime_inputs_requires_per_replica_batches() -> None:
+def test_runtime_inputs_requires_per_replica_batches() -> None:
     kv_manager = _create_kv_manager(data_parallel_degree=2, num_devices=2)
 
     with pytest.raises(ValueError):
-        kv_manager.get_runtime_inputs([[]])
+        kv_manager.runtime_inputs([[]])
 
 
 @dataclass
@@ -178,7 +178,7 @@ def test_increment_cache_lengths() -> None:
         batch.append(context)
         batches_by_replica[replica_idx].append(context)
 
-    kv_cache_inputs = kv_manager.get_runtime_inputs(batches_by_replica)
+    kv_cache_inputs = kv_manager.runtime_inputs(batches_by_replica)
 
     # Check that the cache lengths are initialized to 0.
     assert len(kv_cache_inputs) == 2

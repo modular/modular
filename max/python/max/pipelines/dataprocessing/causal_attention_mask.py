@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Constructs causal attention masks for variable-length sequence batches."""
+
 from __future__ import annotations
 
 import numpy as np

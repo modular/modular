@@ -441,8 +441,7 @@ fn b2b_gemm[
     # Each thread's fragment has 2x2 fp32 values. Casting to half float and
     # directly storing to global memory results in 2 4B writes. Following cutlass,
     # we stage the fragments in shared memory so that each thread can store 16B.
-    @parameter
-    if d_type.is_half_float():
+    comptime if d_type.is_half_float():
         comptime swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
@@ -468,8 +467,7 @@ fn b2b_gemm[
         # Vectorized copy from shared to global memory, during which every 2 FP32
         # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
         # vector and stored using 16B store instruction.
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             comptime warp_layout = Layout.row_major(
                 WARP_SIZE * simd_size // WN, WN // simd_size
@@ -491,8 +489,7 @@ fn b2b_gemm[
                 accum_smem_warp_tile.ptr
             )
 
-            @parameter
-            for i in range(num_stores_per_thread):
+            comptime for i in range(num_stores_per_thread):
                 comptime src_idx = type_of(d_smem_frag).layout(i)
                 comptime src_idx_base = src_idx % swizzle.size()
                 comptime src_idx_diff = src_idx - src_idx_base
@@ -503,8 +500,7 @@ fn b2b_gemm[
 
                 comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
 
-                @parameter
-                if d_layout.all_dims_known():
+                comptime if d_layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
                     dst_idx = Int(d_gmem_frag.runtime_layout(i))
@@ -543,9 +539,7 @@ fn b2b_gemm[
 
     # Store FP32 results to FP32 buffer in global memory.
     else:
-
-        @parameter
-        if elementwise_lambda_fn:
+        comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             var d_gmem_frag = d_gmem_warp_tile.vectorize[1, 2]().distribute[
                 Layout.row_major(8, 4)
@@ -553,12 +547,10 @@ fn b2b_gemm[
             var d_reg_frag = d_reg_tile.vectorize[1, 2]().transpose()
             var thread_offset = d_gmem_frag.distance(D.ptr)
 
-            @parameter
-            for i in range(type_of(d_gmem_frag).layout.size()):
+            comptime for i in range(type_of(d_gmem_frag).layout.size()):
                 comptime src_idx = d_reg_frag.layout(i)
 
-                @parameter
-                if d_layout.all_dims_known():
+                comptime if d_layout.all_dims_known():
                     comptime dst_static_idx = type_of(d_gmem_frag).layout(i)
                     dst_idx = dst_static_idx
                 else:
@@ -754,10 +746,6 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
                 mat_d_tensor[m, n],
                 host_d_ref[m, n],
             )
-    _ = mat_a^
-    _ = mat_b^
-    _ = mat_c^
-    _ = mat_d^
 
 
 def main():

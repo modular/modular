@@ -39,7 +39,7 @@ from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
 from utils import StaticTuple
 
-from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, can_enable_p2p
+from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 
 
 @always_inline
@@ -48,7 +48,7 @@ fn _allgather_naive[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -124,8 +124,7 @@ fn _allgather_p2p_kernel[
 
     # Copy data from each source GPU to corresponding output buffer.
     # outputs[i] should contain data from GPU i.
-    @parameter
-    for src_gpu in range(ngpus):
+    comptime for src_gpu in range(ngpus):
         var length = lengths[src_gpu]
         var num_simd_vectors = length // simd_width
         var remainder = length % simd_width
@@ -157,7 +156,7 @@ fn _allgather_p2p[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -173,8 +172,7 @@ fn _allgather_p2p[
     ]()
     var lengths = StaticTuple[Int, ngpus]()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_in_ptrs[i] = input_buffers[i].data
         lengths[i] = input_buffers[i].num_elements()
 
@@ -189,8 +187,7 @@ fn _allgather_p2p[
             UnsafePointer[Scalar[dtype], MutAnyOrigin], ngpus
         ]()
 
-        @parameter
-        for src_idx in range(ngpus):
+        comptime for src_idx in range(ngpus):
             var output_idx = gpu_idx * ngpus + src_idx
             output_ptrs[src_idx] = output_buffers[output_idx].data
 
@@ -231,7 +228,7 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -261,12 +258,12 @@ fn allgather[
         ctxs: List of device contexts for participating GPUs.
         _max_num_blocks: Maximum number of blocks for kernel launch (optional).
     """
+    comptime assert ngpus >= 2, "allgather requires at least 2 GPUs"
 
     # Return early, if all input buffers are empty
     var all_empty = True
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         if input_buffers[i].num_elements() > 0:
             all_empty = False
             break
@@ -277,7 +274,7 @@ fn allgather[
     var max_num_blocks = _max_num_blocks.or_else(216)
 
     # Check P2P availability.
-    if not can_enable_p2p():
+    if not is_p2p_enabled():
         return _allgather_naive(input_buffers, output_buffers, ctxs)
     else:
         return _allgather_p2p(
@@ -293,7 +290,7 @@ fn allgather[
     rank: Int,
     ngpus: Int,
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus],
     output_buffers: InlineArray[
         NDBuffer[dtype, rank, MutAnyOrigin], ngpus * ngpus
     ],
@@ -304,5 +301,7 @@ fn allgather[
     This version uses the naive implementation since we can't allocate signal
     buffers with proper lifetime in this function.
     """
+    comptime assert ngpus >= 2, "allgather requires at least 2 GPUs"
+
     # Use naive implementation for backward compatibility.
     _allgather_naive(input_buffers, output_buffers, ctxs)

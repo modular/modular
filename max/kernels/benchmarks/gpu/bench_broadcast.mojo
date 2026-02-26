@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray
-from math import align_up, ceildiv
+from math import ceildiv
 from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
 
 from benchmark import (
@@ -24,7 +24,7 @@ from benchmark import (
 )
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from comm.sync import can_enable_p2p
+from comm.sync import enable_p2p
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
@@ -34,7 +34,7 @@ from gpu.host import (
     DeviceMulticastBuffer,
     get_gpu_target,
 )
-from internal_utils import arg_parse, human_readable_size
+from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
 
 from testing import assert_true
 
@@ -99,10 +99,8 @@ fn bench_broadcast[
     var length = num_bytes // size_of[dtype]()
 
     comptime simd_size = simd_width_of[dtype, target = get_gpu_target()]()
-    var stride = align_up(length, simd_size)
-    comptime m512 = 512 * 1024 * 1024
-    var cache_elems = (
-        align_up(m512, stride * size_of[dtype]()) // size_of[dtype]()
+    var cb_in = CacheBustingBuffer[dtype](
+        length, simd_size, list_of_ctx[root], cache_busting
     )
 
     # Create output device buffers for all GPUs
@@ -121,8 +119,7 @@ fn bench_broadcast[
     var out_multicast_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
 
     # Initialize output and signal buffers for each GPU
-    @parameter
-    if use_multimem:
+    comptime if use_multimem:
         out_multicast_buf = DeviceMulticastBuffer[dtype](
             list_of_ctx.copy(), length
         )
@@ -130,8 +127,7 @@ fn bench_broadcast[
             list_of_ctx[0]
         ).unsafe_ptr()
 
-        @parameter
-        for gpu_idx in range(ngpus):
+        comptime for gpu_idx in range(ngpus):
             # For multimem, we use unicast buffers for verification/copy-back
             out_bufs_list.append(
                 out_multicast_buf.unicast_buffer_for(list_of_ctx[gpu_idx])
@@ -150,9 +146,7 @@ fn bench_broadcast[
                 signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
             )
     else:
-
-        @parameter
-        for gpu_idx in range(ngpus):
+        comptime for gpu_idx in range(ngpus):
             # Create output buffer for this GPU
             out_bufs_list.append(
                 list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](length)
@@ -172,22 +166,20 @@ fn bench_broadcast[
             )
 
     # Create and initialize host buffer for root with position-based values
-    var host_buffer = alloc[Scalar[dtype]](cache_elems)
-    for i in range(cache_elems // stride):
+    var host_buffer = alloc[Scalar[dtype]](cb_in.alloc_size())
+    for i in range(cb_in.alloc_size() // cb_in.stride):
         for j in range(length):
-            host_buffer[i * stride + j] = _input_value[dtype](root, j)
+            host_buffer[i * cb_in.stride + j] = _input_value[dtype](root, j)
 
-    # Create input buffer on root GPU and copy from host
-    var in_buf_dev = list_of_ctx[root].enqueue_create_buffer[dtype](cache_elems)
-    list_of_ctx[root].enqueue_copy(in_buf_dev, host_buffer)
+    # Copy host data to input buffer on root GPU
+    list_of_ctx[root].enqueue_copy(cb_in.device_buffer(), host_buffer)
 
     # Create NDBuffer wrappers for outputs
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
 
-    @parameter
-    if use_multimem:
+    comptime if use_multimem:
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
             out_bufs[i] = NDBuffer[dtype, rank](
@@ -204,15 +196,13 @@ fn bench_broadcast[
 
     # Zero device output buffers once before benchmarking so verification isn't
     # affected by any stale data in case a kernel path doesn't overwrite fully.
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
 
     # Pre-initialize vendor CCL communicators from the main thread.
     # ncclCommInitAll is not thread-safe, so we must initialize before
     # spawning worker threads.
-    @parameter
-    if use_vendor_ccl:
+    comptime if use_vendor_ccl:
         if not vendor_ccl.is_broadcast_available():
             raise "Vendor CCL not available; skipping vendor path."
         vendor_ccl.init_comms(ngpus)
@@ -225,15 +215,8 @@ fn bench_broadcast[
         @parameter
         @always_inline
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
-            # Offset the input buffer if cache_busting
-            var offset = 0
-
-            @parameter
-            if cache_busting:
-                offset = (cache_iter * stride) % cache_elems
-
             var in_buf_offset = NDBuffer[dtype, rank, MutAnyOrigin](
-                in_buf_dev.unsafe_ptr() + offset,
+                cb_in.offset_ptr(cache_iter),
                 DimList(length),
             )
 
@@ -281,21 +264,19 @@ fn bench_broadcast[
     # This ensures we're verifying fresh results, not stale data from
     # a previous iteration that might mask a broken kernel.
     # Signal buffers must also be zeroed since 2-stage uses the payload as scratch.
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_memset(signal_buffers[i], 0)
         list_of_ctx[i].enqueue_memset(out_bufs_list[i], 0)
         list_of_ctx[i].synchronize()
 
     # Create input buffer for verification (no cache offset)
     var in_buf_verify = NDBuffer[dtype, rank, MutAnyOrigin](
-        in_buf_dev.unsafe_ptr(),
+        cb_in.unsafe_ptr(),
         DimList(length),
     )
 
     # Run one broadcast for verification
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         comptime broadcast_kernel = vendor_ccl.broadcast if use_vendor_ccl else broadcast
         broadcast_kernel[ngpus, use_multimem=use_multimem](
             in_buf_verify,
@@ -307,8 +288,7 @@ fn bench_broadcast[
         )
 
     # Copy results back and verify - reuse host_buffer for each GPU
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         list_of_ctx[i].enqueue_copy(host_buffer, out_bufs_list[i])
         list_of_ctx[i].synchronize()
 
@@ -324,7 +304,7 @@ fn bench_broadcast[
     # Cleanup
     host_buffer.free()
     _ = signal_buffers^
-    _ = in_buf_dev^
+    _ = cb_in^
 
 
 def main():
@@ -359,7 +339,7 @@ def main():
     for i in range(num_gpus):
         ctx.append(DeviceContext(device_id=i))
 
-    if not can_enable_p2p():
+    if not enable_p2p():
         print("P2P not enabled, skipping benchmark.")
         return
 

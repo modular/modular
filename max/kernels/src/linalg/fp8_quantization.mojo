@@ -126,8 +126,8 @@ fn quantize_dynamic_scaled_fp8[
     group_size_or_per_token: Int,
     num_cols: Int,
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin],
-    scales: NDBuffer[mut=True, scales_dtype, 2, MutAnyOrigin],
+    scaled_output: NDBuffer[mut=True, out_dtype, 2, _],
+    scales: NDBuffer[mut=True, scales_dtype, 2, _],
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
@@ -234,8 +234,7 @@ fn quantize_fp8_kernel[
         var scale_factor: Scalar[scales_type]
         var scale_factor_recip: Scalar[accum_type]
 
-        @parameter
-        if scales_type == DType.float8_e8m0fnu:
+        comptime if scales_type == DType.float8_e8m0fnu:
             scale_factor = max(
                 group_max / fp8_max.cast[accum_type](),
                 Scalar[accum_type](1e-10),
@@ -255,8 +254,7 @@ fn quantize_fp8_kernel[
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
 
-            @parameter
-            if use_warp_tiling:
+            comptime if use_warp_tiling:
                 pass
             else:
                 input_vec = input_fn[simd_width, simd_width](row, idx).cast[
@@ -281,8 +279,8 @@ fn batched_quantize_dynamic_scaled_fp8[
     group_size_or_per_token: Int,
     num_cols: Int,
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 3, MutAnyOrigin],
-    scales: NDBuffer[mut=True, scales_dtype, 3, MutAnyOrigin],
+    scaled_output: NDBuffer[mut=True, out_dtype, 3, _],
+    scales: NDBuffer[mut=True, scales_dtype, 3, _],
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
@@ -384,8 +382,7 @@ fn batched_quantize_fp8_kernel[
         for i in range(tid, group_size // simd_width, num_threads):
             var idx: Int = i * simd_width + group_idx * group_size
 
-            @parameter
-            if use_warp_tiling:
+            comptime if use_warp_tiling:
                 pass
             else:
                 input_vec = input_fn[simd_width, simd_width](
@@ -450,7 +447,7 @@ fn matmul_dynamic_scaled_fp8[
     comptime a_stride = DimList(
         dim[a.static_stride[0]], dim[a.static_stride[1]]
     )
-    var a_buf = NDBuffer[a_type, 2, _, a_shape, a_stride](
+    var a_buf = NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape, a_stride](
         a.ptr,
         rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
         rebind[IndexList[2]](coord_to_index_list(a.layout.stride_coord())),
@@ -459,7 +456,7 @@ fn matmul_dynamic_scaled_fp8[
     comptime b_stride = DimList(
         dim[b.static_stride[0]], dim[b.static_stride[1]]
     )
-    var b_buf = NDBuffer[b_type, 2, _, b_shape, b_stride](
+    var b_buf = NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape, b_stride](
         b.ptr,
         rebind[IndexList[2]](coord_to_index_list(b.layout.shape_coord())),
         rebind[IndexList[2]](coord_to_index_list(b.layout.stride_coord())),
@@ -508,7 +505,7 @@ fn matmul_dynamic_scaled_fp8[
         transpose_b,
         target,
     ](
-        c_buf,
+        c_buf.make_dims_unknown(),
         a_buf,
         b_buf,
         a_scales_buf,
@@ -534,8 +531,8 @@ fn matmul_dynamic_scaled_fp8[
     target: StaticString = "cpu",
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     a_scales: NDBuffer[a_scales_type, 2, _, _, _],
     b_scales: NDBuffer[b_scales_type, 2, _, _, _],
     ctx: DeviceContext,
@@ -588,8 +585,7 @@ fn matmul_dynamic_scaled_fp8[
     ]()
 
     # Tensorwise and Channelwise scaling
-    @parameter
-    if (
+    comptime if (
         input_scale_granularity == "colwise"
         and weight_scale_granularity == "rowwise"
     ) or (input_scale_granularity == weight_scale_granularity == "tensor"):
@@ -600,8 +596,7 @@ fn matmul_dynamic_scaled_fp8[
             weight_scale_granularity,
         )
 
-        @parameter
-        if ctx.default_device_info == B200:
+        comptime if ctx.default_device_info == B200:
 
             @parameter
             @always_inline
@@ -619,8 +614,7 @@ fn matmul_dynamic_scaled_fp8[
                 ]()
                 var b_scale: SIMD[DType.float32, width]
 
-                @parameter
-                if transpose_b:
+                comptime if transpose_b:
                     b_scale = b_scales.load[width=width](idx[1], 0).cast[
                         DType.float32
                     ]()
@@ -658,8 +652,7 @@ fn matmul_dynamic_scaled_fp8[
                 var a_scale = a_scales.load[width=1](0, idx[0]).cast[dtype]()
                 var b_scale: SIMD[dtype, width]
 
-                @parameter
-                if transpose_b:
+                comptime if transpose_b:
                     b_scale = b_scales.load[width=width](idx[1], 0).cast[
                         dtype
                     ]()
@@ -701,13 +694,12 @@ fn matmul_dynamic_scaled_fp8[
         ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
 
     else:
-        constrained[
-            False,
+        comptime assert False, (
             "Unsupported scaling mode: input_scale_granularity="
             + input_scale_granularity
             + ", weight_scale_granularity="
-            + weight_scale_granularity,
-        ]()
+            + weight_scale_granularity
+        )
 
 
 fn naive_blockwise_scaled_fp8_matmul[
@@ -766,8 +758,7 @@ fn naive_blockwise_scaled_fp8_matmul[
         return
 
     # these checks are only applicable when A_SCALES_SIZE and B_SCALES_SIZE are not provided
-    @parameter
-    if not scales_granularity_mnk:
+    comptime if not scales_granularity_mnk:
         if K % a_scales_dim0 != 0:
             raise Error(
                 "K must be divisible by a_scales.dim(0) if A_SCALES_SIZE is not"
@@ -883,8 +874,7 @@ fn naive_blockwise_scaled_fp8_matmul[
         return
 
     # these checks are only applicable when A_SCALES_SIZE and B_SCALES_SIZE are not provided
-    @parameter
-    if not scales_granularity_mnk:
+    comptime if not scales_granularity_mnk:
         if K % a_scales_dim0 != 0:
             raise Error(
                 "K must be divisible by a_scales.dim(0) if A_SCALES_SIZE is not"
@@ -1002,8 +992,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
     var MAT_B_ROWS_SCALE_SIZE: UInt
     var MAT_B_COLS_SCALE_SIZE: UInt
 
-    @parameter
-    if scales_granularity_mnk:
+    comptime if scales_granularity_mnk:
         comptime scales_granularity = scales_granularity_mnk.value()
         MAT_A_ROWS_SCALE_SIZE = UInt(scales_granularity[2])
         MAT_A_COLS_SCALE_SIZE = UInt(scales_granularity[0])
@@ -1041,8 +1030,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
         var b_val: Scalar[accum_type]
         var b_scale_factor: Scalar[accum_type]
 
-        @parameter
-        if transpose_b:
+        comptime if transpose_b:
             b_val = rebind[Scalar[b_type]](b[y, k]).cast[accum_type]()
             b_scale_factor = rebind[Scalar[b_scales_type]](
                 b_scales[
@@ -1059,8 +1047,7 @@ fn naive_blockwise_scaled_fp8_matmul_kernel[
 
         accum += a_val * b_val * a_scale_factor * b_scale_factor
 
-    @parameter
-    if elementwise_lambda_fn:
+    comptime if elementwise_lambda_fn:
         comptime elementwise_lambda = elementwise_lambda_fn.value()
         elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
     else:
@@ -1090,12 +1077,14 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutAnyOrigin],
-    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[
+        expert_ids_type, expert_ids_layout, ImmutAnyOrigin
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1186,12 +1175,14 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutAnyOrigin],
-    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[
+        expert_ids_type, expert_ids_layout, ImmutAnyOrigin
+    ],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin],
 ):
     comptime assert (
         accum_type == DType.float32
@@ -1216,8 +1207,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     var MAT_B_ROWS_SCALE_SIZE: UInt
     var MAT_B_COLS_SCALE_SIZE: UInt
 
-    @parameter
-    if scales_granularity_mnk:
+    comptime if scales_granularity_mnk:
         comptime scales_granularity = scales_granularity_mnk.value()
         MAT_A_ROWS_SCALE_SIZE = UInt(scales_granularity[2])
         MAT_A_COLS_SCALE_SIZE = UInt(scales_granularity[0])
@@ -1263,8 +1253,7 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
             )
             accum += a_val * b_val * a_scale * b_scale
 
-    @parameter
-    if elementwise_lambda_fn:
+    comptime if elementwise_lambda_fn:
         comptime ep = elementwise_lambda_fn.value()
         ep[c_type, 1](Index(a_start_row + m_local, n), accum.cast[c_type]())
     else:
@@ -1378,8 +1367,7 @@ fn blockwise_scaled_fp8_with_epilogue[
     """
 
     # 1D/2D (1x128)x(128x128) blockwise scaling
-    @parameter
-    if (
+    comptime if (
         ctx.default_device_info == B200
         and transpose_b
         and c_type == DType.bfloat16
@@ -1401,8 +1389,7 @@ fn blockwise_scaled_fp8_with_epilogue[
             cta_group=2,
         )
 
-        @parameter
-        if not elementwise_lambda_fn:
+        comptime if not elementwise_lambda_fn:
             if not c.ptr:
                 raise "c must be allocated!"
 

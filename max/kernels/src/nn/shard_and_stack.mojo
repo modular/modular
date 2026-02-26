@@ -23,8 +23,7 @@ fn _row_major_strides[rank: Int](shape: IndexList[rank]) -> IndexList[rank]:
     var offset = 1
     var strides = IndexList[rank]()
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         strides[i] = offset
         offset *= shape[i]
     return strides
@@ -48,8 +47,8 @@ fn _validate_shard_and_stack[
         outputs: Output tensors, one per device/shard.
         inputs: Input tensors to be sharded, all with identical shapes.
     """
-    constrained[inputs.size > 0, "must have one or more inputs"]()
-    constrained[0 <= axis < inputs.rank, "axis must be in [0, inputs.rank)"]()
+    comptime assert inputs.size > 0, "must have one or more inputs"
+    comptime assert 0 <= axis < inputs.rank, "axis must be in [0, inputs.rank)"
 
     var input_shape = inputs[0].shape()
     var row_major_strides = _row_major_strides(input_shape)
@@ -288,8 +287,7 @@ fn shard_and_stack[
     # Check if outputs are on different devices than inputs (multi-device mode).
     comptime is_multi_device = dev_ctxs_input.size > 1
 
-    @parameter
-    if is_multi_device:
+    comptime if is_multi_device:
         _shard_and_stack_multi_device[axis](outputs, inputs, dev_ctxs_input)
     else:
         _shard_and_stack_single_device[axis](outputs, inputs)

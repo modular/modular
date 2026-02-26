@@ -980,23 +980,18 @@ struct GroupedBlockScaledMatmulKernel[
     @staticmethod
     fn validate_config():
         """Compile-time validation of kernel configuration."""
-        constrained[
-            Self.a_type == Self.b_type,
-            "A and B types must match for block-scaled GEMM",
-        ]()
-        constrained[
-            Self.sfa_dtype == Self.sfb_dtype,
-            "SFA and SFB types must match",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
-        constrained[
-            Self.max_groups >= 1,
-            "max_groups must be at least 1",
-        ]()
-        constrained[Self.transpose_b, "Only support transposed B"]()
+        comptime assert (
+            Self.a_type == Self.b_type
+        ), "A and B types must match for block-scaled GEMM"
+        comptime assert (
+            Self.sfa_dtype == Self.sfb_dtype
+        ), "SFA and SFB types must match"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
+        comptime assert Self.max_groups >= 1, "max_groups must be at least 1"
+        comptime assert Self.transpose_b, "Only support transposed B"
 
     # ========== TMA Update Helper ==========
 
@@ -1413,8 +1408,7 @@ struct GroupedBlockScaledMatmulKernel[
 
             var barrier = tiles.barrier()
 
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles as TileTensor (native SMEM storage)
@@ -1501,9 +1495,7 @@ struct GroupedBlockScaledMatmulKernel[
     ):
         """Execute MMA operations using InputConsumerStage."""
         if elect_one_sync():
-
-            @parameter
-            for jj in range(Self.config.k_group_size):
+            comptime for jj in range(Self.config.k_group_size):
                 var j = UInt32(jj)
 
                 # Get tiles as TileTensor (native SMEM storage)
@@ -1684,14 +1676,12 @@ struct GroupedBlockScaledMatmulKernel[
             )
 
             # Initialize CLC barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages_2sm):
+            comptime for i in range(Self.num_clc_pipeline_stages_2sm):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
             # Initialize throttle barriers
-            @parameter
-            for i in range(Self.num_clc_pipeline_stages_2sm * 2):
+            comptime for i in range(Self.num_clc_pipeline_stages_2sm * 2):
                 clc_throttle.ptr[i].init(
                     Int32(
                         Self.clc_throttle_producer_arv_count if i
@@ -2005,8 +1995,7 @@ struct GroupedBlockScaledMatmulKernel[
         # Build cumulative tiles
         var cumulative = StaticTuple[UInt32, Self.max_groups + 1]()
 
-        @parameter
-        for i in range(Self.max_groups + 1):
+        comptime for i in range(Self.max_groups + 1):
             cumulative[i] = 0
 
         var cumsum: UInt32 = 0

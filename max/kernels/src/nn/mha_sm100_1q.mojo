@@ -471,8 +471,7 @@ struct TMemAccumulator[
     fn offset[m_mma: Int, n_mma: Int](self) -> UInt32:
         Self.check_constraints()
 
-        @parameter
-        if m_mma == 0 and n_mma == 0:
+        comptime if m_mma == 0 and n_mma == 0:
             return self.tmem_addr
         else:
             comptime linear = _tmem_offset[
@@ -516,11 +515,8 @@ struct TMemAccumulator[
         # and writes 4 values per thread.
         comptime repeat = frag_size_b32 // 4
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
-
-            @parameter
-            for n_mma in range(Self.num_n_mmas):
+        comptime for m_mma in range(Self.num_m_mmas):
+            comptime for n_mma in range(Self.num_n_mmas):
                 comptime mma_id = n_mma * Self.num_m_mmas + m_mma
                 comptime tmem_offset = _tmem_offset(
                     dtype_size,
@@ -557,11 +553,8 @@ struct TMemAccumulator[
             Self.num_m_mmas * Self.num_n_mmas == type_of(frags).layout.size()
         )
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
-
-            @parameter
-            for n_mma in range(Self.num_n_mmas):
+        comptime for m_mma in range(Self.num_m_mmas):
+            comptime for n_mma in range(Self.num_n_mmas):
                 comptime mma_id = n_mma * Self.num_m_mmas + m_mma
                 comptime tmem_offset = _tmem_offset(
                     dtype_size,
@@ -621,8 +614,7 @@ struct TMemOperand[
         comptime assert Self.MMA_M > 0, "MMA_M = " + String(Self.MMA_M) + "\n"
         comptime assert Self.MMA_K > 0, "MMA_K = " + String(Self.MMA_K) + "\n"
 
-        @parameter
-        if m_mma == 0 and k_mma == 0:
+        comptime if m_mma == 0 and k_mma == 0:
             return self.tmem_addr
         else:
             comptime linear = _tmem_offset[
@@ -691,8 +683,7 @@ struct TMemOperand[
         comptime assert Self.num_m_mmas == 1
         comptime assert Self.num_n_mmas == 1
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
+        comptime for m_mma in range(Self.num_m_mmas):
             tmem = self.offset[m_mma, 0]()
             frag = bitcast[DType.uint32, frag_size_b32](
                 frags[m_mma].cast[Self.dtype]()
@@ -752,8 +743,7 @@ struct TMemOperand[
         comptime assert src_size <= dst_size
         comptime assert Self.num_n_mmas == 1
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
+        comptime for m_mma in range(Self.num_m_mmas):
             tmem = self.offset[m_mma, 0]()
             # 16 x 256b results in repeated 8x4<1x2> pattern
             frags[m_mma, 0] = rebind[
@@ -921,8 +911,7 @@ struct SM100TensorAccumulatorSS[
 
     @always_inline
     fn init(self):
-        @parameter
-        for i in range(Self.pipeline_stages):
+        comptime for i in range(Self.pipeline_stages):
             self.mbar[i].init()
             self.mbar[i + Self.pipeline_stages].init(
                 Int32(Self.num_softmax_threads)
@@ -975,19 +964,15 @@ struct SM100TensorAccumulatorSS[
     ):
         c = c_base[self.pipeline.index()]
 
-        @parameter
-        for k_mma in range(Self.num_k_mmas):
-
-            @parameter
-            for m_mma in range(Self.num_m_mmas):
+        comptime for k_mma in range(Self.num_k_mmas):
+            comptime for m_mma in range(Self.num_m_mmas):
                 comptime a_offset = Self.a_offset.layout(
                     IntTuple(Self.MMA_M * m_mma, Self.MMA_K * k_mma)
                 )
                 comptime a_offset_bytes = a_offset * size_of[Self.operand_t]()
                 a_desc = a + a_offset_bytes
 
-                @parameter
-                for n_mma in range(Self.num_n_mmas):
+                comptime for n_mma in range(Self.num_n_mmas):
                     c_tmem = c.offset[m_mma, n_mma]()
 
                     comptime b_offset = Self.b_offset.layout(
@@ -995,8 +980,7 @@ struct SM100TensorAccumulatorSS[
                     ) * size_of[Self.operand_t]()
                     b_desc = b + b_offset
 
-                    @parameter
-                    if k_mma == 0:
+                    comptime if k_mma == 0:
                         mma[Self.cta_group](
                             a_desc,
                             b_desc,
@@ -1045,8 +1029,7 @@ struct SM100TensorAccumulatorSS[
 
     @always_inline
     fn tmem_arrive_init(self):
-        @parameter
-        for i in range(Self.pipeline_stages):
+        comptime for i in range(Self.pipeline_stages):
             _ = self.mbar[Self.pipeline_stages + i].arrive()
 
     @always_inline
@@ -1198,23 +1181,18 @@ struct SM100TensorAccumulatorTS[
         c: Self.c_t,
         c_scale: UInt32,
     ):
-        @parameter
-        for k_mma in range(Self.num_k_mmas):
-
-            @parameter
-            for m_mma in range(Self.num_m_mmas):
+        comptime for k_mma in range(Self.num_k_mmas):
+            comptime for m_mma in range(Self.num_m_mmas):
                 a_tmem = a.offset[m_mma=m_mma, k_mma=k_mma]()
 
-                @parameter
-                for n_mma in range(Self.num_n_mmas):
+                comptime for n_mma in range(Self.num_n_mmas):
                     c_tmem = c.offset[m_mma=m_mma, n_mma=n_mma]()
                     comptime b_offset = Self.b_offset.layout(
                         IntTuple(Self.MMA_N * n_mma, Self.MMA_K * k_mma)
                     ) * size_of[Self.operand_t]()
                     b_desc = b + b_offset
 
-                    @parameter
-                    if k_mma == 0:
+                    comptime if k_mma == 0:
                         mma[Self.cta_group](
                             a_tmem,
                             b_desc,
@@ -1392,8 +1370,7 @@ fn mha_sm100_dispatch[
     ]
     var scheduler: SchedulerType = SchedulerType()
 
-    @parameter
-    if sink:
+    comptime if sink:
         comptime SinkType = NonNullPointer[KVType.dtype]
         var sink_ptr: SinkType = {
             rebind[UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
@@ -1662,8 +1639,7 @@ fn _mha_sm100_valid_length_dispatch[
     score_mod: ScoreModType,
     ctx: DeviceContext,
 ) raises:
-    @parameter
-    if ragged:
+    comptime if ragged:
         comptime ValidLengthType = NonNullPointer[DType.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm100_enqueue[
@@ -1893,6 +1869,7 @@ fn _mha_sm100_enqueue[
         Int32(config.num_threads[True]())
     )
 )
+@__llvm_metadata(`nvvm.minctasm`=Int(1))
 fn _mha_sm100[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -2204,8 +2181,7 @@ fn _mha_sm100[
     # Handle sink_weights
     var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]()
 
-    @parameter
-    if not SinkType.is_null:
+    comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[
             UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]
         ](sink_weights.value())
@@ -2247,15 +2223,12 @@ fn _mha_sm100[
     initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
     comptime assert not SchedulerType.may_advance
 
-    @parameter
-    if not decoding:
+    comptime if not decoding:
         if not initial_seq_info.is_valid():
             return
 
     if tid == 0:
-
-        @parameter
-        for i in range(pipeline_stages):
+        comptime for i in range(pipeline_stages):
             # until we can use TMA, we need 128 producers working on async copies
             produced_mbar_kv[i].init(1)
             consumed_mbar_kv[i].init(Int32(num_softmax_threads))
@@ -2344,8 +2317,7 @@ fn _mha_sm100[
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
 
-            @parameter
-            if PartitionType.do_partition:
+            comptime if PartitionType.do_partition:
                 # we exit before allocating so we don't need to deallocate
                 if kv_tile_start_row >= end:
                     return
@@ -2430,8 +2402,7 @@ fn _mha_sm100[
             var kv_tile_start_row: UInt32 = startend[0]
             var end: UInt32 = startend[1]
 
-            @parameter
-            if PartitionType.do_partition:
+            comptime if PartitionType.do_partition:
                 if kv_tile_start_row >= end:
                     return
 
@@ -2518,8 +2489,7 @@ fn _mha_sm100[
 
         # arrive to unblock the producers
         # TODO: skip this by not waiting on the first set
-        @parameter
-        for i in range(pipeline_stages):
+        comptime for i in range(pipeline_stages):
             _ = consumed_mbar_kv[i].arrive()
         umma_0.tmem_arrive_init()
 
@@ -2532,8 +2502,7 @@ fn _mha_sm100[
 
         var warp_y: UInt32 = warp_id  # // num_warps_n
 
-        @parameter
-        if num_softmax_threads > 128:
+        comptime if num_softmax_threads > 128:
             warp_y = 2 * (warp_y % 4) + (warp_y // 4)
         comptime warp_x: UInt32 = 0
         comptime assert num_softmax_warps == 4 or num_softmax_warps == 8
@@ -2625,14 +2594,12 @@ fn _mha_sm100[
             # We could avoid this on the first iter
             # if we specialize and unswitch on `first_iter`
             # otherwise, the branch requires synchronization
-            @parameter
-            for row in range(num_rows_per_warp):
+            comptime for row in range(num_rows_per_warp):
                 c = SIMD[accum_type, element_layout.size()](
                     rebind[Scalar[accum_type]](correction[row])
                 )
 
-                @parameter
-                for col in range(num_cols_output):
+                comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * c
 
         @always_inline
@@ -2640,8 +2607,7 @@ fn _mha_sm100[
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
-            @parameter
-            for row in range(num_rows_per_warp):
+            comptime for row in range(num_rows_per_warp):
                 old = old_rowsum[row]
                 new = new_rowsum[row]
                 new_rowsum[row] = recip(old)[0]
@@ -2655,20 +2621,17 @@ fn _mha_sm100[
             vout: VecOType,
         ):
             # Apply softmax denumerator.
-            @parameter
-            for row in range(num_rows_per_warp):
+            comptime for row in range(num_rows_per_warp):
                 rs_inv = vout.element_type(rowsum_inv[row][0])
 
-                @parameter
-                for col in range(num_cols_output):
+                comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * rs_inv
 
             var output_ptr: UnsafePointer[
                 Scalar[output_type], MutAnyOrigin
             ] = o_ptr_arg
 
-            @parameter
-            if decoding and PartitionType.do_partition:
+            comptime if decoding and PartitionType.do_partition:
                 output_ptr = output_ptr + (
                     UInt32(depth * num_heads)
                     * batch_size
@@ -2721,8 +2684,7 @@ fn _mha_sm100[
                 accum_smem_tile.vectorize[1, simd_size](),
             )
 
-        @parameter
-        if (
+        comptime if (
             decoding and PartitionType.do_partition
         ):  # we may have an empty partition
             if kv_tile_start_row >= end:
@@ -2734,8 +2696,7 @@ fn _mha_sm100[
                     )
                     var q_heads = get_q_head_idx(position, lane)
 
-                    @parameter
-                    for i in range(q_heads.size):
+                    comptime for i in range(q_heads.size):
                         var q_head_idx = q_heads[i]
                         exp_sum_ptr[q_head_idx] = Scalar[
                             PartitionType.accum_dtype
@@ -2750,8 +2711,7 @@ fn _mha_sm100[
         named_barrier[Int32(num_softmax_threads + 2 * WARP_SIZE)]()
         var tmem_addr = ptr_tmem_addr[0]
 
-        @parameter
-        if num_softmax_warps > 4:
+        comptime if num_softmax_warps > 4:
             if warp_group_idx != 1:  # elect_one_warp will be false
                 tmem_addr += 1 << 20
         var s_tmem: UInt32 = tmem_addr
@@ -2797,24 +2757,19 @@ fn _mha_sm100[
         wait_for_q_mul_k(read_idx_q)
         apply_mask(position, mask_status, kv_tile_start_row)
 
-        @parameter
-        if not SinkType.is_null:
+        comptime if not SinkType.is_null:
             # Include sink_weights in rowmax computation if present
             var q_head_indices = get_q_head_idx(position, lane)
 
-            @parameter
-            if decoding:
-
-                @parameter
-                for i in range(q_head_indices.size):
+            comptime if decoding:
+                comptime for i in range(q_head_indices.size):
                     var head_idx = q_head_indices[i]
                     var sink_weight = sink_weights_ptr[head_idx] * log2e
                     rowmax[i] = sink_weight.cast[accum_type]()
             else:
                 var sink_weight = sink_weights_ptr[q_head_indices[0]] * log2e
 
-                @parameter
-                for i in range(num_rows_per_warp):
+                comptime for i in range(num_rows_per_warp):
                     rowmax[i] = sink_weight.cast[accum_type]()
 
         # Compute initial rowmax
@@ -2834,15 +2789,11 @@ fn _mha_sm100[
         )
 
         # Add sink weight contribution to rowsum
-        @parameter
-        if not SinkType.is_null:
+        comptime if not SinkType.is_null:
             var q_head_indices = get_q_head_idx(position, lane)
 
-            @parameter
-            if decoding:
-
-                @parameter
-                for i in range(q_head_indices.size):
+            comptime if decoding:
+                comptime for i in range(q_head_indices.size):
                     var head_idx = q_head_indices[i]
                     var sink_weight = (
                         sink_weights_ptr[head_idx].cast[accum_type]() * log2e
@@ -2855,8 +2806,7 @@ fn _mha_sm100[
                     * log2e
                 )
 
-                @parameter
-                for i in range(num_rows_per_warp):
+                comptime for i in range(num_rows_per_warp):
                     # Compute exp2((sink_weight - rowmax[j]) * log2e)
                     var sink_contribution = exp2(sink_weight - rowmax[i])
                     attention_rowsum[i] += sink_contribution[0]
@@ -2911,8 +2861,7 @@ fn _mha_sm100[
             # rowmax now holds score_frag_rowmax
             # score_frag_rowmax now holds the correction
 
-            @parameter
-            for i in range(num_rows_per_warp):
+            comptime for i in range(num_rows_per_warp):
                 rowsum[i] = (
                     rowsum[i] * score_frag_rowmax[i] + score_frag_rowsum[i]
                 )
@@ -2930,8 +2879,7 @@ fn _mha_sm100[
         #     output_scale,
         # )
 
-        @parameter
-        if decoding and PartitionType.do_partition:
+        comptime if decoding and PartitionType.do_partition:
             # Only the first thread of each row
             if thread_idx.x % 4 == 0 and thread_idx.x < UInt(
                 4 * min(group, 8) + 128
@@ -2941,8 +2889,7 @@ fn _mha_sm100[
                 )
                 var q_heads = get_q_head_idx(position, lane)
 
-                @parameter
-                for i in range(q_heads.size):
+                comptime for i in range(q_heads.size):
                     var q_head_idx = q_heads[i]
                     exp_sum_ptr[q_head_idx] = rebind[
                         Scalar[PartitionType.accum_dtype]
@@ -2951,8 +2898,7 @@ fn _mha_sm100[
                         Scalar[PartitionType.accum_dtype]
                     ](rowmax[i])
 
-        @parameter
-        for row in range(num_rows_per_warp):
+        comptime for row in range(num_rows_per_warp):
             rowsum[row] = recip(rowsum[row])[0]
         umma_1.wait_for_mma()
 

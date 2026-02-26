@@ -17,7 +17,6 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
 )
 
 from . import weight_adapters
@@ -26,16 +25,16 @@ from .model_config import BertModelConfig
 from .tokenizer import BertTokenizer
 
 bert_arch = SupportedArchitecture(
-    name="BertModel_Legacy",
+    name="BertModel",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "sentence-transformers/all-MiniLM-L6-v2",
         "sentence-transformers/all-MiniLM-L12-v2",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: [],
-        SupportedEncoding.bfloat16: [],
+        "float32": [],
+        "bfloat16": [],
     },
     pipeline_model=BertPipelineModel,
     tokenizer=BertTokenizer,

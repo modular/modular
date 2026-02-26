@@ -31,8 +31,7 @@ from utils.index import Index
 fn _size[rank: Int](dims: IndexList[rank]) -> Int:
     var size = 1
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         size *= dims[i]
     return size
 
@@ -57,7 +56,7 @@ fn _create_host_buffer[
     dtype, rank, MutAnyOrigin, shape
 ]:
     var storage_ptr = UnsafePointer[Scalar[dtype]].alloc(_size(dynamic_shape))
-    return NDBuffer[dtype, rank, _, shape](
+    return NDBuffer[dtype, rank, MutAnyOrigin, shape](
         storage_ptr, dynamic_shape=dynamic_shape
     )
 

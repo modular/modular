@@ -171,7 +171,13 @@ fn test_conv2d_implicit_im2col[
     ctx.enqueue_copy(filter_device, filter_host_ptr)
 
     # Run conv2d with implicit im2col
-    conv2d_fprop(out_device_nd, act_device_nd, filter_device_nd, problem, ctx)
+    conv2d_fprop(
+        out_device_nd.make_dims_unknown(),
+        act_device_nd.make_dims_unknown(),
+        filter_device_nd.make_dims_unknown(),
+        problem,
+        ctx,
+    )
 
     # Reference: explicit im2col + cuBLAS GEMM
     # Allocate im2col buffer [M, K]
@@ -367,7 +373,11 @@ fn test_conv2d_1sm[
 
     # Run conv2d with 1-SM config
     conv2d_fprop[config=config](
-        out_device_nd, act_device_nd, filter_device_nd, problem, ctx
+        out_device_nd.make_dims_unknown(),
+        act_device_nd.make_dims_unknown(),
+        filter_device_nd.make_dims_unknown(),
+        problem,
+        ctx,
     )
 
     # Reference: explicit im2col + cuBLAS GEMM
@@ -601,7 +611,13 @@ fn test_conv2d_epilogue_lambda[
     conv2d_fprop[
         config=config,
         elementwise_compute_lambda_fn=optional_lambda,
-    ](out_device_nd, act_device_nd, filter_device_nd, problem, ctx)
+    ](
+        out_device_nd.make_dims_unknown(),
+        act_device_nd.make_dims_unknown(),
+        filter_device_nd.make_dims_unknown(),
+        problem,
+        ctx,
+    )
 
     # Reference: explicit im2col + cuBLAS GEMM (without bias)
     var im2col_size = M * K
@@ -721,8 +737,7 @@ fn test_conv2d_bias_fusion[
     var K = problem.gemm_k()
 
     # Select config based on parameter
-    @parameter
-    if use_1sm:
+    comptime if use_1sm:
         comptime config = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm()
     else:
         comptime config = Conv2dConfig[dtype, dtype, dtype].default_bf16()
@@ -807,17 +822,28 @@ fn test_conv2d_bias_fusion[
     comptime bias_lambda = Optional[elementwise_compute_lambda_type](add_bias)
 
     # Run conv2d with fused bias
-    @parameter
-    if use_1sm:
+    comptime if use_1sm:
         conv2d_fprop[
             config = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm(),
             elementwise_compute_lambda_fn=bias_lambda,
-        ](out_nd, act_nd, filter_nd, problem, ctx)
+        ](
+            out_nd.make_dims_unknown(),
+            act_nd.make_dims_unknown(),
+            filter_nd.make_dims_unknown(),
+            problem,
+            ctx,
+        )
     else:
         conv2d_fprop[
             config = Conv2dConfig[dtype, dtype, dtype].default_bf16(),
             elementwise_compute_lambda_fn=bias_lambda,
-        ](out_nd, act_nd, filter_nd, problem, ctx)
+        ](
+            out_nd.make_dims_unknown(),
+            act_nd.make_dims_unknown(),
+            filter_nd.make_dims_unknown(),
+            problem,
+            ctx,
+        )
 
     # Reference: im2col + GEMM + bias (CPU bias add)
     var act_host_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
@@ -1001,10 +1027,10 @@ fn test_conv2d_residual_api[
     # Test 1: has_residual=False should fall back to standard conv2d
     print("  Test 1: has_residual=False fallback...")
     conv2d_fprop_with_residual[config=config, has_residual=False](
-        out_device_nd,
-        act_device_nd,
-        filter_device_nd,
-        source_device_nd,  # Ignored when has_residual=False
+        out_device_nd.make_dims_unknown(),
+        act_device_nd.make_dims_unknown(),
+        filter_device_nd.make_dims_unknown(),
+        source_device_nd.make_dims_unknown(),  # Ignored when has_residual=False
         Float32(1.0),  # Beta (ignored)
         problem,
         ctx,
@@ -1013,10 +1039,10 @@ fn test_conv2d_residual_api[
     # Test 2: beta=0 should fall back to standard conv2d
     print("  Test 2: beta=0 fallback...")
     conv2d_fprop_with_residual[config=config, has_residual=True](
-        out_device_nd,
-        act_device_nd,
-        filter_device_nd,
-        source_device_nd,
+        out_device_nd.make_dims_unknown(),
+        act_device_nd.make_dims_unknown(),
+        filter_device_nd.make_dims_unknown(),
+        source_device_nd.make_dims_unknown(),
         Float32(0.0),  # Beta=0 means no residual
         problem,
         ctx,
@@ -1027,10 +1053,10 @@ fn test_conv2d_residual_api[
     comptime test_beta = Float32(1.0)
     print("  Test 3: source + beta (residual add)...")
     conv2d_fprop_with_residual[config=config, has_residual=True](
-        out_device_nd,
-        act_device_nd,
-        filter_device_nd,
-        source_device_nd,
+        out_device_nd.make_dims_unknown(),
+        act_device_nd.make_dims_unknown(),
+        filter_device_nd.make_dims_unknown(),
+        source_device_nd.make_dims_unknown(),
         test_beta,  # Beta=1.0 for skip connection
         problem,
         ctx,

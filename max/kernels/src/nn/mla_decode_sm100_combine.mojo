@@ -153,8 +153,7 @@ fn warp_reduce_max(val: Float32) -> Float32:
     """Warp-level max reduction using butterfly pattern."""
     var result = val
 
-    @parameter
-    for offset in range(4, -1, -1):  # 16, 8, 4, 2, 1
+    comptime for offset in range(4, -1, -1):  # 16, 8, 4, 2, 1
         var shuffled = warp.shuffle_xor(result, UInt32(1 << offset))
         result = max(result, shuffled)
 
@@ -166,8 +165,7 @@ fn warp_reduce_sum(val: Float32) -> Float32:
     """Warp-level sum reduction using butterfly pattern."""
     var result = val
 
-    @parameter
-    for offset in range(4, -1, -1):  # 16, 8, 4, 2, 1
+    comptime for offset in range(4, -1, -1):  # 16, 8, 4, 2, 1
         var shuffled = warp.shuffle_xor(result, UInt32(1 << offset))
         result = result + shuffled
 
@@ -203,6 +201,17 @@ fn mla_combine_kernel[
     var head_block_idx = Int(block_idx.z)
     var warp_idx = Int(warp_id())
     var lane_idx = Int(lane_id())
+
+    # In ragged mode, each batch can have a different number of Q tokens.
+    # The grid launches with seq_len = q_max_seq_len, so CTAs with
+    # seq_idx >= this batch's actual seq_len must exit early to avoid
+    # writing garbage to output locations belonging to other batches.
+    comptime if ragged:
+        var batch_seq_len = Int(
+            params.input_row_offsets_ptr[batch_idx + 1]
+        ) - Int(params.input_row_offsets_ptr[batch_idx])
+        if seq_idx >= batch_seq_len:
+            return
 
     var sub_warp_idx = warp_idx % warps_per_head
     var head_idx = head_block_idx * heads_per_block + warp_idx // warps_per_head
@@ -252,8 +261,7 @@ fn mla_combine_kernel[
         uninitialized=True
     )
 
-    @parameter
-    for i in range(elems_per_thread):
+    comptime for i in range(elems_per_thread):
         var offset = (
             head_dim_offset + lane_idx * vec_size + i * (WARP_SIZE * vec_size)
         )
@@ -278,8 +286,7 @@ fn mla_combine_kernel[
         fill=min_or_neg_inf[DType.float32]()
     )
 
-    @parameter
-    for k in range(num_lse_per_thread):
+    comptime for k in range(num_lse_per_thread):
         comptime split_idx_base = k * WARP_SIZE
         var split_idx = split_idx_base + lane_idx
         if split_idx < num_splits:
@@ -291,8 +298,7 @@ fn mla_combine_kernel[
     # Thread-local max reduction first, then warp-level reduction
     var thread_max: Float32 = local_lse[0]
 
-    @parameter
-    for k in range(1, num_lse_per_thread):
+    comptime for k in range(1, num_lse_per_thread):
         thread_max = max(thread_max, local_lse[k])
 
     var max_lse = warp_reduce_max(thread_max)
@@ -304,8 +310,7 @@ fn mla_combine_kernel[
     # Compute sum of exp2(lse - max_lse) with thread-local accumulation
     var thread_sum: Float32 = 0.0
 
-    @parameter
-    for k in range(num_lse_per_thread):
+    comptime for k in range(num_lse_per_thread):
         comptime split_idx_base = k * WARP_SIZE
         var split_idx = split_idx_base + lane_idx
         if split_idx < num_splits:
@@ -325,8 +330,7 @@ fn mla_combine_kernel[
     # scale factor and broadcast via shuffle_idx in the accumulation loop.
     # No branch needed: lanes beyond num_splits have local_lse[k] == -inf,
     # and exp2(-inf - global_lse) = 0.0 naturally.
-    @parameter
-    for k in range(num_lse_per_thread):
+    comptime for k in range(num_lse_per_thread):
         local_lse[k] = exp2(local_lse[k] - global_lse)
 
     # =========================================================================
@@ -336,16 +340,14 @@ fn mla_combine_kernel[
         fill=SIMD[DType.float32, vec_size](0.0)
     )
 
-    @parameter
-    for split_idx in range(num_splits):
+    comptime for split_idx in range(num_splits):
         # Broadcast scale from the owning lane via register shuffle (no smem).
         comptime k = split_idx // WARP_SIZE
         comptime src_lane = split_idx % WARP_SIZE
         var lse_scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
         var is_valid = SIMD[DType.bool, vec_size](fill=lse_scale != Float32(0))
 
-        @parameter
-        for i in range(elems_per_thread):
+        comptime for i in range(elems_per_thread):
             var data_f32 = datas[i].cast[DType.float32]()
             var clean_data = is_valid.select(
                 data_f32,
@@ -353,8 +355,7 @@ fn mla_combine_kernel[
             )
             result[i] = result[i] + lse_scale * clean_data
 
-            @parameter
-            if split_idx < num_splits - 1:
+            comptime if split_idx < num_splits - 1:
                 var next_offset = (
                     (split_idx + 1) * params.out_accum_stride_split
                     + head_dim_offset
@@ -371,8 +372,7 @@ fn mla_combine_kernel[
     # correct output position. For non-ragged, use the same padded layout.
     var final_out_row: Int
 
-    @parameter
-    if ragged:
+    comptime if ragged:
         # Ragged output: start_of_seq * num_heads + seq_idx * num_heads + head_idx
         var start_of_seq = Int(params.input_row_offsets_ptr[batch_idx])
         final_out_row = (
@@ -386,8 +386,7 @@ fn mla_combine_kernel[
 
     var out_ptr = params.output_ptr + final_out_row * params.out_stride_row
 
-    @parameter
-    for i in range(elems_per_thread):
+    comptime for i in range(elems_per_thread):
         var offset = (
             head_dim_offset + lane_idx * vec_size + i * (WARP_SIZE * vec_size)
         )

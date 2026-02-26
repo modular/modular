@@ -551,10 +551,10 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     var c_normal_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var c_swapAB_dev_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_device = NDBuffer[a_type, 2, _, static_a_shape](
+    var a_device = NDBuffer[mut=False, a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(), dynamic_a_shape
     )
-    var b_device = NDBuffer[b_type, 2, _, static_b_shape](
+    var b_device = NDBuffer[mut=False, b_type, 2, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(), dynamic_b_shape
     )
     var c_normal_device = NDBuffer[c_type, 2, _, static_c_shape](
@@ -737,8 +737,7 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     # Run REFERENCE matmul: C[M,N] = A[M,K] @ B[N,K]^T
     # Either normal kernel or vendor matmul (cuBLAS)
     # =========================================================================
-    @parameter
-    if use_vendor_reference:
+    comptime if use_vendor_reference:
         print("Running vendor matmul (cuBLAS) as reference...")
         vendor_matmul(
             ctx,
@@ -749,9 +748,7 @@ fn test_matmul_sm90_swapAB_comparison_v2[
             transpose_b=transpose_b,
         )
     else:
-
-        @parameter
-        if default_epilogue or elementwise_compute_lambda_fn:
+        comptime if default_epilogue or elementwise_compute_lambda_fn:
             print(
                 "Running normal matmul (swapAB=False) with epilogue as"
                 " reference..."
@@ -778,8 +775,7 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     # Run SWAPAB matmul: same C[M,N] = A[M,K] @ B[N,K]^T
     # Internally swaps A/B and transposes C tile on store
     # =========================================================================
-    @parameter
-    if default_epilogue or elementwise_compute_lambda_fn:
+    comptime if default_epilogue or elementwise_compute_lambda_fn:
         print("Running swapAB matmul (swapAB=True) with epilogue...")
     else:
         print("Running swapAB matmul (swapAB=True)...")
@@ -806,8 +802,7 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     # Apply compute lambda to vendor reference if needed
     # (vendor matmul doesn't apply epilogue, so we apply it on CPU)
     # =========================================================================
-    @parameter
-    if use_vendor_reference and elementwise_compute_lambda_fn:
+    comptime if use_vendor_reference and elementwise_compute_lambda_fn:
         print("Applying compute lambda to vendor reference on CPU...")
         comptime compute_lambda = elementwise_compute_lambda_fn.value()
         for i in range(M):
@@ -820,11 +815,8 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     # =========================================================================
     # Compare results: Both should be identical
     # =========================================================================
-    @parameter
-    if use_vendor_reference:
-
-        @parameter
-        if elementwise_compute_lambda_fn:
+    comptime if use_vendor_reference:
+        comptime if elementwise_compute_lambda_fn:
             print(
                 "Comparing swapAB results against vendor matmul + CPU"
                 " epilogue..."

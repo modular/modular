@@ -170,7 +170,7 @@ async def test_model_worker_start_timeout(
     mock_pipeline_config: PipelineConfig,
 ) -> None:
     """Tests raising in the model worker task."""
-    settings = Settings(MAX_SERVE_MW_TIMEOUT=0.1)
+    settings = Settings(mw_timeout_s=0.1)
 
     with pytest.raises(
         TimeoutError, match="Model Worker failed to become ready"

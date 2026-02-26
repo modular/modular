@@ -13,38 +13,32 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
-from ..llama3_legacy import weight_adapters
+from ..llama3 import weight_adapters
 from .model import Qwen3Model
 from .model_config import Qwen3Config
 from .weight_adapters import convert_qwen3_moe_state_dict
 
 qwen3_arch = SupportedArchitecture(
-    name="Qwen3ForCausalLM_Legacy",
+    name="Qwen3ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen3-8B", "Qwen/Qwen3-30B-A3B"],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-        ],
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-        ],
+        "bfloat16": ["paged"],
+        "float32": ["paged"],
+        "float8_e4m3fn": ["paged"],
     },
     pipeline_model=Qwen3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
@@ -55,23 +49,23 @@ qwen3_arch = SupportedArchitecture(
 # Qwen3MoE architecture - uses the same model and config as Qwen3,
 # but with MoE-specific weight adapter to handle expert weight stacking
 qwen3_moe_arch = SupportedArchitecture(
-    name="Qwen3MoeForCausalLM_Legacy",
+    name="Qwen3MoeForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["Qwen/Qwen3-30B-A3B-Instruct"],
+    example_repo_ids=[
+        "Qwen/Qwen3-30B-A3B-Instruct",
+        "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
+    ],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [
-            KVCacheStrategy.PAGED,
-        ],
-        SupportedEncoding.float32: [
-            KVCacheStrategy.PAGED,
-        ],
+        "bfloat16": ["paged"],
+        "float32": ["paged"],
+        "float8_e4m3fn": ["paged"],
     },
     pipeline_model=Qwen3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3_moe_state_dict,
     },

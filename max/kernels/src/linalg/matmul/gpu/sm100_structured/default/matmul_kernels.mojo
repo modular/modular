@@ -633,30 +633,23 @@ struct BlackwellMatmulSM100Kernel[
     @always_inline
     fn validate_constraints():
         """Validate parameter constraints at compile time."""
-        constrained[
-            Self.c_type != DType.float32,
-            "c_type cannot be float32",
-        ]()
-        constrained[
-            Self.transpose_b,
-            "Only support transposed B (K-major)",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
+        comptime assert Self.c_type != DType.float32, "c_type cannot be float32"
+        comptime assert Self.transpose_b, "Only support transposed B (K-major)"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
 
-        @parameter
-        if Self.cta_group == 2:
-            constrained[
-                Self.MMA_M in (128, 256),
-                "cta_group=2 requires MMA_M == 128 or 256",
-            ]()
+        comptime if Self.cta_group == 2:
+            comptime assert Self.MMA_M in (
+                128,
+                256,
+            ), "cta_group=2 requires MMA_M == 128 or 256"
         else:
-            constrained[
-                Self.MMA_M in (64, 128),
-                "cta_group=1 requires MMA_M == 64 or 128",
-            ]()
+            comptime assert Self.MMA_M in (
+                64,
+                128,
+            ), "cta_group=1 requires MMA_M == 64 or 128"
 
     # ========== Static Helper Methods ==========
 
@@ -709,8 +702,7 @@ struct BlackwellMatmulSM100Kernel[
             )
 
             # Initialize CLC barriers
-            @parameter
-            for i in range(Self.config.num_clc_pipeline_stages):
+            comptime for i in range(Self.config.num_clc_pipeline_stages):
                 clc_full.ptr[i].init(Self.clc_producer_arv_count)
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
@@ -755,9 +747,7 @@ struct BlackwellMatmulSM100Kernel[
         var accum = tmem_stage.tensor[Self.accum_type, Self.accum_layout]()
 
         if elect_one_sync():
-
-            @parameter
-            for j in range(Self.config.k_group_size):
+            comptime for j in range(Self.config.k_group_size):
                 # Get tiles using payload accessor - tiles have swizzled layout
                 var a_tile, b_tile = tiles.payload().get_tile[
                     Self.config.k_group_size
@@ -845,8 +835,7 @@ struct BlackwellMatmulSM100Kernel[
             # Get barrier for TMA multicast loads
             var barrier = tiles.barrier()
 
-            @parameter
-            for j in range(Self.config.k_group_size):
+            comptime for j in range(Self.config.k_group_size):
                 # Get tiles using payload accessor
                 var a_tile, b_tile = tiles.payload().get_tile[
                     Self.config.k_group_size
@@ -966,9 +955,7 @@ struct BlackwellMatmulSM100Kernel[
 
         if WarpRole.is_main_load():
             with MatmulProfilerType[0](workspace, 0):
-
-                @parameter
-                if Self.pdl_level > PDLLevel.OFF:
+                comptime if Self.pdl_level > PDLLevel.OFF:
                     wait_on_dependent_grids()
 
                 with input_pipeline.producer() as producer:
@@ -1000,8 +987,7 @@ struct BlackwellMatmulSM100Kernel[
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
             # Implies each SM will only process initial work, there is no
             # more work to schedule.
-            @parameter
-            if Self.config.num_clc_pipeline_stages == 0:
+            comptime if Self.config.num_clc_pipeline_stages == 0:
                 return
 
             # Scheduler warp uses its own iterator that manages both
@@ -1009,9 +995,7 @@ struct BlackwellMatmulSM100Kernel[
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
-
-                @parameter
-                if Self.pdl_level > PDLLevel.OFF:
+                comptime if Self.pdl_level > PDLLevel.OFF:
                     wait_on_dependent_grids()
 
                 while sched_iter.has_work():
@@ -1055,8 +1039,7 @@ struct BlackwellMatmulSM100Kernel[
                                                     0,
                                                 )
 
-                    @parameter
-                    if Self.pdl_level > PDLLevel.OFF:
+                    comptime if Self.pdl_level > PDLLevel.OFF:
                         launch_dependent_grids()
 
         if WarpRole.is_epilogue():
@@ -1250,9 +1233,7 @@ struct BlackwellMatmulSM100Kernel[
                     producer.drain()  # wait for consumer before CTA exits
 
         if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-
-            @parameter
-            if Self.config.num_clc_pipeline_stages == 0:
+            comptime if Self.config.num_clc_pipeline_stages == 0:
                 return
 
             var sched_iter = scheduler.scheduler_iterator()
@@ -1436,15 +1417,13 @@ struct BlackwellMatmulSM100FallbackKernel[
     @always_inline
     fn validate_constraints():
         """Validate compile-time constraints for this kernel configuration."""
-        constrained[Self.num_threads == 128 or Self.num_threads == 256]()
-        constrained[
-            ((Self.a_size * size_of[Self.a_type]()) % 128) == 0,
-            "preserve alignment",
-        ]()
-        constrained[
-            ((Self.b_size * size_of[Self.b_type]()) % 16) == 0,
-            "preserve alignment",
-        ]()
+        comptime assert Self.num_threads == 128 or Self.num_threads == 256
+        comptime assert (
+            (Self.a_size * size_of[Self.a_type]()) % 128
+        ) == 0, "preserve alignment"
+        comptime assert (
+            (Self.b_size * size_of[Self.b_type]()) % 16
+        ) == 0, "preserve alignment"
 
     # ========== Kernel Entry Point ==========
     @staticmethod
@@ -1595,11 +1574,8 @@ struct BlackwellMatmulSM100FallbackKernel[
 
         var M = c.dim[0]()
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
-
-            @parameter
-            for n_mma in range(Self.num_n_mmas):
+        comptime for m_mma in range(Self.num_m_mmas):
+            comptime for n_mma in range(Self.num_n_mmas):
                 var warp_tile, warp_coords, _ = ctile.tile_with_offset[
                     Self.MMA_M // num_warps,
                     Self.MMA_N,
@@ -1625,11 +1601,8 @@ struct BlackwellMatmulSM100FallbackKernel[
                 comptime num_vecs_m = type_of(frag).static_shape[0]
                 comptime num_vecs_n = type_of(frag).static_shape[1]
 
-                @parameter
-                for n_vec in range(num_vecs_n):
-
-                    @parameter
-                    for m_vec in range(num_vecs_m):
+                comptime for n_vec in range(num_vecs_n):
+                    comptime for m_vec in range(num_vecs_m):
                         comptime i_vec = n_vec * num_vecs_m + m_vec
                         var dst_idx = Int(frag.layout(coord[m_vec, n_vec]()))
                         var dst_m_offset = dst_idx // N
@@ -1642,8 +1615,7 @@ struct BlackwellMatmulSM100FallbackKernel[
                                 c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
                             ).cast[Self.c_type]()
 
-                            @parameter
-                            if Self.elementwise_lambda_fn:
+                            comptime if Self.elementwise_lambda_fn:
                                 comptime alignment = align_of[
                                     SIMD[Self.c_type, 2]
                                 ]()

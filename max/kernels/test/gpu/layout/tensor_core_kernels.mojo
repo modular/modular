@@ -46,9 +46,8 @@ fn mma_load_and_multiply[
     var d_reg_tile = mma.mma_op(a_reg_tile, b_reg_tile, c_reg_tile)
     var d_frags = load_to_simd(d_reg_tile).cast[DType.float64]()
 
-    @parameter
     # NVIDIA
-    if a_frags.size == 8 and b_frags.size == 4:
+    comptime if a_frags.size == 8 and b_frags.size == 4:
         _printf[
             "thread %u a_vals=[%g %g %g %g %g %g %g %g], b_vals=[%g %g %g %g],"
             " d_vals=[%g %g %g %g]\n"
@@ -181,9 +180,6 @@ def test_load_and_mma_and_multiply_operands[
     )
     ctx.synchronize()
 
-    _ = lhs^
-    _ = rhs^
-
 
 def test_write_res_operand[
     dst_dtype: DType, dtype: DType, shape: IndexList[3]
@@ -203,8 +199,6 @@ def test_write_res_operand[
     ctx.synchronize()
 
     print(dst.tensor())
-
-    _ = dst^
 
 
 fn mma_load_and_print_operands_kernel_ldmatrix[
@@ -268,9 +262,8 @@ fn mma_load_and_print_operands_kernel_ldmatrix[
     var a_frags = a_reg_tile[0, 0].cast[DType.float64]()
     var b_frags = b_reg_tile[0, 0].cast[DType.float64]()
 
-    @parameter
     # NVIDIA
-    if a_frags.size == 4 and b_frags.size == 2:
+    comptime if a_frags.size == 4 and b_frags.size == 2:
         _printf["thread %u a_vals=[%g %g %g %g], b_vals=[%g %g]\n"](
             thread_idx.x,
             a_frags[0],
@@ -346,5 +339,3 @@ def test_load_operands_ldmatrix[
         block_dim=(WARP_SIZE),
     )
     ctx.synchronize()
-    _ = lhs^
-    _ = rhs^

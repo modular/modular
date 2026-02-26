@@ -44,4 +44,6 @@ JS_BINARY__CHDIR="$BUILD_WORKSPACE_DIRECTORY" \
   "$binary" --config "$config" \
   --ignore-path "$BUILD_WORKSPACE_DIRECTORY/.gitignore" \
   --ignore "$BUILD_WORKSPACE_DIRECTORY/third-party" \
+  --ignore "$BUILD_WORKSPACE_DIRECTORY/oss/modular/oss.AGENTS.md" \
+  --ignore "$BUILD_WORKSPACE_DIRECTORY/oss/skills" \
   "$@" $paths 2>&1 | sed 's/^/error: /'
