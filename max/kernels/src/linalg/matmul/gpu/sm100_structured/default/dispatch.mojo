@@ -1479,6 +1479,11 @@ fn matmul_dispatch_sm100_bf16[
 
     comptime DeepSeek_NK = [
         Index(16384, 512),
+        Index(256, 7168),
+        Index(1536, 7168),
+        Index(576, 7168),
+        Index(2112, 7168),
+        Index(24576, 1536),
     ]
 
     comptime miscellaneous_NK = [
