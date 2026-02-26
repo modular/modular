@@ -104,14 +104,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    enable_chunked_prefill: bool = Field(
-        default=True,
-        description=(
-            "Enable chunked prefill to split context encoding requests into "
-            "multiple chunks based on max_batch_input_tokens."
-        ),
-    )
-
     max_num_steps: int = Field(
         default=-1,
         description=(
@@ -1138,7 +1130,7 @@ class PipelineConfig(ConfigFileModel):
         pipeline_entries: list[tuple[str, Any]] = [
             ("max_seq_len", self.model.max_length),
             ("max_batch_size", self.max_batch_size),
-            ("chunked_prefill", self.enable_chunked_prefill),
+            ("chunked_prefill", self.runtime.enable_chunked_prefill),
             ("max_batch_input_tokens", self.max_batch_input_tokens),
             (
                 "in_flight_batching",

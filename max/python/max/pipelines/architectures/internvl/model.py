@@ -306,7 +306,7 @@ class InternVLModel(
 
         # Note: Each image can use up to max_dynamic_patch patches (default 12)
         # plus 1 for thumbnail if applicable.
-        if not pipeline_config.enable_chunked_prefill:
+        if not pipeline_config.runtime.enable_chunked_prefill:
             # When there's no chunked prefill, the number of images may overhang
             # by the maximum in a single request.
             # Since we only support a single image per request for now,
