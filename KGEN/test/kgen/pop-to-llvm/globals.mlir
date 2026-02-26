@@ -64,6 +64,24 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // -----
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+  // CHECK-LABEL: @global_alloc_initialized
+  kgen.func @global_alloc_initialized() -> !kgen.pointer<scalar<si32>> {
+    // CHECK: llvm.mlir.addressof @my_init : !llvm.ptr
+    // CHECK: llvm.bitcast
+    %0 = pop.global_alloc "my_init" 1 x !pop.scalar<si32> align 4 = <31>
+    kgen.return %0 : !kgen.pointer<scalar<si32>>
+  }
+
+  // CHECK: llvm.mlir.global internal @my_init() {addr_space = 0 : i32, alignment = 4 : i64} : !llvm.array<1 x i32> {
+  // CHECK-NEXT: %0 = llvm.mlir.constant(31 : i32) : i32
+  // CHECK-NEXT: %1 = llvm.mlir.undef : !llvm.array<1 x i32>
+  // CHECK-NEXT: %2 = llvm.insertvalue %0, %1[0] : !llvm.array<1 x i32>
+  // CHECK-NEXT: llvm.return %2 : !llvm.array<1 x i32>
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @aligned_globals
   kgen.func @aligned_globals() {
 

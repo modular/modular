@@ -3827,12 +3827,33 @@ struct ConvertPOPGlobalAlloc : public ConvertSymbolOpToLLVM<GlobalAllocOp> {
 
     // Create the global.
     b.clearInsertionPoint();
+    auto arrayType = LLVM::LLVMArrayType::get(
+        elementType, cast<IntegerAttr>(op.getCount()).getInt());
     auto global = LLVM::GlobalOp::create(
-        b, op.getLoc(),
-        LLVM::LLVMArrayType::get(elementType,
-                                 cast<IntegerAttr>(op.getCount()).getInt()),
+        b, op.getLoc(), arrayType,
         /*isConstant=*/false, LLVM::Linkage::Internal, name,
         /*value=*/Attribute(), alignment, addrSpace);
+
+    // If an initializer is present, emit an initializer region.
+    // The verifier guarantees count == 1 when an initializer is set.
+    if (auto init = op.getInitializer()) {
+      global.getBodyRegion().push_back(new Block);
+      ImplicitLocOpBuilder ib(op.getLoc(), op.getContext());
+      ib.setInsertionPointToStart(global.getBody());
+      ErrorOr<Value> value =
+          convertParameterToLLVM(ib, *getTypeConverter(), /*imc=*/nullptr,
+                                 /*scope=*/nullptr, *init);
+      if (value.isError()) {
+        ib.emitError(value.getError());
+        return failure();
+      }
+      // Wrap the scalar value in the array type.
+      Value array = LLVM::UndefOp::create(ib, arrayType);
+      array = LLVM::InsertValueOp::create(ib, array, value.get(),
+                                          ArrayRef<int64_t>{0});
+      LLVM::ReturnOp::create(ib, array);
+    }
+
     symtab.insert(global);
 
     // Replace the alloc op with an `addressof`.
