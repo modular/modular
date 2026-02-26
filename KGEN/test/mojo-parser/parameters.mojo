@@ -1762,3 +1762,17 @@ struct FindOriginFromKGENOrigin[X: AnyType, origin: ImmutOrigin]:
     var writable: Pointer[Self.X, Self.origin]
     fn __init__(out self, ref [Self.origin]w: Self.X):
         self.writable = Pointer(to=w)
+
+
+# Test non-materializable target of a meta type.
+fn infer_non_materializable_target_of_meta_type[
+    type_type: __TypeOfAllTypes,
+    //,
+    type: type_type,
+]():
+    pass
+
+fn test_non_materializable_target_of_meta_type():
+    # CHECK:      lit.call tail {{.*}}"infer_non_materializable_target_of_meta_type{{.*}}"
+    # CHECK-SAME: <:!alias___TypeOfAllTypes1 #kgen.type<meta<!lit.struct<#IntLiteral <:!pop.int_literal 0>>>>
+    infer_non_materializable_target_of_meta_type[type_of(0)]()

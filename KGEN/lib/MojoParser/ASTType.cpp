@@ -496,11 +496,18 @@ TypedAttr ASTType::extractOriginOf(TypedAttr value) {
 /// Return the @__nonmaterializable decorator target for the type, or null if
 /// there is none.
 ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
-  if (auto structDecl = getDecl(shared))
+  if (auto structDecl = getDecl(shared)) {
+    // If the type is a MetaType itself, don't return the nonmaterializable
+    // target, we could theoretically return a `meta<!target>` here too, but we
+    // have to decide what implicit conversion between meta types means first.
+    if (isa<StructMetaMetaType>(getMetaType()))
+      return {};
+
     if (auto structOp =
             dyn_cast_or_null<StructDeclOp>(structDecl->getIfOperation()))
       if (TypeAttr targetMlirType = structOp.getNonmaterializableTargetAttr())
         return ASTType(targetMlirType.getValue());
+  }
   return {};
 }
 
