@@ -822,6 +822,48 @@ def test_list_count():
     assert_equal(0, list2.count(1))
 
 
+def test_list_sort():
+    # Basic ascending sort.
+    var numbers = [3, 1, 4, 1, 5, 9, 2, 6]
+    numbers.sort()
+    assert_equal(numbers, [1, 1, 2, 3, 4, 5, 6, 9])
+
+    # Already sorted.
+    var sorted_list = [1, 2, 3, 4, 5]
+    sorted_list.sort()
+    assert_equal(sorted_list, [1, 2, 3, 4, 5])
+
+    # Reverse sorted.
+    var reversed_list = [5, 4, 3, 2, 1]
+    reversed_list.sort()
+    assert_equal(reversed_list, [1, 2, 3, 4, 5])
+
+    # Single element.
+    var single = [42]
+    single.sort()
+    assert_equal(single, [42])
+
+    # Empty list.
+    var empty = List[Int]()
+    empty.sort()
+    assert_equal(len(empty), 0)
+
+    # Duplicates.
+    var dups = [3, 3, 3, 1, 1, 2]
+    dups.sort()
+    assert_equal(dups, [1, 1, 2, 3, 3, 3])
+
+    # Custom comparison (descending).
+    var desc = [3, 1, 4, 1, 5]
+
+    @parameter
+    fn cmp_desc(a: Int, b: Int) -> Bool:
+        return a > b
+
+    desc.sort[cmp_fn=cmp_desc]()
+    assert_equal(desc, [5, 4, 3, 1, 1])
+
+
 def test_list_add():
     var a = [1, 2, 3]
     var b = [4, 5, 6]
