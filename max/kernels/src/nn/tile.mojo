@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from memory import memcpy
 
 from utils import IndexList

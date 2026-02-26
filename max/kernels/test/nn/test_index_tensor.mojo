@@ -13,9 +13,9 @@
 
 from random import random_ui64
 
-from layout.coord import Coord
+from layout import Coord
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,

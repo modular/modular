@@ -47,8 +47,8 @@ from ..structured_kernels.epilogue_components import (
 )
 from ..structured_kernels.barriers import WarpGroupBarrier
 from layout._layout import TensorLayout
-from layout.coord import Coord, Idx
-from layout.tile_tensor import TileTensor
+from layout import Coord, Idx
+from layout import TileTensor
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 

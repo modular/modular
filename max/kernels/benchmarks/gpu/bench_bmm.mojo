@@ -22,7 +22,7 @@ from sys import (
 )
 from sys.info import has_amd_gpu_accelerator
 
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure

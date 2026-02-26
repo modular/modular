@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from memory import UnsafePointer
 from nn.argmaxmin import argmax, argmin
 

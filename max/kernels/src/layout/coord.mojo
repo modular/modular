@@ -759,7 +759,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
         Examples:
             ```mojo
-            from layout.coord import Coord, Idx
+            from layout import Coord, Idx
             var nested = Coord(
                 Idx[5](),
                 Coord(Idx[3](), Idx[2]()),

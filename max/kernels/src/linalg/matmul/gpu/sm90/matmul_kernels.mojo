@@ -77,7 +77,7 @@ from ..sm100_structured.structured_kernels.tile_types import (
     SMemTileArray2DRowMajor,
 )
 from layout._layout import Layout as _Layout, row_major
-from layout.coord import Coord, Idx
+from layout import Coord, Idx
 from ..sm100_structured.structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )

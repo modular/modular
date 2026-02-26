@@ -31,8 +31,8 @@ from _cufft.utils import check_error
 from complex import ComplexFloat32
 from gpu.host import DeviceContext
 from gpu.host._nvidia_cuda import CUDA
-from layout.coord import coord_to_index_list
-from layout.tile_tensor import TileTensor
+from layout import coord_to_index_list
+from layout import TileTensor
 
 
 # This should eventually be moved to ffi.mojo with a more general global cache method

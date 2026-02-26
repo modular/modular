@@ -16,7 +16,7 @@ from sys._build import is_debug_build
 from sys.info import CompilationTarget, simd_width_of, size_of
 
 from layout import Layout, LayoutTensor, IntTuple, UNKNOWN_VALUE
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from linalg.utils import partition_work
 
 from utils.index import Index, IndexList

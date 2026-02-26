@@ -30,7 +30,7 @@ from gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor
 from layout.coord import Coord, _DimsToCoordLike
 from layout._layout import Layout as TileLayout
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]

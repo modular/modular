@@ -15,8 +15,8 @@ from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from layout._layout import TensorLayout, row_major
-from layout.coord import Coord, Idx
-from layout.tile_tensor import TileTensor
+from layout import Coord, Idx
+from layout import TileTensor
 from layout.tma_async import SharedMemBarrier, PipelineState
 from utils.static_tuple import StaticTuple
 from .tile_types import static_row_major, _StridedLayout, _strided_layout

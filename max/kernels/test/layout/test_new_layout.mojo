@@ -19,8 +19,8 @@ from layout._layout import (
     col_major,
     blocked_product,
 )
-from layout.coord import ComptimeInt, Idx, Coord, RuntimeInt
-from layout.tile_tensor import TileTensor
+from layout import ComptimeInt, Idx, Coord, RuntimeInt
+from layout import TileTensor
 from layout.int_tuple import IntTuple
 from testing import assert_equal, assert_true, TestSuite
 

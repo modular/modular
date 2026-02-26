@@ -30,7 +30,7 @@ from layout.coord import (
     coord_to_index_list,
 )
 from layout._layout import TensorLayout, RowMajorLayout, Layout, row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
 from utils import IndexList

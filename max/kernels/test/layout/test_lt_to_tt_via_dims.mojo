@@ -21,7 +21,7 @@ from layout.coord import (
     RuntimeInt,
 )
 from layout._layout import Layout as InternalLayout
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 
 
 # ============================================================

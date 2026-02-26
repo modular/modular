@@ -45,7 +45,7 @@ from layout.coord import (
     coord_to_index_list,
 )
 from layout._layout import TensorLayout, Layout, RowMajorLayout, row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from math import log2
 from memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index

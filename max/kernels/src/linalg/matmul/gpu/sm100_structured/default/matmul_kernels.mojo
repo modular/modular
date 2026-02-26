@@ -68,7 +68,7 @@ from layout._layout import (
 )
 from builtin.variadics import Variadic
 from layout.coord import Coord, Idx, coord
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from ..structured_kernels.tile_types import (
     GMEMTile,
     TMATile,

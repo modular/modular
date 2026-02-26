@@ -15,10 +15,10 @@ from math import sqrt
 from sys.info import simd_width_of
 
 from algorithm.functional import elementwise
-from layout.coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, coord_to_index_list
 from layout._fillers import random
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from memory import alloc
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu
 from testing import assert_almost_equal

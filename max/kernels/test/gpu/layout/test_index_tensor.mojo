@@ -14,9 +14,9 @@
 from random import random_ui64
 
 from gpu.host import DeviceContext, DeviceBuffer
-from layout.coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from nn.index_tensor import _index_tensor_impl
 from testing import assert_equal, assert_true
 

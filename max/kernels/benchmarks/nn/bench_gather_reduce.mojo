@@ -19,8 +19,8 @@ from sys import simd_width_of, size_of
 
 from benchmark import Bench, Bencher, BenchId
 from layout._layout import row_major
-from layout.coord import Coord, Idx
-from layout.tile_tensor import TileTensor
+from layout import Coord, Idx
+from layout import TileTensor
 from nn.gather_scatter import gather_reduce
 
 from utils import IndexList

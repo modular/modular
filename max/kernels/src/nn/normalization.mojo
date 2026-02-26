@@ -48,7 +48,7 @@ from layout.coord import (
     coord_to_index_list,
 )
 from layout._layout import Layout, TensorLayout, row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout import Layout as LegacyLayout
 from layout.layout_tensor import LayoutTensor as LegacyLayoutTensor

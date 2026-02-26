@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from memory import memcpy
 
 

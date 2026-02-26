@@ -13,7 +13,7 @@
 
 from layout.coord import Coord, DynamicCoord, Idx
 from layout._layout import Layout, TensorLayout
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from register import register_internal
 
 from utils.index import IndexList

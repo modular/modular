@@ -14,9 +14,9 @@
 from random import random_float64
 
 from gpu.host import DeviceContext
-from layout.coord import Coord
+from layout import Coord
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from testing import assert_equal

@@ -26,9 +26,9 @@ from algorithm.functional import (
 from gpu import block_idx, thread_idx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.info import is_cpu, is_valid_target
-from layout.coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, coord_to_index_list
 from layout._layout import TensorLayout, row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id

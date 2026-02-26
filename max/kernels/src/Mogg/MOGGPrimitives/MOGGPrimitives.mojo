@@ -22,9 +22,9 @@ from collections import InlineArray
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout.coord import Coord, Idx
+from layout import Coord, Idx
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from memory import memcpy
 
 from nn.concat import concat

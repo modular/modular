@@ -13,7 +13,7 @@
 
 from math import ceil
 
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 
 from utils.numerics import min_or_neg_inf
 

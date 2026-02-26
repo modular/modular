@@ -17,7 +17,7 @@ from algorithm.functional import elementwise
 from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from layout import LayoutTensor
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from runtime.asyncrt import DeviceContextPtr
 
 from utils import IndexList

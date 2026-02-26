@@ -15,9 +15,9 @@ from math import sqrt
 
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext
-from layout.coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, coord_to_index_list
 from layout._layout import row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 from layout._fillers import random
 from nn.normalization import *
 from testing import assert_almost_equal

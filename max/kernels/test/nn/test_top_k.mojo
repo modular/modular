@@ -17,7 +17,7 @@ from random import rand, seed
 
 from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
 from layout._layout import Layout, row_major
-from layout.tile_tensor import TileTensor
+from layout import TileTensor
 
 from nn.topk import _top_k_cpu, _top_k_sampling
 
