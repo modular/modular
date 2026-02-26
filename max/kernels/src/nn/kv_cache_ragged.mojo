@@ -2672,7 +2672,6 @@ fn generic_flash_attention_kv_cache_ragged[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
@@ -2704,7 +2703,7 @@ fn generic_flash_attention_kv_cache_ragged[
         desc_parts.append("sink=False")
         return String(";").join(desc_parts)
 
-    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
+    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + ".nhead_" + String(
         collection_t.kv_params.num_heads
     ) + ".hdim_" + String(
         collection_t.kv_params.head_size
@@ -2718,7 +2717,6 @@ fn generic_flash_attention_kv_cache_ragged[
         return _flash_attention_dispatch[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -2738,7 +2736,6 @@ fn _flash_attention_dispatch[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[
@@ -2808,7 +2805,7 @@ fn _flash_attention_dispatch[
 
     return dispatch_mask_and_score_mod[
         mask_str,
-        score_mod_str,
+        IdentityScoreMod.name_str,
         _dispatch_flash_attention,
         local_window_size,
         Int(collection_t.kv_params.num_heads),
@@ -2823,7 +2820,6 @@ fn generic_flash_attention_kv_cache_ragged_sink[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
@@ -2858,7 +2854,7 @@ fn generic_flash_attention_kv_cache_ragged_sink[
         desc_parts.append("sink=True")
         return String(";").join(desc_parts)
 
-    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
+    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + ".nhead_" + String(
         collection_t.kv_params.num_heads
     ) + ".hdim_" + String(
         collection_t.kv_params.head_size
@@ -2872,7 +2868,6 @@ fn generic_flash_attention_kv_cache_ragged_sink[
         return _flash_attention_dispatch[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -2904,7 +2899,6 @@ fn generic_flare_mla_decode_kv_cache_ragged[
     dtype: DType,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
@@ -2940,8 +2934,6 @@ fn generic_flare_mla_decode_kv_cache_ragged[
         + collection_t.name_str
         + "."
         + mask_str
-        + "."
-        + score_mod_str
         + ".nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
@@ -2952,7 +2944,6 @@ fn generic_flare_mla_decode_kv_cache_ragged[
         return _flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -2971,7 +2962,6 @@ fn _flare_mla_decode_kv_cache_ragged[
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
@@ -3023,7 +3013,7 @@ fn _flare_mla_decode_kv_cache_ragged[
 
     dispatch_mask_and_score_mod[
         mask_str,
-        score_mod_str,
+        IdentityScoreMod.name_str,
         _dispatch_mla,
         local_window_size,
         Int(collection_t.kv_params.num_heads),
@@ -3036,7 +3026,6 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
     dtype: DType,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
@@ -3100,8 +3089,6 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
         + collection_t.name_str
         + "."
         + mask_str
-        + "."
-        + score_mod_str
         + ".nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
@@ -3111,7 +3098,6 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
     ):
         return _flare_mla_prefill_kv_cache_ragged[
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             target=target,
             local_window_size=local_window_size,
         ](
@@ -3135,7 +3121,6 @@ fn _flare_mla_prefill_kv_cache_ragged[
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
@@ -3217,7 +3202,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
 
     dispatch_mask_and_score_mod[
         mask_str,
-        score_mod_str,
+        IdentityScoreMod.name_str,
         _mla_dispatch,
         local_window_size,
         Int(collection_t.kv_params.num_heads),
@@ -3345,7 +3330,6 @@ fn _cross_attention_dispatch[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[
@@ -3426,7 +3410,7 @@ fn _cross_attention_dispatch[
 
     return dispatch_mask_and_score_mod[
         mask_str,
-        score_mod_str,
+        IdentityScoreMod.name_str,
         _dispatch_flash_attention,
         local_window_size,
         Int(collection_t.kv_params.num_heads),
@@ -3440,7 +3424,6 @@ fn generic_cross_attention_kv_cache[
     //,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, ...],
@@ -3492,8 +3475,6 @@ fn generic_cross_attention_kv_cache[
         + collection_t.name_str
         + "."
         + mask_str
-        + "."
-        + score_mod_str
         + ".nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
@@ -3504,7 +3485,6 @@ fn generic_cross_attention_kv_cache[
         return _cross_attention_dispatch[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
