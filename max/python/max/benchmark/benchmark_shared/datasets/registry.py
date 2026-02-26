@@ -108,4 +108,8 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="VisionArenaBenchmarkDataset",
         has_multiturn_chat_support=False,
     ),
+    "synthetic-pixel": DatasetRegistryEntry(
+        class_name="SyntheticPixelBenchmarkDataset",
+        has_multiturn_chat_support=False,
+    ),
 }

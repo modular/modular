@@ -1,0 +1,54 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# FLUX.2-dev text-to-image serving benchmark configuration (random dataset)
+# Usage:
+#   ./bazelw run //max/python/max/entrypoints:pipelines -- benchmark \
+#     --config-file max/python/max/benchmark/configs/serving_flux2_t2i_random_config.yaml
+
+name: "Serving Benchmark Configuration - FLUX.2-dev T2I Random"
+description: "Benchmark FLUX.2-dev text-to-image serving via /v1/responses using random prompts."
+version: "0.0.1"
+
+benchmark_config:
+  model: "black-forest-labs/FLUX.2-dev"
+  benchmark_task: "text-to-image"
+  endpoint: "/v1/responses"
+  dataset_name: "synthetic-pixel"
+  num_chat_sessions: null
+
+  # Workload
+  num_prompts: 5
+  request_rate: "inf"
+  max_concurrency: 1
+  max_benchmark_duration_s: null
+
+  # Server target
+  host: "localhost"
+  port: 8000
+  base_url: null
+
+  # T2I generation options
+  image_width: 1024
+  image_height: 1024
+  image_steps: 50
+  image_guidance_scale: 3.5
+  image_negative_prompt: null
+  image_seed: null
+
+  # Output and observability
+  skip_test_prompt: false
+  collect_gpu_stats: false
+  collect_cpu_stats: true
+  collect_server_stats: true
+  result_filename: null

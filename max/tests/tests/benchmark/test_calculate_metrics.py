@@ -18,7 +18,10 @@ from __future__ import annotations
 import math
 from unittest.mock import MagicMock
 
-from max.benchmark.benchmark_serving import calculate_metrics
+from max.benchmark.benchmark_serving import (
+    calculate_metrics,
+    calculate_pixel_generation_metrics,
+)
 from max.benchmark.benchmark_shared.request import RequestFuncOutput
 
 
@@ -234,3 +237,34 @@ def test_failed_requests_excluded() -> None:
     assert metrics.failures == 1
     # TPOT values should only include [0.1, 0.2], not [999.0]
     assert metrics.tpot_ms.median < 500.0
+
+
+def test_calculate_pixel_generation_metrics() -> None:
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            num_generated_outputs=1,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=2.0,
+            num_generated_outputs=2,
+        ),
+        RequestFuncOutput(success=False, error="bad request"),
+    ]
+
+    metrics = calculate_pixel_generation_metrics(
+        outputs=outputs,
+        dur_s=5.0,
+        gpu_metrics=None,
+        cpu_metrics={},
+        max_concurrency=None,
+        collect_gpu_stats=False,
+    )
+
+    assert metrics.completed == 2
+    assert metrics.failures == 1
+    assert math.isclose(metrics.request_throughput, 0.4, rel_tol=1e-6)
+    assert metrics.total_generated_outputs == 3
+    assert math.isclose(metrics.latency_ms.mean, 1500.0, rel_tol=1e-6)
