@@ -2740,39 +2740,6 @@ class DebugTensorPrintOp(max._core.Operation):
     @label.setter
     def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
 
-class DebugTensorUnsafePrintOp(max._core.Operation):
-    """
-    Deprecated use mo.debug.tensor.print instead to ensure proper sequencing
-    of print operations.
-
-    This is just kept around due to the Mojo Graph API not supporting chains at
-    the time of writing.
-
-    Prints a debug representation of argument input. If a label attribute
-    is supplied the tensor contents is printed with that label. Otherwise
-    just the tensor metadata is printed. For debugging and testing only.
-
-    Example:
-    ```mlir
-      %arg: !mo.tensor<[5], f32>
-      mo.debug.tensor.print(%arg) {label = "label"} : !mo.tensor<[5], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        label: max._core.dialects.builtin.StringAttr,
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def label(self) -> str: ...
-    @label.setter
-    def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
-
 class DivOp(max._core.Operation):
     """
     Returns `x / y`, where `x` and `y` are input tensors.
