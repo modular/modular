@@ -2253,21 +2253,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Returns:
             The number of occurrences of `substr`.
         """
-        if not substr:
-            return len(self) + 1
-
-        var res = 0
-        var offset = 0
-
-        while True:
-            var pos = self.find(substr, offset)
-            if pos == -1:
-                break
-            res += 1
-
-            offset = pos + substr.byte_length()
-
-        return res
+        return _memmem_count(
+            self.as_bytes().get_immutable(),
+            substr.as_bytes().get_immutable(),
+        )
 
     fn is_ascii_digit(self) -> Bool:
         """A string is a digit string if all characters in the string are digits
@@ -2806,6 +2795,120 @@ fn _memmem_impl[
             output = haystack + i
             return
     output = {}
+
+
+@always_inline
+fn _memmem_count[
+    dtype: DType, //
+](
+    haystack_span: Span[mut=False, Scalar[dtype], ...],
+    needle_span: Span[mut=False, Scalar[dtype], ...],
+) -> Int:
+    """Counts all non-overlapping occurrences of needle in haystack.
+
+    This is the same approach used by `_memmem_impl`, extended to count
+    all non-overlapping matches in a single pass.
+
+    Args:
+        haystack_span: The span to search in.
+        needle_span: The span to search for.
+
+    Returns:
+        The number of non-overlapping occurrences.
+    """
+    var haystack = haystack_span.unsafe_ptr()
+    var haystack_len = len(haystack_span)
+    var needle = needle_span.unsafe_ptr()
+    var needle_len = len(needle_span)
+
+    if needle_len == 0:
+        # Empty needle: return number of positions (len + 1)
+        return haystack_len + 1
+
+    if needle_len > haystack_len:
+        return 0
+
+    var count = 0
+
+    # For single-character needles, use a simple optimized loop
+    if needle_len == 1:
+        var target = needle[0]
+        for i in range(haystack_len):
+            if haystack[i] == target:
+                count += 1
+        return count
+
+    # For compile-time or small haystacks, use scalar implementation
+    if is_compile_time() or haystack_len < simd_width_of[Scalar[dtype]]():
+        var i = 0
+        while i <= haystack_len - needle_len:
+            if haystack[i] == needle[0]:
+                if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
+                    count += 1
+                    i += needle_len  # Skip past this match (non-overlapping)
+                    continue
+            i += 1
+        return count
+
+    # SIMD-optimized implementation
+    comptime bool_mask_width = simd_width_of[DType.bool]()
+    var search_end = haystack_len - needle_len + 1
+    # Account for SIMD load width: when loading last_block at position
+    # i + needle_len - 1, we read bool_mask_width bytes, so we need
+    # i + needle_len - 1 + bool_mask_width <= haystack_len
+    var safe_end = search_end - bool_mask_width + 1 if search_end >= bool_mask_width else 0
+    var vectorized_end = align_down(safe_end, bool_mask_width)
+
+    var first_needle = SIMD[dtype, bool_mask_width](needle[0])
+    var last_needle = SIMD[dtype, bool_mask_width](needle[needle_len - 1])
+
+    var i = 0
+    while i < vectorized_end:
+        var first_block = haystack.load[width=bool_mask_width](i)
+        var last_block = haystack.load[width=bool_mask_width](
+            i + needle_len - 1
+        )
+
+        var bool_mask = first_needle.eq(first_block) & last_needle.eq(
+            last_block
+        )
+        var mask = pack_bits(bool_mask)
+
+        if not mask:
+            i += bool_mask_width
+            continue
+
+        # Process potential matches in this block
+        var block_offset = i
+        while mask:
+            var bit_pos = Int(count_trailing_zeros(mask))
+            var offset = block_offset + bit_pos
+            if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
+                count += 1
+                # For non-overlapping: skip ahead by needle_len
+                # We need to adjust i to skip past this match
+                i = offset + needle_len
+                # Break inner loop; outer loop will check if i < vectorized_end
+                # or fall through to scalar loop
+                break
+            mask = mask & (mask - 1)
+        else:
+            # No match found in this block, move to next block
+            i += bool_mask_width
+            continue
+        # If we broke from inner loop (found match), continue outer loop
+        continue
+
+    # Handle remaining bytes with scalar loop
+    while i <= haystack_len - needle_len:
+        if haystack[i] == needle[0]:
+            if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
+                count += 1
+                i += needle_len
+                continue
+        i += 1
+
+    return count
 
 
 @always_inline

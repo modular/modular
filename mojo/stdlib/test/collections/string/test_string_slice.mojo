@@ -1132,6 +1132,127 @@ def test_string_slice_intern() raises:
     assert_equal(get_static_string["a", "b", "c"](), "abc")
 
 
+def test_count_simd_edge_cases():
+    """Test count() edge cases around SIMD boundaries.
+
+    These tests specifically target:
+    1. Out-of-bounds read vulnerability when loading last_block near end
+    2. Control flow bug when match causes i >= vectorized_end
+    """
+    # Test 1: Various haystack sizes around typical SIMD widths (16, 32, 64)
+    # with matches near the end to exercise boundary conditions
+
+    # Width 16
+    assert_equal(String("a" * 14 + "xy").count("xy"), 1)
+    assert_equal(String("a" * 15 + "xy").count("xy"), 1)
+    assert_equal(String("a" * 16 + "xy").count("xy"), 1)
+
+    # Width 32
+    assert_equal(String("a" * 30 + "xy").count("xy"), 1)
+    assert_equal(String("a" * 31 + "xy").count("xy"), 1)
+    assert_equal(String("a" * 32 + "xy").count("xy"), 1)
+
+    # Width 64
+    assert_equal(String("a" * 62 + "xy").count("xy"), 1)
+    assert_equal(String("a" * 63 + "xy").count("xy"), 1)
+    assert_equal(String("a" * 64 + "xy").count("xy"), 1)
+
+    # Test 2: Match found near vectorized_end that jumps i past boundary
+    # Create string where match is found and skip takes us past vectorized_end
+    var s = String("a" * 60 + "xyz" + "a" * 5)  # 68 chars total
+    assert_equal(s.count("xyz"), 1)
+
+    # Multiple matches with last one near boundary
+    s = String("ab" * 30 + "xy")  # 62 chars
+    assert_equal(s.count("ab"), 30)
+    assert_equal(s.count("xy"), 1)
+
+    # Test 3: Long needle that makes search_end small
+    # When needle_len is close to haystack_len, search_end becomes small
+    var long_needle = String("abcdefghij")  # 10 chars
+    var short_haystack = String("xxabcdefghijyy")  # 14 chars
+    assert_equal(short_haystack.count(long_needle), 1)
+
+    # Needle almost as long as haystack
+    assert_equal(String("abcdef").count("abcde"), 1)
+    assert_equal(String("abcdef").count("abcdef"), 1)
+    assert_equal(String("abcdef").count("abcdefg"), 0)
+
+    # Test 4: Non-overlapping matches near SIMD boundaries
+    # This tests the skip-ahead logic after finding matches
+    s = String("aa" * 35)  # 70 chars of "aa" repeated
+    assert_equal(s.count("aa"), 35)  # non-overlapping
+
+    s = String("aaa" * 25)  # 75 chars of "aaa" repeated
+    assert_equal(s.count("aaa"), 25)  # non-overlapping
+
+    # Test 5: Matches that cause jumps across vectorized boundary
+    # Pattern: match near position 60 with needle_len that jumps past 64
+    s = String("a" * 58 + "xyzxyz" + "a" * 10)  # match at 58, len 6, jumps to 64
+    assert_equal(s.count("xyz"), 2)
+
+    # Test 6: Edge case with very small strings (scalar path only)
+    assert_equal(String("ab").count("a"), 1)
+    assert_equal(String("ab").count("ab"), 1)
+    assert_equal(String("abc").count("bc"), 1)
+
+    # Test 7: Boundary between vectorized and scalar processing
+    # Create string where first match is in vectorized region,
+    # second match requires scalar fallback
+    assert_equal(String("xy" + "a" * 59 + "xy").count("xy"), 2)  # size 63
+    assert_equal(String("xy" + "a" * 60 + "xy").count("xy"), 2)  # size 64
+    assert_equal(String("xy" + "a" * 61 + "xy").count("xy"), 2)  # size 65
+    assert_equal(String("xy" + "a" * 123 + "xy").count("xy"), 2)  # size 127
+    assert_equal(String("xy" + "a" * 124 + "xy").count("xy"), 2)  # size 128
+    assert_equal(String("xy" + "a" * 125 + "xy").count("xy"), 2)  # size 129
+
+
+def test_count_unicode():
+    """Test count() with multi-byte Unicode characters."""
+    # Single multi-byte character as needle
+    assert_equal(String("hello🔥world🔥!").count("🔥"), 2)
+    assert_equal(String("🔥🔥🔥").count("🔥"), 3)
+    assert_equal(String("abc").count("🔥"), 0)
+
+    # Multi-byte needle not present
+    assert_equal(String("hello world").count("🌍"), 0)
+
+    # Multi-byte characters in both haystack and needle
+    assert_equal(String("café café café").count("café"), 3)
+    assert_equal(String("naïve naïve").count("naïve"), 2)
+
+    # CJK characters
+    assert_equal(String("日本語日本語日本語").count("日本語"), 3)
+    assert_equal(String("日本語abc日本語").count("日本語"), 2)
+    assert_equal(String("日本語").count("本"), 1)
+
+    # Mixed ASCII and multi-byte
+    assert_equal(String("a🌍b🌍c🌍d").count("🌍"), 3)
+    assert_equal(String("hello🌍world").count("🌍world"), 1)
+    assert_equal(String("hello🌍world").count("o🌍w"), 1)
+
+    # Empty substring with unicode haystack
+    assert_equal(String("🔥").count(""), 5)  # 4 bytes + 1
+    assert_equal(String("aé").count(""), 4)  # 3 bytes + 1
+
+    # Emoji sequences and accented characters as substrings
+    assert_equal(String("ééé").count("é"), 3)
+    assert_equal(String("αβγαβγαβγ").count("αβγ"), 3)
+    assert_equal(String("αβγ").count("β"), 1)
+
+    # Non-overlapping with multi-byte characters
+    assert_equal(String("aaéééaa").count("éé"), 1)  # non-overlapping
+
+    # Needle longer than haystack (multi-byte)
+    assert_equal(String("🔥").count("🔥🔥"), 0)
+
+    # Large string with unicode to exercise SIMD path
+    var large = String("ab🌍cd" * 20)  # 7 bytes per repeat = 140 bytes
+    assert_equal(large.count("🌍"), 20)
+    assert_equal(large.count("ab🌍"), 20)
+    assert_equal(large.count("🌍cd"), 20)
+
+
 # This is just a compile test
 # it does not need to be run
 def test_merge() raises:
