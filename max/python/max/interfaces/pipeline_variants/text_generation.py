@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines request, context, and output types for text generation pipelines, including multimodal and VLM support."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
