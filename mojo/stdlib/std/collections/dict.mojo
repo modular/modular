@@ -37,14 +37,14 @@ Value elements must be `Copyable`. As with `KeyElement`, the
 See the `Dict` docs for more details.
 """
 
-from builtin.constrained import _constrained_conforms_to
-from compile import get_type_name
-from hashlib import Hasher, default_comp_time_hasher, default_hasher
-import format._utils as fmt
-from sys.intrinsics import is_compile_time, likely
+from std.builtin.constrained import _constrained_conforms_to
+from std.compile import get_type_name
+from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
+import std.format._utils as fmt
+from std.sys.intrinsics import is_compile_time, likely
 
-from bit import count_trailing_zeros, next_power_of_two
-from memory import alloc, bitcast, memcpy, memset, pack_bits
+from std.bit import count_trailing_zeros, next_power_of_two
+from std.memory import alloc, bitcast, memcpy, memset, pack_bits
 
 comptime KeyElement = Copyable & Hashable & Equatable
 """A trait composition for types which implement all requirements of
@@ -1203,7 +1203,7 @@ struct Dict[
         var missing_value = my_dict.get("c")
         print(missing_value.__str__())  # => -1
 
-        from testing import assert_true
+        from std.testing import assert_true
         assert_true(my_dict["a"] == my_dict.get("a").or_else(Int.MAX))
         ```
         """
@@ -1231,7 +1231,7 @@ struct Dict[
         var missing_value = my_dict.get("c", -1)
         print(missing_value.__str__())  # => -1
 
-        from testing import assert_true
+        from std.testing import assert_true
         assert_true(my_dict["a"] == my_dict.get("a", Int.MAX))
         ```
         """

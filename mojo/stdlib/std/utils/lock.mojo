@@ -18,8 +18,8 @@ automatic lock management. These primitives enable safe concurrent access to
 shared resources in multi-threaded code.
 """
 
-from os import Atomic
-from ffi import external_call
+from std.os import Atomic
+from std.ffi import external_call
 
 # ===-----------------------------------------------------------------------===#
 # SpinWaiter

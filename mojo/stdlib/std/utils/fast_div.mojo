@@ -17,10 +17,10 @@ This method replaces division by constants with a sequence of shifts and
 multiplications, significantly optimizing division performance.
 """
 
-from bit import log2_ceil
-from builtin.dtype import _uint_type_of_width
-from gpu.intrinsics import mulhi
-from sys.info import bit_width_of
+from std.bit import log2_ceil
+from std.builtin.dtype import _uint_type_of_width
+from std.gpu.intrinsics import mulhi
+from std.sys.info import bit_width_of
 
 
 struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):

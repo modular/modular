@@ -32,16 +32,16 @@ var filled = InlineArray[Int, 5](fill=42)
 ```
 """
 
-import math
-from collections._index_normalization import normalize_index
+import std.math
+from std.collections._index_normalization import normalize_index
 
-from builtin.device_passable import DevicePassable
-from builtin.rebind import downcast
-from builtin.constrained import _constrained_conforms_to
-from builtin.repr import repr
-from compile import get_type_name
-import format._utils as fmt
-from memory import UnsafeMaybeUninit
+from std.builtin.device_passable import DevicePassable
+from std.builtin.rebind import downcast
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.repr import repr
+from std.compile import get_type_name
+import std.format._utils as fmt
+from std.memory import UnsafeMaybeUninit
 
 # ===-----------------------------------------------------------------------===#
 # Array

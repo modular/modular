@@ -15,18 +15,18 @@
 You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from algorithm import map
+from std.algorithm import map
 ```
 """
 
-import sys
-from collections import OptionalReg
-from collections.string.string_slice import get_static_string
-from math import align_down, ceildiv, clamp
-from os import abort
-from pathlib import Path
+import std.sys
+from std.collections import OptionalReg
+from std.collections.string.string_slice import get_static_string
+from std.math import align_down, ceildiv, clamp
+from std.os import abort
+from std.pathlib import Path
 
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_dim,
     block_idx,
@@ -36,16 +36,18 @@ from gpu import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.primitives.grid_controls import pdl_launch_attributes  # @doc_private
-from gpu.host import DeviceContext
-from gpu.host.info import B200, is_cpu, is_gpu
-from runtime import tracing
-from runtime.asyncrt import DeviceContextPtr, TaskGroup, parallelism_level
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.gpu.primitives.grid_controls import (
+    pdl_launch_attributes,
+)  # @doc_private
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import B200, is_cpu, is_gpu
+from std.runtime import tracing
+from std.runtime.asyncrt import DeviceContextPtr, TaskGroup, parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
-from utils.index import Index, IndexList
-from utils.numerics import FlushDenormals
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import FlushDenormals
+from std.utils.static_tuple import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Map
@@ -70,7 +72,7 @@ fn map[
     For example:
 
     ```mojo
-    from algorithm import map
+    from std.algorithm import map
 
     def main() raises:
         # Create list with initial values to act on
@@ -142,8 +144,8 @@ fn vectorize[
     the machine:
 
     ```mojo
-    from algorithm.functional import vectorize
-    from sys import simd_width_of
+    from std.algorithm.functional import vectorize
+    from std.sys import simd_width_of
 
     # The amount of elements to loop through
     comptime size = 10
@@ -256,10 +258,10 @@ fn vectorize[
     using SIMD registers, while handling the tail with `evl` by generating a mask:
 
     ```mojo
-    from algorithm.functional import vectorize
-    from sys import simd_width_of
-    from math import iota
-    from sys.intrinsics import masked_store
+    from std.algorithm.functional import vectorize
+    from std.sys import simd_width_of
+    from std.math import iota
+    from std.sys.intrinsics import masked_store
 
     comptime size = 10
     comptime simd_width = simd_width_of[DType.int32]()  # assumed 4 in this example
@@ -374,8 +376,8 @@ fn vectorize[
     the machine:
 
     ```mojo
-    from algorithm.functional import vectorize
-    from sys import simd_width_of
+    from std.algorithm.functional import vectorize
+    from std.sys import simd_width_of
 
     # The amount of elements to loop through
     comptime size = 10

@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functionality to start a mojo execution."""
 
-from ffi import external_call
-from ffi import _get_global
-from sys.compile import SanitizeAddress
+from std.ffi import external_call
+from std.ffi import _get_global
+from std.sys.compile import SanitizeAddress
 
 
 fn _init_global_runtime() -> OpaquePointer[MutExternalOrigin]:

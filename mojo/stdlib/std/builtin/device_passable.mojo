@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import _type_is_eq
-from builtin.rebind import downcast
+from std.sys.intrinsics import _type_is_eq
+from std.builtin.rebind import downcast
 
 
 trait DevicePassable:

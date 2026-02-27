@@ -15,17 +15,17 @@
 You can import these APIs from the `utils` package. For example:
 
 ```mojo
-from utils.numerics import FPUtils
+from std.utils.numerics import FPUtils
 ```
 """
 
-from sys import CompilationTarget, bit_width_of, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from ffi import _external_call_const
+from std.sys import CompilationTarget, bit_width_of, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.ffi import _external_call_const
 
-from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
-from builtin.simd import _simd_apply
-from memory import bitcast
+from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of
+from std.builtin.simd import _simd_apply
+from std.memory import bitcast
 
 # ===----------------------------------------------------------------------=== #
 # FPUtils

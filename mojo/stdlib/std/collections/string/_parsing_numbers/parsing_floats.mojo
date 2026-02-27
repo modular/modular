@@ -22,12 +22,12 @@ The reference implementation used was the one in C# and can be found here:
 - https://github.com/CarlVerret/csFastFloat
 """
 
-from collections import InlineArray
+from std.collections import InlineArray
 
-import bit
-import memory
+import std.bit
+import std.memory
 
-from builtin.globals import global_constant
+from std.builtin.globals import global_constant
 
 from .constants import (
     CONTAINER_SIZE,

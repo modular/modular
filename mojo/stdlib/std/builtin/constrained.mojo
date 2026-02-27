@@ -14,13 +14,13 @@
 
 These are Mojo built-ins, so you don't need to import them.
 """
-from collections.string.string_slice import _get_kgen_string
-from reflection import (
+from std.collections.string.string_slice import _get_kgen_string
+from std.reflection import (
     get_type_name,
     struct_field_names,
     struct_field_types,
 )
-from reflection.type_info import _unqualified_type_name
+from std.reflection.type_info import _unqualified_type_name
 
 
 @deprecated("Use `comptime assert` instead")

@@ -12,33 +12,33 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the core `String` type and related utilities."""
 
-from collections import KeyElement
-from collections.string import CodepointsIter
-from collections.string._parsing_numbers.parsing_floats import _atof
-from collections.string._utf8 import UTF8Chunks, _is_valid_utf8
-from collections.string.format import _FormatUtils
-from collections.string.string_slice import (
+from std.collections import KeyElement
+from std.collections.string import CodepointsIter
+from std.collections.string._parsing_numbers.parsing_floats import _atof
+from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
+from std.collections.string.format import _FormatUtils
+from std.collections.string.string_slice import (
     CodepointSliceIter,
     _to_string_list,
     _unsafe_strlen,
 )
-from builtin.builtin_slice import ContiguousSlice
-from hashlib.hasher import Hasher
-from format.tstring import TString
-from format._utils import (
+from std.builtin.builtin_slice import ContiguousSlice
+from std.hashlib.hasher import Hasher
+from std.format.tstring import TString
+from std.format._utils import (
     STACK_BUFFER_BYTES,
     _TotalWritableBytes,
     _WriteBufferStack,
 )
-from os import PathLike, abort
-from os.atomic import Atomic, Consistency, fence
-from sys import size_of, bit_width_of
-from ffi import c_char, CStringSlice
-from sys.info import is_32bit
+from std.os import PathLike, abort
+from std.os.atomic import Atomic, Consistency, fence
+from std.sys import size_of, bit_width_of
+from std.ffi import c_char, CStringSlice
+from std.sys.info import is_32bit
 
-from bit import count_leading_zeros
-from memory import memcmp, memcpy, memset
-from python import ConvertibleFromPython, ConvertibleToPython, PythonObject
+from std.bit import count_leading_zeros
+from std.memory import memcmp, memcpy, memset
+from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -1029,7 +1029,7 @@ struct String(
         Query the length of a string, in bytes and Unicode codepoints:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = "ನಮಸ್ಕಾರ"
 
@@ -1041,7 +1041,7 @@ struct String(
         Unicode codepoint length:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = "abc"
 
@@ -1172,7 +1172,7 @@ struct String(
         Print the characters in a string:
 
         ```mojo
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         var s = "abc"
         var iter = s.codepoints()
@@ -1187,7 +1187,7 @@ struct String(
         codepoints:
 
         ```mojo
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
         var s = "á"
@@ -1217,7 +1217,7 @@ struct String(
         Iterate over the character slices in a string:
 
         ```mojo
-        from testing import assert_equal, assert_raises, assert_true
+        from std.testing import assert_equal, assert_raises, assert_true
 
         var s = "abc"
         var iter = s.codepoint_slices()

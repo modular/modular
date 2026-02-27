@@ -40,13 +40,13 @@ components, including tensor operations, linear algebra routines, and
 domain-specific libraries for machine learning and scientific computing.
 """
 
-import math
-from collections import InlineArray
-from collections.string.string import _calc_initial_buffer_size
-from hashlib.hasher import Hasher
-from math import Ceilable, CeilDivable, Floorable, Truncable
-from math.math import _call_ptx_intrinsic, trunc
-from sys import (
+import std.math
+from std.collections import InlineArray
+from std.collections.string.string import _calc_initial_buffer_size
+from std.hashlib.hasher import Hasher
+from std.math import Ceilable, CeilDivable, Floorable, Truncable
+from std.math.math import _call_ptx_intrinsic, trunc
+from std.sys import (
     CompilationTarget,
     _RegisterPackType,
     align_of,
@@ -61,35 +61,35 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys._assembly import inlined_assembly
-from sys.info import (
+from std.sys._assembly import inlined_assembly
+from std.sys.info import (
     _cdna_4_or_newer,
     _is_amd_mi300x,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
 )
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
-from bit import bit_width, byte_swap, pop_count
-from builtin._format_float import _write_float
-from builtin.device_passable import DevicePassable
-from builtin.format_int import _write_int
-from math import DivModable, Powable
-from documentation import doc_private
-from memory import bitcast, memcpy, pack_bits
-from python import ConvertibleToPython, Python, PythonObject
+from std.bit import bit_width, byte_swap, pop_count
+from std.builtin._format_float import _write_float
+from std.builtin.device_passable import DevicePassable
+from std.builtin.format_int import _write_int
+from std.math import DivModable, Powable
+from std.documentation import doc_private
+from std.memory import bitcast, memcpy, pack_bits
+from std.python import ConvertibleToPython, Python, PythonObject
 
-from utils import IndexList, StaticTuple
-from utils._visualizers import lldb_formatter_wrapping_type
-from utils.numerics import FPUtils
-from utils.numerics import inf as _inf
-from utils.numerics import isinf as _isinf
-from utils.numerics import isnan as _isnan
-from utils.numerics import max_finite as _max_finite
-from utils.numerics import max_or_inf as _max_or_inf
-from utils.numerics import min_finite as _min_finite
-from utils.numerics import min_or_neg_inf as _min_or_neg_inf
-from utils.numerics import nan as _nan
+from std.utils import IndexList, StaticTuple
+from std.utils._visualizers import lldb_formatter_wrapping_type
+from std.utils.numerics import FPUtils
+from std.utils.numerics import inf as _inf
+from std.utils.numerics import isinf as _isinf
+from std.utils.numerics import isnan as _isnan
+from std.utils.numerics import max_finite as _max_finite
+from std.utils.numerics import max_or_inf as _max_or_inf
+from std.utils.numerics import min_finite as _min_finite
+from std.utils.numerics import min_or_neg_inf as _min_or_neg_inf
+from std.utils.numerics import nan as _nan
 
 from .dtype import (
     _integral_type_of,

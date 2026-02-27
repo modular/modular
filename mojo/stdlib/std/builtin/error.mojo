@@ -15,18 +15,18 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.string_slice import _unsafe_strlen
-from format._utils import FormatStruct
-from memory import (
+from std.collections.string.string_slice import _unsafe_strlen
+from std.format._utils import FormatStruct
+from std.memory import (
     ArcPointer,
     OwnedPointer,
     alloc,
     memcpy,
 )
-from ffi import external_call
-import format._utils as fmt
-from sys import is_gpu
-from sys.info import size_of, align_of
+from std.ffi import external_call
+import std.format._utils as fmt
+from std.sys import is_gpu
+from std.sys.info import size_of, align_of
 
 
 # ===-----------------------------------------------------------------------===#

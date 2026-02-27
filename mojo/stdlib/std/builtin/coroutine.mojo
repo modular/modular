@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from sys import size_of
+from std.sys import size_of
 
 # ===----------------------------------------------------------------------=== #
 # _suspend_async

@@ -53,8 +53,8 @@ Returns:
 
 Examples:
     ```mojo
-    from utils.type_functions import ConditionalType
-    from sys import size_of
+    from std.utils.type_functions import ConditionalType
+    from std.sys import size_of
 
     struct Wrapper[T: AnyType]:
         comptime StorageType = ConditionalType[

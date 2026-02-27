@@ -15,7 +15,7 @@
 You can import these APIs from the `testing` package. For example:
 
 ```mojo
-from testing import assert_true
+from std.testing import assert_true
 
 def main() raises:
     x = 1
@@ -31,12 +31,12 @@ def main() raises:
 ```
 """
 
-from math import isclose
+from std.math import isclose
 
-from reflection import call_location, SourceLocation
-from memory import memcmp
-from python import PythonObject, ConvertibleToPython
-from utils._ansi import Color, Text
+from std.reflection import call_location, SourceLocation
+from std.memory import memcmp
+from std.python import PythonObject, ConvertibleToPython
+from std.utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #
 # Assertions
@@ -621,7 +621,7 @@ struct assert_raises:
     errors are raised. For instance:
 
     ```mojo
-    from testing import assert_raises
+    from std.testing import assert_raises
 
     # Good! Caught the raised error, test passes
     with assert_raises():

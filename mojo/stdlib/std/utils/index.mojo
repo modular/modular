@@ -16,16 +16,16 @@ indices.
 You can import these APIs from the `utils` package. For example:
 
 ```mojo
-from utils import IndexList
+from std.utils import IndexList
 ```
 """
 
-from hashlib.hasher import Hasher
-from sys import bit_width_of
+from std.hashlib.hasher import Hasher
+from std.sys import bit_width_of
 
-from builtin.device_passable import DevicePassable
-from builtin.dtype import _int_type_of_width, _uint_type_of_width
-from builtin.variadics import Variadic
+from std.builtin.device_passable import DevicePassable
+from std.builtin.dtype import _int_type_of_width, _uint_type_of_width
+from std.builtin.variadics import Variadic
 
 from .static_tuple import StaticTuple
 
