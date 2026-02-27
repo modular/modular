@@ -27,8 +27,8 @@ def test_precompile_mpnet() -> None:
         name_filter="mpnet",
     )
     assert len(jobs) >= 1, (
-        "No jobs selected -- mpnet may have been removed from PIPELINES "
-        "or lost DeviceKind.CPU compatibility"
+        "No jobs selected -- mpnet may have been removed from "
+        "LOGIT_VERIFICATION_CONFIG or lost DeviceKind.CPU compatibility"
     )
 
     success, output, _ = run_precompile_inprocess(jobs[0])

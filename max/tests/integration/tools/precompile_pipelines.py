@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Precompile-pipelines orchestrator for pipeline verification.
 
-Reads the PIPELINES dict from verify_pipelines.py and PIPELINE_ORACLES from
-create_pipelines.py to pre-compile each pipeline via the Python registry API,
-running compilations in parallel.
+Reads LOGIT_VERIFICATION_CONFIG and PIPELINE_ORACLES from create_pipelines.py
+to pre-compile each pipeline via the Python registry API, running compilations
+in parallel.
 """
 
 from __future__ import annotations
@@ -31,9 +31,11 @@ from multiprocessing.sharedctypes import Synchronized
 import click
 from create_pipelines import PIPELINE_ORACLES
 from max.pipelines.lib.config.config_enums import SupportedEncoding
-from verify_pipelines import (
-    PIPELINES,
+from max.tests.integration.accuracy.logit_verification.logit_verification_config import (
+    LOGIT_VERIFICATION_CONFIG,
     DeviceKind,
+)
+from verify_pipelines import (
     TagFilter,
     TagFilterParamType,
 )
@@ -142,12 +144,15 @@ def collect_precompile_jobs(
     tag_filter: TagFilter,
     name_filter: str | None,
 ) -> list[PrecompileJob]:
-    """Walk PIPELINES and build a PrecompileJob for each match."""
+    """Walk LOGIT_VERIFICATION_CONFIG and build a PrecompileJob for each match."""
     jobs: list[PrecompileJob] = []
     seen: set[tuple[str, str, str | None]] = set()
     requested_devices = {DeviceKind(devices.split(":")[0].strip())}
 
-    for pipeline_name, pipeline_def in PIPELINES.items():
+    for (
+        pipeline_name,
+        pipeline_def,
+    ) in LOGIT_VERIFICATION_CONFIG.pipelines.items():
         if not requested_devices & set(pipeline_def.compatible_with):
             continue
         if not tag_filter.satisfied_by(pipeline_def.tags):
