@@ -27,7 +27,7 @@ from .multi_latent_attention import (
     LatentAttentionWithRope,
     TensorParallelLatentAttentionWithRope,
 )
-from .multihead_attention import MultiheadAttention
+from .multihead_attention import MultiheadAttention, num_heads_for_device
 from .ragged_attention import RaggedAttention
 
 __all__ = [
@@ -42,4 +42,5 @@ __all__ = [
     "RaggedAttention",
     "TensorParallelAttentionWithRope",
     "TensorParallelLatentAttentionWithRope",
+    "num_heads_for_device",
 ]

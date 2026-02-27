@@ -34,6 +34,29 @@ from ..linear import Linear
 from .mask_config import MHAMaskVariant
 
 
+def num_heads_for_device(
+    *, num_heads: int, device_idx: int, num_devices: int
+) -> int:
+    """Compute the number of attention heads assigned to a specific device.
+
+    Distributes heads across devices, handling cases where the total is not
+    evenly divisible by the number of devices. Earlier devices receive one
+    extra head when there is a remainder.
+
+    Args:
+        num_heads: Total number of attention heads.
+        device_idx: The index of the current device (0-based).
+        num_devices: Total number of devices.
+
+    Returns:
+        Number of heads assigned to the specified device.
+    """
+    base_heads, remainder = divmod(num_heads, num_devices)
+    if device_idx < remainder:
+        return base_heads + 1
+    return base_heads
+
+
 class MultiheadAttention(Module):
     """Multihead attention that handles both single and distributed computation."""
 

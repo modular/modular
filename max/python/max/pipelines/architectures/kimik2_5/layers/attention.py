@@ -26,32 +26,11 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
+from max.nn.attention import num_heads_for_device
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
-
-
-def _compute_heads_per_device(
-    *, total_heads: int, device_idx: int, num_devices: int
-) -> int:
-    """Computes the number of heads assigned to a specific device.
-
-    Distributes heads across devices, handling cases where the total is not
-    evenly divisible by the number of devices.
-
-    Args:
-        total_heads: Total number of attention heads.
-        device_idx: The index of the current device (0-based).
-        num_devices: Total number of devices.
-
-    Returns:
-        Number of heads assigned to the specified device.
-    """
-    base_heads, remainder = divmod(total_heads, num_devices)
-    if device_idx < remainder:
-        return base_heads + 1
-    return base_heads
 
 
 class Attention(Module, Shardable):
@@ -234,8 +213,8 @@ class Attention(Module, Shardable):
 
         shards = []
         for shard_idx, device in enumerate(devices):
-            sharded_num_heads = _compute_heads_per_device(
-                total_heads=self.num_heads,
+            sharded_num_heads = num_heads_for_device(
+                num_heads=self.num_heads,
                 device_idx=shard_idx,
                 num_devices=self._sharding_strategy.num_devices,
             )
