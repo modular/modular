@@ -74,7 +74,11 @@ public:
   /// struct properly runs its destructor.
   FnOp synthesizeEmptyDtor();
   /// Add an empty move/copy ctor stub for this struct, to be filled in later.
-  FnOp synthesizeEmptyMoveOrCopyInit(bool isMove);
+  /// When \p conformanceConstraint is non-null, it is attached as a
+  /// where-clause so that overload resolution rejects calls when the
+  /// conditional conformance cannot be proven.
+  FnOp synthesizeEmptyMoveOrCopyInit(bool isMove,
+                                     ConstraintAttr conformanceConstraint = {});
   /// Populate the function with a field by field copy. This will fail if the
   /// given function does not have the expected signature.
   LogicalResult populateMoveCopy(ASTDecl &fnDecl, bool isMove);
@@ -124,13 +128,15 @@ public:
   /// Like synthesizeMethodInStruct but accepts higher-level signature
   /// information and extracts the necessary components internally. Also handles
   /// all the post-creation setup specific to default trait method wrappers.
-  FnOp synthesizeDefaultTraitMethodWrapper(ASTDecl &existingDecl,
-                                           StringRef name,
-                                           FnTypeGeneratorType wrapperSignature,
-                                           FnOp traitFn, ASTDecl *traitFnDecl,
-                                           bool structDefinesMethod,
-                                           ImplicitLocOpBuilder &builder,
-                                           StringRef suffix = "");
+  /// When \p conformanceConstraint is non-null, it is attached as a
+  /// where-clause constraint on the synthesized function so that overload
+  /// resolution rejects calls when the conditional conformance cannot be
+  /// proven.
+  FnOp synthesizeDefaultTraitMethodWrapper(
+      ASTDecl &existingDecl, StringRef name,
+      FnTypeGeneratorType wrapperSignature, FnOp traitFn, ASTDecl *traitFnDecl,
+      bool structDefinesMethod, ImplicitLocOpBuilder &builder,
+      StringRef suffix = "", ConstraintAttr conformanceConstraint = {});
 };
 
 } // namespace M::KGEN::LIT

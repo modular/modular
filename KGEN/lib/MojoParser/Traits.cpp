@@ -395,7 +395,8 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     FnOp newFn = structEmitter.synthesizeDefaultTraitMethodWrapper(
         *structFnDecl, name.str(), wrapperSignature, traitFn, traitFnDecl,
         structDefinesMethod, builder,
-        traitDecl.getSymbolRef().getLeafReference().strref());
+        traitDecl.getSymbolRef().getLeafReference().strref(),
+        conformanceConstraint);
 
     // If newFn is null something went very wrong -- assert
     assert(newFn && "Couldn't synthesize default trait wrapper in body");

@@ -18,6 +18,7 @@
 #include "Traits.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterReplacer.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -40,7 +41,8 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
                ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
                Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
                ImplicitLocOpBuilder &builder, FnEffects fnEffects,
-               StringRef suffix, bool synthetic, InlineLevel inlineLevel) {
+               StringRef suffix, bool synthetic, InlineLevel inlineLevel,
+               ArrayRef<ConstraintAttr> fnConstraints = {}) {
   MLIRContext *ctx = parent.getContext();
   SharedState &shared = parent.getShared();
 
@@ -139,8 +141,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
       argListAttrs, numImplicitOriginDecls,
       getOriginsAccessibleByParams(paramListAttrs, params, shared,
                                    /*captureOrigins=*/nullptr),
-      /*isNestedOriginExclusivityCheckingDisabled=*/false,
-      /*constraints=*/{});
+      /*isNestedOriginExclusivityCheckingDisabled=*/false, fnConstraints);
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
@@ -230,7 +231,8 @@ std::pair<FnOp, ASTDecl *> FunctionEmitter::synthesizeFunction(
 FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
     ASTDecl &existingDecl, StringRef name, FnTypeGeneratorType wrapperSignature,
     FnOp traitFn, ASTDecl *traitFnDecl, bool structDefinesMethod,
-    ImplicitLocOpBuilder &builder, StringRef suffix) {
+    ImplicitLocOpBuilder &builder, StringRef suffix,
+    ConstraintAttr conformanceConstraint) {
 
   assert(existingDecl.resolvedness <= DeclResolvedness::signature &&
          "synthesizeMethodInStruct is only valid on non-body resolved Fn "
@@ -305,12 +307,17 @@ FnOp StructEmitter::synthesizeDefaultTraitMethodWrapper(
   if (structDeclOp.getConvention() == TypeConvention::RegisterPassableTrivial)
     inlineLevel = InlineLevel::AlwaysNoDebug;
 
+  SmallVector<ConstraintAttr> fnConstraints;
+  if (conformanceConstraint &&
+      !isTriviallyTrueConstraint(conformanceConstraint))
+    fnConstraints.push_back(conformanceConstraint);
+
   FnOp funcOp = createFunction(
       structDecl, name, mangledParams, wrapperSignature.getParamListAttrs(),
       argTypes, argConventions, traitArgListAttrs, resultType,
       SpecialFunctionKind::kNormal, structDecl.getLoc(), builder,
       traitFn.getFuncTypeGenerator().getFnEffects(), suffix, /*synthetic=*/true,
-      inlineLevel);
+      inlineLevel, fnConstraints);
 
   if (!funcOp)
     return nullptr;
@@ -708,7 +715,8 @@ FnOp StructEmitter::synthesizeEmptyDtor() {
   return funcOp;
 }
 
-FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
+FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(
+    bool isMove, ConstraintAttr conformanceConstraint) {
   ASTType selfType = structDecl.getTypeDeclSelf();
   MLIRContext *ctx = shared.getContext();
   Builder b(ctx);
@@ -734,6 +742,22 @@ FnOp StructEmitter::synthesizeEmptyMoveOrCopyInit(bool isMove) {
   if (!resultFn)
     return {};
   resultDecl->resolvedness = DeclResolvedness::signature;
+
+  // Attach the conformance constraint as a where-clause so that overload
+  // resolution rejects calls when the conditional conformance is unproven.
+  if (conformanceConstraint &&
+      !isTriviallyTrueConstraint(conformanceConstraint)) {
+    FnTypeGeneratorType sig = resultFn.getFuncTypeGenerator();
+    FnType body = sig.getBody();
+    FnMetadataAttr oldMeta = body.getMetadata();
+    FnMetadataAttr newMeta = FnMetadataAttr::get(
+        oldMeta.getArgListAttrs(), oldMeta.getNumImplicitOriginDecls(),
+        oldMeta.getCaptureOrigins(),
+        oldMeta.getIsNestedOriginExclusivityCheckingDisabled(),
+        {conformanceConstraint});
+    resultFn.setFuncTypeGenerator(
+        sig.getWithBody(body.getWithMetadata(newMeta)));
+  }
 
   // Add a unresolved EndFnOp to the end of the function. This makes the
   // function able to verify clean, even if we don't body or signature resolve

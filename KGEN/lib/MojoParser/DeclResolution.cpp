@@ -3572,6 +3572,23 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
            ConformanceResult::No;
   };
 
+  // Look up the conditional conformance constraint for a specific trait from
+  // the struct's canonical trait. Returns null for unconditional conformances.
+  auto getConformanceConstraint = [&](StringRef traitName) -> ConstraintAttr {
+    TraitType canonTrait = structOp.getCanonicalTrait();
+    if (!canonTrait)
+      return {};
+    ArrayRef<ConstraintAttr> constraints = canonTrait.getConstraints();
+    if (constraints.empty())
+      return {};
+    ArrayRef<SymbolRefAttr> symbols = canonTrait.getSymbols();
+    for (auto [i, symbol] : llvm::enumerate(symbols)) {
+      if (symbol.getLeafReference() == traitName)
+        return constraints[i];
+    }
+    return {};
+  };
+
   // If the type lacks a __sp_fn__is_trivial member, synthesize it to
   // unresolved.
   auto synthesizeTrivialFlagIfNeeded = [&](StringRef spFnName) {
@@ -3696,7 +3713,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     FnOp moveFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kMoveCtor);
     if (!moveFn)
       moveFn = StructEmitter(structDecl)
-                   .synthesizeEmptyMoveOrCopyInit(/*isMove=*/true);
+                   .synthesizeEmptyMoveOrCopyInit(
+                       /*isMove=*/true, getConformanceConstraint("Movable"));
     if (moveFn) {
       synthesizeTrivialFlagIfNeeded("__move_ctor_");
       structOp.setMoveInitAttr(moveFn.getBoundSymbolRef(
@@ -3707,10 +3725,9 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     FnOp copyFn = lookupSpecialInit(structDecl, SpecialFunctionKind::kCopyCtor);
     if (!copyFn)
       copyFn = StructEmitter(structDecl)
-                   .synthesizeEmptyMoveOrCopyInit(/*isMove=*/false);
+                   .synthesizeEmptyMoveOrCopyInit(
+                       /*isMove=*/false, getConformanceConstraint("Copyable"));
     if (copyFn) {
-      // NOTE: We don't need to synthesize copy() here, there should be a
-      // default implementation.
       synthesizeTrivialFlagIfNeeded("__copy_ctor_");
       structOp.setCopyInitAttr(copyFn.getBoundSymbolRef(
           structDecl.getShared().getEvaluationContext()));
