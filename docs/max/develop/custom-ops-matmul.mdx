@@ -649,7 +649,7 @@ method to produce vectorized views of the tensors, allowing multiple values to b
 copied as a single SIMD vector.
 
 ```mojo
-from sys.info import simd_width_of
+from std.sys.info import simd_width_of
 
 comptime simd_width = simd_width_of[dtype]()
 var partition_col = Int(thread_idx.x % UInt(BN // TN))
