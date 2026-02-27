@@ -303,3 +303,34 @@ fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
         return (1e-7, 1e-7)
     else:
         return (0.0, 0.0)
+
+
+# ===----------------------------------------------------------------------=== #
+# test_value_for_gpu_element
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+@parameter
+fn test_value_for_gpu_element[
+    dtype: DType,
+](gpu_rank: Int, element_idx: Int) -> Scalar[dtype]:
+    """Generates unique deterministic test values per GPU and element index.
+
+    Creates predictable values for testing multi-GPU operations where each
+    GPU's contribution needs to be distinguishable. Uses prime modulus to
+    avoid power-of-two aliasing patterns.
+
+    Args:
+        gpu_rank: The rank/ID of the GPU (0-indexed).
+        element_idx: The element index within the buffer.
+
+    Returns:
+        A unique scalar value for this GPU and element combination.
+
+    Examples:
+        `test_value_for_gpu_element[DType.float32](0, 0)` !=
+        `test_value_for_gpu_element[DType.float32](1, 0)`.
+    """
+    # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
+    return Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % 251)

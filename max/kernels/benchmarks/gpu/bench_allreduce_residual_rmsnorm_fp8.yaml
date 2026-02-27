@@ -11,8 +11,8 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: bench_allreduce_rmsnorm_fp8
-file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_allreduce_rmsnorm_fp8.mojo
+name: bench_allreduce_residual_rmsnorm_fp8
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_allreduce_residual_rmsnorm_fp8.mojo
 
 # out_dtype is auto-detected from platform (AMD -> float8_e4m3fnuz,
 # NVIDIA -> float8_e4m3fn).

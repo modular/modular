@@ -160,6 +160,38 @@ _FILECHECK_TESTS = [
     "test_gather_nd_oob.mojo",
 ]
 
+# Standalone multi-GPU test: allreduce + RMSNorm + FP8 quantization.
+# Needs multi-GPU constraints, disabled assertions, special env vars,
+# 4GB GPU memory, and extra deps that the standard nn glob doesn't provide.
+mojo_test(
+    name = "test_allreduce_residual_rmsnorm_fp8.mojo.test",
+    size = "large",
+    srcs = ["test_allreduce_residual_rmsnorm_fp8.mojo"],
+    enable_assertions = False,  # MSTDL-2301: register pressure
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE_PERCENT": "80",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+    ],
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+)
+
 [
     mojo_filecheck_test(
         name = src + ".test",
@@ -219,6 +251,8 @@ _FILECHECK_TESTS = [
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + [
+            "test_allreduce_residual_rmsnorm_fp8.mojo",  # Has its own standalone rule above
+        ],
     )
 ]
