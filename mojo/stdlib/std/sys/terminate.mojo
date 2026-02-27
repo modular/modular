@@ -13,8 +13,8 @@
 """This module includes the exit functions."""
 
 
-from sys import _libc as libc
-from ffi import c_int
+from std.sys import _libc as libc
+from std.ffi import c_int
 
 
 fn exit():

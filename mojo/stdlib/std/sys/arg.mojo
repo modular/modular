@@ -15,7 +15,7 @@ environment.
 """
 
 
-from ffi import external_call
+from std.ffi import external_call
 
 
 # TODO: When we have global variables, this should be a global list.
@@ -25,7 +25,7 @@ fn argv() -> VariadicList[StaticString]:
     For example:
 
     ```mojo title="app.mojo"
-    from sys import argv
+    from std.sys import argv
 
     def main():
         args = argv()

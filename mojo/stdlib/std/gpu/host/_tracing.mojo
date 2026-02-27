@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from pathlib import Path
-from sys import (
+from std.os import abort
+from std.pathlib import Path
+from std.sys import (
     has_accelerator,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     size_of,
 )
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle, _try_find_dylib
-from sys.param_env import env_get_int
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle, _try_find_dylib
+from std.sys.param_env import env_get_int
 
-from utils.variant import Variant
+from std.utils.variant import Variant
 
 # ===-----------------------------------------------------------------------===#
 # Library Load

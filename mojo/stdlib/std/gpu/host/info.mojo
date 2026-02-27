@@ -556,9 +556,9 @@ See real-world examples by searching for these functions:
 Each example demonstrates the complete target configuration for that GPU family.
 """
 
-from math import ceildiv, floor
-from os import abort
-from sys.info import CompilationTarget, _accelerator_arch, _TargetType
+from std.math import ceildiv, floor
+from std.os import abort
+from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
 comptime _KB = 1024
 comptime _K = 1024

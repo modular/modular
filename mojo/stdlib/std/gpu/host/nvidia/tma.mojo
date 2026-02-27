@@ -21,18 +21,18 @@ features like swizzling for bank conflict avoidance, L2 cache promotion hints, a
 support for various data types and memory layouts.
 """
 
-from ffi import external_call
-from sys import size_of
+from std.ffi import external_call
+from std.sys import size_of
 
-from gpu._utils import to_llvm_ptr
-from gpu.host.device_context import (
+from std.gpu._utils import to_llvm_ptr
+from std.gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
     _DeviceBufferPtr,
 )
 
-from utils import IndexList, StaticTuple
-from builtin.device_passable import DevicePassable
+from std.utils import IndexList, StaticTuple
+from std.builtin.device_passable import DevicePassable
 
 
 @fieldwise_init("implicit")

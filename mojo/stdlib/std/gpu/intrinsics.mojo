@@ -25,10 +25,10 @@ directly to hardware instructions and require understanding of the
 underlying GPU architecture.
 """
 
-from collections.string.string_slice import get_static_string
-from os.atomic import Consistency
-from ffi import external_call
-from sys import (
+from std.collections.string.string_slice import get_static_string
+from std.os.atomic import Consistency
+from std.ffi import external_call
+from std.sys import (
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
@@ -36,8 +36,8 @@ from sys import (
     size_of,
     _RegisterPackType,
 )
-from sys._assembly import inlined_assembly
-from sys.info import (
+from std.sys._assembly import inlined_assembly
+from std.sys.info import (
     CompilationTarget,
     _is_sm_9x_or_newer,
     align_of,
@@ -49,9 +49,9 @@ from sys.info import (
     _is_amd_rdna3,
     _is_amd_rdna4,
 )
-from sys.intrinsics import llvm_intrinsic, readfirstlane
+from std.sys.intrinsics import llvm_intrinsic, readfirstlane
 
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 
 from .memory.memory import CacheOperation, _int_to_str
 

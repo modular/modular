@@ -13,7 +13,7 @@
 """Implements functions that return compile-time information.
 """
 from .param_env import env_get_int, env_get_string, is_defined
-from collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_slice import _get_kgen_string
 
 # ===----------------------------------------------------------------------=== #
 # is_compile_time

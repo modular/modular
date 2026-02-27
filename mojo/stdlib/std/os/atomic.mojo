@@ -15,16 +15,16 @@
 You can import these APIs from the `os` package. For example:
 
 ```mojo
-from os import Atomic
+from std.os import Atomic
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string
-from sys import is_compile_time
-from sys.info import is_nvidia_gpu
+from std.collections.string.string_slice import _get_kgen_string
+from std.sys import is_compile_time
+from std.sys.info import is_nvidia_gpu
 
-from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
-from memory import bitcast
+from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of
+from std.memory import bitcast
 
 # ===-----------------------------------------------------------------------===#
 # Consistency

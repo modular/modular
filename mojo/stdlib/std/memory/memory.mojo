@@ -15,16 +15,16 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory import memcmp
+from std.memory import memcmp
 ```
 """
 
 
-from collections.string.string_slice import _get_kgen_string
-from math import iota
-from sys import _libc as libc
-from ffi import external_call
-from sys import (
+from std.collections.string.string_slice import _get_kgen_string
+from std.math import iota
+from std.sys import _libc as libc
+from std.ffi import external_call
+from std.sys import (
     align_of,
     codegen_unreachable,
     env_get_string,
@@ -36,7 +36,7 @@ from sys import (
     size_of,
 )
 
-from algorithm import vectorize
+from std.algorithm import vectorize
 
 # ===-----------------------------------------------------------------------===#
 # memcmp

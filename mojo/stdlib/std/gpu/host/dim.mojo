@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the dim type."""
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @fieldwise_init("implicit")

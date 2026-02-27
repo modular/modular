@@ -21,9 +21,9 @@ Most functionality is architecture-agnostic, with some NVIDIA-specific features 
 The module is designed to work seamlessly across different GPU architectures while providing
 optimal performance through hardware-specific optimizations where applicable."""
 
-import math
-from sys import llvm_intrinsic
-from sys.info import (
+import std.math
+from std.sys import llvm_intrinsic
+from std.sys.info import (
     CompilationTarget,
     _is_sm_9x_or_newer,
     is_amd_gpu,
@@ -31,7 +31,7 @@ from sys.info import (
     is_gpu,
     is_nvidia_gpu,
 )
-from memory import AddressSpace
+from std.memory import AddressSpace
 
 from ..globals import WARP_SIZE
 from .warp import broadcast

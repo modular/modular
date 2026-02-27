@@ -15,12 +15,12 @@
 You can import these APIs from the `os` package. For example:
 
 ```mojo
-from os import setenv
+from std.os import setenv
 ```
 """
 
-from ffi import c_int, external_call
-from sys import CompilationTarget
+from std.ffi import c_int, external_call
+from std.sys import CompilationTarget
 
 
 fn setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:

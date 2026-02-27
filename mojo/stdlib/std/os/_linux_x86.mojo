@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from ffi import external_call
-from time.time import _CTimeSpec
+from std.collections import InlineArray
+from std.ffi import external_call
+from std.time.time import _CTimeSpec
 
 from .fstat import stat_result
 
