@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import _to_string_list, get_static_string
+from collections.string.string_slice import (
+    _to_string_list,
+    _unsafe_strlen,
+    get_static_string,
+)
 from sys.info import size_of, simd_width_of
 
 from testing import assert_equal, assert_false, assert_true, assert_raises
@@ -1171,6 +1175,63 @@ def test_string_slice_codepoint_slices_reversed():
     for v in s.codepoint_slices_reversed():
         concat += v
     assert_equal(concat, "")
+
+
+def test_unsafe_strlen():
+    comptime simd_width = simd_width_of[DType.bool]()
+
+    # Empty string: just a null terminator.
+    var empty = List[Byte](capacity=1)
+    empty.append(0)
+    assert_equal(_unsafe_strlen(empty.unsafe_ptr()), UInt(0))
+
+    # Short string, well below one SIMD block.
+    var short_buf = List[Byte](capacity=3)
+    short_buf.append(Byte(ord("h")))
+    short_buf.append(Byte(ord("i")))
+    short_buf.append(0)
+    assert_equal(_unsafe_strlen(short_buf.unsafe_ptr()), UInt(2))
+
+    # String exactly (simd_width - 1) bytes long (fits within one SIMD block).
+    var sub_block = List[Byte](capacity=simd_width)
+    for _ in range(simd_width - 1):
+        sub_block.append(Byte(ord("x")))
+    sub_block.append(0)
+    assert_equal(_unsafe_strlen(sub_block.unsafe_ptr()), UInt(simd_width - 1))
+
+    # String that spans more than one SIMD block.
+    var multi_block_len = simd_width * 3 + 7
+    var multi_block = List[Byte](capacity=multi_block_len + 1)
+    for _ in range(multi_block_len):
+        multi_block.append(Byte(ord("a")))
+    multi_block.append(0)
+    assert_equal(
+        _unsafe_strlen(multi_block.unsafe_ptr()), UInt(multi_block_len)
+    )
+
+    # Bounded scan: max smaller than the actual string length.
+    var long_buf = List[Byte](capacity=6)
+    long_buf.append(Byte(ord("a")))
+    long_buf.append(Byte(ord("b")))
+    long_buf.append(Byte(ord("c")))
+    long_buf.append(Byte(ord("d")))
+    long_buf.append(Byte(ord("e")))
+    long_buf.append(0)
+    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), UInt(3)), UInt(3))
+
+    # Bounded scan: max exactly equal to the string length.
+    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), UInt(5)), UInt(5))
+
+    # Bounded scan: max larger than the string length — returns actual length.
+    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), UInt(100)), UInt(5))
+
+    # Unicode bytes: UTF-8 is treated as raw bytes, all non-zero.
+    # "é" encodes as two bytes: 0xC3, 0xA9.
+    var unicode_buf = List[Byte](capacity=3)
+    unicode_buf.append(Byte(0xC3))
+    unicode_buf.append(Byte(0xA9))
+    unicode_buf.append(0)
+    assert_equal(_unsafe_strlen(unicode_buf.unsafe_ptr()), UInt(2))
 
 
 def main():
