@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides extended utilities for :obj:`max.driver.Buffer`, including dtype casting, numpy interop, and DLPack integration."""
+
 from __future__ import annotations
 
 import struct
