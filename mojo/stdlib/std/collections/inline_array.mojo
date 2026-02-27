@@ -707,7 +707,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             .address_space_cast[address_space]()
         )
 
-    fn fill[
+    def fill[
         T: Copyable & ImplicitlyDestructible, //
     ](mut self: InlineArray[T, Self.size], value: T):
         """Fills all elements of the array with the given value.

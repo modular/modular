@@ -58,6 +58,8 @@ This version is still a work in progress.
 - Subscripting `String` and `StringSlice` now requires a named parameter for range
   indexing, for example `s[1:3]` is now `s[byte=1:3]`.
 
+- Added `InlineArray.fill(value)` to set all elements to a given value.
+
 ## Tooling changes
 
 ## ❌ Removed
