@@ -27,11 +27,27 @@ fn test_math() raises:
     var a: Int = 7
     var b: Int = 2
 
-    # print(a / b)                       # 3 — integer floor division
-    # print(Float64(a) / Float64(b))     # 3.5 — explicit float division
-    assert_true(a / b == 3)
-    var value = Float64(a) / Float64(b)
-    assert_almost_equal(value, 3.5)
+    assert_true(
+        a / b == 3
+    )  # Integer division, result is truncated towards zero
+
+    var c = -7
+    var d = 2
+    assert_true(
+        c / d == -3
+    )  # -3, not -4, because division truncates towards zero
+    assert_true(c // d == -4)  # -4, biased towards negative infinity
+
+    var e: Float64 = 7.0
+    var f: Float64 = 2.0
+    assert_almost_equal(e / f, 3.5)  # Floating-point division, result is 3.5
+    assert_almost_equal(e // f, 3.0)  # biased towards negative infinity
+
+    var g: Float64 = -7.0
+    assert_almost_equal(
+        g / f, -3.5
+    )  # zero bias does not affect floating-point division
+    assert_almost_equal(g // f, -4.0)  # biased towards negative infinity
 
 
 fn test_collections() raises:

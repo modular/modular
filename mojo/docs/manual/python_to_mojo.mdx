@@ -179,22 +179,6 @@ compiler more room to generate faster code.
 Python's `int` uses arbitrary precision. It can hold integers as large as
 memory allows.
 
-```python
-print(7 // 2)  # 3 — floor division, returns int
-```
-
-**Mojo Int Division**
-
-Division behaves differently than in Python. Dividing two integers
-returns a truncated integer. Use `/` for integer division:
-
-```mojo
-var a: Int = 7
-var b: Int = 2
-
-print(a / b)                       # 3 - integer division, truncates
-```
-
 **Mojo's `Int` type**
 
 The general `Int` type maps to your machine's native word size. This is
@@ -213,8 +197,21 @@ fn main():
 
 **Python**
 
-In Python, `float` is always 64-bit. Dividing two integers always
-produces a float:
+In Python, `float` is always 64-bit.
+
+**Mojo**
+
+Mojo floating point types _aren't_ arbitrary precision.
+Mojo doesn't provide a default floating point type, the way it does
+with integers. That means there's no built-in `Float` type.
+
+When you're just starting with Mojo, stick to `Float32` or `Float64`
+floating point.
+
+### Division and types
+
+Mojo division behaves differently than in Python.
+In Python, dividing two integers always produces a float:
 
 ```python
 a = 7
@@ -223,22 +220,57 @@ b = 2
 print(7 / 2)   # 3.5 — always float
 ```
 
-**Mojo**
-
-Mojo floating point types _aren't_ arbitrary precision. Also,
-Mojo doesn't provide a default floating point type, the way it does
-with integers. That means there's no built-in `Float` type.
-
-When you're just starting with Mojo, stick to `Float32` or `Float64`
-floating point.
-
-Use explicit casting with division to return a floating-point result:
+In Mojo, if you want integer division to return a floating-point result,
+you must use explicit casting:
 
 ```mojo
 var a: Int = 7
 var b: Int = 2
 
 print(Float64(a) / Float64(b))     # 3.5 — explicit float division
+```
+
+### Mojo division operators
+
+In Mojo, `/` returns a value that always matches the type of the
+operands. A floating point number divided by a floating point number
+returns a floating point number, and an integer divided by an integer
+returns an integer:
+
+```mojo
+var a: Int = 7
+var b: Int = 2
+
+print(a / b)   # 3, result type matches operand type
+```
+
+Python programmers may be a bit surprised that / isn't "true division."
+It returns a truncated result, but the result is biased towards zero:
+
+```mojo
+var c = -7
+var d = 2
+print(c / d)  # -3, not -4, truncates towards zero
+```
+
+`//` performs floored division, in the direction of negative
+infinity:
+
+```mojo
+print(c // d) # -4, not -3, truncates towards negative infinity
+```
+
+Like `/`, the type returned by `//` is preserved from the operands:
+
+```mojo
+var e: Float64 = 7.0
+var f: Float64 = 2.0
+print(e // f) # 3.0, floors toward negative infinity
+print(e / f)  # 3.5
+
+var g: Float64 = -7.0
+print(g // f) # -4.0, floors toward negative infinity
+print(g / f)  # -3.5
 ```
 
 ## Data structures: lists
