@@ -19,15 +19,17 @@ from layout._tile_tensor import TileTensor
 from nn.rope import rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
+    position_ids_input,
     q_input,
     q_out_golden,
+    q_out_golden_with_position_ids,
 )
 
 from utils import IndexList
 
 
-def test_rope_ragged_gpu[
-    rope_dim: Int, dtype: DType
+def _test_rope_ragged_gpu_impl[
+    rope_dim: Int, dtype: DType, has_position_ids: Bool
 ](ctx: DeviceContext) -> None:
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
@@ -48,6 +50,7 @@ def test_rope_ragged_gpu[
     comptime input_row_offsets_layout = row_major[batch_size + 1]()
     comptime start_pos_layout = row_major[batch_size]()
     comptime freqs_cis_layout = row_major[max_seq_len, rope_dim]()
+    comptime position_ids_layout = row_major[1, batch_size * seq_len]()
 
     # ===== Step 1: Create all buffers =====
     # Query tensor buffers
@@ -82,6 +85,14 @@ def test_rope_ragged_gpu[
         freqs_cis_layout.static_product
     )
 
+    # Position ids buffers
+    var position_ids_host_buffer = ctx.enqueue_create_host_buffer[DType.uint32](
+        position_ids_layout.static_product
+    )
+    var position_ids_device_buffer = ctx.enqueue_create_buffer[DType.uint32](
+        position_ids_layout.static_product
+    )
+
     # Output buffers
     var q_out_device_buffer = ctx.enqueue_create_buffer[dtype](
         q_layout.static_product
@@ -104,7 +115,7 @@ def test_rope_ragged_gpu[
         input_row_offsets_host_buffer[i] = UInt32(i * seq_len)
     input_row_offsets_host_buffer[batch_size] = batch_size * seq_len
 
-    # Fill start positions
+    # Fill start positions (ignored when position_ids are passed)
     start_pos_host_buffer[0] = 0
     start_pos_host_buffer[1] = 5
 
@@ -120,6 +131,11 @@ def test_rope_ragged_gpu[
                 seq_idx * rope_dim + rope_idx
             ] = freqs_cis_table_buffer[buffer_offset]
 
+    # Fill explicit position ids
+    position_ids_buffer = position_ids_input[DType.uint32]()
+    for i in range(len(position_ids_buffer)):
+        position_ids_host_buffer[i] = position_ids_buffer[i]
+
     # ===== Step 3: Copy all data to device =====
     ctx.enqueue_copy(q_device_buffer, q_host_buffer)
     ctx.enqueue_copy(
@@ -127,6 +143,7 @@ def test_rope_ragged_gpu[
     )
     ctx.enqueue_copy(start_pos_device_buffer, start_pos_host_buffer)
     ctx.enqueue_copy(freqs_cis_device_buffer, freqs_cis_host_buffer)
+    ctx.enqueue_copy(position_ids_device_buffer, position_ids_host_buffer)
 
     # Synchronize to ensure all copies are complete before kernel execution
     ctx.synchronize()
@@ -142,6 +159,22 @@ def test_rope_ragged_gpu[
     var freqs_cis_device_tensor = TileTensor(
         freqs_cis_device_buffer.unsafe_ptr(), freqs_cis_layout
     )
+    var position_ids_device_tensor_static = TileTensor(
+        position_ids_device_buffer.unsafe_ptr(), position_ids_layout
+    )
+    var position_ids_device_tensor = TileTensor[
+        DType.uint32,
+        _,
+        ImmutAnyOrigin,
+    ](
+        position_ids_device_tensor_static.ptr.as_immutable().unsafe_origin_cast[
+            ImmutAnyOrigin
+        ](),
+        position_ids_device_tensor_static.layout,
+    ).make_dynamic[
+        DType.int64
+    ]()
+
     var q_out_device_tensor = TileTensor(
         q_out_device_buffer.unsafe_ptr(), q_layout
     )
@@ -154,19 +187,35 @@ def test_rope_ragged_gpu[
         q_out_device_tensor.store[width=width](Coord(idx), val)
 
     # Execute rope_ragged kernel on GPU
-    rope_ragged[
-        dtype,
-        dtype,
-        interleaved=True,
-        target = StaticString("gpu"),
-        output_fn=output_fn,
-    ](
-        x=q_device_tensor.as_any_origin(),
-        input_row_offsets=input_row_offsets_device_tensor.as_any_origin(),
-        start_pos=start_pos_device_tensor.as_any_origin(),
-        freqs_cis=freqs_cis_device_tensor.as_any_origin(),
-        context=Optional[DeviceContext](ctx),
-    )
+    comptime if has_position_ids:
+        rope_ragged[
+            dtype,
+            dtype,
+            interleaved=True,
+            target = StaticString("gpu"),
+            output_fn=output_fn,
+        ](
+            x=q_device_tensor.as_any_origin(),
+            input_row_offsets=input_row_offsets_device_tensor.as_any_origin(),
+            start_pos=start_pos_device_tensor.as_any_origin(),
+            freqs_cis=freqs_cis_device_tensor.as_any_origin(),
+            context=Optional[DeviceContext](ctx),
+            position_ids=position_ids_device_tensor,
+        )
+    else:
+        rope_ragged[
+            dtype,
+            dtype,
+            interleaved=True,
+            target = StaticString("gpu"),
+            output_fn=output_fn,
+        ](
+            x=q_device_tensor.as_any_origin(),
+            input_row_offsets=input_row_offsets_device_tensor.as_any_origin(),
+            start_pos=start_pos_device_tensor.as_any_origin(),
+            freqs_cis=freqs_cis_device_tensor.as_any_origin(),
+            context=Optional[DeviceContext](ctx),
+        )
 
     # Copy results back to host for validation
     ctx.enqueue_copy(q_out_host_buffer, q_out_device_buffer)
@@ -177,7 +226,10 @@ def test_rope_ragged_gpu[
         q_layout.static_product
     )
     ctx.synchronize()
-    expected_q_out_buffer = q_out_golden[dtype]()
+    comptime if has_position_ids:
+        expected_q_out_buffer = q_out_golden_with_position_ids[dtype]()
+    else:
+        expected_q_out_buffer = q_out_golden[dtype]()
     for i in range(len(expected_q_out_buffer)):
         expected_q_out_host_buffer[i] = expected_q_out_buffer[i]
 
@@ -222,13 +274,27 @@ def test_rope_ragged_gpu[
                     )
 
 
+def test_rope_ragged_gpu[
+    rope_dim: Int, dtype: DType
+](ctx: DeviceContext) -> None:
+    _test_rope_ragged_gpu_impl[rope_dim, dtype, has_position_ids=False](ctx)
+
+
+def test_rope_ragged_gpu_with_position_ids[
+    rope_dim: Int, dtype: DType
+](ctx: DeviceContext) -> None:
+    _test_rope_ragged_gpu_impl[rope_dim, dtype, has_position_ids=True](ctx)
+
+
 def execute_rope_ragged_gpu(ctx: DeviceContext) -> None:
     """Execute GPU RoPE tests with different rope dimensions."""
     # Full head RoPE
     test_rope_ragged_gpu[8, DType.float32](ctx)
+    test_rope_ragged_gpu_with_position_ids[8, DType.float32](ctx)
 
     # partial RoPE
     test_rope_ragged_gpu[4, DType.float32](ctx)
+    test_rope_ragged_gpu_with_position_ids[4, DType.float32](ctx)
 
 
 def main():

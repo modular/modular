@@ -20,7 +20,7 @@ from complex import ComplexSIMD
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu
 from layout._coord import Coord, CoordLike, ComptimeInt, RuntimeInt, Idx, coord
-from layout._layout import Layout, _RowMajor
+from layout._layout import TensorLayout, RowMajorLayout
 from layout._tile_tensor import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -123,6 +123,9 @@ fn rope_ragged[
         CoordLike
     ],
     mrope_section: Optional[Coord[*mrope_types]] = None,
+    PositionIdsLayoutType: TensorLayout = RowMajorLayout[
+        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+    ],
 ](
     x: TileTensor[dtype, ...],
     input_row_offsets: TileTensor[DType.uint32, ...],
@@ -130,32 +133,18 @@ fn rope_ragged[
     freqs_cis: TileTensor[freq_dtype, ...],
     context: Optional[DeviceContext],
     position_ids: OptionalReg[
-        TileTensor[
-            DType.uint32,
-            Layout[
-                Variadic.types[
-                    RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-                ],
-                _RowMajor[
-                    *Variadic.types[
-                        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-                    ]
-                ],
-            ],
-            MutAnyOrigin,
-        ]
+        TileTensor[DType.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
     ] = None,
 ) raises where (
     input_row_offsets.flat_rank == 1
     and start_pos.flat_rank == 1
-    and position_ids.T.flat_rank == 2
     and freqs_cis.flat_rank == 2
 ):
-    comptime assert (
-        freqs_cis.all_dims_known
-    ), "freqs_cis shape must be statically shaped"
-    comptime head_size = x.static_shape[2]
-    comptime rope_dim = freqs_cis.static_shape[1]
+    comptime assert freqs_cis.LayoutType._shape_types[
+        1
+    ].is_static_value, "Need static rope_dim for freqs_cis"
+    comptime head_size = Int(x.static_shape[2])
+    comptime rope_dim = Int(freqs_cis.static_shape[1])
     comptime unroped_dim = head_size - rope_dim
     comptime has_nope = unroped_dim > 0
 
@@ -196,6 +185,8 @@ fn rope_ragged[
 
             var position_ids_idx = Int(post_seq_idx)
             if position_ids:
+                comptime PIdTensor = type_of(position_ids.value())
+                comptime assert PIdTensor.flat_rank == 2
                 comptime if mrope_section:
                     var section_idx = 0
 

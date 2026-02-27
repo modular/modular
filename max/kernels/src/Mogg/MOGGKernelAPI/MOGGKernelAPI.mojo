@@ -7015,6 +7015,90 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
             )
 
 
+@compiler.register("mo.rope.ragged.with_position_id")
+struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=3],
+        x: InputTensor[dtype=dtype, rank=3],
+        input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+        start_pos: InputTensor[dtype = DType.uint32, rank=1],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
+        position_ids: InputTensor[dtype = DType.uint32, rank=2],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @always_inline
+        @parameter
+        fn description_fn() -> String:
+            return String(";").join(
+                Span(
+                    [
+                        trace_arg("output", output.shape()),
+                        trace_arg("x", x.shape()),
+                        trace_arg(
+                            "input_row_offsets", input_row_offsets.shape()
+                        ),
+                        trace_arg("start_pos", start_pos.shape()),
+                        trace_arg("freqs_cis", freqs_cis.shape()),
+                        trace_arg("position_ids", position_ids.shape()),
+                        "interleaved=" + String(Self.interleaved),
+                        "target=" + String(target),
+                    ]
+                )
+            )
+
+        @always_inline
+        @parameter
+        fn output_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+            output._lambda_store[width=width, element_alignment=alignment](
+                idx,
+                rebind[SIMD[dtype, width]](val),
+            )
+
+        var device_ctx: Optional[DeviceContext] = None
+
+        @parameter
+        if is_gpu[target]():
+            device_ctx = ctx.get_device_context()
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.rope.ragged.with_position_id",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        ):
+            var x_tensor = x.to_tile_tensor[DType.int64]()
+            var row_offsets_tensor = input_row_offsets.to_tile_tensor[
+                DType.int64
+            ]()
+            var start_tensor = start_pos.to_tile_tensor[DType.int64]()
+            var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
+            var position_ids_tensor = position_ids.to_tile_tensor[DType.int64]()
+            comptime assert row_offsets_tensor.flat_rank == 1
+            comptime assert start_tensor.flat_rank == 1
+            comptime assert freqs_cis_tensor.flat_rank == 2
+            comptime assert position_ids_tensor.flat_rank == 2
+
+            rope_ragged[
+                interleaved = Self.interleaved,
+                target=target,
+                output_fn=output_fn,
+            ](
+                x_tensor,
+                row_offsets_tensor,
+                start_tensor,
+                freqs_cis_tensor,
+                device_ctx,
+                position_ids=position_ids_tensor.as_any_origin().as_immut(),
+            )
+
+
 # ===-----------------------------------------------------------------------===#
 # MHA
 #
