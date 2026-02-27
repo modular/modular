@@ -2665,7 +2665,49 @@ fn _unsafe_strlen(
     Notes:
         The length does NOT include the null terminator.
     """
-    var offset = UInt(0)
+    if is_compile_time():
+        var offset = UInt(0)
+        while offset < max and ptr[offset]:
+            offset += 1
+        return offset
+    return _unsafe_strlen_impl(ptr, max)
+
+
+fn _unsafe_strlen_impl(
+    ptr: UnsafePointer[mut=False, Byte], max: UInt
+) -> UInt:
+    """SIMD-accelerated helper for `_unsafe_strlen`.
+
+    Scans for a null byte using SIMD-width blocks, then a scalar tail for any
+    remaining bytes within `max`.
+    """
+    comptime bool_mask_width = simd_width_of[DType.bool]()
+    var zero = SIMD[DType.uint8, bool_mask_width](0)
+
+    if max == UInt.MAX:
+        # Unbounded scan: the string is guaranteed to be null-terminated, so
+        # a null byte will always be found. Load SIMD-width blocks until one
+        # containing a null is found.
+        var i = 0
+        while True:
+            var block = ptr.load[width=bool_mask_width](i)
+            var bool_mask = block.eq(zero)
+            var mask = pack_bits(bool_mask)
+            if mask:
+                return UInt(i) + UInt(count_trailing_zeros(mask))
+            i += bool_mask_width
+
+    # Bounded case: process only complete SIMD blocks that fit within max.
+    var vectorized_end = align_down(Int(max), bool_mask_width)
+    for i in range(0, vectorized_end, bool_mask_width):
+        var block = ptr.load[width=bool_mask_width](i)
+        var bool_mask = block.eq(zero)
+        var mask = pack_bits(bool_mask)
+        if mask:
+            return UInt(i) + UInt(count_trailing_zeros(mask))
+
+    # Scalar tail for the remaining bytes that don't fill a full SIMD block.
+    var offset = UInt(vectorized_end)
     while offset < max and ptr[offset]:
         offset += 1
     return offset
