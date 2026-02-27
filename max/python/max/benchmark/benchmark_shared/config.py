@@ -338,10 +338,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Number of multiturn chat sessions."""
 
-    delay_between_chat_turns: int | None = field(
+    delay_between_chat_turns: int | str | None = field(
         default=None, metadata={"group": "Workload Configuration"}
     )
-    """Delay between chat turns in ms."""
+    """Delay between chat turns in ms. Accepts an integer for a constant delay,
+    or a distribution string: 'N(mean,std)' for normal, 'U(lower,upper)' for uniform or 'G(shape,scale)' for gamma."""
 
     # Output control (serving-specific extensions)
     output_lengths: str | None = field(
