@@ -654,6 +654,41 @@ LogicalResult DeclResolver::importDeclFromModule(
   }
   ArrayRef<ASTDecl *> results = result.getIfSuccess();
   assert(!results.empty() && "other cases handled above");
+
+  // If the initial lookup only found submodule/package decls in a package,
+  // the name might also refer to a re-exported symbol from __init__.mojo.
+  // The directory-scan creates whole-module imports that shadow wildcard
+  // imports from __init__, so look up the name directly in __init__'s scope.
+  SmallVector<ASTDecl *> initNonModuleDecls;
+  if (isa_and_nonnull<PackageOp>(module.getIfOperation()) &&
+      llvm::all_of(results, [](ASTDecl *d) {
+        return isa_and_nonnull<FileModuleOp, PackageOp>(d->getIfOperation());
+      })) {
+    StringAttr initName = StringAttr::get(getContext(), "__init__");
+    auto initResult = shared.lookupAndResolveDecl(
+        initName, sourceNameLoc, module,
+        /*searchParentScopes=*/false, /*resolveTarget=*/false);
+    if (initResult.isSuccess()) {
+      ASTDecl &initDecl = *initResult.getIfSuccess().front();
+      if (failed(resolveBody(initDecl, loc)))
+        return failure();
+      auto initLookup = shared.lookupAndResolveDecl(
+          sourceName, sourceNameLoc, initDecl,
+          /*searchParentScopes=*/false, resolveTarget);
+      if (initLookup.isSuccess()) {
+        // Filter to only non-module decls from __init__ (the re-exported
+        // symbols). These should take priority over submodule names.
+        for (ASTDecl *d : initLookup.getIfSuccess()) {
+          auto *op = d->getIfOperation();
+          if (!isa_and_nonnull<FileModuleOp, PackageOp>(op))
+            initNonModuleDecls.push_back(d);
+        }
+        if (!initNonModuleDecls.empty())
+          results = ArrayRef(initNonModuleDecls);
+      }
+    }
+  }
+
   shared.notifyListenerOnRef(results, sourceName, sourceNameLoc);
   shared.notifyListenerOnRef(results, destName, destNameLoc);
 
