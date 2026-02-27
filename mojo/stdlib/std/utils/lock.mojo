@@ -53,6 +53,9 @@ struct SpinWaiter(Defaultable):
         )
 
 
+# Cache-line aligned to prevent false sharing when multiple locks are
+# accessed concurrently from different threads.
+@align(64)
 struct BlockingSpinLock(Defaultable):
     """A basic locking implementation that uses an integer to represent the
     owner of the lock."""
