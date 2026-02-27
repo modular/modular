@@ -2145,6 +2145,7 @@ fn rms_norm_fused_fp8[
     ],
     /,
     target: StaticString = "gpu",
+    compile_only: Bool = False,
 ](
     shape: IndexList[rank],
     output: NDBuffer[mut=True, out_dtype, rank, ...],
@@ -2170,6 +2171,9 @@ fn rms_norm_fused_fp8[
         rank: Tensor rank.
         input_fn: Function to load input values.
         target: Target device ("gpu" or "cpu").
+        compile_only: If True, only compiles the kernel without executing it.
+            Used to pre-compile kernels and avoid JIT compilation deadlocks
+            in multi-GPU contexts.
 
     Args:
         shape: Input tensor shape.
@@ -2214,6 +2218,7 @@ fn rms_norm_fused_fp8[
                 scales_dtype,
                 rank,
                 input_fn,
+                compile_only=compile_only,
             ](
                 shape,
                 output,
@@ -2237,6 +2242,7 @@ fn _rms_norm_fused_fp8_gpu[
     input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         in_dtype, width
     ],
+    compile_only: Bool = False,
 ](
     shape: IndexList[rank],
     output: NDBuffer[mut=True, out_dtype, rank, ...],
@@ -2295,6 +2301,7 @@ fn _rms_norm_fused_fp8_gpu[
             scales_dtype,
             input_fn_2d,
             use_warp_tiling=warp_tiling,
+            compile_only=compile_only,
         ](
             rows,
             cols,
@@ -2430,6 +2437,7 @@ fn _rms_norm_fused_fp8_gpu_launch[
         in_dtype, width
     ],
     use_warp_tiling: Bool,
+    compile_only: Bool = False,
 ](
     rows: Int,
     cols: Int,
@@ -2483,17 +2491,20 @@ fn _rms_norm_fused_fp8_gpu_launch[
             input_fn=input_fn,
             output_fn=output_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
-            gamma,
-            scale_buffer_tensor,
-            epsilon,
-            weight_offset,
-            cols,
-            scale_ub.cast[scales_dtype](),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            attributes=pdl_launch_attributes(),
-        )
+        comptime if compile_only:
+            _ = ctx.compile_function[kernel, kernel]()
+        else:
+            ctx.enqueue_function[kernel, kernel](
+                gamma,
+                scale_buffer_tensor,
+                epsilon,
+                weight_offset,
+                cols,
+                scale_ub.cast[scales_dtype](),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
     else:
         comptime kernel = _rms_norm_fused_fp8_kernel_block[
             mut = gamma.mut,
@@ -2508,17 +2519,20 @@ fn _rms_norm_fused_fp8_gpu_launch[
             input_fn=input_fn,
             output_fn=output_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
-            gamma,
-            scale_buffer_tensor,
-            epsilon,
-            weight_offset,
-            cols,
-            scale_ub.cast[scales_dtype](),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            attributes=pdl_launch_attributes(),
-        )
+        comptime if compile_only:
+            _ = ctx.compile_function[kernel, kernel]()
+        else:
+            ctx.enqueue_function[kernel, kernel](
+                gamma,
+                scale_buffer_tensor,
+                epsilon,
+                weight_offset,
+                cols,
+                scale_ub.cast[scales_dtype](),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
 
 
 fn _rms_norm_fused_fp8_kernel_block[

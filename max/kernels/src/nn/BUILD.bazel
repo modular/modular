@@ -10,6 +10,7 @@ mojo_library(
     deps = [
         "//max:_cudnn",
         "//max:_cufft",
+        "//max:comm",
         "//max:kv_cache",
         "//max:layout",
         "//max:linalg",

@@ -7,7 +7,6 @@ mojo_test(
     name = "test_multimem_allreduce.mojo.test",
     size = "large",
     srcs = [
-        "comm_test_utils.mojo",
         "test_allreduce.mojo",
         "test_multimem_allreduce.mojo",
     ],
@@ -43,19 +42,14 @@ HIGH_GPU_MEMORY_TESTS = [
 
 # Tests where assertions push register usage past hardware limits,
 # causing CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES on NVIDIA GPUs.
-DISABLE_ASSERTIONS_TESTS = [
-    "test_allreduce_rmsnorm_fp8.mojo",  # MSTDL-2301: 80 regs with assertions vs 62 without (limit 64 at 32 warps)
-]
+DISABLE_ASSERTIONS_TESTS = []
 
 # Regular tests for all other files
 [
     mojo_test(
         name = src + ".test",
         size = "large",
-        srcs = [
-            src,
-            "comm_test_utils.mojo",
-        ],
+        srcs = [src],
         # NOTE: test_allgather.mojo tests deprecated functionality.
         copts = ["-Wno-error"] if src == "test_allgather.mojo" else [],
         enable_assertions = src not in DISABLE_ASSERTIONS_TESTS,
@@ -85,7 +79,6 @@ DISABLE_ASSERTIONS_TESTS = [
     for src in glob(
         ["**/*.mojo"],
         exclude = [
-            "comm_test_utils.mojo",  # Imported source, not a test
             "test_multimem_allreduce.mojo",
         ],
     )

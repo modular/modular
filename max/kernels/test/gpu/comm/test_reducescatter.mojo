@@ -25,7 +25,7 @@ from comm.reducescatter import (
     elementwise_epilogue_type,
 )
 from internal_utils import human_readable_size
-from comm_test_utils import test_value_for_gpu_element
+from internal_utils._testing import test_value_for_gpu_element
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from testing import assert_almost_equal, assert_true
 from utils import IndexList, StaticTuple
