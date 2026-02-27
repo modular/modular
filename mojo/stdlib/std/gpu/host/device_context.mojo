@@ -6489,6 +6489,48 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             ]()
         )
 
+    @staticmethod
+    @always_inline
+    fn all_peer_access_enabled() raises -> Bool:
+        """Check whether peer-to-peer memory access is enabled between all GPU pairs.
+
+        This function queries whether P2P access has been successfully enabled
+        between all pairs of GPUs in the system. It returns True only if every
+        GPU can directly access every other GPU's memory.
+
+        Returns:
+            True if P2P access is enabled between all GPU pairs, False otherwise.
+            Returns False if there are fewer than 2 GPUs or if P2P is not
+            supported between any pair.
+
+        Raises:
+            If there's an error querying the P2P access status.
+
+        Example:
+
+        ```mojo
+        from gpu.host import DeviceContext
+
+        # P2P access is automatically enabled when devices are constructed.
+        # Check if it was successful for all pairs.
+        if DeviceContext.all_peer_access_enabled():
+            print("P2P access enabled between all GPUs")
+        else:
+            print("P2P access not available for all GPU pairs")
+        ```
+        """
+        var result: Bool = False
+        # const char *AsyncRT_DeviceContext_allPeerAccessEnabled(bool *result)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_allPeerAccessEnabled",
+                _ConstCharPtr,
+                UnsafePointer[Bool, origin_of(result)],
+            ](UnsafePointer(to=result)),
+            location=call_location(),
+        )
+        return result
+
 
 struct DeviceMulticastBuffer[dtype: DType]:
     """Represents a multicast memory object enables special memory operations to be broadcast
