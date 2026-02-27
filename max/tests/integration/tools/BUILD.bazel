@@ -221,6 +221,7 @@ modular_py_binary(
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",
         "//max/tests/integration/accuracy:verify_pipelines",
+        "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
         requirement("click"),
     ],
 )

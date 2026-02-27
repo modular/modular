@@ -20,10 +20,37 @@ configurations used to matrix logit verification over CI runs.
 
 from __future__ import annotations
 
+import enum
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+
+SupportedEncoding = Literal[
+    "float32",
+    "bfloat16",
+    "q4_k",
+    "q4_0",
+    "q6_k",
+    "float8_e4m3fn",
+    "float4_e2m1fnx2",
+    "gptq",
+]
+
+
+class DeviceKind(enum.Enum):
+    CPU = "cpu"
+    GPU = "gpu"
+
+
+class PregeneratedTorchGoldens(BaseModel):
+    """Paths to pregenerated torch golden logits."""
+
+    tar_file: str
+    """S3 path to the tar file containing the bundled golden json files."""
+    json_file: str
+    """Name of the json file containing the golden logits."""
 
 
 class Agent(BaseModel):
@@ -38,8 +65,22 @@ class Agent(BaseModel):
 class PipelineConfig(BaseModel):
     "Logit verification pipeline configuration"
 
-    pre_submit_agents: list[Agent]
+    pre_submit_agents: list[Agent] = Field(default_factory=list)
     pipeline: str
+
+    compatible_with: list[DeviceKind] = Field(default_factory=list)
+    encoding: SupportedEncoding
+    tags: list[str] = Field(default_factory=list)
+    pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None
+
+    absolute_tolerance: float | None = None
+    relative_tolerance: float | None = None
+    cos_dist_threshold: float | None = None
+    kl_div_threshold: float | None = None
+    timeout: int | None = None
+
+    ssim_threshold: float | None = None
+    lpips_threshold: float | None = None
 
 
 class LogitVerificationConfig(BaseModel):
