@@ -26,7 +26,7 @@ idefics3_arch = SupportedArchitecture(
     example_repo_ids=["HuggingFaceM4/Idefics3-8B-Llama3"],
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     pipeline_model=Idefics3Model,
     tokenizer=Idefics3Tokenizer,

@@ -31,9 +31,9 @@ qwen3vl_moe_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
-        "float8_e4m3fn": ["paged"],
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
@@ -57,9 +57,9 @@ qwen3vl_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
-        "float8_e4m3fn": ["paged"],
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,

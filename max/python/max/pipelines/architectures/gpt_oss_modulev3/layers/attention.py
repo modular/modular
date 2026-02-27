@@ -25,7 +25,6 @@ from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
-    uses_opaque,
 )
 from max.nn.module_v3 import Linear, Module
 
@@ -96,12 +95,6 @@ class GptOssAttention(Module[..., Tensor]):
 
         # Initialize sinks parameter for each attention head
         self.sinks = Tensor.zeros([num_attention_heads])
-
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
 
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads

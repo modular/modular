@@ -129,7 +129,6 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -318,7 +317,6 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -453,7 +451,6 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         devices=[DeviceRef.CPU()],
     )
@@ -560,7 +557,6 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )

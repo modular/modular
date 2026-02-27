@@ -315,7 +315,6 @@ def _make_kv_cache_manager(
         num_layers=2,
         n_kv_heads=4,
         head_dim=64,
-        cache_strategy="paged",
         enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=False,
         page_size=INTEGRATION_PAGE_SIZE,

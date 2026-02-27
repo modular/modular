@@ -28,7 +28,6 @@ from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightsFormat, weights_format
 from max.interfaces import SamplingParamsGenerationConfigDefaults
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib.device_specs import coerce_device_specs_input
 from max.pipelines.lib.hf_utils import (
     HuggingFaceRepo,
@@ -829,12 +828,12 @@ class MAXModelConfig(MAXModelConfigBase):
 
     def validate_and_resolve_with_resolved_quantization_encoding(
         self,
-        supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
+        supported_encodings: set[SupportedEncoding],
         default_weights_format: WeightsFormat,
     ) -> None:
         """Validates model path and weight path against resolved quantization encoding.
 
-        Also resolves the KV cache strategy and finalizes the encoding config.
+        Also finalizes the encoding config.
 
         Args:
             supported_encodings: A dictionary of supported encodings and their corresponding KV cache strategies.
@@ -845,11 +844,10 @@ class MAXModelConfig(MAXModelConfigBase):
         # TODO: This call may be redundant since we do device compatibility
         # validation as they're being set?
         self._validate_quantization_encoding_device_compatibility(
-            supported_encodings_list=list(supported_encodings.keys())
+            supported_encodings_list=list(supported_encodings)
         )
         self._finalize_encoding_config()
         self._resolve_weight_path(default_weights_format=default_weights_format)
-        self._resolve_kv_cache_strategy(supported_encodings=supported_encodings)
         self._validate_final_architecture_model_path_weight_path()
 
     def _validate_and_resolve_dtype_casting(
@@ -1098,44 +1096,6 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"compatible weights cannot be found for '{self.quantization_encoding}', in the provided repo: '{self.huggingface_weight_repo.repo_id}'"
             )
 
-    def _resolve_kv_cache_strategy(
-        self,
-        supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
-    ) -> None:
-        """Resolves the KVCacheStrategy.
-
-        This method should only be called after the quantization encoding has
-        been set / resolved.
-
-        Args:
-            supported_encodings: A dictionary of supported encodings and their corresponding KV cache strategies.
-        """
-        assert self.quantization_encoding, "quantization_encoding must be set."
-
-        # Check supported_cache_strategy
-        supported_cache_strategies = supported_encodings.get(
-            self.quantization_encoding, []
-        )
-        if (
-            self.kv_cache.cache_strategy == "model_default"
-            and supported_cache_strategies
-        ):
-            default_strategy = supported_cache_strategies[0]
-            msg = f"default cache_strategy of '{default_strategy}' enabled"
-            logger.debug(msg)
-
-            self.kv_cache.cache_strategy = default_strategy
-        elif (
-            supported_cache_strategies
-            and self.kv_cache.cache_strategy not in supported_cache_strategies
-        ):
-            supported_strategy = supported_cache_strategies[0]
-
-            msg = f"cache_strategy = '{self.kv_cache.cache_strategy}' not supported for '{self.quantization_encoding}', using '{supported_strategy}' cache strategy."
-            logger.warning(msg)
-
-            self.kv_cache.cache_strategy = supported_strategy
-
     def _validate_final_architecture_model_path_weight_path(self) -> None:
         # Assume at this point, an architecture,
         # a model_path and weight_paths are available.
@@ -1281,7 +1241,6 @@ class MAXModelConfig(MAXModelConfigBase):
         Args:
             **kv_cache_kwargs: Keyword arguments to pass to KVCacheConfig constructor.
                 Common options include:
-                - cache_strategy: The KV cache strategy (continuous, paged, etc.)
                 - kv_cache_page_size: Number of tokens per page for paged cache
                 - enable_prefix_caching: Whether to enable prefix caching
                 - device_memory_utilization: Fraction of device memory to use

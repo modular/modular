@@ -16,14 +16,11 @@ from .cache_params import (
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
-    KVCacheStrategy,
     MultiKVCacheParams,
     compute_max_seq_len_fitting_in_cache,
     compute_num_device_blocks,
     compute_num_host_blocks,
     estimated_memory_size,
-    kernel_substring,
-    uses_opaque,
 )
 from .input_types import (
     KVCacheInputs,
@@ -43,7 +40,6 @@ __all__ = [
     "KVCacheParamInterface",
     "KVCacheParams",
     "KVCacheQuantizationConfig",
-    "KVCacheStrategy",
     "MultiKVCacheParams",
     "NestedIterableDataclass",
     "PagedCacheValues",
@@ -53,6 +49,4 @@ __all__ = [
     "compute_num_device_blocks",
     "compute_num_host_blocks",
     "estimated_memory_size",
-    "kernel_substring",
-    "uses_opaque",
 ]

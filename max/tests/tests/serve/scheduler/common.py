@@ -81,7 +81,6 @@ def create_kv_cache(
         num_layers=1,
         n_kv_heads=1,
         head_dim=1,
-        cache_strategy="paged",
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,

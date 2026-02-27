@@ -112,7 +112,6 @@ class TestMAXConfigFileLoading:
             "description": "A test config with enums",
             "version": "1.0",
             "kv_cache_config": {
-                "cache_strategy": "paged",
                 "kv_cache_page_size": 256,
                 "enable_kvcache_swapping_to_host": True,
             },
@@ -132,7 +131,6 @@ class TestMAXConfigFileLoading:
             kv_config = KVCacheConfig(
                 config_file=f.name, section_name="kv_cache_config"
             )
-            assert kv_config.cache_strategy == "paged"
             assert kv_config.kv_cache_page_size == 256
             assert kv_config.enable_kvcache_swapping_to_host is True
 
@@ -196,7 +194,6 @@ class TestBuiltinConfigClasses:
         config = KVCacheConfig()
 
         # Test default values.
-        assert hasattr(config, "cache_strategy")
         assert hasattr(config, "kv_cache_page_size")
 
         # Test section name.

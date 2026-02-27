@@ -30,8 +30,8 @@ phi3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=Phi3Model,
     tokenizer=TextTokenizer,

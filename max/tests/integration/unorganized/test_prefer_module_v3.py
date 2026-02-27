@@ -42,7 +42,7 @@ def test_registry__retrieve_architecture_default() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -80,7 +80,7 @@ def test_registry__retrieve_architecture_v3_falls_back_to_v2() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -120,7 +120,7 @@ def test_registry__retrieve_architecture_module_v3() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -138,7 +138,7 @@ def test_registry__retrieve_architecture_module_v3() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -182,7 +182,7 @@ def test_config__prefer_module_v3_default_is_false() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -218,7 +218,7 @@ def test_config__prefer_module_v3_can_be_set_to_true() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -252,7 +252,7 @@ def test_config__prefer_module_v3_true_falls_back_to_v2_arch() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -287,7 +287,7 @@ def test_registry__retrieve_architecture_falls_back_to_v3() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -329,7 +329,7 @@ def test_config__prefer_module_v3_with_draft_model() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,

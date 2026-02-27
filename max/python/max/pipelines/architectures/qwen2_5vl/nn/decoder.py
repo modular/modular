@@ -42,7 +42,7 @@ from max.nn.kernels import (
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module, Shardable
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.norm import RMSNorm
@@ -121,12 +121,6 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         self.devices = devices or [DeviceRef.CPU()]
 
         self._sharding_strategy: ShardingStrategy | None = None
-
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
 
         q_weight_dim = self.kv_params.head_dim * num_attention_heads
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads

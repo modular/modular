@@ -30,13 +30,8 @@ def list_pipelines_to_console() -> None:
             print(f"              {repo_id}")
 
         print()
-        for (
-            encoding_name,
-            kv_cache_strategies,
-        ) in arch.supported_encodings.items():
-            print(
-                f"         Encoding Supported: {encoding_name}, with Cache Strategies: {kv_cache_strategies}"
-            )
+        for encoding_name in arch.supported_encodings:
+            print(f"         Encoding Supported: {encoding_name}")
 
     print()
 
@@ -47,12 +42,6 @@ def list_pipelines_to_json() -> None:
     for arch in PIPELINE_REGISTRY.architectures.values():
         architectures[arch.name] = {
             "example_repo_ids": list(arch.example_repo_ids),
-            "supported_encodings": [
-                {
-                    "encoding": encoding,
-                    "supported_kv_cache_strategies": list(strategies),
-                }
-                for encoding, strategies in arch.supported_encodings.items()
-            ],
+            "supported_encodings": list(arch.supported_encodings),
         }
     print(json.dumps({"architectures": architectures}, indent=2))

@@ -96,7 +96,6 @@ def _generate_latent_attention_max_outputs(
         n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
-        cache_strategy="paged",
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,

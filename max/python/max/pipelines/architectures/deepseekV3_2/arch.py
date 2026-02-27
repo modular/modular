@@ -14,10 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from transformers import AutoConfig, DeepseekV3Config
 
 from . import weight_adapters
@@ -33,7 +30,7 @@ deepseekV3_2_arch = SupportedArchitecture(
     ],
     default_encoding="float8_e4m3fn",
     supported_encodings={
-        "float8_e4m3fn": ["paged"],
+        "float8_e4m3fn",
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3_2Model,

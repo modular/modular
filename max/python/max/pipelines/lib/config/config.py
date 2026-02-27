@@ -1246,7 +1246,6 @@ def _log_kvcache_entries(config: KVCacheConfig, indent: str = "    ") -> None:
         indent: Prefix string for each line.
     """
     entries: list[tuple[str, Any]] = [
-        ("cache_strategy", config.cache_strategy),
         ("page_size", f"{config.kv_cache_page_size} tokens"),
         ("prefix_caching", config.enable_prefix_caching),
         ("host_swapping", config.enable_kvcache_swapping_to_host),

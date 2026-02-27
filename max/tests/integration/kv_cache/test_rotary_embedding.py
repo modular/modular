@@ -563,7 +563,6 @@ def test_kv_cache_ragged_rope(
         n_kv_heads=8,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )

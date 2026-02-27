@@ -87,7 +87,6 @@ def make_pipeline_config(
             max_batch_size=max_batch_size,
             max_length=hf_config.max_position_embeddings,
             quantization_encoding="bfloat16",
-            kv_cache_strategy="paged",
             device_specs=device_specs,
         )
         pipeline_config.model.kv_cache._available_cache_memory = 1024**4  # 1TB

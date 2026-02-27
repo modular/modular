@@ -21,10 +21,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flare_mla_prefill_ragged
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from test_common.context_utils import create_text_context
 
 
@@ -43,7 +40,6 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         n_kv_heads=1,
         head_dim=576,
         num_layers=num_layers,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.GPU()],
     )

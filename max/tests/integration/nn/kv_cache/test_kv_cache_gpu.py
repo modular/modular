@@ -34,7 +34,6 @@ async def _test_kv_cache_gpu() -> None:
         head_dim=128,
         dtype=DType.bfloat16,
         num_layers=32,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.GPU()],
     )

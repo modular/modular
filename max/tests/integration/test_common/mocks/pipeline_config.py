@@ -20,7 +20,6 @@ from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -48,7 +47,7 @@ class DummyMAXModelConfig(MAXModelConfig):
 
     def validate_and_resolve_with_resolved_quantization_encoding(
         self,
-        supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
+        supported_encodings: set[SupportedEncoding],
         default_weights_format: WeightsFormat,
     ) -> None:
         pass
@@ -63,7 +62,6 @@ class DummyPipelineConfig(PipelineConfig):
         max_length: int | None,
         pdl_level: str = "1",
         device_specs: list[DeviceSpec] | None = None,
-        kv_cache_strategy: KVCacheStrategy = "model_default",
         # TODO(AITLIB-328): These values do not belong in PipelineConfig,
         # but are somehow used by MockPipelineModel in pipeline_model.py.
         eos_prob: float | None = None,
@@ -106,9 +104,7 @@ class DummyPipelineConfig(PipelineConfig):
             quantization_encoding=quantization_encoding,
             max_length=max_length,
         )
-        model_config.kv_cache = KVCacheConfig(
-            cache_strategy=kv_cache_strategy,
-        )
+        model_config.kv_cache = KVCacheConfig()
         # NOTE: Using MagicMock without spec here because HuggingFace configs
         # vary by model type (LlamaConfig, Qwen2Config, etc.). Tests that need
         # strict type checking should pass a model-specific huggingface_config

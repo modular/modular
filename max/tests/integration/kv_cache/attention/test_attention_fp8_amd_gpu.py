@@ -91,7 +91,6 @@ def _create_kv_manager(
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         devices=[DeviceRef.GPU()],
     )
 

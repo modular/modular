@@ -244,11 +244,10 @@ def _create_vision_max_pipeline(
     assert revision is not None
     if device_memory_utilization is not None:
         kv_cache = pipelines.KVCacheConfig(
-            cache_strategy="paged",
             device_memory_utilization=device_memory_utilization,
         )
     else:
-        kv_cache = pipelines.KVCacheConfig(cache_strategy="paged")
+        kv_cache = pipelines.KVCacheConfig()
     model = pipelines.MAXModelConfig(
         device_specs=device_specs,
         quantization_encoding=encoding,
@@ -957,7 +956,6 @@ class LoRAOracle(PipelineOracle):
                 "lora_paths": [lora_path],
                 "max_num_loras": 1,
                 "max_lora_rank": self.lora_rank,
-                "cache_strategy": "paged",
                 "enable_prefix_caching": False,  # LoRA requires prefix caching disabled
                 "trust_remote_code": True,
                 **self.config_params,
@@ -1440,7 +1438,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
             "max_length": 512,
-            "cache_strategy": "paged",
         },
         prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
         device_encoding_map={

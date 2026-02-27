@@ -26,7 +26,6 @@ from ..kernels import flash_attention_ragged, fused_qkv_ragged_matmul
 from ..kv_cache import (
     KVCacheParams,
     PagedCacheValues,
-    uses_opaque,
 )
 from ..layer import Module
 from ..linear import Linear
@@ -78,11 +77,6 @@ class RaggedAttention(Module):
         if stacked_qkv and clip_qkv:
             raise ValueError(
                 "`clip_qkv` not yet supported when `stack_qkv=True`."
-            )
-        if not uses_opaque(kv_params.cache_strategy):
-            raise ValueError(
-                f"{kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
             )
 
         super().__init__()

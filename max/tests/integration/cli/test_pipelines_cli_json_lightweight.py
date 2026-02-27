@@ -40,7 +40,4 @@ def test_pipelines_list_json(capsys: pytest.CaptureFixture[str]) -> None:
 
         # Check encoding entries
         for encoding in arch_data["supported_encodings"]:
-            assert isinstance(encoding, dict)
-            assert "encoding" in encoding
-            assert "supported_kv_cache_strategies" in encoding
-            assert isinstance(encoding["supported_kv_cache_strategies"], list)
+            assert isinstance(encoding, str)

@@ -48,7 +48,6 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
@@ -112,14 +111,6 @@ class ThroughputBenchmarkConfig(ConfigFileModel):
 
     async_engine: bool = Field(default=True)
     """Use Modular async pipeline engine rather than LLM class."""
-
-    # TODO: These have different default values than ones configured via
-    # PipelineConfig constructor.
-    # KV Cache configuration (throughput-specific)
-    cache_strategy: KVCacheStrategy = Field(
-        default="paged",
-    )
-    """The KVCache strategy to use."""
 
     kv_cache_page_size: int | None = Field(default=None)
     """Number of tokens in a single page in the paged kv cache."""
@@ -670,15 +661,6 @@ def main() -> None:
         if benchmark_config.other.tokenizer is None:
             benchmark_config.other.tokenizer = (
                 benchmark_config.pipeline.model.model_path
-            )
-
-        # Validate cache strategy
-        if (
-            benchmark_config.enable_prefix_caching
-            and benchmark_config.cache_strategy != "paged"
-        ):
-            raise ValueError(
-                "prefix caching is only supported with paged attention"
             )
 
         if (

@@ -34,7 +34,6 @@ from max.interfaces import (
     TextGenerationContext,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext, TextContext
 from transformers import (
     AutoConfig,
@@ -183,8 +182,8 @@ class SupportedArchitecture:
                 ],
                 default_encoding="q4_k",
                 supported_encodings={
-                    "q4_k": ["paged"],
-                    "bfloat16": ["paged"],
+                    "q4_k",
+                    "bfloat16",
                     # Add other encodings your model supports
                 },
                 pipeline_model=MyModel,
@@ -212,8 +211,9 @@ class SupportedArchitecture:
     default_encoding: SupportedEncoding
     """The default quantization encoding to use when no specific encoding is requested."""
 
-    supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]]
-    """A dictionary mapping supported quantization encodings to their compatible KV cache strategies."""
+    # TODO: This should be a set[SupportedEncoding] once we remove the sentinal None value.
+    supported_encodings: set[SupportedEncoding]
+    """A dictionary of supported quantization encodings."""
 
     pipeline_model: type[PipelineModel[Any]]
     """The `PipelineModel` class that defines the model graph structure and execution logic."""
