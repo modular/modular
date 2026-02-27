@@ -447,5 +447,19 @@ def test_inline_array_iter_bounds():
     _test_inline_array_iter_bounds(reversed(arr), len(arr))
 
 
+def test_inline_array_fill():
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    arr.fill(0)
+    assert_equal(arr[0], 0)
+    assert_equal(arr[1], 0)
+    assert_equal(arr[2], 0)
+
+    # Fill with a different value.
+    arr.fill(42)
+    assert_equal(arr[0], 42)
+    assert_equal(arr[1], 42)
+    assert_equal(arr[2], 42)
+
+
 def main():
     TestSuite.discover_tests[__functions_in_module()]().run()
