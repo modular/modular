@@ -5466,7 +5466,7 @@ def tpool_patch_merger(
         input: Input tensor of shape ``[total_input_tokens, D]`` where
             ``total_input_tokens = sum(T_i * H_i * W_i)`` over all videos.
         grid_thws: Grid dimensions tensor of shape ``[n_videos, 3]`` with
-            ``(T, H, W)`` per video.  Must have dtype ``int32``.
+            ``(T, H, W)`` per video.  Must have dtype ``int64``.
         kH: Merge kernel height.
         kW: Merge kernel width.
         max_h: Maximum ``H`` across all videos in the batch (for grid sizing).
@@ -5483,9 +5483,9 @@ def tpool_patch_merger(
     if input.rank != 2:
         raise ValueError(f"expected input to have rank 2, got {input.rank}")
 
-    if grid_thws.dtype != DType.int32:
+    if grid_thws.dtype != DType.int64:
         raise ValueError(
-            f"expected grid_thws to have dtype int32, got {grid_thws.dtype}"
+            f"expected grid_thws to have dtype int64, got {grid_thws.dtype}"
         )
 
     if grid_thws.rank != 2:

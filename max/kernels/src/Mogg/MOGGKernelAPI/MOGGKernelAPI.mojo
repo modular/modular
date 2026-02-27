@@ -10520,7 +10520,7 @@ struct TPoolPatchMerger:
     ](
         output: OutputTensor[dtype=dtype, rank=2],
         input: InputTensor[dtype=dtype, rank=2],
-        grid_thws: InputTensor[dtype = DType.int32, rank=2],
+        grid_thws: InputTensor[dtype = DType.int64, rank=2],
         kH: Int32,
         kW: Int32,
         max_h: Int32,

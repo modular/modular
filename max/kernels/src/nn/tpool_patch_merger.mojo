@@ -42,7 +42,7 @@ fn tpool_patch_merger_kernel[
 ](
     x_tile: TileTensor[dtype, XLayout, x_origin],
     out_tile: TileTensor[dtype, OutLayout, out_origin],
-    grid_thws: TileTensor[DType.int32, GridThwLayout, grid_thw_origin],
+    grid_thws: TileTensor[DType.int64, GridThwLayout, grid_thw_origin],
     kH: Int,
     kW: Int,
     D: Int,
@@ -145,7 +145,7 @@ fn tpool_patch_merger[
 ](
     output: TileTensor[dtype, _, MutAnyOrigin],
     x: TileTensor[dtype, _, ImmutAnyOrigin],
-    bounds: TileTensor[DType.int32, _, ImmutAnyOrigin],
+    bounds: TileTensor[DType.int64, _, ImmutAnyOrigin],
     kH: Int,
     kW: Int,
     max_h: Int,
