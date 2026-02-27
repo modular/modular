@@ -3255,7 +3255,7 @@ fn get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
         raise Error("unsupported dtype", dtype, "for cuDNN")
 
 
-struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable, RegisterPassable):
+struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
     var ptr_handle: UnsafePointer[cudnnContext]
     var ptr_input_desc: UnsafePointer[cudnnTensorStruct]
     var ptr_filter_desc: UnsafePointer[cudnnFilterStruct]
@@ -3270,27 +3270,13 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable, RegisterPassable):
 
     # Cache key fields
     var is_set: Bool
-    var in_n: Int
-    var in_h: Int
-    var in_w: Int
-    var in_c: Int
+    var in_: Tuple[Int, Int, Int, Int]
+    var filt: Tuple[Int, Int, Int, Int]
+    var out: Tuple[Int, Int, Int, Int]
 
-    var filt_k: Int
-    var filt_c: Int
-    var filt_r: Int
-    var filt_s: Int
-
-    var out_n: Int
-    var out_h: Int
-    var out_w: Int
-    var out_c: Int
-
-    var pad_h: Int
-    var pad_w: Int
-    var stride_h: Int
-    var stride_w: Int
-    var dil_h: Int
-    var dil_w: Int
+    var pad: Tuple[Int, Int]
+    var stride: Tuple[Int, Int]
+    var dil: Tuple[Int, Int]
 
     fn __init__(out self) raises:
         self.ptr_handle = UnsafePointer[cudnnContext]()
@@ -3324,24 +3310,12 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable, RegisterPassable):
         )
 
         self.is_set = False
-        self.in_n = 0
-        self.in_h = 0
-        self.in_w = 0
-        self.in_c = 0
-        self.filt_k = 0
-        self.filt_c = 0
-        self.filt_r = 0
-        self.filt_s = 0
-        self.out_n = 0
-        self.out_h = 0
-        self.out_w = 0
-        self.out_c = 0
-        self.pad_h = 0
-        self.pad_w = 0
-        self.stride_h = 0
-        self.stride_w = 0
-        self.dil_h = 0
-        self.dil_w = 0
+        self.in_ = (0, 0, 0, 0)
+        self.filt = (0, 0, 0, 0)
+        self.out = (0, 0, 0, 0)
+        self.pad = (0, 0)
+        self.stride = (0, 0)
+        self.dil = (0, 0)
 
 
 fn _get_cached_cudnn_meta_nhwc_full(
@@ -3380,9 +3354,9 @@ fn _conv_cudnn[
     input: LayoutTensor[input_type, ...],
     filter: LayoutTensor[filter_type, ...],
     output: LayoutTensor[output_type, ...],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    padding: IndexList[2],
+    stride_list: IndexList[2],
+    dilation_list: IndexList[2],
+    padding_list: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
@@ -3390,59 +3364,47 @@ fn _conv_cudnn[
     var ptr_meta = _get_cached_cudnn_meta_nhwc_full(ctx)
 
     # Input shape: NHWC
-    var in_n = input.dim[0]()
-    var in_h = input.dim[1]()
-    var in_w = input.dim[2]()
-    var in_c = input.dim[3]()
+    var in_: Tuple[Int, Int, Int, Int] = (
+        input.dim[0](),
+        input.dim[1](),
+        input.dim[2](),
+        input.dim[3](),
+    )
 
     # Filter shape: FCRS (K, C, R, S)
-    var filt_k = filter.dim[0]()
-    var filt_c = filter.dim[1]()
-    var filt_r = filter.dim[2]()
-    var filt_s = filter.dim[3]()
+    var filt: Tuple[Int, Int, Int, Int] = (
+        filter.dim[0](),
+        filter.dim[1](),
+        filter.dim[2](),
+        filter.dim[3](),
+    )
 
     # Output shape: NHWC
-    var out_n = output.dim[0]()
-    var out_h = output.dim[1]()
-    var out_w = output.dim[2]()
-    var out_c = output.dim[3]()
+    var out: Tuple[Int, Int, Int, Int] = (
+        output.dim[0](),
+        output.dim[1](),
+        output.dim[2](),
+        output.dim[3](),
+    )
 
-    var pad_h = padding[0]
-    var pad_w = padding[1]
-    var stride_h = stride[0]
-    var stride_w = stride[1]
-    var dil_h = dilation[0]
-    var dil_w = dilation[1]
+    var pad: Tuple[Int, Int] = (padding_list[0], padding_list[1])
+    var stride: Tuple[Int, Int] = (stride_list[0], stride_list[1])
+    var dil: Tuple[Int, Int] = (dilation_list[0], dilation_list[1])
 
     var params_match = ptr_meta[].is_set
 
     if params_match:
-        if (
-            ptr_meta[].in_n != in_n
-            or ptr_meta[].in_h != in_h
-            or ptr_meta[].in_w != in_w
-            or ptr_meta[].in_c != in_c
-        ):
+        if ptr_meta[].in_ != in_:
             params_match = False
-        elif (
-            ptr_meta[].filt_k != filt_k
-            or ptr_meta[].filt_c != filt_c
-            or ptr_meta[].filt_r != filt_r
-            or ptr_meta[].filt_s != filt_s
-        ):
+        elif ptr_meta[].filt != filt:
             params_match = False
-        elif (
-            ptr_meta[].out_n != out_n
-            or ptr_meta[].out_h != out_h
-            or ptr_meta[].out_w != out_w
-            or ptr_meta[].out_c != out_c
-        ):
+        elif ptr_meta[].out != out:
             params_match = False
-        elif ptr_meta[].pad_h != pad_h or ptr_meta[].pad_w != pad_w:
+        elif ptr_meta[].pad != pad:
             params_match = False
-        elif ptr_meta[].stride_h != stride_h or ptr_meta[].stride_w != stride_w:
+        elif ptr_meta[].stride != stride:
             params_match = False
-        elif ptr_meta[].dil_h != dil_h or ptr_meta[].dil_w != dil_w:
+        elif ptr_meta[].dil != dil:
             params_match = False
 
     if not params_match:
@@ -3452,10 +3414,10 @@ fn _conv_cudnn[
                 ptr_meta[].ptr_input_desc,
                 cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
                 get_cudnn_dtype[input_type](),
-                Int16(in_n),
-                Int16(in_c),
-                Int16(in_h),
-                Int16(in_w),
+                Int16(in_[0]),
+                Int16(in_[3]),
+                Int16(in_[1]),
+                Int16(in_[2]),
             )
         )
 
@@ -3465,10 +3427,10 @@ fn _conv_cudnn[
                 ptr_meta[].ptr_filter_desc,
                 get_cudnn_dtype[filter_type](),
                 cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
-                Int16(filt_k),
-                Int16(filt_c),
-                Int16(filt_r),
-                Int16(filt_s),
+                Int16(filt[0]),
+                Int16(filt[1]),
+                Int16(filt[2]),
+                Int16(filt[3]),
             )
         )
 
@@ -3476,12 +3438,12 @@ fn _conv_cudnn[
         check_cudnn_error(
             cudnnSetConvolution2dDescriptor(
                 ptr_meta[].ptr_conv_desc,
-                Int16(pad_h),
-                Int16(pad_w),
-                Int16(stride_h),
-                Int16(stride_w),
-                Int16(dil_h),
-                Int16(dil_w),
+                Int16(pad[0]),
+                Int16(pad[1]),
+                Int16(stride[0]),
+                Int16(stride[1]),
+                Int16(dil[0]),
+                Int16(dil[1]),
                 cudnnConvolutionMode_t.CUDNN_CROSS_CORRELATION,
                 cudnnDataType_t.CUDNN_DATA_FLOAT,
             )
@@ -3499,10 +3461,17 @@ fn _conv_cudnn[
                 ptr_meta[].ptr_output_desc,
                 cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
                 get_cudnn_dtype[output_type](),
-                Int16(out_n),
-                Int16(out_c),
-                Int16(out_h),
-                Int16(out_w),
+                Int16(out[0]),
+                Int16(out[3]),
+                Int16(out[1]),
+                Int16(out[2]),
+            )
+        )
+
+        check_cudnn_error(
+            cudnnSetConvolutionMathType(
+                ptr_meta[].ptr_conv_desc,
+                cudnnMathType_t.CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION,
             )
         )
 
@@ -3511,16 +3480,6 @@ fn _conv_cudnn[
         # layout (Int8 enums vs C's 4-byte int enums). We bypass it by
         # allocating a raw 48-byte buffer matching the C ABI layout and
         # reading the algo Int32 at offset 0.
-        check_cudnn_error(
-            cudnnSetConvolutionMathType(
-                ptr_meta[].ptr_conv_desc,
-                cudnnMathType_t.CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION,
-            )
-        )
-
-        # C layout of cudnnConvolutionFwdAlgoPerf_t is 48 bytes.
-        # We allocate raw bytes and bitcast the pointer to satisfy the
-        # wrapper function signature (which just passes it through to C).
         var perf_buf = UnsafePointer[UInt8].alloc(48)
         var requested_count: Int16 = 1
         var returned_count: Int16 = 0
@@ -3566,24 +3525,12 @@ fn _conv_cudnn[
 
         # Update Cache State
         ptr_meta[].is_set = True
-        ptr_meta[].in_n = in_n
-        ptr_meta[].in_h = in_h
-        ptr_meta[].in_w = in_w
-        ptr_meta[].in_c = in_c
-        ptr_meta[].filt_k = filt_k
-        ptr_meta[].filt_c = filt_c
-        ptr_meta[].filt_r = filt_r
-        ptr_meta[].filt_s = filt_s
-        ptr_meta[].out_n = out_n
-        ptr_meta[].out_h = out_h
-        ptr_meta[].out_w = out_w
-        ptr_meta[].out_c = out_c
-        ptr_meta[].pad_h = pad_h
-        ptr_meta[].pad_w = pad_w
-        ptr_meta[].stride_h = stride_h
-        ptr_meta[].stride_w = stride_w
-        ptr_meta[].dil_h = dil_h
-        ptr_meta[].dil_w = dil_w
+        ptr_meta[].in_ = in_
+        ptr_meta[].filt = filt
+        ptr_meta[].out = out
+        ptr_meta[].pad = pad
+        ptr_meta[].stride = stride
+        ptr_meta[].dil = dil
 
     # Allocate workspace per-call using ctx (runtime-managed buffer)
     var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
