@@ -234,6 +234,11 @@ modular_py_test(
         "no-sandbox",
         "requires-network",
     ],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/tests/integration/accuracy:verify_pipelines",
         "//max/tests/integration/tools:precompile_pipelines",

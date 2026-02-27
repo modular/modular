@@ -150,7 +150,7 @@ modular_run_binary_test(
 
 mojo_test(
     name = "enumerated_errors_test",
-    size = "small",
+    size = "medium",
     srcs = [
         "enumerated_errors.mojo",
         "test_enumerated_errors.mojo",
