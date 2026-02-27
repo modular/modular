@@ -3,16 +3,10 @@ title: Mojo reference
 sidebar_label: Overview
 hide_table_of_contents: false
 description: Mojo standard library and other references
-listing:
-  - id: std
-    contents: 'std/*/index.md'
-    type: grid
-    page-size: 99
-  - id: kernels
-    contents: 'kernels/*/index.md'
-    type: grid
-    page-size: 99
 ---
+
+import DocCardList from '@theme/DocCardList';
+import {useSidebarCategory} from '@site/src/util/sidebarHelpers';
 
 This section includes the Mojo API references:
 
@@ -106,8 +100,17 @@ writing Mojo programs, including basic data types like
 
 Top-level packages:
 
-:::🔥#std
-:::
+export const StdLibCards = () => {
+  const stdLib = useSidebarCategory('Standard library');
+  if (!stdLib) return null;
+  // Don't show the index page (this page) as a card.
+  const items = stdLib.items.filter(
+    item => !(item.type === 'link' && item.docId === 'mojo/std/index')
+  );
+  return <DocCardList items={items} />;
+};
+
+<StdLibCards />
 
 ## MAX AI kernels library
 
@@ -119,19 +122,21 @@ kernels](/mojo/manual/gpu/basics) that are portable across CPUs and GPUs.
 
 Top-level packages:
 
-:::🔥#kernels
-:::
+export const KernelsCards = () => {
+  const kernels = useSidebarCategory('MAX AI kernels');
+  return kernels ? <DocCardList items={kernels.items} /> : null;
+};
 
+<KernelsCards />
 
 ## Decorators
 
 A Mojo decorator is a higher-order function that modifies or extends the
 behavior of a struct, a function, or some other code.
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+export const DecoratorCards = () => {
+  const decorators = useSidebarCategory('Decorators');
+  return decorators ? <DocCardList items={decorators.items} /> : null;
+};
 
-export const decorators = [
-        '../manual/decorators/*.mdx'
-    ]
-
-<MDXListing mdxList={decorators} />
+<DecoratorCards />
