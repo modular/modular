@@ -729,8 +729,9 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
   Type selfType = isRegisterPassable ? loweredClosureType
                                      : PointerType::get(loweredClosureType);
   Region &region = closureInitData.region();
-  region.insertArgument((unsigned)0, selfType,
-                        closureInitData.getLiftedLocation());
+  region.insertArgument(
+      (unsigned)0, selfType,
+      DebugInfo::extractSourceLoc(closureInitData.getLiftedLocation()));
   if (failed(liftCallFunction(b, closureInitData, loweredClosureType)))
     return {};
   // TODO: create thunks for register passable closures (MOCO-2242).
