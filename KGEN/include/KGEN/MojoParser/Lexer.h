@@ -142,6 +142,10 @@ public:
   /// Return the a string value of `spelling` after the escape sequences are
   /// handled. `spelling` is known to have been lexed as a string literal token.
   static std::string getStringLiteralValue(StringRef spelling);
+  /// Return the string value of a t-string literal part after processing
+  /// escape sequences. Unlike getStringLiteralValue, this expects raw content
+  /// without quotes.
+  static std::string getTStringLiteralValue(StringRef bytes);
   /// Return a location to the start of the given string, after stripping the
   /// wrapping quotes.
   static SMLoc getStringLiteralStartLoc(StringRef spelling);

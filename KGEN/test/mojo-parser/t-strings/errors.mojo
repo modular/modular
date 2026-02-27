@@ -90,6 +90,12 @@ fn test_format_spec_with_complex_expression():
 # expression errors
 # =============================================================================
 
+fn test_undefined_variable():
+    # Test: Undefined variable in interpolation
+    # expected-error @below {{use of unknown declaration 'undefined_var'}}
+    var s1 = t"Hello, {undefined_var}!"
+
+
 fn test_invalid_expression():
     # Test: Invalid expression in interpolation (bare operator)
     # expected-error @below {{unexpected token in expression}}
@@ -100,6 +106,27 @@ fn test_incomplete_expression():
     # Test: Incomplete expression in interpolation
     # expected-error @below {{unexpected token in expression}}
     var s3 = t"Value: {1 +}"
+
+
+fn test_multiple_undefined_vars():
+    # Test: Multiple undefined variables in one t-string (only first error reported)
+    # expected-error @below {{use of unknown declaration 'x'}}
+    var s4 = t"Values: {x} and {y}"
+
+# =============================================================================
+# comptime errors
+# =============================================================================
+
+fn test_unmaterializable_value_in_tstring():
+    comptime l = [1, 2, 3]
+    # expected-error @below {{cannot materialize comptime value of type 'List[Int]' to runtime because it is not 'ImplicitlyCopyable'}}
+    # expected-note @below {{use 'materialize' to explicitly materialize the value}}
+    _ = t"List: {l}"
+
+fn test_runtime_value_in_comptime_tstring():
+    var x = 42
+    # expected-error @below {{cannot use dynamic value in comptime initializer}}
+    comptime tstring = t"Value: {x}"
 
 # =============================================================================
 # Catastrophic errors (these must be last - they break parser recovery)
