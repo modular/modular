@@ -1594,12 +1594,14 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       return failure();
     }
   }
-  if (isDef)
-    fnSignature.effects.setThrows();
 
   // Parse the argument list next if present.
   if (fnSignature.parseArgumentListAndEffects(p, ArgListKind::kArgList))
     return failure();
+
+  // 'def' implies raises if not specified.
+  if (isDef)
+    fnSignature.effects.setThrows();
 
   // TODO: effects parsing must be moved after captures parsing.
   // A capture list must be specified for every unified closure.

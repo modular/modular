@@ -1565,8 +1565,6 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     type = tcSignature.selfType;
   } else {
     // Otherwise, this is an error.
-    // TODO: We could explore making type annotations optional in 'def'
-    // functions when we have a functional "Object" type.
     shared.emitError(arg.loc, "argument type must be specified")
         << SourceRange(arg.loc, arg.loc);
     type = shared.getTypeCheckErrorType();
