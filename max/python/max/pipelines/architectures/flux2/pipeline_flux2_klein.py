@@ -132,10 +132,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 hs = hs[:target_seq_len]
             hidden_states_selected.append(hs)
 
-        mask_tensor = Tensor.from_dlpack(mask)
-        prompt_embeds = self._prepare_prompt_embeddings(
-            mask_tensor, *hidden_states_selected
-        )
+        prompt_embeds = self._prepare_prompt_embeddings(*hidden_states_selected)
         batch_size = int(prompt_embeds.shape[0])
         seq_len = int(prompt_embeds.shape[1])
 
@@ -310,6 +307,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
                         np.ndarray,
                         self.decode_latents(
                             latents,
+                            latent_image_ids,
                             model_inputs.height,
                             model_inputs.width,
                             output_type=output_type,
@@ -323,6 +321,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
             image_list.append(
                 self.decode_latents(
                     latents_b,
+                    latent_image_ids,
                     model_inputs.height,
                     model_inputs.width,
                     output_type=output_type,
