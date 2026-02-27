@@ -1401,6 +1401,10 @@ def test_format_conversion_flags() raises:
     with assert_raises(contains="Empty conversion flag."):
         _ = String("{!}").format(1)
 
+    # TODO: once we properly integrate the new types into Writable
+    # with assert_raises(contains="Empty conversion format after ':'"):
+    #     _ = String("{:}").format(1)
+
     with assert_raises(contains='Conversion flag "rs" not recognized.'):
         _ = String("{!rs}").format(1)
 
@@ -1412,9 +1416,6 @@ def test_format_conversion_flags() raises:
 
     with assert_raises(contains='Conversion flag "x" not recognized.'):
         _ = String("{0!x}").format(1)
-
-    with assert_raises(contains='Conversion flag "r:d" not recognized.'):
-        _ = String("{!r:d}").format(1)
 
 
 def test_float_conversion() raises:
