@@ -318,8 +318,8 @@ class Graph:
     lazily-executed, parallel operations instead of sequential instructions.
 
     When you instantiate a graph, you must specify the input shapes as one or
-    more :obj:`TensorType` values. Then, build a sequence of ops and set the
-    graph output with :obj:`output()`. For example:
+    more :class:`TensorType` values. Then, build a sequence of ops and set the
+    graph output with :meth:`output()`. For example:
 
     .. code-block:: python
 
@@ -346,14 +346,14 @@ class Graph:
         )
 
     You can't call a :class:`Graph` directly from Python. You must compile it and
-    execute it with MAX Engine. For more detail, see the
+    execute it with MAX. For more detail, see the
     `build a graph with MAX Graph tutorial </max/develop/get-started-with-max-graph-in-python>`_.
 
     When creating a graph, a global sequence of chains is initialized and stored
-    in ``_current_chain``. Every side-effecting op, such as
-    :func:`buffer_load()`, :func:`buffer_store()`, and
-    :func:`buffer_store_slice()`, will use the current chain to perform the op
-    and update ``_current_chain`` with a new chain. Currently, the
+    in ``Graph._current_chain``. Every side-effecting op, such as
+    ``buffer_load()``, ``buffer_store()``, and
+    ``buffer_store_slice()``, will use the current chain to perform the op
+    and update ``Graph._current_chain`` with a new chain. Currently, the
     input/output chains for mutable ops can be used at most once. The goal of
     this design choice is to prevent data races.
 
