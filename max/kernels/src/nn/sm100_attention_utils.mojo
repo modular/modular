@@ -23,7 +23,7 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 
 from math import ceildiv, exp2, align_up, iota
 from math.constants import log2e
-from sys import size_of, _RegisterPackType
+from sys import size_of
 from sys._assembly import inlined_assembly
 from bit import prev_power_of_two, pop_count
 from gpu.globals import WARP_SIZE
@@ -1035,23 +1035,12 @@ fn intrin_ftz_x2[
 ](a: SIMD[DType.float32, 2], b: SIMD[DType.float32, 2]) -> SIMD[
     DType.float32, 2
 ]:
-    comptime s0 = """{
-        .reg .b64 %ra;
-        .reg .b64 %rb;
-        .reg .b64 %rc;
-        mov.b64 %ra, {$2, $3};
-        mov.b64 %rb, {$4, $5};
-        """
-    comptime s1 = """.ftz.f32x2 %rc, %ra, %rb;
-        mov.b64 {$0, $1}, %rc;
-        }"""
-    ret = inlined_assembly[
-        String(s0, intrin, s1),
-        _RegisterPackType[Float32, Float32],
-        constraints="=f,=f,f,f,f,f",
+    return inlined_assembly[
+        String(intrin, ".ftz.f32x2 $0, $1, $2;"),
+        SIMD[DType.float32, 2],
+        constraints="=l,l,l",
         has_side_effect=False,
-    ](a[0], a[1], b[0], b[1])
-    return {ret[0], ret[1]}
+    ](a, b)
 
 
 @always_inline
@@ -1113,23 +1102,12 @@ fn fma_ftz(
     b: SIMD[DType.float32, 2],
     c: SIMD[DType.float32, 2],
 ) -> SIMD[DType.float32, 2]:
-    ret = inlined_assembly[
-        """{
-        .reg .b64 %ra;
-        .reg .b64 %rb;
-        .reg .b64 %rc;
-        .reg .b64 %rd;
-        mov.b64 %ra, {$2, $3};
-        mov.b64 %rb, {$4, $5};
-        mov.b64 %rc, {$6, $7};
-        fma.rn.ftz.f32x2 %rd, %ra, %rb, %rc;
-        mov.b64 {$0, $1}, %rd;
-        }""",
-        _RegisterPackType[Float32, Float32],
-        constraints="=f,=f,f,f,f,f,f,f",
+    return inlined_assembly[
+        "fma.rn.ftz.f32x2 $0, $1, $2, $3;",
+        SIMD[DType.float32, 2],
+        constraints="=l,l,l,l",
         has_side_effect=False,
-    ](a[0], a[1], b[0], b[1], c[0], c[1])
-    return {ret[0], ret[1]}
+    ](a, b, c)
 
 
 @always_inline
