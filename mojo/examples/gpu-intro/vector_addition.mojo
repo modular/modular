@@ -47,8 +47,7 @@ fn vector_addition(
 
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
         # Get the context for the attached GPU

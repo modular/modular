@@ -10,16 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from sys import has_accelerator
 
 
-fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
-    var total = 0
-
-    comptime for i in range(args.__len__()):
-        total += Int(args[i])
-
-    return total
+fn run_on_gpu():
+    pass
 
 
-def main() raises:
-    print(count_many_things(5, 11.7, 12))
+fn run_on_cpu():
+    pass
+
+
+def main():
+    comptime if has_accelerator():
+        run_on_gpu()
+    else:
+        run_on_cpu()

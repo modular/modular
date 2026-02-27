@@ -543,8 +543,7 @@ from std.sys import is_defined
 
 def some_function_with_issues() raises:
     # ...
-    @parameter
-    if is_defined["DEBUG_ME"]():
+    comptime if is_defined["DEBUG_ME"]():
         breakpoint()
 ```
 
@@ -557,7 +556,7 @@ mojo debug -D DEBUG_ME main.mojo
 
 The `is_defined()` function returns a compile-time true or false value based on
 whether the specified name is defined. Since the `breakpoint()` call is inside a
-[parametric `if` statement](/mojo/manual/decorators/parameter#parametric-if-statement),
+[`comptime if` statement](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if),
 it is only included in the compiled code when the `DEBUG_ME` name is defined on
 the command line.
 

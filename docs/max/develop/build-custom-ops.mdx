@@ -319,8 +319,7 @@ struct VectorAddition:
         rhs: InputTensor[dtype = output.dtype, rank = output.rank],
         ctx: DeviceContextPtr,
     ) raises:
-        @parameter
-        if target == "cpu":
+        comptime if target == "cpu":
             _vector_addition_cpu(output, lhs, rhs, ctx)
         elif target == "gpu":
             _vector_addition_gpu(output, lhs, rhs, ctx)
@@ -328,7 +327,9 @@ struct VectorAddition:
             raise Error("No known target:", target)
 ```
 
-Using the [parametric `if`](/mojo/manual/decorators/parameter), Mojo checks at
+Using the
+[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+statement, Mojo checks at
 compile time if the target device has a GPU or not. If it does, it uses the
 `_vector_addition_gpu()` function; otherwise, it uses `_vector_addition_cpu()`.
 Compile-time specialization like this is a unique and powerful feature of Mojo

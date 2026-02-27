@@ -1292,7 +1292,7 @@ information. You can use
 type at compile time. For example, you can:
 
 - `get_type_name[ErrType]()` — Get the error type's name as a string.
-- `@parameter if conforms_to(ErrType, Writable)` — Check if the error
+- `comptime if conforms_to(ErrType, Writable)` — Check if the error
   implements `Writable`.
 - `trait_downcast[Writable](err)` — Access the error through its `Writable`
   interface.
@@ -1330,8 +1330,7 @@ struct ResourceGuard(ImplicitlyCopyable):
         print("Releasing:", self.name)
         print("  Error type:", type_name)
 
-        @parameter
-        if conforms_to(ErrType, Writable):
+        comptime if conforms_to(ErrType, Writable):
             print("  Message:", trait_downcast[Writable](err))
 
         return self.suppress_errors

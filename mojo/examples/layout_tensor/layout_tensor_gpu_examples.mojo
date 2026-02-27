@@ -291,8 +291,7 @@ fn simple_copy_example():
 # TODO: improve thread layout example and explanations
 # start-copy-from-async-example
 fn copy_from_async_example():
-    @parameter
-    if not has_apple_gpu_accelerator():
+    comptime if not has_apple_gpu_accelerator():
         comptime dtype = DType.float32
         comptime rows = 128
         comptime cols = 128
@@ -328,8 +327,7 @@ fn copy_from_async_example():
 
             shared_fragment.copy_from_async(global_fragment)
 
-            @parameter
-            if is_nvidia_gpu():
+            comptime if is_nvidia_gpu():
                 async_copy_wait_all()
             barrier()
 

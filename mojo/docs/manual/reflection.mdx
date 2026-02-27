@@ -93,8 +93,7 @@ fn show_type[T: AnyType]():
 
     print("struct", type_name)
 
-    @parameter
-    for idx in range(field_count):
+    comptime for idx in range(field_count):
         comptime field_name = field_names[idx]
         comptime field_type = get_type_name[field_types[idx]]()
         var intro = "├──" if idx < (field_count - 1) else "└──"
@@ -131,9 +130,13 @@ fn main():
 - Reflection functions are themselves parameterized.
   That means you do not call `foo()`. You call `foo[T]()` to reflect on a type.
 - All processing of reflected information happens at compile time.
-  For that reason, these reflection examples use `@parameter for` and `@parameter if`.
-  - In this example, `@parameter for` allows the loop index to be used across iterations.
-  - Later examples show `@parameter if`.
+  For that reason, these reflection examples use
+  [`comptime for`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-for)
+  and
+  [`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if).
+  - In this example, `comptime for` allows the loop index to be used across
+    iterations.
+  - Later examples show `comptime if`.
 
 :::note
 Using `sep=""` in `show_type` allows the colon to be flush left with the
@@ -199,13 +202,11 @@ trait MakeCopyable:
         comptime field_count = struct_field_count[Self]()
         comptime field_types = struct_field_types[Self]()
 
-        @parameter
-        for idx in range(field_count):
+        comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
 
             # Guard: field type must be copyable
-            @parameter
-            if not conforms_to(field_type, Copyable): continue
+            comptime if not conforms_to(field_type, Copyable): continue
 
             # Perform the copy
             ref p_value = __struct_field_ref(idx, self)
@@ -219,7 +220,7 @@ trait MakeCopyable:
 - As a method, `copy_to()` does not require a type parameter such as `copy_to[T]()`.
   It has direct access to `Self`, which is enabled by `MakeCopyable` trait adoption.
 - The `copy_to()` _implementation_ is heavily parameterized and evaluated at
-  compile time. It uses `@parameter for` and `@parameter if` together with reflection
+  compile time. It uses `comptime for` and `comptime if` together with reflection
   calls.
 - The `__struct_field_ref(idx, self)` and `__struct_field_ref(idx, other)` calls
   return references to fields by index, which allows both reading from the source
@@ -278,12 +279,10 @@ fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     comptime field_count = struct_field_count[T]()
     comptime field_types = struct_field_types[T]()
 
-    @parameter
-    for idx in range(field_count):
+    comptime for idx in range(field_count):
         # Guard: field type must be equatable
         comptime field_type = field_types[idx]
-        @parameter
-        if not conforms_to(field_type, Equatable): continue
+        comptime if not conforms_to(field_type, Equatable): continue
 
         # Fetch values
         ref lhs_value = __struct_field_ref(idx, lhs)

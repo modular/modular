@@ -13,9 +13,8 @@
 
 
 fn repeat[MsgType: Writable, //, count: Int](msg: MsgType):
-    @parameter
-    for i in range(count):
-        print(msg)
+    comptime for i in range(count):
+        print(String(msg))
 
 
 def main() raises:

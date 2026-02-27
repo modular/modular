@@ -314,9 +314,8 @@ fn tiled_matmul_kernel(
     var accumulator: matrix_c.element_type = 0.0
 
     # Iterate through tiles along K dimension
-    # Use @parameter to unroll the loop at compile time
-    @parameter
-    for k_tile in range(0, MATRIX_K, TILE_K):
+    # Use comptime for to unroll the loop at compile time
+    comptime for k_tile in range(0, MATRIX_K, TILE_K):
         # Cooperative tile loading
         # Calculate global coordinates for tile loading
         var a_global_row = tile_row_start + thread_y
@@ -351,8 +350,7 @@ fn tiled_matmul_kernel(
         barrier()
 
         # Compute dot product using shared memory tiles
-        @parameter
-        for k in range(TILE_K):
+        comptime for k in range(TILE_K):
             var a_element = tile_a_shared[thread_y, k]
             var b_element = tile_b_shared[k, thread_x]
             accumulator += a_element * b_element
@@ -937,15 +935,14 @@ mistake is assuming a warp size of 32. Use the
 [`gpu.WARP_SIZE`](/mojo/std/gpu/globals/#warp_size) constant to ensure your
 code works correctly on all vendors' hardware.
 
-Finally, for highly-tuned kernels, you can use `@parameter if` blocks to write
+Finally, for highly-tuned kernels, you can use `comptime if` blocks to write
 architecture-specific code paths while keeping a single source file.
 
 ```mojo
 from std.sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu
 
 fn adaptive_algorithm():
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvidia_optimized_path()
     elif is_amd_gpu():
         amd_optimized_path()

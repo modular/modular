@@ -13,8 +13,7 @@
 
 
 fn process[T: AnyType](value: T):
-    @parameter
-    if conforms_to(T, Writable & ImplicitlyCopyable):
+    comptime if conforms_to(T, Writable & ImplicitlyCopyable):
         var w = trait_downcast[Writable & ImplicitlyCopyable](value)
         print(w)
     else:

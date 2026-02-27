@@ -331,8 +331,8 @@ function:
 
 ```mojo
 def repeat[count: Int](msg: String) raises:
-    @parameter # evaluate the following for loop at compile time
-    for i in range(count):
+    # evaluate the following for loop at compile time
+    comptime for i in range(count):
         print(msg)
 ```
 
@@ -348,7 +348,7 @@ def call_repeat() raises:
 
 By specifying `count` as a parameter, the Mojo compiler is able to optimize the
 function because this value is guaranteed to not change at runtime. And the
-`@parameter` decorator in the code tells the compiler to evaluate the `for` loop
+`comptime` keyword in the code tells the compiler to evaluate the `for` loop
 at compile time, not runtime.
 
 The compiler effectively generates a unique version of the `repeat()` function

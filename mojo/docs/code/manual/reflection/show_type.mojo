@@ -52,8 +52,7 @@ fn show_type[T: AnyType]():
     comptime field_types = struct_field_types[T]()
     print("struct", type_name)
 
-    @parameter
-    for idx in range(field_count):
+    comptime for idx in range(field_count):
         comptime field_name = field_names[idx]
         comptime field_type = get_type_name[field_types[idx]]()
         var intro = "├──" if idx < (field_count - 1) else "└──"

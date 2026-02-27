@@ -30,20 +30,20 @@ constants.
 
 To define a *parameterized function*, add parameters in square brackets ahead
 of the argument list. Each parameter is formatted just like an argument: a
-parameter name, followed by a colon and a type (which is required). In the
+parameter name, followed by a colon and a type. In the
 following example, the function has a single parameter, `count` of type `Int`.
 
 ```mojo
 fn repeat[count: Int](msg: String):
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         print(msg)
 ```
 
-The [`@parameter`](/mojo/manual/decorators/parameter) decorator shown here
-causes the `for` loop to be evaluated at compile time. The decorator only works
-if the loop limits are compile-time constants. Since `count` is a parameter,
-`range(count)` can be calculated at compile time.
+The [`comptime`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-for)
+keyword shown here
+causes the `for` loop to be fully unrolled at compile time. The `comptime for`
+requires the loop limits to be known at compile time. Since `count` is a
+parameter, `range(count)` can be calculated at compile time.
 
 Calling a parameterized function, you provide values for the parameters, just
 like function arguments:
@@ -144,8 +144,7 @@ conforms to the [`Writable`](/mojo/std/format/Writable) trait:
 
 ```mojo
 fn repeat[MsgType: Writable, //, count: Int](msg: MsgType):
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         print(msg)
 
 
@@ -170,9 +169,8 @@ argument is an `Int` and *infers* the type from the value.
 
 Mojo's support for generics is still early. You can write generic functions like
 this using traits and parameters. You can also write generic collections like
-`List` and `Dict`. If you're interested in learning how these types work, you
-can find the source code for the standard library collection types
-[on GitHub](https://github.com/modular/modular/blob/main/mojo/stdlib/std/collections/).
+`List` and `Dict`. For more information, see the section on
+[generics](/mojo/manual/generics/generics/).
 
 ## Parameterized structs
 
@@ -813,12 +811,10 @@ fn concat[
 ]:
     var result = SIMD[dtype, ls_size + rh_size]()
 
-    @parameter
-    for i in range(ls_size):
+    comptime for i in range(ls_size):
         result[i] = lhs[i]
 
-    @parameter
-    for j in range(rh_size):
+    comptime for j in range(rh_size):
         result[ls_size + j] = rhs[j]
     return result
 ```
@@ -849,8 +845,7 @@ fn slice[
 
 
 fn reduce_add(x: SIMD) -> Int:
-    @parameter
-    if x.size == 1:
+    comptime if x.size == 1:
         return Int(x[0])
     elif x.size == 2:
         return Int(x[0]) + Int(x[1])
@@ -873,11 +868,12 @@ def main() raises:
 Elements sum: 10
 ```
 
-This makes use of the [`@parameter`](/mojo/manual/decorators/parameter) decorator to
-create a parametric if condition, which is an `if` statement that runs at compile-time.
-It requires that its condition be a valid parameter expression, and ensures that only
-the live branch of the `if` statement is compiled into the program. (This is similar to
-use of the `@parameter` decorator with a `for` loop shown earlier.)
+This makes use of the
+[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+statement, which is an `if` statement that runs at compile-time. It requires
+that its condition be a valid parameter expression, and ensures that only the
+live branch of the `if` statement is compiled into the program. This is similar
+to use of the `comptime for` loop shown earlier.
 
 ## `comptime`: named parameter expressions
 
@@ -1465,8 +1461,7 @@ fn take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
-    @parameter
-    if nelts == 8:
+    comptime if nelts == 8:
         take_simd8(x)
 ```
 
@@ -1490,7 +1485,6 @@ fn take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
-    @parameter
-    if nelts == 8:
+    comptime if nelts == 8:
         take_simd8(rebind[SIMD[DType.float32, 8]](x))
 ```

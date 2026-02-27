@@ -55,8 +55,7 @@ whether a supported GPU is available.
 from std.sys import has_accelerator
 
 def main() raises:
-    @parameter
-    if has_accelerator():
+    comptime if has_accelerator():
         print("GPU detected")
         # Enable GPU processing
     else:
@@ -69,11 +68,11 @@ def main() raises:
 Mojo requires a [compatible GPU development
 environment](/max/faq/#gpu-requirements) to compile kernel functions, otherwise
 it raises a compile-time error. In this example, we're using the
-[`@parameter`](/mojo/manual/decorators/parameter) decorator to evaluate the
-`has_accelerator()` function at compile time and compile only the corresponding
-branch of the `if` statement. As a result, if you don't have a compatible GPU
-development environment, you'll see the following message when you run the
-program:
+[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+statement to evaluate the `has_accelerator()` function at compile time and
+compile only the corresponding branch of the `if` statement. As a result, if you
+don't have a compatible GPU development environment, you'll see the following
+message when you run the program:
 
 ```output
 No GPU detected
@@ -154,8 +153,7 @@ fn scalar_add(
 
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime for not has_accelerator():
         print("No GPUs detected")
         exit(0)
     else:
@@ -362,8 +360,7 @@ fn print_threads():
     )
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime for not has_accelerator():
         print("No compatible GPU found")
     elif has_apple_gpu_accelerator():
         print(

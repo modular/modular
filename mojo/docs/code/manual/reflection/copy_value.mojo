@@ -19,13 +19,11 @@ trait MakeCopyable:
         comptime field_count = struct_field_count[Self]()
         comptime field_types = struct_field_types[Self]()
 
-        @parameter
-        for idx in range(field_count):
+        comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
 
             # Guard: field type must be copyable
-            @parameter
-            if not conforms_to(field_type, Copyable):
+            comptime if not conforms_to(field_type, Copyable):
                 continue
 
             # Perform copy

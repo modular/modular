@@ -17,8 +17,7 @@ fn take_simd8(x: SIMD[DType.float32, 8]):
 
 
 fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
-    @parameter
-    if nelts == 8:
+    comptime if nelts == 8:
         take_simd8(rebind[SIMD[DType.float32, 8]](x))
 
 

@@ -17,8 +17,7 @@ from std.gpu.host import DeviceContext
 
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
         ctx = DeviceContext()

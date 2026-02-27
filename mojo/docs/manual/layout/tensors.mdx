@@ -323,7 +323,7 @@ allocation. For local memory, each thread gets a separate allocation.
 There's no way to explicitly allocate *register* memory. However, the
 compiler can promote some local memory allocations to registers. To enable
 this optimization, keep the size of the tensor small, and all indexing into the
-tensor static—for example, using `@parameter for` loops.
+tensor static—for example, using `comptime for` loops.
 
 :::note
 
@@ -634,8 +634,7 @@ fn copy_from_async_example():
         ]().distribute[thread_layout](lane_id())
 
         shared_fragment.copy_from_async(global_fragment)
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             async_copy_wait_all()
         barrier()
 

@@ -329,7 +329,7 @@ fn make_worldly(mut *strs: String):
 Implementing heterogeneous variadic arguments (each argument type may be
 different) is somewhat more complicated than homogeneous variadic arguments. To
 handle multiple argument types, the function must be
-[generic](/mojo/manual/functions/#variadic-arguments), which requires using
+[generic](/mojo/manual/generics/), which requires using
 [traits](/mojo/manual/traits) and [parameters](/mojo/manual/parameters/). So
 the syntax may look a little unfamiliar if you haven't worked with those
 features.
@@ -361,15 +361,14 @@ Inside the function, `args` becomes a
 syntax `*args: *ArgTypes` creates a heterogeneous variadic argument. That means
 each element in `args` can be a different type that requires a different amount
 of memory. To iterate through the `VariadicPack`, the compiler must know each
-element's type (its memory size), so you must use a [parametric `for`
-loop](/mojo/manual/decorators/parameter/#parametric-for-statement):
+element's type, so you must use a [`comptime for`
+loop](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-for):
 
 ```mojo
 fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
     var total = 0
 
-    @parameter
-    for i in range(args.__len__()):
+    comptime for i in range(args.__len__()):
         total += Int(args[i])
 
     return total
@@ -510,7 +509,7 @@ keyword.
 
 Any required keyword-only arguments must appear in the signature before
 any optional keyword-only arguments. That is, arguments appear in the following
-sequence a function signature:
+sequence in a function signature:
 
 - Required positional arguments.
 - Optional positional arguments.

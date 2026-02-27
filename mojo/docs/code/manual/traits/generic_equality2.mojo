@@ -21,8 +21,7 @@ fn all_equal[T: Copyable](lhs: List[T], rhs: List[T]) -> Bool:
     if len(lhs) != len(rhs):
         return False
 
-    @parameter
-    if conforms_to(T, Equatable):
+    comptime if conforms_to(T, Equatable):
         for left, right in zip(lhs, rhs):
             if trait_downcast[Equatable](left) != trait_downcast[Equatable](
                 right
