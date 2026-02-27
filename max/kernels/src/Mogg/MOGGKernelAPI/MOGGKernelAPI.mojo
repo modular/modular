@@ -9419,6 +9419,7 @@ struct DistributedReduceScatterSum:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        axis: Int = -1,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank],
         inputs: InputVariadicTensors[dtype, rank, ...],
@@ -9498,7 +9499,9 @@ struct DistributedReduceScatterSum:
             )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            reducescatter[ngpus=num_devices, output_lambda=output_lambda](
+            reducescatter[
+                ngpus=num_devices, output_lambda=output_lambda, axis=axis
+            ](
                 in_bufs,
                 out_buf.make_dynamic[DType.int64](),
                 rank_sigs,
