@@ -13,7 +13,6 @@
 
 from utils import StaticTuple
 from sys import size_of
-from ffi import _Global, external_call
 
 from gpu.host import DeviceContext
 from gpu import (
@@ -36,77 +35,33 @@ fn group_end():
     return
 
 
-fn _p2p_cache_destroy_wrapper(
-    ptr: MutOpaquePointer[MutExternalOrigin],
-) -> None:
-    # No resources to free for tagged-pointer encoding.
-    pass
+fn enable_p2p() -> Bool:
+    """Enable peer-to-peer memory access between all GPU pairs if supported.
 
-
-fn _p2p_cache_init_wrapper() -> MutOpaquePointer[MutExternalOrigin]:
-    """Initializer for the indexed global caching P2P availability.
-
-    Returns an OpaquePointer encoding a small integer tag:
-      1 => p2p_not_available
-      2 => p2p_available
-    """
-    comptime p2p_not_available = 1
-    comptime p2p_available = 2
-
-    try:
-        DeviceContext.enable_all_peer_access()
-        return UnsafePointer[NoneType, MutExternalOrigin](
-            unsafe_from_address=p2p_available
-        )
-    except:
-        return UnsafePointer[NoneType, MutExternalOrigin](
-            unsafe_from_address=p2p_not_available
-        )
-
-
-fn enable_p2p() raises -> Bool:
-    """Enables peer-to-peer access between all GPU pairs if supported.
-
-    Must be called before any collective operations that require P2P access.
-    The result is cached globally; subsequent calls return the cached value.
+    Attempts to enable P2P access between all device pairs. Returns False
+    if P2P is not supported by the hardware rather than raising.
 
     Returns:
-        True if P2P access was successfully enabled, False otherwise.
+        True if P2P access is enabled between all GPU pairs, False otherwise.
     """
-    comptime p2p_not_available = Scalar[DType.int](1)
-    comptime p2p_available = Scalar[DType.int](2)
-
-    var cached = external_call[
-        "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-        MutOpaquePointer[MutExternalOrigin],
-    ](
-        _Global._gpu_comm_p2p_idx,
-        _p2p_cache_init_wrapper,
-        _p2p_cache_destroy_wrapper,
-    )
-
-    var tag = Scalar[DType.int](Int(cached))
-    return tag == p2p_available
+    try:
+        DeviceContext.enable_all_peer_access()
+        return DeviceContext.all_peer_access_enabled()
+    except:
+        return False
 
 
 fn is_p2p_enabled() raises -> Bool:
     """Checks whether P2P access is available between GPUs.
 
-    Intended as a read-only status check for use in kernels and ops.
-    Callers should ensure `enable_p2p()` is called during initialization
-    (e.g., during model setup) before relying on this function.
-
-    The underlying global is initialized lazily, so if `enable_p2p()` has
-    not yet been called, this function will trigger initialization as a
-    fallback. However, explicit `enable_p2p()` calls at startup are
-    preferred to avoid side effects during kernel execution.
+    This is a read-only status check. Callers must ensure `enable_p2p()`
+    has been called during initialization (e.g., during model setup or
+    via `Signals.buffers()`) before relying on this function.
 
     Returns:
         True if P2P access is available between all GPU pairs, False otherwise.
     """
-
-    # NOTE: Transitional workaround, soon this will be a read-only check.
-    return enable_p2p()
+    return DeviceContext.all_peer_access_enabled()
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
