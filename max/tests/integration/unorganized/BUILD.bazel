@@ -224,6 +224,9 @@ modular_py_test(
         "//max/tests/integration/Inputs:pytest_inputs",
     ],
     env = {"MODULAR_PATH": "."},
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862
@@ -296,6 +299,9 @@ modular_py_test(
         "//max/tests/integration/Inputs:pytest_inputs",
     ],
     env = {"MODULAR_PATH": "."},
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862

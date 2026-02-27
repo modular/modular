@@ -62,6 +62,7 @@ modular_py_test(
 
 modular_py_test(
     name = "test_functional_custom_gpu",
+    size = "large",
     srcs = ["test_functional_custom_gpu.py"],
     data = ["//max/tests/integration/Inputs/kernel_verification_ops"] + select({
         "//:b200_gpu": ["//max/kernels/test/gpu/device_context:vec_add_cubin_sm100"],

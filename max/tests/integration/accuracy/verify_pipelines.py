@@ -53,12 +53,19 @@ from verify import ModelModality as Modality
 # likely caused by a network flake and could be resolved by a retry.
 EX_TEMPFAIL = 75
 
+# Encodings that cannot generate torch reference goldens locally.
+# These require pregenerated goldens from S3 (e.g. generated via vLLM).
+# When --no-aws is set, pipelines with these encodings are skipped.
+TORCH_INCOMPATIBLE_ENCODINGS = frozenset({"float8_e4m3fn", "float4_e2m1fnx2"})
+
 
 def validate_hf_token() -> None:
     """
     It's a regular occurrence that people are asked to run logit verification
     locally, and not everyone has an HF_TOKEN set. Let's help them out
     """
+    if os.getenv("HF_HUB_OFFLINE", "").lower() in ("1", "t", "true"):
+        return
     if os.getenv("HF_TOKEN") is None:
         raise ValueError(
             "Environment variable `HF_TOKEN` must be set. "
@@ -813,6 +820,17 @@ def _is_pixel_generation(config: PipelineConfig) -> bool:
     default=None,
     help="Only run pipelines whose name matches the filter. Comma-separated for multiple filters (OR logic).",
 )
+@click.option(
+    "--no-aws",
+    is_flag=True,
+    default=False,
+    help=(
+        "Run without AWS access. Ignores pregenerated torch goldens and"
+        " generates reference outputs locally using torch instead."
+        " Works for bf16/f32 models but will fail for FP8 models that"
+        " require vLLM-generated goldens."
+    ),
+)
 def main(
     report: TextIO | None,
     store_verdicts_json: Path | None,
@@ -823,6 +841,7 @@ def main(
     find_tolerances: bool,
     print_suggested_tolerances: bool,
     name_filter: str | None,
+    no_aws: bool,
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
 
@@ -848,6 +867,17 @@ def main(
             if f.strip()
         ):
             continue
+        if no_aws and pipeline_config.encoding in TORCH_INCOMPATIBLE_ENCODINGS:
+            raise click.ClickException(
+                f"Pipeline {pipeline_name!r} uses encoding"
+                f" {pipeline_config.encoding!r}, which cannot generate torch"
+                " goldens locally. Remove --no-aws or choose a different"
+                " pipeline."
+            )
+        if no_aws:
+            pipeline_config = pipeline_config.model_copy(
+                update={"pregenerated_torch_goldens": None}
+            )
         start_time = time.time()
         print(f"\n===== Running {pipeline_name} =====", flush=True)
         if _is_pixel_generation(pipeline_config):
