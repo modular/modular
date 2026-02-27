@@ -23,7 +23,6 @@ from max.graph import (
     DeviceRef,
     ShardingStrategy,
     TensorValue,
-    TensorValueLike,
     ops,
 )
 from max.nn.attention import num_heads_for_device
@@ -117,7 +116,7 @@ class Attention(Module, Shardable):
 
     def __call__(
         self,
-        x: TensorValueLike,
+        x: TensorValue,
         input_row_offsets: TensorValue,
         max_seq_len: TensorValue,
         rope_freqs_cis: TensorValue,
@@ -135,7 +134,6 @@ class Attention(Module, Shardable):
         Returns:
             Output tensor of shape (n_patches, hidden_dim).
         """
-        x = TensorValue(x)
         n_patches = x.shape[0]
 
         xqkv = self.wqkv(x)

@@ -20,7 +20,6 @@ from max.graph import (
     DeviceRef,
     ShardingStrategy,
     TensorValue,
-    TensorValueLike,
 )
 from max.graph.quantization import QuantizationEncoding
 from max.nn.activation import activation_function_from_name
@@ -85,7 +84,7 @@ class MLP2(Module, Shardable):
         self.float8_config = float8_config
         self._sharding_strategy: ShardingStrategy | None = None
 
-    def __call__(self, x: TensorValueLike) -> TensorValue:
+    def __call__(self, x: TensorValue) -> TensorValue:
         """Applies the MLP2 transformation to the input.
 
         Args:
@@ -94,13 +93,12 @@ class MLP2(Module, Shardable):
         Returns:
             The transformed tensor after applying the MLP2 layers.
         """
-        value = TensorValue(x)
-        assert value.dtype == self.dtype, (
-            f"Input dtype does not match {self.__class__.__name__} dtype (received {value.dtype}, expected {self.dtype})"
+        assert x.dtype == self.dtype, (
+            f"Input dtype does not match {self.__class__.__name__} dtype (received {x.dtype}, expected {self.dtype})"
         )
-        value = self.up_proj(value)
-        value = self.activation_function(value)
-        return self.down_proj(value)
+        x = self.up_proj(x)
+        x = self.activation_function(x)
+        return self.down_proj(x)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
