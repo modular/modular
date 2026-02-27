@@ -107,17 +107,12 @@ class Flux2Pipeline(DiffusionPipeline):
             else 8
         )
 
-        self.build_prepare_prompt_embeddings()
         self.build_preprocess_latents()
         self.build_prepare_image_latents()
         self.build_prepare_scheduler()
         self.build_scheduler_step()
         self.build_concat_image_latents()
         self.build_decode_latents()
-
-        # A workaround to remove overhead from `functional.wrapped`.
-        if unwrapped_transformer := self.transformer.unwrap_model():
-            self.transformer = cast(Any, unwrapped_transformer)
 
         self._cached_guidance: dict[str, Tensor] = {}
         self._cached_text_ids: dict[str, Tensor] = {}
@@ -132,21 +127,6 @@ class Flux2Pipeline(DiffusionPipeline):
                 context.input_image.astype(np.uint8)
             )
         return Flux2ModelInputs.from_context(context)
-
-    def build_prepare_prompt_embeddings(self) -> None:
-        input_types = [
-            TensorType(
-                self.text_encoder.config.dtype,
-                shape=["seq_len", "hidden_dim"],
-                device=self.text_encoder.devices[0],
-            )
-            for _ in range(3)
-        ]
-
-        self.__dict__["_prepare_prompt_embeddings"] = max_compile(
-            self._prepare_prompt_embeddings,
-            input_types=input_types,
-        )
 
     def build_preprocess_latents(self) -> None:
         device = self.transformer.devices[0]
@@ -403,9 +383,9 @@ class Flux2Pipeline(DiffusionPipeline):
     ) -> tuple[Tensor, Tensor]:
         """Create prompt embeddings and text position IDs for the transformer.
 
-        Flux2 uses multiple hidden-state layers from the text encoder. The
-        encoder is configured to return only the needed layers directly, which
-        are then stacked and flattened across the layer/hidden dimensions.
+        The text encoder returns fused prompt embeddings directly, with hidden
+        states from the configured layers already stacked and merged across the
+        layer/hidden dimensions.
 
         Args:
             tokens: TokenBuffer produced by tokenization / chat templating.
@@ -416,19 +396,16 @@ class Flux2Pipeline(DiffusionPipeline):
                 - prompt_embeds: Tensor of shape (B', S, L*D)
                 - text_ids: Tensor[int64] of shape (B', S, 4)
         """
+        seq_len = int(tokens.array.shape[0])
+        batch_size = 1  # text encoder always outputs a single batch
+
         with Tracer("text_encoder"):
             text_input_ids = Tensor.constant(
                 tokens.array,
                 dtype=DType.int64,
                 device=self.text_encoder.devices[0],
             )
-            hidden_states_selected = self.text_encoder(text_input_ids)
-
-        with Tracer("prompt_embeddings"):
-            prompt_embeds = self._prepare_prompt_embeddings(
-                *hidden_states_selected
-            )
-            batch_size, seq_len, _ = map(int, prompt_embeds.shape)
+            prompt_embeds = self.text_encoder(text_input_ids)
 
         with Tracer("post_process"):
             if num_images_per_prompt != 1:
@@ -453,18 +430,6 @@ class Flux2Pipeline(DiffusionPipeline):
                 self._cached_text_ids[text_ids_key] = text_ids
 
         return prompt_embeds, text_ids
-
-    def _prepare_prompt_embeddings(self, *hidden_states: Tensor) -> Tensor:
-        # [B, L, S, D] -> [B, S, L, D] -> [B, S, L*D]
-        stacked = F.stack(hidden_states, axis=0)
-        stacked = F.unsqueeze(stacked, axis=0)
-        stacked = F.permute(stacked, [0, 2, 1, 3])
-        batch_size, seq_len, num_layers, hidden_dim = stacked.shape
-        prompt_embeds = F.reshape(
-            stacked, [batch_size, seq_len, num_layers * hidden_dim]
-        )
-
-        return prompt_embeds
 
     @traced
     def decode_latents(
@@ -797,7 +762,6 @@ class Flux2Pipeline(DiffusionPipeline):
                             text_ids,
                             guidance,
                         )[0]
-                        noise_pred = Tensor.from_dlpack(noise_pred)
 
                     with Tracer("scheduler_step"):
                         latents = self.scheduler_step(
