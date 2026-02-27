@@ -60,10 +60,10 @@ Path = Union[str, "os.PathLike[str]"]
 _COLON_ONLY_LINE = re.compile(r"^\s+:\s*$")
 
 
-def _normalize_mojo_colon_on_next_line(text: str) -> str:
+def _join_colon_next_line(prev: str, line: str) -> str | None:
     """Move a standalone colon from its own indented line to the previous line.
 
-    In Mojo, this is valid syntax:
+    In Mojo, this is valid syntax::
 
         def foo()  # comment
             :
@@ -72,21 +72,155 @@ def _normalize_mojo_colon_on_next_line(text: str) -> str:
     but the lib2to3-based parser requires the colon on the same line as
     the signature.
     """
+    if _COLON_ONLY_LINE.match(line):
+        return prev + ":"
+    return None
+
+
+def _starts_with_keyword(line: str, keyword: str) -> bool:
+    """Check that *line* starts with *keyword* as a whole word, not a prefix
+    of a longer identifier (e.g. ``if`` but not ``ifvar``)."""
+    if not line.startswith(keyword):
+        return False
+    rest = line[len(keyword) :]
+    return bool(rest) and not (rest[0].isalnum() or rest[0] == "_")
+
+
+def _join_multiline_ternary(prev: str, line: str) -> str | None:
+    """Join ternary continuations that appear on an indented next line.
+
+    In Mojo, these are valid syntax::
+
+        var a = 10
+           if b % 2 else 100
+
+        var a = 10 if True
+           else 100
+
+    but the lib2to3-based parser requires the ternary on the same logical
+    line.
+    """
+    stripped = line.lstrip()
+    # Distinguish ternary ``if`` from a statement ``if``: a statement
+    # always ends with ``:`` (ignoring trailing comments).
+    code, _ = _split_trailing_comment(stripped)
+    is_continuation = (
+        (_starts_with_keyword(stripped, "if") and not code.endswith(":"))
+        or (_starts_with_keyword(stripped, "else") and not code.endswith(":"))
+        or stripped == "else"
+    )
+    if not is_continuation:
+        return None
+    cur_indent = len(line) - len(line.lstrip())
+    prev_indent = len(prev) - len(prev.lstrip())
+    if (
+        prev
+        and not prev.endswith(":")
+        and not prev.endswith("\\")
+        and not prev.lstrip().startswith("#")
+        and cur_indent > prev_indent
+    ):
+        return prev + " " + stripped
+    return None
+
+
+# Normalizers are applied in order; each receives the previous result line
+# (with any trailing comment already stripped) and the current raw line,
+# and returns a replacement for the previous line or None to skip.
+_MOJO_LINE_NORMALIZERS = [_join_colon_next_line, _join_multiline_ternary]
+
+# Matches the trailing comment portion of a line: optional whitespace then #
+# to end-of-string, but only when # is not inside a quoted string.  The
+# leading alternation skips over single- and double-quoted string literals
+# (including escaped quotes) so the ``(\s*#.*)$`` only fires on a real comment.
+_TRAILING_COMMENT = re.compile(
+    r"""^((?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^#"'])*)(\s*#.*)$"""
+)
+
+
+def _split_trailing_comment(line: str) -> tuple[str, str]:
+    """Split *line* into ``(code, comment)`` around the first ``#`` outside quotes.
+
+    *comment* includes any whitespace between the code and ``#``.
+    Returns ``(line, "")`` when there is no trailing comment.
+    """
+    match = _TRAILING_COMMENT.match(line)
+    if match:
+        code = match.group(1).rstrip()
+        comment = line[len(code) :]
+        return code, comment
+    return line, ""
+
+
+def _try_merge_line(result: list[str], line: str) -> bool:
+    """Try to merge *line* into the last element of *result*.
+
+    Strips the trailing comment from the previous result line before
+    calling each normalizer, then reattaches it so normalizers only
+    see code.  Returns ``True`` if any normalizer matched.
+    """
+    prev_code, comment = _split_trailing_comment(result[-1])
+    merged = False
+    for normalizer in _MOJO_LINE_NORMALIZERS:
+        replacement = normalizer(prev_code, line)
+        if replacement is not None:
+            prev_code = replacement
+            merged = True
+    if merged:
+        result[-1] = prev_code + comment
+    return merged
+
+
+def _normalize_mojo_source(text: str) -> str:
+    """Apply Mojo-specific line normalizations before tokenization.
+
+    Iterates over the lines once, skipping triple-quoted string regions,
+    ``# fmt: off`` regions, and lines inside open brackets, then gives
+    each normalizer a chance to merge the current line into the previous
+    one.
+
+    In an ideal architecture normalization would not be required. In
+    reality the grammar strongly assumes that new lines end statements.
+    """
+    from mblack.comments import FMT_OFF, FMT_ON
+
     lines = text.split("\n")
     result: list[str] = []
     in_multiline_string = False
+    in_fmt_off = False
+    bracket_depth = 0
+
     for line in lines:
-        if not in_multiline_string and result and _COLON_ONLY_LINE.match(line):
-            # Insert colon before any trailing comment (or at end of line).
-            code, sep, comment = result[-1].partition("  #")
-            result[-1] = code + ":" + sep + comment
-        else:
+        stripped = line.lstrip()
+
+        # Track ``# fmt: off`` / ``# fmt: on`` regions.
+        if stripped in FMT_OFF:
+            in_fmt_off = True
+        elif stripped in FMT_ON:
+            in_fmt_off = False
+
+        # Try to merge this line into the previous one.
+        can_normalize = (
+            not in_multiline_string
+            and not in_fmt_off
+            and bracket_depth == 0
+            and result  # need a previous line to merge into
+        )
+        if not (can_normalize and _try_merge_line(result, line)):
             result.append(line)
-        # Heuristic: toggle on odd triple-quote counts. This doesn't handle
-        # triple-quotes embedded in single-quoted strings, but that combination
-        # cannot precede a block-opening colon in practice.
+
+        # Update state for the *next* iteration.
+        if not in_multiline_string:
+            # Heuristic bracket count — also counts brackets in single-line
+            # strings and comments, but those are usually balanced; at worst
+            # an imbalance just disables the normalizer.
+            bracket_depth += line.count("(") - line.count(")")
+            bracket_depth += line.count("[") - line.count("]")
+            bracket_depth += line.count("{") - line.count("}")
+        # Heuristic: toggle on odd triple-quote counts.
         if line.count('"""') % 2 == 1 or line.count("'''") % 2 == 1:
             in_multiline_string = not in_multiline_string
+
     return "\n".join(result)
 
 
@@ -259,7 +393,7 @@ class Driver:
     def parse_string(self, text: str, debug: bool = False) -> NL:
         """Parse a string and return the syntax tree."""
         if self.grammar.mojo_keywords:
-            text = _normalize_mojo_colon_on_next_line(text)
+            text = _normalize_mojo_source(text)
         tokens = tokenize.generate_tokens(
             io.StringIO(text).readline, grammar=self.grammar
         )
