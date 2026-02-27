@@ -32,6 +32,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
+from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
@@ -484,6 +485,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     """A pipeline model that supports KV cache."""
 
     kv_params: KVCacheParamInterface
+    extra_kv_managers: list[PagedKVCacheManager]
 
     def __init__(
         self,
@@ -513,6 +515,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
+        self.extra_kv_managers = []
 
     # TODO(AITLIB-265): Remove this altogether from all PipelineModels.
     @classmethod

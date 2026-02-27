@@ -46,4 +46,9 @@ def convert_safetensor_state_dict(
         if key.startswith(f"layers.{mtp_layer_idx}."):
             del new_state_dict[key]
 
+    # TODO: We don't have the Indexer layer yet, so delete the weights
+    for key in list(new_state_dict.keys()):
+        if ".indexer." in key:
+            del new_state_dict[key]
+
     return new_state_dict

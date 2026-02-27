@@ -658,11 +658,14 @@ class TextGenerationPipeline(
     def release(self, request_id: RequestID) -> None:
         """Mark the context as complete, releasing the cache slot from the KV manager.
 
-        Note: KV cache lifecycle is now managed by the scheduler. This method
-        is kept for interface compatibility but is a no-op for regular pipelines.
+        Note: Primary KV cache lifecycle is managed by the scheduler. This method
+        handles extra KV caches managed by the pipeline model (e.g., indexer cache
+        for DeepSeekV3.2).
         """
-        # KV cache release is handled by the scheduler via batch_constructor
-        pass
+        # Primary KV cache release is handled by the scheduler via batch_constructor.
+        # Pipeline model may have extra KV caches to release.
+        if hasattr(self._pipeline_model, "release"):
+            self._pipeline_model.release(request_id)
 
     @property
     def kv_manager(self) -> PagedKVCacheManager:

@@ -21,6 +21,7 @@ from max.graph import DeviceRef
 from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVCacheParams,
+    KVCacheQuantizationConfig,
     MultiKVCacheParams,
 )
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
@@ -54,9 +55,15 @@ class DeepseekV3_2Config(DeepseekV3Config):
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
         )
+
+        # Always store the indexer's K cache in float8_e4m3fn.
+        indexer_cache_dtype = DType.float8_e4m3fn
+        indexer_kvcache_quant_config = KVCacheQuantizationConfig(
+            scale_dtype=DType.float32, quantization_granularity=32
+        )
         assert isinstance(mla_kv_params, KVCacheParams)
         indexer_kv_params = kv_cache_config.to_params(
-            dtype=cache_dtype,
+            dtype=indexer_cache_dtype,
             # Similar to MLA, the indexer's k-cache uses a single KV head.
             n_kv_heads=1,
             head_dim=huggingface_config.index_head_dim,
@@ -65,7 +72,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             # Set to True because there is only a key-cache, and one KV head.
             is_mla=True,
-            kvcache_quant_config=mla_kv_params.kvcache_quant_config,
+            kvcache_quant_config=indexer_kvcache_quant_config,
         )
         assert isinstance(indexer_kv_params, KVCacheParams)
         return MultiKVCacheParams(

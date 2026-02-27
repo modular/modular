@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from max._core.driver import is_virtual_device_mode
 from max.dtype import DType
@@ -31,10 +31,7 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import (
-    DataParallelLatentAttentionWithRope,
-    MLAPrefillMetadata,
-)
+from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
 from max.nn.attention.multi_latent_attention_fp8 import (
     DataParallelLatentAttentionWithRopeFp8,
 )
@@ -42,9 +39,14 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    MultiKVCacheParams,
+    PagedCacheValues,
+)
 from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.linear import ColumnParallelLinear
+from max.nn.no_opaque_kernels import PagedKVCacheTensorsNoOpaque
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -74,6 +76,32 @@ def _unpack_kv_collections(
         [kv.cache_lengths for kv in kv_collections],
         [kv.lookup_table for kv in kv_collections],
         [kv.max_lengths for kv in kv_collections],
+    )
+
+
+def _unpack_kv_collections_with_scales(
+    kv_collections: Sequence[PagedCacheValues],
+) -> tuple[
+    list[BufferValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[BufferValue],
+]:
+    """Unpack KV collections into component lists.
+
+    Returns:
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths, kv_scales).
+    """
+    for kv in kv_collections:
+        assert kv.kv_scales is not None
+    kv_scales = cast(list[BufferValue], [kv.kv_scales for kv in kv_collections])
+    return (
+        [kv.kv_blocks for kv in kv_collections],
+        [kv.cache_lengths for kv in kv_collections],
+        [kv.lookup_table for kv in kv_collections],
+        [kv.max_lengths for kv in kv_collections],
+        kv_scales,
     )
 
 
@@ -115,18 +143,27 @@ class DeepseekV3_2DecoderLayer(Module):
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
 
-        # Type annotations for mlp attributes
         self.mlp: DeepseekV3_2MLP | DeepseekV3_2MoE
-        self.mlp_shards: list[MLP] | list[DeepseekV3_2MoE]
+        self.mlp_shards: list[DeepseekV3_2MLP | DeepseekV3_2MoE | Module]
 
+        nvfp4_enabled = (
+            config.float8_config is not None and config.float8_config.is_nvfp4
+        )
+        use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
+
+        if not use_fp8_mla:
+            raise ValueError(
+                "DeepSeekV3.2 must be executed with fp8 (due to fp8 indexer)."
+            )
+        assert isinstance(config.kv_params, MultiKVCacheParams)
+        mla_kv_params, _indexer_kv_params = config.kv_params.params
         # TODO(MODELS-968): Create new MLA layer with sparse attention support
-        # For now, using standard MLA as placeholder
-        mla_kwargs: dict[str, Any] = dict(
+        self.self_attn = DataParallelLatentAttentionWithRopeFp8(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
             hidden_size=config.hidden_size,
-            kv_params=config.kv_params,
+            kv_params=mla_kv_params,
             q_lora_rank=config.q_lora_rank,
             kv_lora_rank=config.kv_lora_rank,
             qk_nope_head_dim=config.qk_nope_head_dim,
@@ -135,33 +172,16 @@ class DeepseekV3_2DecoderLayer(Module):
             devices=config.devices,
             graph_mode=config.graph_mode,
             buffer_size=config.max_batch_context_length,
+            norm_dtype=DType.float32,
+            float8_config=config.float8_config,
         )
-
-        nvfp4_enabled = (
-            config.float8_config is not None and config.float8_config.is_nvfp4
-        )
-        use_fp8_mla = config.float8_config is not None and not nvfp4_enabled
-
-        if config.float8_config is not None and nvfp4_enabled:
-            mla_kwargs["o_proj_float8_config"] = config.float8_config
-            mla_kwargs["o_proj_dtype"] = config.dtype
-
-        mla_cls: (
-            type[DataParallelLatentAttentionWithRope]
-            | type[DataParallelLatentAttentionWithRopeFp8]
-        )
-        if use_fp8_mla:
-            mla_kwargs["float8_config"] = config.float8_config
-            mla_cls = DataParallelLatentAttentionWithRopeFp8
-        else:
-            mla_kwargs["dtype"] = DType.bfloat16
-            mla_cls = DataParallelLatentAttentionWithRope
-
-        self.self_attn = mla_cls(**mla_kwargs)
 
         # Create MLP or MoE layer
         self.mlp = self._get_mlp(config, layer_idx)
-        self.mlp_shards = self.mlp.shard(config.devices)
+        if self.mlp.sharding_strategy is not None:
+            self.mlp_shards = list(self.mlp.shard(config.devices))
+        else:
+            self.mlp_shards = [self.mlp]
 
         # Create normalization layers
         create_norm = functools.partial(
@@ -225,7 +245,7 @@ class DeepseekV3_2DecoderLayer(Module):
                     topk_group=config.topk_group,
                     norm_topk_prob=config.norm_topk_prob,
                     # Use the same dtype for the gate as the norm
-                    gate_dtype=config.norm_dtype,
+                    gate_dtype=DType.bfloat16,
                     correction_bias_dtype=config.correction_bias_dtype,
                 ),
                 mlp_cls=DeepseekV3_2MLP,
@@ -234,7 +254,7 @@ class DeepseekV3_2DecoderLayer(Module):
                 * config.moe_intermediate_size,
                 dtype=config.dtype,
                 ep_size=ep_size,
-                apply_router_weight_first=True,
+                apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
                 float8_config=config.float8_config,
             )
@@ -264,10 +284,16 @@ class DeepseekV3_2DecoderLayer(Module):
         layer_idx: TensorValue,
         xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_blocks: list[BufferValue],
-        kv_cache_lengths: list[TensorValue],
-        kv_lookup_table: list[TensorValue],
-        kv_max_lengths: list[TensorValue],
+        mla_kv_blocks: list[BufferValue],
+        mla_kv_cache_lengths: list[TensorValue],
+        mla_kv_lookup_table: list[TensorValue],
+        mla_kv_max_lengths: list[TensorValue],
+        mla_kv_cache_scales: list[BufferValue],
+        indexer_kv_blocks: list[BufferValue],
+        indexer_kv_cache_lengths: list[TensorValue],
+        indexer_kv_lookup_table: list[TensorValue],
+        indexer_kv_max_lengths: list[TensorValue],
+        indexer_kv_cache_scales: list[BufferValue],
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
@@ -276,18 +302,32 @@ class DeepseekV3_2DecoderLayer(Module):
         # We have to unpack our PagedCacheValues into constituent parts so
         # subgraphs have only max.graph.Values as arguments.
         # Re-pack those arguments into a nice structured type.
-        kv_collections = [
+
+        mla_kv_collections = [
             PagedCacheValues(
-                kv_blocks[i],
-                kv_cache_lengths[i],
-                kv_lookup_table[i],
-                kv_max_lengths[i],
+                mla_kv_blocks[i],
+                mla_kv_cache_lengths[i],
+                mla_kv_lookup_table[i],
+                mla_kv_max_lengths[i],
+                mla_kv_cache_scales[i] if mla_kv_cache_scales else None,
             )
-            for i in range(len(kv_blocks))
+            for i in range(len(mla_kv_blocks))
         ]
 
+        indexer_kv_collections = [
+            PagedKVCacheTensorsNoOpaque(
+                indexer_kv_blocks[i],
+                indexer_kv_cache_lengths[i],
+                indexer_kv_lookup_table[i],
+                indexer_kv_max_lengths[i],
+                indexer_kv_cache_scales[i] if indexer_kv_cache_scales else None,
+            )
+            for i in range(len(indexer_kv_blocks))
+        ]
+        del indexer_kv_collections  # Unused.
+
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
-        num_devices = len(kv_blocks)
+        num_devices = len(mla_kv_blocks)
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
         for i in range(num_devices):
             mla_prefill_metadata.append(
@@ -305,7 +345,7 @@ class DeepseekV3_2DecoderLayer(Module):
             layer_idx,
             norm_xs,
             signal_buffers,
-            kv_collections,
+            mla_kv_collections,
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
             mla_prefill_metadata=mla_prefill_metadata,
@@ -437,7 +477,8 @@ class DeepseekV3_2(Module):
         self,
         tokens: TensorValue,
         signal_buffers: list[BufferValue],
-        kv_collections: list[PagedCacheValues],
+        mla_kv_collections: list[PagedCacheValues],
+        indexer_kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         host_input_row_offsets: TensorValue,
@@ -474,7 +515,7 @@ class DeepseekV3_2(Module):
             mla_prefill_metadata = self.layers[
                 0
             ].self_attn.create_mla_prefill_metadata(  # type: ignore
-                input_row_offsets_, kv_collections
+                input_row_offsets_, mla_kv_collections
             )
 
             # replace each device's buffer_lengths with the batch context length
@@ -496,18 +537,56 @@ class DeepseekV3_2(Module):
             )
 
         # Unpack KV collections once for use throughout the method
-        kv_blocks, cache_lengths, lookup_tables, max_lengths = (
-            _unpack_kv_collections(kv_collections)
-        )
+        mla_kv_scales: list[BufferValue]
+        if mla_kv_collections[0].kv_scales is not None:
+            (
+                mla_kv_blocks,
+                mla_cache_lengths,
+                mla_lookup_tables,
+                mla_max_lengths,
+                mla_kv_scales,
+            ) = _unpack_kv_collections_with_scales(mla_kv_collections)
+        else:
+            (
+                mla_kv_blocks,
+                mla_cache_lengths,
+                mla_lookup_tables,
+                mla_max_lengths,
+            ) = _unpack_kv_collections(mla_kv_collections)
+            mla_kv_scales = []
+
+        indexer_kv_scales: list[BufferValue]
+        if indexer_kv_collections[0].kv_scales is not None:
+            (
+                indexer_kv_blocks,
+                indexer_cache_lengths,
+                indexer_lookup_tables,
+                indexer_max_lengths,
+                indexer_kv_scales,
+            ) = _unpack_kv_collections_with_scales(indexer_kv_collections)
+        else:
+            (
+                indexer_kv_blocks,
+                indexer_cache_lengths,
+                indexer_lookup_tables,
+                indexer_max_lengths,
+            ) = _unpack_kv_collections(indexer_kv_collections)
+            indexer_kv_scales = []
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
             TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
             [hidden.type for hidden in h],
             [signal_buffer.type for signal_buffer in signal_buffers],
-            [block.type for block in kv_blocks],
-            [length.type for length in cache_lengths],
-            [table.type for table in lookup_tables],
-            [length.type for length in max_lengths],
+            [block.type for block in mla_kv_blocks],
+            [length.type for length in mla_cache_lengths],
+            [table.type for table in mla_lookup_tables],
+            [length.type for length in mla_max_lengths],
+            [scale.type for scale in mla_kv_scales],
+            [block.type for block in indexer_kv_blocks],
+            [length.type for length in indexer_cache_lengths],
+            [table.type for table in indexer_lookup_tables],
+            [length.type for length in indexer_max_lengths],
+            [scale.type for scale in indexer_kv_scales],
             [freq.type for freq in freqs_cis],
             [val.type for val in mla_prefill_metadata_flat],
             [offset.type for offset in input_row_offsets_],
@@ -547,10 +626,16 @@ class DeepseekV3_2(Module):
                             ),
                             *h,
                             *signal_buffers,
-                            *kv_blocks,
-                            *cache_lengths,
-                            *lookup_tables,
-                            *max_lengths,
+                            *mla_kv_blocks,
+                            *mla_cache_lengths,
+                            *mla_lookup_tables,
+                            *mla_max_lengths,
+                            *mla_kv_scales,
+                            *indexer_kv_blocks,
+                            *indexer_cache_lengths,
+                            *indexer_lookup_tables,
+                            *indexer_max_lengths,
+                            *indexer_kv_scales,
                             *freqs_cis,
                             *mla_prefill_metadata_flat,
                             *input_row_offsets_,
@@ -564,10 +649,16 @@ class DeepseekV3_2(Module):
                     ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
                     h,
                     signal_buffers,
-                    kv_blocks,
-                    cache_lengths,
-                    lookup_tables,
-                    max_lengths,
+                    mla_kv_blocks,
+                    mla_cache_lengths,
+                    mla_lookup_tables,
+                    mla_max_lengths,
+                    mla_kv_scales,
+                    indexer_kv_blocks,
+                    indexer_cache_lengths,
+                    indexer_lookup_tables,
+                    indexer_max_lengths,
+                    indexer_kv_scales,
                     freqs_cis=freqs_cis,
                     mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,
