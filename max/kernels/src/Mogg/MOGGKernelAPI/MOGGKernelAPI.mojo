@@ -331,6 +331,9 @@ from utils.index import Index
 from utils.numerics import isinf, isnan
 from nn.learnable_2d_interp_pos_emb import learnable_2d_interp_pos_emb
 from nn.spatial_merge import spatial_merge
+from nn.tpool_patch_merger import (
+    tpool_patch_merger as nn_tpool_patch_merger,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Helpers
@@ -10497,6 +10500,55 @@ struct SpatialMerge:
             grid_thw.to_tile_tensor[DType.int64](),
             Int(hidden_size),
             Int(merge_size),
+            cuda_ctx,
+        )
+
+
+@compiler.register("tpool_patch_merger")
+struct TPoolPatchMerger:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2],
+        input: InputTensor[dtype=dtype, rank=2],
+        grid_thws: InputTensor[dtype = DType.int32, rank=2],
+        kH: Int32,
+        kW: Int32,
+        max_h: Int32,
+        max_w: Int32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "tpool_patch_merger only supported on GPUs"
+
+        var cuda_ctx = ctx.get_device_context()
+
+        var out_tt = output.to_tile_tensor[DType.int64]()
+        var in_tt = input.to_tile_tensor[DType.int64]()
+        var grid_tt = grid_thws.to_tile_tensor[DType.int64]()
+
+        nn_tpool_patch_merger[dtype](
+            TileTensor(
+                out_tt.ptr.unsafe_origin_cast[MutAnyOrigin](),
+                out_tt.layout,
+            ),
+            TileTensor(
+                in_tt.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+                in_tt.layout,
+            ),
+            TileTensor(
+                grid_tt.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+                grid_tt.layout,
+            ),
+            Int(kH),
+            Int(kW),
+            Int(max_h),
+            Int(max_w),
             cuda_ctx,
         )
 
