@@ -363,14 +363,13 @@ def test_apply() raises:
 
 
 def test_count_func() raises:
-    @parameter
-    fn is_2[w: Int](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+    fn is_2[w: Int](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
         return v.eq(2)
 
     var data = Span[Byte]([Byte(0), 1, 2, 1, 2, 1, 2])
-    assert_equal(3, Int(data.count[func=is_2]()))
-    assert_equal(2, Int(data[:-1].count[func=is_2]()))
-    assert_equal(1, Int(data[:3].count[func=is_2]()))
+    assert_equal(3, Int(data.count(is_2)))
+    assert_equal(2, Int(data[:-1].count(is_2)))
+    assert_equal(1, Int(data[:3].count(is_2)))
 
 
 def test_unsafe_subspan() raises:
