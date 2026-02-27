@@ -154,7 +154,7 @@ def _build_and_run_max(
 
 def _assert_close(expected: torch.Tensor, actual: torch.Tensor) -> None:
     rtol = 2e-2
-    atol = 4 * torch.finfo(TORCH_DTYPE).eps
+    atol = 2e-2
     torch.testing.assert_close(
         expected.cpu().float(),
         actual.cpu().float(),

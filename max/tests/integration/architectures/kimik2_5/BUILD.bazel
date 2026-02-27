@@ -10,7 +10,10 @@ package(default_visibility = [
 modular_py_test(
     name = "kimik2_5",
     size = "large",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = ["test_vision_processor.py"],
+    ),
     exec_properties = {
         "test.resources:gpu-memory": "4",
     },
@@ -30,5 +33,22 @@ modular_py_test(
         "//max/python/max/pipelines/architectures",
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_processor",
+    srcs = ["test_vision_processor.py"],
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("av"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )

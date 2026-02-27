@@ -14,6 +14,7 @@ modular_py_library(
         "decord",
     ],
     deps = [
+        requirement("av"),  # For Kimi2.5 video reader
         requirement("huggingface-hub"),  # For Mistral, should we be circumventing the cache here?
         requirement("numpy"),
         requirement("pillow"),
