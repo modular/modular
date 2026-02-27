@@ -517,6 +517,12 @@ def defAlwaysRaises() -> Int:
     # CHECK-NEXT: lit.return [[FALSE]]
     return 0
 
+# CHECK-LABEL: lit.fn @"defCanAlsoRaise()"{{.*}} throws -> i1
+def defCanAlsoRaise() raises Int -> Int:
+    pass
+
+
+
 
 # CHECK-LABEL: lit.fn @"fnThatRaises()"{{.*}} throws -> i1
 fn fnThatRaises() raises -> Int:
@@ -645,6 +651,13 @@ fn call_test_typed_raises_fn() raises Int:
 
     # CHECK: %test_type_of = lit.var.decl {{.*}} : !lit.ref<!String,
     var test_type_of : type_of(test_typed_raises_fn1())
+
+
+# CHECK-LABEL: lit.fn @"test_typed_raises_fn8
+# CHECK-SAME: %__error__: !lit.ref<!Int, mut *"__error__`"> byref_error
+# CHECK-SAME: ) throws -> i1
+def test_typed_raises_fn8() raises Int -> String:
+    pass
 
 fn parametric_raise_example[ErrorType: AnyType](fp: fn () raises ErrorType) raises ErrorType:
     fp()

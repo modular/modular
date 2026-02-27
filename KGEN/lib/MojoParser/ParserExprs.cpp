@@ -1283,15 +1283,13 @@ ParseResult ExprParser::parseSubscriptSuffix(ExprNode *&result,
 
 ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   SMLoc baseLoc = getToken().getLoc();
-
   ParsedParamList paramList;
   ParsedArgumentList fnSignature;
 
   // Parse the function effects from the leading keyword.
   fnSignature.effects.setAsync(consumeIf(Token::kw_async));
   // 'def' implies throws.
-  if (consumeToken().is(Token::kw_def))
-    fnSignature.effects.setThrows();
+  bool isDef = consumeToken().is(Token::kw_def);
 
   // Parameter signature, argument list and the function effects next.
   if (paramList.parseParametersIfPresent(*this,
@@ -1313,6 +1311,10 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   // Parse the result type if present.
   fnSignature.parseResultIfPresent(*this, stmtIndent);
+
+  // If not already specified, 'def' implies raises.
+  if (isDef)
+    fnSignature.effects.setThrows();
 
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
