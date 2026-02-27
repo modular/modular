@@ -14,15 +14,15 @@
 """This module includes utilities for working with the
 tensorcore 5th generation (tcgen05) instructions."""
 
-from os import abort
-from sys import _RegisterPackType, size_of
-from sys._assembly import inlined_assembly
-from sys.info import _has_blackwell_tcgen05
+from std.os import abort
+from std.sys import _RegisterPackType, size_of
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _has_blackwell_tcgen05
 
-from gpu import external_memory
-from gpu.compute.mma import _str_iota  # TODO: move to a string module
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from memory import bitcast
+from std.gpu import external_memory
+from std.gpu.compute.mma import _str_iota  # TODO: move to a string module
+from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from std.memory import bitcast
 
 
 @always_inline("nodebug")

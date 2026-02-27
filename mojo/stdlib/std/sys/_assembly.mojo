@@ -15,11 +15,11 @@
 You can import these APIs from the `sys` package. For example:
 
 ```mojo
-from sys import inlined_assembly
+from std.sys import inlined_assembly
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_slice import _get_kgen_string
 
 from .intrinsics import _mlirtype_is_eq
 
@@ -45,7 +45,7 @@ fn inlined_assembly[
     Example:
 
     ```mojo
-    from sys import inlined_assembly
+    from std.sys import inlined_assembly
 
     # Convert bfloat16 to float32 on NVIDIA GPU using PTX assembly.
     # "$0" is the output (float32), "$1" is the input (int16 bitcast of bf16).

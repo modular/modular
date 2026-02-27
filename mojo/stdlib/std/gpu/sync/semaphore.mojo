@@ -20,7 +20,7 @@ to implement efficient thread synchronization.
 Example:
 
     ```mojo
-    from gpu import Semaphore
+    from std.gpu import Semaphore
 
     var lock = UnsafePointer[Int32](...)
     var sem = Semaphore(lock, thread_id)
@@ -33,7 +33,7 @@ Example:
     ```
 """
 
-from sys import is_nvidia_gpu, llvm_intrinsic
+from std.sys import is_nvidia_gpu, llvm_intrinsic
 
 from ..intrinsics import Scope, load_acquire, store_release
 from .sync import MaxHardwareBarriers, barrier, named_barrier

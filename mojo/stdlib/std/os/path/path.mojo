@@ -16,16 +16,16 @@ file system paths.
 You can import these APIs from the `os.path` package. For example:
 
 ```mojo
-from os.path import isdir
+from std.os.path import isdir
 ```
 """
 
-from collections.string.string_slice import _unsafe_strlen
-from pwd import getpwuid
-from stat import S_ISDIR, S_ISLNK, S_ISREG
-from ffi import MAX_PATH, c_char, external_call, get_errno
-from sys import CompilationTarget
-from sys._libc import realpath as libc_realpath
+from std.collections.string.string_slice import _unsafe_strlen
+from std.pwd import getpwuid
+from std.stat import S_ISDIR, S_ISLNK, S_ISREG
+from std.ffi import MAX_PATH, c_char, external_call, get_errno
+from std.sys import CompilationTarget
+from std.sys._libc import realpath as libc_realpath
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -449,7 +449,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     """Returns the tail section of a path.
 
     ```mojo
-    from os.path import basename
+    from std.os.path import basename
 
     basename("a/path/foo.txt")  # returns "foo.txt"
     ```

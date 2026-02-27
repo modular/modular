@@ -20,22 +20,22 @@ low-level memory operations, interfacing with C code, and building custom data
 structures.
 """
 
-from sys import align_of, is_gpu, is_nvidia_gpu, size_of
-from sys.intrinsics import gather, scatter, strided_load, strided_store
+from std.sys import align_of, is_gpu, is_nvidia_gpu, size_of
+from std.sys.intrinsics import gather, scatter, strided_load, strided_store
 
-from builtin.rebind import downcast
-from builtin.format_int import _write_int
-from builtin.simd import _simd_construction_checks
-from builtin.variadics import Variadic
-from compile import get_type_name
-from format._utils import FormatStruct, Named, TypeNames
-from memory import memcpy
-from memory.memory import _free, _malloc
-from memory import UnsafeMaybeUninit
-from os import abort
-from python import PythonObject
+from std.builtin.rebind import downcast
+from std.builtin.format_int import _write_int
+from std.builtin.simd import _simd_construction_checks
+from std.builtin.variadics import Variadic
+from std.compile import get_type_name
+from std.format._utils import FormatStruct, Named, TypeNames
+from std.memory import memcpy
+from std.memory.memory import _free, _malloc
+from std.memory import UnsafeMaybeUninit
+from std.os import abort
+from std.python import PythonObject
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 
 from .legacy_unsafe_pointer import _default_invariant

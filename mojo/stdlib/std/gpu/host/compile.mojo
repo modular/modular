@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA compilation operations."""
 
-import subprocess
-import tempfile
-from pathlib import Path
-from sys.info import CompilationTarget, _accelerator_arch, _TargetType
+import std.subprocess
+import std.tempfile
+from std.pathlib import Path
+from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
-from compile import CompiledFunctionInfo, compile_info
+from std.compile import CompiledFunctionInfo, compile_info
 
 from .info import A100, GPUInfo
 

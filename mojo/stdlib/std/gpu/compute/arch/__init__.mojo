@@ -34,7 +34,7 @@ unified interface in `gpu.compute.mma` which automatically dispatches to the
 appropriate architecture-specific implementation at compile time:
 
 ```mojo
-from gpu.compute import mma
+from std.gpu.compute import mma
 
 # Automatically dispatches to the correct architecture
 result = mma(a, b, c)

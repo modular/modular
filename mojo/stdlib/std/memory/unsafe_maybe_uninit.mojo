@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.rebind import downcast
-from os import abort
-from memory import memset_zero
+from std.builtin.rebind import downcast
+from std.os import abort
+from std.memory import memset_zero
 
 
 struct UnsafeMaybeUninit[T: AnyType](Copyable, Defaultable):

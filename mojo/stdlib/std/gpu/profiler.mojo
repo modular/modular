@@ -24,17 +24,17 @@ context manager interface. It includes:
 Example:
 
 ```mojo
-from gpu import profiler
+from std.gpu import profiler
     with profiler.ProfileBlock("my_kernel"):
         # Code to profile
         run_gpu_kernel()
 ```
 """
 
-from io.io import _printf
-from time import perf_counter_ns
+from std.io.io import _printf
+from std.time import perf_counter_ns
 
-from reflection import call_location, SourceLocation
+from std.reflection import call_location, SourceLocation
 
 
 @fieldwise_init

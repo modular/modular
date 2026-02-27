@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import c_int, external_call
-from sys.info import CompilationTarget, platform_map
+from std.ffi import c_int, external_call
+from std.sys.info import CompilationTarget, platform_map
 
 
 fn _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
@@ -70,8 +70,8 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
 
     Example:
         ```mojo
-        import os
-        from ffi import get_errno, set_errno, ErrNo
+        import std.os
+        from std.ffi import get_errno, set_errno, ErrNo
 
         try:
             _ = os.path.realpath("non-existent-file")

@@ -32,7 +32,7 @@ grid and the current thread, including block dimensions, block index in the grid
 and thread index. Import these directly from `gpu`:
 
 ```mojo
-from gpu import block_dim, block_idx, thread_idx, global_idx
+from std.gpu import block_dim, block_idx, thread_idx, global_idx
 ```
 
 For an example of launching a GPU kernel from a MAX custom operation, see the

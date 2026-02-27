@@ -24,9 +24,9 @@ Supported operations:
 Reference: https://docs.nvidia.com/cuda/parallel-thread-execution/
 """
 
-from sys import _RegisterPackType, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from memory import bitcast
+from std.sys import _RegisterPackType, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.memory import bitcast
 
 # Import helper functions from parent module
 from ..mma import _has_type, _has_shape, _unsupported_mma_op

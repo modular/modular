@@ -26,10 +26,13 @@ The module is designed for performance-critical code and requires careful usage 
 achieve optimal memory access patterns and cache utilization.
 """
 
-from collections.optional import Optional, OptionalReg
-from collections.string import StaticString
-from collections.string.string_slice import _get_kgen_string, get_static_string
-from sys import (
+from std.collections.optional import Optional, OptionalReg
+from std.collections.string import StaticString
+from std.collections.string.string_slice import (
+    _get_kgen_string,
+    get_static_string,
+)
+from std.sys import (
     align_of,
     bit_width_of,
     is_apple_gpu,
@@ -39,21 +42,21 @@ from sys import (
     llvm_intrinsic,
     size_of,
 )
-from sys._assembly import inlined_assembly
-from sys.info import (
+from std.sys._assembly import inlined_assembly
+from std.sys.info import (
     CompilationTarget,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
     is_apple_gpu,
 )
-from sys.intrinsics import _RegisterPackType
+from std.sys.intrinsics import _RegisterPackType
 
-from builtin.dtype import _uint_type_of_width
-from memory.pointer import AddressSpace, GPUAddressSpace
-from memory.unsafe import bitcast
+from std.builtin.dtype import _uint_type_of_width
+from std.memory.pointer import AddressSpace, GPUAddressSpace
+from std.memory.unsafe import bitcast
 
-from utils import IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.utils import IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
 from .._utils import (
     to_i16,
@@ -2516,7 +2519,7 @@ fn multimem_st[
     Example:
 
     ```mojo
-    from gpu.memory.memory import *
+    from std.gpu.memory.memory import *
 
     # Store 2 float32 values to multimem address.
     multimem_st[DType.float32, count=2, scope=Scope.CTA, consistency=Consistency.RELAXED](

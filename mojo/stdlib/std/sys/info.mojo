@@ -15,14 +15,14 @@
 You can import these APIs from the `sys` package. For example:
 
 ```mojo
-from sys import CompilationTarget
+from std.sys import CompilationTarget
 
 print(CompilationTarget.is_x86())
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string
-from .ffi import _external_call_const, external_call
+from std.collections.string.string_slice import _get_kgen_string
+from std.ffi import _external_call_const, external_call
 
 comptime _TargetType = __mlir_type.`!kgen.target`
 
@@ -880,7 +880,7 @@ fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
 
     Example:
     ```mojo
-    from sys.info import size_of
+    from std.sys.info import size_of
     def main():
         print(
             size_of[UInt8]() == 1,

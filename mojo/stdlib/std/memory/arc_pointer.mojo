@@ -15,19 +15,19 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory import ArcPointer
+from std.memory import ArcPointer
 ```
 """
 
-from os.atomic import Atomic, Consistency, fence
-from sys.info import size_of
-from format._utils import (
+from std.os.atomic import Atomic, Consistency, fence
+from std.sys.info import size_of
+from std.format._utils import (
     Repr,
     FormatStruct,
     TypeNames,
     constrained_conforms_to_writable,
 )
-from builtin.constrained import _constrained_conforms_to
+from std.builtin.constrained import _constrained_conforms_to
 
 
 struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
@@ -101,7 +101,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     Examples:
 
     ```mojo
-    from memory import ArcPointer
+    from std.memory import ArcPointer
     var p = ArcPointer(4)
     var p2 = p
     p2[]=3
@@ -146,7 +146,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         ### Example
 
         ```mojo
-        from memory import ArcPointer
+        from std.memory import ArcPointer
 
         var initial_arc = ArcPointer[Int](42)
         var raw_ptr = initial_arc^.steal_data()

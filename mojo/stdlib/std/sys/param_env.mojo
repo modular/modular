@@ -16,7 +16,7 @@ You can use these functions to set parameter values or runtime constants based o
 name-value pairs defined on the command line. For example:
 
 ```mojo
-  from sys import is_defined
+  from std.sys import is_defined
 
   comptime float_type = DType.float32 if is_defined["FLOAT32"]() else DType.float64
 
@@ -36,11 +36,11 @@ The `mojo run` command also supports the `-D` option.
 You can import these APIs from the `sys` package. For example:
 
 ```mojo
-from sys import is_defined
+from std.sys import is_defined
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_slice import _get_kgen_string
 
 
 fn is_defined[name: StaticString]() -> Bool:
@@ -144,7 +144,7 @@ fn env_get_int[name: StaticString, default: Int]() -> Int:
 
     Example:
     ```mojo
-    from sys.param_env import env_get_int
+    from std.sys.param_env import env_get_int
 
     def main():
         comptime number = env_get_int[

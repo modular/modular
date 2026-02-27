@@ -31,7 +31,7 @@ NVIDIA PTX: https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#wa
 AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
-from sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
+from std.sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
 
 
 @always_inline

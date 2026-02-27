@@ -16,23 +16,23 @@
 You can import these APIs from the `memory` module. For example:
 
 ```mojo
-from memory import Span
+from std.memory import Span
 ```
 """
-from builtin.builtin_slice import ContiguousSlice
-from reflection import call_location
-from bit._mask import splat
-from bit import pop_count
-from memory import pack_bits, uninit_copy_n
-from collections._index_normalization import normalize_index
-from builtin.rebind import downcast
-from sys import align_of
-from sys.info import simd_width_of
+from std.builtin.builtin_slice import ContiguousSlice
+from std.reflection import call_location
+from std.bit._mask import splat
+from std.bit import pop_count
+from std.memory import pack_bits, uninit_copy_n
+from std.collections._index_normalization import normalize_index
+from std.builtin.rebind import downcast
+from std.sys import align_of
+from std.sys.info import simd_width_of
 
-from algorithm import vectorize
-from builtin.device_passable import DevicePassable
-from compile import get_type_name
-import format._utils as fmt
+from std.algorithm import vectorize
+from std.builtin.device_passable import DevicePassable
+from std.compile import get_type_name
+import std.format._utils as fmt
 
 
 # ===-----------------------------------------------------------------------===#

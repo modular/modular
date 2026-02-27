@@ -15,13 +15,13 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory import OwnedPointer
+from std.memory import OwnedPointer
 ```
 """
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast, trait_downcast
-from format._utils import (
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast, trait_downcast
+from std.format._utils import (
     Repr,
     FormatStruct,
     TypeNames,

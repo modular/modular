@@ -15,15 +15,15 @@
 Example:
 
 ```mojo
-from os import Process
-from collections import List
+from std.os import Process
+from std.collections import List
 _ = Process.run("echo", ["== TEST_ECHO"])
 ```
 """
-from collections import List, Optional
-from collections.string import StringSlice
-from sys import CompilationTarget
-from sys._libc import (
+from std.collections import List, Optional
+from std.collections.string import StringSlice
+from std.sys import CompilationTarget
+from std.sys._libc import (
     waitpid,
     posix_spawnp,
     kill,
@@ -35,8 +35,8 @@ from sys._libc import (
     close,
     WaitFlags,
 )
-from ffi import c_char, c_int, c_pid_t, get_errno
-from sys.os import abort, sep
+from std.ffi import c_char, c_int, c_pid_t, get_errno
+from .os import abort, sep
 
 
 # ===----------------------------------------------------------------------=== #
