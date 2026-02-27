@@ -253,9 +253,11 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
             )
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
+        self,
+        kv_inputs_flat: Sequence[Value[Any]],
+        kv_params: KVCacheParamInterface | None = None,
     ) -> list[PagedCacheValues]:
-        kv_params = self.get_kv_params(
+        kv_params = kv_params or self.get_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
