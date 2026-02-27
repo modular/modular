@@ -119,7 +119,7 @@ fn definesParamRefClosure[T: Coordinate & ImplicitlyCopyable](value: T):
     usesParamRefClosure[T, type_of(closureImpl)](closureImpl, value)
 
 
-def main():
+def main() raises:
     var one = atol(argv()[1])
     var four = atol(argv()[2])
     # CHECK: 8

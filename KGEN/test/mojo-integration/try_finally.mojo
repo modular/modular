@@ -9,7 +9,7 @@
 from collections.string import StaticString
 
 
-def try_it(c0: Bool, c1: Bool) -> StaticString:
+def try_it(c0: Bool, c1: Bool) raises -> StaticString:
     try:
         try:
             print("try")
@@ -48,13 +48,13 @@ fn with_no_throw() -> Int:
         return 1
 
 
-def with_it() -> Int:
+def with_it() raises -> Int:
     # CHECK-NOT: warning: 'except' logic is unreachable, try doesn't raise an exception
     with MyCtxtMgr():
         return 2
 
 
-def with_it_err(handle: Bool) -> Int:
+def with_it_err(handle: Bool) raises -> Int:
     with MyCtxtMgr(handle):
         raise Error()
     return 3
@@ -141,7 +141,7 @@ fn raising_finally_no_use_of_uninit():
         return
 
 
-def main():
+def main() raises:
     # CHECK-LABEL: == try-finally
     print("== try-finally")
     # CHECK-NEXT: try

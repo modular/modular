@@ -85,12 +85,12 @@ fn tryFinally():
         pass
 
 
-def maybeRaises() -> Int:
+def maybeRaises() raises -> Int:
     return 0
 
 
 # CHECK-LABEL: lit.fn @"propagateErrorInDef
-def propagateErrorInDef():
+def propagateErrorInDef() raises:
     # CHECK: %a = lit.var.decl "a"
     # CHECK: lit.call {{.*}}maybeRaises{{.*}}(%__error__, %a)
     a = maybeRaises()
@@ -117,14 +117,14 @@ fn propagateErrorInTry():
 
 
 # CHECK-LABEL: lit.fn @"raiseError
-def raiseErrorInDef():
+def raiseErrorInDef() raises:
     # CHECK: lit.call {{.*}}@Error::@"__init__{{.*}}(%__error__)
     # CHECK-NEXT: lit.raise
     raise Error()
 
 
 # CHECK-LABEL: lit.fn @"raiseErrorInIf
-def raiseErrorInIf(cond: Bool):
+def raiseErrorInIf(cond: Bool) raises:
     # CHECK: hlcf.elif
     if cond:
         # CHECK: lit.call {{.*}}@Error::@"__init__{{.*}}(%__error__)
@@ -206,3 +206,4 @@ fn fail_register_raises() raises -> Int:
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
     # CHECK-NEXT: lit.return [[FALSE]]
     return fail_register()
+

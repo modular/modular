@@ -49,7 +49,7 @@ fn use_resource_typed(name: String, should_fail: Bool) raises ResourceError:
 # CHECK-NEXT: Working with network...
 # CHECK-NEXT: Releasing resource: network (typed error)
 # CHECK-NEXT: Continued after suppressed error
-def main():
+def main() raises:
     with TypedResourceGuard("network", suppress_errors=True):
         print("Working with network...")
         use_resource_typed("network", should_fail=True)

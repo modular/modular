@@ -288,7 +288,7 @@ fn fn_raises_with_return_type(x: Int) raises -> Int:
     """
     return 0
 
-def def_implicit_return_type(x: Int):
+def def_implicit_return_type(x: Int) raises:
     """This is a `def` function with no explicit return type.
 
     Args:
@@ -357,3 +357,4 @@ fn _fn_with_params[x: Int](s: _AutoParamTest):
 # These mangled names should NOT require documentation.
 comptime AliasWithAutoParams = _fn_with_params[1]
 """This alias has compiler-generated autoparams that should be ignored."""
+

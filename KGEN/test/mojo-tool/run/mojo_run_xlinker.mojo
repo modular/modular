@@ -15,5 +15,5 @@
 # CHECK: hello, world
 
 
-def main():
+def main() raises:
     print("hello, world")

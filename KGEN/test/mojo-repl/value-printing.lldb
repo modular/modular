@@ -132,3 +132,4 @@ var s3 = String()
 # CHECK:   (Int) [2] = 4
 # CHECK: }
 var even = [idx for idx in range(5) if idx % 2 == 0]
+

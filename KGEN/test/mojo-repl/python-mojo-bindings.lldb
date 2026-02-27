@@ -42,3 +42,4 @@ print(420)
 
 # CHECK: 420
 # CHECK-NOT: (PythonObject)
+

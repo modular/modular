@@ -22,3 +22,4 @@ var bigValue = SIMD[DType.float32, 64]()
 var `^ weird name` = 12
 
 # CHECK: (Int) ^ weird name = 12
+

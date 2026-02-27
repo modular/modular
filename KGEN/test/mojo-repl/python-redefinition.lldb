@@ -21,3 +21,4 @@ def foo():
 # CHECK-DAG: (PythonObject) foo
 # CHECK-DAG: (PythonObject) module
 # CHECK-DAG: (PythonObject) num
+

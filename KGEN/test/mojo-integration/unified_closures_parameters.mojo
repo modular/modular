@@ -64,7 +64,7 @@ fn captureIt(p: Parameter[...]):
     takeIt(closure)
 
 
-def main():
+def main() raises:
     var num = atol(argv()[1])
     var str = argv()[2]
     var p1 = Parameter[base=String](str)

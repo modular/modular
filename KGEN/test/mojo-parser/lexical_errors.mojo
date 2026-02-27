@@ -14,7 +14,7 @@
 struct Issue4181IndentWeirdness[dt: DType]:
   var b : Int
     # expected-error @+1 {{definition isn't on its own line at the correct indentation}}
-    def f():
+    def f() raises:
       pass
 
 # Failed to parse due to indentation.
@@ -65,3 +65,4 @@ fn m # expected-error {{expected '(' for argument list}}
 # Issue #6909
 # expected-error @below {{invalid comptime declaration: expected an identifier or '_'}}
 comptime True = 42
+

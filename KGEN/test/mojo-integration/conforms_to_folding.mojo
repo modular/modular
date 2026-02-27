@@ -18,7 +18,7 @@ struct ConditionalArraySize[T: AnyType]:
         self.array = {fill = 0}
 
 
-def generic(conditional: ConditionalArraySize):
+def generic(conditional: ConditionalArraySize) raises:
     print(conditional.array.size)
 
 
@@ -36,7 +36,7 @@ struct ConditionalValueType[T: AnyType]:
         self.value = {}
 
 
-def main():
+def main() raises:
     comptime IsImplicitlyCopyable: AnyType = Int
     comptime IsNotImplicitlyCopyable: AnyType = List[Int]
 

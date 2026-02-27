@@ -15,7 +15,7 @@ fn param_fn[x: Int, y: Int]() -> Int:
     return x + y
 
 
-def main():
+def main() raises:
     # intentionally missing one parameter
     comptime myInstantiatedFn = param_fn[2]
     print(compile_info[myInstantiatedFn]())

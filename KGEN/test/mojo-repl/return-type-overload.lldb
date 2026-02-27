@@ -27,3 +27,4 @@ fn bar(f: Float32) -> Float32:
 
 # CHECK: 1.11{{[0-9]+}}
 print(bar(True))
+

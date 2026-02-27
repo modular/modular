@@ -82,7 +82,7 @@ fn exported_function():
     a_closure()
 
 
-def def_function() -> Int:
+def def_function() raises -> Int:
     return 120
 
 

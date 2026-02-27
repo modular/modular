@@ -131,7 +131,7 @@ fn test_var_decl_patterns(cond: Bool):
   y = (var 42) # expected-error {{'var' patterns are only valid on the left side of an assignment}}
 
 import builtin
-def test_member_access():
+def test_member_access() raises:
     # MOCO-2006: This crashed because it was trying to synthesize the vardecl in
     # the package.
     # expected-error @+1 {{dynamic type values not permitted yet}}
@@ -141,7 +141,7 @@ def test_member_access():
 # Conversions
 ##===----------------------------------------------------------------------===##
 
-def invalid_conversion(a: Int):
+def invalid_conversion(a: Int) raises:
   var b: __mlir_type.index = a # expected-error {{implicitly convert 'Int' value to '__mlir_type.index' in 'var' initializer}}
 
   # expected-error @+1 {{cannot construct type '__mlir_type.index'}}
@@ -239,7 +239,7 @@ struct LValuesRvalues:
 
   def normalMethod(self): pass
   # expected-note @+1 {{function declared here}}
-  def mutatingMethod(mut self) -> None: pass
+  def mutatingMethod(mut self) raises -> None: pass
   # expected-note @+1 {{function declared here}}
   def takesByRef(self, mut x: LValuesRvalues): pass
 
@@ -257,7 +257,7 @@ struct NonCopyable:
 
 fn generic_on_type_ok[T: TrivialRegisterPassable](): pass
 
-def testLValuesRvalues() -> None:
+def testLValuesRvalues() raises -> None:
   # Test with lvalues
   var lv: LValuesRvalues
   lv.normalMethod()
@@ -333,14 +333,14 @@ fn unused_values():
   except e:
     pass
 
-def unused_values2():
+def unused_values2() raises:
   # No warning.
   getPythonObject()
 
   # expected-warning @+1 {{'Int' value is unused}}
   4+1
 
-def no_unused_values_in_def():
+def no_unused_values_in_def() raises:
   var x : Int = 42
   4+4  # expected-warning {{'Int' value is unused}}
   x    # expected-warning {{'Int' value is unused}}
@@ -415,11 +415,11 @@ fn bad_tuple(a: Int):
   iTup = (1, 2.0)
 
 
-def tuple_return() -> Int:
+def tuple_return() raises -> Int:
   # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, Int]' value to 'Int'}}
   return 32, 17
 
-def tuple_pattern(a: Int):
+def tuple_pattern(a: Int) raises:
   # expected-error @+1 {{cannot unpack value of type 'Int' into 2 values}}
   (b, c) = a
 
@@ -529,13 +529,13 @@ fn bad_exprs(cond: Bool, x: Error, c1: Conv1, c2: Conv2):
   # expected-note @below {{or cast the right value to 'Conv1'}}
   _ = c1 if cond else c2
 
-def bad_assignment0():
+def bad_assignment0() raises:
    var a: Int
    var b: Int
    # expected-error @+1 {{cannot implicitly convert 'None' value to 'Int'}}
    a = b += b
 
-def bad_assignment1(a: Int, b: Int):
+def bad_assignment1(a: Int, b: Int) raises:
    # expected-error @+1 {{expected ')' in parenthesized expression}}
    a = (b += b)
 
@@ -560,12 +560,12 @@ async fn async_function() -> Int:
     return 0
 
 # See Issue #15578
-def doIs(a: Int, b: Int):
+def doIs(a: Int, b: Int) raises:
   # expected-error @+1 {{'Int' does not implement the '__is__' method}}
   if a is b:
     pass
 
-def doIsNot(a: Int, b: Int):
+def doIsNot(a: Int, b: Int) raises:
   # expected-error @+1 {{'Int' does not implement the '__isnot__' method}}
   if a is not b:
     pass
@@ -634,15 +634,15 @@ fn type_subscript(t0 : t):
 # lambda not supported yet
 ##===----------------------------------------------------------------------===##
 
-def testLambda():
+def testLambda() raises:
   # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
   _ = lambda x, y: x+y
 
-def testLambda2():
+def testLambda2() raises:
   # expected-error @+1 {{Mojo doesn't support lambda expressions yet}}
   _ = lambda (x: Int, y: Float64) raises: x+y
 
-def testInExpr(x: Int, y: Int):
+def testInExpr(x: Int, y: Int) raises:
   # expected-error @+1 {{'Int' does not implement the '__contains__' method}}
   _ = x in y
   # expected-error @+1 {{'Int' does not implement the '__contains__' method}}
@@ -1117,3 +1117,4 @@ comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B]
 fn take_anytype[T: AnyType]():
   # expected-error @below {{'take_anytype' parameter 'T' has 'AnyType' type, but value has type '[B: Int] AnyStruct[TwoParamsType[B, ?]]'}}
     take_anytype[TwoParamsTypeAlias]()
+

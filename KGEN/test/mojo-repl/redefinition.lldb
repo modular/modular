@@ -33,3 +33,4 @@ fn xoo() -> Struct:
     return Struct()
 var abc = xoo()
 # CHECK: (Struct) abc =
+

@@ -33,5 +33,5 @@ fn test_fixit[T: AnyType](a: T):
     _ = __origin_of(a)
 
 
-def main():
+def main() raises:
     test_fixit(1)

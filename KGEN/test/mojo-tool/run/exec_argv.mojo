@@ -10,7 +10,7 @@
 from sys import argv
 
 
-def main():
+def main() raises:
     # NO_ARGS: exec_argv.mojo
 
     # ARGS: exec_argv.mojo

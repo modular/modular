@@ -12,7 +12,7 @@ from test_binary_package.inner1.myfile import print10
 from test_binary_package.inner1 import myfile_copy
 
 
-def main():
+def main() raises:
     # CHECK: 10
     # CHECK: 10
     print10()

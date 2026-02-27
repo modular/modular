@@ -240,7 +240,7 @@ fn test_while(a: Bool, b: Bool) -> Bool:
 
 
 # CHECK-LABEL: lit.fn @"test_else_outside_while
-def test_else_outside_while(a: Bool, b: Bool) -> Bool:
+def test_else_outside_while(a: Bool, b: Bool) raises -> Bool:
     # CHECK: hlcf.elif {
     # CHECK:   hlcf.elif.yield
     # CHECK: } then {
@@ -264,7 +264,7 @@ def test_else_outside_while(a: Bool, b: Bool) -> Bool:
 
 
 # CHECK-LABEL: lit.fn @"test_break_continue_inside_while
-def test_break_continue_inside_while(a: Bool) -> Bool:
+def test_break_continue_inside_while(a: Bool) raises -> Bool:
     # CHECK: lit.loop {
     # CHECK:   [[V1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__({{.*}}Bool)"(%a)
     while a:
@@ -288,7 +288,7 @@ def test_break_continue_inside_while(a: Bool) -> Bool:
 
 
 # CHECK-LABEL: lit.fn @"test_early_return
-def test_early_return():
+def test_early_return() raises:
     # CHECK:  hlcf.elif {
     # CHECK:    hlcf.elif.yield
     # CHECK:  } then {
@@ -315,7 +315,7 @@ def test_early_return():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"pass
-def `pass`():
+def `pass`() raises:
     pass
     # CHECK: lit.end_fn
 
@@ -490,7 +490,7 @@ fn induction_var_scope():
         var g = item
 
 # CHECK-LABEL: @"induction_var_scope_def()"
-def induction_var_scope_def():
+def induction_var_scope_def() raises:
     # CHECK: lit.loop {
     for item in IterRange(0):
         # CHECK: __next__
@@ -524,3 +524,4 @@ fn weird_llvm_dialect_op():
 #  var result = 0
 #  for i in iterable:
 #    result += i
+

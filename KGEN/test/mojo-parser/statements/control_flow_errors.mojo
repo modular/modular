@@ -10,7 +10,7 @@
 # Return
 ##===----------------------------------------------------------------------===##
 
-def foo():
+def foo() raises:
 # expected-error @+1 {{unexpected token in expression}}
   return pass
 
@@ -20,7 +20,7 @@ return 32 # expected-error {{cannot return from this context}}
 # If / While
 ##===----------------------------------------------------------------------===##
 
-def elif_parse_error(a: Bool):
+def elif_parse_error(a: Bool) raises:
   if a:
     pass
  elif a: # expected-error {{unknown tokens at the end of a declaration}}
@@ -32,7 +32,7 @@ struct NotBoolConvertible:
   fn __init__(out self, *, copy: Self):
     pass
 
-def test_bool_context(a: NotBoolConvertible):
+def test_bool_context(a: NotBoolConvertible) raises:
   if a: # expected-error {{NotBoolConvertible' does not implement the '__bool__' method}}
      pass
 
@@ -125,7 +125,7 @@ struct ListValueStringRef:
     fn __next__(mut self) raises StopIteration -> ref [self] String: pass
 
 
-def loop_variable_scoped():
+def loop_variable_scoped() raises:
   for i in ListValueInt():
      i = i   # expected-error {{expression must be mutable in assignment}}
   _ = i # expected-error {{use of unknown declaration 'i'}}
@@ -149,13 +149,13 @@ struct ExampleCM(Movable):
   fn __exit__(self, err: Error) -> Bool:
     return True # Raise
 
-def withUsingImmutableVariable(var a: ExampleCM):
+def withUsingImmutableVariable(var a: ExampleCM) raises:
   var x = 77
   with a^ as x:
     pass
 
 # External Issue #529 https://github.com/modular/mojo/issues/529
-def withWithNoColon(var a: ExampleCM):
+def withWithNoColon(var a: ExampleCM) raises:
   # expected-error @below {{expected ':' or ',' after 'with' expression}}
   with a^ as b
 
@@ -205,3 +205,4 @@ fn noIndentError():
     # expected-error @+1 {{value passed to 'self' cannot be converted from type value 'MyBool' to an instance of 'MyBool'; did you mean to instantiate 'MyBool'?}}
     if MyBool: # no error 'statements must start at the beginning of a line' should be printed
       pass
+

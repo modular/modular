@@ -24,5 +24,5 @@ fn no_fixits_needed():
     pass
 
 
-def main():
+def main() raises:
     no_fixits_needed()

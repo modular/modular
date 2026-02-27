@@ -25,7 +25,7 @@ fn issue1242():
 @invalid_dec # expected-error {{use of unknown declaration 'invalid_dec'}}
 def unknown_decorator(): pass
 
-fn decorator_on_statements():
+fn decorator_on_statements() raises:
     @invalid_dec
     var decorated_var: Int  # expected-error {{'var' statement in function body does not allow decorators}}
 
@@ -104,7 +104,7 @@ struct HasBadStaticMethod:
 # ===----------------------------------------------------------------------=== #
 
 @no_inline()  # expected-error {{'@no_inline' cannot have arguments}}
-fn bad_no_inline_1():
+fn bad_no_inline_1() raises:
     pass
 
 @no_inline("abc")  # expected-error {{'@no_inline' cannot have arguments}}
@@ -178,32 +178,32 @@ fn deprecated_implicit_conversion():
 
 # expected-error @+1 {{@export requires a string specifying the name of the exported symbol}}
 @export(1)
-def export_me():
+def export_me() raises:
   ...
 
 # expected-note @+1 {{previous export here}}
 @export("my_foo")
-def foo():
+def foo() raises:
   ...
 
 # expected-error @+1 {{invalid re-export of my_foo}}
 @export("my_foo")
-def bar():
+def bar() raises:
   ...
 
 # expected-error @+1 {{my+foo is not a valid C identifier}}
 @export("my+foo", ABI="C")
-def bad_name():
+def bad_name() raises:
   ...
 
 # expected-note @+1 {{previous export here}}
 @export
-def func_overloaded(x: Int):
+def func_overloaded(x: Int) raises:
   ...
 
 # expected-error @+1 {{invalid re-export of func_overloaded}}
 @export
-def func_overloaded(x: Bool):
+def func_overloaded(x: Bool) raises:
   ...
 
 
@@ -353,3 +353,4 @@ trait DeprecatedRPTrait:
 @register_passable
 struct DeprecatedRPStruct:
     pass
+

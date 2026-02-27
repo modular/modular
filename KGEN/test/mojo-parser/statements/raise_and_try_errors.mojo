@@ -11,7 +11,7 @@
 ##===----------------------------------------------------------------------===##
 
 
-def raisingFunction():
+def raisingFunction() raises:
     pass
 
 
@@ -64,3 +64,4 @@ fn origin_scope_example():
         raises_arg(String())
     except e3:
         _ = e3[]  # isn't valid.
+

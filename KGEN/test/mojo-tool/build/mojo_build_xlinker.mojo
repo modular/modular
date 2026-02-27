@@ -26,6 +26,7 @@
 
 from ffi import external_call
 
+
 # CHECK: hello from foo: 0
-def main():
+def main() raises:
     external_call["foo", NoneType](0)

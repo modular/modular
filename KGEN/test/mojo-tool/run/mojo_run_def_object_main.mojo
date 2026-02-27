@@ -7,6 +7,6 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-def main():
+def main() raises:
     # CHECK: ok
     print("ok")

@@ -9,6 +9,6 @@
 from sys import env_get_bool
 
 
-def main():
+def main() raises:
     # CHECK: True
     print(env_get_bool["VAR", False]())

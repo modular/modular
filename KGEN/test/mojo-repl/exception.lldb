@@ -11,3 +11,4 @@
 # CHECK: oopsy woopsy
 var message = "oopsy" + " woopsy"
 raise Error(message)
+

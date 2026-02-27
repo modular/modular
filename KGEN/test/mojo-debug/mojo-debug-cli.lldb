@@ -57,3 +57,4 @@
 # COM: Check that --help overrides unknown arguments
 # RUN: mojo debug --help --cusa-gdb | FileCheck %s --check-prefix=CHECK-HELP-OVERRIDES-UNKNOWN
 # CHECK-HELP-OVERRIDES-UNKNOWN: mojo debug
+

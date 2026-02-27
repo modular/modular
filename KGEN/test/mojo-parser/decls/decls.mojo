@@ -510,7 +510,7 @@ fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
 
 
 # CHECK-LABEL: lit.fn @"defAlwaysRaises()"[{{.*}}](?, %__error__: {{.*}}, %__result__: {{.*}}) throws -> i1 attributes {def
-def defAlwaysRaises() -> Int:
+def defAlwaysRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
     # CHECK: lit.ref.store [[RESULT]], %__result__
     # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
@@ -700,7 +700,7 @@ struct CutDownDict[V: Copyable]:
     fn __getitem__(ref self) raises StringLiteral["foo".value] -> ref [self] Self.V:
         pass
 
-def test_cut_down_dict():
+def test_cut_down_dict() raises:
     var dict: CutDownDict[Int]
     ptr = Pointer(to=dict[])
     ptr[] = 17 # should be mutable.
@@ -1277,7 +1277,7 @@ struct SomeParamStruct[c_param: Int]:
 @export("my_named_export", ABI="C")
 # CHECK: lit.fn export C @"export_me()"
 # CHECK-SAME: linkageName = "my_named_export"
-def export_me() -> None:
+def export_me() raises -> None:
     ...
 
 
@@ -1592,3 +1592,4 @@ struct BinStruct[x: Int, y: Int where bin_pred(x, y)]:
     # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#BinStruct
     fn get_with_z[z: Int where bin_pred(Self.x, z)](self) -> BinStruct[Self.xx, z]:
         return {}
+

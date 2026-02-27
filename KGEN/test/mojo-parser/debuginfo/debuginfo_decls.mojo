@@ -35,7 +35,7 @@ fn testAlwaysInlineNoDebug():
 
 
 # CHECK-LABEL: lit.fn @"testImplicitVarDeclScope
-def testImplicitVarDeclScope():
+def testImplicitVarDeclScope() raises:
     # CHECK-DAG: lit.var.decl "outer" {{.*}} loc(#[[LOC_OUTER:.+]])
     # CHECK-DAG: lit.var.decl "inner" {{.*}} loc(#[[LOC_INNER:.+]])
     outer = 8
@@ -46,7 +46,7 @@ def testImplicitVarDeclScope():
 # CHECK-LABEL: lit.fn @"testImplicitVarDeclScopeNoDebug
 # CHECK-SAME: always_inline_no_debug
 @always_inline("nodebug")
-def testImplicitVarDeclScopeNoDebug():
+def testImplicitVarDeclScopeNoDebug() raises:
     # CHECK-DAG: lit.var.decl "inner" {{.*}} loc(#[[LOC_INNER_NODEBUG:.+]])
     if True:
         inner = 5
@@ -74,3 +74,4 @@ fn param_where_clause[x: Int where x]():
 
 # COM: Make sure this is a FileLineColLoc and not a FusedLoc.
 # CHECK-DAG: #[[LOC_WHERE_PARAM]] = loc("{{.*}}":{{[0-9]+}}:{{[0-9]+}})
+

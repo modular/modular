@@ -191,7 +191,7 @@ fn testLazyConformanceSuperset[BB: Coord & Euclidean](arg: BB):
     superset[BB, BB, type_of(closure)](closure, arg)
 
 
-def main():
+def main() raises:
     var one = atol(argv()[1])
     var two = atol(argv()[2])
     var three = atol(argv()[3])

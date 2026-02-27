@@ -12,3 +12,4 @@ fn testFn() raises -> String:
 var example = testFn()
 # CHECK: Hello
 print(example)
+

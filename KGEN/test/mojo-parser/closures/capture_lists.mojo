@@ -153,12 +153,12 @@ fn testOnce(x: MyCopyableType):
 
 # COM: Trailing commas are supported
 
-def callIt(x: String, x1: String, x2: String, x3: String, x4: String):
+def callIt(x: String, x1: String, x2: String, x3: String, x4: String) raises:
     pass
 
 
 @no_inline
-def takeIt[T: def () unified -> None](impl: T):
+def takeIt[T: def () unified -> None](impl: T) raises:
     impl()
 
 
@@ -170,7 +170,7 @@ def longCaptureLists(
     mut something3: String,
     mut something4: String,
     mut something5: String,
-):
+) raises:
     # CHECK: lit.closure.init
     def closure() unified {
         var something,
@@ -182,3 +182,4 @@ def longCaptureLists(
         callIt(something, something2, something3, something4, something5)
 
     takeIt(closure)
+

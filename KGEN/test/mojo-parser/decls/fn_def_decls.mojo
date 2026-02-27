@@ -140,7 +140,7 @@ struct ValueWithTypeWithParametricSelf:
 # CHECK-LABEL: test_def_arg_box_mbvalue
 def test_def_arg_box_mbvalue(
     a: TypeWithParametricSelf, b: ValueWithTypeWithParametricSelf
-):
+) raises:
     # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}method{{.*}}(%a)
     # CHECK-NEXT: %xyz = lit.var.decl "xyz"
     # CHECK-NEXT: lit.ref.store [[TMP]], %xyz
@@ -157,7 +157,7 @@ fn returnsMultiple() -> Tuple[Int, MemoryOnly]:
 
 # MOCO-687: Unable to destructure multiple outputs in a def function without explicit var declarations
 # CHECK-LABEL: test_multi_tuple_def_value
-def test_multi_tuple_def_value():
+def test_multi_tuple_def_value() raises:
     # CHECK: %b = lit.var.decl "b"
     # CHECK: %a = lit.var.decl "a"
     a, b = returnsMultiple()
@@ -170,7 +170,7 @@ fn ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
 
 
 # CHECK-LABEL: lit.fn @"def_ref_result
-def def_ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
+def def_ref_result(mut x: MemoryOnly) raises -> ref [x] MemoryOnly:
     # CHECK-NEXT: lit.ref.store %x, %__result__
     # CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
     # CHECK-NEXT: lit.return %0
@@ -178,7 +178,7 @@ def def_ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
 
 
 # CHECK-LABEL: lit.fn @"use_ref_result
-def use_ref_result():
+def use_ref_result() raises:
     # CHECK-NEXT: %a = lit.var.decl "a"
     # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}(%a)
     var a = MemoryOnly()
@@ -195,7 +195,7 @@ def use_ref_result():
 
 
 # CHECK-LABEL: lit.fn @"return_def_arg_box
-def return_def_arg_box(abc: MemoryOnly) -> ref [abc] MemoryOnly:
+def return_def_arg_box(abc: MemoryOnly) raises -> ref [abc] MemoryOnly:
     # CHECK-NEXT: lit.ref.store %abc, %__result__
     return abc
 
@@ -259,3 +259,4 @@ fn foldable_param_requires_2[
     y: Int where y > 10 = 11
 ]():
     pass
+

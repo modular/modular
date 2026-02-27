@@ -55,7 +55,7 @@ fn test_rhs_inference():
 
 
 # CHECK-LABEL: lit.fn @"test_var_decl_patterns
-def test_var_decl_patterns(c: Bool):
+def test_var_decl_patterns(c: Bool) raises:
     # CHECK-NEXT: lit.call {{.*}}marker
     marker()
 
@@ -255,7 +255,7 @@ fn lifetime_of(x: Unmovable, y: Unmovable, mut z: Unmovable):
     # CHECK-NEXT: lit.alias.decl *"lt4{{.*}}:origin<0> {*"x`", (mutcast mut *"z`2")}>>
     comptime lt4 = origin_of(x, z)
 
-def take_string_var(var x: String, y: String):
+def take_string_var(var x: String, y: String) raises:
     # Check mutable to immutable origin conversions + inference.
     imm_ref_to[origin_of(x)](x)
     imm_ref_to(x)
@@ -571,3 +571,4 @@ fn test_ellipsis():
     var x = ...
     test_ellipsis_overloading(4)
     test_ellipsis_overloading(...)
+

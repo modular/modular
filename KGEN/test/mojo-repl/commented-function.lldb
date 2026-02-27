@@ -10,7 +10,7 @@
 
 alias x = 5 # some comment
 # another comment
-def foo():
+def foo() raises:
   print("foo")
   # another comment
 # a tricky comment
@@ -23,3 +23,4 @@ foo()
 # CHECK: foo defined
 # CHECK-NEXT: foo
 # CHECK-NEXT: bar
+

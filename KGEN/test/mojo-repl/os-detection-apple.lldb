@@ -14,3 +14,4 @@ from sys.info import CompilationTarget
 print(CompilationTarget.is_macos())
 # CHECK: False
 print(CompilationTarget.is_linux())
+

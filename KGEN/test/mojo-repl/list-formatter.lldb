@@ -65,3 +65,4 @@ var p3 = Point(3, 3)
 vec3.append(p1)
 vec3.append(p2)
 vec3.append(p3)
+

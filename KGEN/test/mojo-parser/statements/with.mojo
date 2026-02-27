@@ -202,7 +202,7 @@ fn testWithScoping(a: ExampleCM):
 
 
 # CHECK-LABEL: lit.fn @"testWithInDef
-def testWithInDef(a: ExampleCM):
+def testWithInDef(a: ExampleCM) raises:
     # This is a test that issue #20141 is fixed.
     # https://github.com/modularml/modular/issues/20141
     # IE that when used inside a `def`, the `with` statement uses
@@ -483,3 +483,4 @@ struct ConsumingExitCM(Movable):
 fn testConsumingExitCM():
     with ConsumingExitCM() as a:
         _ = a
+

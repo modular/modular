@@ -32,6 +32,6 @@ fn old_origin_of_2[T: AnyType](b: T):
     _ = __origin_of(b)
 
 
-def main():
+def main() raises:
     old_origin_of(1)
     old_origin_of_2(2)

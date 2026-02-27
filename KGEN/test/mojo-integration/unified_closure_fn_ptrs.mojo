@@ -16,7 +16,7 @@ fn takeIt[T: fn(Int) unified -> Int](cb: T, x: Int):
     print(cb(x))
 
 
-def main():
+def main() raises:
     var x = atol(argv()[1])
     var y = atol(argv()[2])
 

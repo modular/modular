@@ -31,3 +31,4 @@ var a = Tensor[DType.float64](n)
 # CHECK:     var a = Tensor[DType.float64](n)
 # CHECK:         ^
 # CHECK: SyntaxError: invalid syntax
+

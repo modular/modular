@@ -7,14 +7,14 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-def test0(a: Int, b: Int) -> Bool:
+def test0(a: Int, b: Int) raises -> Bool:
     comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
     var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
     return res
 
 
-def test1[cmp: Bool](a: Int, b: Int) -> Bool:
+def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
     fn select_pred[cmp: Bool]() -> __mlir_type.`!kgen.deferred`:
         comptime if cmp:
             return __mlir_attr.`#index<cmp_predicate sle>`
@@ -164,7 +164,7 @@ fn test3[n: Int, dtype: DType](vec: SIMD[dtype, n]) -> SIMD[dtype, n]:
     return simd
 
 
-def main():
+def main() raises:
     # CHECK: test0 = True
     print("test0 = ", test0(1, 2))
 

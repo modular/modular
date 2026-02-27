@@ -16,7 +16,7 @@ fn raiseErrorIf(cond: Bool) raises -> Int:
     return 0
 
 
-def implicitlyPropagate(cond: Bool) -> Int:
+def implicitlyPropagate(cond: Bool) raises -> Int:
     return raiseErrorIf(cond)
 
 

@@ -25,3 +25,4 @@ var z = Bar()
 # CHECK: (__mlir_type.`!kgen.dtype`) dtype_value =
 var dtype = DType.bool
 var dtype_value = dtype.get_value()
+

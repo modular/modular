@@ -620,7 +620,7 @@ struct ExoticDelExample(RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"def_borrowed
 # CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> read_mem
-def def_borrowed(a: MemExample) -> None:
+def def_borrowed(a: MemExample) raises -> None:
   # CHECK: lit.ref.store %none, %__result__
   # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
   # CHECK-NEXT: return [[FALSE]]
@@ -1360,7 +1360,7 @@ fn test_min2(a: String):
     # CHECK-NEXT: lit.var.lifetime.end %y
 
 # MOCO-1500: Can't take origin of read-only String arg
-def origin_of_def_arg(a: String):
+def origin_of_def_arg(a: String) raises:
     _ = origin_of(a)
 
 # MOCO-1542: Need to rebind field type when checking size.
@@ -1489,3 +1489,4 @@ struct TestRaiseFromInit:
         # CHECK-NEXT: kgen.param.constant: !Int = <{42}>
         self.y = String()
         raise 42
+
