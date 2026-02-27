@@ -84,7 +84,7 @@ from nn.mha_operand import (
 )
 from nn.mha_sm90 import mha_sm90_dispatch
 from nn.mha_sm100_1q import mha_sm100_dispatch as mha_sm100_1q_dispatch
-from nn.mha_sm100_2q import mha_sm100_dispatch as mha_sm100_2q_dispatch
+from nn.mha_sm100 import mha_sm100_dispatch as mha_sm100_2q_dispatch
 from nn.mha_utils import (
     DynamicInt,
     FlashAttentionAlgorithm,

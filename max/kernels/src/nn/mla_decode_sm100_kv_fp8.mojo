@@ -48,12 +48,12 @@ from nn.mha_operand import MHAOperand
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
-from nn.mha_sm100_2q import (
+from nn.sm100_attention_utils import (
     elect,
     elect_mma_arrive,
 )
 from layout._layout import row_major
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
+from layout import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 
 from nn.mla_decode_sm100_utils import (

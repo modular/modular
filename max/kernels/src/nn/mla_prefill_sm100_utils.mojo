@@ -18,8 +18,8 @@ from math import exp2, recip
 from nn.mha_operand import MHAOperand
 from nn.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.mha_tile_scheduler import MHATileScheduler, SeqInfo
-from nn.mha_sm100_2q import (
-    FA4Config,
+from nn.fa4_config import FA4Config
+from nn.sm100_attention_utils import (
     SM100TensorAccumulatorSS,
     SM100TensorAccumulatorTS,
     LocalTensor,
@@ -560,7 +560,6 @@ struct SM100MLA[
         correction_smem_arg: SharedMemPointer[Scalar[Self.accum_type]],
     ):
         o_prod_mbar = mbars.mbar_base + Self.MiscMBarsType.O_producer_offset
-        o_cons_mbar = mbars.mbar_base + Self.MiscMBarsType.O_consumer_offset
         # FIXME: for depth 256
         var s_tmem: UInt32 = tmem_addr + UInt32(Self.config.TMEM_S0)
 
@@ -974,7 +973,7 @@ struct SM100MLA[
                 o_smem + warp_group_idx * UInt32(HalfBM * Self.kv_depth),
                 o_tile,
                 ragged_tma_store,
-                o_cons_mbar + warp_group_idx,  # consumer arrive
+                mbars.combined_p_o_consumer(warp_group_idx),  # consumer arrive
                 num_output_rows,
                 q_head_idx,
                 gmem_row + warp_group_idx * UInt32(HalfBM),
@@ -1018,6 +1017,11 @@ struct SM100MLA[
         comptime load_remainder = Self.kv_depth % (2 * batch_size)
         var correction_smem_0 = correction_smem_arg + UInt32(thread_idx.x) % 128
         var correction_smem_1 = correction_smem_0 + (Self.BM // 2)
+
+        # Dummy arrives for the prologue iteration (no previous O to protect).
+        # This satisfies the combined barrier's correction half for the first P@V.
+        _ = mbars.combined_p_o_consumer(0)[].arrive()
+        _ = mbars.combined_p_o_consumer(1)[].arrive()
 
         while iter_count != 0:
             iter_count -= 1
