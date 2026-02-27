@@ -16,13 +16,13 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-from math import ceildiv
-from sys.info import size_of
-from sys.intrinsics import unlikely
+from std.math import ceildiv
+from std.sys.info import size_of
+from std.sys.intrinsics import unlikely
 
-from python import PythonObject
+from std.python import PythonObject
 
-from utils._select import _select_register_value as select
+from std.utils._select import _select_register_value as select
 
 # ===----------------------------------------------------------------------=== #
 # Utilities

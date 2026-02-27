@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the IntLiteral class."""
 
-from math import Ceilable, Floorable, Truncable
+from std.math import Ceilable, Floorable, Truncable
 
 
 @__nonmaterializable(Int)

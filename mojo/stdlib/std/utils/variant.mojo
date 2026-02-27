@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Defines a Variant type."""
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
-from builtin.variadics import Variadic
-from format._utils import (
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast
+from std.builtin.variadics import Variadic
+from std.format._utils import (
     FormatStruct,
     TypeNames,
     constrained_conforms_to_writable,
 )
-from os import abort
-from sys.intrinsics import _type_is_eq
+from std.os import abort
+from std.sys.intrinsics import _type_is_eq
 
 # ===----------------------------------------------------------------------=== #
 # Variant
@@ -58,8 +58,8 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     Example:
 
     ```mojo
-    from utils import Variant
-    import random
+    from std.utils import Variant
+    import std.random
 
     comptime IntOrString = Variant[Int, String]
 
@@ -505,7 +505,7 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         Example:
 
         ```mojo
-        from utils import Variant
+        from std.utils import Variant
 
         def takes_variant(mut arg: Variant) raises:
             if arg.is_type_supported[Float64]():

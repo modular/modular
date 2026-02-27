@@ -15,24 +15,24 @@
 You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from algorithm import map_reduce
+from std.algorithm import map_reduce
 ```
 """
 
-from collections import OptionalReg
-from math import align_down, ceildiv
-from sys.info import align_of, simd_width_of, size_of
+from std.collections import OptionalReg
+from std.math import align_down, ceildiv
+from std.sys.info import align_of, simd_width_of, size_of
 
-from algorithm import sync_parallelize, vectorize
-from algorithm.functional import _get_num_workers
-from bit import log2_floor
-from math.math import max as _max, min as _min
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_valid_target
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.algorithm import sync_parallelize, vectorize
+from std.algorithm.functional import _get_num_workers
+from std.bit import log2_floor
+from std.math.math import max as _max, min as _min
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import is_cpu, is_valid_target
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
-from utils.index import Index, IndexList, StaticTuple
+from std.utils.index import Index, IndexList, StaticTuple
 
 from ._gpu.reduction import reduce_launch
 

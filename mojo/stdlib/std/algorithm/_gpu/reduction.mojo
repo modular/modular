@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
+from std.math import align_up
 
-from algorithm.reduction import _get_nd_indices_from_flat_index
-from gpu import (
+from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -30,16 +30,18 @@ from gpu import (
     wait_on_dependent_grids,
     AddressSpace,
 )
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.primitives import warp
-from gpu.primitives.grid_controls import pdl_launch_attributes  # @doc_private
-from memory import stack_allocation
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.primitives import warp
+from std.gpu.primitives.grid_controls import (
+    pdl_launch_attributes,
+)  # @doc_private
+from std.memory import stack_allocation
 
-from utils import IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
-from sys import env_get_int
-from sys.info import simd_width_of
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
+from std.sys import env_get_int
+from std.sys.info import simd_width_of
 
 
 @always_inline

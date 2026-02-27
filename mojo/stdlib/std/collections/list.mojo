@@ -16,20 +16,20 @@ These APIs are imported automatically, just like builtins.
 """
 
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
-import format._utils as fmt
-from reflection import get_type_name
-from collections._index_normalization import normalize_index
-from collections._asan_annotations import (
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast
+import std.format._utils as fmt
+from std.reflection import get_type_name
+from std.collections._index_normalization import normalize_index
+from std.collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
 )
-from os import abort
-from sys import size_of
-from sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
+from std.os import abort
+from std.sys import size_of
+from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
-from memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
-from builtin.builtin_slice import ContiguousSlice, StridedSlice
+from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
+from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
 # ===-----------------------------------------------------------------------===#
@@ -883,7 +883,7 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        from collections import List
+        from std.collections import List
 
         numbers: List[Int64] = [1, 2]
         more = SIMD[DType.int64, 2](3, 4)
@@ -921,7 +921,7 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        from collections import List
+        from std.collections import List
 
         numbers: List[Int64] = [1, 2]
         more = SIMD[DType.int64, 4](3, 4, 5, 6)
@@ -1215,7 +1215,7 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        from collections import List
+        from std.collections import List
 
         list: List[Int64] = [1, 2, 3, 4]
         ptr = list.steal_data() # list is no longer available

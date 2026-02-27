@@ -17,14 +17,14 @@ You can import these APIs from the `collections` package.
 Examples:
 
 ```mojo
-from collections import Deque
+from std.collections import Deque
 ```
 """
 
 
-from bit import next_power_of_two
-from builtin.constrained import _constrained_conforms_to
-import format._utils as fmt
+from std.bit import next_power_of_two
+from std.builtin.constrained import _constrained_conforms_to
+import std.format._utils as fmt
 
 # ===-----------------------------------------------------------------------===#
 # Deque

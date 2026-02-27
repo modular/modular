@@ -15,11 +15,11 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from math import ceil
+from std.math import ceil
 
-from sys import bit_width_of
-from bit import count_leading_zeros
-from memory import Span
+from std.sys import bit_width_of
+from std.bit import count_leading_zeros
+from std.memory import Span
 
 # ===-----------------------------------------------------------------------===#
 # sort

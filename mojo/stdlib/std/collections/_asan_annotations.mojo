@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.compile import SanitizeAddress, is_compile_time
-from ffi import external_call
+from std.sys.compile import SanitizeAddress, is_compile_time
+from std.ffi import external_call
 
 
 @always_inline

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing.prop.random import Rng
+from std.testing.prop.random import Rng
 
 
 __extension String:

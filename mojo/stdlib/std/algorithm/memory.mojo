@@ -16,14 +16,14 @@
 You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from algorithm import parallel_memcpy
+from std.algorithm import parallel_memcpy
 ```
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from memory import memcpy
-from runtime.asyncrt import parallelism_level
+from std.memory import memcpy
+from std.runtime.asyncrt import parallelism_level
 
 
 fn parallel_memcpy[

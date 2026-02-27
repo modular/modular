@@ -15,12 +15,12 @@
 You can import these APIs from the `utils` package. For example:
 
 ```mojo
-from utils import StaticTuple
+from std.utils import StaticTuple
 ```
 """
 
-from builtin.device_passable import DevicePassable
-from compile import get_type_name
+from std.builtin.device_passable import DevicePassable
+from std.compile import get_type_name
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple

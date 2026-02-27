@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the `StringSlice` type and related utilities for efficient string operations."""
 
-from builtin.builtin_slice import ContiguousSlice
-from builtin.format_int import _write_int
-from collections._index_normalization import normalize_index
-from collections.string._unicode import (
+from std.builtin.builtin_slice import ContiguousSlice
+from std.builtin.format_int import _write_int
+from std.collections._index_normalization import normalize_index
+from std.collections.string._unicode import (
     is_lowercase,
     is_uppercase,
     to_lowercase,
     to_uppercase,
 )
-from collections.string._utf8 import (
+from std.collections.string._utf8 import (
     _count_utf8_continuation_bytes,
     _is_newline_char_utf8,
     _is_valid_utf8,
@@ -30,25 +30,25 @@ from collections.string._utf8 import (
     _is_utf8_continuation_byte,
     _is_utf8_start_byte,
 )
-from collections.string.format import _FormatUtils
-from hashlib.hasher import Hasher
-from format._utils import _TotalWritableBytes, _WriteBufferStack
-from math import align_down
-from os import PathLike, abort
-from sys import is_compile_time, simd_width_of
-from ffi import c_char
-from sys.intrinsics import likely, unlikely
+from std.collections.string.format import _FormatUtils
+from std.hashlib.hasher import Hasher
+from std.format._utils import _TotalWritableBytes, _WriteBufferStack
+from std.math import align_down
+from std.os import PathLike, abort
+from std.sys import is_compile_time, simd_width_of
+from std.ffi import c_char
+from std.sys.intrinsics import likely, unlikely
 
-from bit import count_trailing_zeros
-from bit._mask import is_negative, splat
-from memory import (
+from std.bit import count_trailing_zeros
+from std.bit._mask import is_negative, splat
+from std.memory import (
     Span,
     memcmp,
     memcpy,
     pack_bits,
 )
-from python import ConvertibleToPython, Python, PythonObject
-from format._utils import _write_hex
+from std.python import ConvertibleToPython, Python, PythonObject
+from std.format._utils import _write_hex
 
 comptime StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice.
@@ -194,8 +194,8 @@ struct CodepointSliceIter[
         return the same value:
 
         ```mojo
-        from collections.string import Codepoint
-        from testing import assert_equal
+        from std.collections.string import Codepoint
+        from std.testing import assert_equal
 
         var input = StringSlice("123")
         var iter = input.codepoint_slices()
@@ -237,8 +237,8 @@ struct CodepointSliceIter[
         return the same value:
 
         ```mojo
-        from collections.string import Codepoint
-        from testing import assert_equal
+        from std.collections.string import Codepoint
+        from std.testing import assert_equal
 
         var input = StringSlice("123")
         var iter = input.codepoint_slices()
@@ -410,8 +410,8 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         return the same value:
 
         ```mojo
-        from collections.string import Codepoint
-        from testing import assert_equal
+        from std.collections.string import Codepoint
+        from std.testing import assert_equal
 
         var input = StringSlice("123")
         var iter = input.codepoints()
@@ -785,7 +785,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = StringSlice("ನಮಸ್ಕಾರ")
 
@@ -798,7 +798,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = StringSlice("abc")
 
@@ -1523,7 +1523,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         var s = StringSlice("abc")
         var iter = s.codepoints()
@@ -1539,7 +1539,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
 
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
         var s = StringSlice("á")
@@ -1688,7 +1688,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Check if particular byte positions are codepoint boundaries:
 
         ```mojo
-        from testing import assert_equal, assert_true, assert_false
+        from std.testing import assert_equal, assert_true, assert_false
         var abc = StringSlice("abc")
         assert_equal(len(abc), 3)
         assert_true(abc.is_codepoint_boundary(0))
@@ -1733,7 +1733,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         The following program verifies the above diagram:
 
         ```mojo
-        from testing import assert_true, assert_false
+        from std.testing import assert_true, assert_false
 
         var text = StringSlice("a©➇𝄞")
         assert_true(text.is_codepoint_boundary(0))

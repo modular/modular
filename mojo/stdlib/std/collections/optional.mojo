@@ -32,14 +32,14 @@ print(d)  # prints 2
 ```
 """
 
-from os import abort
+from std.os import abort
 
-from utils import Variant
+from std.utils import Variant
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.device_passable import DevicePassable
-from compile import get_type_name
-from format._utils import FormatStruct, TypeNames, write_to, write_repr_to
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.device_passable import DevicePassable
+from std.compile import get_type_name
+from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
 
 
 # TODO(27780): NoneType can't currently conform to traits

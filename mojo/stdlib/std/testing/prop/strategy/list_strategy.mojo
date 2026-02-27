@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing.prop.random import Rng
-from builtin.simd import SIMD
-from collections import List
+from std.testing.prop.random import Rng
+from std.builtin.simd import SIMD
+from std.collections import List
 
 
 __extension List:

@@ -23,14 +23,14 @@
 # is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 # KIND, either express or implied.
 # ===----------------------------------------------------------------------=== #
-from collections import InlineArray
-from sys.info import size_of
+from std.collections import InlineArray
+from std.sys.info import size_of
 
-from memory import bitcast
+from std.memory import bitcast
 
 from .globals import global_constant
 
-from utils.numerics import FPUtils, isinf, isnan
+from std.utils.numerics import FPUtils, isinf, isnan
 
 
 @always_inline

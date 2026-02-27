@@ -15,9 +15,9 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
-from sys.intrinsics import _type_is_eq_parse_time
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast
+from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 struct Variadic:
@@ -216,7 +216,7 @@ struct Variadic:
 
     ```mojo
     from std.builtin.variadics import Variadic
-    from testing import *
+    from std.testing import *
 
     trait MyError:
         comptime ErrorType: AnyType
@@ -341,8 +341,8 @@ struct Variadic:
 
     ```mojo
     from std.builtin.variadics import Variadic
-    from utils import Variant
-    from sys.intrinsics import _type_is_eq
+    from std.utils import Variant
+    from std.sys.intrinsics import _type_is_eq
 
     comptime FullVariant = Variant[Int, String, Float64, Bool]
 

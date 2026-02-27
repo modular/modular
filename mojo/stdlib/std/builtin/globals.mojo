@@ -45,7 +45,7 @@ fn global_constant[
 
     Examples:
     ```mojo
-    from builtin.globals import global_constant
+    from std.builtin.globals import global_constant
 
     # Create a reference to a constant array and access elements
     comptime lookup_table: InlineArray[Int, 4] = [1, 2, 3, 4]
