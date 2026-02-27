@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from random import random_float64
+from std.random import random_float64
 
-from gpu import block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext, HostBuffer
-from testing import assert_equal, TestSuite
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext, HostBuffer
+from std.testing import assert_equal, TestSuite
 
 
 fn simd_add_kernel[

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite
-from testing import assert_equal
+from std.testing import TestSuite
+from std.testing import assert_equal
 
 
 def test_max() raises:

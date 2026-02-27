@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import getsize
-from tempfile import NamedTemporaryFile
+from std.os.path import getsize
+from std.tempfile import NamedTemporaryFile
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 def test_getsize() raises:

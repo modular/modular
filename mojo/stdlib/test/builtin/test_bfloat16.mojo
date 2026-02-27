@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import randn_float64
-from sys import CompilationTarget
+from std.random import randn_float64
+from std.sys import CompilationTarget
 
-from testing import assert_almost_equal, assert_equal, TestSuite
+from std.testing import assert_almost_equal, assert_equal, TestSuite
 
 
 def test_methods() raises:

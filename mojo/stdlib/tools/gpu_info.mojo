@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.arg import argv
+from std.sys.arg import argv
 
-import gpu.host
-import gpu.host._nvidia_cuda as cuda
+import std.gpu.host
+import std.gpu.host._nvidia_cuda as cuda
 
 
 fn compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:

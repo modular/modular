@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os.path import expandvars
+import std.os
+from std.os.path import expandvars
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 @fieldwise_init

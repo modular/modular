@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Deque
+from std.collections import Deque
 
 from test_utils import check_write_to
-from testing import assert_equal, assert_false, assert_raises, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_false, assert_raises, assert_true
+from std.testing import TestSuite
 
 # ===-----------------------------------------------------------------------===#
 # Implementation tests

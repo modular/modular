@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python
-from python._cpython import PythonVersion
-from testing import assert_equal, TestSuite
+from std.python import Python
+from std.python._cpython import PythonVersion
+from std.testing import assert_equal, TestSuite
 
 
 fn _test_python_version(mut python: Python) raises:

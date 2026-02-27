@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import realpath
-from pathlib import Path, cwd
-from sys import CompilationTarget
+from std.os.path import realpath
+from std.pathlib import Path, cwd
+from std.sys import CompilationTarget
 
-from python import Python
-from testing import TestSuite, assert_equal, assert_raises, assert_true
+from std.python import Python
+from std.testing import TestSuite, assert_equal, assert_raises, assert_true
 
 
 def test_realpath() raises:

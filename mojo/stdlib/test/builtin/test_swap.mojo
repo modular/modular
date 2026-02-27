@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import MoveOnly
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 
 def test_swap_Int() raises:

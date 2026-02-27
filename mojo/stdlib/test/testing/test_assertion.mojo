@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import SourceLocation
-from python import PythonObject
-from testing import (
+from std.reflection import SourceLocation
+from std.python import PythonObject
+from std.testing import (
     assert_almost_equal,
     assert_equal,
     assert_false,
@@ -23,7 +23,7 @@ from testing import (
     TestSuite,
 )
 
-from utils.numerics import inf, nan
+from std.utils.numerics import inf, nan
 
 
 def test_assert_messages() raises:

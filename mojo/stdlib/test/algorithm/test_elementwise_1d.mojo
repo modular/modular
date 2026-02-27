@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import erf, exp, tanh
-from sys.info import simd_width_of
+from std.math import erf, exp, tanh
+from std.sys.info import simd_width_of
 
-from algorithm import elementwise
-from testing import assert_almost_equal
-from testing import TestSuite
+from std.algorithm import elementwise
+from std.testing import assert_almost_equal
+from std.testing import TestSuite
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 def test_elementwise_1d() raises:

@@ -16,8 +16,8 @@
 
 # Tests for generic types that constrain their own Writable implementation.
 
-from memory import ArcPointer, OwnedPointer
-from sys import env_get_int
+from std.memory import ArcPointer, OwnedPointer
+from std.sys import env_get_int
 
 
 @fieldwise_init

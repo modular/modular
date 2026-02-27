@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from testing import assert_true, TestSuite
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import assert_true, TestSuite
 
 comptime A100_TARGET = get_gpu_target["sm_80"]()
 comptime MI300X_TARGET = get_gpu_target["mi300x"]()

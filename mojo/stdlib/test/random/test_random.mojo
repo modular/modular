@@ -16,7 +16,7 @@ This test file validates the public API of the random module, including
 random number generation, seeding, and shuffle functionality.
 """
 
-from random import (
+from std.random import (
     randn_float64,
     random_float64,
     random_si64,
@@ -25,7 +25,7 @@ from random import (
     shuffle,
 )
 
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_random() raises:

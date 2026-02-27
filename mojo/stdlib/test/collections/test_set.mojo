@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
+from std.collections import Set
 
 from test_utils import check_write_to
-from testing import (
+from std.testing import (
     assert_false,
     assert_equal,
     assert_raises,

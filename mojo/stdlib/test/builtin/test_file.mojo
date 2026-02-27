@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import remove
-from pathlib import Path, _dir_of_current_file
-from stat import S_ISFIFO
-from subprocess import run
-from tempfile import gettempdir
-from time import sleep
+from std.os import remove
+from std.pathlib import Path, _dir_of_current_file
+from std.stat import S_ISFIFO
+from std.subprocess import run
+from std.tempfile import gettempdir
+from std.time import sleep
 
-from testing import assert_equal, assert_raises, assert_true, TestSuite
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 comptime DUMMY_FILE_SIZE: UInt = 954
 
@@ -276,7 +276,7 @@ def test_file_read_to_address() raises:
 
 
 def test_file_seek() raises:
-    import os
+    import std.os
 
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",

@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from testing import *
-from testing import TestSuite
+from std.testing import *
+from std.testing import TestSuite
 from test_utils import MoveOnly, check_write_to
 
 

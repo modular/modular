@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import *
+from std.testing import *
 from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
-from benchmark import keep
-from compile import compile_info
-from collections.string.format import _FormatUtils
-from format._utils import write_sequence_to
+from std.benchmark import keep
+from std.compile import compile_info
+from std.collections.string.format import _FormatUtils
+from std.format._utils import write_sequence_to
 
 
 @fieldwise_init

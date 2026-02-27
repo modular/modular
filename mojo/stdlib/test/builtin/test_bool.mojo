@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import PythonObject
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.python import PythonObject
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_default() raises:

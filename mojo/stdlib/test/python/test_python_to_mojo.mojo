@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
-from testing import (
+from std.python import Python, PythonObject
+from std.testing import (
     assert_equal,
     assert_equal_pyobj,
     assert_false,

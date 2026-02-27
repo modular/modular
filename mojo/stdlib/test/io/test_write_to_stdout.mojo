@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import sys
-from testing import TestSuite
+import std.sys
+from std.testing import TestSuite
 
 
 def main() raises:

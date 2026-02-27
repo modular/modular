@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
-from python._cpython import Py_ssize_t, PyObjectPtr
-from python.bindings import PythonModuleBuilder
-from testing import (
+from std.python import Python, PythonObject
+from std.python._cpython import Py_ssize_t, PyObjectPtr
+from std.python.bindings import PythonModuleBuilder
+from std.testing import (
     assert_equal,
     assert_equal_pyobj,
     assert_false,

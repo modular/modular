@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import gcd
-from sys import (
+from std.math import gcd
+from std.sys import (
     compressed_store,
     masked_load,
     masked_store,
     strided_load,
     strided_store,
 )
-from sys.intrinsics import assume, likely, unlikely
+from std.sys.intrinsics import assume, likely, unlikely
 
-from memory import memset_zero
-from testing import assert_equal
-from testing import TestSuite
+from std.memory import memset_zero
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 comptime F32x4 = SIMD[DType.float32, 4]
 comptime F32x8 = SIMD[DType.float32, 8]

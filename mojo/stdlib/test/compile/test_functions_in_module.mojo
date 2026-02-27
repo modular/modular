@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import get_linkage_name
-from testing import assert_equal
+from std.reflection import get_linkage_name
+from std.testing import assert_equal
 
 
 fn foo():

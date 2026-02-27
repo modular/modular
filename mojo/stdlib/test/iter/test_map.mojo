@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import CopyCounter
-from testing import TestSuite, assert_equal, assert_raises
+from std.testing import TestSuite, assert_equal, assert_raises
 
 
 def test_map() raises:

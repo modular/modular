@@ -20,7 +20,7 @@
 # RUN: not not %t 7 2>&1 | FileCheck --check-prefix CHECK_7 %s
 
 
-from sys.arg import argv
+from std.sys.arg import argv
 
 
 def main() raises:

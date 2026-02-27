@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafeMaybeUninit, memcmp
-from sys import size_of
+from std.memory import UnsafeMaybeUninit, memcmp
+from std.sys import size_of
 from test_utils import (
     AbortOnDel,
     ConfigureTrivial,
@@ -20,7 +20,7 @@ from test_utils import (
     DelRecorder,
     MoveCounter,
 )
-from testing import *
+from std.testing import *
 
 
 def test_maybe_uninitialized() raises:

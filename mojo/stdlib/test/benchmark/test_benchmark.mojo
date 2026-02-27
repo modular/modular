@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import sleep, time_function
+from std.time import sleep, time_function
 
-from benchmark import Report, clobber_memory, keep, run
-from testing import TestSuite, assert_true
+from std.benchmark import Report, clobber_memory, keep, run
+from std.testing import TestSuite, assert_true
 
 
 def test_stopping_criteria() raises:

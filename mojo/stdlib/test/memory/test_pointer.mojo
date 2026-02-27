@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import AddressSpace
+from std.memory import AddressSpace
 from test_utils import check_write_to
-from testing import TestSuite
-from testing import assert_equal, assert_not_equal, assert_true
+from std.testing import TestSuite
+from std.testing import assert_equal, assert_not_equal, assert_true
 
 
 def test_copy_reference_explicitly() raises:

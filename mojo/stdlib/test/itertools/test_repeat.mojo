@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import repeat
-from testing import (
+from std.itertools import repeat
+from std.testing import (
     TestSuite,
     assert_equal,
     assert_false,

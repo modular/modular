@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import dirname
+from std.os.path import dirname
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 def test_dirname() raises:

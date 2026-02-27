@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for struct field reflection and introspection APIs."""
 
-from reflection import (
+from std.reflection import (
     get_type_name,
     is_struct_type,
     struct_field_index_by_name,
@@ -22,8 +22,8 @@ from reflection import (
     struct_field_types,
     offset_of,
 )
-from testing import assert_equal, assert_true, assert_false
-from testing import TestSuite
+from std.testing import assert_equal, assert_true, assert_false
+from std.testing import TestSuite
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1216,7 +1216,7 @@ def test_offset_with_nested_struct() raises:
 
 def test_offset_with_size_of_verification() raises:
     """Test that field offsets are consistent with size_of for packed fields."""
-    from sys.info import size_of
+    from std.sys.info import size_of
 
     # For SimpleOffsetStruct with two Int64 fields:
     # offset[y] should equal offset[x] + size_of[Int64]()
@@ -1283,7 +1283,7 @@ def test_offset_single_field_struct() raises:
 
 def test_offset_all_same_type_fields() raises:
     """Test offset calculation when all fields have the same type."""
-    from sys.info import size_of
+    from std.sys.info import size_of
 
     comptime a_off = offset_of[AllSameTypeStruct, name="a"]()
     comptime b_off = offset_of[AllSameTypeStruct, name="b"]()

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import Atomic
-from time import time_function
+from std.os import Atomic
+from std.time import time_function
 
-from runtime.asyncrt import TaskGroup
-from testing import assert_equal, TestSuite
+from std.runtime.asyncrt import TaskGroup
+from std.testing import assert_equal, TestSuite
 
-from utils.lock import BlockingScopedLock, BlockingSpinLock
+from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 
 
 def test_basic_lock() raises:

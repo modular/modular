@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import _to_string_list
-from pathlib import _dir_of_current_file
-from random import rand, random_float64, random_si64, random_ui64, seed
+from std.collections.string.string_slice import _to_string_list
+from std.pathlib import _dir_of_current_file
+from std.random import rand, random_float64, random_si64, random_ui64, seed
 
-from builtin.sort import (
+from std.builtin.sort import (
     _heap_sort,
     _insertion_sort,
     _quicksort,
@@ -23,7 +23,7 @@ from builtin.sort import (
     _stable_sort,
 )
 from test_utils import CopyCounter
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 fn random_numbers[

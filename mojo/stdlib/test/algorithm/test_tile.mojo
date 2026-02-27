@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import (
+from std.algorithm import (
     tile,
     tile_and_unswitch,
     tile_middle_unswitch_boundaries,
     unswitch,
 )
-from testing import TestSuite
+from std.testing import TestSuite
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # Helper workgroup function to test dynamic workgroup tiling.

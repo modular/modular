@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Logger
-from testing import TestSuite
+from std.logger import Logger
+from std.testing import TestSuite
 
 
 def test_log_with_env() raises:

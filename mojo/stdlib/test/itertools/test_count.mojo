@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import count
-from testing import TestSuite, assert_equal
+from std.itertools import count
+from std.testing import TestSuite, assert_equal
 
 
 def test_count() raises:

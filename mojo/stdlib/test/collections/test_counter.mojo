@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.counter import Counter
+from std.collections.counter import Counter
 
-from testing import assert_equal, assert_false, assert_raises, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_false, assert_raises, assert_true
+from std.testing import TestSuite
 
 
 def test_and() raises:

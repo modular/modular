@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from tempfile import NamedTemporaryFile
+from std.tempfile import NamedTemporaryFile
 
-from reflection import call_location, SourceLocation
-from testing import TestSuite
+from std.reflection import call_location, SourceLocation
+from std.testing import TestSuite
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline

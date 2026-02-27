@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
 from std.collections.list import _ListIter
-from testing import TestSuite, assert_true
+from std.testing import TestSuite, assert_true
 
 
 fn test_iter() raises:

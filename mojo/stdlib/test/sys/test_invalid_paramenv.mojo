@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: not %mojo -D my_false=blah %s 2>&1 | FileCheck %s -check-prefix=CHECK-FAIL
 
-from sys import env_get_bool
+from std.sys import env_get_bool
 
 
 # CHECK-FAIL: constraint failed: the boolean environment value of `my_false` with value `blah` is not recognized

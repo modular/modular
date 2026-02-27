@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from ffi import _Global
+from std.os import abort
+from std.ffi import _Global
 
 from test_utils import (
     MoveCopyCounter,
@@ -23,10 +23,10 @@ from test_utils import (
     NonMovable,
     check_write_to,
 )
-from testing import TestSuite, assert_equal, assert_false, assert_true
-from benchmark import keep
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
+from std.benchmark import keep
 
-from utils import Variant
+from std.utils import Variant
 
 comptime TEST_VARIANT_POISON = _Global[
     "TEST_VARIANT_POISON", _initialize_poison

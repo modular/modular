@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import frexp, ldexp
-from ffi import external_call
+from std.math import frexp, ldexp
+from std.ffi import external_call
 
-from testing import TestSuite
-from testing import assert_almost_equal, assert_equal
+from std.testing import TestSuite
+from std.testing import assert_almost_equal, assert_equal
 
 
 def test_ldexp() raises:

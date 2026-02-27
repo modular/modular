@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import TestSuite, assert_equal, assert_true, assert_raises
 
 
 fn test_enumerate() raises:

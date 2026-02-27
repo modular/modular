@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections._index_normalization import normalize_index
+from std.collections._index_normalization import normalize_index
 
-from testing import assert_equal
-from testing import TestSuite
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
 def test_out_of_bounds_message() raises:

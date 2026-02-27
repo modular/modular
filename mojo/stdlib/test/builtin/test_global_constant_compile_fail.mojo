@@ -16,7 +16,7 @@
 # Test that global_constant produces a clear error message when used with
 # a type that has non-trivial copy/destroy semantics.
 
-from builtin.globals import global_constant
+from std.builtin.globals import global_constant
 
 
 # CHECK: global_constant requires a type with trivial copy and destroy semantics

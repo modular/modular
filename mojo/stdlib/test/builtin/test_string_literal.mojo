@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import c_char
+from std.ffi import c_char
 
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_raises,

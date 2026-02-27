@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math.polynomial import _horner_evaluate, polynomial_evaluate
+from std.math.polynomial import _horner_evaluate, polynomial_evaluate
 
-from testing import TestSuite
-from testing import assert_equal
+from std.testing import TestSuite
+from std.testing import assert_equal
 
 
 def test_polynomial_evaluate_degree1() raises:

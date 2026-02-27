@@ -13,16 +13,16 @@
 
 """Tests for the UnsafeUnion type."""
 
-from sys import align_of, size_of
-from testing import (
+from std.sys import align_of, size_of
+from std.testing import (
     TestSuite,
     assert_almost_equal,
     assert_equal,
     assert_true,
 )
 
-from ffi import UnsafeUnion
-from memory import UnsafePointer
+from std.ffi import UnsafeUnion
+from std.memory import UnsafePointer
 
 
 def test_basic_int_storage() raises:

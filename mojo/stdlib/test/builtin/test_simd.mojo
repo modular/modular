@@ -11,29 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
-from sys.info import CompilationTarget, is_64bit
+from std.sys import size_of
+from std.sys.info import CompilationTarget, is_64bit
 
-from bit import count_leading_zeros
-from memory.unsafe import bitcast
-from builtin.simd import _modf
-from itertools import product
-from random import randn, seed
-from testing import (
+from std.bit import count_leading_zeros
+from std.memory.unsafe import bitcast
+from std.builtin.simd import _modf
+from std.itertools import product
+from std.random import randn, seed
+from std.testing import (
     assert_almost_equal,
     assert_equal,
     assert_false,
     assert_true,
     TestSuite,
 )
-from testing.prop import PropTest
+from std.testing.prop import PropTest
 
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
-from testing.prop.strategy import SIMD
+from std.testing.prop.strategy import SIMD
 
-from utils import StaticTuple
-from utils.numerics import isfinite, isinf, isnan, nan
+from std.utils import StaticTuple
+from std.utils.numerics import isfinite, isinf, isnan, nan
 
 
 def test_cast() raises:

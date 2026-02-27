@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import listdir
-from pathlib import Path
+from std.os import listdir
+from std.pathlib import Path
 
-from testing import TestSuite, assert_true
+from std.testing import TestSuite, assert_true
 
 
 def test_listdir() raises:

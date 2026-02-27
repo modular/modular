@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _accelerator_arch
-from sys.param_env import env_get_string, is_defined
+from std.sys.info import _accelerator_arch
+from std.sys.param_env import env_get_string, is_defined
 
-from gpu.host import DeviceContext
-from gpu.host.info import GPUInfo
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import GPUInfo
 
 
 fn api() -> String:

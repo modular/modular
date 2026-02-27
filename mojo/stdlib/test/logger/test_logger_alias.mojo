@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Level, Logger
-from testing import TestSuite
+from std.logger import Level, Logger
+from std.testing import TestSuite
 
 comptime log = Logger[Level.INFO]()
 

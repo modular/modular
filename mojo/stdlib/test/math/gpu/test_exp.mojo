@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp
-from sys import simd_width_of
+from std.math import exp
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from gpu import *
-from gpu.host import DeviceContext, get_gpu_target
-from testing import *
+from std.algorithm.functional import elementwise
+from std.gpu import *
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.testing import *
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def run_elementwise[

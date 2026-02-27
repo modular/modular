@@ -11,10 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.interval import Interval, IntervalElement, IntervalTree
+from std.collections.interval import Interval, IntervalElement, IntervalTree
 
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
-from testing import TestSuite
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
+from std.testing import TestSuite
 
 
 def test_interval() raises:

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, TestSuite
-from testing.suite import TestSuiteReport
+from std.testing import assert_equal, assert_false, TestSuite
+from std.testing.suite import TestSuiteReport
 
 
 def nonconforming_name() raises:

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from iter import peekable
-from testing import *
+from std.iter import peekable
+from std.testing import *
 
 
 def test_empty_peek() raises:

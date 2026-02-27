@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: test_fail_list_index

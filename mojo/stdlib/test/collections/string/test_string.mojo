@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string import (
+from std.collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
-from collections.string.string_slice import _to_string_list
-from math import isinf, isnan
+from std.collections.string.string_slice import _to_string_list
+from std.math import isinf, isnan
 
-from memory import memcpy
-from python import Python, PythonObject
-from testing import (
+from std.memory import memcpy
+from std.python import Python, PythonObject
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
     assert_raises,
     assert_true,
 )
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 @fieldwise_init

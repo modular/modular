@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path.path import _split_extension, split_extension
+from std.os.path.path import _split_extension, split_extension
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 def _split_extension_test(

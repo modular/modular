@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin._format_float import _write_float
-from testing import assert_equal, TestSuite
+from std.builtin._format_float import _write_float
+from std.testing import assert_equal, TestSuite
 
 
 def test_float64() raises:

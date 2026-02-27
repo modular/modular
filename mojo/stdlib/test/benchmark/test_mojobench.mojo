@@ -14,7 +14,7 @@
 # RUN: cat %t.csv | FileCheck %s --check-prefix=CHECK-OUT
 # RUN: %mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -23,7 +23,7 @@ from benchmark import (
     Format,
     ThroughputMeasure,
 )
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 @parameter

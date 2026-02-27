@@ -21,9 +21,9 @@ They verify specific implementation contracts that are important for
 correctness but not part of the public API.
 """
 
-from random._rng import _PhiloxWrapper
+from std.random._rng import _PhiloxWrapper
 
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 def test_philox_wrapper_basic() raises:

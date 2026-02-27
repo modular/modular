@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.builtin_slice import ContiguousSlice, StridedSlice
+from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from test_utils import check_write_to
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 def test_none_end_folds() raises:

@@ -11,12 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys.info import num_physical_cores
+from std.math import ceildiv
+from std.sys.info import num_physical_cores
 
-from algorithm import map, parallelize, sync_parallelize, parallelize_over_rows
-from testing import TestSuite
-from utils import IndexList
+from std.algorithm import (
+    map,
+    parallelize,
+    sync_parallelize,
+    parallelize_over_rows,
+)
+from std.testing import TestSuite
+from std.utils import IndexList
 
 
 # CHECK-LABEL: test_sync_parallelize

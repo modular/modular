@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import c_int, c_long, c_long_long, c_ulong, c_ulong_long
-from sys.info import CompilationTarget, is_64bit
+from std.ffi import c_int, c_long, c_long_long, c_ulong, c_ulong_long
+from std.sys.info import CompilationTarget, is_64bit
 
-from testing import assert_equal, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_true
+from std.testing import TestSuite
 
 #
 # Reference:

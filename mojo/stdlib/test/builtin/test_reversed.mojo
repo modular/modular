@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Deque
+from std.collections import Deque
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 
 def test_reversed_list() raises:

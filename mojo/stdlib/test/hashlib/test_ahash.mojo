@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib._ahash import AHasher
+from std.hashlib._ahash import AHasher
 
-from memory import memset_zero
+from std.memory import memset_zero
 from test_utils import (
     assert_dif_hashes,
     assert_fill_factor,
@@ -27,7 +27,7 @@ from test_utils import (
     words_pl,
     words_ru,
 )
-from testing import assert_equal, assert_not_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_not_equal, assert_true, TestSuite
 
 comptime hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 comptime hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]

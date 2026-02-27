@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import cosh, exp, exp2, log, sinh
-from sys import simd_width_of
+from std.math import cosh, exp, exp2, log, sinh
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from testing import assert_almost_equal, assert_equal, TestSuite
+from std.algorithm.functional import elementwise
+from std.gpu import *
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.testing import assert_almost_equal, assert_equal, TestSuite
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 comptime length = 8192
 

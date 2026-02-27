@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 def test_basics() raises:

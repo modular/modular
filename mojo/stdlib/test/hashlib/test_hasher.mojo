@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib._ahash import AHasher
-from hashlib.hasher import Hasher
-from memory import Span
-from pathlib import Path
+from std.hashlib._ahash import AHasher
+from std.hashlib.hasher import Hasher
+from std.memory import Span
+from std.pathlib import Path
 
-from testing import assert_equal
-from testing import TestSuite
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
 struct DummyHasher(Hasher):

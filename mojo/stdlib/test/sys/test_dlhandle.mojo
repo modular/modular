@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
-from ffi import OwnedDLHandle
+from std.pathlib import Path
+from std.ffi import OwnedDLHandle
 
-from testing import assert_equal, assert_raises, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_raises, assert_true
+from std.testing import TestSuite
 
 
 # ===----------------------------------------------------------------------=== #

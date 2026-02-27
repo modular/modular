@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite
-from testing import assert_equal, assert_raises, assert_true, assert_false
+from std.testing import TestSuite
+from std.testing import assert_equal, assert_raises, assert_true, assert_false
 from test_utils import MoveOnly, check_write_to
-from math import iota
-from memory import ImmutSpan, MutSpan
+from std.math import iota
+from std.memory import ImmutSpan, MutSpan
 
 
 def test_span_list_int() raises:

@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
-from utils.type_functions import ConditionalType
-from testing import assert_true, assert_false, TestSuite
+from std.utils.type_functions import ConditionalType
+from std.testing import assert_true, assert_false, TestSuite
 
 
 def test_conditional_type_with_bool_literal() raises:

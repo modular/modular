@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import getenv, setenv, unsetenv
+from std.os import getenv, setenv, unsetenv
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 def test_getenv() raises:

@@ -24,8 +24,8 @@
 # RUN: not %t 11 2>&1 | FileCheck --check-prefix CHECK_11 %s
 # RUN: not %t 12 2>&1 | FileCheck --check-prefix CHECK_12 %s
 
-from sys.arg import argv
-from testing import assert_equal
+from std.sys.arg import argv
+from std.testing import assert_equal
 
 
 def main() raises:

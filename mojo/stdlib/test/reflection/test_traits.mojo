@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for trait-checking meta functions in reflection.traits."""
 
-from reflection.traits import (
+from std.reflection.traits import (
     AllWritable,
     AllMovable,
     AllCopyable,
@@ -20,8 +20,8 @@ from reflection.traits import (
     AllDefaultable,
     AllEquatable,
 )
-from testing import assert_true, assert_false
-from testing import TestSuite
+from std.testing import assert_true, assert_false
+from std.testing import TestSuite
 
 
 struct NoConformances:

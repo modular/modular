@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import size_of
+from std.sys.info import size_of
 
-from compile import compile_info
-from memory import UnsafeMaybeUninit
+from std.compile import compile_info
+from std.memory import UnsafeMaybeUninit
 from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
-from testing import assert_equal, assert_true, assert_false, TestSuite
+from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 
 def test_array_unsafe_get() raises:

@@ -15,11 +15,11 @@
 # RUN: %mojo  -D TEMP_DIR=%t/tmp %s
 # RUN: rm -rf %t
 
-from os.path import isdir, islink
-from pathlib import Path
-from sys import env_get_string
+from std.os.path import isdir, islink
+from std.pathlib import Path
+from std.sys import env_get_string
 
-from testing import TestSuite, assert_false, assert_true
+from std.testing import TestSuite, assert_false, assert_true
 
 comptime TEMP_DIR = env_get_string["TEMP_DIR"]()
 

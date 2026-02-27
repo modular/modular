@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of, size_of
+from std.sys import simd_width_of, size_of
 
-from memory import (
+from std.memory import (
     destroy_n,
     memcmp,
     memcpy,
@@ -23,8 +23,8 @@ from memory import (
     uninit_copy_n,
     uninit_move_n,
 )
-from testing import TestSuite
-from testing import (
+from std.testing import TestSuite
+from std.testing import (
     assert_almost_equal,
     assert_equal,
     assert_not_equal,
@@ -37,7 +37,7 @@ from test_utils import (
     MoveCopyCounter,
 )
 
-from utils.numerics import nan
+from std.utils.numerics import nan
 
 comptime void = __mlir_attr.`#kgen.dtype.constant<invalid> : !kgen.dtype`
 comptime int8_pop = __mlir_type.`!pop.scalar<si8>`

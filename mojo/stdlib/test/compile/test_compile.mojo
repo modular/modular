@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compile import compile_info
-from gpu import *
-from gpu.host import *
-from memory import stack_allocation
-from testing import *
-from testing import TestSuite
-from sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
-from sys.compile import SanitizeAddress
+from std.compile import compile_info
+from std.gpu import *
+from std.gpu.host import *
+from std.memory import stack_allocation
+from std.testing import *
+from std.testing import TestSuite
+from std.sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
+from std.sys.compile import SanitizeAddress
 
 
 def test_compile_llvm() raises:

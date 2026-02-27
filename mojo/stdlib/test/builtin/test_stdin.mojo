@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: echo "Hello, World" | %mojo %s
 
-import sys
-from io.io import _fdopen
+import std.sys
+from std.io.io import _fdopen
 
-from testing import testing, TestSuite
+from std.testing import testing, TestSuite
 
 
 fn test_stdin() raises:

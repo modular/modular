@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.format_int import _format_int
-from testing import assert_equal, TestSuite
+from std.builtin.format_int import _format_int
+from std.testing import assert_equal, TestSuite
 
 
 fn test_format_int() raises:

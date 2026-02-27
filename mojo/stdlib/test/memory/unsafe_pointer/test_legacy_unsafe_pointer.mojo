@@ -18,7 +18,7 @@ from test_utils import (
     ObservableMoveOnly,
     check_write_to,
 )
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
