@@ -420,3 +420,33 @@ modular_multi_py_version_test(
         "//max/python/max:_core",
     ],
 )
+
+modular_py_test(
+    name = "test_runtime_source_notes",
+    size = "large",
+    srcs = ["test_runtime_source_notes.py"],
+    data = [
+        "//max/tests/integration/Inputs/kernel_verification_ops",
+    ],
+    env = {
+        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],  # ROCm aborts on GPU trap
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)

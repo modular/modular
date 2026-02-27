@@ -13,7 +13,7 @@
 
 import compiler_internal as compiler
 from gpu.host.device_context import DeviceExternalFunction
-from os import getenv
+from os import abort, getenv
 from tensor import (
     foreach,
     DynamicTensor,
@@ -277,3 +277,33 @@ struct ExternalCubinVecAdd:
             grid_dim=(grid_dim,),
             block_dim=(block_dim,),
         )
+
+
+@compiler.register("intentional_gpu_crash")
+struct IntentionalGpuCrash:
+    """A custom op that launches a GPU kernel which executes a trap instruction.
+
+    This causes a real GPU hardware fault (e.g. CUDA_ERROR_ILLEGAL_INSTRUCTION)
+    to test that runtime error reporting includes source notes. Only supported
+    on NVIDIA GPUs; ROCm handles GPU traps by calling host-side abort() which
+    kills the process.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[rank=1],
+        x: InputTensor[dtype = output.dtype, rank=1],
+        ctx: DeviceContextPtr,
+    ):
+        comptime assert target == "gpu"
+        gpu_ctx = ctx.get_device_context()
+
+        fn crash_kernel():
+            abort()
+
+        gpu_ctx.enqueue_function_experimental[crash_kernel](
+            grid_dim=(1,), block_dim=(1,)
+        )
+        gpu_ctx.synchronize()
