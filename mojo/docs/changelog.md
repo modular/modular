@@ -558,6 +558,13 @@ what we publish.
 - `mojo format` now supports `--print-cache-dir` (hidden, use `--help-hidden`
   to see it) to display the path to the formatter cache directory.
 
+- `mojo build --emit=asm` now also emits GPU kernel assembly files alongside
+  the host `.s` output. For NVIDIA targets, PTX is written as
+  `<out>_<kernelfn>.ptx`; for Apple Metal targets, LLVM IR is written as
+  `<out>_<kernelfn>.ll`; for AMD targets, `.amdgcn` files are written.
+  Multiple kernels generated from the same function are disambiguated with a
+  numeric suffix (e.g. `<out>_<kernelfn>_1.ptx`).
+
 ### ❌ Removed
 
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
