@@ -29,10 +29,8 @@ lit_tests(
         "MODULAR_CRASH_REPORTING_ENABLED": "true",
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(rootpath @crashpad//:modular-crashpad-handler)",
     },
-    # TODO(GEX-3157): Investigate crashpad test failures on macOS
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
-        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     tools = [

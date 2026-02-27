@@ -115,11 +115,7 @@ std::optional<std::string> M::findConfigWithRunfiles(StringRef key) {
   std::string runfilePath = buildRunfilePath(*mapping);
   std::string rlocation = rf->Rlocation(runfilePath);
   if (rlocation.empty())
-    llvm::report_fatal_error(
-        llvm::Twine("[BazelRunfiles] Runfile lookup failed for key '") + key +
-        "': Rlocation returned empty for path '" + runfilePath +
-        "'. This indicates a build configuration error - the runfile mapping "
-        "exists but the file is not in the runfiles manifest.");
+    return std::nullopt;
 
   // If the file isn't part of the runfiles, return nothing so looks
   // fallthrough. It might still fail later.
