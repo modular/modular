@@ -1188,9 +1188,7 @@ struct LegacyUnsafePointer[
     @always_inline("nodebug")
     fn mut_cast[
         target_mut: Bool
-    ](self) -> Self._OriginCastType[
-        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
-    ]:
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
         """Changes the mutability of a pointer.
 
         This is a safe way to change the mutability of a pointer with an
@@ -1212,9 +1210,7 @@ struct LegacyUnsafePointer[
     @always_inline("builtin")
     fn unsafe_mut_cast[
         target_mut: Bool
-    ](self) -> Self._OriginCastType[
-        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
-    ]:
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
         """Changes the mutability of a pointer.
 
         Parameters:
@@ -1238,7 +1234,7 @@ struct LegacyUnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = Self._OriginCastType[
-                Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
+                Self.origin.unsafe_mut_cast[target_mut]()
             ]._mlir_type,
         ](self.address)
 
