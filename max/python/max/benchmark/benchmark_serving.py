@@ -82,6 +82,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     RequestSamples,
     Samples,
 )
+from max.benchmark.benchmark_shared.distribution import BaseDistribution
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
@@ -893,7 +894,7 @@ async def chat_session_driver(
     request_counter: RequestCounter,
     chat_session: ChatSession,
     max_chat_len: int,
-    delay_between_chat_turns: int | None,
+    delay_between_chat_turns: BaseDistribution | None,
     temperature: float | None,
     top_p: float | None,
     top_k: int | None,
@@ -977,13 +978,8 @@ async def chat_session_driver(
         )
         chat_len += output_len
 
-        if delay_between_chat_turns:
-            # todo parameterize the distribution and scale
-            # e.g. N(mean, std) or U(lower, upper)
-            delay_ms = np.random.normal(
-                loc=delay_between_chat_turns,
-                scale=delay_between_chat_turns * 0.5,
-            )
+        if delay_between_chat_turns is not None:
+            delay_ms = max(delay_between_chat_turns.sample_value(), 0)
             await asyncio.sleep(delay_ms / 1000)
 
     return session_outputs
@@ -1082,7 +1078,7 @@ async def run_multiturn_benchmark(
     model_id: str,
     api_url: str,
     tokenizer: PreTrainedTokenizerBase,
-    delay_between_chat_turns: int | None,
+    delay_between_chat_turns: BaseDistribution | None,
     skip_first_n_requests: int,
     ignore_first_turn_stats: bool,
     lora_manager: LoRABenchmarkManager | None,
@@ -1274,7 +1270,7 @@ async def benchmark(
     collect_server_stats: bool,
     print_inputs_and_outputs: bool,
     max_requests: int,
-    delay_between_chat_turns: int | None,
+    delay_between_chat_turns: BaseDistribution | None,
     skip_first_n_requests: int,
     max_output_len: int | None,
     temperature: float | None,
@@ -2047,7 +2043,9 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             collect_server_stats=args.collect_server_stats,
             print_inputs_and_outputs=args.print_inputs_and_outputs,
             max_requests=args.num_prompts,
-            delay_between_chat_turns=args.delay_between_chat_turns,
+            delay_between_chat_turns=BaseDistribution.from_distribution_parameter(
+                args.delay_between_chat_turns
+            ),
             skip_first_n_requests=args.skip_first_n_requests,
             max_output_len=args.max_output_len,
             temperature=args.temperature,
