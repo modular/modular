@@ -15,6 +15,7 @@
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/NameMangling.h"
@@ -2038,9 +2039,15 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op) {
         offloadInfo.symbols.insert({func, OffloadInfo::Group::SymbolInfo{}})
             .first;
 
+    GeneratorOp kernelOp = getThunkCallee(symbol, oldSymTab);
+    std::optional<StringAttr> sourceName;
+    if (auto srcName = (kernelOp ? kernelOp : func).getSourceName())
+      sourceName = StringAttr::get(ctx, *srcName);
+
     auto pair = iter->second.insert(
-        {symbol, OffloadInfo::KernelInfo{
-                     name, offloadInfo.numKernels, populateFnType, {}}});
+        {symbol,
+         OffloadInfo::KernelInfo{
+             name, offloadInfo.numKernels, populateFnType, {}, sourceName}});
 
     if (pair.second)
       offloadInfo.numKernels += 1;

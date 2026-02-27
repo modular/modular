@@ -50,6 +50,7 @@
 #include "llvm/Option/Option.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
@@ -451,39 +452,30 @@ enum class OutputType {
   assembly,
 };
 
+/// Return the output file path for a given extension: the value of `-o` if
+/// provided, otherwise `<input-stem><fileExtension>`.
+static std::string deriveOutputPath(const llvm::opt::InputArgList &args,
+                                    StringRef fileExtension) {
+  StringRef inputName = args.getLastArgValue(options::OPT_INPUT);
+  StringRef inputBaseName = inputName.rsplit('.').first;
+  std::string defaultPath = (inputBaseName + fileExtension).str();
+  return args.getLastArgValue(options::OPT_o, defaultPath).str();
+}
+
 /// Helper function to create an output file with the given extension
 static std::unique_ptr<llvm::ToolOutputFile>
 createOutputFile(const State &state, const llvm::opt::InputArgList &args,
                  bool hasBinaryOutput, StringRef fileExtension) {
-  // Get the input filename
-  StringRef inputName = args.getLastArgValue(options::OPT_INPUT);
-
-  if (inputName.empty()) {
+  if (args.getLastArgValue(options::OPT_INPUT).empty()) {
     state.reportError("no input file provided");
     return nullptr;
   }
 
-  // Get the file base name, e.g. `foo` in `foo.mojo`
-  StringRef inputBaseName = inputName.rsplit('.').first;
+  std::string outputPath = deriveOutputPath(args, fileExtension);
 
-  // Create the output filename
-  std::string outputName = (inputBaseName + fileExtension).str();
-
-  // Check if -o was specified
-  StringRef outputPath = outputName;
-  for (size_t i = 0; i < state.arguments.size(); ++i) {
-    if (StringRef(state.arguments[i]) == "-o" &&
-        i + 1 < state.arguments.size()) {
-      outputPath = state.arguments[i + 1];
-      break;
-    }
-  }
-
-  // Create the output file
   std::error_code ec;
   auto outFile = std::make_unique<llvm::ToolOutputFile>(outputPath, ec,
                                                         llvm::sys::fs::OF_None);
-
   if (ec) {
     state.reportError("could not open output file: " + ec.message());
     return nullptr;
@@ -501,12 +493,27 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
                        OwningOpRef<ModuleOp> module, TargetInfoAttr target,
                        BufferRef &archive, OutputType outputType,
                        const llvm::opt::InputArgList &args) {
-  KGENCompiler compiler(context, options);
+  // When emitting assembly, derive the GPU ASM output prefix from the same
+  // path that createOutputFile() will use for the host assembly output.
+  // This must be set before runKGENPipeline() so compileOffloads() can write
+  // GPU kernel PTX alongside the host assembly.
+  CompilationOptions effectiveOptions = options;
+  if (outputType == OutputType::assembly) {
+    // The extension ".s" does not matter here, it will get replaced
+    // with target-specific extension later.
+    std::string asmPath = deriveOutputPath(args, ".s");
+    llvm::SmallString<256> prefix(asmPath);
+    llvm::sys::path::replace_extension(prefix, "");
+    effectiveOptions.gpuAsmOutputPrefix = prefix.str().str();
+  }
+
+  KGENCompiler compiler(context, effectiveOptions);
 
   // Compile the moduleOp down to the post-elaboration phase, because before
   // that phase we don't have flat symbols.
   ErrorOr<std::unique_ptr<ObjectCompiler>> objectCompilerOr =
-      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/false, context);
+      ObjectCompiler::create(".mojo_cache", effectiveOptions, /*isJIT=*/false,
+                             context);
 
   if (objectCompilerOr.isError())
     return state.reportError(objectCompilerOr.getError());

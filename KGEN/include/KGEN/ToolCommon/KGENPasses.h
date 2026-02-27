@@ -118,6 +118,10 @@ struct OffloadInfo {
     uint64_t kernelId;
     FuncTypeGeneratorType populateFnType;
     llvm::SmallSet<EmitAs, 4> emissionKinds;
+    /// The source-level name of the kernel function (e.g. "add_one_kernel"),
+    /// used to name the GPU ASM output file when --emit=asm is requested.
+    /// Not set when the source name could not be determined.
+    std::optional<StringAttr> sourceName;
   };
 
   struct Group {

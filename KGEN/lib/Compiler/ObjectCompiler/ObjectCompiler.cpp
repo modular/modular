@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/ObjectCompiler.h"
+#include "KGEN/Compiler/SaveAsmOutput.h"
 
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/LLVMOptimizationPipeline.h"
@@ -55,23 +56,19 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Support/FileSystem.h"
-#include "llvm/Support/FileUtilities.h"
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/xxhash.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/IPO/Internalize.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
-#include <fstream>
 
 using namespace M;
 using namespace KGEN;
@@ -326,53 +323,6 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   }
 
   return mlir::success();
-}
-
-// Write the given `buf` to a file with the given prefix and postfix.
-// Appends a hash based on `buf` contents to emitted file name.
-static LogicalResult
-writeBytesToTempWithHash(const std::string &saveTempsPrefix,
-                         const std::string &postfix, StringRef buf) {
-  if (saveTempsPrefix.empty())
-    return success();
-
-  // Include unique hash as part of name.
-  assert(sizeof(uint8_t) == sizeof(char) && "Assume char is 8 bits");
-  llvm::XXH128_hash_t hash =
-      llvm::xxh3_128bits(llvm::arrayRefFromStringRef(buf));
-  std::string outPath =
-      saveTempsPrefix + "." + llvm::utohexstr(hash.high64, /*LowerCase=*/true) +
-      llvm::utohexstr(hash.low64, /*LowerCase=*/true) + postfix;
-
-  auto outFile = mlir::openOutputFile(outPath);
-  if (!outFile)
-    return failure();
-  outFile->os() << buf;
-  outFile->keep();
-  return success();
-}
-
-// Write the given `buf` to a file with the given prefix and postfix.
-// Appends a hash based on `buf` contents to emitted file name.
-static LogicalResult
-writeBytesToTempWithHash(const std::string &saveTempsPrefix,
-                         const std::string &postfix,
-                         llvm::MemoryBufferRef buf) {
-  return writeBytesToTempWithHash(saveTempsPrefix, postfix, buf.getBuffer());
-}
-
-template <typename ModuleT>
-static LogicalResult writeTempModule(const std::string &saveTempsPrefix,
-                                     const std::string &phase, ModuleT &module,
-                                     const std::string &fileExt = ".ll") {
-  if (saveTempsPrefix.empty())
-    return success();
-
-  const std::string finalSavePrefix = saveTempsPrefix + phase;
-  std::string str;
-  llvm::raw_string_ostream ss(str);
-  ss << module;
-  return writeBytesToTempWithHash(finalSavePrefix, fileExt, str);
 }
 
 /// Compile optimized llvm::Module module to object through the llc pipeline
@@ -1120,16 +1070,6 @@ static void computeFnOrdering(llvm::Module &module,
   }
 }
 
-static std::string getAsmFilePostfix(const CompilationOptions &options) {
-  if (isNVPTXBackend(options))
-    return ".ptx";
-
-  if (isAMDGPUBackend(options))
-    return ".amdgcn";
-
-  return ".s";
-}
-
 //===----------------------------------------------------------------------===//
 // emitArchive
 //===----------------------------------------------------------------------===//
@@ -1220,7 +1160,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
-              std::string postfix = getAsmFilePostfix(options);
+              std::string postfix =
+                  gpuAsmExt(llvm::Triple(options.targetTriple)).str();
               StringRef toEmit(linkedObj->getBufferStart(),
                                linkedObj->getBufferSize());
               if (failed(writeBytesToTempWithHash(options.saveTempsPrefix,
@@ -1921,12 +1862,13 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
       std::unique_ptr<llvm::MCContext> mcContext;
 
       if (emissionKind == EmitAs::ASM) {
-        // Ensure Module data layout matches TargetMachine data layout to avoid
-        // assertion failure
-        if (isMetalTarget &&
-            module.getDataLayoutStr() !=
-                tm.createDataLayout().getStringRepresentation()) {
-          module.setDataLayout(tm.createDataLayout());
+        // For Metal (air64) targets, LLVM IR text is the closest equivalent to
+        // human-readable assembly. Emit it directly instead of running LLC,
+        // which would produce arm64 host assembly rather than GPU code.
+        if (isMetalTarget) {
+          *buf << module;
+          std::move(output).emplace(buf.copy());
+          return;
         }
 
         if (failed(runLlcPasses(module, options, tm, *buf, machineModuleInfo,
@@ -1936,7 +1878,8 @@ static AnyAsyncValueRef lowerLLVMModuleToObject(
               "llc failed to codegen LLVM IR to object code", loc));
         }
 
-        std::string postfix = getAsmFilePostfix(options);
+        std::string postfix =
+            gpuAsmExt(llvm::Triple(options.targetTriple)).str();
         StringRef toEmit(buf->getBufferStart(), buf->getBufferSize());
         if (failed(writeBytesToTempWithHash(options.saveTempsPrefix, postfix,
                                             toEmit))) {

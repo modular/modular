@@ -6,12 +6,12 @@
 
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
+#include "KGEN/Compiler/SaveAsmOutput.h"
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/Support/BuildInfo.h"
 #include "KGEN/Support/CompilerProfiling.h"
-#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/Debug.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/SlicingUtils.h"
@@ -36,7 +36,9 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/TargetParser/Triple.h"
 
 #include "xxh3.h"
 #include "xxhash.h"
@@ -385,6 +387,14 @@ static ElaboratorCompileOffloadRetType compileOffloads(
               LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName()))
     bitcodeLibArrayAttr.externalize(currentBitcodeLibs);
 
+  // Tracks how many times each sanitized kernel name has been used per
+  // extension, to avoid collisions across targets. Keyed by "<name><ext>".
+  llvm::StringMap<int> kernelNameCounts;
+
+  // Accumulates {filePath, content} pairs for GPU ASM files to be written
+  // after cachedTransform (see flushGpuAsmWrites).
+  SmallVector<NamedAttribute> gpuAsmPendingWrites;
+
   // Compiling offload for different targets.
   // This loop cannot be parallelized since different targets may need
   // different llvm options that are global states.
@@ -526,9 +536,13 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       if (failed(pm.run(*module)))
         return Error("failed to run the pass manager for offload functions");
 
-      llvm::MapVector<uint64_t, std::tuple<OwningOpRef<FuncOp>, unsigned,
-                                           mlir::DenseI64ArrayAttr>>
-          captures;
+      struct CaptureEntry {
+        OwningOpRef<FuncOp> func;
+        unsigned numCaptures;
+        mlir::DenseI64ArrayAttr captureSizes;
+        mlir::StringAttr nameForFile;
+      };
+      llvm::MapVector<uint64_t, CaptureEntry> captures;
 
       llvm::DenseMap<uint64_t, llvm::SmallSet<EmitAs, 4>> kernelEmissionKinds;
 
@@ -538,10 +552,32 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           auto [capturesFunc, numCaptures, captureSizes] =
               writeCaptureArgs(*module, kernel.name);
 
-          captures.insert(
-              {kernel.kernelId, std::make_tuple(std::move(capturesFunc),
-                                                numCaptures, captureSizes)});
+          // Use the user-visible source name for the GPU ASM output filename
+          // when available; fall back to the mangled symbol name otherwise.
+          mlir::StringAttr nameForFile =
+              kernel.sourceName.value_or(symbol.getSymbol().getRootReference());
+          captures.insert({kernel.kernelId,
+                           CaptureEntry{std::move(capturesFunc), numCaptures,
+                                        captureSizes, nameForFile}});
           kernelEmissionKinds.insert({kernel.kernelId, kernel.emissionKinds});
+        }
+      }
+
+      // If saving GPU ASM to files, request ASM emission for all kernels.
+      // For Metal (air64) targets, also drop OBJECT emission: xcrun metallib
+      // is macOS-only and is not needed when the goal is assembly inspection.
+      // The ASM content (LLVM IR text) will be aliased under the OBJECT key
+      // after compilation so that rewriteCompileOffloadOp still finds it.
+      //
+      // Note: for NVIDIA/PTX, EmitAs::ASM is already present in
+      // kernelEmissionKinds by default (PTX text is the natural output), so
+      // only the Metal branch below is strictly load-bearing.
+      if (!compilationOptions.gpuAsmOutputPrefix.empty()) {
+        bool metalTarget = isMetalTriple(target.getTriple());
+        for (auto &[id, kinds] : kernelEmissionKinds) {
+          kinds.insert(EmitAs::ASM);
+          if (metalTarget)
+            kinds.erase(EmitAs::OBJECT);
         }
       }
 
@@ -585,9 +621,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         if (iter == captures.end())
           return Error("Can't find offload capture.");
 
-        OwningOpRef<FuncOp> func = std::move(std::get<0>(iter->second));
-        unsigned numCaptures = std::get<1>(iter->second);
-        mlir::DenseI64ArrayAttr captureSizes = std::get<2>(iter->second);
+        OwningOpRef<FuncOp> func = std::move(iter->second.func);
+        unsigned numCaptures = iter->second.numCaptures;
+        mlir::DenseI64ArrayAttr captureSizes = iter->second.captureSizes;
 
         auto populate = cast<FuncOp>(func.get());
         auto populateFnRef = SymbolConstantAttr::get(populate);
@@ -596,11 +632,42 @@ static ElaboratorCompileOffloadRetType compileOffloads(
 
         for (auto kindAndContent : bufs) {
           EmitAs kind = kindAndContent.first;
+          // Stage GPU ASM for writing after cachedTransform.  The content is
+          // stored as a module attribute so it survives cache serialization and
+          // is available on both cache-hit (deserialized) and cache-miss (fresh
+          // PM run) paths.  flushGpuAsmWrites() in runKGENPipeline performs the
+          // actual file I/O after cachedTransform returns.
+          if (!compilationOptions.gpuAsmOutputPrefix.empty() &&
+              kind == EmitAs::ASM) {
+            mlir::StringAttr rawName = iter->second.nameForFile;
+            std::string baseName =
+                reserveGpuAsmBaseName(rawName, target, kernelNameCounts);
+            std::string gpuAsmPath = gpuAsmOutputPath(
+                compilationOptions.gpuAsmOutputPrefix, target, baseName);
+            gpuAsmPendingWrites.push_back(
+                {mlir::StringAttr::get(theModule->getContext(), gpuAsmPath),
+                 mlir::StringAttr::get(theModule->getContext(),
+                                       kindAndContent.second->getBuffer())});
+          }
           StringAttr content =
               StringAttr::get(kindAndContent.second->getBuffer(),
                               StringType::get(theModule->getContext()));
           contents.insert({kind, content});
           moduleNames.insert({kind, getXXH3Hash(content)});
+        }
+
+        // For Metal with --emit=asm, OBJECT was not compiled (xcrun skipped),
+        // because otherwise one cannot cross-compile on a host without xcrun.
+        // Alias the ASM content (LLVM IR text) under the OBJECT key so that
+        // rewriteCompileOffloadOp, which always looks up contents[OBJECT],
+        // still finds a value to embed in the host module.
+        if (!compilationOptions.gpuAsmOutputPrefix.empty() &&
+            isMetalTriple(target.getTriple())) {
+          auto asmIt = contents.find(EmitAs::ASM);
+          if (asmIt != contents.end() && !contents.count(EmitAs::OBJECT)) {
+            contents.insert({EmitAs::OBJECT, asmIt->second});
+            moduleNames.insert({EmitAs::OBJECT, moduleNames[EmitAs::ASM]});
+          }
         }
 
         targetResult.insert(
@@ -618,6 +685,15 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         return resetResult.takeError();
       }
     }
+  }
+
+  // Record pending GPU ASM writes as a module attribute so they survive cache
+  // serialization and are available to flushGpuAsmWrites() on both cache-hit
+  // and cache-miss paths.
+  if (!gpuAsmPendingWrites.empty()) {
+    theModule->setAttr(
+        kGpuAsmWritesAttrName,
+        DictionaryAttr::get(theModule->getContext(), gpuAsmPendingWrites));
   }
 
   // Set the final updated bitcode library data back on the original module.
@@ -766,6 +842,15 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
   AsyncRT::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
+
+  // Write any GPU ASM files staged by compileOffloads().  This runs after
+  // both cache hits (module deserialized with attribute intact) and cache
+  // misses (module freshly transformed), so files are always produced.
+  if (!options.gpuAsmOutputPrefix.empty()) {
+    if (auto err = flushGpuAsmWrites(theModule))
+      return err;
+  }
+
   return success();
 }
 
