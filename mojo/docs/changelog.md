@@ -21,6 +21,25 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports t-strings (template strings) for building structured
+  string templates with interpolated expressions. T-strings use the `t"..."`
+  prefix and produce a `TString` value that captures both the static
+  format string and any runtime arguments, rather than immediately producing a
+  `String`:
+
+  ```mojo
+  fn main():
+      var x = 10
+      var y = 20
+      print(t"{x} + {y} = {x + y}")  # prints: 10 + 20 = 30
+  ```
+
+  Use `{{` and `}}` to include literal braces in the output:
+
+  ```mojo
+  print(t"Use {{braces}} like this")  # prints: Use {braces} like this
+  ```
+
 - Mojo now supports `comptime if` and `comptime for` as the preferred syntax
   for compile-time conditional and loop constructs, replacing the legacy
   `@parameter if` and `@parameter for` decorator forms:
