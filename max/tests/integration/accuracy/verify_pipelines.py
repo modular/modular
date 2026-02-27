@@ -1274,8 +1274,8 @@ PIPELINES = {
             json_file="torch_qwen3_embedding_0.6b_bfloat16_golden.json",
         ),
         relative_tolerance=1.0e-04,
-        absolute_tolerance=4.2e-01,
-        cos_dist_threshold=2.4e-1,
+        absolute_tolerance=4.0e-03,
+        cos_dist_threshold=2.5e-04,
         kl_div_threshold=2.6e-04,
     ),
     # Qwen2.VL-FP8
