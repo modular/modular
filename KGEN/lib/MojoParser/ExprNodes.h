@@ -165,6 +165,37 @@ struct StringLiteralNode final : public ExprNode {
   void print(mlir::raw_indented_ostream &os) const override;
 };
 
+/// T-string literal nodes like t"hello {name}".
+/// For Phase 1, we support basic {expr} interpolation.
+struct TStringExprNode final : public ExprNode {
+  struct LiteralPart {
+    StringRef text;
+  };
+
+  struct InterpolationPart {
+    ExprNode *expr;
+  };
+
+  using Part = std::variant<LiteralPart, InterpolationPart>;
+
+  TStringExprNode(SMLoc startLoc, SMLoc endLoc, ArrayRef<Part> parts)
+      : ExprNode(kTStringLiteral), startLoc(startLoc), endLoc(endLoc),
+        parts(parts) {}
+
+  const SMLoc startLoc;
+  const SMLoc endLoc;
+  const ArrayRef<Part> parts;
+
+  static bool classof(const ExprNode *node) {
+    return node->kind == kTStringLiteral;
+  }
+
+  SMLoc getLoc() const override { return startLoc; }
+  SourceRange getRange() const override;
+  AnyValue emitIR(ValueDest &dest, IREmitter &emitter) const override;
+  void print(mlir::raw_indented_ostream &os) const override;
+};
+
 struct Identifier {
   Identifier(StringRef spelling, bool isEscaped)
       : spelling(spelling), isEscaped(isEscaped) {}

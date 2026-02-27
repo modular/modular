@@ -26,6 +26,7 @@
 #include "ExprNodes.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "ParserBase.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -94,6 +95,9 @@ private:
   ParseResult parseFunctionType(ExprNode *&result);
   ParseResult parseLambda(ExprNode *&result);
   ParseResult parseMagicFunction(ExprNode *&result);
+  ParseResult
+  parseTStringFromSpelling(const Token &tstrTok,
+                           SmallVectorImpl<TStringExprNode::Part> &parts);
 
   ParseResult parseComprehension(ExprNode *&result, ExprNode::Kind kind,
                                  SMLoc startLoc, ExprNode *expr,
@@ -391,6 +395,7 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::dot_dot_dot:
   case Token::float_num:
   case Token::string:
+  case Token::t_string:
   case Token::kw_None:
   case Token::l_paren:
   case Token::l_square:
@@ -557,6 +562,25 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     result = alloc<StringLiteralNode>(copyArrayRef<StringRef>(spellings));
     break;
   }
+  case Token::t_string: { // primary -> literal -> t-string
+    SmallVector<TStringExprNode::Part> allParts;
+    SMLoc tstringStart = startTok.getLoc();
+    SMLoc tstringEnd = startTok.getLoc();
+
+    // T-string concatenation: collect consecutive t-strings (like string
+    // literals)
+    do {
+      Token tstrTok = consumeToken(Token::t_string);
+      tstringEnd = tstrTok.getEndLoc();
+      if (parseTStringFromSpelling(tstrTok, allParts))
+        return failure();
+    } while (getToken().is(Token::t_string) && isTokenInCurrentStatement());
+
+    result =
+        alloc<TStringExprNode>(tstringStart, tstringEnd,
+                               copyArrayRef<TStringExprNode::Part>(allParts));
+    break;
+  }
   case Token::kw_None:
     consumeToken(Token::kw_None);
     result =
@@ -671,6 +695,117 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     }
 
     break;
+  }
+
+  return success();
+}
+
+/// Walk the spelling of a single t-string token and extract literal parts
+/// and expression interpolation parts. For each `{...}` expression region,
+/// the lexer cursor is temporarily repositioned into the source buffer to
+/// parse the expression, then restored.
+ParseResult ExprParser::parseTStringFromSpelling(
+    const Token &tstrTok, SmallVectorImpl<TStringExprNode::Part> &parts) {
+  StringRef spelling = tstrTok.getSpelling();
+  const char *ptr = spelling.data();
+  const char *end = ptr + spelling.size();
+
+  // Skip 't'/'T' prefix.
+  ptr++;
+
+  auto peekNextIs = [&](char c) -> bool {
+    return ptr + 1 < end && ptr[1] == c;
+  };
+
+  // Determine quote style and skip opening quote(s).
+  char quoteChar = *ptr;
+  bool isTriple = Lexer::isTripleQuote(ptr, end, quoteChar);
+  ptr += isTriple ? 3 : 1;
+
+  // Calculate end of content (before closing quote(s)).
+  const char *contentEnd = end - (isTriple ? 3 : 1);
+  assert(contentEnd >= ptr && "tstring end is before the beginning");
+  const char *literalStart = ptr;
+
+  while (ptr < contentEnd) {
+    // Check for escaped braces {{ and }}.
+    if ((*ptr == '{' && peekNextIs('{')) || (*ptr == '}' && peekNextIs('}'))) {
+      ptr += 2;
+      continue;
+    }
+
+    // Start of interpolation expression.
+    if (*ptr == '{') {
+      // Emit pending literal if any.
+      if (ptr > literalStart) {
+        parts.push_back(TStringExprNode::LiteralPart{
+            .text = StringRef(literalStart, ptr - literalStart),
+        });
+      }
+
+      const char *exprStart = ptr + 1; // one past the opening '{'
+      // Find the matching '}' by skipping nested strings/t-strings.
+      if (!Lexer::findTStringInterpolationEnd(ptr, contentEnd)) {
+        // The lexer should have caught this, but be defensive.
+        emitError(SMLoc::getFromPointer(exprStart - 1),
+                  "unmatched '{' in t-string");
+        return failure();
+      }
+
+      const char *exprEnd = ptr - 1; // points to '}'
+
+      // Check for empty braces.
+      if (exprStart == exprEnd) {
+        emitError(SMLoc::getFromPointer(exprStart - 1),
+                  "t-string expression cannot be empty");
+        return failure();
+      }
+
+      // Save the current lexer state (which is past the t_string token).
+      auto savedCursor = lexer.getCursor();
+
+      // Make a lexer at the expression content within the source buffer.
+      // Swap the ExprLexer state into our lexer so parseExpression works.
+      Lexer tStringExprLexer(shared.diags, lexer.getBuffer(), exprStart);
+      LexerCursor(tStringExprLexer).restore(lexer);
+      auto restoreLexer = llvm::scope_exit([&] { savedCursor.restore(lexer); });
+
+      // Parse the expression.
+      ExprNode *expr = nullptr;
+      if (parseExpression(expr)) {
+        return failure();
+      }
+
+      // Check if user attempted to use format spec (not yet supported).
+      if (getToken().is(Token::colon)) {
+        emitError(getToken().getLoc(),
+                  "format specs are not yet supported in t-strings");
+        return failure();
+      }
+
+      // Verify we stopped at the closing '}'.
+      if (!getToken().is(Token::r_brace)) {
+        emitError(getToken().getLoc(),
+                  "expected '}' to close t-string expression");
+        return failure();
+      }
+
+      parts.push_back(TStringExprNode::InterpolationPart{
+          .expr = expr,
+      });
+
+      literalStart = ptr;
+      continue;
+    }
+
+    ptr++;
+  }
+
+  // Emit trailing literal if any.
+  if (ptr > literalStart && literalStart < contentEnd) {
+    parts.push_back(TStringExprNode::LiteralPart{
+        .text = StringRef(literalStart, contentEnd - literalStart),
+    });
   }
 
   return success();
