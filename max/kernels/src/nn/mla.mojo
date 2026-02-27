@@ -169,9 +169,14 @@ fn flare_mla_decoding[
     comptime assert (
         not ragged or rank == 3
     ), "only support rank 3 inputs for ragged inputs."
-    comptime assert (
-        q.dtype == output.dtype
-    ), "Q, K, V, output should have same type."
+    # Q and output may differ for native FP8 path: Q is float8_e4m3fn,
+    # output is bfloat16. Both half-float Q (bfloat16) and FP8 Q are valid.
+    comptime assert q.dtype == output.dtype or (
+        q.dtype == DType.float8_e4m3fn and output.dtype == DType.bfloat16
+    ), (
+        "Q and output must have same type, or Q=float8_e4m3fn with"
+        " output=bfloat16."
+    )
 
     @always_inline
     @parameter
@@ -351,7 +356,9 @@ fn flare_mla_decoding_dispatch[
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
-    comptime assert q.dtype.is_half_float(), "Only support half precision."
+    comptime assert (
+        q.dtype.is_half_float() or q.dtype == DType.float8_e4m3fn
+    ), "Only support half precision or float8_e4m3fn Q."
 
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known for opaque KVCache types, we only check Q.

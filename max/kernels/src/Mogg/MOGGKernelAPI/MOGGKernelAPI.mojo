@@ -7149,14 +7149,16 @@ struct Struct_mla_decode_ragged_paged:
     @staticmethod
     fn execute[
         dtype: DType,
+        q_dtype: DType,
+        kv_dtype: DType,
         //,
         mask_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        q: InputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=q_dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],

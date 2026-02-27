@@ -209,7 +209,8 @@ fn test[
         ),
     )
 
-    comptime if not against_gpu_naive:
+    @parameter
+    if not against_gpu_naive:
         comptime assert (
             q_type == mask_type
         ), "expect qkv and mask have same type for CPU."
@@ -276,7 +277,8 @@ fn test[
     @always_inline
     @__copy_capture(q_device, k_device, mask3d, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        comptime if mla_mask_type == MLAMaskType.CAUSAL:
+        @parameter
+        if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
                 output_device.as_any_origin(),
                 q_device,
@@ -336,7 +338,8 @@ fn test[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    comptime if against_gpu_naive:
+    @parameter
+    if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[q_type](o_size)
         comptime output_ref_layout = Layout.row_major(
             Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
@@ -359,7 +362,8 @@ fn test[
         )
         ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
-        comptime if mla_mask_type == MLAMaskType.CAUSAL:
+        @parameter
+        if mla_mask_type == MLAMaskType.CAUSAL:
             var k_operand = LayoutTensorMHAOperand(k_ref_device)
             var null_valid_length = LayoutTensor[
                 DType.uint32, Layout.row_major(UNKNOWN_VALUE)
@@ -533,7 +537,9 @@ fn test_decoding[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
+
+        @parameter
+        if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
             # tests with mask tensor
             # Test with benchmark parameters: batch_size=1, cache_len=32768, num_heads=128
             test_decoding[1, MLAMaskType.NO_MASK](ctx, False, 1, 32768)

@@ -49,6 +49,7 @@ from nn.mla_decode_sm100_utils import (
 )
 from nn.mla_decode_sm100_kv_bf16 import MLA_SM100_Decode_KV_BF16
 from nn.mla_decode_sm100_kv_fp8 import MLA_SM100_Decode_KV_FP8
+from nn.mla_decode_sm100_qkv_fp8 import MLA_SM100_Decode_QKV_FP8
 from nn.mla_decode_sm100_combine import mla_decode_combine_partial_outputs
 
 
@@ -292,7 +293,30 @@ fn _mla_decode_sm100_dispatch_impl[
     # because the resulting num_kv_cache_pages // min_pages_per_split naturally
     # produces low split counts (often 0), letting target_partitions dominate,
     # which gives the right np for these configs.
-    var min_pages_per_split: Int = 8 if batch_size >= 64 else 4
+    #
+    # FP8 adjustment: FP8 KV tiles are half the bytes of BF16, so TMA
+    # loads complete ~2x faster. This means each split finishes faster,
+    # making the combine kernel overhead a larger fraction of total time.
+    # To compensate, use 2x min_pages_per_split for FP8 to produce fewer,
+    # larger splits.
+    #
+    # Exception: very small batches (bs <= 8) benefit from more splits
+    # regardless of dtype because wave efficiency dominates. At bs=8 with
+    # long cache, FP8 gets np=37 at min_pps=4 vs np=29 at min_pps=8,
+    # giving ~5% speedup. For medium batch (bs=16-32), FP8 still needs
+    # the higher threshold to avoid over-splitting and combine overhead.
+    comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+    comptime _min_pps_large_batch = 16 if _is_fp8_kv else 8
+    comptime _min_pps_small_batch = 8 if _is_fp8_kv else 4
+    var min_pages_per_split: Int
+    if batch_size >= 64:
+        min_pages_per_split = _min_pps_large_batch
+    elif batch_size <= 8 and _is_fp8_kv:
+        # Very small batch FP8: use BF16 threshold (4) to allow more
+        # splits. Wave efficiency matters more than combine overhead.
+        min_pages_per_split = 4
+    else:
+        min_pages_per_split = _min_pps_small_batch
 
     var target_partitions = ceildiv(sm_count, ctas_per_partition)
     # Use wave_quantum for alignment when it gives reasonable split sizes,
@@ -314,10 +338,15 @@ fn _mla_decode_sm100_dispatch_impl[
     #    - Allow np=1 when cache is very short and batch is large enough
     #      (combine overhead dominates, np=1 eliminates it entirely).
     #      Tested extensively for bs>=64 with cache_len<=256 (<=2 pages @128).
+    #    - For FP8: allow np=1 with a higher cache threshold since each split
+    #      finishes faster and combine overhead is proportionally larger.
     #    - Otherwise require np>=2 when we have enough pages.
     #    - Fall back to np=1 for very short cache (<=1 page) as safety net.
+    # FP8: allow np=1 with higher cache threshold (512 vs 256) since each
+    # split finishes faster and combine overhead is proportionally larger.
+    comptime _np1_cache_threshold = 512 if _is_fp8_kv else 256
     var min_partitions: Int
-    if effective_max_cache_len <= 256 and batch_size >= 64:
+    if effective_max_cache_len <= _np1_cache_threshold and batch_size >= 64:
         min_partitions = 1
     elif num_kv_cache_pages >= 2:
         min_partitions = 2
@@ -326,7 +355,6 @@ fn _mla_decode_sm100_dispatch_impl[
     num_partitions = clamp(
         num_partitions, min_partitions, min(max_num_splits, num_kv_cache_pages)
     )
-
     # Eliminate empty splits caused by ceil division mismatch.
     # The main kernel uses pages_per_split = ceildiv(total_pages, num_partitions),
     # which means only ceildiv(total_pages, pages_per_split) splits actually have
@@ -481,10 +509,17 @@ fn _mla_decode_sm100_dispatch_impl[
         #   combine_ctas_base >= 512  <==> bs >= 16
         #
         # Decision matrix (empirically tuned for B200 with 148 SMs):
-        #   ctas >= 4096 AND np <= 4 AND cache_len <= 1280:  wph=1
-        #   ctas >= 2048 AND np > 4:                   wph=2
-        #   ctas >= 512:                               wph=4
-        #   ctas < 512 (small grid):                   wph=8
+        #   BF16: ctas >= 4096 AND np <= 4 AND cache <= 1280: wph=1
+        #   ctas >= 2048 AND np > 4:                          wph=2
+        #   ctas >= 512:                                      wph=4
+        #   ctas < 512 (small grid):                          wph=8
+        #
+        # The wph=1 path is BF16-only. FP8 decode finishes ~2x faster
+        # (half the KV bytes), leaving less PDL overlap for the combine
+        # kernel. With wph=1 the combine kernel has too few warps per
+        # head to sustain memory throughput. FP8 falls through to the
+        # wph=4 path which provides better per-head parallelism.
+        #   bs=128, cl=1024 FP8: wph=1 -> 37.3us, wph=4 -> 34.8us
         var combine_ctas_base = (
             batch_size * q_max_seq_len * ceildiv(num_heads, 4)
         )
@@ -492,29 +527,18 @@ fn _mla_decode_sm100_dispatch_impl[
             combine_ctas_base >= 4096
             and num_partitions <= 4
             and effective_max_cache_len <= 1280
+            and not _is_fp8_kv
         ):
             # Very large combine grid with small split count AND short KV
-            # cache: use wph=1 to aggressively minimize CTA count. With
-            # only 1-4 partials to reduce, per-CTA work is negligible. The
-            # bottleneck is purely wave count (CTAs / sm_count).
-            #
-            # The cache length guard (effective_max_cache_len <= 1280, i.e.
-            # <=10 pages at page_size=128) ensures we only use wph=1 when the
-            # decode kernel finishes quickly (short cache per split), making
-            # combine the dominant cost. We compare against
-            # effective_max_cache_len directly for clarity, independent of
-            # the split_page_size used.
-            # For larger caches (e.g., bs=256/cl=2048 with effective ~2049),
-            # the decode takes longer and combine is partially hidden
-            # behind PDL overlap, so wph=4 with more intra-CTA
-            # parallelism is preferred.
-            #
-            # Threshold 4096 corresponds to bs >= 128 for DeepSeek V3/R1
-            # (num_heads=128). Example configs:
+            # cache (BF16 only). The bottleneck is combine wave count
+            # since the decode kernel finishes quickly.
+            # Use wph=1 to aggressively minimize CTA count.
+            # With only 1-4 partials to reduce, per-CTA work is negligible.
+            # The bottleneck is purely wave count (CTAs / sm_count).
+            # The longer BF16 decode provides ample PDL overlap to hide
+            # the combine kernel's sequential portion.
             #   bs=128, cl=1024: np=2, wph=1, 2048 CTAs (14 waves)
             #     vs wph=4: 8192 CTAs (56 waves). 4x fewer waves.
-            #   bs=128, cl=128:  np=2, wph=1, 2048 CTAs (14 waves)
-            #   bs=256, cl=2048: effective ~2049 > 1280, wph=4 (excluded by guard)
 
             comptime for i in range(2, max_num_splits + 1):
                 if num_partitions == i:
@@ -618,12 +642,29 @@ fn mla_decode_sm100_sink_split_k[
     ctx: DeviceContext,
 ) raises:
     comptime _scale_block_size = k_t.quantization_granularity if k_t.quantization_enabled else 0
+    # Use native FP8 path when:
+    # 1. KV is FP8 tensorwise (scale_block_size == 0)
+    # 2. Q is also FP8 (q_type must match kv_type) — the pipeline provides FP8 Q
+    # When Q is BF16, fall through to the old FP8 converter or BF16 path.
+    comptime _native_fp8 = (
+        k_t.dtype == DType.float8_e4m3fn
+        and _scale_block_size == 0
+        and q_type == DType.float8_e4m3fn
+    )
+    # For native FP8: Q is FP8 (1 byte) but swizzle_mode is the output
+    # swizzle (SWIZZLE_128B for BF16). Using size_of[q_type]()=1 with
+    # SWIZZLE_128B gives swizzle_elems=128, causing padded_q_depth=640
+    # instead of 576. Use output_type size (2 for BF16) so
+    # swizzle_elems=64 and padded dims are correct.
+    comptime _dtype_size = size_of[output_type]() if _native_fp8 else size_of[
+        q_type
+    ]()
     comptime mla_config = MLA_SM100_Decode_Config(
         num_q_heads=num_heads,
         group=group,  # num_q_heads/h_k(1)
         depth=(depth - 64),  # 512
         q_depth=depth,  # 576
-        dtype_size=size_of[q_type](),
+        dtype_size=_dtype_size,
         kv_type_size=size_of[k_t.dtype](),
         swizzle_mode=config.swizzle_mode,
         kv_mma_swizzle_mode=config.swizzle_mode,
@@ -631,17 +672,9 @@ fn mla_decode_sm100_sink_split_k[
         decoding_warp_split_k=decoding_warp_split_k,
         split_page_size=split_page_size,
         scale_block_size=_scale_block_size,
+        native_fp8=_native_fp8,
     )
     var num_rows_q = num_matrix_view_rows_decode(q)
-    q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
-        q.to_device_buffer(ctx).unsafe_ptr()
-    )
-    q_tma_op = tma_tile_qo[
-        swizzle_mode = mla_config.swizzle_mode,
-        BM = mla_config.BM,  # tile_m =64
-        BK = mla_config.BK0,  # tile_n =576
-        depth = mla_config.q_depth,
-    ](ctx, q_ptr, num_rows_q)
 
     k_tma_op = k.create_tma_tile[
         BN = mla_config.BK1,  # tile_m =64
@@ -660,66 +693,153 @@ fn mla_decode_sm100_sink_split_k[
         depth = mla_config.depth,
     ](ctx, o_ptr, num_rows_o)
 
-    if ragged:
-        comptime ValidLengthType = NonNullPointer[DType.uint32]
-        var valid_len: ValidLengthType = {
-            valid_length.to_device_buffer(ctx).unsafe_ptr()
-        }
-        launch_mla_sm100_decode_enqueue_kernel[
-            q_type=q_type,
-            KVLUTType=k_t,
-            output_type=output_type,
-            SplitAccumType=SplitAccumType,
-            MaskType=mask_t,
-            config=mla_config,
-            ValidLengthType=ValidLengthType,
-            ragged=True,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-        ](
-            q_tma_op,
-            k_tma_op,
-            o_tma_op,
-            k,
-            lse_accum_split_ptr,
-            scale,
-            batch_size,
-            block_z,
-            num_partitions,
-            q_max_seq_len,
-            valid_len,
-            mask,
-            scales_ptr,
-            ctx,
-        )
+    # For native FP8: Q data is already FP8 in the Q buffer (like FlashInfer).
+    # Create FP8 Q TMA with SWIZZLE_64B. The kernel reads Q directly as FP8.
+    # This path uses a dedicated launch function because the Q TMA type differs
+    # from the BF16 path (FP8 dtype, SWIZZLE_64B vs BF16 dtype, SWIZZLE_128B).
+    comptime if _native_fp8:
+        q_ptr_fp8 = rebind[
+            UnsafePointer[Scalar[k_t.dtype], origin=MutAnyOrigin]
+        ](q.to_device_buffer(ctx).unsafe_ptr())
+        q_tma_fp8 = tma_tile_qo[
+            swizzle_mode = mla_config.kv_tma_swizzle_mode,  # SWIZZLE_64B
+            BM = mla_config.BM,
+            BK = mla_config.BK0,
+            depth = mla_config.q_depth,
+        ](ctx, q_ptr_fp8, num_rows_q)
+
+        if ragged:
+            comptime ValidLengthType = NonNullPointer[DType.uint32]
+            var valid_len: ValidLengthType = {
+                valid_length.to_device_buffer(ctx).unsafe_ptr()
+            }
+            launch_mla_sm100_decode_native_fp8[
+                q_type=q_type,
+                KVLUTType=k_t,
+                output_type=output_type,
+                SplitAccumType=SplitAccumType,
+                MaskType=mask_t,
+                config=mla_config,
+                ValidLengthType=ValidLengthType,
+                ragged=False,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+            ](
+                q_tma_fp8,
+                k_tma_op,
+                o_tma_op,
+                k,
+                lse_accum_split_ptr,
+                scale,
+                batch_size,
+                block_z,
+                num_partitions,
+                q_max_seq_len,
+                valid_len,
+                mask,
+                scales_ptr,
+                ctx,
+            )
+        else:
+            comptime ValidLengthType = NullPointer[DType.uint32]
+            var valid_len: ValidLengthType = {}
+            launch_mla_sm100_decode_native_fp8[
+                q_type=q_type,
+                KVLUTType=k_t,
+                output_type=output_type,
+                SplitAccumType=SplitAccumType,
+                MaskType=mask_t,
+                config=mla_config,
+                ValidLengthType=ValidLengthType,
+                ragged=False,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+            ](
+                q_tma_fp8,
+                k_tma_op,
+                o_tma_op,
+                k,
+                lse_accum_split_ptr,
+                scale,
+                batch_size,
+                block_z,
+                num_partitions,
+                q_max_seq_len,
+                valid_len,
+                mask,
+                scales_ptr,
+                ctx,
+            )
     else:
-        comptime ValidLengthType = NullPointer[DType.uint32]
-        var valid_len: ValidLengthType = {}
-        launch_mla_sm100_decode_enqueue_kernel[
-            q_type=q_type,
-            KVLUTType=k_t,
-            output_type=output_type,
-            SplitAccumType=SplitAccumType,
-            MaskType=mask_t,
-            config=mla_config,
-            ValidLengthType=ValidLengthType,
-            ragged=False,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-        ](
-            q_tma_op,
-            k_tma_op,
-            o_tma_op,
-            k,
-            lse_accum_split_ptr,
-            scale,
-            batch_size,
-            block_z,
-            num_partitions,
-            q_max_seq_len,
-            valid_len,
-            mask,
-            scales_ptr,
-            ctx,
+        # BF16 / old FP8 converter path: Q is BF16, create BF16 Q TMA.
+        q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
+            q.to_device_buffer(ctx).unsafe_ptr()
         )
+        q_tma_op = tma_tile_qo[
+            swizzle_mode = mla_config.swizzle_mode,
+            BM = mla_config.BM,
+            BK = mla_config.BK0,
+            depth = mla_config.q_depth,
+        ](ctx, q_ptr, num_rows_q)
+
+        if ragged:
+            comptime ValidLengthType = NonNullPointer[DType.uint32]
+            var valid_len: ValidLengthType = {
+                valid_length.to_device_buffer(ctx).unsafe_ptr()
+            }
+            launch_mla_sm100_decode_enqueue_kernel[
+                q_type=q_type,
+                KVLUTType=k_t,
+                output_type=output_type,
+                SplitAccumType=SplitAccumType,
+                MaskType=mask_t,
+                config=mla_config,
+                ValidLengthType=ValidLengthType,
+                ragged=True,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+            ](
+                q_tma_op,
+                k_tma_op,
+                o_tma_op,
+                k,
+                lse_accum_split_ptr,
+                scale,
+                batch_size,
+                block_z,
+                num_partitions,
+                q_max_seq_len,
+                valid_len,
+                mask,
+                scales_ptr,
+                ctx,
+            )
+        else:
+            comptime ValidLengthType = NullPointer[DType.uint32]
+            var valid_len: ValidLengthType = {}
+            launch_mla_sm100_decode_enqueue_kernel[
+                q_type=q_type,
+                KVLUTType=k_t,
+                output_type=output_type,
+                SplitAccumType=SplitAccumType,
+                MaskType=mask_t,
+                config=mla_config,
+                ValidLengthType=ValidLengthType,
+                ragged=False,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+            ](
+                q_tma_op,
+                k_tma_op,
+                o_tma_op,
+                k,
+                lse_accum_split_ptr,
+                scale,
+                batch_size,
+                block_z,
+                num_partitions,
+                q_max_seq_len,
+                valid_len,
+                mask,
+                scales_ptr,
+                ctx,
+            )
 
 
 @always_inline
@@ -837,10 +957,12 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         num_partitions,
     )
 
-    # Dispatch to the appropriate kernel:
-    # - FP8: float8_e4m3fn KV cache (handles both tensorwise and blockwise scaling
-    #   via @parameter if Self.config.scale_block_size > 0 conditionals)
-    # - BF16: bfloat16 KV cache (no conversion needed)
+    # Dispatch to BF16 or old FP8 converter kernel (not native FP8 — that has
+    # its own launch function with FP8 Q TMA).
+    # Route ALL FP8 KV (both tensorwise and blockwise) to the FP8 converter
+    # kernel. When we reach this function, native FP8 has already been ruled
+    # out (Q is BF16), so the converter kernel handles FP8->BF16 conversion.
+    comptime _is_old_fp8 = KVLUTType.dtype == DType.float8_e4m3fn
     comptime kernel = MLA_SM100_Decode_KV_FP8[
         q_type=q_type,
         KVLUTType=KVLUTType,
@@ -851,7 +973,7 @@ fn launch_mla_sm100_decode_enqueue_kernel[
         ValidLengthType=ValidLengthType,
         _is_cache_length_accurate=_is_cache_length_accurate,
         ragged=ragged,
-    ].kernel if KVLUTType.dtype == DType.float8_e4m3fn else MLA_SM100_Decode_KV_BF16[
+    ].kernel if _is_old_fp8 else MLA_SM100_Decode_KV_BF16[
         q_type=q_type,
         KVLUTType=KVLUTType,
         output_type=output_type,
@@ -864,6 +986,97 @@ fn launch_mla_sm100_decode_enqueue_kernel[
     ].kernel
     # Enable PDL (Programmatic Dependent Launch) for split-K mode to chain
     # the MLA decode kernel with the combine kernel, reducing host synchronization.
+    comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    ctx.enqueue_function[kernel, kernel](
+        q_tma,
+        k_tma,
+        o_tma,
+        kv_lut,
+        scale,
+        batch_size,
+        q_max_seq_len,
+        num_partitions,
+        mla_decode_pack,
+        scales_ptr,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        shared_mem_bytes=config.smem_used,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(config.smem_used)
+        ),
+        attributes=pdl_launch_attributes(pdl_level),
+    )
+
+
+@always_inline
+fn launch_mla_sm100_decode_native_fp8[
+    q_type: DType,
+    KVLUTType: MHAOperand,
+    output_type: DType,
+    SplitAccumType: OptionalPointer,
+    MaskType: MHAMask,
+    config: MLA_SM100_Decode_Config,
+    ValidLengthType: OptionalPointer,
+    _is_cache_length_accurate: Bool = False,
+    ragged: Bool = False,
+](
+    q_tma: QOTMATile[
+        dtype = KVLUTType.dtype,  # FP8 Q TMA
+        BM = config.BM,
+        BK = config.BK0,
+        swizzle_mode = config.kv_tma_swizzle_mode,  # SWIZZLE_64B
+    ],
+    k_tma: KVTMATile[
+        dtype = KVLUTType.dtype,
+        swizzle_mode = config.kv_tma_swizzle_mode,
+        BN = config.BK1,
+        BK = config.BK0,
+    ],
+    o_tma: QOTMATile[
+        dtype=output_type,
+        BM = config.out_rows,
+        BK = config.BN,
+        swizzle_mode = config.swizzle_mode,
+    ],
+    kv_lut: KVLUTType,
+    lse_accum_split_ptr: SplitAccumType,
+    scale: Float32,
+    batch_size: Int,
+    block_z: Int,
+    num_partitions: Int,
+    q_max_seq_len: Int,
+    valid_len: ValidLengthType,
+    mask: MaskType,
+    scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    ctx: DeviceContext,
+) raises:
+    """Launch the native FP8 MLA decode kernel with FP8 Q TMA.
+
+    This is a dedicated launch function for the native FP8 path because
+    the Q TMA has FP8 dtype (SWIZZLE_64B) instead of BF16 (SWIZZLE_128B).
+    """
+    var mla_decode_pack = MLA_Decode_Pack[
+        ValidLengthType=ValidLengthType,
+        MaskType=MaskType,
+        SplitAccumType=SplitAccumType,
+    ](mask, valid_len, lse_accum_split_ptr)
+    var block_x = ceildiv(config.num_q_heads, config.BM)
+    var grid_dim = (block_x, q_max_seq_len, block_z)
+    var block_dim = (config.num_threads, 1, 1)
+
+    logger.info("------ Dispatching to SM100 Native FP8 MLA-DECODE ------")
+
+    comptime kernel = MLA_SM100_Decode_QKV_FP8[
+        q_type=q_type,
+        KVLUTType=KVLUTType,
+        output_type=output_type,
+        SplitAccumType=SplitAccumType,
+        MaskType=MaskType,
+        config=config,
+        ValidLengthType=ValidLengthType,
+        _is_cache_length_accurate=_is_cache_length_accurate,
+        ragged=ragged,
+    ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     ctx.enqueue_function[kernel, kernel](
         q_tma,

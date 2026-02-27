@@ -1720,6 +1720,730 @@ fn run_bench_paged_variable[
 
 
 # ===-----------------------------------------------------------------------===#
+# Core test: native FP8 paged path (Q=FP8, KV=FP8, output=BF16)
+# ===-----------------------------------------------------------------------===#
+
+
+fn run_test_paged_variable_native_fp8[
+    num_heads: Int,
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+    """Test native FP8 MLA decode through the paged path.
+
+    In the native FP8 path:
+    - Q is float8_e4m3fn (sent to the kernel as FP8 via TMA)
+    - KV cache is float8_e4m3fn (tensorwise, scale_block_size=0)
+    - Output is bfloat16
+
+    This exercises the 3-WG native FP8 kernel (MLA_SM100_Decode_QKV_FP8)
+    with split-K + PDL through the paged KV cache path.
+
+    For the GPU naive reference, we use BF16 Q and dequantized BF16 K
+    since mha_gpu_naive does not support FP8 inputs.
+    """
+    comptime q_type = DType.float8_e4m3fn
+    comptime kv_type = DType.float8_e4m3fn
+    comptime ref_type = DType.bfloat16  # Reference/output type
+
+    var batch_size = len(cache_lengths)
+    print(
+        "test:",
+        name,
+        " batch_size:",
+        batch_size,
+        " num_heads:",
+        num_heads,
+        " q_type:",
+        q_type,
+        " kv_type:",
+        kv_type,
+        " output_type:",
+        ref_type,
+    )
+    for i in range(batch_size):
+        print("  batch", i, ": cache_len=", cache_lengths[i])
+
+    # All seq_lens = 1 (standard decode)
+    comptime q_max_seq_len = 1
+    var total_q_tokens = batch_size  # Each batch has 1 query token
+
+    var max_cache_len = 0
+    var total_pages = 0
+    for i in range(batch_size):
+        if cache_lengths[i] > max_cache_len:
+            max_cache_len = cache_lengths[i]
+        total_pages += ceildiv(cache_lengths[i] + q_max_seq_len, PAGE_SIZE)
+
+    comptime scale = Float32(0.125)
+    comptime group = num_heads
+
+    # -----------------------------------------------------------------------
+    # Step 1: Create the paged KV cache on host (FP8)
+    # -----------------------------------------------------------------------
+    comptime kv_params = KVCacheStaticParams(
+        num_heads=KV_NUM_HEADS, head_size=DEPTH, is_mla=True
+    )
+    comptime kv_dim2 = 1
+
+    var block_shape = IndexList[6](
+        total_pages,
+        kv_dim2,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        Int(kv_params.num_heads),
+        Int(kv_params.head_size),
+    )
+    var block_elems = (
+        total_pages
+        * kv_dim2
+        * NUM_LAYERS
+        * PAGE_SIZE
+        * Int(kv_params.num_heads)
+        * Int(kv_params.head_size)
+    )
+
+    var blocks_host = UnsafePointer[Scalar[kv_type]].alloc(block_elems)
+
+    # Generate KV data in bf16 first, then cast to FP8.
+    # Keep bf16 copy for the reference path.
+    var blocks_bf16 = UnsafePointer[Scalar[ref_type]].alloc(block_elems)
+    randn[ref_type](blocks_bf16, block_elems, mean=0.0, standard_deviation=0.5)
+    for i in range(block_elems):
+        blocks_host[i] = blocks_bf16[i].cast[kv_type]()
+    # Note: blocks_bf16 is kept alive for reference computation below.
+
+    var _page_stride = (
+        kv_dim2
+        * NUM_LAYERS
+        * PAGE_SIZE
+        * Int(kv_params.num_heads)
+        * Int(kv_params.head_size)
+    )
+    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+
+    var cache_lengths_host = UnsafePointer[UInt32].alloc(batch_size)
+    for i in range(batch_size):
+        cache_lengths_host[i] = UInt32(cache_lengths[i])
+
+    var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
+    var lut_size = batch_size * max_pages_per_batch
+    var lookup_table_host = UnsafePointer[UInt32].alloc(lut_size)
+    for i in range(lut_size):
+        lookup_table_host[i] = UInt32(0)
+
+    var page_offset = 0
+    for i in range(batch_size):
+        var num_pages_i = ceildiv(cache_lengths[i] + q_max_seq_len, PAGE_SIZE)
+        for p in range(num_pages_i):
+            lookup_table_host[i * max_pages_per_batch + p] = UInt32(
+                page_offset + p
+            )
+        page_offset += num_pages_i
+
+    # Zero out tail slots in both FP8 and BF16 copies
+    var cur_page = 0
+    for bi in range(batch_size):
+        var num_keys_i = cache_lengths[bi] + q_max_seq_len
+        var num_pages_i = ceildiv(num_keys_i, PAGE_SIZE)
+        for pg in range(num_pages_i):
+            var valid_toks = num_keys_i - pg * PAGE_SIZE
+            if valid_toks > PAGE_SIZE:
+                valid_toks = PAGE_SIZE
+            var base = cur_page * _page_stride + valid_toks * _tok_stride
+            var zero_count = (PAGE_SIZE - valid_toks) * _tok_stride
+            for z in range(zero_count):
+                blocks_host[base + z] = 0
+                blocks_bf16[base + z] = 0
+            cur_page += 1
+
+    # -----------------------------------------------------------------------
+    # Step 2: Q tensor — generate in BF16, keep copy, cast to FP8
+    # -----------------------------------------------------------------------
+    var q_size = total_q_tokens * num_heads * DEPTH
+
+    # BF16 Q for reference
+    var q_bf16_host = UnsafePointer[Scalar[ref_type]].alloc(q_size)
+    randn[ref_type](q_bf16_host, q_size, mean=0.0, standard_deviation=0.5)
+
+    # FP8 Q for kernel
+    var q_fp8_host = UnsafePointer[Scalar[q_type]].alloc(q_size)
+    for i in range(q_size):
+        q_fp8_host[i] = q_bf16_host[i].cast[q_type]()
+
+    # -----------------------------------------------------------------------
+    # Step 3: input_row_offsets (batch_size + 1 elements)
+    # -----------------------------------------------------------------------
+    var row_offsets_host = UnsafePointer[UInt32].alloc(batch_size + 1)
+    row_offsets_host[0] = UInt32(0)
+    for i in range(batch_size):
+        row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
+
+    # -----------------------------------------------------------------------
+    # Step 4: Output tensor (BF16, not FP8)
+    # -----------------------------------------------------------------------
+    var out_size = total_q_tokens * num_heads * V_DEPTH
+    var out_host = UnsafePointer[Scalar[ref_type]].alloc(out_size)
+
+    # -----------------------------------------------------------------------
+    # Step 5: Copy everything to device
+    # -----------------------------------------------------------------------
+    var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
+    ctx.enqueue_copy(blocks_device, blocks_host)
+
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
+
+    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    ctx.enqueue_copy(lookup_table_device, lookup_table_host)
+
+    # FP8 Q to device
+    var q_device = ctx.enqueue_create_buffer[q_type](q_size)
+    ctx.enqueue_copy(q_device, q_fp8_host)
+
+    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size + 1
+    )
+    ctx.enqueue_copy(row_offsets_device, row_offsets_host)
+
+    # Output is BF16
+    var out_device = ctx.enqueue_create_buffer[ref_type](out_size)
+
+    ctx.synchronize()
+
+    # -----------------------------------------------------------------------
+    # Step 6: Build LayoutTensors and PagedKVCacheCollection on device
+    # -----------------------------------------------------------------------
+    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
+        blocks_device.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    )
+
+    comptime cl_layout = Layout(UNKNOWN_VALUE)
+    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+        cache_lengths_device.unsafe_ptr(),
+        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    )
+
+    comptime lt_layout_2d = Layout.row_major[2]()
+    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+        lookup_table_device.unsafe_ptr(),
+        RuntimeLayout[lt_layout_2d].row_major(
+            IndexList[2](batch_size, max_pages_per_batch)
+        ),
+    )
+
+    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
+        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+            blocks_lt.ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                blocks_lt.runtime_layout.shape.value,
+                blocks_lt.runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+            cache_lengths_lt.ptr,
+            RuntimeLayout[cl_layout](
+                cache_lengths_lt.runtime_layout.shape.value,
+                cache_lengths_lt.runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+            lookup_table_lt.ptr,
+            RuntimeLayout[lt_layout_2d](
+                lookup_table_lt.runtime_layout.shape.value,
+                lookup_table_lt.runtime_layout.stride.value,
+            ),
+        ),
+        UInt32(q_max_seq_len),
+        UInt32(max_cache_len),
+    )
+
+    var kv_cache = kv_collection.get_key_cache(0)
+
+    # Q is FP8, output is BF16
+    comptime q_layout_3d = Layout.row_major(
+        Index(UNKNOWN_VALUE, num_heads, DEPTH)
+    )
+    var q_lt = LayoutTensor[q_type, q_layout_3d](
+        q_device.unsafe_ptr(),
+        RuntimeLayout[q_layout_3d].row_major(
+            Index(total_q_tokens, num_heads, DEPTH)
+        ),
+    )
+
+    comptime out_layout_3d = Layout.row_major(
+        Index(UNKNOWN_VALUE, num_heads, V_DEPTH)
+    )
+    var out_lt = LayoutTensor[ref_type, out_layout_3d](
+        out_device.unsafe_ptr(),
+        RuntimeLayout[out_layout_3d].row_major(
+            Index(total_q_tokens, num_heads, V_DEPTH)
+        ),
+    )
+
+    comptime ro_layout = Layout.row_major(UNKNOWN_VALUE)
+    var row_offsets_lt = LayoutTensor[DType.uint32, ro_layout](
+        row_offsets_device.unsafe_ptr(),
+        RuntimeLayout[ro_layout].row_major(Index(batch_size + 1)),
+    )
+
+    # -----------------------------------------------------------------------
+    # Step 7: Call the kernel (Q=FP8, KV=FP8, output=BF16)
+    # -----------------------------------------------------------------------
+    print("  Launching native FP8 MLA decode kernel...")
+
+    flare_mla_decoding[rank=3, ragged=True](
+        out_lt,
+        q_lt,
+        kv_cache,
+        NullMask(),
+        row_offsets_lt,
+        scale,
+        ctx,
+        q_max_seq_len,
+    )
+
+    ctx.synchronize()
+    print("  Kernel completed successfully (no crash).")
+
+    # -----------------------------------------------------------------------
+    # Step 8: Numerical verification using mha_gpu_naive reference
+    # Uses BF16 Q and dequantized BF16 K for the reference.
+    # -----------------------------------------------------------------------
+    ctx.enqueue_copy(out_host, out_device)
+    ctx.synchronize()
+
+    print("  Computing GPU naive reference per batch and comparing...")
+
+    # FP8 has larger quantization error, so use wider tolerances.
+    var rtol = 8e-2
+    var atol = 5e-1
+    var total_checked = 0
+    var max_abs_err = Float64(0)
+
+    for b in range(batch_size):
+        var cache_len = cache_lengths[b]
+        var ref_num_keys = cache_len + q_max_seq_len
+
+        # Extract contiguous BF16 K for this batch from bf16 paged blocks
+        var k_b_size = ref_num_keys * KV_NUM_HEADS * DEPTH
+        var k_b_host = UnsafePointer[Scalar[ref_type]].alloc(k_b_size)
+
+        var page_base_b = 0
+        for bi in range(b):
+            page_base_b += ceildiv(cache_lengths[bi] + q_max_seq_len, PAGE_SIZE)
+
+        for tok in range(ref_num_keys):
+            var page_idx = tok // PAGE_SIZE
+            var tok_in_page = tok % PAGE_SIZE
+            var physical_page = page_base_b + page_idx
+
+            var src_offset = (
+                physical_page
+                * kv_dim2
+                * NUM_LAYERS
+                * PAGE_SIZE
+                * Int(kv_params.num_heads)
+                * Int(kv_params.head_size)
+                + tok_in_page
+                * Int(kv_params.num_heads)
+                * Int(kv_params.head_size)
+            )
+            var dst_offset = tok * KV_NUM_HEADS * DEPTH
+            for d in range(KV_NUM_HEADS * DEPTH):
+                # Use BF16 (dequantized) version for reference
+                k_b_host[dst_offset + d] = blocks_bf16[src_offset + d]
+
+        # BF16 Q for this batch: [1, 1, num_heads, depth]
+        var q_b_size = 1 * num_heads * DEPTH
+        var q_b_host = UnsafePointer[Scalar[ref_type]].alloc(q_b_size)
+        for i in range(q_b_size):
+            q_b_host[i] = q_bf16_host[b * num_heads * DEPTH + i]
+
+        # Reference output: [1, 1, num_heads, depth] (full depth, BF16)
+        var ref_b_size = 1 * num_heads * DEPTH
+        var ref_b_host = UnsafePointer[Scalar[ref_type]].alloc(ref_b_size)
+
+        # Copy to device
+        var k_b_device = ctx.enqueue_create_buffer[ref_type](k_b_size)
+        ctx.enqueue_copy(k_b_device, k_b_host)
+
+        var q_b_device = ctx.enqueue_create_buffer[ref_type](q_b_size)
+        ctx.enqueue_copy(q_b_device, q_b_host)
+
+        var ref_b_device = ctx.enqueue_create_buffer[ref_type](ref_b_size)
+        ctx.synchronize()
+
+        # Build 4D LayoutTensors (all BF16 for reference)
+        comptime layout_4d = Layout.row_major[4]()
+        var q_b_lt = LayoutTensor[ref_type, layout_4d](
+            q_b_device.unsafe_ptr(),
+            RuntimeLayout[layout_4d].row_major(Index(1, 1, num_heads, DEPTH)),
+        )
+        var k_b_lt = LayoutTensor[ref_type, layout_4d](
+            k_b_device.unsafe_ptr(),
+            RuntimeLayout[layout_4d].row_major(
+                Index(1, ref_num_keys, KV_NUM_HEADS, DEPTH)
+            ),
+        )
+        var ref_b_lt = LayoutTensor[ref_type, layout_4d](
+            ref_b_device.unsafe_ptr(),
+            RuntimeLayout[layout_4d].row_major(Index(1, 1, num_heads, DEPTH)),
+        )
+
+        # Run mha_gpu_naive with BF16 inputs
+        mha_gpu_naive(
+            q_b_lt,
+            k_b_lt,
+            k_b_lt,
+            NullMask(),
+            ref_b_lt,
+            scale,
+            1,  # batch_size
+            1,  # seq_len
+            ref_num_keys,
+            num_heads,
+            DEPTH,
+            group,
+            ctx,
+        )
+
+        ctx.synchronize()
+        ctx.enqueue_copy(ref_b_host, ref_b_device)
+        ctx.synchronize()
+
+        # Compare first V_DEPTH=512 dims per head
+        var out_offset = b * num_heads * V_DEPTH
+        for h in range(num_heads):
+            for d in range(V_DEPTH):
+                var expect = ref_b_host.load(d + DEPTH * h).cast[
+                    DType.float64
+                ]()
+                var actual = out_host.load(out_offset + V_DEPTH * h + d).cast[
+                    DType.float64
+                ]()
+                var abs_err = abs(actual - expect)
+                if abs_err > max_abs_err:
+                    max_abs_err = abs_err
+                if abs_err > 2e-1:
+                    print(b, h, d, actual, expect)
+                assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
+
+        total_checked += num_heads * V_DEPTH
+
+        # Cleanup per-batch buffers
+        k_b_host.free()
+        q_b_host.free()
+        ref_b_host.free()
+        _ = k_b_device
+        _ = q_b_device
+        _ = ref_b_device
+
+    print(
+        "  Verified:",
+        total_checked,
+        "elements, max_abs_err:",
+        max_abs_err,
+    )
+
+    print("  PASS:", name, "\n")
+
+    # Cleanup
+    q_fp8_host.free()
+    q_bf16_host.free()
+    out_host.free()
+    blocks_host.free()
+    blocks_bf16.free()
+    cache_lengths_host.free()
+    lookup_table_host.free()
+    row_offsets_host.free()
+
+    _ = blocks_device
+    _ = cache_lengths_device
+    _ = lookup_table_device
+    _ = q_device
+    _ = row_offsets_device
+    _ = out_device
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark: native FP8 paged path (Q=FP8, KV=FP8, output=BF16)
+# ===-----------------------------------------------------------------------===#
+
+
+fn run_bench_paged_variable_native_fp8[
+    num_heads: Int,
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
+    """Benchmark the native FP8 paged path (no numerical verification)."""
+    comptime q_type = DType.float8_e4m3fn
+    comptime kv_type = DType.float8_e4m3fn
+    comptime ref_type = DType.bfloat16
+
+    var batch_size = len(cache_lengths)
+    print(
+        "bench:",
+        name,
+        " batch_size:",
+        batch_size,
+        " num_heads:",
+        num_heads,
+        " q_type:",
+        q_type,
+        " kv_type:",
+        kv_type,
+        " output_type:",
+        ref_type,
+    )
+    for i in range(batch_size):
+        print("  batch", i, ": cache_len=", cache_lengths[i])
+
+    comptime q_max_seq_len = 1
+    var total_q_tokens = batch_size
+
+    var max_cache_len = 0
+    var total_pages = 0
+    for i in range(batch_size):
+        if cache_lengths[i] > max_cache_len:
+            max_cache_len = cache_lengths[i]
+        total_pages += ceildiv(cache_lengths[i] + q_max_seq_len, PAGE_SIZE)
+
+    comptime scale = Float32(0.125)
+
+    # Step 1: Paged KV cache on host (FP8)
+    comptime kv_params = KVCacheStaticParams(
+        num_heads=KV_NUM_HEADS, head_size=DEPTH, is_mla=True
+    )
+    comptime kv_dim2 = 1
+
+    var block_shape = IndexList[6](
+        total_pages,
+        kv_dim2,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        Int(kv_params.num_heads),
+        Int(kv_params.head_size),
+    )
+    var block_elems = (
+        total_pages
+        * kv_dim2
+        * NUM_LAYERS
+        * PAGE_SIZE
+        * Int(kv_params.num_heads)
+        * Int(kv_params.head_size)
+    )
+
+    var blocks_host = UnsafePointer[Scalar[kv_type]].alloc(block_elems)
+    var blocks_bf16 = UnsafePointer[Scalar[ref_type]].alloc(block_elems)
+    randn[ref_type](blocks_bf16, block_elems, mean=0.0, standard_deviation=0.5)
+    for i in range(block_elems):
+        blocks_host[i] = blocks_bf16[i].cast[kv_type]()
+    blocks_bf16.free()
+
+    var _page_stride = (
+        kv_dim2
+        * NUM_LAYERS
+        * PAGE_SIZE
+        * Int(kv_params.num_heads)
+        * Int(kv_params.head_size)
+    )
+    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+
+    var cache_lengths_host = UnsafePointer[UInt32].alloc(batch_size)
+    for i in range(batch_size):
+        cache_lengths_host[i] = UInt32(cache_lengths[i])
+
+    var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
+    var lut_size = batch_size * max_pages_per_batch
+    var lookup_table_host = UnsafePointer[UInt32].alloc(lut_size)
+    for i in range(lut_size):
+        lookup_table_host[i] = UInt32(0)
+
+    var page_offset = 0
+    for i in range(batch_size):
+        var num_pages_i = ceildiv(cache_lengths[i] + q_max_seq_len, PAGE_SIZE)
+        for p in range(num_pages_i):
+            lookup_table_host[i * max_pages_per_batch + p] = UInt32(
+                page_offset + p
+            )
+        page_offset += num_pages_i
+
+    var cur_page = 0
+    for bi in range(batch_size):
+        var num_keys_i = cache_lengths[bi] + q_max_seq_len
+        var num_pages_i = ceildiv(num_keys_i, PAGE_SIZE)
+        for pg in range(num_pages_i):
+            var valid_toks = num_keys_i - pg * PAGE_SIZE
+            if valid_toks > PAGE_SIZE:
+                valid_toks = PAGE_SIZE
+            var base = cur_page * _page_stride + valid_toks * _tok_stride
+            var zero_count = (PAGE_SIZE - valid_toks) * _tok_stride
+            for z in range(zero_count):
+                blocks_host[base + z] = 0
+            cur_page += 1
+
+    # Step 2: Q tensor (FP8)
+    var q_size = total_q_tokens * num_heads * DEPTH
+    var q_bf16_tmp = UnsafePointer[Scalar[ref_type]].alloc(q_size)
+    randn[ref_type](q_bf16_tmp, q_size, mean=0.0, standard_deviation=0.5)
+    var q_host = UnsafePointer[Scalar[q_type]].alloc(q_size)
+    for i in range(q_size):
+        q_host[i] = q_bf16_tmp[i].cast[q_type]()
+    q_bf16_tmp.free()
+
+    # Step 3: input_row_offsets
+    var row_offsets_host = UnsafePointer[UInt32].alloc(batch_size + 1)
+    row_offsets_host[0] = UInt32(0)
+    for i in range(batch_size):
+        row_offsets_host[i + 1] = row_offsets_host[i] + UInt32(1)
+
+    # Step 4: Output tensor (BF16)
+    var out_size = total_q_tokens * num_heads * V_DEPTH
+    var out_host = UnsafePointer[Scalar[ref_type]].alloc(out_size)
+
+    # Step 5: Copy to device
+    var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
+    ctx.enqueue_copy(blocks_device, blocks_host)
+
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
+
+    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](lut_size)
+    ctx.enqueue_copy(lookup_table_device, lookup_table_host)
+
+    var q_device = ctx.enqueue_create_buffer[q_type](q_size)
+    ctx.enqueue_copy(q_device, q_host)
+
+    var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size + 1
+    )
+    ctx.enqueue_copy(row_offsets_device, row_offsets_host)
+
+    var out_device = ctx.enqueue_create_buffer[ref_type](out_size)
+
+    ctx.synchronize()
+
+    # Step 6: Build LayoutTensors and PagedKVCacheCollection
+    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
+        blocks_device.unsafe_ptr(),
+        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    )
+
+    comptime cl_layout = Layout(UNKNOWN_VALUE)
+    var cache_lengths_lt = LayoutTensor[DType.uint32, cl_layout](
+        cache_lengths_device.unsafe_ptr(),
+        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    )
+
+    comptime lt_layout_2d = Layout.row_major[2]()
+    var lookup_table_lt = LayoutTensor[DType.uint32, lt_layout_2d](
+        lookup_table_device.unsafe_ptr(),
+        RuntimeLayout[lt_layout_2d].row_major(
+            IndexList[2](batch_size, max_pages_per_batch)
+        ),
+    )
+
+    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
+        LayoutTensor[kv_type, Layout.row_major[6](), MutAnyOrigin](
+            blocks_lt.ptr,
+            RuntimeLayout[Layout.row_major[6]()](
+                blocks_lt.runtime_layout.shape.value,
+                blocks_lt.runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+            cache_lengths_lt.ptr,
+            RuntimeLayout[cl_layout](
+                cache_lengths_lt.runtime_layout.shape.value,
+                cache_lengths_lt.runtime_layout.stride.value,
+            ),
+        ),
+        LayoutTensor[DType.uint32, lt_layout_2d, ImmutAnyOrigin](
+            lookup_table_lt.ptr,
+            RuntimeLayout[lt_layout_2d](
+                lookup_table_lt.runtime_layout.shape.value,
+                lookup_table_lt.runtime_layout.stride.value,
+            ),
+        ),
+        UInt32(q_max_seq_len),
+        UInt32(max_cache_len),
+    )
+
+    var kv_cache = kv_collection.get_key_cache(0)
+
+    comptime q_layout_3d = Layout.row_major(
+        Index(UNKNOWN_VALUE, num_heads, DEPTH)
+    )
+    var q_lt = LayoutTensor[q_type, q_layout_3d](
+        q_device.unsafe_ptr(),
+        RuntimeLayout[q_layout_3d].row_major(
+            Index(total_q_tokens, num_heads, DEPTH)
+        ),
+    )
+
+    comptime out_layout_3d = Layout.row_major(
+        Index(UNKNOWN_VALUE, num_heads, V_DEPTH)
+    )
+    var out_lt = LayoutTensor[ref_type, out_layout_3d](
+        out_device.unsafe_ptr(),
+        RuntimeLayout[out_layout_3d].row_major(
+            Index(total_q_tokens, num_heads, V_DEPTH)
+        ),
+    )
+
+    comptime ro_layout = Layout.row_major(UNKNOWN_VALUE)
+    var row_offsets_lt = LayoutTensor[DType.uint32, ro_layout](
+        row_offsets_device.unsafe_ptr(),
+        RuntimeLayout[ro_layout].row_major(Index(batch_size + 1)),
+    )
+
+    # Step 7: Benchmark - warmup + timed iterations
+    @parameter
+    @always_inline
+    @__copy_capture(out_lt, q_lt, kv_cache, row_offsets_lt)
+    fn kernel_launch(ctx: DeviceContext) raises:
+        flare_mla_decoding[rank=3, ragged=True](
+            out_lt,
+            q_lt,
+            kv_cache,
+            NullMask(),
+            row_offsets_lt,
+            scale,
+            ctx,
+            q_max_seq_len,
+        )
+
+    comptime nrun = 200
+
+    # Warmup
+    kernel_launch(ctx)
+
+    var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
+        nrun
+    )
+    var mstime = nstime / 1000000
+    print("  ", nrun, "runs avg", mstime, "ms")
+    print()
+
+    # Cleanup
+    q_host.free()
+    out_host.free()
+    blocks_host.free()
+    cache_lengths_host.free()
+    lookup_table_host.free()
+    row_offsets_host.free()
+
+    _ = blocks_device
+    _ = cache_lengths_device
+    _ = lookup_table_device
+    _ = q_device
+    _ = row_offsets_device
+    _ = out_device
+
+
+# ===-----------------------------------------------------------------------===#
 # Helper functions to reduce duplication in main()
 # ===-----------------------------------------------------------------------===#
 
@@ -1819,6 +2543,43 @@ fn run_ragged_q_both_kv_types[
     ](name + "_fp8", cache_lengths, seq_lens, ctx)
 
 
+fn run_all_three_kv_types[
+    num_heads: Int
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+    """Run correctness test for bf16, fp8 (converter), and native fp8."""
+    run_both_kv_types[num_heads](name, cache_lengths, ctx)
+    run_test_paged_variable_native_fp8[num_heads](
+        name + "_native_fp8", cache_lengths, ctx
+    )
+
+
+fn run_uniform_all_three[
+    num_heads: Int
+](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
+    """Run correctness test with uniform cache lengths for all three KV types.
+    """
+    run_all_three_kv_types[num_heads](name, make_uniform(count, value), ctx)
+
+
+fn run_bench_all_three_kv_types[
+    num_heads: Int
+](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext) raises:
+    """Run benchmark for bf16, fp8 (converter), and native fp8."""
+    run_bench_both_kv_types[num_heads](name, cache_lengths, ctx)
+    run_bench_paged_variable_native_fp8[num_heads](
+        name + "_native_fp8", cache_lengths, ctx
+    )
+
+
+fn run_bench_uniform_all_three[
+    num_heads: Int
+](name: StringLiteral, count: Int, value: Int, ctx: DeviceContext) raises:
+    """Run benchmark with uniform cache lengths for all three KV types."""
+    run_bench_all_three_kv_types[num_heads](
+        name, make_uniform(count, value), ctx
+    )
+
+
 # ===-----------------------------------------------------------------------===#
 # Entry point
 # ===-----------------------------------------------------------------------===#
@@ -1840,18 +2601,18 @@ def main() raises:
                 print()
 
                 # Batch size 1: single long context
-                run_bench_uniform_both[128]("bs1_32k", 1, 32768, ctx)
+                run_bench_uniform_all_three[128]("bs1_32k", 1, 32768, ctx)
 
                 # Batch size 1: medium context
-                run_bench_uniform_both[128]("bs1_4k", 1, 4096, ctx)
+                run_bench_uniform_all_three[128]("bs1_4k", 1, 4096, ctx)
 
                 # Batch size 2: variable lengths
                 var b2: List[Int] = [4096, 32768]
-                run_bench_both_kv_types[128]("bs2_4k_32k", b2, ctx)
+                run_bench_all_three_kv_types[128]("bs2_4k_32k", b2, ctx)
 
                 # Batch size 4: mixed lengths
                 var b4: List[Int] = [1024, 4096, 16384, 32768]
-                run_bench_both_kv_types[128]("bs4_mixed", b4, ctx)
+                run_bench_all_three_kv_types[128]("bs4_mixed", b4, ctx)
 
                 # Batch size 8: mixed lengths (production-like)
                 var b8: List[Int] = [
@@ -1864,10 +2625,10 @@ def main() raises:
                     24576,
                     32768,
                 ]
-                run_bench_both_kv_types[128]("bs8_mixed", b8, ctx)
+                run_bench_all_three_kv_types[128]("bs8_mixed", b8, ctx)
 
                 # Batch size 8: all long (worst case)
-                run_bench_uniform_both[128]("bs8_all32k", 8, 32768, ctx)
+                run_bench_uniform_all_three[128]("bs8_all32k", 8, 32768, ctx)
 
                 print("=" * 72)
                 print("BENCHMARK COMPLETE")
@@ -2120,6 +2881,55 @@ def main() raises:
                 var rq_sl4: List[Int] = [1, 1, 1, 1, 1, 6]
                 run_ragged_q_both_kv_types[16](
                     "ragged_mostly_1", rq_cl4, rq_sl4, ctx
+                )
+
+                # -----------------------------------------------------------
+                # Group 14: Native FP8 (Q=FP8 + KV=FP8, output=BF16)
+                # Tests the 3-WG native FP8 kernel through the paged path
+                # with split-K + PDL. Q is quantized to FP8 before being
+                # sent to the kernel. The reference uses BF16 Q and K.
+                # -----------------------------------------------------------
+                print(
+                    "--- Group 14: Native FP8 paged"
+                    " (Q=FP8, KV=FP8, output=BF16) ---"
+                )
+
+                # Small caches (16 heads)
+                var nfp8_1: List[Int] = [30, 50, 80, 100]
+                run_test_paged_variable_native_fp8[16](
+                    "native_fp8_short_16h", nfp8_1, ctx
+                )
+
+                # Variable cache lengths (16 heads)
+                var nfp8_2: List[Int] = [30, 256, 640, 1024]
+                run_test_paged_variable_native_fp8[16](
+                    "native_fp8_variable_16h", nfp8_2, ctx
+                )
+
+                # Extreme disparity (16 heads)
+                var nfp8_3: List[Int] = [30, 1024, 8192, 32768]
+                run_test_paged_variable_native_fp8[16](
+                    "native_fp8_extreme_16h", nfp8_3, ctx
+                )
+
+                # Full DeepSeek config (128 heads)
+                var nfp8_4: List[Int] = [30, 1024, 8192, 32768]
+                run_test_paged_variable_native_fp8[128](
+                    "native_fp8_extreme_128h", nfp8_4, ctx
+                )
+
+                # Production-like: moderate batch, medium cache (128 heads)
+                run_test_paged_variable_native_fp8[128](
+                    "native_fp8_prod_bs8_4k",
+                    make_uniform(8, 4096),
+                    ctx,
+                )
+
+                # Large batch, short cache (128 heads)
+                run_test_paged_variable_native_fp8[128](
+                    "native_fp8_bs64_1k",
+                    make_uniform(64, 1024),
+                    ctx,
                 )
 
                 print("=" * 72)
