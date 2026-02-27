@@ -5339,6 +5339,63 @@ def spatial_merge(
     )[0].tensor
 
 
+def learnable_2d_interp_pos_emb(
+    x: TensorValue,
+    weight: TensorValue,
+    grid_thws: TensorValue,
+    time_weight: TensorValue,
+) -> TensorValue:
+    """Applies learnable 2D interpolated position embedding (Kimi K2.5).
+
+    For each video described by ``grid_thws``, bicubic-interpolates ``weight``
+    from (H, W) to (h, w), optionally adds temporal sincos embedding when
+    ``t > 1``, and adds the result element-wise to ``x``.
+
+    Args:
+        x: Patch embeddings of shape ``(L, dim)``.
+        weight: Learnable 2D grid of shape ``(H, W, dim)``.
+        grid_thws: Per-video ``(t, h, w)`` of shape ``(N, 3)``, dtype int64.
+        time_weight: 1D sincos temporal embedding of shape
+            ``(num_frames, dim)``, dtype float32.
+
+    Returns:
+        Tensor of shape ``(L, dim)`` with position embeddings added.
+
+    Raises:
+        ValueError: On invalid input shapes or dtypes.
+    """
+    if x.rank != 2:
+        raise ValueError(f"expected x to have rank 2, got {x.rank}")
+    if weight.rank != 3:
+        raise ValueError(f"expected weight to have rank 3, got {weight.rank}")
+    if grid_thws.rank != 2 or grid_thws.shape[1] != 3:
+        raise ValueError(
+            "expected grid_thws of shape (N, 3), got rank="
+            f"{grid_thws.rank} shape[1]={grid_thws.shape[1]}"
+        )
+    if grid_thws.dtype != DType.int64:
+        raise ValueError(
+            f"expected grid_thws dtype int64, got {grid_thws.dtype}"
+        )
+    if time_weight.rank != 2:
+        raise ValueError(
+            f"expected time_weight to have rank 2, got {time_weight.rank}"
+        )
+
+    return ops.custom(
+        "learnable_2d_interp_pos_emb",
+        device=x.device,
+        values=[x, weight, grid_thws, time_weight],
+        out_types=[
+            TensorType(
+                dtype=x.dtype,
+                shape=x.shape,
+                device=x.device,
+            )
+        ],
+    )[0].tensor
+
+
 def sliced_add(
     x: TensorValue,
     y: TensorValue,
