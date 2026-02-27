@@ -316,6 +316,11 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
         w.write_string(result)
 
+    fn write_repr_to(self, mut w: Some[Writer]):
+        w.write("Codepoint(")
+        w.write(Int(self._scalar_value))
+        w.write(")")
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
