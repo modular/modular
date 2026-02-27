@@ -809,10 +809,9 @@ class Flux2Pipeline(DiffusionPipeline):
                             latents, noise_pred, dt, num_noise_tokens
                         )
 
-                    if hasattr(device, "synchronize"):
-                        device.synchronize()
-
                     if callback_queue is not None:
+                        if hasattr(device, "synchronize"):
+                            device.synchronize()
                         callback_queue.put_nowait(
                             cast(
                                 np.ndarray,
