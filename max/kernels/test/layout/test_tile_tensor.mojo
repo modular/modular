@@ -353,6 +353,47 @@ fn test_slice_3d() raises:
 #     assert_equal(sliced[(Idx(1), Idx(1))], Float32(10))
 
 
+fn test_slice_dynamic() raises:
+    """Test slice with runtime (start, end) tuples."""
+    var data_2d = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        data_2d[i] = Int32(i)
+
+    # 4x4 row-major:
+    # [0  1  2  3]
+    # [4  5  6  7]
+    # [8  9  10 11]
+    # [12 13 14 15]
+    var tensor_2d = TileTensor(data_2d, row_major[4, 4]())
+
+    # Slice middle 2x2: rows [1:3], cols [1:3] -> [5,6],[9,10]
+    var sliced = tensor_2d.slice((1, 3), (1, 3))
+    assert_equal(sliced.layout.shape[0]().value(), 2)
+    assert_equal(sliced.layout.shape[1]().value(), 2)
+    assert_equal(sliced[0, 0], 5)
+    assert_equal(sliced[0, 1], 6)
+    assert_equal(sliced[1, 0], 9)
+    assert_equal(sliced[1, 1], 10)
+
+    # Top-left 2x2
+    var top_left = tensor_2d.slice((0, 2), (0, 2))
+    assert_equal(top_left[0, 0], 0)
+    assert_equal(top_left[0, 1], 1)
+    assert_equal(top_left[1, 0], 4)
+    assert_equal(top_left[1, 1], 5)
+
+    # Single row: rows [2:3], all cols
+    var row2 = tensor_2d.slice((2, 3), (0, 4))
+    assert_equal(row2.layout.shape[0]().value(), 1)
+    assert_equal(row2.layout.shape[1]().value(), 4)
+    assert_equal(row2[0, 0], 8)
+    assert_equal(row2[0, 3], 11)
+
+    # Verify it's a view
+    sliced[(Idx(0), Idx(0))] = 99
+    assert_equal(tensor_2d[(Idx(1), Idx(1))], 99)
+
+
 fn test_vectorize() raises:
     """Test tensor vectorization functionality."""
     # Create a 16x16 tensor with row-major layout

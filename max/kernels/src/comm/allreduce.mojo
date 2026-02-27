@@ -120,7 +120,7 @@ from collections.optional import Optional
 
 from .reducescatter import (
     ReduceScatterConfig,
-    _reduce_scatter_impl,
+    _reduce_scatter_flat_impl,
     _load_reduce,
     _target_address_space,
 )
@@ -446,7 +446,7 @@ fn _allreduce_2stage_kernel[
             val.cast[dtype](),
         )
 
-    _reduce_scatter_impl[
+    _reduce_scatter_flat_impl[
         ngpus, output_lambda=rs_output_lambda, use_multimem=use_multimem
     ](ptrs, tmp_buff, my_rank, rs_config)
 
@@ -487,7 +487,7 @@ fn _allreduce_2stage_kernel[
     # Ragged tail - max 1 simd vector per gpu, spread work between threads
     if global_tid < ngpus:
         var peer_rank = (my_rank + global_tid) % ngpus
-        if peer_rank < rs_config.remainder:
+        if peer_rank < rs_config.axis_remainder:
             var idx = (
                 rs_config.rank_part(0) - simd_width
             )  # last ragged simd_vector

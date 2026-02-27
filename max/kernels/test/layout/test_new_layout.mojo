@@ -610,6 +610,36 @@ def test_tile_tensor_flat_indexing_blocked() raises:
     assert_equal(tensor[1, 1, 1, 2], 1112.0)
 
 
+def test_layout_reverse() raises:
+    """Test Layout.reverse() swaps shape and stride dimensions."""
+    # row_major[3,4] has shape (3,4), strides (4,1).
+    # Reversed: shape (4,3), strides (1,4) — column-major ordering.
+    var layout = row_major[3, 4]()
+    var rev = layout.reverse()
+    assert_equal(rev.shape[0]().value(), 4)
+    assert_equal(rev.shape[1]().value(), 3)
+    assert_equal(rev.stride[0]().value(), 1)
+    assert_equal(rev.stride[1]().value(), 4)
+
+    # Products should be identical.
+    assert_equal(rev.product(), layout.product())
+
+    # col_major[2,5] has shape (2,5), strides (1,2).
+    # Reversed: shape (5,2), strides (2,1) — row-major ordering.
+    var layout2 = col_major[2, 5]()
+    var rev2 = layout2.reverse()
+    assert_equal(rev2.shape[0]().value(), 5)
+    assert_equal(rev2.shape[1]().value(), 2)
+    assert_equal(rev2.stride[0]().value(), 2)
+    assert_equal(rev2.stride[1]().value(), 1)
+
+    # 1D layout: reverse is identity.
+    var layout1d = row_major[7]()
+    var rev1d = layout1d.reverse()
+    assert_equal(rev1d.shape[0]().value(), 7)
+    assert_equal(rev1d.stride[0]().value(), 1)
+
+
 def test_tile_tensor_flat_indexing_with_coord() raises:
     """Test flat indexing using Coord on nested layout."""
     var block = row_major[2, 2]()
