@@ -329,6 +329,7 @@ from time import sleep
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
+from nn.learnable_2d_interp_pos_emb import learnable_2d_interp_pos_emb
 from nn.spatial_merge import spatial_merge
 
 # ===-----------------------------------------------------------------------===#
@@ -10434,6 +10435,38 @@ struct Struct_kv_cache_ragged_paged_radd:
             input_row_offsets.to_layout_tensor(),
             batch_offset,
             layer_idx,
+            cuda_ctx,
+        )
+
+
+@compiler.register("learnable_2d_interp_pos_emb")
+struct Learnable2DInterpPosEmb:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2],
+        x: InputTensor[dtype=dtype, rank=2],
+        weight: InputTensor[dtype=dtype, rank=3],
+        grid_thws: InputTensor[dtype = DType.int64, rank=2],
+        time_weight: InputTensor[dtype = DType.float32, rank=2],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "learnable_2d_interp_pos_emb only supported on GPUs"
+
+        var cuda_ctx = ctx.get_device_context()
+
+        learnable_2d_interp_pos_emb[dtype](
+            output.to_tile_tensor[DType.int64](),
+            x.to_tile_tensor[DType.int64](),
+            weight.to_tile_tensor[DType.int64](),
+            grid_thws.to_tile_tensor[DType.int64](),
+            time_weight.to_tile_tensor[DType.int64](),
             cuda_ctx,
         )
 
