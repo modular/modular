@@ -14,6 +14,7 @@
 from math import ceildiv
 from sys import env_get_int
 
+from comm.sync import enable_p2p
 from gpu import block_dim, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import LegacyUnsafePointer
@@ -62,6 +63,7 @@ def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Create contexts for both devices
     var ctx1 = DeviceContext(device_id=0)

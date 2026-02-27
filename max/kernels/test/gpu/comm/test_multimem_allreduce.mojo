@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from comm.sync import enable_p2p
 from gpu.host import DeviceContext
 from test_allreduce import run_allreduce_sweep
 from testing import assert_true
@@ -20,5 +21,6 @@ def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     run_allreduce_sweep[use_multimem=True]()

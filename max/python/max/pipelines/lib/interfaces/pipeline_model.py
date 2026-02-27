@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, Generic
 from max.driver import (
     Buffer,
     Device,
-    enable_all_peer_access,
     is_virtual_device_mode,
 )
 from max.dtype import DType
@@ -82,15 +81,6 @@ class AlwaysSignalBuffersMixin:
         # Signal buffers are only needed during model execution, not compilation.
         if is_virtual_device_mode():
             return []
-
-        if len(self.devices) > 1:
-            try:
-                enable_all_peer_access()
-            except RuntimeError:
-                logger.warning(
-                    "Failed to enable peer-to-peer GPU access. "
-                    "Collective operations will fall back to slower paths."
-                )
 
         from max.nn.comm import Signals
 
@@ -302,16 +292,6 @@ class PipelineModel(ABC, Generic[BaseContextType]):
 
         if len(self.devices) <= 1:
             return []
-
-        # Enable P2P access between all GPUs before any collective operations.
-        # This must happen before the first allreduce/broadcast/etc. executes.
-        try:
-            enable_all_peer_access()
-        except RuntimeError:
-            logger.warning(
-                "Failed to enable peer-to-peer GPU access. "
-                "Collective operations will fall back to slower paths."
-            )
 
         # Import here to avoid circular dependency
         from max.nn.comm import Signals

@@ -18,6 +18,7 @@ from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
 from collections import Optional
 from comm import Signal, MAX_GPUS
+from comm.sync import enable_p2p
 from comm.reducescatter import (
     reducescatter,
     ReduceScatterConfig,
@@ -541,6 +542,7 @@ def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Run standard 1D reduce-scatter sweep
     run_reducescatter_sweep()

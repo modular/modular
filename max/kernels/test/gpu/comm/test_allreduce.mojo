@@ -18,6 +18,7 @@ from itertools import product
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS, group_start, group_end
+from comm.sync import enable_p2p
 from comm.allreduce import (
     _allreduce_naive_single,
     allreduce,
@@ -451,6 +452,8 @@ def main() raises:
 
     # First, explicitly exercise the naive allreduce path by calling it directly.
     allreduce_naive_test()
+
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Standard (non-multimem) sweep
     run_allreduce_sweep[use_multimem=False]()

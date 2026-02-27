@@ -14,9 +14,10 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 
-from max.driver import Accelerator, Buffer
+from max.driver import Accelerator, Buffer, enable_all_peer_access
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -107,9 +108,18 @@ class Signals:
     def buffers(self) -> list[Buffer]:
         """Allocates and returns buffers used for communication in allreduce.
 
-        Synchronizes so that buffers are ready for use when this method
+        Enables peer-to-peer access between all GPUs (idempotent) and
+        synchronizes so that buffers are ready for use when this method
         returns.
         """
+        try:
+            enable_all_peer_access()
+        except RuntimeError:
+            logging.getLogger(__name__).warning(
+                "Failed to enable peer-to-peer GPU access. "
+                "Collective operations will fall back to slower paths."
+            )
+
         # Contents of signal buffer should be filled with zeros.
         accelerators = [Accelerator(id=dev.id) for dev in self.devices]
         signal_buffers = [
