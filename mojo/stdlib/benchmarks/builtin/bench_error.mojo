@@ -19,7 +19,7 @@ Key metrics:
 - error_catch_depth_*: Shows impact of call stack depth on capture time
 """
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#

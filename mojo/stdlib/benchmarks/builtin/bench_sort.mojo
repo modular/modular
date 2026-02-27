@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import *
+from std.random import *
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.builtin.sort import _heap_sort, _insertion_sort, _small_sort, sort
 
 # ===-----------------------------------------------------------------------===#

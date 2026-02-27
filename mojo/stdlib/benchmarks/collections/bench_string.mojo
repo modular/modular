@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.string._utf8 import _is_valid_utf8
-from collections.string.string_slice import _split
-from os import abort
-from pathlib import _dir_of_current_file
-from random import seed
-from sys import stderr
+from std.collections import Optional
+from std.collections.string._utf8 import _is_valid_utf8
+from std.collections.string.string_slice import _split
+from std.os import abort
+from std.pathlib import _dir_of_current_file
+from std.random import seed
+from std.sys import stderr
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#

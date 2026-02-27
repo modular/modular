@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
