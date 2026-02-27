@@ -17,13 +17,13 @@ Documentation for these functions can be found online at:
   <https://docs.python.org/3/c-api/stable.html#contents-of-limited-api>
 """
 
-from collections import InlineArray
-from memory import OpaquePointer, alloc
-from os import abort, getenv, setenv
-from os.path import dirname
-from pathlib import Path
-from sys.arg import argv
-from ffi import (
+from std.collections import InlineArray
+from std.memory import OpaquePointer, alloc
+from std.os import abort, getenv, setenv
+from std.os.path import dirname
+from std.pathlib import Path
+from std.sys.arg import argv
+from std.ffi import (
     external_call,
     _DLHandle,
     OwnedDLHandle,
@@ -37,7 +37,7 @@ from ffi import (
     c_ulong,
 )
 
-from utils import Variant
+from std.utils import Variant
 
 comptime Py_ssize_t = c_ssize_t
 comptime Py_hash_t = Py_ssize_t

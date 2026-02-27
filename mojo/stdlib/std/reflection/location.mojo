@@ -24,7 +24,7 @@ custom assertion functions that report meaningful locations to users.
 Example using `source_location()` to get the current location:
 
 ```mojo
-from reflection import source_location
+from std.reflection import source_location
 
 fn main():
     var loc = source_location()
@@ -38,7 +38,7 @@ to work - the function must be inlined so the compiler can capture the caller's
 location:
 
 ```mojo
-from reflection import call_location
+from std.reflection import call_location
 
 @always_inline  # Required for call_location() to work
 fn my_assert(cond: Bool, msg: String = "assertion failed") raises:
@@ -62,7 +62,7 @@ struct SourceLocation(TrivialRegisterPassable, Writable):
     Example:
 
     ```mojo
-    from reflection import source_location, SourceLocation
+    from std.reflection import source_location, SourceLocation
 
     fn main():
         # Get current location
@@ -134,7 +134,7 @@ fn source_location() -> SourceLocation:
     Example:
 
     ```mojo
-    from reflection import source_location
+    from std.reflection import source_location
 
     fn log_message(msg: String):
         var loc = source_location()
@@ -192,7 +192,7 @@ fn call_location[*, inline_count: Int = 1]() -> SourceLocation:
     Example:
 
     ```mojo
-    from reflection import call_location
+    from std.reflection import call_location
 
     @always_inline  # Required for call_location() to work
     fn assert_positive(value: Int) raises:

@@ -29,9 +29,9 @@ operations.
 # count
 # ===-----------------------------------------------------------------------===#
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
-from builtin.variadics import Variadic
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast
+from std.builtin.variadics import Variadic
 
 
 @fieldwise_init
@@ -698,7 +698,7 @@ fn take_while[
     Examples:
 
     ```mojo
-    from itertools import take_while
+    from std.itertools import take_while
 
     # Take while less than 5
     fn less_than_5(x: Int) -> Bool:
@@ -820,7 +820,7 @@ fn drop_while[
     Examples:
 
     ```mojo
-    from itertools import drop_while
+    from std.itertools import drop_while
 
     # Drop while less than 5
     fn less_than_5(x: Int) -> Bool:

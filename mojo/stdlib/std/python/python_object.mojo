@@ -15,15 +15,15 @@
 You can import these APIs from the `python` package. For example:
 
 ```mojo
-from python import PythonObject
+from std.python import PythonObject
 ```
 """
 
-from os import abort
-from sys import bit_width_of
-from ffi import c_double, c_long, c_size_t, c_ssize_t
+from std.os import abort
+from std.sys import bit_width_of
+from std.ffi import c_double, c_long, c_size_t, c_ssize_t
 
-from reflection import get_type_name
+from std.reflection import get_type_name
 
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object

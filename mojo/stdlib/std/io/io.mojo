@@ -15,11 +15,11 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.string_slice import get_static_string
-from format._utils import _WriteBufferHeap, _WriteBufferStack
-from sys import _libc as libc
-from ffi import c_char, external_call
-from sys import (
+from std.collections.string.string_slice import get_static_string
+from std.format._utils import _WriteBufferHeap, _WriteBufferStack
+from std.sys import _libc as libc
+from std.ffi import c_char, external_call
+from std.sys import (
     is_amd_gpu,
     is_compile_time,
     is_gpu,
@@ -27,12 +27,16 @@ from sys import (
     stdin,
     stdout,
 )
-from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
-from sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
-from sys.info import CompilationTarget
-from sys.intrinsics import _type_is_eq
+from std.sys._amdgpu import (
+    printf_append_args,
+    printf_append_string_n,
+    printf_begin,
+)
+from std.sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import _type_is_eq
 
-from memory import bitcast
+from std.memory import bitcast
 
 from .file_descriptor import FileDescriptor
 
@@ -75,8 +79,8 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
         Examples:
 
         ```mojo
-        from io.io import _fdopen
-        from sys import stdin
+        from std.io.io import _fdopen
+        from std.sys import stdin
 
         var line = _fdopen["r"](stdin).readline()
         print(line)
@@ -106,8 +110,8 @@ struct _fdopen[mode: StaticString = "a"](TrivialRegisterPassable):
         Examples:
 
         ```mojo
-        from io.io import _fdopen
-        from sys import stdin
+        from std.io.io import _fdopen
+        from std.sys import stdin
 
         var line = _fdopen["r"](stdin).read_until_delimiter(",")
         print(line)

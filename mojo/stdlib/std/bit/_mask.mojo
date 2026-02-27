@@ -15,11 +15,11 @@
 You can import these APIs from the `bit` package. For example:
 
 ```mojo
-from bit.mask import is_negative
+from std.bit.mask import is_negative
 ```
 """
 
-from sys.info import bit_width_of
+from std.sys.info import bit_width_of
 
 
 @always_inline

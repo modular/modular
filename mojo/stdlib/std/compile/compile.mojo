@@ -27,7 +27,7 @@ Key features:
 
 Example:
 ```mojo
-from compile import compile_info
+from std.compile import compile_info
 
 fn my_func(x: Int) -> Int:
     return x
@@ -38,12 +38,12 @@ print(info)
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string
-from os import PathLike
-from pathlib import Path
-from sys.info import CompilationTarget, _current_target, _TargetType
+from std.collections.string.string_slice import _get_kgen_string
+from std.os import PathLike
+from std.pathlib import Path
+from std.sys.info import CompilationTarget, _current_target, _TargetType
 
-from reflection import get_linkage_name
+from std.reflection import get_linkage_name
 
 # ===-----------------------------------------------------------------------===#
 # compile_info
@@ -260,7 +260,7 @@ fn compile_info[
     Example:
 
         ```mojo
-        from compile import compile_info
+        from std.compile import compile_info
 
         fn my_func(x: Int) -> Int:
             return x

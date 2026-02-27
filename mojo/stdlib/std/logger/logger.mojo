@@ -25,7 +25,7 @@ The main components are:
 Example:
 
 ```mojo
-from logger import Logger
+from std.logger import Logger
 
 var logger = Logger()  # Uses default level from LOGGING_LEVEL env var
 logger.info("Starting process")
@@ -37,13 +37,13 @@ The logger can be configured to write to different file descriptors (default
 stdout). Messages below the configured level will be silently ignored.
 """
 
-import sys
-from format._utils import _WriteBufferStack
-from os import abort
-from sys.param_env import env_get_string
-from utils._ansi import Text, Color
+import std.sys
+from std.format._utils import _WriteBufferStack
+from std.os import abort
+from std.sys.param_env import env_get_string
+from std.utils._ansi import Text, Color
 
-from reflection import call_location, SourceLocation
+from std.reflection import call_location, SourceLocation
 
 # ===-----------------------------------------------------------------------===#
 # DEFAULT_LEVEL

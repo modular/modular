@@ -13,8 +13,8 @@
 
 """Implements the [Fnv1a 64 bit variant](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function) algorithm as a Hasher type."""
 
-from memory import Span
-from sys import size_of
+from std.memory import Span
+from std.sys import size_of
 
 from .hasher import Hasher
 

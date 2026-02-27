@@ -73,15 +73,15 @@ print(repr(p)) # Point: x=1.5, y=2.7
 ```
 """
 
-from builtin.constrained import _constrained_field_conforms_to
-from memory import Span
-from reflection import (
+from std.builtin.constrained import _constrained_field_conforms_to
+from std.memory import Span
+from std.reflection import (
     struct_field_names,
     struct_field_types,
     struct_field_count,
     get_type_name,
 )
-from reflection.type_info import _unqualified_type_name
+from std.reflection.type_info import _unqualified_type_name
 
 
 # ===-----------------------------------------------------------------------===#

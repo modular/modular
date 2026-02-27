@@ -95,7 +95,7 @@ fn main():
 ```
 """
 
-from sys.info import _current_target, _TargetType
+from std.sys.info import _current_target, _TargetType
 
 
 fn struct_field_index_by_name[
@@ -291,7 +291,7 @@ fn struct_field_types[
 
     Example:
         ```mojo
-        from reflection import get_type_name
+        from std.reflection import get_type_name
 
         fn print_field_types[T: AnyType]():
             comptime types = struct_field_types[T]()
@@ -397,7 +397,7 @@ fn is_struct_type[T: AnyType]() -> Bool:
 
     Example:
         ```mojo
-        from reflection import get_type_name
+        from std.reflection import get_type_name
 
         fn process_type[T: AnyType]():
             comptime if is_struct_type[T]():

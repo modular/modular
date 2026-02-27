@@ -17,16 +17,16 @@ standard library for formatting and writing data. These utilities are not
 intended for public use and may change without notice.
 """
 
-from builtin.constrained import _constrained_conforms_to
-from io.io import _printf
-from os import abort
-from reflection.type_info import _unqualified_type_name
-from sys import align_of, size_of
-from sys.info import is_gpu
-from sys.param_env import env_get_int
+from std.builtin.constrained import _constrained_conforms_to
+from std.io.io import _printf
+from std.os import abort
+from std.reflection.type_info import _unqualified_type_name
+from std.sys import align_of, size_of
+from std.sys.info import is_gpu
+from std.sys.param_env import env_get_int
 
-from bit import byte_swap
-from memory import Span, bitcast, memcpy
+from std.bit import byte_swap
+from std.memory import Span, bitcast, memcpy
 
 
 fn constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():

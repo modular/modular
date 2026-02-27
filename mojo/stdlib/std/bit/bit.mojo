@@ -15,15 +15,15 @@
 You can import these APIs from the `bit` package. For example:
 
 ```mojo
-from bit import count_leading_zeros
+from std.bit import count_leading_zeros
 ```
 """
 
-from sys import llvm_intrinsic, bit_width_of
+from std.sys import llvm_intrinsic, bit_width_of
 
-from bit._mask import is_negative
+from std.bit._mask import is_negative
 
-from utils._select import _select_register_value as select
+from std.utils._select import _select_register_value as select
 
 # ===-----------------------------------------------------------------------===#
 # count_leading_zeros
