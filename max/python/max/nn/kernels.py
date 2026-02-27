@@ -1990,11 +1990,9 @@ def flare_mla_decode_ragged(
             f"expected input of rank {input_rank_expected} but got {input.rank}"
         )
 
-    # TODO: This check needs to be removed once FP8 KVCache is supported (KERN-2394).
-    if input.dtype != kv_params.dtype:
-        raise ValueError(
-            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
-        )
+    # FP8 KVCache: Q can be bf16 (legacy) or fp8 (native FP8).
+    # The underlying Mojo kernel handles both cases natively.
+    # Output is always bfloat16 when Q is FP8 (native FP8 path).
 
     if layer_idx.dtype != DType.uint32:
         raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
@@ -2012,6 +2010,12 @@ def flare_mla_decode_ragged(
     assert kv_params.page_size is not None
     parameters = _mha_parameters(mask_variant)
 
+    # Output dtype: always bfloat16 for FP8 Q (native FP8 path produces
+    # bfloat16 output), same as input dtype otherwise.
+    output_dtype = (
+        DType.bfloat16 if input.dtype == DType.float8_e4m3fn else input.dtype
+    )
+
     return ops.inplace_custom(
         "mo.mla.decode.ragged.paged",
         device=input.device,
@@ -2025,7 +2029,7 @@ def flare_mla_decode_ragged(
         ],
         out_types=[
             TensorType(
-                dtype=input.dtype,
+                dtype=output_dtype,
                 shape=[
                     input.shape[0],
                     input.shape[1],

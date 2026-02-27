@@ -363,12 +363,14 @@ struct MLA_SM100_Decode_KV_FP8[
 
         var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
 
+        # max_smem is double-buffered (2 x 128 elements) to avoid a race
+        # condition in softmax; li_smem is a single 128-element buffer.
         var max_smem = (out_smem + out_smem_total).bitcast[
             Scalar[Self.AccumType]
         ]()
 
         var li_smem = (
-            max_smem + WARPGROUP_SIZE
+            max_smem + 2 * WARPGROUP_SIZE
         )  # 128 x1 for SMEM correction for Softmax
 
         # Scale SMEM for blockwise FP8 scaling (e8m0, 1 byte per scale).

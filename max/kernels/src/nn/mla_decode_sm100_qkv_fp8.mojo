@@ -11,7 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+"""Native FP8 MLA decode kernel for SM100 (B200).
+
+All-FP8 kernel: Q, K, V, and P are all FP8 e4m3 in SMEM.
+Uses native FP8 WGMMA (tcgen05.mma.kind::f8f6f4) for both QK and PV.
+Same 3-WG structure as the BF16 kernel (softmax WG, correction WG, MMA+Load+Store WG).
+
+Q arrives as FP8 from TMA directly (like FlashInfer), no BF16 conversion.
+KV arrives as FP8 from TMA directly (half the bytes of BF16).
+P (softmax output) is written as FP8 e4m3 to a separate SMEM region.
+The FP8 tensorwise dequant scale is folded into the softmax QK scale.
+
+SMEM Layout (native FP8):
+  Q FP8:      64 x 576 x 1 = 36864 bytes   (SWIZZLE_64B)
+  KV stages:  N x 64 x 576 x 1 bytes  (SWIZZLE_64B, N=num_kv_stages, typically 4)
+  P stages:   N x 64 x 64 x 1 bytes    (SWIZZLE_64B, separate from KV)
+  max/li:     128 x 4 x 2 = 1024 bytes
+  barriers:   (6N+11) fixed + output barriers
+"""
+
+from math import ceildiv, exp2, recip, log2
+from math.constants import log2e
 from sys import size_of
 import gpu.primitives.warp as warp
 from gpu import (
@@ -29,25 +49,38 @@ from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
 from gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
+    tcgen05_fence_after,
     tcgen05_fence_before,
+    tcgen05_ld,
+    tcgen05_load_wait,
     tcgen05_release_allocation_lock,
+    tcgen05_st,
 )
+from gpu.sync import named_barrier
+from gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
+from layout._layout import row_major
+from layout.layout import Layout
+from layout.int_tuple import UNKNOWN_VALUE
+from layout.swizzle import make_ldmatrix_swizzle
 from memory import bitcast
 from nn.mha_fa3_utils import (
     OptionalPointer,
+    KVTMATile,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from utils.numerics import get_accum_type
+from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 
 from nn.sm100_attention_utils import (
     elect,
+    LocalTensor,
+    elect_mma_arrive,
+    sub_ftz,
 )
-from nn.mha_fa3_utils import KVTMATile
 
 from nn.mla_decode_sm100_utils import (
     MLA_SM100_Decode_Config,
@@ -62,22 +95,24 @@ from nn.mla_decode_sm100_utils import (
     SharedMemTensor,
     KVPipelineGeneric,
     DecodeSM100MiscMBars,
-    DecodeSProducer,
-    DecodePConsumer,
+    DecodeSProducerN,
+    DecodePConsumerN,
     DecodeOProducer,
     OutPipeline,
     DecodeOutProducer,
     DecodeKVProducer,
     DecodeKVConsumer,
-    DecodeSM100QKTSS,
-    DecodeSM100PVSS,
+    DecodeSM100QKTSS_FP8,
+    DecodeSM100PVSS_FP8,
+    clamped_index_coordinate,
 )
 
 
 # ------------------------------------------------------------------------------
-# MLA decoding kernel struct for SM100
+# Native FP8 MLA decoding kernel struct for SM100
+# All of Q, K, V, P are FP8 in SMEM.
 # ------------------------------------------------------------------------------
-struct MLA_SM100_Decode_KV_BF16[
+struct MLA_SM100_Decode_QKV_FP8[
     q_type: DType,
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -88,7 +123,8 @@ struct MLA_SM100_Decode_KV_BF16[
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
 ](TrivialRegisterPassable):
-    comptime kv_type = Self.KVLUTType.dtype
+    comptime kv_type = Self.KVLUTType.dtype  # float8_e4m3fn
+    comptime fp8_type = DType.float8_e4m3fn
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
     comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN
@@ -96,20 +132,27 @@ struct MLA_SM100_Decode_KV_BF16[
     comptime NumVOBlocks = Self.config.padded_depth // Self.config.BN
     # 64 * 64 = 4096
     comptime BlockElems = Self.config.BM * Self.config.BN
-    # 2 bytes for float16
-    comptime bytes_per_element = size_of[Self.q_type]()
-    # the stage element is the same for both K and V
+    # FP8: 1 byte per element for all SMEM operands (Q, K, V, P)
+    comptime fp8_bytes_per_element = size_of[Self.fp8_type]()
+    # BF16: 2 bytes per element for output/accumulator
+    comptime bf16_bytes_per_element = size_of[Self.q_type]()
+    # KV stage element count (FP8): 9 blocks * 4096 elems = 36864
     comptime KVStageElems = Self.NumQKBlocks * Self.BlockElems
+    # P stage element count (FP8): 1 block * 4096 elems = 4096
+    comptime PStageElems = Self.BlockElems
     comptime output_tile_width = (Self.config.BN // 2) * (
         4 // size_of[Self.output_type]()
     )
-    comptime UMMAQKTSS = DecodeSM100QKTSS[
-        operand_type = Self.q_type,
+
+    # QK MMA: FP8 (KIND_F8F6F4) — both Q and K are FP8 in SMEM
+    comptime UMMAQKTSS = DecodeSM100QKTSS_FP8[
+        operand_type = Self.fp8_type,
         accum_type = Self.AccumType,
         config = Self.config,
     ]
-    comptime UMMAPVSS = DecodeSM100PVSS[
-        operand_type = Self.q_type,
+    # PV MMA: FP8 (KIND_F8F6F4) — both P and V are FP8 in SMEM
+    comptime UMMAPVSS = DecodeSM100PVSS_FP8[
+        operand_type = Self.fp8_type,
         accum_type = Self.AccumType,
         config = Self.config,
     ]
@@ -126,47 +169,26 @@ struct MLA_SM100_Decode_KV_BF16[
         Self.ragged,
     ]
 
+    # Number of pipeline stages for KV, S, and P (dynamically computed, typically 4)
+    comptime num_stages = Self.config.num_kv_stages
+
     # --------------------------------------------------------------------------
-    # MLA decoding main kernel function
+    # Main kernel function — 3 Warpgroups, 384 threads
     # --------------------------------------------------------------------------
-    #    3 Warpgroups: Softmax WG (warps 0-3), Correction WG (warps 4-7),
-    #                  MMA+Load+Store WG (warps 8-11)
+    #    Softmax WG (warps 0-3), Correction WG (warps 4-7),
+    #    MMA+Load+Store WG (warps 8-11)
     #    Warp assignments within WG2: warp 8 = Load, warp 9 = MMA QK,
     #                                 warp 10 = MMA PV, warp 11 = Store
     #
-    #    KSlot0 (tile 0)                KSlot1 (tile 1)
-    #         |                              |
-    #         V                              V
-    #    UMMA QK → S0 (warp 9)         UMMA QK → S1 (warp 9)
-    #         |                              |
-    #   arrive mbar_s0                arrive mbar_s1
-    #         |                              |
-    #         |---- Softmax WG (warps 0-3) ----|
-    #         |                                |
-    #         V                                V
-    #       wait_s0                          wait_s1
-    #       S0 → P0                          S1 → P1
-    #         |                                |
-    #         |---- Correction WG (warps 4-7) ----|
-    #         |   (scale O by correction factor    |
-    #         |    before new P*V accumulation)    |
-    #         V                                    V
-    #    UMMA PV → O (warp 10)          UMMA PV → O (warp 10)
-    #    (P0 * V → O accumulate)        (P1 * V → O accumulate)
-    #         |                                    |
-    #       arrive mbar_o                    arrive mbar_o
-    #         |                                    |
-    #       corr_done_bars signal -----------------|
-    #         |                                    |
-    #       wait_O_filled                    wait_O_filled
-    #         |                                    |
-    #       wait_out                           wait_out
-    #         |                                    |
-    #       Store warp (warp 11)             Store warp
+    # SMEM layout (all FP8, N=num_kv_stages, typically 4):
+    #   Q FP8:     64 x 576 x 1 = 36864 bytes (SWIZZLE_64B)
+    #   KV stages: N x 64 x 576 x 1 bytes (SWIZZLE_64B)
+    #   P stages:  N x 64 x 64 x 1 bytes (SWIZZLE_64B, separate region)
+    #   max/li:    128 x 4 x 2 = 1024 bytes
+    #   barriers:  (6N+11) fixed + output barriers
     #
-
-    # --------------------------------------------------------------------------
-    # MLA decoding SMEMDescriptors for Q, K, V, P
+    # The FP8 dequant scale is folded into the softmax scale:
+    #   qk_scale = (1.0 / sqrt(d_qk)) * kv_scale
     # --------------------------------------------------------------------------
 
     @staticmethod
@@ -178,13 +200,13 @@ struct MLA_SM100_Decode_KV_BF16[
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=Int(1))
     fn kernel(
+        # Q TMA is FP8 with SWIZZLE_64B (same as KV)
         q_tma: QOTMATile[
-            dtype = Self.q_type,
+            dtype = Self.kv_type,
             BM = Self.config.BM,  # tile_m =64
             BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.swizzle_mode,
+            swizzle_mode = Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype = Self.kv_type,
@@ -210,6 +232,7 @@ struct MLA_SM100_Decode_KV_BF16[
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
     ):
+        # Register allocation: same as BF16 kernel (3 WGs)
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
@@ -231,11 +254,7 @@ struct MLA_SM100_Decode_KV_BF16[
             batch_size,
         )
 
-        # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
-        # must still write -inf LSE, zero o_accum_split, and call
-        # launch_dependent_grids() to fulfill the PDL contract with the
-        # combine kernel.  Skipping launch_dependent_grids() causes the
-        # combine kernel to hang, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
+        # Early exit for split-K: CTAs with no work
         comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:
                 Self.Common_MLA_Op.pdl_early_exit(
@@ -249,15 +268,8 @@ struct MLA_SM100_Decode_KV_BF16[
                 )
                 return
 
-        # EARLY EXIT: Skip blocks beyond actual sequence length for this batch
-        # In ragged mode with split-K, q_max_seq_len can be > 1 (up to 8).
-        # block_idx.y ranges from 0 to q_max_seq_len-1, but some sequences
-        # may have fewer tokens. CTAs with block_idx.y >= seq_len must still
-        # fulfill the PDL contract (write -inf LSE, zero o_accum_split, and
-        # call launch_dependent_grids) or the combine kernel will hang.
+        # Early exit for ragged: skip blocks beyond actual sequence length
         comptime if Self.ragged:
-            # In ragged mode, block_idx.y is the query token index (0 to q_max_seq_len-1)
-            # But this batch might have fewer tokens than q_max_seq_len
             if Int(block_idx.y) >= offset_position.seq_len:
                 comptime if Self.config.decoding_warp_split_k:
                     Self.Common_MLA_Op.pdl_early_exit(
@@ -270,119 +282,103 @@ struct MLA_SM100_Decode_KV_BF16[
                         o_tma,
                     )
 
-                return  # This query position doesn't exist for this batch
+                return
+
+        # ---- SMEM layout (all FP8, N stages) ----
+        # Q FP8 region: 64 x 576 x 1 bytes = 36864 bytes
         q_smem = external_memory[
-            Scalar[Self.q_type],
+            Scalar[Self.fp8_type],
             address_space = AddressSpace.SHARED,
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
-        var kv_smem = (q_smem + Self.BlockElems * Self.NumQKBlocks).bitcast[
-            Scalar[Self.kv_type]
-        ]()
+
+        # KV FP8 SMEM: N stages, starts right after Q FP8
+        # Each stage = 64 x 576 x 1 = 36864 bytes
+        var kv_smem = q_smem + Self.BlockElems * Self.NumQKBlocks
+
+        # P FP8 SMEM: separate region after KV stages
+        # Each stage = 64 x 64 x 1 = 4096 bytes
         comptime kv_total_stages = Self.config.num_kv_stages
-        # to reuse the K for V as well, we break KV as 9 stages of 64x64 to cover 64x576
-        comptime kv_smem_total = Self.BlockElems * Self.NumQKBlocks * kv_total_stages
+        var p_smem = kv_smem + Self.KVStageElems * kv_total_stages
 
-        # we need to use the KSmem for out pointer
-        # We move P to the last slot of KV pipeline SO now we have tile of 64x
-        # 32 of float or 64x64 of FP16 to save output into
-        # tiles in SMEM and smooth the pipeline for the next batch if we use splitk
+        # P stages: num_stages * 4096 elems
+        comptime p_total_stages = Self.num_stages
+
+        # Output SMEM reuses KV SMEM (same as BF16 kernel)
         var out_smem_start = kv_smem
-        # there is potential to have two Tmem for S, because we have two K so we can
-        # unblock the MMA while loading S to reg for softmax
-        # if it was splitk we need to use the extra P slot. If not we need
-        # to clear the KV slot before starting the max because KV slot is used by
-        # MMA/load when max is valid.
-        var out_smem_total = kv_smem_total
-
         var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
 
+        # max_smem/li_smem: placed after P stages
         # max_smem is double-buffered (2 x 128 elements) to avoid a race
         # condition in softmax; li_smem is a single 128-element buffer.
-        var max_smem = (out_smem + out_smem_total).bitcast[
+        var max_smem = (p_smem + Self.PStageElems * p_total_stages).bitcast[
             Scalar[Self.AccumType]
         ]()
+        var li_smem = max_smem + 2 * WARPGROUP_SIZE
 
-        var li_smem = (
-            max_smem + 2 * WARPGROUP_SIZE
-        )  # 128 x1 for SMEM correction for Softmax
-        #  Now we have to define MBARS for the kernel
+        # ---- Barrier layout (6N+11 fixed for N-stage pipelines) ----
+        # bar_q(1) + kv(2N) + s(2N) + p(2N) + o(4) + c(2) + corr_done(4)
         var mbar_base: MBarType = (li_smem + WARPGROUP_SIZE).bitcast[
             SharedMemBarrier
         ]()
 
-        var mbar_q: MBarType = mbar_base  # q uses 0
-        var mbar_kv_base: MBarType = mbar_base + 1  # barrier total[1]
+        var mbar_q: MBarType = mbar_base
+        var mbar_kv_base: MBarType = mbar_base + 1
 
         var kv_pipeline = KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages = Self.config.num_kv_stages,
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
         ](mbar_kv_base)
 
-        # Move mbar_base to the first free barrier *after* KV:
-        mbar_base = mbar_kv_base + kv_pipeline.num_mbars()  # kv uses 1..4
-        # Move mbar_base to the first free barrier *after* k done:
+        mbar_base = mbar_kv_base + kv_pipeline.num_mbars()
+        # S pipeline: N-stage (matching KV stages)
         var s_bars = DecodeSM100MiscMBars[
-            num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
-        ](
-            mbar_base
-        )  # S uses 5..8
-        mbar_base = s_bars.end()  # barrier total[9]
+            num_stages = Self.num_stages,
+            num_producer=1,
+            num_consumer=WARPGROUP_SIZE,
+        ](mbar_base)
+        mbar_base = s_bars.end()
+        # P pipeline: N-stage (matching KV stages)
         var p_bars = DecodeSM100MiscMBars[
-            num_stages=2, num_producer=WARPGROUP_SIZE, num_consumer=1
-        ](
-            mbar_base
-        )  # P uses 9 .. 12
-        mbar_base = p_bars.end()  # barrier total [13]
+            num_stages = Self.num_stages,
+            num_producer=WARPGROUP_SIZE,
+            num_consumer=1,
+        ](mbar_base)
+        mbar_base = p_bars.end()
         var o_bars = DecodeSM100MiscMBars[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
-        ](
-            mbar_base
-        )  # O uses 13..16
-        mbar_base = o_bars.end()  # barrier total [17]
-        # C pipeline, Softmax -> Correction
+        ](mbar_base)
+        mbar_base = o_bars.end()
         var c_bars = DecodeSM100MiscMBars[
             num_stages=1,
             num_producer=WARPGROUP_SIZE,
             num_consumer=WARPGROUP_SIZE,
-        ](
-            mbar_base
-        )  # C uses 17..18
-        mbar_base = c_bars.end()  # barrier total [19]
-        # Correction done barrier: Correction -> Softmax direction
-        # Signals when Correction exits its while loop (all corrections done)
-        # 2-stage pipeline to overlap correction with next softmax iteration
+        ](mbar_base)
+        mbar_base = c_bars.end()
         var corr_done_bars = DecodeSM100MiscMBars[
             num_stages=2,
             num_producer=WARPGROUP_SIZE,
             num_consumer=WARPGROUP_SIZE,
-        ](
-            mbar_base
-        )  # corr_done uses 19..22
-        mbar_base = corr_done_bars.end()  # barrier total [23]
-        # We need (num_out_stages * 2) more barriers for the out pipeline.
-        # num_out_stages = (Depth/BN) / blocks_per_stage = 8/2 = 4, so 4*2 = 8.
+        ](mbar_base)
+        mbar_base = corr_done_bars.end()
         comptime OutPipeType = DecodeOutProducer[Self.output_type, Self.config]
         var out_pipeline = OutPipeline[
             num_out_stages = OutPipeType.num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
-        ](
-            mbar_base
-        )  # Write uses 23 + (num_out_stages)*2
-        mbar_base += (
-            out_pipeline.num_mbars()
-        )  # barrier total [23 + (num_out_stages)*2]
+        ](mbar_base)
+        mbar_base += out_pipeline.num_mbars()
+
         var warp_idx = UInt32(warp.broadcast(warp_id()))
         var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
         is_leader = elect() != 0
+
         if warp_idx == 8:
             if is_leader:
                 mbar_q[].init(1)
-                # only one thread will load the Q
                 kv_pipeline.init()
                 s_bars.init()
                 p_bars.init()
@@ -401,11 +397,14 @@ struct MLA_SM100_Decode_KV_BF16[
 
         if warp_idx < 4:  # softmax warpgroup
             warpgroup_reg_alloc[num_reg_softmax]()
-            Self.Common_MLA_Op.Softmax(
+            Self.Common_MLA_Op.Softmax[
+                native_fp8=True,
+                num_sp_stages = Self.num_stages,
+            ](
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                kv_smem.bitcast[Scalar[Self.q_type]](),
+                p_smem.bitcast[Scalar[Self.Common_MLA_Op.q_type]](),
                 max_smem,
                 li_smem,
                 out_smem,
@@ -445,7 +444,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 Self.mmaQK(
                     ptr_tmem_addr[0],
                     q_smem,
-                    (kv_smem).bitcast[Scalar[Self.q_type]](),
+                    kv_smem,
                     mbar_q,
                     s_bars,
                     kv_pipeline,
@@ -454,7 +453,8 @@ struct MLA_SM100_Decode_KV_BF16[
             elif warp_idx == 10:
                 Self.mmaPV(
                     ptr_tmem_addr[0],
-                    (kv_smem).bitcast[Scalar[Self.q_type]](),
+                    kv_smem,
+                    p_smem,
                     p_bars,
                     o_bars,
                     kv_pipeline,
@@ -466,8 +466,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 )
         barrier()
 
-        # PDL: Signal that this CTA is done so dependent grids (combine kernel) can start.
-        # This must be called by all threads in the CTA after all work is complete.
+        # PDL: Signal that this CTA is done
         comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
 
@@ -478,29 +477,29 @@ struct MLA_SM100_Decode_KV_BF16[
             )
 
     # --------------------------------------------------------------------------
-    # MLA decoding load_q and load_kv function
+    # Load: TMA Q (FP8) directly, TMA KV (FP8) directly
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
     fn load(
         q_tma: QOTMATile[
-            dtype = Self.q_type,
-            BM = Self.config.BM,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
-            swizzle_mode = Self.config.swizzle_mode,
+            dtype = Self.kv_type,
+            BM = Self.config.BM,
+            BK = Self.config.BK0,
+            swizzle_mode = Self.config.kv_tma_swizzle_mode,  # SWIZZLE_64B
         ],
         k_tma: KVTMATile[
             dtype = Self.kv_type,
             swizzle_mode = Self.config.kv_tma_swizzle_mode,
-            BN = Self.config.BK1,  # tile_m =64
-            BK = Self.config.BK0,  # tile_n =576
+            BN = Self.config.BK1,
+            BK = Self.config.BK0,
         ],
         kv_lut: Self.KVLUTType,
-        q_smem: SharedMemPointer[Scalar[Self.q_type]],
-        kv_smem: SharedMemPointer[Scalar[Self.kv_type]],
+        q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
+        kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         mbar_q: MBarType,
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages = Self.config.num_kv_stages,
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -514,7 +513,6 @@ struct MLA_SM100_Decode_KV_BF16[
             Self.config.decoding_warp_split_k,
         ],
     ):
-        # Early exit if this split has no work (prevents producer/consumer deadlock)
         if offset_position.num_keys_this_split == 0:
             return
 
@@ -523,49 +521,55 @@ struct MLA_SM100_Decode_KV_BF16[
         )
 
         var kv_prod = DecodeKVProducer[Self.kv_type, Self.config](
-            kv_pipeline, kv_smem
+            kv_pipeline, kv_smem.bitcast[Scalar[Self.kv_type]]()
         )
         var elect_mask = elect()
         var is_leader = elect_mask != 0
         var row: UInt = UInt(offset_position.q_row_offset)
-        # Start KV from kv_start_row for split-K support
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
-        # Clamp kv_row to prevent OOB lookup_table access on the last tile.
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
         var kv_gmem_row: UInt32 = kv_lut.row_idx(
             UInt32(offset_position.batch_idx), kv_row
         )
+
+        # Load Q via TMA as FP8 (no conversion needed)
         if is_leader:
-            # this is the total bytes expected to be transferred to the mbar for Q and K0
             mbar_q[].expect_bytes(
                 Int32(
                     Self.config.BM
                     * Self.config.q_depth
-                    * size_of[Self.q_type]()
+                    * Self.fp8_bytes_per_element
                 )
             )
-            Self.Common_MLA_Op.load_q(q_tma, q_smem, mbar_q, UInt(0), row)
+            # Q TMA: load FP8 Q directly into q_smem
+            var q_block_smem = q_smem
+            var q_smem_tensor = SharedMemTensor[
+                Self.kv_type, type_of(q_tma).layout
+            ](q_block_smem.bitcast[Scalar[Self.kv_type]]())
+            q_tma.async_copy(q_smem_tensor, mbar_q[], (Int(UInt(0)), Int(row)))
 
+        # Load first KV tile (FP8)
         var k0_bar: MBarType = kv_prod.producer_mbar[qk_stage=0]()
-
         if is_leader:
             k0_bar[].expect_bytes(
                 Int32(
                     Self.config.BN
                     * Self.config.q_depth
-                    * size_of[Self.kv_type]()
+                    * Self.fp8_bytes_per_element
                 )
             )
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             Self.Common_MLA_Op.load_kv(
                 k_tma, stage_ptr, k0_bar, UInt(0), UInt(kv_gmem_row)
             )
-
         kv_prod.commit_step()
-
         kv_row += UInt32(Self.config.BN)
 
+        # Wait for Q TMA to complete. Q arrives as FP8, ready for MMA.
+        mbar_q[].wait(0)
+
+        # Load remaining KV tiles
         var tile_idx: Int = 1
         while tile_idx < num_k_tiles:
             kv_prod.acquire[qk_stage=0]()
@@ -581,7 +585,7 @@ struct MLA_SM100_Decode_KV_BF16[
                     Int32(
                         Self.config.BN
                         * Self.config.q_depth
-                        * size_of[Self.kv_type]()
+                        * Self.fp8_bytes_per_element
                     )
                 )
                 Self.Common_MLA_Op.load_kv(
@@ -593,66 +597,22 @@ struct MLA_SM100_Decode_KV_BF16[
             tile_idx += 1
 
     # --------------------------------------------------------------------------
-    # MLA decoding MMA for Q, K, V, P blocks
+    # MMA QK: Q(FP8) x K(FP8) -> S(TMEM)
     # --------------------------------------------------------------------------
-
-    # -------------------------------------------------
-    # PIPELINE LOOP:
-    #   loop over tiles 1..num_k_tiles-1
-    #   each iteration does:
-    #     - PV(tile_idx-1) with prev_stage_idx  (then release its KV stage)
-    #     - QK(tile_idx) with the next KV stage
-    # -------------------------------------------------
-    # QK process the Numkey vertically, meaning the C Scale for the first
-    # block of all tiles is going to be zero the PV multiply the P horizontally
-    # to V meaning only the C scale for prev tile for is going to be Zero for all
-    # 9 block and after that it is going to be 1
-    #                Q                                              KV0/1
-    #   ___ ___ ___ ___ ___ ___ ___ ___ ___       ___ ___ ___ ___ ___ ___ ___ ___ ___
-    #  |___|___|___|___|___|___|___|___|___|  T0 |___|___|___|___|___|___|___|___|___|
-    #                                         T1 |___|___|___|___|___|___|___|___|___|
-    #                                         T2 |___|___|___|___|___|___|___|___|___|
-    #                                         T3 |___|___|___|___|___|___|___|___|___|
-    #     S0     S1     S0    S1
-    #   ______ ______ ______ ______
-    #  |__T0__|__T1__|__T2__|__T3__|
-    #
-    #     P0     P0     P0    P0
-    #   ______ ______ ______ ______
-    #  |__T0__|__T1__|__T2__|__T3__|
-
-    # We move it to It might be possible to create two P slot and put it at the
-    # last slot of KV pipeline, Need to verify if that gives better performance.
-    # QK process the Numkey vertically, meaning the C Scale for the first block
-    # of all tiles is going to be zero the PV multiply the P horizontally to V
-    # meaning only the C scale for prev tile for is going to be Zero for all 9 block
-    # and after that it is going to be 1
-    #                Q                                              KV0/1
-    #   ___ ___ ___ ___ ___ ___ ___ ___ ___       ___ ___ ___ ___ ___ ___ ___ ___ _______
-    #  |___|___|___|___|___|___|___|___|___|  T0 |___|___|___|___|___|___|___|___|__P0/1_|
-    #                                         T1 |___|___|___|___|___|___|___|___|__P0/1_|
-    #                                         T2 |___|___|___|___|___|___|___|___|__P0/1_|
-    #                                         T3 |___|___|___|___|___|___|___|___|__P0/1_|
-    #     S0    S1    S0    S1
-    #   ______ ______ ______ ______
-    #  |__T0__|__T1__|__T2__|__T3__|
-    #
-    #   P0     P1    P0    P1
-    #  ______ ______ ______ ______
-    # |__T0__|__T1__|__T2__|__T3__|
-
     @staticmethod
     @always_inline
     fn mmaQK(
         tmem_addr: UInt32,
-        q_smem: SharedMemPointer[Scalar[Self.q_type]],
-        kv_smem: SharedMemPointer[Scalar[Self.q_type]],
+        q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
+        kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         mbar_q: MBarType,
         s_bars: DecodeSM100MiscMBars[
-            num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
+            num_stages = Self.num_stages,
+            num_producer=1,
+            num_consumer=WARPGROUP_SIZE,
         ],
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages = Self.config.num_kv_stages,
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -673,26 +633,27 @@ struct MLA_SM100_Decode_KV_BF16[
             offset_position.num_keys_this_split, Self.config.BN
         )
 
-        # Early exit if there are no K tiles
         if num_k_tiles == 0:
             return
 
-        var kv_cons = DecodeKVConsumer[Self.q_type, Self.config](
+        var kv_cons = DecodeKVConsumer[Self.fp8_type, Self.config](
             kv_pipeline, kv_smem
         )
-        # ---  S producer wrapper (2-stage pipeline) ---
-        var s_prod = DecodeSProducer(s_bars.producer())
+        # N-stage S producer
+        var s_prod = DecodeSProducerN[Self.num_stages](s_bars.producer())
         comptime s_stride = UInt32(Self.config.TMEM_S1 - Self.config.TMEM_S0)
 
+        # FP8 descriptors for Q and K
         var q_descriptor = Self.UMMAQKTSS.descriptor_q_block(q_smem)
         var k_descriptor = Self.UMMAQKTSS.descriptor_k_block(kv_smem)
-        comptime stage_stride_in_bytes = Self.KVStageElems * Self.bytes_per_element
+        # Stage stride in bytes: FP8 elements (1 byte each)
+        comptime stage_stride_in_bytes = Self.KVStageElems * Self.fp8_bytes_per_element
 
-        mbar_q[].wait(0)
+        # Q FP8 is ready (load warp waited on mbar_q and Q arrived as FP8).
+        # The barrier() at the end of init ensures visibility.
+
         var tile_idx: Int = 0
-
         while tile_idx < num_k_tiles:
-            # wait until the corresponding consumer has freed a slot
             s_prod.acquire()
 
             var slot_idx: UInt32 = s_prod.slot_index()
@@ -713,19 +674,25 @@ struct MLA_SM100_Decode_KV_BF16[
             kv_cons.release[qk_stage=0](elect_mask)
             tile_idx += 1
 
+    # --------------------------------------------------------------------------
+    # MMA PV: P(FP8) x V(FP8) -> O(TMEM)
+    # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
     fn mmaPV(
         tmem_addr: UInt32,
-        kv_smem: SharedMemPointer[Scalar[Self.q_type]],
+        kv_smem: SharedMemPointer[Scalar[Self.fp8_type]],
+        p_smem: SharedMemPointer[Scalar[Self.fp8_type]],
         p_bars: DecodeSM100MiscMBars[
-            num_stages=2, num_producer=WARPGROUP_SIZE, num_consumer=1
+            num_stages = Self.num_stages,
+            num_producer=WARPGROUP_SIZE,
+            num_consumer=1,
         ],
         o_bars: DecodeSM100MiscMBars[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
         ],
         kv_pipeline: KVPipelineGeneric[
-            num_kv_stages = Self.config.num_kv_stages,  # 2
+            num_kv_stages = Self.config.num_kv_stages,
             num_qk_stages=1,
             num_producer=1,
             num_consumer=2,
@@ -745,23 +712,26 @@ struct MLA_SM100_Decode_KV_BF16[
             offset_position.num_keys_this_split, Self.config.BN
         )
 
-        # Early exit if there are no K tiles
         if num_k_tiles == 0:
             return
 
-        # ---  S producer wrapper (2-stage pipeline) ---
         comptime s_stride = UInt32(Self.config.TMEM_S1 - Self.config.TMEM_S0)
-        var kv_cons = DecodeKVConsumer[Self.q_type, Self.config](
+        var kv_cons = DecodeKVConsumer[Self.fp8_type, Self.config](
             kv_pipeline, kv_smem
         )
-        var p_cons = DecodePConsumer(p_bars.consumer())
+        # N-stage P consumer
+        var p_cons = DecodePConsumerN[Self.num_stages](p_bars.consumer())
         var o_prod = DecodeOProducer(o_bars.producer())
-        var p_smem_base = kv_smem + Self.NumVOBlocks * Self.BlockElems
-        var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem_base)
+
+        # P descriptor: points to the separate P SMEM region
+        var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem)
+        # V descriptor: points to the KV SMEM (V data is first 512 cols of KV)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_smem)
         comptime block_step = Self.config.MMA_PV_N // Self.config.BN
-        comptime stage_stride_in_bytes = Self.KVStageElems * Self.bytes_per_element
-        comptime block_stride_in_bytes = Self.BlockElems * Self.bytes_per_element
+        # FP8: 1 byte per element
+        comptime kv_stage_stride_in_bytes = Self.KVStageElems * Self.fp8_bytes_per_element
+        comptime p_stage_stride_in_bytes = Self.PStageElems * Self.fp8_bytes_per_element
+        comptime block_stride_in_bytes = Self.BlockElems * Self.fp8_bytes_per_element
 
         var tile_idx: Int = 0
         var c_scale: UInt32 = 0
@@ -775,9 +745,9 @@ struct MLA_SM100_Decode_KV_BF16[
                 o_prod.acquire()
                 Self.UMMAPVSS.mma[stage_idx=0](
                     a=p_descriptor
-                    + p_slot_index * UInt32(stage_stride_in_bytes),
+                    + p_slot_index * UInt32(p_stage_stride_in_bytes),
                     b=v_descriptor
-                    + v_slot_index * UInt32(stage_stride_in_bytes)
+                    + v_slot_index * UInt32(kv_stage_stride_in_bytes)
                     + UInt32(block * block_stride_in_bytes),
                     c=o_tmem + UInt32(block) * UInt32(Self.config.BN // 2),
                     c_scale=c_scale,

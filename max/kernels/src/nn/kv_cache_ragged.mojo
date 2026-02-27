@@ -2894,22 +2894,20 @@ fn generic_flash_attention_kv_cache_ragged_sink[
 @always_inline
 fn generic_flare_mla_decode_kv_cache_ragged[
     collection_t: KVCollectionT,
-    dtype: DType,
+    q_dtype: DType,
     //,
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[q_dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -2956,23 +2954,21 @@ fn generic_flare_mla_decode_kv_cache_ragged[
 
 @always_inline
 fn _flare_mla_decode_kv_cache_ragged[
-    dtype: DType,
+    q_dtype: DType,
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[q_dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.

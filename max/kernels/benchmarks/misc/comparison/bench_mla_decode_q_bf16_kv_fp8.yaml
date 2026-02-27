@@ -11,9 +11,22 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-name: bench_mla_decode_subgraph
+# MLA decode FP8 with BF16 queries benchmark: Q=BF16, KV=FP8 for MAX;
+# Q=FP8, KV=FP8 for FlashInfer (FlashInfer always uses FP8 for both).
+#
+# This tests the old FP8 converter path where MAX keeps queries in BF16
+# while KV cache is stored in FP8. FlashInfer does not support this split
+# mode, so it runs with FP8 for both Q and KV.
+#
+# Usage:
+#   kbench bench_mla_decode_q_bf16_kv_fp8.yaml
+#   kbench bench_mla_decode_q_bf16_kv_fp8.yaml --param engine:"[modular_max]"
+#   kbench bench_mla_decode_q_bf16_kv_fp8.yaml --param engine:"[flashinfer]"
+
+name: bench_mla_decode_q_bf16_kv_fp8
 file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_blackwell_mla_decode.py
 
+# FP8 with BF16 queries: Q=BF16 for MAX, KV=FP8 (FlashInfer uses FP8 for both)
 deepseek-v2-commons: &deepseek-v2-commons
   $num_q_heads: 128
   $qk_nope_head_dim: 128
@@ -22,6 +35,8 @@ deepseek-v2-commons: &deepseek-v2-commons
   $q_len_per_request: 1
   $num_iters: 100
   $engine: ["flashinfer", "modular_max"]
+  $dtype: "float8_e4m3fn"
+  $q_dtype: "bf16"
   model: "deepseek-v2"
 
 # latency sensitive configuration

@@ -92,6 +92,7 @@ def calculate_mla_memory_bytes(
     cache_len: int,
     dtype: torch.dtype,
     model_config: Config,
+    q_dtype: torch.dtype | None = None,
 ) -> int:
     """Calculate memory throughput for MLA operations.
 
@@ -99,28 +100,40 @@ def calculate_mla_memory_bytes(
         batch_size: Number of sequences
         q_len_per_request: Query length per request
         cache_len: KV cache length per sequence
-        dtype: Data type of tensors
-        time_s: Execution time in seconds
+        dtype: Data type of KV cache tensors
+        model_config: Model configuration
+        q_dtype: Data type of Q tensor (defaults to dtype if not specified)
 
     Returns:
-        Memory throughput in GB/s
+        Total memory bytes read and written
     """
+    if q_dtype is None:
+        q_dtype = dtype
+
     num_q_heads = model_config.num_q_heads
     kv_lora_rank = model_config.kv_lora_rank
     qk_rope_head_dim = model_config.qk_rope_head_dim
 
     # MLA reads compressed KV cache and query, writes output
-    # Read: query + kv_cache (in input dtype)
+    # Read: query (in q_dtype) + kv_cache (in kv dtype)
     # Write: output (always bf16 for FP8 inputs, otherwise same as input dtype)
+    def _bytes_per_element(dt: torch.dtype) -> int:
+        if dt in [torch.float8_e4m3fn, torch.float8_e5m2]:
+            return 1
+        elif dt in [torch.bfloat16, torch.float16]:
+            return 2
+        else:
+            return 4
+
+    kv_bytes_per_element = _bytes_per_element(dtype)
+    q_bytes_per_element = _bytes_per_element(q_dtype)
+
+    # Output is always bf16 for FP8 inputs, otherwise same as input dtype
     if dtype in [torch.float8_e4m3fn, torch.float8_e5m2]:
-        input_bytes_per_element = 1
-        # FP8 MLA kernels produce bf16 output (see bmm2_scale comment in bench_flashinfer_trtllm)
         output_bytes_per_element = 2
     elif dtype in [torch.bfloat16, torch.float16]:
-        input_bytes_per_element = 2
         output_bytes_per_element = 2
     else:
-        input_bytes_per_element = 4
         output_bytes_per_element = 4
 
     # Input: query [batch_size, q_len_per_request, num_q_heads, kv_lora_rank + qk_rope_head_dim]
@@ -129,7 +142,7 @@ def calculate_mla_memory_bytes(
         * q_len_per_request
         * num_q_heads
         * (kv_lora_rank + qk_rope_head_dim)
-        * input_bytes_per_element
+        * q_bytes_per_element
     )
 
     # KV cache: [num_blocks, page_size, kv_lora_rank + qk_rope_head_dim] (read only what's needed)
@@ -137,7 +150,7 @@ def calculate_mla_memory_bytes(
         batch_size
         * cache_len
         * (kv_lora_rank + qk_rope_head_dim)
-        * input_bytes_per_element
+        * kv_bytes_per_element
     )
 
     # Output: [batch_size, q_len_per_request, num_q_heads, kv_lora_rank]
@@ -162,6 +175,7 @@ def bench_flashinfer_trtllm(
     q_len_per_request: int = 1,
     enable_pdl: bool | None = None,
     no_kineto: bool = False,
+    num_iters: int = 100,
 ) -> tuple[float, int] | None:
     """Benchmark FlashInfer MLA decode with paged KV cache.
 
@@ -172,6 +186,7 @@ def bench_flashinfer_trtllm(
         dtype: torch dtype for inputs (supports bfloat16, float16, float8_e4m3fn)
         q_len_per_request: Query length per request (1 for decode, >1 for chunked prefill)
         enable_pdl: Enable PDL (Persistent Dynamic Load) optimization
+        num_iters: Number of benchmark iterations for noise reduction.
     """
     if _flashinfer is None:
         print("flashinfer not available, skipping bench_flashinfer")
@@ -293,7 +308,7 @@ def bench_flashinfer_trtllm(
         time_s = bench_kineto_with_cupti_warmup(
             run_kernel,
             kernel_names="fmhaSm100",  # FlashInfer TRT-LLM MLA kernel name prefix
-            num_tests=100,
+            num_tests=num_iters,
             suppress_kineto_output=True,
             flush_l2=True,
         )
@@ -321,6 +336,8 @@ def bench_max(
     model_config: Config,
     q_len_per_request: int = 1,
     no_kineto: bool = False,
+    q_dtype_override: torch.dtype | None = None,
+    num_iters: int = 100,
 ) -> tuple[float, int]:
     """Benchmark MAX MLA decode with paged KV cache.
 
@@ -328,11 +345,24 @@ def bench_max(
         batch_size: Number of sequences
         cache_len: KV cache length per sequence
         page_size: Page size for paged KV cache
-        dtype: torch dtype for inputs
+        dtype: torch dtype for inputs (bf16 or fp8 for KV cache)
         q_len_per_request: Query length per request (1 for decode)
+        no_kineto: Skip kineto timing (for ncu/nsys)
+        q_dtype_override: Override Q tensor dtype. If None, Q is BF16 (legacy).
+            Set to torch.float8_e4m3fn for native QKV FP8 mode.
+        num_iters: Number of benchmark iterations for noise reduction.
     """
-    # Convert torch dtype to MAX DType
-    max_dtype = DType.from_torch(dtype)
+    is_fp8_kv = dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
+
+    kv_dtype = dtype  # KV cache dtype (bf16 or fp8)
+    # For native FP8: Q can be FP8 too. Otherwise default to BF16.
+    q_dtype = (
+        q_dtype_override if q_dtype_override is not None else torch.bfloat16
+    )
+    is_fp8_q = q_dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
+
+    max_kv_dtype = DType.from_torch(kv_dtype)
+    max_q_dtype = DType.from_torch(q_dtype)
 
     # Create inference session
     session = InferenceSession(devices=[Accelerator()])
@@ -348,7 +378,7 @@ def bench_max(
     # Setup KV cache configuration for MLA
     # MLA stores compressed KV (kv_lora_rank) + rope embeddings (qk_rope_head_dim)
     kv_params = KVCacheParams(
-        dtype=max_dtype,
+        dtype=max_kv_dtype,
         n_kv_heads=num_kv_heads,
         head_dim=kv_lora_rank + qk_rope_head_dim,  # Compressed dimension
         num_layers=1,  # Benchmarking a single layer
@@ -361,6 +391,7 @@ def bench_max(
 
     # For MLA: [num_pages, 1 (K and V compressed together), 1 layer, page_size, 1 kv_head, compressed_dim]
     # MLA stores compressed KV cache, not separate K and V
+    # For FP8: generate in bf16 first then cast (torch.randn doesn't support FP8)
     paged_blocks_torch = torch.randn(
         batch_size * num_blocks_per_seq,
         1,  # MLA uses compressed KV format, not separate K and V
@@ -368,9 +399,11 @@ def bench_max(
         page_size,
         num_kv_heads,
         kv_lora_rank + qk_rope_head_dim,
-        dtype=dtype,
+        dtype=torch.bfloat16,
         device="cuda",
     )
+    if is_fp8_kv:
+        paged_blocks_torch = paged_blocks_torch.to(kv_dtype)
 
     lut_torch = (
         torch.arange(
@@ -390,16 +423,23 @@ def bench_max(
     )
 
     # Convert torch tensors to MAX types
-    paged_blocks_max = Buffer.from_dlpack(paged_blocks_torch)
+    # For FP8: DLPack doesn't support float8 types, so we transfer as uint8
+    # and reinterpret the dtype using Buffer.view()
+    if is_fp8_kv:
+        paged_blocks_max = Buffer.from_dlpack(
+            paged_blocks_torch.view(torch.uint8)
+        ).view(max_kv_dtype)
+    else:
+        paged_blocks_max = Buffer.from_dlpack(paged_blocks_torch)
     lut_max = Buffer.from_dlpack(lut_torch)
     cache_lengths_max = Buffer.from_dlpack(cache_lengths_torch)
     max_lengths_max = Buffer.from_dlpack(max_lengths_torch)
 
     # Define input types
     # Query for MLA decode: [total_tokens, num_q_heads, qk_head_dim]
-    # where qk_head_dim = kv_lora_rank + qk_rope_head_dim
+    # Q is BF16 by default, or FP8 in native QKV FP8 mode
     q_type = TensorType(
-        max_dtype,
+        max_q_dtype,
         shape=["total_tokens", num_q_heads, qk_head_dim],
         device=DeviceRef.GPU(),
     )
@@ -411,7 +451,7 @@ def bench_max(
     )
 
     blocks_type = BufferType(
-        max_dtype,
+        max_kv_dtype,
         shape=[
             "total_num_pages",
             1,
@@ -490,10 +530,25 @@ def bench_max(
 
     # Prepare inputs
     # Query: [batch_size * q_len_per_request, num_q_heads, qk_head_dim]
+    # Q is BF16 by default, or FP8 in native QKV FP8 mode
     total_tokens = batch_size * q_len_per_request
-    q_input = torch.randn(
-        total_tokens, num_q_heads, qk_head_dim, dtype=dtype, device="cuda"
+    q_input_torch = torch.randn(
+        total_tokens,
+        num_q_heads,
+        qk_head_dim,
+        dtype=torch.bfloat16,
+        device="cuda",
     )
+    if is_fp8_q:
+        q_input_torch = q_input_torch.to(q_dtype)
+
+    # For FP8 Q: DLPack doesn't support float8 types, use uint8 view workaround
+    if is_fp8_q:
+        q_input = Buffer.from_dlpack(q_input_torch.view(torch.uint8)).view(
+            max_q_dtype
+        )
+    else:
+        q_input = q_input_torch
 
     # Input row offsets for ragged tensor
     input_row_offsets = torch.arange(
@@ -502,7 +557,7 @@ def bench_max(
 
     def run_kernel() -> Any:
         output = model.execute(
-            q_input.detach(),
+            q_input if is_fp8_q else q_input_torch.detach(),
             input_row_offsets.detach(),
             paged_blocks_max,
             cache_lengths_max,
@@ -522,6 +577,7 @@ def bench_max(
         cache_len,
         dtype,
         model_config=model_config,
+        q_dtype=q_dtype,
     )
 
     # If running under external profilers (ncu/nsys), skip kineto to avoid assertion failures.
@@ -537,7 +593,7 @@ def bench_max(
         time_s = bench_kineto_with_cupti_warmup(
             run_kernel,
             kernel_names="mla",
-            num_tests=100,
+            num_tests=num_iters,
             suppress_kineto_output=True,
             flush_l2=True,
             with_multiple_kernels=True,
@@ -568,6 +624,8 @@ def bench_mla_decode(
     backend: str = "trtllm-gen",
     enable_pdl: bool | None = None,
     no_kineto: bool = False,
+    q_dtype: str = "bf16",
+    num_iters: int = 100,
 ) -> tuple[float, int] | None:
     """Run all MLA decode benchmarks and return results.
 
@@ -575,20 +633,33 @@ def bench_mla_decode(
         batch_size: Batch size (number of sequences)
         cache_len: KV cache length per sequence (max sequence length)
         dtype: torch dtype for inputs (e.g., torch.bfloat16, torch.float8_e4m3fn)
+        model_config: Model configuration
+        engine: Engine to benchmark ("modular_max" or "flashinfer")
         q_len_per_request: Query length per request (1 for decode, >1 for chunked prefill)
         backend: Backend for FlashInfer ("trtllm-gen" or "xqa")
         enable_pdl: Enable PDL optimization for FlashInfer
+        no_kineto: Skip kineto timing (for ncu/nsys)
+        q_dtype: Query dtype ("bf16" or "fp8"). When "fp8", Q is float8_e4m3fn
+            for native QKV FP8 mode. Only affects MAX engine; FlashInfer always
+            uses whatever dtype is passed (already FP8 when dtype=float8_e4m3fn).
+        num_iters: Number of benchmark iterations for noise reduction.
 
     Returns:
-        Dictionary with benchmark results: {"flashinfer": (time_s, gb_per_sec), "max": (time_s, gb_per_sec)}
+        Tuple of (time_seconds, total_bytes) or None on failure.
     """
     # Use appropriate page sizes for each backend
     flashinfer_page_size = 64  # FlashInfer TRT-LLM tested with 32 and 64
     max_page_size = 128  # MAX only supports 128
 
+    # Resolve Q dtype override for MAX engine
+    q_dtype_override: torch.dtype | None = None
+    if q_dtype == "fp8":
+        q_dtype_override = torch.float8_e4m3fn
+
     result: tuple[float, int] | None = None
     if engine == "flashinfer":
         # Run FlashInfer benchmark with TensorRT-LLM MLA backend
+        # FlashInfer always uses the same dtype for Q and KV
         if _flashinfer is not None:
             try:
                 result = bench_flashinfer_trtllm(
@@ -600,6 +671,7 @@ def bench_mla_decode(
                     q_len_per_request=q_len_per_request,
                     enable_pdl=enable_pdl,
                     no_kineto=no_kineto,
+                    num_iters=num_iters,
                 )
             except Exception as e:
                 print(f"FlashInfer benchmark failed: {e}")
@@ -618,6 +690,8 @@ def bench_mla_decode(
                 model_config=model_config,
                 q_len_per_request=q_len_per_request,
                 no_kineto=no_kineto,
+                q_dtype_override=q_dtype_override,
+                num_iters=num_iters,
             )
         except Exception as e:
             print(f"MAX benchmark failed: {e}")
@@ -683,7 +757,7 @@ if __name__ == "__main__":
         "--kv_lora_rank",
         "--kv-lora-rank",
         type=int,
-        default=cfg.qk_rope_head_dim,
+        default=cfg.kv_lora_rank,
         help="kv lora rank",
     )
 
@@ -693,6 +767,18 @@ if __name__ == "__main__":
         default="bfloat16",
         choices=["float16", "bfloat16", "float32", "float8_e4m3fn"],
         help="Data type (float8_e4m3fn for FP8 quantized MLA)",
+    )
+
+    parser.add_argument(
+        "--q_dtype",
+        "--q-dtype",
+        type=str,
+        default="bf16",
+        choices=["bf16", "fp8"],
+        help=(
+            "Query tensor dtype: 'bf16' (default) or 'fp8' for native QKV FP8. "
+            "Only affects MAX engine. FlashInfer always matches Q dtype to --dtype."
+        ),
     )
 
     parser.add_argument(
@@ -706,6 +792,13 @@ if __name__ == "__main__":
         "--no-kineto",
         action="store_true",
         help="Skip kineto timing (for ncu/nsys).",
+    )
+    parser.add_argument(
+        "--num_iters",
+        "--num-iters",
+        type=int,
+        default=100,
+        help="Number of benchmark iterations for noise reduction",
     )
     parser.add_argument(
         "--output",
@@ -737,6 +830,8 @@ if __name__ == "__main__":
         backend="trtllm-gen",
         enable_pdl=True,
         no_kineto=args.no_kineto,
+        q_dtype=args.q_dtype,
+        num_iters=args.num_iters,
     )
 
     met_sec, bytes = result if result else [0, 0]
