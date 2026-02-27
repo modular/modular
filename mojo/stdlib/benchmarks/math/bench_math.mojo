@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
-from random import *
+from std.math import *
+from std.random import *
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data

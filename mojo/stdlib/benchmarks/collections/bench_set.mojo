@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
+from std.collections import Set
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#

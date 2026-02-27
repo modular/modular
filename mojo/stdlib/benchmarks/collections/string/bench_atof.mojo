@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import _dir_of_current_file
+from std.pathlib import _dir_of_current_file
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,

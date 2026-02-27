@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import _memchr, _memmem
-from math import align_down
-from sys import simd_width_of
+from std.collections.string.string_slice import _memchr, _memmem
+from std.math import align_down
+from std.sys import simd_width_of
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
-from bit import count_trailing_zeros
-from memory import memcmp, pack_bits
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.bit import count_trailing_zeros
+from std.memory import memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data

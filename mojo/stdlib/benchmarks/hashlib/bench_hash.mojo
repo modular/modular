@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib import Hasher
-from hashlib._ahash import AHasher
-from hashlib._fnv1a import Fnv1a
+from std.hashlib import Hasher
+from std.hashlib._ahash import AHasher
+from std.hashlib._fnv1a import Fnv1a
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 # Source: https://www.101languages.net/arabic/most-common-arabic-words/
 comptime words_ar: String = """
