@@ -209,6 +209,9 @@ what we publish.
 
 ### Library changes
 
+- `InlineArray` now has a `fill()` method that sets all elements to a given
+  value, delegating to `Span.fill()`.
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 

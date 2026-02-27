@@ -650,6 +650,27 @@ struct InlineArray[ElementType: Copyable, size: Int](
             .address_space_cast[address_space]()
         )
 
+    fn fill[
+        T: Copyable & ImplicitlyDestructible, //
+    ](mut self: InlineArray[T, Self.size], value: T):
+        """Fills all elements of the array with the given value.
+
+        Parameters:
+            T: The element type, must implement `Copyable` and
+                `ImplicitlyDestructible`.
+
+        Args:
+            value: The value to assign to each element.
+
+        Examples:
+
+        ```mojo
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
+        arr.fill(0)  # arr is now [0, 0, 0]
+        ```
+        """
+        Span(self).fill(value)
+
     @always_inline
     fn __contains__[
         T: Equatable & Copyable, //
