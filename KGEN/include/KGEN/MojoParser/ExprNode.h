@@ -57,6 +57,7 @@ public:
     kBoolLiteral,       // False
     kSelfLiteral,       // Self
     kStringLiteral,     // "Hello"
+    kTStringLiteral,    // t"Hello, {name}!"
     kNoneLiteral,       // None
     kDiscardLiteral,    // _
     kEllipsisLiteral,   // ...

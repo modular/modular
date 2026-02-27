@@ -39,6 +39,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "EllipsisLiteral";
   case ExprNode::kStringLiteral:
     return "StringLiteral";
+  case ExprNode::kTStringLiteral:
+    return "TStringLiteral";
   case ExprNode::kNoneLiteral:
     return "NoneLiteral";
   case ExprNode::kDiscardLiteral:
@@ -243,6 +245,27 @@ void StringLiteralNode::print(raw_indented_ostream &os) const {
   }
   for (StringRef spelling : spellings)
     os << "  \"" << spelling << "\"\n";
+  os << "}\n";
+}
+
+void TStringExprNode::print(raw_indented_ostream &os) const {
+  os << "TStringLiteral {\n";
+  os.indent();
+  for (const Part &part : parts) {
+    std::visit(Overloaded{
+                   [&](const LiteralPart &literal) {
+                     os << "Literal: \"" << literal.text << "\"\n";
+                   },
+                   [&](const InterpolationPart &interpolation) {
+                     os << "Interpolation:\n";
+                     os.indent();
+                     interpolation.expr->print(os);
+                     os.unindent();
+                   },
+               },
+               part);
+  }
+  os.unindent();
   os << "}\n";
 }
 

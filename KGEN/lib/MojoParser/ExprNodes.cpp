@@ -681,6 +681,14 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   return emitCtorCall(value, this, dest, emitter);
 }
 
+/// Get the source range for a t-string, from start to the closing quote.
+SourceRange TStringExprNode::getRange() const { return {startLoc, endLoc}; }
+
+/// Emit IR for a t-string (stub — will be implemented in a follow-up commit).
+AnyValue TStringExprNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
+  return {};
+}
+
 bool Operand::isPositionalStringLiteral(StringRef str) const {
   if (isPositional())
     if (auto *strExpr = dyn_cast<StringLiteralNode>(expr))
