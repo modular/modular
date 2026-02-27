@@ -65,10 +65,10 @@ declare all Mojo functions and types that are callable from Python using
 So the complete Mojo code looks like this:
 
 ```mojo title="mojo_module.mojo"
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
 import math
-from os import abort
+from std.os import abort
 
 @export
 fn PyInit_mojo_module() -> PythonObject:
@@ -403,9 +403,9 @@ compared to normal Mojo methods: they must be a `@staticmethod` that takes
 either `py_self: PythonObject` or `self_ptr: UnsafePointer[Self]`:
 
 ```mojo
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.os import abort
 
 @export
 fn PyInit_mojo_module() -> PythonObject:
@@ -451,9 +451,9 @@ Mojo methods called from Python are currently required to take non-standard self
 Python Mojo bindings supports exposing Python `@staticmethods`, bound using [`PythonTypeBuilder.def_staticmethod()`](/mojo/std/python/bindings/PythonTypeBuilder/#def_staticmethod). A function declared using `def_staticmethod()` is callable as a static method on the type within Python, without needing an object instance.
 
 ```mojo
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.os import abort
 
 @export
 fn PyInit_mojo_module() -> PythonObject:
@@ -509,7 +509,7 @@ result = mojo_module.sum_kwargs_ints(a=10, b=20, c=30)  # returns 60
 ```
 
 ```mojo
-from collections import OwnedKwargsDict
+from std.collections import OwnedKwargsDict
 
 def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) raises -> PythonObject:
     var total = 0
@@ -521,7 +521,7 @@ def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) raises -> PythonObjec
 Keyword arguments are also supported following normal positional arguments. Additionally, getting specific keyword arguments is a dictionary lookup on the `OwnedKwargsDict`:
 
 ```mojo
-from collections import OwnedKwargsDict
+from std.collections import OwnedKwargsDict
 
 def duration_in_seconds(
     hours_obj: PythonObject,

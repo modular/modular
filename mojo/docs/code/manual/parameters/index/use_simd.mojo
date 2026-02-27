@@ -43,7 +43,7 @@ def main() raises:
 
     # second example
 
-    from math import sqrt
+    from std.math import sqrt
 
     fn rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
         return 1 / sqrt(x)

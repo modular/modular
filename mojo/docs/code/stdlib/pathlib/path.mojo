@@ -11,26 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import cwd, Path
-from testing import *
+from std.pathlib import cwd, Path
+from std.testing import *
 
 
 fn test_cwd() raises:
-    from pathlib import cwd
+    from std.pathlib import cwd
 
     var string_path = cwd()
     print(string_path)
 
 
 fn test_stat() raises:
-    from pathlib import Path
+    from std.pathlib import Path
 
     var p = Path()  # Path to cwd
     print(p.stat())  # os.stat_result(...)
 
 
 fn test_exists() raises:
-    from pathlib import Path
+    from std.pathlib import Path
 
     var p = Path("./path/to/nowhere/does-not-exist")
     var result = "Exists" if p.exists() else "Does not exist"
@@ -38,30 +38,30 @@ fn test_exists() raises:
 
 
 fn test_expanding_user() raises:
-    from pathlib import Path
-    from testing import assert_true
+    from std.pathlib import Path
+    from std.testing import assert_true
 
     var p = Path("~")
     assert_true(p.expanduser() == Path.home())
 
 
 fn test_isdir() raises:
-    from pathlib import Path
-    from testing import assert_true
+    from std.pathlib import Path
+    from std.testing import assert_true
 
     assert_true(Path.home().is_dir())
 
 
 fn test_isfile() raises:
-    from pathlib import Path
-    from testing import assert_false
+    from std.pathlib import Path
+    from std.testing import assert_false
 
     assert_false(Path.home().is_file())
 
 
 fn test_read() raises:
-    from pathlib import Path
-    from testing import assert_true
+    from std.pathlib import Path
+    from std.testing import assert_true
 
     var p = Path("testfile.txt")
     p.write_text("test")
@@ -71,8 +71,8 @@ fn test_read() raises:
 
 
 fn test_read_bytes() raises:
-    from pathlib import Path
-    from testing import assert_true
+    from std.pathlib import Path
+    from std.testing import assert_true
 
     var p = Path("testfile.txt")
     p.write_text("test")
@@ -82,8 +82,8 @@ fn test_read_bytes() raises:
 
 
 fn test_write_text() raises:
-    from pathlib import Path
-    from testing import assert_true
+    from std.pathlib import Path
+    from std.testing import assert_true
 
     var p = Path("testfile.txt")
     p.write_text("Hello")
@@ -93,8 +93,8 @@ fn test_write_text() raises:
 
 
 fn test_write_bytes() raises:
-    from pathlib import Path
-    from testing import assert_true
+    from std.pathlib import Path
+    from std.testing import assert_true
 
     var p = Path("testfile.txt")
     var s = "Hello"
@@ -105,8 +105,8 @@ fn test_write_bytes() raises:
 
 
 fn test_suffix() raises:
-    from pathlib import Path
-    from testing import assert_true
+    from std.pathlib import Path
+    from std.testing import assert_true
 
     var p = Path("testfile.txt")
     print(p.suffix())
@@ -117,7 +117,7 @@ fn test_suffix() raises:
 
 
 fn test_joinpath() raises:
-    from pathlib import Path
+    from std.pathlib import Path
 
     # gettmpdir() has no guarantee of trailing /
     # Use joinpath to ensure path construction
@@ -133,23 +133,23 @@ fn test_joinpath() raises:
 
 
 fn test_listdir() raises:
-    from pathlib import Path
+    from std.pathlib import Path
 
     for item in cwd().listdir():
         print(item)
 
 
 fn test_name() raises:
-    from pathlib import Path
-    from testing import assert_true
+    from std.pathlib import Path
+    from std.testing import assert_true
 
     var p = Path("a/path/foo.txt")
     assert_true(p.name() == "foo.txt")
 
 
 fn test_parts() raises:
-    from pathlib import Path
-    from testing import assert_true
+    from std.pathlib import Path
+    from std.testing import assert_true
 
     for p, q in zip(Path("a/path/foo.txt").parts(), ["a", "path", "foo.txt"]):
         assert_true(p == q)

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-list-example
-from python import Python
+from std.python import Python
 
 
 def main() raises:

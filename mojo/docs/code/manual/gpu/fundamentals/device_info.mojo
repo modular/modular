@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import (
+from std.sys import (
     exit,
     has_accelerator,
     has_amd_gpu_accelerator,
     has_apple_gpu_accelerator,
 )
 
-from gpu.host import DeviceAttribute, DeviceContext
+from std.gpu.host import DeviceAttribute, DeviceContext
 
 
 def main() raises:

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from utils import Variant
+from std.utils import Variant
 
 
 @fieldwise_init

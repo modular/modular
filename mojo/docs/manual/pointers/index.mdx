@@ -16,7 +16,7 @@ example, the following code creates an `OwnedPointer` that points to an `Int`
 value:
 
 ```mojo
-from memory import OwnedPointer
+from std.memory import OwnedPointer
 
 var ptr: OwnedPointer[Int]
 ptr = OwnedPointer(100)
@@ -157,7 +157,7 @@ You can construct a `Pointer` to an existing value by calling the constructor
 with the `to` keyword argument:
 
 ```mojo
-from memory import Pointer
+from std.memory import Pointer
 
 ptr = Pointer(to=some_value)
 ```
@@ -176,7 +176,7 @@ when you initialize the `OwnedPointer`. The `OwnedPointer` allocates memory and
 moves or copies the value into the reserved memory.
 
 ```mojo
-from memory import OwnedPointer
+from std.memory import OwnedPointer
 
 o_ptr = OwnedPointer(some_big_struct)
 ```
@@ -202,7 +202,7 @@ may not be clear. Like an `OwnedPointer`, it points to a single value, and it
 allocates memory when you initialize the `ArcPointer` with a value:
 
 ```mojo
-from memory import ArcPointer
+from std.memory import ArcPointer
 
 attributesDict: Dict[String, String] = {}
 attributes = ArcPointer(attributesDict)
@@ -220,7 +220,7 @@ store a dictionary. Copying an instance of `SharedDict` only copies the
 `ArcPointer`, not the dictionary, which is shared between all of the copies.
 
 ```mojo
-from memory import ArcPointer
+from std.memory import ArcPointer
 
 struct SharedDict(Copyable):
     var attributes: ArcPointer[Dict[String, String]]

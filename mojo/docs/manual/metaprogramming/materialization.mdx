@@ -136,7 +136,7 @@ allocates a statically sized array of elements on the stack. The following code
 uses `global_constant()` to create a static lookup table.
 
 ```
-from builtin.globals import global_constant
+from std.builtin.globals import global_constant
 
 fn use_lookup(idx: Int) -> Int64:
     comptime numbers: InlineArray[Int64, 10] = [

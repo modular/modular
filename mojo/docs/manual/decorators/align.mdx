@@ -11,7 +11,7 @@ For example, adding `@align(64)` on a struct containing an `Int` (8-byte
 aligned) aligns the struct to 64 bytes:
 
 ```mojo
-from sys import align_of
+from std.sys import align_of
 
 @align(64)
 struct CacheAligned:
@@ -34,7 +34,7 @@ The alignment value can also be a struct parameter, enabling generic aligned
 types:
 
 ```mojo
-from sys import align_of
+from std.sys import align_of
 
 @align(Self.alignment)
 struct AlignedBuffer[alignment: Int]:

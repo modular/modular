@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import *
+from std.testing import *
 
 comptime CanCompare = Equatable & ImplicitlyCopyable
 

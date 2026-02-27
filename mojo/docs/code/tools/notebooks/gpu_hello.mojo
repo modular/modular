@@ -14,7 +14,7 @@
 # Tested on T4 GPU 2 Dec 2025
 
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
 fn kernel():

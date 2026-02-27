@@ -445,7 +445,7 @@ an integer-based enumeration. Define a separate struct for each condition, then
 combine them into a single error type with a `comptime` alias:
 
 ```mojo title="variant_errors.mojo"
-from utils import Variant
+from std.utils import Variant
 
 
 @fieldwise_init
@@ -1300,7 +1300,7 @@ type at compile time. For example, you can:
 The following `ResourceGuard` example demonstrates this pattern:
 
 ```mojo
-from reflection import *
+from std.reflection import *
 
 @fieldwise_init
 struct ConnectionError(Copyable, Writable):

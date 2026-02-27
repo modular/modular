@@ -1248,7 +1248,7 @@ You must store the reference in a variable so that you can then access the
 functions and objects in the module. For example:
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def run_display() raises:
     # This is roughly equivalent to Python's `import pygame`
@@ -1278,7 +1278,7 @@ a look at the updated code for `life.mojo`, and we'll explain more below:
 import time
 
 from gridv1 import Grid
-from python import Python
+from std.python import Python
 
 
 def run_display(

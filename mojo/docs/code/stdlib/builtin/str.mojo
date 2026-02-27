@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_true
+from std.testing import assert_true
 
 
 @fieldwise_init

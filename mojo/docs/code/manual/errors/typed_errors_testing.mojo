@@ -25,7 +25,7 @@ Recommended patterns:
 3. Use flag variables to avoid mixing error types in try blocks
 """
 
-from testing import assert_raises, assert_equal, assert_true
+from std.testing import assert_raises, assert_equal, assert_true
 
 
 @fieldwise_init

@@ -44,7 +44,7 @@ with the module name. The following shows an example of importing the standard
 Python [NumPy](https://numpy.org/) package:
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def main() raises:
     # This is equivalent to Python's `import numpy as np`
@@ -68,7 +68,7 @@ If you want to use Python builtin APIs, you just need to import the `builtins`
 module the same way. For example:
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def main() raises:
     np = Python.import_module("numpy")
@@ -143,7 +143,7 @@ def gen_random_values(size, base):
 Here's how you can import it and use it in a Mojo file:
 
 ```mojo title="main.mojo"
-from python import Python
+from std.python import Python
 
 def main() raises:
     Python.add_to_path("path/to/module")

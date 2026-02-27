@@ -14,10 +14,10 @@
 # Tested on T4 GPU 2 Dec 2025
 
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 comptime VECTOR_WIDTH = 10
 comptime layout = Layout.row_major(VECTOR_WIDTH)

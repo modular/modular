@@ -113,8 +113,8 @@ obtains a reference to the GPU device. Using any editor, create a file named
 `vector_addition.mojo` with the following code:
 
 ```mojo title="vector_addition.mojo"
-from gpu.host import DeviceContext
-from sys import has_accelerator
+from std.gpu.host import DeviceContext
+from std.sys import has_accelerator
 
 def main() raises:
     @parameter
@@ -190,7 +190,7 @@ write a simple kernel function that prints the thread block and thread indices.
 Add the following code to your `vector_addition.mojo` file:
 
 ```mojo title="vector_addition.mojo"
-from gpu import block_idx, thread_idx
+from std.gpu import block_idx, thread_idx
 
 fn print_threads():
     """Print thread IDs."""
@@ -225,10 +225,10 @@ Modify the `main()` function and add `has_apple_gpu_accelerator()` to the list
 of imports from the `sys` module so that your program looks like this:
 
 ```mojo title="vector_addition.mojo"
-from sys import has_accelerator, has_apple_gpu_accelerator
+from std.sys import has_accelerator, has_apple_gpu_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
 
 
 fn print_threads():
@@ -507,9 +507,9 @@ After making these changes, your `vector_addition.mojo` file should look like
 this:
 
 ```mojo title="vector_addition.mojo"
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
-from sys import has_accelerator
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
+from std.sys import has_accelerator
 
 # Vector data type and size
 comptime float_dtype = DType.float32
@@ -689,8 +689,8 @@ Now we're ready to write the kernel function. First, add the following imports
 (note that we've added `block_dim` to the list of imports from `gpu`):
 
 ```mojo title="vector_addition.mojo"
-from gpu import block_dim, block_idx, thread_idx
-from math import ceildiv
+from std.gpu import block_dim, block_idx, thread_idx
+from std.math import ceildiv
 ```
 
 Then, add the following code to `vector_addition.mojo` just before the
@@ -789,11 +789,11 @@ back to the CPU. Add the following code to the end of the `main()` function:
   <summary>Click here to see the complete version of `vector_addition.mojo`.</summary>
 
 ```mojo title="vector_addition.mojo"
-from math import ceildiv
-from sys import has_accelerator
+from std.math import ceildiv
+from std.sys import has_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
 
 # Vector data type and size

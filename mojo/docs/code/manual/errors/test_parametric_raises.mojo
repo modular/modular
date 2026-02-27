@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
 from parametric_raises import run_action, fetch_data, parse_config, get_value
 

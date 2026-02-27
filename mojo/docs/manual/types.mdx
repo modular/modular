@@ -370,7 +370,7 @@ a variable with the type `SIMD[DType.float64, 1]` (or  `Float64`, which is the
 same thing).
 
 ```mojo
-from utils.numerics import max_finite, min_finite
+from std.utils.numerics import max_finite, min_finite
 
 def describeDType[dtype: DType]() raises:
     print(dtype, "is floating-point:", dtype.is_floating_point())

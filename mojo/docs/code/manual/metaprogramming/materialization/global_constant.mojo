@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.globals import global_constant
-from testing import assert_equal
+from std.builtin.globals import global_constant
+from std.testing import assert_equal
 
 
 fn use_lookup(idx: Int) -> Int64:

@@ -231,14 +231,14 @@ the tiling strategy, see
 Blackwell](https://www.modular.com/blog/matrix-multiplication-on-nvidias-blackwell-part-2-using-hardware-features-to-optimize-matmul#shared-memory).
 
 ```mojo title="tiled_matmul.mojo"
-from math import ceildiv
-from sys import exit, has_accelerator
+from std.math import ceildiv
+from std.sys import exit, has_accelerator
 
 # GPU programming imports from open source stdlib
-from gpu.sync import barrier
-from gpu.host import DeviceContext
-from gpu import thread_idx, block_idx
-from gpu.memory import AddressSpace
+from std.gpu.sync import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx, block_idx
+from std.gpu.memory import AddressSpace
 
 # Layout tensor support from open source layout package
 from layout import Layout, LayoutTensor
@@ -941,7 +941,7 @@ Finally, for highly-tuned kernels, you can use `@parameter if` blocks to write
 architecture-specific code paths while keeping a single source file.
 
 ```mojo
-from sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu
+from std.sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu
 
 fn adaptive_algorithm():
     @parameter

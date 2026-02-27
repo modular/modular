@@ -13,7 +13,7 @@
 import time
 
 from conditional_context_mgr import ConditionalTimer, flaky_identity
-from testing import assert_raises, TestSuite
+from std.testing import assert_raises, TestSuite
 
 
 def test_conditional_timer_no_error() raises:
