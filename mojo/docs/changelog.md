@@ -242,6 +242,11 @@ what we publish.
 - A statically False `comptime assert` now ends a scope. Any code following it
   in the same scope is now a warning, and can be removed.
 
+- Re-exported functions from a package's `__init__.mojo` are no longer shadowed
+  by a submodule of the same name. For example, if `pkg/foo.mojo` defines
+  `fn foo` and `pkg/__init__.mojo` does `from .foo import foo`, then
+  `from pkg import foo` now correctly resolves to the function.
+
 ### Library changes
 
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
