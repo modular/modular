@@ -76,6 +76,7 @@ from utils.index import Index
 from kv_cache.types import swizzle_granularity, padded_depth
 
 from nn.mla_prefill_sm100_utils import (
+    MLAConfig,
     SM100MLA,
     MLAPositionSummary,
     MLAKVProducerPipeline,
@@ -120,7 +121,7 @@ fn warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
         return WarpRole.Empty
 
 
-struct MLASmemStorage[dtype: DType, num_mbars: Int, config: FA4Config]:
+struct MLASmemStorage[dtype: DType, num_mbars: Int, config: MLAConfig]:
     comptime q_smem_size = Self.config.BM * Self.config.padded_depth
     comptime num_kv_stages = Self.config.num_kv_stages * Self.config.num_qk_stages
     comptime kv_smem_size = Self.config.padded_depth * Self.config.BN * Self.num_kv_stages
@@ -159,7 +160,7 @@ __extension SM100MLA:
     ](
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
+            Self.config.qkv_swizzle_mode,
             BM = Self.config.BM // 2,
             depth = Self.config.BK0,
             group = Self.config.group,
@@ -167,25 +168,25 @@ __extension SM100MLA:
         ],
         k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
+            Self.config.qkv_swizzle_mode,
             BN = Self.config.BN,
             BK = Self.kv_depth,
         ],
         k_rope_tma_op: KVTMATile[
             Self.KRopeType.dtype,
-            Self.k_rope_swizzle_mode,
+            Self.config.k_rope_swizzle_mode,
             BN = Self.config.BN,
             BK = Self.k_rope_depth,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
+            Self.config.qkv_swizzle_mode,
             BN = Self.config.BN,
             BK = Self.kv_depth,
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            Self.config.swizzle_mode,
+            Self.config.output_swizzle_mode,
             BM = Self.config.BM // 2,
             BN = Self.kv_depth,
         ],
@@ -465,7 +466,7 @@ __extension SM100MLA:
         mask: Self.MaskType,
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
+            Self.config.qkv_swizzle_mode,
             BM = Self.config.BM // 2,
             depth = Self.config.BK0,  # padded depth -> 192
             group = Self.config.group,
@@ -473,19 +474,19 @@ __extension SM100MLA:
         ],
         k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
+            Self.config.qkv_swizzle_mode,
             BN = Self.config.BN,
             BK = Self.kv_depth,
         ],
         k_rope_tma_op: KVTMATile[
             Self.KRopeType.dtype,
-            Self.k_rope_swizzle_mode,
+            Self.config.k_rope_swizzle_mode,
             BN = Self.config.BN,
             BK = Self.k_rope_depth,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
-            Self.config.swizzle_mode,
+            Self.config.qkv_swizzle_mode,
             BN = Self.config.BN,
             BK = Self.kv_depth,
         ],
@@ -577,7 +578,7 @@ __extension SM100MLA:
                 depth = Self.k_rope_depth,
                 swizzle_granularity = Self.swizzle_granularity,
             ](k_rope_gmem_row, k_rope_head_idx)
-            k_rope_coord[0] = (
+            k_rope_coord[0] = UInt32(
                 Self.cache_depth - Self.k_rope_depth
             )  # only load last 64 head_dims
 
@@ -666,7 +667,7 @@ __extension SM100MLA:
                     depth = Self.k_rope_depth,
                     swizzle_granularity = Self.swizzle_granularity,
                 ](k_rope_gmem_row, k_rope_head_idx)
-                k_rope_coord[0] = (
+                k_rope_coord[0] = UInt32(
                     Self.cache_depth - Self.k_rope_depth
                 )  # only load last 64 head_dims
                 k_rope_tma_op.async_copy(
@@ -818,13 +819,13 @@ __extension SM100MLA:
         var k_smem_descriptor = smem_descriptor[
             BMN = Self.config.BN,
             BK = Self.config.BK0,
-            swizzle_mode = Self.config.swizzle_mode,
+            swizzle_mode = Self.config.qkv_swizzle_mode,
             is_k_major=True,
         ](kv_smem)
         var v_smem_descriptor = smem_descriptor[
             BMN = Self.kv_depth,
             BK = Self.config.BK1,
-            swizzle_mode = Self.config.swizzle_mode,
+            swizzle_mode = Self.config.qkv_swizzle_mode,
             is_k_major=False,
         ](kv_smem)
 
@@ -945,26 +946,23 @@ fn mla_sm100_prefill_fp8[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime fa4_config = FA4Config(
+    comptime fa4_config = MLAConfig(
         num_q_heads=Int(config.num_heads),
         group=group,
         depth=q_depth,
-        dtype_size=size_of[q_type](),
-        swizzle_mode=config.swizzle_mode,
+        qkv_dtype_size=size_of[q_type](),
+        k_rope_dtype_size=size_of[KRopeType.dtype](),
+        output_dtype_size=size_of[output_type](),
         page_size=KVType.page_size,
-        is_mla=True,
     )
-
-    comptime k_rope_depth = 64
-    comptime kv_depth = q_depth - k_rope_depth
 
     var num_rows_q = q_num_matrix_view_rows(q)
 
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_type,
-        fa4_config.swizzle_mode,
+        fa4_config.output_swizzle_mode,
         BM = fa4_config.BM // 2,
-        BN = fa4_config.depth - 64,
+        BN = fa4_config.kv_depth,
     ]
 
     var ragged_tma_store = RaggedStoreType.create(
@@ -972,7 +970,7 @@ fn mla_sm100_prefill_fp8[
     )
 
     q_tma_op = q_tma[
-        fa4_config.swizzle_mode,
+        fa4_config.qkv_swizzle_mode,
         BM = fa4_config.BM // 2,
         depth = fa4_config.depth,
         q_num_heads = fa4_config.num_q_heads,
@@ -986,29 +984,24 @@ fn mla_sm100_prefill_fp8[
 
     # [batch_size * num_keys, num_heads, kv_depth]
     k_tma_op = k.create_tma_tile[
-        fa4_config.swizzle_mode,
+        fa4_config.qkv_swizzle_mode,
         BN = fa4_config.BN,
-        depth = fa4_config.depth - 64,
+        depth = fa4_config.kv_depth,
     ](ctx)
-
-    comptime k_swizzle_mode = (
-        TensorMapSwizzle.SWIZZLE_64B if KRopeType.dtype
-        == DType.float8_e4m3fn else TensorMapSwizzle.SWIZZLE_128B
-    )
 
     # [batch_size, num_keys, cache_num_heads, cache_depth]
     k_rope_tma_op = k_rope.create_tma_tile[
-        k_swizzle_mode,
+        fa4_config.k_rope_swizzle_mode,
         BN = fa4_config.BN,
         depth=cache_depth,
-        BK=k_rope_depth,
+        BK = fa4_config.k_rope_depth,
     ](ctx)
 
     # [batch_size * num_keys, num_heads, kv_depth]
     v_tma_op = v.create_tma_tile[
-        fa4_config.swizzle_mode,
+        fa4_config.qkv_swizzle_mode,
         BN = fa4_config.BN,
-        depth = fa4_config.depth - 64,
+        depth = fa4_config.kv_depth,
     ](ctx)
 
     _mla_prefill_sm100_valid_length_dispatch[
@@ -1038,25 +1031,24 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     KVType: MHAOperand,
     output_type: DType,
     q_type: DType,
-    k_swizzle_mode: TensorMapSwizzle,
     MaskType: MHAMask,
     KRopeType: MHAOperand,
     MaxPromptLenType: OptionallyStaticInt,
     //,
-    fa4_config: FA4Config,
+    fa4_config: MLAConfig,
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
 ](
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
-        fa4_config.swizzle_mode,
+        fa4_config.output_swizzle_mode,
         BM = fa4_config.BM // 2,
-        BN = fa4_config.depth - 64,
+        BN = fa4_config.kv_depth,
     ],
     q_tma_op: QTMATile[
         q_type,
-        fa4_config.swizzle_mode,
+        fa4_config.qkv_swizzle_mode,
         BM = fa4_config.BM // 2,
         depth = fa4_config.depth,
         group = fa4_config.group,
@@ -1064,25 +1056,25 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     ],
     k_tma_op: KVTMATile[
         KVType.dtype,
-        fa4_config.swizzle_mode,
+        fa4_config.qkv_swizzle_mode,
         BN = fa4_config.BN,
         BK = padded_depth[
-            KVType.dtype, fa4_config.swizzle_mode, fa4_config.depth - 64
+            KVType.dtype, fa4_config.qkv_swizzle_mode, fa4_config.kv_depth
         ](),
     ],
     v_tma_op: KVTMATile[
         KVType.dtype,
-        fa4_config.swizzle_mode,
+        fa4_config.qkv_swizzle_mode,
         BN = fa4_config.BN,
         BK = padded_depth[
-            KVType.dtype, fa4_config.swizzle_mode, fa4_config.depth - 64
+            KVType.dtype, fa4_config.qkv_swizzle_mode, fa4_config.kv_depth
         ](),
     ],
     k_rope_tma_op: KVTMATile[
         KRopeType.dtype,
-        k_swizzle_mode,
+        fa4_config.k_rope_swizzle_mode,
         BN = fa4_config.BN,
-        BK=64,
+        BK = fa4_config.k_rope_depth,
     ],
     kv_lut: KVType,
     k_rope_lut: KRopeType,
