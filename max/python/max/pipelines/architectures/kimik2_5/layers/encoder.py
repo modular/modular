@@ -27,7 +27,7 @@ from .mlp import MLP2
 from .rotary_embedding import Rope2DPosEmbRepeated
 
 
-class EncoderLayer(Module, Shardable):
+class EncoderBlock(Module, Shardable):
     """Vision encoder layer with QKV-packed self-attention and MLP.
 
     Args:
@@ -148,14 +148,14 @@ class EncoderLayer(Module, Shardable):
 
         self._sharding_strategy = strategy
 
-    def shard(self, devices: Iterable[DeviceRef]) -> list[EncoderLayer]:
+    def shard(self, devices: Iterable[DeviceRef]) -> list[EncoderBlock]:
         """Creates sharded views of this encoder layer across multiple devices.
 
         Args:
             devices: Iterable of devices to place the shards on.
 
         Returns:
-            List of sharded :obj:`EncoderLayer` instances, one per device.
+            List of sharded :obj:`EncoderBlock` instances, one per device.
         """
         if not self._sharding_strategy:
             raise ValueError(
@@ -169,7 +169,7 @@ class EncoderLayer(Module, Shardable):
 
         shards = []
         for shard_idx, device in enumerate(devices):
-            sharded = EncoderLayer(
+            sharded = EncoderBlock(
                 num_heads=self.num_heads,
                 hidden_dim=self.hidden_dim,
                 mlp_dim=self.mlp_dim,
@@ -190,14 +190,14 @@ class EncoderLayer(Module, Shardable):
 class Encoder(Module, Shardable):
     """Full vision encoder.
 
-    Wraps an initial :obj:`Rope2DPosEmbRepeated`, multiple :obj:`EncoderLayer`
+    Wraps an initial :obj:`Rope2DPosEmbRepeated`, multiple :obj:`EncoderBlock`
     blocks, and a final :obj:`LayerNorm`.
 
     Args:
         num_heads: Number of attention heads.
         hidden_dim: Hidden dimension of the encoder.
         mlp_dim: Inner dimension of the feed-forward MLP found in each
-            underlying :obj:`EncoderLayer`.
+            underlying :obj:`EncoderBlock`.
         num_layers: Number of encoder layers.
         rope_max_height: Maximum grid height for RoPE frequencies.
         rope_max_width: Maximum grid width for RoPE frequencies.
@@ -245,7 +245,7 @@ class Encoder(Module, Shardable):
             )
             self.blocks = LayerList(
                 [
-                    EncoderLayer(
+                    EncoderBlock(
                         num_heads=num_heads,
                         hidden_dim=hidden_dim,
                         mlp_dim=mlp_dim,
