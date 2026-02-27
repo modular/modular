@@ -11,12 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os.path import exists, split
-from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory, gettempdir, mkdtemp
+import std.os
+from std.os.path import exists, split
+from std.pathlib import Path
+from std.tempfile import (
+    NamedTemporaryFile,
+    TemporaryDirectory,
+    gettempdir,
+    mkdtemp,
+)
 
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_mkdtemp() raises:

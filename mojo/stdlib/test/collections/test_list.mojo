@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import size_of
+from std.sys.info import size_of
 
 from test_utils import (
     CopyCountedStruct,
@@ -21,7 +21,7 @@ from test_utils import (
     TriviallyCopyableMoveCounter,
     check_write_to,
 )
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
@@ -29,12 +29,12 @@ from testing import (
     assert_true,
     TestSuite,
 )
-from testing.prop import PropTest
+from std.testing.prop import PropTest
 
 # TODO(MOCO-522): Figure out desired behavior for importing files with only
 # extensions in them.
-from testing.prop.strategy import SIMD, List
-from sys.intrinsics import _type_is_eq
+from std.testing.prop.strategy import SIMD, List
+from std.sys.intrinsics import _type_is_eq
 
 
 def test_mojo_issue_698() raises:

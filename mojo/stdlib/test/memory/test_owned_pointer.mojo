@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import OwnedPointer
+from std.memory import OwnedPointer
 from test_utils import (
     ExplicitCopyOnly,
     ImplicitCopyOnly,
@@ -19,7 +19,7 @@ from test_utils import (
     ObservableDel,
     check_write_to,
 )
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,

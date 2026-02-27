@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from testing import (
+from std.os import abort
+from std.testing import (
     assert_raises,
     assert_equal,
     assert_true,
     assert_false,
     TestSuite,
 )
-from testing.prop.random import Rng
+from std.testing.prop.random import Rng
 
 
 def test_rng_xoshiro_float() raises:

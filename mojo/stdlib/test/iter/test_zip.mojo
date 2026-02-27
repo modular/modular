@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import (
+from std.testing import (
     TestSuite,
     assert_equal,
     assert_false,

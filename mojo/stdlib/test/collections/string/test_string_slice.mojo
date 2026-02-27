@@ -11,11 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import _to_string_list, get_static_string
-from sys.info import size_of, simd_width_of
+from std.collections.string.string_slice import (
+    _to_string_list,
+    get_static_string,
+)
+from std.sys.info import size_of, simd_width_of
 
-from testing import assert_equal, assert_false, assert_true, assert_raises
-from testing import TestSuite
+from std.testing import assert_equal, assert_false, assert_true, assert_raises
+from std.testing import TestSuite
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data

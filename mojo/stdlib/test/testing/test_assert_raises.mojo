@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_raises, assert_true
+from std.testing import assert_equal, assert_raises, assert_true
 
 
 fn test_assert_raises_catches_error() raises:

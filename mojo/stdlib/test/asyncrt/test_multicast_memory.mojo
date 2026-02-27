@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu import *
-from gpu.host import DeviceContext, DeviceMulticastBuffer
-from testing import TestSuite
+from std.gpu import *
+from std.gpu.host import DeviceContext, DeviceMulticastBuffer
+from std.testing import TestSuite
 
 
 fn _test_multicast_memory(contexts: List[DeviceContext]) raises:

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 from test_utils import check_write_to
 
 

@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.atomic import Atomic, fence
+from std.os.atomic import Atomic, fence
 
-from compile import compile_info
-from testing import TestSuite, assert_false, assert_true
+from std.compile import compile_info
+from std.testing import TestSuite, assert_false, assert_true
 
 
 def test_compile_atomic() raises:

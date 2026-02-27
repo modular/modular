@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import erf
-from random import randn, seed
+from std.math import erf
+from std.random import randn, seed
 
 from test_utils import compare, libm_call
-from testing import assert_almost_equal, assert_equal, TestSuite
+from std.testing import assert_almost_equal, assert_equal, TestSuite
 
 
 def test_erf_float32() raises:

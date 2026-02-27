@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import LinkedList
+from std.collections import LinkedList
 
 from test_utils import (
     CopyCountedStruct,
@@ -20,7 +20,7 @@ from test_utils import (
     MoveCounter,
     check_write_to,
 )
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_raises,

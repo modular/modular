@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import rand
+from std.random import rand
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 fn _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:

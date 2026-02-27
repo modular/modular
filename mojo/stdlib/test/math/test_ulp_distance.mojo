@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import ulp_distance
-from testing import assert_true, TestSuite
+from std.testing import assert_true, TestSuite
 
 
 fn test_ulp_distance() raises:

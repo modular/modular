@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import (
+from std.testing import (
     assert_equal,
     assert_true,
     assert_raises,
     TestSuite,
 )
-from testing.prop import PropTest, PropTestConfig, Rng, Strategy
+from std.testing.prop import PropTest, PropTestConfig, Rng, Strategy
 
 
 @fieldwise_init

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.dict import (
+from std.collections.dict import (
     Dict,
     DictKeyError,
     EmptyDictError,
@@ -19,10 +19,10 @@ from collections.dict import (
     _GROUP_WIDTH,
 )
 
-from hashlib import Hasher, default_comp_time_hasher
+from std.hashlib import Hasher, default_comp_time_hasher
 
 from test_utils import CopyCounter, check_write_to
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_raises,

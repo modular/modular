@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
-from testing import TestSuite, assert_equal
+from std.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
 fn _ownership_helper(

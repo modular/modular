@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys._build import is_debug_build, is_release_build
+from std.sys._build import is_debug_build, is_release_build
 
-from testing import assert_false, assert_true
-from testing import TestSuite
+from std.testing import assert_false, assert_true
+from std.testing import TestSuite
 
 
 def test_is_debug() raises:

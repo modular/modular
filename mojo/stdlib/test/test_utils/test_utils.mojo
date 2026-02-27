@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import external_call
+from std.ffi import external_call
 
-from builtin.simd import _simd_apply
-from testing import assert_equal, assert_true
+from std.builtin.simd import _simd_apply
+from std.testing import assert_equal, assert_true
 
 
 def check_write_to(

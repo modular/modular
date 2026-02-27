@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import inf, isinf, isnan
+from std.math import inf, isinf, isnan
 
-from testing import assert_equal, assert_raises, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_raises, assert_true
+from std.testing import TestSuite
 
 
 def test_basic_parsing() raises:

@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import bit_width_of
-from python import PythonObject
-from testing import (
+from std.sys import bit_width_of
+from std.python import PythonObject
+from std.testing import (
     assert_equal,
     assert_false,
     assert_raises,

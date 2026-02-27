@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
-from random import randint
-from time import sleep
+import std.math
+from std.random import randint
+from std.time import sleep
 
-from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
-from testing import TestSuite
+from std.benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
+from std.testing import TestSuite
 
 
 fn vec_reduce[

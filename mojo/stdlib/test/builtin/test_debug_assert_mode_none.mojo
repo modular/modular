@@ -15,7 +15,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 def main() raises:

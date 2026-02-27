@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
-from utils.numerics import isnan
+from std.utils.numerics import isnan
 
 
 def test_abs() raises:

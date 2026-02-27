@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 comptime uint_dtypes = [
     DType.uint8,

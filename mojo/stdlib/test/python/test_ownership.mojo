@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
-from testing import assert_equal, assert_true, TestSuite
+from std.python import Python, PythonObject
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 def _test_import(mut python: Python) raises:

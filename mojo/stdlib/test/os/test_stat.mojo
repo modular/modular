@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import stat
-from stat import S_ISREG
+from std.os import stat
+from std.stat import S_ISREG
 
-from reflection import source_location
-from testing import TestSuite, assert_not_equal, assert_true
+from std.reflection import source_location
+from std.testing import TestSuite, assert_not_equal, assert_true
 
 
 def test_stat() raises:

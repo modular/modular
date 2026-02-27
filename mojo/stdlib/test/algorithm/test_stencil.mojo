@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 # Issue #23536
 
-from algorithm.functional import stencil
-from testing import TestSuite
+from std.algorithm.functional import stencil
+from std.testing import TestSuite
 
-from utils import IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils import IndexList
+from std.utils.numerics import min_or_neg_inf
 
 comptime _map_fn_type = fn[rank: Int](IndexList[rank]) capturing -> Tuple[
     IndexList[rank],

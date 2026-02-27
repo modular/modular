@@ -11,10 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import BitSet
+from std.collections import BitSet
 
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
-from testing import TestSuite
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
+from std.testing import TestSuite
 from test_utils import check_write_to
 
 

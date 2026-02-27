@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from benchmark import black_box, keep
-from compile import compile_info
-from testing import TestSuite, assert_true, assert_false
+from std.benchmark import black_box, keep
+from std.compile import compile_info
+from std.testing import TestSuite, assert_true, assert_false
 
 
 def use_keep(var x: Int32) raises:

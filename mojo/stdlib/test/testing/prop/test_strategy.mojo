@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import (
+from std.testing import (
     assert_equal,
     assert_true,
     TestSuite,
 )
 from test_utils import DelCounter
-from testing.prop import Rng, Strategy
-from testing.prop.strategy.simd_strategy import *
-from testing.prop.strategy.string_strategy import *
-from testing.prop.strategy.list_strategy import *
-from sys.intrinsics import _type_is_eq
-from collections.string._utf8 import _is_valid_utf8
+from std.testing.prop import Rng, Strategy
+from std.testing.prop.strategy.simd_strategy import *
+from std.testing.prop.strategy.string_strategy import *
+from std.testing.prop.strategy.list_strategy import *
+from std.sys.intrinsics import _type_is_eq
+from std.collections.string._utf8 import _is_valid_utf8
 
 
 @fieldwise_init

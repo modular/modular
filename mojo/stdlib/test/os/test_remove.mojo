@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import PathLike, remove, unlink
-from os.path import exists
-from pathlib import Path
+from std.os import PathLike, remove, unlink
+from std.os.path import exists
+from std.pathlib import Path
 
-from testing import TestSuite, assert_false, assert_raises, assert_true
+from std.testing import TestSuite, assert_false, assert_raises, assert_true
 
 
 fn create_file_and_test_delete_path[

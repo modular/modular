@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from base64 import b16decode, b16encode, b64decode, b64encode
+from std.base64 import b16decode, b16encode, b64decode, b64encode
 
 
-from testing import assert_equal, assert_raises
-from testing import TestSuite
+from std.testing import assert_equal, assert_raises
+from std.testing import TestSuite
 
 
 def test_b64encode() raises:

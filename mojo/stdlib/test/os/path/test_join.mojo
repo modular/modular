@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import join
-from pathlib import Path
+from std.os.path import join
+from std.pathlib import Path
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 def test_join() raises:

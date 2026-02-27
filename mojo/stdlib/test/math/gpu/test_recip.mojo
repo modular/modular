@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import recip
+from std.math import recip
 
-from gpu.host import DeviceContext
-from testing import assert_almost_equal, TestSuite
+from std.gpu.host import DeviceContext
+from std.testing import assert_almost_equal, TestSuite
 
 
 fn run_func[

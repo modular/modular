@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import tanh
-from random import randn, seed
+from std.math import tanh
+from std.random import randn, seed
 
 from test_utils import compare, libm_call
-from testing import assert_almost_equal, TestSuite
+from std.testing import assert_almost_equal, TestSuite
 
 
 fn tanh_libm[

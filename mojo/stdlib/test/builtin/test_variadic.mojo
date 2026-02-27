@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.variadics import Variadic, _ReduceValueAndIdxToVariadic
-from sys.intrinsics import _type_is_eq
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.builtin.variadics import Variadic, _ReduceValueAndIdxToVariadic
+from std.sys.intrinsics import _type_is_eq
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from test_utils import ExplicitDelOnly
 
 

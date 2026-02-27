@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python.python import Python, PythonObject
-from testing import assert_equal, assert_raises, assert_true, TestSuite
+from std.python.python import Python, PythonObject
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
 fn _test_execute_python_string(mut python: Python) -> String:

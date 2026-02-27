@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm._gpu.reduction import reduce_launch
-from gpu.host import DeviceContext
-from testing import assert_equal, TestSuite
+from std.algorithm._gpu.reduction import reduce_launch
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 comptime num_reductions = 2
 

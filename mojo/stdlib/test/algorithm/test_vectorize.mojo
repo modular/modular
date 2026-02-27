@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import vectorize
-from memory import memcmp
-from testing import assert_equal
-from testing import TestSuite
-from math import iota
-from sys.intrinsics import masked_load, masked_store
+from std.algorithm import vectorize
+from std.memory import memcmp
+from std.testing import assert_equal
+from std.testing import TestSuite
+from std.math import iota
+from std.sys.intrinsics import masked_load, masked_store
 
 
 def test_vectorize() raises:

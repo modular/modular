@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python
-from testing import TestSuite
+from std.python import Python
+from std.testing import TestSuite
 
 
 def test_create_module() raises:

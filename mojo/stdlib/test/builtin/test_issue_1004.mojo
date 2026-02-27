@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # Test for https://github.com/modular/modular/issues/1004
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 
 fn foo(x: String) raises:

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io import FileDescriptor
-from sys._io import stdin, stdout, stderr
+from std.io import FileDescriptor
+from std.sys._io import stdin, stdout, stderr
 
-from sys.intrinsics import _type_is_eq
-from testing import TestSuite, assert_false, assert_true
+from std.sys.intrinsics import _type_is_eq
+from std.testing import TestSuite, assert_false, assert_true
 
 
 def test_isatty_with_standard_descriptors() raises:

@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import CompilationTarget, is_64bit
+from std.sys.info import CompilationTarget, is_64bit
 
-from testing import (
+from std.testing import (
     TestSuite,
     assert_almost_equal,
     assert_equal,
@@ -21,7 +21,7 @@ from testing import (
     assert_true,
 )
 
-from utils.numerics import (
+from std.utils.numerics import (
     FPUtils,
     get_accum_type,
     inf,

@@ -15,11 +15,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys import CompilationTarget, is_big_endian, is_little_endian
-from sys.info import _macos_version
+from std.sys import CompilationTarget, is_big_endian, is_little_endian
+from std.sys.info import _macos_version
 
-from testing import assert_false, assert_true
-from testing import TestSuite
+from std.testing import assert_false, assert_true
+from std.testing import TestSuite
 
 
 fn test_os_query() raises:

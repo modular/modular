@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import (
+from std.sys import (
     CompilationTarget,
     align_of,
     num_logical_cores,
@@ -20,8 +20,8 @@ from sys import (
     size_of,
 )
 
-from testing import assert_equal, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_true
+from std.testing import TestSuite
 
 
 fn test_size_of() raises:

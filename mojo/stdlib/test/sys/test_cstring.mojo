@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import (
+from std.testing import (
     TestSuite,
     assert_equal,
     assert_raises,
     assert_true,
     assert_false,
 )
-from ffi import CStringSlice
+from std.ffi import CStringSlice
 
 
 def test_default_slice() raises:

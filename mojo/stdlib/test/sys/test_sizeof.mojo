@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from testing import assert_equal
-from testing import TestSuite
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
 def test_size_of_dtypes() raises:

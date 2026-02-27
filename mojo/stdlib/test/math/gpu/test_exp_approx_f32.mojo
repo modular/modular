@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math.fast import exp_approx_f32
-from math import exp as ref_exp
-from algorithm.functional import elementwise
-from gpu import *
-from gpu.host import DeviceContext, get_gpu_target
-from testing import *
-from utils import Index, IndexList
+from std.math.fast import exp_approx_f32
+from std.math import exp as ref_exp
+from std.algorithm.functional import elementwise
+from std.gpu import *
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.testing import *
+from std.utils import Index, IndexList
 
 
 @parameter

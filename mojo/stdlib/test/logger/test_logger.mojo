@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import SourceLocation
-from logger import Level, Logger
-from testing import TestSuite
+from std.reflection import SourceLocation
+from std.logger import Level, Logger
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: Test logging at trace level

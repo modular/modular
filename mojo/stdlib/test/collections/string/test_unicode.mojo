@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string._unicode import _get_uppercase_mapping
+from std.collections.string._unicode import _get_uppercase_mapping
 
-from testing import assert_equal
-from testing import TestSuite
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
 def test_uppercase_conversion() raises:

@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import (
+from std.algorithm import (
     cumsum,
     mean,
     product,
     sum,
     variance,
 )
-from algorithm.reduction import _reduce_generator, max, min
-from math.math import max as _max, min as _min
-from testing import TestSuite
+from std.algorithm.reduction import _reduce_generator, max, min
+from std.math.math import max as _max, min as _min
+from std.testing import TestSuite
 
-from utils.index import Index, IndexList, StaticTuple
+from std.utils.index import Index, IndexList, StaticTuple
 
 
 # CHECK-LABEL: test_reductions

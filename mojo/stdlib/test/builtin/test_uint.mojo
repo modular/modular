@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from bit import count_trailing_zeros
-from testing import (
+from std.bit import count_trailing_zeros
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
     assert_true,
     TestSuite,
 )
-from sys import bit_width_of
+from std.sys import bit_width_of
 
 
 def test_simple_uint() raises:

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os import remove
-from pathlib import Path
-from tempfile import gettempdir
-from testing import TestSuite, assert_equal
+import std.os
+from std.os import remove
+from std.pathlib import Path
+from std.tempfile import gettempdir
+from std.testing import TestSuite, assert_equal
 
 
 def test_create_hardlink() raises:

@@ -28,7 +28,7 @@
 * `AbortOnCopy`
 """
 
-from os import abort
+from std.os import abort
 
 # ===----------------------------------------------------------------------=== #
 # MoveOnly

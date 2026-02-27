@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compile import compile_info
-from memory import UnsafePointer, alloc
-from sys import size_of
+from std.compile import compile_info
+from std.memory import UnsafePointer, alloc
+from std.sys import size_of
 
 from test_utils import (
     ExplicitCopyOnly,
@@ -22,7 +22,7 @@ from test_utils import (
     ObservableMoveOnly,
     check_write_to,
 )
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,

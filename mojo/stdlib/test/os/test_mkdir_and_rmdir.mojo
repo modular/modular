@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os.path import exists
-from pathlib import Path
+import std.os
+from std.os.path import exists
+from std.pathlib import Path
 
-from testing import TestSuite, assert_false, assert_raises, assert_true
+from std.testing import TestSuite, assert_false, assert_raises, assert_true
 
 
 def create_and_delete(path: String) raises:

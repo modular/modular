@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 # V2 -> V1 tests

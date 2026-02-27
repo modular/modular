@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_bool, env_get_int, env_get_string, is_defined
+from std.sys import env_get_bool, env_get_int, env_get_string, is_defined
 
-from testing import assert_equal, assert_false, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_false, assert_true
+from std.testing import TestSuite
 
 
 def test_is_defined() raises:

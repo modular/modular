@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import ArcPointer
+from std.memory import ArcPointer
 from test_utils import ObservableDel, check_write_to
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def test_basic() raises:

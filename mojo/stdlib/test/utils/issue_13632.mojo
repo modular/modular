@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 fn sum_items(data: List[Int8]) -> Int:

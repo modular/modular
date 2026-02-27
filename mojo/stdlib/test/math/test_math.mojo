@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import (
+from std.math import (
     acos,
     align_down,
     align_up,
@@ -46,13 +46,18 @@ from math import (
     trunc,
     ulp,
 )
-from math.math import _call_libm
-from sys import CompilationTarget
+from std.math.math import _call_libm
+from std.sys import CompilationTarget
 
-from testing import TestSuite
-from testing import assert_almost_equal, assert_equal, assert_false, assert_true
+from std.testing import TestSuite
+from std.testing import (
+    assert_almost_equal,
+    assert_equal,
+    assert_false,
+    assert_true,
+)
 
-from utils.numerics import inf, isinf, isnan, nan, neg_inf
+from std.utils.numerics import inf, isinf, isnan, nan, neg_inf
 
 
 fn test_sin() raises:

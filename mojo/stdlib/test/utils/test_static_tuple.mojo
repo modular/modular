@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
 def test_getitem() raises:

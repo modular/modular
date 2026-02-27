@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python
-from python._cpython import (
+from std.python import Python
+from std.python._cpython import (
     CPython,
     Py_eval_input,
     Py_file_input,
@@ -22,7 +22,7 @@ from python._cpython import (
     Py_TPFLAGS_LONG_SUBCLASS,
     Py_TPFLAGS_LIST_SUBCLASS,
 )
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_raises,

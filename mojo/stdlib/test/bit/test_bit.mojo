@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceil, floor, log2
+from std.math import ceil, floor, log2
 
-from bit import (
+from std.bit import (
     bit_not,
     bit_reverse,
     bit_width,
@@ -28,8 +28,8 @@ from bit import (
     rotate_bits_left,
     rotate_bits_right,
 )
-from testing import assert_equal
-from testing import TestSuite
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
 def test_count_leading_zeros() raises:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 def test_host_mapped() raises:

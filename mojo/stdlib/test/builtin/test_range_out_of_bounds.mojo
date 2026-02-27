@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 
 # CHECK: test_range_getitem_uint_out_of_bounds

@@ -12,19 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for type and function name introspection APIs."""
 
-from sys.info import CompilationTarget, _current_target, is_64bit
+from std.sys.info import CompilationTarget, _current_target, is_64bit
 
-from collections import List, Optional
+from std.collections import List, Optional
 
-from reflection import (
+from std.reflection import (
     get_linkage_name,
     get_type_name,
     get_function_name,
     get_base_type_name,
 )
-from reflection.type_info import _unqualified_type_name
-from testing import assert_equal, assert_true, assert_false
-from testing import TestSuite
+from std.reflection.type_info import _unqualified_type_name
+from std.testing import assert_equal, assert_true, assert_false
+from std.testing import TestSuite
 
 
 fn my_func() -> Int:

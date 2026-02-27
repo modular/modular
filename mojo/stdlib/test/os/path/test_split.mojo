@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os.path import expanduser, split
-from pathlib import Path
+import std.os
+from std.os.path import expanduser, split
+from std.pathlib import Path
 
-from reflection import source_location
-from testing import TestSuite, assert_equal
+from std.reflection import source_location
+from std.testing import TestSuite, assert_equal
 
 
 def test_split() raises:

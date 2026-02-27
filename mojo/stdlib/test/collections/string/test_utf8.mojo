@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string._utf8 import (
+from std.collections.string._utf8 import (
     _count_utf8_continuation_bytes,
     _is_utf8_continuation_byte,
     _is_valid_utf8,
@@ -21,8 +21,8 @@ from collections.string._utf8 import (
     BIGGEST_UTF8_FIRST_BYTE,
 )
 
-from testing import assert_equal, assert_false, assert_raises, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_false, assert_raises, assert_true
+from std.testing import TestSuite
 
 # ===----------------------------------------------------------------------=== #
 # Reusable testing data

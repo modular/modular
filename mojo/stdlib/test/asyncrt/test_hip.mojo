@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceContext
-from gpu.host._amdgpu_hip import HIP, hipDevice_t
-from testing import TestSuite
+from std.gpu.host import DeviceContext
+from std.gpu.host._amdgpu_hip import HIP, hipDevice_t
+from std.testing import TestSuite
 
 
 fn _run_hip_context(ctx: DeviceContext) raises:

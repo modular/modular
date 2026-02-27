@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os.atomic import Atomic, Consistency
+from std.math import ceildiv
+from std.os.atomic import Atomic, Consistency
 
-from gpu import *
-from gpu.host import DeviceContext
-from testing import assert_equal, TestSuite
-from sys import is_apple_gpu, has_apple_gpu_accelerator
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, TestSuite
+from std.sys import is_apple_gpu, has_apple_gpu_accelerator
 
 
 @fieldwise_init

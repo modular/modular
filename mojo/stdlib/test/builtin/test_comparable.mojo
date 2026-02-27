@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
-from testing import assert_true, assert_false, TestSuite
+from std.testing import assert_true, assert_false, TestSuite
 
 
 def test_default_eq_simple() raises:

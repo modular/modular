@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from pathlib import DIR_SEPARATOR, Path, cwd
-from sys import CompilationTarget
-from tempfile import NamedTemporaryFile
+import std.os
+from std.pathlib import DIR_SEPARATOR, Path, cwd
+from std.sys import CompilationTarget
+from std.tempfile import NamedTemporaryFile
 
-from reflection import source_location
-from testing import (
+from std.reflection import source_location
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,

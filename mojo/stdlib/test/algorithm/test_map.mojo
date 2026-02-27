@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import map
-from testing import assert_equal
-from testing import TestSuite
+from std.algorithm import map
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
 def test_map() raises:

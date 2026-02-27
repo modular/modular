@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
-from os.path import exists
-from os import Process
-from os.process import Pipe
+from std.collections import List
+from std.os.path import exists
+from std.os import Process
+from std.os.process import Pipe
 
-from testing import (
+from std.testing import (
     assert_false,
     assert_raises,
     assert_true,

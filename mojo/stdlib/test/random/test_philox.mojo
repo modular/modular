@@ -13,9 +13,9 @@
 
 """Tests for the Philox random number generator."""
 
-from random.philox import Random, NormalRandom
-from math import sqrt
-from testing import assert_equal, assert_true, assert_false, TestSuite
+from std.random.philox import Random, NormalRandom
+from std.math import sqrt
+from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 
 def test_philox_basic() raises:

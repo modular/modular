@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import splitroot
+from std.os.path import splitroot
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 def _splitroot_test(

@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from runtime.asyncrt import create_task
+from std.runtime.asyncrt import create_task
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: test_runtime_task

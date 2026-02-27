@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os.env import getenv, setenv
-from os.path import expanduser, join
-from sys.info import CompilationTarget
+import std.os
+from std.os.env import getenv, setenv
+from std.os.path import expanduser, join
+from std.sys.info import CompilationTarget
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 fn get_user_path() -> String:

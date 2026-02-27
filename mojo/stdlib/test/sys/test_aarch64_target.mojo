@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_bit_width
-from sys.info import CompilationTarget
+from std.sys import simd_bit_width
+from std.sys.info import CompilationTarget
 
-from testing import assert_equal, assert_false, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_false, assert_true
+from std.testing import TestSuite
 
 
 def test_arch_query() raises:

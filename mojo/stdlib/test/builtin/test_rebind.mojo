@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.rebind import downcast
-from reflection import struct_field_types
-from testing import TestSuite, assert_equal
+from std.reflection import struct_field_types
+from std.testing import TestSuite, assert_equal
 from test_utils import MoveCopyCounter, DelCounter
 
 

@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 # Test for https://github.com/modular/modular/issues/1505
 
-from random import random_ui64
+from std.random import random_ui64
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn gen_perm() -> IndexList[64]:

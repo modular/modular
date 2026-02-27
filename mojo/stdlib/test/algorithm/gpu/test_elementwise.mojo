@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from gpu.host import DeviceContext, get_gpu_target
-from testing import assert_equal, TestSuite
+from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn _linear_index[

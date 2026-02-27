@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from subprocess import run
+from std.subprocess import run
 
-from testing import *
+from std.testing import *
 
 
 def test_run() raises:

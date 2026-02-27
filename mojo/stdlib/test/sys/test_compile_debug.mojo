@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.compile import DebugLevel, OptimizationLevel
+from std.sys.compile import DebugLevel, OptimizationLevel
 
-from testing import assert_equal
-from testing import TestSuite
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
 def test_compile_debug_options() raises:

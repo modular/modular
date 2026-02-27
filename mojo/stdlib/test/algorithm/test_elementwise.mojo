@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import (
+from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
-from testing import assert_equal, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_true
+from std.testing import TestSuite
 
-from utils.index import IndexList, Index
+from std.utils.index import IndexList, Index
 
 
 fn _linear_index[

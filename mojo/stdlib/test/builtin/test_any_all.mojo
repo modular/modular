@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.set import Set
+from std.collections.set import Set
 
-from testing import assert_false, assert_true, TestSuite
+from std.testing import assert_false, assert_true, TestSuite
 
 
 def test_list_any() raises:

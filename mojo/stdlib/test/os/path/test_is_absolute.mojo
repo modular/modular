@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import is_absolute
+from std.os.path import is_absolute
 
-from testing import TestSuite, assert_false, assert_true
+from std.testing import TestSuite, assert_false, assert_true
 
 
 def test_is_absolute() raises:

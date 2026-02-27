@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 comptime DTYPES = [

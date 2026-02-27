@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import bitcast, pack_bits
-from testing import TestSuite
-from testing import assert_equal
+from std.memory import bitcast, pack_bits
+from std.testing import TestSuite
+from std.testing import assert_equal
 
 
 def test_bitcast() raises:

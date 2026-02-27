@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
+from std.hashlib.hasher import Hasher
 
-from bit import pop_count
-from reflection import call_location
-from testing import assert_true
+from std.bit import pop_count
+from std.reflection import call_location
+from std.testing import assert_true
 
 
 def dif_bits(i1: UInt64, i2: UInt64) raises -> Int:

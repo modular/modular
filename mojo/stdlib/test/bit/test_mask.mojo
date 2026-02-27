@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import bit_width_of
+from std.sys.info import bit_width_of
 
-from bit._mask import is_negative, splat
-from testing import assert_equal
-from testing import TestSuite
+from std.bit._mask import is_negative, splat
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
 def test_is_negative() raises:

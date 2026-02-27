@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib._fnv1a import Fnv1a
+from std.hashlib._fnv1a import Fnv1a
 
-from memory import memset_zero
+from std.memory import memset_zero
 from test_utils import (
     assert_dif_hashes,
     assert_fill_factor,
@@ -26,7 +26,7 @@ from test_utils import (
     words_pl,
     words_ru,
 )
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 
 def test_hash_byte_array() raises:

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
+import std.math
 
-from complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
-from testing import assert_almost_equal, assert_equal
-from testing import TestSuite
+from std.complex import ComplexFloat32, ComplexFloat64, ComplexSIMD, abs
+from std.testing import assert_almost_equal, assert_equal
+from std.testing import TestSuite
 from test_utils import check_write_to
 
 

@@ -16,8 +16,8 @@ This module tests the internal formatting utilities used by the standard library
 for implementing Writable and formatting operations.
 """
 
-from format._utils import FormatStruct, Named, Repr, write_sequence_to
-from testing import assert_equal, TestSuite
+from std.format._utils import FormatStruct, Named, Repr, write_sequence_to
+from std.testing import assert_equal, TestSuite
 
 
 # ===----------------------------------------------------------------------=== #

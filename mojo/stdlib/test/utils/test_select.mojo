@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
-from utils._select import _select_register_value
+from std.utils._select import _select_register_value
 
 
 def test_select_register_value() raises:

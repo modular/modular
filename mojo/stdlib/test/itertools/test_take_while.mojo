@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import take_while
-from testing import (
+from std.itertools import take_while
+from std.testing import (
     TestSuite,
     assert_equal,
     assert_raises,

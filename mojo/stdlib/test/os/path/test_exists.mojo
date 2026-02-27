@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import exists, lexists
-from pathlib import Path, cwd
+from std.os.path import exists, lexists
+from std.pathlib import Path, cwd
 
-from reflection import source_location
-from testing import TestSuite, assert_false, assert_true
+from std.reflection import source_location
+from std.testing import TestSuite, assert_false, assert_true
 
 
 def test_exists() raises:

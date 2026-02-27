@@ -11,9 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import monotonic, perf_counter, perf_counter_ns, sleep, time_function
+from std.time import (
+    monotonic,
+    perf_counter,
+    perf_counter_ns,
+    sleep,
+    time_function,
+)
 
-from testing import assert_true, TestSuite
+from std.testing import assert_true, TestSuite
 
 
 @always_inline

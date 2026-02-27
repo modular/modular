@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import isatty
-from sys._io import stdin, stdout, stderr
-from testing import TestSuite, assert_equal, assert_false
+from std.os import isatty
+from std.sys._io import stdin, stdout, stderr
+from std.testing import TestSuite, assert_equal, assert_false
 
 
 def test_isatty_matches_file_descriptor() raises:

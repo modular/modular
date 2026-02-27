@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
+from std.math import *
 
-from gpu.host import DeviceContext
-from testing import TestSuite
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite
 
 
 fn run_func[

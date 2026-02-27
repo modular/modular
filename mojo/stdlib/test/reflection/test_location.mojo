@@ -13,12 +13,12 @@
 #
 
 
-from reflection import (
+from std.reflection import (
     call_location,
     source_location,
     SourceLocation,
 )
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 fn check_source_loc(line: Int, col: Int, source_loc: SourceLocation) raises:

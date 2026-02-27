@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceContext, Dim
-from gpu.host._nvidia_cuda import (
+from std.gpu.host import DeviceContext, Dim
+from std.gpu.host._nvidia_cuda import (
     CUDA,
     CUcontext,
     CUDA_get_current_context,
 )
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
 fn _run_cuda_context(ctx: DeviceContext) raises:

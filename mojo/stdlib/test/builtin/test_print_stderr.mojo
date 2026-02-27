@@ -13,9 +13,9 @@
 # RUN: %mojo %s 2>&1 1>/dev/null | FileCheck %s --check-prefix=CHECK-STDERR
 
 
-import sys
+import std.sys
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: test_print_stderr

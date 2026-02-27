@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import TestSuite, assert_equal
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
 fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:

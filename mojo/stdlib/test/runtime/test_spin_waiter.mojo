@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_true, TestSuite
+from std.testing import assert_true, TestSuite
 
-from utils.lock import SpinWaiter
+from std.utils.lock import SpinWaiter
 
 
 def test_spin_waiter() raises:
