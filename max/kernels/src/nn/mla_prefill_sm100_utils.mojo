@@ -55,6 +55,7 @@ from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 
 from linalg.arch.sm100.mma import smem_descriptor
 
+from gpu.host.info import B200
 from gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from gpu.memory import fence_async_view_proxy
 from gpu.host.nvidia.tma import TensorMapSwizzle
@@ -71,6 +72,136 @@ from gpu.sync import (
 
 from utils.static_tuple import StaticTuple
 from utils.index import Index
+
+
+struct MLAConfig(TrivialRegisterPassable):
+    var MMA_M: Int
+    var BM: Int
+    var BN: Int
+    var BK0: Int  # BK for MMA0
+    var BK1: Int  # BK for MMA1
+    var depth: Int
+    var k_rope_depth: Int
+    var kv_depth: Int
+    var cache_depth: Int
+    var padded_depth: Int  # align_up(depth, 64)
+    var group: Int
+    var num_q_heads: Int
+    var num_kv_heads: Int
+    comptime TMEM_S0: Int = 0
+    var TMEM_S1: Int
+    var TMEM_O0: Int
+    var TMEM_O1: Int
+    var TMEM_P0: Int
+    var TMEM_P1: Int
+    var TMEM_C0: Int
+    var TMEM_C1: Int
+    var tmem_used: Int
+    var num_kv_stages: Int
+    var num_qk_stages: Int  # Stages for Q@K' (K loading pipelining)
+    var num_pv_stages: Int  # Stages for P@V (P writing pipelining)
+    var smem_used: Int
+    var dtype_size: Int
+    comptime num_threads: Int = 512  # 2x softmax, 1x correction, 1x other
+    var split_m: Bool
+    var qkv_swizzle_mode: TensorMapSwizzle
+    var k_rope_swizzle_mode: TensorMapSwizzle
+    var output_swizzle_mode: TensorMapSwizzle
+
+    comptime MMA_K = 16
+    comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
+    comptime sm100_tmem_cols = 512
+    comptime mbar_size = size_of[DType.int64]()
+    comptime num_correction_cols = 1
+
+    fn __init__(
+        out self,
+        *,
+        num_q_heads: Int,
+        group: Int,
+        depth: Int,
+        qkv_dtype_size: Int,
+        k_rope_dtype_size: Int,
+        output_dtype_size: Int,
+        page_size: Int,
+    ):
+        if qkv_dtype_size == 1:
+            self.qkv_swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+        else:
+            self.qkv_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+
+        if k_rope_dtype_size == 1:
+            self.k_rope_swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
+        else:
+            self.k_rope_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+
+        self.output_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
+
+        var fa4_config = FA4Config(
+            num_q_heads=num_q_heads,
+            group=group,
+            depth=depth,
+            dtype_size=qkv_dtype_size,
+            swizzle_mode=self.qkv_swizzle_mode,
+            page_size=page_size,
+            is_mla=True,
+        )
+
+        self.MMA_M = fa4_config.MMA_M
+        self.BM = fa4_config.BM
+        self.BN = fa4_config.BN
+        self.BK0 = fa4_config.BK0
+        self.BK1 = fa4_config.BK1
+        self.depth = fa4_config.depth
+        self.k_rope_depth = 64
+        self.kv_depth = self.depth - self.k_rope_depth
+        self.cache_depth = 576
+        self.padded_depth = fa4_config.padded_depth
+        self.tmem_used = fa4_config.tmem_used
+        self.num_kv_stages = fa4_config.num_kv_stages
+        self.num_qk_stages = fa4_config.num_qk_stages
+        self.num_pv_stages = fa4_config.num_pv_stages
+        self.smem_used = fa4_config.smem_used
+        self.dtype_size = qkv_dtype_size
+        self.split_m = fa4_config.split_m
+        self.group = fa4_config.group
+        self.num_q_heads = fa4_config.num_q_heads
+        self.num_kv_heads = fa4_config.num_kv_heads
+        self.TMEM_S1 = fa4_config.TMEM_S1
+        self.TMEM_O0 = fa4_config.TMEM_O0
+        self.TMEM_O1 = fa4_config.TMEM_O1
+        self.TMEM_P0 = fa4_config.TMEM_P0
+        self.TMEM_P1 = fa4_config.TMEM_P1
+        self.TMEM_C0 = fa4_config.TMEM_C0
+        self.TMEM_C1 = fa4_config.TMEM_C1
+        self.tmem_used = fa4_config.tmem_used
+        self.num_kv_stages = fa4_config.num_kv_stages
+        self.num_qk_stages = fa4_config.num_qk_stages
+        self.num_pv_stages = fa4_config.num_pv_stages
+        self.smem_used = fa4_config.smem_used
+        self.dtype_size = qkv_dtype_size
+
+    @always_inline
+    fn num_qo(self) -> Int:
+        return 2
+
+    fn supported(self) -> Bool:
+        return (
+            self.depth >= 64
+            and self.BN >= 64
+            and self.num_kv_stages >= 2
+            and self.tmem_used <= Self.sm100_tmem_cols
+            and self.smem_used <= Self.sm100_smem_carveout
+        )
+
+    fn correction_smem_elements(self) -> Int:
+        return self.BM * Self.num_correction_cols
+
+    fn num_active_warps_per_group(self) -> Int:
+        return 4
+
+    fn num_active_threads_per_group(self) -> Int:
+        return WARP_SIZE * self.num_active_warps_per_group()
 
 
 @always_inline
@@ -141,35 +272,31 @@ struct MLAPositionSummary(TrivialRegisterPassable):
 
 
 struct MLAKVProducerPipeline[
-    k_nope_dtype: DType, k_rope_dtype: DType, config: FA4Config
+    k_nope_dtype: DType, k_rope_dtype: DType, config: MLAConfig
 ](TrivialRegisterPassable):
-    comptime k_rope_swizzle_mode = (
-        TensorMapSwizzle.SWIZZLE_64B if Self.k_rope_dtype
-        == DType.float8_e4m3fn else TensorMapSwizzle.SWIZZLE_128B
-    )
     comptime k_nope_tma_layout = tile_layout_k_major[
         Self.k_nope_dtype,
         Self.config.BN,
         128,
-        Self.config.swizzle_mode,
+        Self.config.qkv_swizzle_mode,
     ]()
     comptime k_rope_tma_layout = tile_layout_k_major[
         Self.k_rope_dtype,
         Self.config.BN,
         64,
-        Self.k_rope_swizzle_mode,
+        Self.config.k_rope_swizzle_mode,
     ]()
     comptime k_tma_layout = tile_layout_k_major[
         Self.k_nope_dtype,
         Self.config.BN,
         Self.config.BK0,
-        Self.config.swizzle_mode,
+        Self.config.qkv_swizzle_mode,
     ]()
     comptime v_tma_layout = tile_layout_mn_major[
         Self.k_nope_dtype,
         128,
         Self.config.BK1,
-        Self.config.swizzle_mode,
+        Self.config.qkv_swizzle_mode,
     ]()
 
     comptime KType = SharedMemLT[Self.k_nope_dtype, Self.k_tma_layout]
@@ -444,7 +571,7 @@ struct SM100MLA[
     output_type: DType,
     MaskType: MHAMask,
     SchedulerType: MHATileScheduler,
-    config: FA4Config,
+    config: MLAConfig,
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
     KVRowOffsetsType: OptionalPointer,
@@ -465,14 +592,9 @@ struct SM100MLA[
     comptime group = Self.config.group
     comptime page_size = Self.KVLUTType.page_size
 
-    comptime k_rope_depth = 64
-    comptime kv_depth = Self.config.depth - Self.k_rope_depth
-    comptime cache_depth = 576
-
-    comptime k_rope_swizzle_mode = (
-        TensorMapSwizzle.SWIZZLE_64B if Self.KRopeType.dtype
-        == DType.float8_e4m3fn else TensorMapSwizzle.SWIZZLE_128B
-    )
+    comptime k_rope_depth = Self.config.k_rope_depth
+    comptime kv_depth = Self.config.kv_depth
+    comptime cache_depth = Self.config.cache_depth
 
     comptime num_m_mmas = 2
     comptime MMA_M = Self.config.BM // Self.num_m_mmas
@@ -489,8 +611,8 @@ struct SM100MLA[
         MMA_M = Self.MMA_M,  # generally 128
         MMA_N = Self.BN,
         BK = Self.depth,  # BK in memory depth
-        swizzle_a = Self.config.swizzle_mode,
-        swizzle_b = Self.config.swizzle_mode,
+        swizzle_a = Self.config.qkv_swizzle_mode,
+        swizzle_b = Self.config.qkv_swizzle_mode,
         transpose_b=True,
         num_stages = Self.num_qk_stages,
     ]
@@ -502,12 +624,12 @@ struct SM100MLA[
         MMA_M = Self.MMA_M,
         MMA_N = Self.kv_depth,  # 128
         BK = Self.BN,
-        swizzle_b = Self.config.swizzle_mode,
+        swizzle_b = Self.config.qkv_swizzle_mode,
         transpose_b=False,
         num_stages = Self.num_qk_stages,
     ]
 
-    comptime swizzle_granularity = Self.config.swizzle_mode.bytes() // Self.qkv_dt_size
+    comptime swizzle_granularity = Self.config.qkv_swizzle_mode.bytes() // Self.qkv_dt_size
     comptime k_elements: UInt32 = UInt32(
         Self.swizzle_granularity * Self.config.BN
     )
@@ -552,7 +674,7 @@ struct SM100MLA[
         max_seq_len: UInt32,
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            Self.config.swizzle_mode,
+            Self.config.output_swizzle_mode,
             BM = Self.config.BM // 2,
             BN = Self.kv_depth,
         ],
@@ -1147,7 +1269,7 @@ struct SM100MLA[
         o_tmem: TMemTile[Self.accum_type, Self.BM // 2, Self.kv_depth],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
-            Self.config.swizzle_mode,
+            Self.config.output_swizzle_mode,
             BM = Self.config.BM // 2,
             BN = Self.kv_depth,
         ],
@@ -1199,14 +1321,14 @@ struct SM100MLA[
                 o[i, j] *= irs
 
         comptime swizzle = make_swizzle[
-            Self.output_type, Self.config.swizzle_mode
+            Self.output_type, Self.config.output_swizzle_mode
         ]()
 
         comptime ST = STMatrixLayout[
             Self.BM // 2, Self.kv_depth, num_threads=WARPGROUP_SIZE
         ]
 
-        comptime swizzle_granularity = Self.config.swizzle_mode.bytes() // size_of[
+        comptime swizzle_granularity = Self.config.output_swizzle_mode.bytes() // size_of[
             Self.output_type
         ]()
         comptime iters = Self.kv_depth // swizzle_granularity
@@ -1272,6 +1394,6 @@ struct SM100MLA[
         return smem_descriptor[
             BMN = Self.config.BM // 2,
             BK = Self.config.BK0,
-            swizzle_mode = Self.config.swizzle_mode,
+            swizzle_mode = Self.config.qkv_swizzle_mode,
             is_k_major=True,
         ](q_smem)
