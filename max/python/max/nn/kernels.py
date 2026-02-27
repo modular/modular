@@ -5440,3 +5440,78 @@ def lmcache_onload(
         ],
         parameters=parameters,
     )
+
+
+def tpool_patch_merger(
+    input: TensorValue,
+    grid_thws: TensorValue,
+    kH: int,
+    kW: int,
+    max_h: int,
+    max_w: int,
+    total_output_patches: int,
+) -> TensorValue:
+    """Performs temporal pooling patch merger on ragged video tokens.
+
+    For each video in the batch, averages the input across the temporal (T)
+    dimension and rearranges the result according to the spatial merge kernel
+    (kH, kW).  Each video's T*H*W input tokens are reduced to H*W output
+    tokens.  All videos are concatenated contiguously in the output.
+
+    Args:
+        input: Input tensor of shape ``[total_input_tokens, D]`` where
+            ``total_input_tokens = sum(T_i * H_i * W_i)`` over all videos.
+        grid_thws: Grid dimensions tensor of shape ``[n_videos, 3]`` with
+            ``(T, H, W)`` per video.  Must have dtype ``int32``.
+        kH: Merge kernel height.
+        kW: Merge kernel width.
+        max_h: Maximum ``H`` across all videos in the batch (for grid sizing).
+        max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
+        total_output_patches: Total number of output patches, i.e.
+            ``sum(H_i * W_i)`` over all videos.
+
+    Returns:
+        Output tensor of shape ``[total_output_patches, D]``.
+
+    Raises:
+        ValueError: On invalid input shapes or dtypes.
+    """
+    if input.rank != 2:
+        raise ValueError(f"expected input to have rank 2, got {input.rank}")
+
+    if grid_thws.dtype != DType.int32:
+        raise ValueError(
+            f"expected grid_thws to have dtype int32, got {grid_thws.dtype}"
+        )
+
+    if grid_thws.rank != 2:
+        raise ValueError(
+            f"expected grid_thws to have rank 2, got {grid_thws.rank}"
+        )
+
+    if grid_thws.shape[1] != 3:
+        raise ValueError(
+            f"expected grid_thws.shape[1] to be 3, got {grid_thws.shape[1]}"
+        )
+
+    D = input.shape[-1]
+
+    return ops.custom(
+        "tpool_patch_merger",
+        device=input.device,
+        values=[
+            input,
+            grid_thws,
+            ops.constant(kH, dtype=DType.int32, device=DeviceRef.CPU()),
+            ops.constant(kW, dtype=DType.int32, device=DeviceRef.CPU()),
+            ops.constant(max_h, dtype=DType.int32, device=DeviceRef.CPU()),
+            ops.constant(max_w, dtype=DType.int32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=[total_output_patches, D],
+                device=input.device,
+            )
+        ],
+    )[0].tensor
