@@ -189,13 +189,13 @@ fn load_AB[
     if elect_one_cta:
         tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
-    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-        a_tma_rows
-    ) + work_tile_coord[0] * UInt(BM)
+    var a_gmem_slice_coord = (
+        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+    )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1] * UInt(MMA_N)
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1]) * MMA_N
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -211,14 +211,14 @@ fn load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), a_gmem_slice_coord),
+        (Int(iter_idx) * BK, a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), b_gmem_slice_coord),
+        (Int(iter_idx) * BK, b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -544,8 +544,8 @@ fn store_C[
     # #           c_frag                   c_smem_tile      c_tma_op
 
     if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
-        var row_start = block_idx.x * UInt(BM)
-        var col_start = block_idx.y * UInt(MMA_N) + thread_idx.x * UInt(TMA_BN)
+        var row_start = Int(block_idx.x) * BM
+        var col_start = Int(block_idx.y) * MMA_N + Int(thread_idx.x) * TMA_BN
 
         fence_async_view_proxy()
         var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)

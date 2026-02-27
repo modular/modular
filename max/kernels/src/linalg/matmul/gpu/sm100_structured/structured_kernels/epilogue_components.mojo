@@ -533,7 +533,7 @@ struct TMAStoreExecutor[
             else:
                 c_tma_op.async_store(
                     c_smem_split,
-                    (store_coords.coord_m, store_coords.coord_n),
+                    (Int(store_coords.coord_m), Int(store_coords.coord_n)),
                 )
         else:
             # Path B: Other transpose cases - loop over swizzle tiles
@@ -563,8 +563,8 @@ struct TMAStoreExecutor[
                     c_tma_op.async_store(
                         c_smem_warp_tile,
                         (
-                            store_coords.coord_m + UInt(i * Self.swizzle_width),
-                            store_coords.coord_n,
+                            Int(store_coords.coord_m) + i * Self.swizzle_width,
+                            Int(store_coords.coord_n),
                         ),
                     )
 
@@ -608,7 +608,7 @@ struct TMAStoreExecutor[
         else:
             c_tma_op.async_store(
                 c_smem_split,
-                (store_coords.coord_n, store_coords.coord_m),
+                (Int(store_coords.coord_n), Int(store_coords.coord_m)),
             )
 
     @staticmethod
@@ -719,7 +719,7 @@ struct TMAStoreExecutor[
             else:
                 c_tma_op.async_store(
                     c_split_lt,
-                    (store_coords.coord_m, store_coords.coord_n),
+                    (Int(store_coords.coord_m), Int(store_coords.coord_n)),
                 )
         else:
             # Path B: loop over swizzle tiles
@@ -764,8 +764,8 @@ struct TMAStoreExecutor[
                     c_tma_op.async_store(
                         c_warp_lt,
                         (
-                            store_coords.coord_m + UInt(i * Self.swizzle_width),
-                            store_coords.coord_n,
+                            Int(store_coords.coord_m) + i * Self.swizzle_width,
+                            Int(store_coords.coord_n),
                         ),
                     )
 

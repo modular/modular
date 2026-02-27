@@ -837,9 +837,9 @@ struct Grouped1D1DMatmulKernel[
         b_multicast_mask: UInt16,
     ):
         """Load A, B, SFA, SFB tiles using TMA."""
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # M coordinate in contiguous token space
         var m_coord = work_ctx.m()
@@ -847,30 +847,30 @@ struct Grouped1D1DMatmulKernel[
         var expert_id = work_ctx.expert_id()
         var group_idx = work_ctx.group_idx()
 
-        var a_gmem_m_coord: UInt
-        var b_gmem_n_coord: UInt
+        var a_gmem_m_coord: Int
+        var b_gmem_n_coord: Int
 
         comptime if Self.config.AB_swapped:
             # A loads weights (b_device): use weight coordinate
             a_gmem_m_coord = (
-                peer_m_rank * UInt(Self.a_tma_rows)
-                + UInt(n_coord)
-                + UInt(expert_id) * UInt(Self.static_N)
+                peer_m_rank * Self.a_tma_rows
+                + Int(n_coord)
+                + Int(expert_id) * Self.static_N
             )
             # B loads tokens (a_device): use token coordinate
             b_gmem_n_coord = (
-                peer_rank_m * UInt(Self.b_tma_rows)
-                + peer_rank_n * UInt(Self.BN)
-                + UInt(m_coord)
+                peer_rank_m * Self.b_tma_rows
+                + peer_rank_n * Self.BN
+                + Int(m_coord)
             )
         else:
             # Normal: A loads tokens, B loads weights
-            a_gmem_m_coord = peer_m_rank * UInt(Self.a_tma_rows) + UInt(m_coord)
+            a_gmem_m_coord = peer_m_rank * Self.a_tma_rows + Int(m_coord)
             b_gmem_n_coord = (
-                peer_rank_m * UInt(Self.b_tma_rows)
-                + peer_rank_n * UInt(Self.BN)
-                + UInt(n_coord)
-                + UInt(expert_id) * UInt(Self.static_N)
+                peer_rank_m * Self.b_tma_rows
+                + peer_rank_n * Self.BN
+                + Int(n_coord)
+                + Int(expert_id) * Self.static_N
             )
 
         if elect_one_sync():
@@ -889,15 +889,15 @@ struct Grouped1D1DMatmulKernel[
 
                 # Peer CTA slice using TileTensor pattern (ptr + layout)
                 var a_peer_tt = type_of(a_tt)(
-                    a_tt.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tt.ptr + peer_m_rank * Self.a_tma_load_size,
                     a_tt.layout,
                 )
                 var b_peer_tt = type_of(b_tt)(
-                    b_tt.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tt.ptr + peer_rank_m * Self.b_tma_load_size,
                     b_tt.layout,
                 )
 
-                var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
+                var k_coord = Int(iter_idx + j) * Self.BK
 
                 # TileTensor directly to TMA (uses TileTensor overload)
                 a_tma_op.async_multicast_load[Self.cta_group](

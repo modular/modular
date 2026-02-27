@@ -192,13 +192,13 @@ fn load_AB[
     if elect_one_cta:
         tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
-    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-        a_tma_rows
-    ) + work_tile_coord[0] * UInt(BM)
+    var a_gmem_slice_coord = (
+        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+    )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1] * UInt(MMA_N)
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1]) * MMA_N
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -214,14 +214,14 @@ fn load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), a_gmem_slice_coord),
+        (Int(iter_idx) * BK, a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), b_gmem_slice_coord),
+        (Int(iter_idx) * BK, b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -447,8 +447,8 @@ fn multi_stage_store_C[
             c_tma_op.async_store(
                 c_smem_tile,
                 (
-                    work_tile_coord[1] * UInt(MMA_N) + UInt(stage * stageN),
-                    work_tile_coord[0] * UInt(BM),
+                    Int(work_tile_coord[1]) * MMA_N + stage * stageN,
+                    Int(work_tile_coord[0]) * BM,
                 ),
             )
             c_tma_op.commit_group()

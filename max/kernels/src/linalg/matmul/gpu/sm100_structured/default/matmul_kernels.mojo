@@ -852,20 +852,20 @@ struct BlackwellMatmulSM100Kernel[
             iter_idx: K iteration index (base index for k_group).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # Global memory coordinates
-        var a_gmem_m_coord = peer_m_rank * UInt(
-            Self.a_tma_rows
-        ) + work_tile_coord[0] * UInt(Self.BM)
-        var b_gmem_n_coord = (
-            peer_rank_m * UInt(Self.b_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + work_tile_coord[1] * UInt(Self.MMA_N)
+        var a_gmem_m_coord = (
+            peer_m_rank * Self.a_tma_rows + Int(work_tile_coord[0]) * Self.BM
         )
-        var batch_coord = work_tile_coord[2]
+        var b_gmem_n_coord = (
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + Int(work_tile_coord[1]) * Self.MMA_N
+        )
+        var batch_coord = Int(work_tile_coord[2])
 
         if elect_one_sync():
             # Set expected bytes ONCE for all k_group tiles
@@ -883,15 +883,15 @@ struct BlackwellMatmulSM100Kernel[
 
                 # Peer CTA slice using pointer arithmetic
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
-                var k_coord = UInt(iter_idx + UInt32(j)) * UInt(Self.BK)
+                var k_coord = Int(iter_idx + UInt32(j)) * Int(Self.BK)
 
                 # 3D TMA loads with batch coordinate
                 a_tma_op.async_multicast_load_3d[Self.cta_group](

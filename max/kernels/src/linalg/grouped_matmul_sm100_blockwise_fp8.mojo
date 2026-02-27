@@ -778,8 +778,8 @@ fn load_AB[
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
 
-    var a_gmem_slice_coord = (
-        peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
+    var a_gmem_slice_coord = Int(peer_cta_coord[2]) * a_tma_rows + Int(
+        work_tile_coord[0]
     )
     var expert_id = expert_ids[Int(scheduler.current_group_idx)]
     var b_gmem_slice_coord_vec = type_of(expert_id)(
@@ -788,7 +788,7 @@ fn load_AB[
         + work_tile_coord[1]
     ) + expert_id * type_of(expert_id)(scheduler.static_MN)
     comptime assert b_gmem_slice_coord_vec.size == 1
-    var b_gmem_slice_coord = b_gmem_slice_coord_vec[0]
+    var b_gmem_slice_coord = Int(b_gmem_slice_coord_vec[0])
 
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
@@ -809,14 +809,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), a_gmem_slice_coord),
+            (Int(iter_idx) * BK, a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
+            (Int(iter_idx) * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -1033,8 +1033,8 @@ fn multi_stage_reg_epilogue[
                 c_tma_op.async_store(
                     c_smem_split,
                     (
-                        coord_n,
-                        coord_m,
+                        Int(coord_n),
+                        Int(coord_m),
                     ),
                 )
                 c_tma_op.commit_group()

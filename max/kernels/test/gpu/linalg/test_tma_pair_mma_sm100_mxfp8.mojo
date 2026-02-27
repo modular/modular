@@ -335,18 +335,18 @@ fn blockscaled_pair_cta_mxfp8[
         b_mma_mask | b_mma_mask << 1
     )
 
-    for k_iter in range(num_iters):
+    for k_iter in range(Int(num_iters)):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-                a_tma_rows
-            ) + block_idx.x * UInt(BM)
+            var a_gmem_slice_coord = (
+                Int(peer_cta_coord[2]) * a_tma_rows + Int(block_idx.x) * BM
+            )
             var b_gmem_slice_coord = (
-                peer_cta_coord[1] * UInt(b_tma_rows)
-                + peer_cta_coord[0] * UInt(BN)
-                + block_idx.y * UInt(MMA_N)
+                Int(peer_cta_coord[1]) * b_tma_rows
+                + Int(peer_cta_coord[0]) * BN
+                + Int(block_idx.y) * MMA_N
             )
 
             var a_smem_reshape = a_smem_tile.reshape[Layout.row_major(BM, BK)]()
@@ -355,7 +355,7 @@ fn blockscaled_pair_cta_mxfp8[
             a_tma_op.async_multicast_load[cta_group](
                 a_smem_reshape.split[CLUSTER_N]()[peer_cta_coord[2]],
                 tma_mbar[0],
-                (k_iter * UInt(BK), a_gmem_slice_coord),
+                (k_iter * BK, a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
@@ -364,7 +364,7 @@ fn blockscaled_pair_cta_mxfp8[
                     peer_cta_coord[1]
                 ],
                 tma_mbar[0],
-                (k_iter * UInt(BK), b_gmem_slice_coord),
+                (k_iter * BK, b_gmem_slice_coord),
                 b_multicast_mask,
             )
 
@@ -374,7 +374,7 @@ fn blockscaled_pair_cta_mxfp8[
                 (
                     0,
                     0,
-                    Int(k_iter),
+                    k_iter,
                     Int(block_idx.x) * (BM // SF_MN_GROUP_SIZE),
                 ),
             )
@@ -385,7 +385,7 @@ fn blockscaled_pair_cta_mxfp8[
                 (
                     0,
                     0,
-                    Int(k_iter),
+                    k_iter,
                     Int(block_idx.y) * (MMA_N // SF_MN_GROUP_SIZE),
                 ),
             )

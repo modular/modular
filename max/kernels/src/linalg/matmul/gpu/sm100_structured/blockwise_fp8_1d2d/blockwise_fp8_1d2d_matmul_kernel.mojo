@@ -662,9 +662,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         elect_one_cta: Bool,
     ):
         """Load A, B, and A-scales tiles using TMA."""
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # M coordinate in contiguous token space
         var m_coord = work_ctx.m()
@@ -672,12 +672,12 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         var expert_id = work_ctx.expert_id()
 
         # UInt required at TMA coord boundary
-        var a_gmem_m_coord = peer_m_rank * UInt(Self.a_tma_rows) + UInt(m_coord)
+        var a_gmem_m_coord = peer_m_rank * Self.a_tma_rows + Int(m_coord)
         var b_gmem_n_coord = (
-            peer_rank_m * UInt(Self.b_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + UInt(n_coord)
-            + UInt(expert_id) * UInt(Self.static_N)
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + Int(n_coord)
+            + Int(expert_id) * Self.static_N
         )
 
         if elect_one_sync():
@@ -694,15 +694,15 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
             # Peer CTA slicing using TileTensor pattern (ptr + layout)
             var a_peer_tile = type_of(a_tile)(
-                a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
                 a_tile.layout,
             )
             var b_peer_tile = type_of(b_tile)(
-                b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
                 b_tile.layout,
             )
 
-            var k_coord = UInt(iter_idx * Self.BK)
+            var k_coord = iter_idx * Self.BK
 
             # Load A and B using TileTensor overload
             a_tma_op.async_multicast_load[Self.cta_group](

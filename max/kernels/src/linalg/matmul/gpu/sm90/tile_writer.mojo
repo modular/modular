@@ -223,7 +223,7 @@ struct TileWriterTMA[
         fence_async_view_proxy()
 
         # Perform the async store
-        self.tma_op[].async_store(src, coords)
+        self.tma_op[].async_store(src, (Int(coords[0]), Int(coords[1])))
 
         # Commit and wait for completion
         self.tma_op[].commit_group()
