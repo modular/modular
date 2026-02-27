@@ -751,28 +751,34 @@ class GenericOracle(PipelineOracle):
         model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         weight_path = self.weight_path(encoding) if encoding else None
 
-        # Determine weight revision: use weight repo's revision if different
-        weight_revision = model_revision
+        weight_filename: str | None = None
+        weight_repo_id: str | None = None
         if weight_path:
-            weight_repo_id, _, weight_revision = self._parse_weight_path(
+            weight_repo_id, weight_filename, _ = self._parse_weight_path(
                 weight_path
             )
-            if weight_repo_id == self.model_path:
-                weight_revision = model_revision
 
+        # Defer resolution so we can set _weights_repo_id before
+        # validation runs.  Without this, PipelineConfig.resolve() would
+        # look for weight files in the model repo (meta-llama) instead of
+        # the weights repo (bartowski).
         config = pipelines.PipelineConfig.model_validate(
             {
+                "defer_resolve": True,
                 "device_specs": device_specs if device_specs else None,
                 "quantization_encoding": encoding,
                 "model_path": self.model_path,
                 "huggingface_model_revision": model_revision,
-                "huggingface_weight_revision": weight_revision,
-                "weight_path": [] if weight_path is None else [weight_path],
+                "huggingface_weight_revision": model_revision,
+                "weight_path": [] if weight_path is None else [weight_filename],
                 "max_num_steps": 1,
                 **self.config_params,
             }
         )
+        if weight_repo_id and weight_repo_id != self.model_path:
+            config.model._weights_repo_id = weight_repo_id
         hf_repo_lock.apply_to_config(config)
+        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             config, task=self.task
         )
@@ -790,8 +796,10 @@ class GenericOracle(PipelineOracle):
         device: torch.device,
     ) -> TorchModelAndDataProcessor:
         trust_remote_code = self.config_params.get("trust_remote_code", False)
+        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         processor = self.auto_processor_cls.from_pretrained(
             self.model_path,
+            revision=model_revision,
             trust_remote_code=trust_remote_code,
         )
         weight_path = self.weight_path(encoding) if encoding else None

@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Test precompile-pipelines orchestrator compiles mpnet on CPU."""
+"""Test precompile-all-pipelines orchestrator compiles mpnet on CPU."""
 
-from precompile_pipelines import (
+from precompile_all_pipelines import (
     collect_precompile_jobs,
     run_precompile_inprocess,
 )

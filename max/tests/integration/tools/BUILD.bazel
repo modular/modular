@@ -1,4 +1,5 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "modular_run_binary_test", "requirement")
+load(":precompile_pipeline.bzl", "modular_pipeline_target_name", "modular_precompile_pipeline")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -209,11 +210,11 @@ modular_py_binary(
 )
 
 modular_py_binary(
-    name = "precompile_pipelines",
+    name = "precompile_all_pipelines",
     testonly = True,
-    srcs = ["precompile_pipelines.py"],
+    srcs = ["precompile_all_pipelines.py"],
     imports = ["."],
-    main = "precompile_pipelines.py",
+    main = "precompile_all_pipelines.py",
     tags = ["no-pydeps"],
     deps = [
         ":create_pipelines",
@@ -227,9 +228,9 @@ modular_py_binary(
 )
 
 modular_py_test(
-    name = "test_precompile_pipelines_cpu",
+    name = "test_precompile_all_pipelines_cpu",
     size = "large",
-    srcs = ["test_precompile_pipelines_cpu.py"],
+    srcs = ["test_precompile_all_pipelines_cpu.py"],
     imports = ["."],
     tags = [
         "no-sandbox",
@@ -242,9 +243,131 @@ modular_py_test(
     }),
     deps = [
         "//max/tests/integration/accuracy:verify_pipelines",
-        "//max/tests/integration/tools:precompile_pipelines",
+        "//max/tests/integration/tools:precompile_all_pipelines",
     ],
 )
+
+modular_py_binary(
+    name = "precompile_pipeline",
+    testonly = True,
+    srcs = ["precompile_pipeline.py"],
+    imports = ["."],
+    deps = [
+        ":create_pipelines",
+        "//max/python/max/driver",
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:config",
+        requirement("click"),
+    ],
+)
+
+PIPELINE_SPECS = [
+    # NOTE: GGUF models are excluded because local torch golden generation
+    # requires GGUF tensor de-quantization, which exceeds the CI timeout.
+    # They are still verified via the Pipeline Logit Verification workflow
+    # which has access to pregenerated S3 goldens.
+    #
+    # Mistral Small 24B
+    {
+        "pipeline": "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
+        "model_path": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "encoding": "bfloat16",
+        "target": "cuda:sm_90a",
+        "tags": ["gpu"],
+        "gpu_constraints": ["//:h100_gpu"],
+        "devices": "gpu",
+        "exec_properties": {"test.resources:gpu-memory": "80"},
+    },
+    {
+        "pipeline": "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
+        "model_path": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "encoding": "bfloat16",
+        "target": "cuda:sm_100a",
+        "tags": ["gpu"],
+        "gpu_constraints": ["//:b200_gpu"],
+        "devices": "gpu",
+        "exec_properties": {"test.resources:gpu-memory": "80"},
+    },
+    # TODO: HIP targets are excluded because the precompile_pipeline build
+    # action cross-compiles for ROCm but runs on a CPU-only executor that
+    # lacks ROCm runtime libraries (e.g. libroctx64.so).  Re-add once
+    # cross-compilation from CPU-only executors is supported.
+    #
+    # {
+    #     "pipeline": "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
+    #     "model_path": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+    #     "encoding": "bfloat16",
+    #     "target": "hip:gfx950",
+    #     "tags": ["gpu"],
+    #     "gpu_constraints": ["//:mi355_gpu"],
+    #     "devices": "gpu",
+    #     "exec_properties": {"test.resources:gpu-memory": "80"},
+    # },
+    #
+    # Llama 3.3 70B
+    {
+        "pipeline": "meta-llama/Llama-3.3-70B-Instruct-bfloat16",
+        "model_path": "meta-llama/Llama-3.3-70B-Instruct",
+        "encoding": "bfloat16",
+        "target": "cuda:sm_100a",
+        "tags": ["gpu"],
+        "gpu_constraints": ["//:b200_gpu"],
+        "devices": "gpu",
+        "exec_properties": {"test.resources:gpu-memory": "180"},
+    },
+    {
+        "pipeline": "meta-llama/Llama-3.3-70B-Instruct-bfloat16",
+        "model_path": "meta-llama/Llama-3.3-70B-Instruct",
+        "encoding": "bfloat16",
+        "target": "cuda:sm_90a",
+        "tags": ["gpu"],
+        "gpu_constraints": [
+            "//:h100_gpu",
+            "//:has_4_gpus",
+        ],
+        "devices": "gpu:0,1,2,3",
+        "exec_properties": {"test.resources:gpu-memory": "80"},
+    },
+]
+
+[
+    modular_precompile_pipeline(
+        name = "precompile_pipeline_{}".format(modular_pipeline_target_name(spec)),
+        testonly = True,
+        devices = spec["devices"],
+        encoding = spec["encoding"],
+        pipeline = spec["model_path"],
+        target = spec["target"],
+    )
+    for spec in PIPELINE_SPECS
+]
+
+[
+    modular_run_binary_test(
+        name = "test_verify_pipeline_{}".format(modular_pipeline_target_name(spec)),
+        size = "enormous",
+        args = [
+            "--pipeline",
+            spec["pipeline"],
+            "--devices",
+            spec["devices"],
+            "--no-aws",
+        ],
+        binary = "//max/tests/integration/accuracy:verify_pipelines",
+        data = [":precompile_pipeline_{}".format(modular_pipeline_target_name(spec))],
+        env = {
+            "HF_HUB_OFFLINE": "1",
+            "MODULAR_MAX_CACHE_DIR": "$(rootpath :precompile_pipeline_{})".format(
+                modular_pipeline_target_name(spec),
+            ),
+        },
+        exec_properties = spec["exec_properties"],
+        gpu_constraints = spec["gpu_constraints"],
+        tags = spec["tags"] + ["manual"],
+    )
+    for spec in PIPELINE_SPECS
+]
 
 modular_py_binary(
     name = "compare_tensors",

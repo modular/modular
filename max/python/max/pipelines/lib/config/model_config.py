@@ -446,9 +446,15 @@ class MAXModelConfig(MAXModelConfigBase):
                 f"available devices: {available_devices}"
             )
 
-        self.weight_path, self._weights_repo_id = WeightPathParser.parse(
+        self.weight_path, parsed_repo_id = WeightPathParser.parse(
             self.model_path, self.weight_path
         )
+        # Only overwrite a seeded _weights_repo_id when the parser actually
+        # extracts one.  When callers pass a bare filename (to avoid network
+        # calls in WeightPathParser), the parser returns None and we must
+        # keep the value seeded via __init__.
+        if parsed_repo_id is not None:
+            self._weights_repo_id = parsed_repo_id
 
         # If we cannot infer the weight path, we lean on the model_path
         # to provide it.
