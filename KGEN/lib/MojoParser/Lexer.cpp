@@ -1111,6 +1111,10 @@ std::string Lexer::getStringLiteralValue(StringRef bytes) {
   return processEscapeSequences(bytes, isRaw);
 }
 
+std::string Lexer::getTStringLiteralValue(StringRef bytes) {
+  return processEscapeSequences(bytes, /*isRaw=*/false);
+}
+
 SMLoc Lexer::getStringLiteralStartLoc(StringRef spelling) {
   size_t stringStartOffset = 1;
   if (spelling[0] == 'r' || spelling[0] == 'R')

@@ -15,6 +15,7 @@
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
+#include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "ParserEvaluationContext.h"
 #include "StabilityMarkers.h"
@@ -684,9 +685,69 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
 /// Get the source range for a t-string, from start to the closing quote.
 SourceRange TStringExprNode::getRange() const { return {startLoc, endLoc}; }
 
-/// Emit IR for a t-string (stub — will be implemented in a follow-up commit).
+/// Emit IR for a t-string.
+///
+/// Lowers t"Hello, {name}!" to __make_tstring["Hello, {}"](name).
+/// The format template is built at compile time with {} placeholders for each
+/// interpolation, then passed as a comptime string parameter to
+/// __make_tstring. The interpolated expressions become runtime arguments.
 AnyValue TStringExprNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
-  return {};
+  // Build the format template string and collect interpolated expressions.
+  SmallString<128> formatTemplate;
+  SmallVector<const ExprNode *> interpolatedExprs;
+
+  for (const Part &part : parts) {
+    std::visit(Overloaded{
+                   [&](const LiteralPart &literal) {
+                     formatTemplate +=
+                         Lexer::getTStringLiteralValue(literal.text);
+                   },
+                   [&](const InterpolationPart &interpolation) {
+                     formatTemplate += "{}";
+                     interpolatedExprs.push_back(interpolation.expr);
+                   },
+               },
+               part);
+  }
+
+  // Emit IR for each interpolated expression.
+  SmallVector<ASTExprAnd<AnyValue>> interpolatedValues;
+  ValueDest exprDest(EC_OperatorOperandValue);
+  for (const ExprNode *expr : interpolatedExprs) {
+    AnyValue exprValue = expr->emitIR(exprDest, emitter);
+    if (!exprValue)
+      return {};
+    interpolatedValues.push_back({std::move(exprValue), expr});
+  }
+
+  // Bind the format string as a compile-time parameter.
+  ParamBindings paramBindings(emitter.declScope, this);
+  auto formatStringAttr = StringAttr::get(
+      formatTemplate, KGEN::StringType::get(emitter.getContext()));
+  paramBindings.add(this, formatStringAttr);
+
+  // Look up __make_tstring and create an overload set.
+  constexpr auto kMakeTStringFnName = "__make_tstring";
+  auto fnDecls = emitter.shared.getBuiltinFunction(
+      emitter.declScope, "std.format.tstring", kMakeTStringFnName, getLoc());
+  if (fnDecls.empty())
+    return {};
+
+  OverloadSet os(kMakeTStringFnName, fnDecls, std::move(paramBindings),
+                 CallSyntax::kDirectCall);
+
+  // Build the call operands from the interpolated values.
+  CallOperands operands(CallSyntax::kDirectCall, this);
+  for (const auto &interpolated : interpolatedValues)
+    operands.add(interpolated);
+
+  // Resolve the overload and emit the call.
+  auto callee = os.filterOverloadSet(
+      operands, /*emitDiagnosticsOnFailure=*/true, emitter);
+  if (!callee)
+    return {};
+
+  return emitter.emitCallUnchecked(callee, operands, dest);
 }
 
 bool Operand::isPositionalStringLiteral(StringRef str) const {
