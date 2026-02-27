@@ -19,17 +19,17 @@ from nn.mha_tile_scheduler import (
     SeqInfo,
     TransientScheduler,
 )
-from nn.mha_sm100_2q import (
-    FA4Config,
+from nn.fa4_config import FA4Config
+from nn.sm100_attention_utils import (
     KVPipeline,
     SharedMemPointer,
     SharedMemLT,
     elect,
     MBarType,
     ProducerPipeline,
+    elect_mma_arrive,
 )
 from nn.mha import q_num_matrix_view_rows
-from nn.mha_sm100_2q import elect_mma_arrive
 from nn.mha_fa3_utils import (
     get_seq_info,
     KVTMATile,
@@ -616,12 +616,9 @@ __extension SM100MLA:
         consumer_s0 = pipeline_s0.consumer_mbar_base
         consumer_s1 = pipeline_s1.consumer_mbar_base
 
-        # O pipelines: o0 and o1 alternate with different initial phases
+        # O pipelines (producer side only; consumer wait is merged into S barriers)
         var pipeline_o0 = mbars.producer_o0()
         var pipeline_o1 = mbars.producer_o1()
-        # Keep consumer pointers for acquire operations (shared phase tracking)
-        consumer_o0 = pipeline_o0.consumer_mbar_base
-        consumer_o1 = pipeline_o1.consumer_mbar_base
 
         comptime q0_size = (Self.config.BM // 2) * Self.config.padded_depth
         comptime q0_bytes = UInt32(q0_size * size_of[Self.KVLUTType.dtype]())
@@ -678,8 +675,7 @@ __extension SM100MLA:
         _ = consumer_s0[].wait(0)
         Self.UMMA1Type.mma(s0_tmem, vlatest, o0_tmem, elect=e, c_scale=0)
         pipeline_o0.commit_mma(e)
-        var phase_s: UInt32 = 0
-        var phase_o: UInt32 = 1
+        var phase: UInt32 = 0
 
         var c_scale: UInt32 = 0
 
@@ -696,13 +692,11 @@ __extension SM100MLA:
             pipeline_s0.commit_mma(e)
 
             # O_1 + P_1 @ V_{n-1}
-            _ = consumer_o1[].wait(phase_o)
-            _ = consumer_s1[].wait(phase_s)
+            _ = consumer_s1[].wait(phase)
             Self.UMMA1Type.mma(
                 s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
             )
             pipeline_o1.commit_mma(e)
-            phase_o = phase_s
             c_scale = 1
             # Release old V (deferred release, no step)
             elect_mma_arrive(pipeline.consumer_mbar[0](v_release_index), e)
@@ -710,20 +704,18 @@ __extension SM100MLA:
             # Q_1 @ K_n'
             Self.UMMA0Type.mma(q1, kn, s1_tmem, elect=e, c_scale=0)
             pipeline_s1.commit_mma(e)
-            phase_s ^= 1
+            phase ^= 1
 
             pipeline.consumer_release[0](e)  # release K, step to V state
 
             # O_0 + P_0 @ V_n
             pipeline.consumer_wait[0]()  # wait Vn
             vlatest = v_smem_descriptor + full_kv_bytes * pipeline.state.index()
-            _ = consumer_o0[].wait(phase_o)
-            _ = consumer_s0[].wait(phase_s)
+            _ = consumer_s0[].wait(phase)
             Self.UMMA1Type.mma(s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1)
             pipeline_o0.commit_mma(e)
 
-        _ = consumer_o1[].wait(phase_o)
-        _ = consumer_s1[].wait(phase_s)
+        _ = consumer_s1[].wait(phase)
         Self.UMMA1Type.mma(s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale)
         pipeline_o1.commit_mma(e)
 

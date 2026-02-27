@@ -74,7 +74,7 @@ from utils.numerics import get_accum_type, min_or_neg_inf
 from utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
-from nn.mha_sm100_2q import (
+from nn.sm100_attention_utils import (
     elect,
     LocalTensor,
     elect_mma_arrive,
@@ -84,7 +84,7 @@ from nn.mha_sm100_2q import (
     sub_ftz,
 )
 from layout._layout import row_major
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
+from layout import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 from builtin.device_passable import DevicePassable
 from sys._assembly import inlined_assembly
