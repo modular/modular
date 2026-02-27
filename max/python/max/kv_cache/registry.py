@@ -27,6 +27,7 @@ from max.nn.kv_cache import (
     KVCacheStrategy,
     MultiKVCacheParams,
     compute_num_device_blocks,
+    compute_num_host_blocks,
     estimated_memory_size,
 )
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
@@ -108,7 +109,7 @@ def load_kv_manager(
         max_seq_len=max_seq_len,
     )
 
-    total_num_host_pages = params.compute_num_host_blocks()
+    total_num_host_pages = compute_num_host_blocks(params)
 
     return _load_single_kv_manager(
         params=params,
@@ -152,8 +153,7 @@ def load_multi_kv_managers(
         max_seq_len=max_seq_len,
     )
 
-    # assume all params have the same number of host pages
-    total_num_host_pages = params.params[0].compute_num_host_blocks()
+    total_num_host_pages = compute_num_host_blocks(params)
 
     return [
         _load_single_kv_manager(

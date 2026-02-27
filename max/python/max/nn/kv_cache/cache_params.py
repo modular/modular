@@ -178,6 +178,8 @@ class KVCacheParamInterface(Protocol):
     page_size: int
     data_parallel_degree: int
     n_devices: int
+    enable_kvcache_swapping_to_host: bool
+    host_kvcache_swap_space_gb: float | None
 
     @property
     def bytes_per_block(self) -> int:
@@ -434,29 +436,6 @@ class KVCacheParams(KVCacheParamInterface):
             base_bytes += scale_bytes
         return base_bytes
 
-    def compute_num_host_blocks(self) -> int:
-        """Computes the number of blocks that can be allocated to the host.
-
-        Returns:
-            The number of blocks that can be allocated to the host.
-        """
-        if not self.enable_kvcache_swapping_to_host:
-            return 0
-        assert self.host_kvcache_swap_space_gb is not None
-        GiB = 1024 * 1024 * 1024
-        host_gb_per_replica = self.host_kvcache_swap_space_gb
-        host_bytes_per_replica = host_gb_per_replica * GiB
-        num_host_blocks = int(host_bytes_per_replica // self.bytes_per_block)
-
-        if num_host_blocks == 0:
-            raise RuntimeError(
-                f"Insufficient cache memory to allocate even a single page.\n"
-                f"One page requires {to_human_readable_bytes(self.bytes_per_block)} but only "
-                f"{to_human_readable_bytes(host_gb_per_replica * GiB)} are available on host."
-            )
-
-        return num_host_blocks
-
     def copy_as_dp_1(self, replica_idx: int = 0) -> KVCacheParams:
         """Creates a copy of the KVCacheParams with data parallelism disabled.
 
@@ -630,6 +609,8 @@ class MultiKVCacheParams(KVCacheParamInterface):
     page_size: int
     data_parallel_degree: int
     n_devices: int
+    enable_kvcache_swapping_to_host: bool
+    host_kvcache_swap_space_gb: float | None
 
     @classmethod
     def from_params(cls, *params: KVCacheParams) -> MultiKVCacheParams:
@@ -641,6 +622,10 @@ class MultiKVCacheParams(KVCacheParamInterface):
             page_size=params[0].page_size,
             data_parallel_degree=params[0].data_parallel_degree,
             n_devices=params[0].n_devices,
+            enable_kvcache_swapping_to_host=params[
+                0
+            ].enable_kvcache_swapping_to_host,
+            host_kvcache_swap_space_gb=params[0].host_kvcache_swap_space_gb,
         )
 
     def __post_init__(self) -> None:
@@ -672,6 +657,22 @@ class MultiKVCacheParams(KVCacheParamInterface):
         if len(n_devices) > 1:
             raise ValueError(
                 f"All params must use the same number of devices, got: {n_devices}"
+            )
+
+        enable_kvcache_swapping_to_host = {
+            p.enable_kvcache_swapping_to_host for p in self.params
+        }
+        if len(enable_kvcache_swapping_to_host) > 1:
+            raise ValueError(
+                f"All params must use the same enable_kvcache_swapping_to_host, got: {enable_kvcache_swapping_to_host}"
+            )
+
+        host_kvcache_swap_space_gb = {
+            p.host_kvcache_swap_space_gb for p in self.params
+        }
+        if len(host_kvcache_swap_space_gb) > 1:
+            raise ValueError(
+                f"All params must use the same host_kvcache_swap_space_gb, got: {host_kvcache_swap_space_gb}"
             )
 
     @property
@@ -827,3 +828,27 @@ def compute_max_seq_len_fitting_in_cache(
         max_seq_len=None,
     )
     return num_blocks * params.page_size
+
+
+def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
+    """Computes the number of blocks that can be allocated on the host.
+
+    Returns:
+        The number of blocks that can be allocated on the host.
+    """
+    if not params.enable_kvcache_swapping_to_host:
+        return 0
+    assert params.host_kvcache_swap_space_gb is not None
+    GiB = 1024 * 1024 * 1024
+    host_gb_per_replica = params.host_kvcache_swap_space_gb
+    host_bytes_per_replica = host_gb_per_replica * GiB
+    num_host_blocks = int(host_bytes_per_replica // params.bytes_per_block)
+
+    if num_host_blocks == 0:
+        raise RuntimeError(
+            f"Insufficient cache memory to allocate even a single page.\n"
+            f"One page requires {to_human_readable_bytes(params.bytes_per_block)} but only "
+            f"{to_human_readable_bytes(host_gb_per_replica * GiB)} are available on host."
+        )
+
+    return num_host_blocks
