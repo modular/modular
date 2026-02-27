@@ -72,7 +72,6 @@ def max_flash_attention_with_sinks(
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=num_layers,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.GPU()],
     )

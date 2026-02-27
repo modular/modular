@@ -11,6 +11,8 @@ what we publish.
 
 ### Documentation {#26-2-docs}
 
+- Removed `--cache-strategy` cli flag.
+
 ### MAX models {#26-2-models}
 
 - Add support for Olmo3ForCausalLM architecture.

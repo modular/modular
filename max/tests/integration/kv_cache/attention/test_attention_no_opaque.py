@@ -135,7 +135,6 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         dtype=DType.float32,
         num_layers=1,
         page_size=page_size,
-        cache_strategy="paged",
         devices=[DeviceRef.from_device(device)],
     )
 

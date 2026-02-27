@@ -72,7 +72,6 @@ def create_kv_cache(
         num_layers=1,
         n_kv_heads=1,
         head_dim=1,
-        cache_strategy="paged",
         enable_prefix_caching=True,
         page_size=page_size,
         devices=[DeviceRef.CPU()],

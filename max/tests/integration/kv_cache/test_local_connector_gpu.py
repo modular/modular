@@ -45,7 +45,6 @@ def create_local_connector(
         num_layers=num_layers,
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
-        cache_strategy="paged",
         enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=True,
         host_kvcache_swap_space_gb=999,

@@ -36,7 +36,7 @@ from max.nn.kernels import (
     quantize_static_scaled_float8,
     rms_norm_key_cache,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
@@ -109,12 +109,6 @@ class Gemma3Attention(Module, Shardable):
         self.sliding_window_pattern = sliding_window_pattern
         self.qk_norm_eps = qk_norm_eps
         self.float8_config = float8_config
-
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
 
         self.q_norm = Gemma3RMSNorm(
             self.kv_params.head_dim, DType.bfloat16, self.qk_norm_eps

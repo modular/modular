@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Literal, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
@@ -36,38 +36,6 @@ from .input_types import (
 )
 
 logger = logging.getLogger("max.pipelines")
-
-
-KVCacheStrategy = Literal["model_default", "paged"]
-"""Supported KV cache strategies for attention mechanisms.
-
-This defines the different strategies for managing key-value caches
-in transformer models during inference.
-"""
-
-
-def kernel_substring(strategy: KVCacheStrategy) -> str:
-    """Returns the common substring included in the kernel name for this caching strategy.
-
-    Args:
-        strategy: The cache strategy.
-
-    Returns:
-        The string representation of the cache strategy value.
-    """
-    return strategy
-
-
-def uses_opaque(strategy: KVCacheStrategy) -> bool:
-    """Determines if this cache strategy uses opaque cache implementations.
-
-    Args:
-        strategy: The cache strategy to check.
-
-    Returns:
-        True if the strategy uses opaque caching, False otherwise.
-    """
-    return True
 
 
 @dataclass
@@ -174,7 +142,6 @@ class KVCacheQuantizationConfig:
 class KVCacheParamInterface(Protocol):
     """Interface for KV cache parameters."""
 
-    cache_strategy: KVCacheStrategy
     page_size: int
     data_parallel_degree: int
     n_devices: int
@@ -196,7 +163,7 @@ class KVCacheParams(KVCacheParamInterface):
     """Configuration parameters for key-value cache management in transformer models.
 
     This class encapsulates all configuration options for managing KV caches during
-    inference, including parallelism settings, memory management, and cache strategy.
+    inference, including parallelism settings, and memory management.
     """
 
     dtype: DType
@@ -223,17 +190,13 @@ class KVCacheParams(KVCacheParamInterface):
     host_kvcache_swap_space_gb: float | None = None
     """Amount of host memory (in GB) to reserve for KV cache swapping. Required when swapping is enabled."""
 
-    cache_strategy: KVCacheStrategy = "paged"
-    """Strategy to use for managing the KV cache."""
-
     page_size: int = 128
-    """Number of tokens per page (block) when using the paged cache strategy.
+    """Number of tokens per page (block).
 
     This value is expressed in tokens, not bytes. The byte footprint of a page is
     derived from pipeline configuration.
 
     Current constraints: the page size must be a multiple of 128 and at least 128.
-    Required when ``cache_strategy`` is ``"paged"``.
     """
 
     is_mla: bool = False
@@ -266,7 +229,6 @@ class KVCacheParams(KVCacheParamInterface):
         This method:
         - Validates parallelism configuration (data parallel vs tensor parallel)
         - Computes n_kv_heads_per_device based on parallelism strategy
-        - Validates cache strategy compatibility with enabled features
 
         Raises:
             ValueError: If configuration parameters are invalid or incompatible.
@@ -295,17 +257,6 @@ class KVCacheParams(KVCacheParamInterface):
             )
 
         # Validate inputs
-        if self.enable_prefix_caching and self.cache_strategy != "paged":
-            raise ValueError(
-                "Prefix caching is only supported for paged cache strategy"
-            )
-        if (
-            self.enable_kvcache_swapping_to_host
-            and self.cache_strategy != "paged"
-        ):
-            raise ValueError(
-                "KVCache swapping to host is only supported for paged cache strategy"
-            )
         if (
             self.enable_kvcache_swapping_to_host
             and not self.enable_prefix_caching
@@ -320,8 +271,6 @@ class KVCacheParams(KVCacheParamInterface):
             raise ValueError(
                 "host_kvcache_swap_space_gb is required when kvcache_swapping_to_host is enabled"
             )
-        if self.page_size is None and self.cache_strategy == "paged":
-            raise ValueError("Page size is required for paged cache strategy")
 
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             # Validate FP8 KVCache quantization granularity.
@@ -467,7 +416,6 @@ class KVCacheParams(KVCacheParamInterface):
             enable_prefix_caching=self.enable_prefix_caching,
             enable_kvcache_swapping_to_host=self.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
-            cache_strategy=self.cache_strategy,
             page_size=self.page_size,
             devices=devices_per_replica[replica_idx],
             is_mla=self.is_mla,
@@ -605,7 +553,6 @@ class MultiKVCacheParams(KVCacheParamInterface):
     params: Sequence[KVCacheParams]
     """List of KV cache parameter sets to aggregate."""
 
-    cache_strategy: KVCacheStrategy
     page_size: int
     data_parallel_degree: int
     n_devices: int
@@ -618,7 +565,6 @@ class MultiKVCacheParams(KVCacheParamInterface):
             raise ValueError("MultiKVCacheParams requires at least one param.")
         return cls(
             params=params,
-            cache_strategy=params[0].cache_strategy,
             page_size=params[0].page_size,
             data_parallel_degree=params[0].data_parallel_degree,
             n_devices=params[0].n_devices,
@@ -629,16 +575,10 @@ class MultiKVCacheParams(KVCacheParamInterface):
         )
 
     def __post_init__(self) -> None:
-        """Validates that all params have consistent cache strategy and page size."""
+        """Validates that all params have consistent page size."""
         if not self.params:
             raise ValueError(
                 "MultiKVCacheParams requires at least one param set."
-            )
-
-        strategies = {p.cache_strategy for p in self.params}
-        if len(strategies) > 1:
-            raise ValueError(
-                f"All params must use the same cache strategy, got: {strategies}"
             )
 
         page_sizes = {p.page_size for p in self.params}

@@ -28,7 +28,7 @@ mistral3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     multi_gpu_supported=True,
     pipeline_model=Mistral3Model,

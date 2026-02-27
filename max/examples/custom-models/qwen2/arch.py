@@ -16,10 +16,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.architectures.llama3 import weight_adapters
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from .model import Qwen2Model
 from .model_config import Qwen2Config
@@ -31,8 +28,8 @@ qwen2_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=Qwen2Model,
     tokenizer=TextTokenizer,

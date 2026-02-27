@@ -26,11 +26,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
 
@@ -46,16 +42,15 @@ BATCH_SIZE = 4
 
 
 @pytest.mark.parametrize(
-    "cache_strategy,mask_strategy",
+    "mask_strategy",
     [
-        ("paged", MHAMaskVariant.CAUSAL_MASK),
-        ("paged", MHAMaskVariant.CHUNKED_CAUSAL_MASK),
-        ("paged", MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK),
+        MHAMaskVariant.CAUSAL_MASK,
+        MHAMaskVariant.CHUNKED_CAUSAL_MASK,
+        MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
     ],
 )
 def test_kv_cache_ragged_attention(
     session: InferenceSession,
-    cache_strategy: KVCacheStrategy,
     mask_strategy: MHAMaskVariant,
 ) -> None:
     num_q_heads = 32
@@ -64,7 +59,6 @@ def test_kv_cache_ragged_attention(
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy=cache_strategy,
         page_size=128,
         devices=[DeviceRef.CPU()],
     )

@@ -18,10 +18,7 @@ from dataclasses import dataclass
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import PixelContext
-from max.pipelines.lib import (
-    PixelGenerationTokenizer,
-    SupportedArchitecture,
-)
+from max.pipelines.lib import PixelGenerationTokenizer, SupportedArchitecture
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
 from typing_extensions import Self
@@ -49,7 +46,7 @@ flux2_arch = SupportedArchitecture(
     name="Flux2Pipeline",
     task=PipelineTask.PIXEL_GENERATION,
     default_encoding="bfloat16",
-    supported_encodings={"bfloat16": []},
+    supported_encodings={"bfloat16"},
     example_repo_ids=[
         "black-forest-labs/FLUX.2-dev",
     ],

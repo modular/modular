@@ -38,7 +38,6 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
-    uses_opaque,
 )
 from max.nn.layer import Module
 from max.nn.linear import Linear
@@ -129,12 +128,6 @@ class _Llama4TextAttention(Module):
         self.floor_scale = floor_scale
         self.attn_temperature_tuning = attn_temperature_tuning
         self.qk_norm_eps = qk_norm_eps
-
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
 
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads

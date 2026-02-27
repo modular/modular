@@ -77,9 +77,9 @@ qwen2_5_vl_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
-        "float8_e4m3fn": ["paged"],
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen2_5vl_model_state_dict,

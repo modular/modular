@@ -41,7 +41,6 @@ def create_kv_cache_params(
         head_dim=head_dim,
         num_layers=num_layers,
         devices=[DeviceRef.GPU()],
-        cache_strategy="paged",
         page_size=page_size,
     )
 
@@ -53,22 +52,6 @@ class TestMultiKVCacheParamsValidation:
         """MultiKVCacheParams should raise an error if params list is empty."""
         with pytest.raises(ValueError, match="requires at least one param"):
             MultiKVCacheParams.from_params()
-
-    def test_mismatched_cache_strategy_raises_error(self) -> None:
-        """MultiKVCacheParams should raise if cache strategies don't match."""
-        params1 = create_kv_cache_params()
-        # Create a params with different strategy by modifying after creation
-        params2 = KVCacheParams(
-            dtype=DType.bfloat16,
-            n_kv_heads=8,
-            head_dim=128,
-            num_layers=32,
-            devices=[DeviceRef.GPU()],
-            cache_strategy="model_default",
-            page_size=128,
-        )
-        with pytest.raises(ValueError, match="same cache strategy"):
-            MultiKVCacheParams.from_params(params1, params2)
 
     def test_mismatched_page_size_raises_error(self) -> None:
         """MultiKVCacheParams should raise if page sizes don't match."""

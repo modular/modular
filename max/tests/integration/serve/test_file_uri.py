@@ -33,7 +33,7 @@ pipeline_config = PipelineConfig(
         quantization_encoding="bfloat16",
         trust_remote_code=True,
         max_length=512,
-        kv_cache=KVCacheConfig(cache_strategy="paged"),
+        kv_cache=KVCacheConfig(),
     ),
     max_batch_size=1,
 )

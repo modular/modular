@@ -14,10 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from ..llama3 import weight_adapters
 from .model import OlmoModel
@@ -30,8 +27,8 @@ olmo_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
     default_encoding="float32",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=OlmoModel,
     tokenizer=TextTokenizer,

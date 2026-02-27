@@ -31,7 +31,7 @@ deepseekV2_arch = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV2Model,

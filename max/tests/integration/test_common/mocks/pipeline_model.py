@@ -160,7 +160,6 @@ class MockPipelineModel(PipelineModelWithKVCache):
             head_dim=1,
             num_layers=1,
             enable_prefix_caching=False,
-            cache_strategy="paged",
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )

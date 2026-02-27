@@ -96,7 +96,6 @@ def make_test_config() -> DeepseekV3_2Config:
 
     mla_kv_params = KVCacheParams(
         dtype=DType.bfloat16,
-        cache_strategy="paged",
         n_kv_heads=hf_config.num_key_value_heads,
         head_dim=hf_config.v_head_dim,
         num_layers=hf_config.num_hidden_layers,
@@ -104,19 +103,12 @@ def make_test_config() -> DeepseekV3_2Config:
     )
     indexer_kv_params = KVCacheParams(
         dtype=DType.float8_e4m3fn,
-        cache_strategy="paged",
         n_kv_heads=1,
         head_dim=hf_config.index_head_dim,
         num_layers=hf_config.num_hidden_layers,
         devices=[device],
     )
-    kv_params = MultiKVCacheParams(
-        params=[mla_kv_params, indexer_kv_params],
-        cache_strategy="paged",
-        page_size=128,
-        data_parallel_degree=1,
-        n_devices=1,
-    )
+    kv_params = MultiKVCacheParams.from_params(mla_kv_params, indexer_kv_params)
 
     return DeepseekV3_2Config(
         dtype=DType.float8_e4m3fn,

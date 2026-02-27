@@ -33,10 +33,7 @@ from max.nn.kernels import (
     grouped_dynamic_scaled_fp8_matmul,
     matmul_k_cache_ragged_scaled_float8,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 
 
 class DynamicScaledMatmul:
@@ -232,7 +229,6 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )
@@ -370,7 +366,6 @@ def test_fused_qkv_ragged_matmul_scaled_float8_device_mismatch(
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[get_device(wqkv_dev)],
     )
@@ -426,7 +421,6 @@ def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )
@@ -472,7 +466,6 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )
@@ -547,7 +540,6 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )
@@ -660,55 +652,6 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
         ValueError, match="expected hidden_states to have rank 2"
     ):
         try_create_graph(invalid_types)
-
-    # Test 6: unsupported cache strategy (should be PAGED)
-    invalid_kv_params = KVCacheParams(
-        dtype=DType.bfloat16,
-        n_kv_heads=8,
-        head_dim=64,
-        num_layers=1,
-        cache_strategy="model_default",  # Invalid strategy
-        page_size=128,
-        devices=[device],
-    )
-
-    with Graph(
-        "matmul_k_cache_ragged_scaled_float8",
-        input_types=get_valid_input_types(),
-    ) as graph:
-        (
-            hidden_states,
-            input_row_offsets,
-            weight,
-            input_scale,
-            weight_scale,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            is_cache_empty,
-            layer_idx,
-        ) = graph.inputs
-        kv_collection = PagedCacheValues(
-            blocks.buffer,
-            cache_lengths.tensor,
-            lookup_table.tensor,
-            is_cache_empty.tensor,
-        )
-        with pytest.raises(
-            ValueError,
-            match="unsupported cache strategy for matmul_kv_cache_ragged",
-        ):
-            matmul_k_cache_ragged_scaled_float8(
-                invalid_kv_params,  # Use invalid params
-                hidden_states.tensor,
-                input_row_offsets.tensor,
-                weight.tensor,
-                input_scale.tensor,
-                weight_scale.tensor,
-                kv_collection,
-                scale_granularity,
-                layer_idx.tensor,
-            )
 
 
 def test_grouped_dynamic_scaled_fp8_matmul_valid() -> None:

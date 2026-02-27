@@ -228,14 +228,13 @@ def generate_qwen3_max_outputs(
         for weight_name, value in attention_weights.items()
     }
 
-    kv_cache_config = KVCacheConfig(cache_strategy="paged")
+    kv_cache_config = KVCacheConfig()
     kv_params = KVCacheParams(
         dtype=dtype,
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=1,
         page_size=kv_cache_config.kv_cache_page_size,
-        cache_strategy=kv_cache_config.cache_strategy,
         enable_prefix_caching=kv_cache_config.enable_prefix_caching,
         enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
         host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,

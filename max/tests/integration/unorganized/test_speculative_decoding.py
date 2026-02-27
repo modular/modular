@@ -76,7 +76,6 @@ def setup_speculative_decoding_pipeline(num_steps: int = 1):  # noqa: ANN201
         max_batch_size=4,
         runtime=PipelineRuntimeConfig(max_num_steps=num_steps),
     )
-    pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
@@ -241,7 +240,6 @@ def test_draft_model_encoding_selection() -> None:
         max_batch_size=4,
         runtime=PipelineRuntimeConfig(max_num_steps=1),
     )
-    pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 
@@ -272,7 +270,6 @@ def test_draft_model_encoding_selection() -> None:
         max_batch_size=4,
         runtime=PipelineRuntimeConfig(max_num_steps=1),
     )
-    pipeline_config2.model.kv_cache.cache_strategy = "paged"
     pipeline_config2.model.kv_cache.kv_cache_page_size = 128
     pipeline_config2.model.kv_cache.device_memory_utilization = 0.3
 
@@ -313,7 +310,6 @@ def test_kv_cache_claiming_protocol() -> None:
         max_batch_size=4,
         runtime=PipelineRuntimeConfig(max_num_steps=1),
     )
-    pipeline_config.model.kv_cache.cache_strategy = "paged"
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
 

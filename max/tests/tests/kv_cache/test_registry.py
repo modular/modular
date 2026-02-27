@@ -39,7 +39,6 @@ def create_kv_params(
         head_dim=head_dim,
         num_layers=num_layers,
         devices=[DeviceRef.GPU()],
-        cache_strategy="paged",
         page_size=page_size,
     )
 
@@ -134,7 +133,6 @@ class TestLoadKvManager:
             head_dim=128,
             num_layers=32,
             devices=[DeviceRef.GPU()],
-            cache_strategy="paged",
             page_size=64,  # Invalid: not a multiple of 128
         )
         mock_session = MagicMock()

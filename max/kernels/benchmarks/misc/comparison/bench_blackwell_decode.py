@@ -237,7 +237,6 @@ def bench_max(
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         devices=[DeviceRef.GPU()],
     )

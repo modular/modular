@@ -54,7 +54,6 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     kv_cache_config = KVCacheConfig(
-        cache_strategy="paged",
         kv_cache_page_size=128,
         device_memory_utilization=0.3,
     )

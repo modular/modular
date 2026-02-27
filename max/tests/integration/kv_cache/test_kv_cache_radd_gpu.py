@@ -81,7 +81,6 @@ def test_kv_cache_radd_basic() -> None:
         n_kv_heads=8,
         head_dim=128,
         dtype=dtype,
-        cache_strategy="paged",
         num_layers=num_layers,
         page_size=128,
         devices=[DeviceRef.GPU()],

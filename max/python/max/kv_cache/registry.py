@@ -24,7 +24,6 @@ from max.driver import Device, is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     MultiKVCacheParams,
     compute_num_device_blocks,
     compute_num_host_blocks,
@@ -35,10 +34,6 @@ from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from .paged_kv_cache import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
-
-CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[PagedKVCacheManager]] = {
-    "paged": PagedKVCacheManager,
-}
 
 
 def _load_single_kv_manager(
@@ -55,11 +50,6 @@ def _load_single_kv_manager(
             "Detected compile-only mode, Use fake KVCache to avoid GPU allocation"
         )
         return Mock()
-
-    if params.cache_strategy != "paged":
-        raise ValueError(
-            f"Found unsupported KVCache strategy: {params.cache_strategy}"
-        )
 
     # TODO(KERN-1308) remove this validation as we generalize page_size
     if params.page_size % 128 != 0 or params.page_size < 128:
@@ -191,10 +181,8 @@ def infer_optimal_batch_size(
     devices: Sequence[Device],
     **kwargs: Any,
 ) -> int:
-    """Infers the optimal batch size for the cache strategy and constraints."""
-    return CACHE_MANAGER_REGISTRY[
-        params.cache_strategy
-    ].infer_optimal_batch_size(
+    """Infers the optimal batch size for the constraints."""
+    return PagedKVCacheManager.infer_optimal_batch_size(
         params=params,
         max_seq_len=max_seq_len,
         available_cache_memory=available_cache_memory,

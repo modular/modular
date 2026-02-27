@@ -37,8 +37,8 @@ olmo2_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
-        "float32": ["paged"],
+        "bfloat16",
+        "float32",
     },
     pipeline_model=Olmo2Model,
     tokenizer=TextTokenizer,

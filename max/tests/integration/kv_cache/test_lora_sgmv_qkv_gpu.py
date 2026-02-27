@@ -290,7 +290,6 @@ def run_sgmv_qkv_lora_kernel(
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         devices=[device_ref],
     )

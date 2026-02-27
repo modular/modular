@@ -96,7 +96,6 @@ def test_print_kv_cache(dtype: DType) -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )

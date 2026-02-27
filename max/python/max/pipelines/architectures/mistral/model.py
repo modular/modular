@@ -34,7 +34,6 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     PagedCacheValues,
-    uses_opaque,
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
@@ -143,10 +142,6 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
 
         context_batch = replica_batches[0]
 
-        if not uses_opaque(self.kv_cache_config.cache_strategy):
-            # TODO(MODELS-407): Consider deleting the padded path entirely.
-            raise ValueError("Mistral unsupported for padded token batches")
-
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = Buffer.from_numpy(
@@ -177,10 +172,6 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
         prev_model_inputs: ModelInputs,
     ) -> MistralInputs:
         assert isinstance(prev_model_inputs, MistralInputs)
-
-        if not uses_opaque(self.kv_cache_config.cache_strategy):
-            # TODO(MODELS-407): Consider deleting the padded path entirely.
-            raise ValueError("multistep unsupported for padded token batches")
 
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]

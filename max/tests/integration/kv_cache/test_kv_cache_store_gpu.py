@@ -44,7 +44,6 @@ def _make_session_and_kv_manager() -> tuple[Accelerator, PagedKVCacheManager]:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy="paged",
         page_size=32,
         devices=[DeviceRef.GPU()],
     )
@@ -245,7 +244,6 @@ def _make_session_and_kv_manager_fp8() -> tuple[
         n_kv_heads=1,
         head_dim=128,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.GPU()],
         is_mla=False,

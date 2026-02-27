@@ -94,7 +94,6 @@ def test_fused_qkv_ragged_matmul_scaled_float4_valid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[device],
     )

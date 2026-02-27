@@ -352,7 +352,6 @@ def bench_max(
         n_kv_heads=num_kv_heads,
         head_dim=kv_lora_rank + qk_rope_head_dim,  # Compressed dimension
         num_layers=1,  # Benchmarking a single layer
-        cache_strategy="paged",
         page_size=page_size,
         devices=[DeviceRef.GPU()],
         is_mla=True,

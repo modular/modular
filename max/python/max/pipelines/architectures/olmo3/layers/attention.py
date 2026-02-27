@@ -22,7 +22,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.module_v3 import Linear, Module
 
 from ...common_layers.functional_kernels import (
@@ -94,12 +94,6 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         )
         self.local_window_size = local_window_size
         self.mask_variant = mask_variant
-
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
 
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
