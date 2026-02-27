@@ -275,6 +275,13 @@ def PropagateShapes() -> max._core.Pass:
     reducing shape logic as much as it can.
     """
 
+def RemoveUnusedOps() -> max._core.Pass:
+    """
+    Some MO ops have no uses but can't be erased by CSE because of their memory effects.
+    In practice the chains def / use of those ops already encode the dependencies.
+    If the output chain of such an op is unused, that means it can be removed.
+    """
+
 def SplatLargeConstants(num_elements: int = 100000000) -> max._core.Pass:
     """
     This pass will replace a large constant with a splatted version by
