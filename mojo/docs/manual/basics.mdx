@@ -201,7 +201,7 @@ struct MyPair(Copyable):
         self.first = first
         self.second = second
 
-    fn __init__(out self, *, copy: Self)
+    fn __init__(out self, *, copy: Self):
         self.first = copy.first
         self.second = copy.second
 
