@@ -32,7 +32,10 @@ from max.graph import (
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
-from max.nn.attention import TensorParallelAttentionWithRope
+from max.nn.attention import (
+    TensorParallelAttentionWithRope,
+    num_heads_for_device,
+)
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.comm import Allreduce
 from max.nn.embedding import VocabParallelEmbedding
@@ -51,10 +54,7 @@ from max.pipelines.architectures.llama3.model_config import (
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 from .embedding_utils import merge_multimodal_embeddings
-from .layers.attention import (
-    InternVLMultiheadAttention,
-    compute_heads_per_device,
-)
+from .layers.attention import InternVLMultiheadAttention
 from .model_config import InternVLConfig
 
 
@@ -1005,8 +1005,8 @@ class InternVisionEncoderLayer(Module):
             DeviceAttentionParams with device-specific attention parameters
         """
         num_heads = self.config.vision_config.num_attention_heads
-        device_heads = compute_heads_per_device(
-            total_heads=num_heads,
+        device_heads = num_heads_for_device(
+            num_heads=num_heads,
             device_idx=device_idx,
             num_devices=len(self.devices),
         )
