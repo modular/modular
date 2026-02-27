@@ -12,11 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
 from max.interfaces import RequestID, TextGenerationInputs, TokenBuffer
 from max.pipelines.core import TextContext
 from max.pipelines.lib import OverlapTextGenerationPipeline
+from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
+    _MAX_GRAPH_CAPTURE_BATCH_SIZE,
+)
 
 
 def test_throws_if_num_steps_gt_1() -> None:
@@ -60,3 +65,59 @@ def test_throws_if_enable_log_probs() -> None:
         match=r"Log probabilities are not supported with overlap pipeline",
     ):
         pipeline.execute(inputs)
+
+
+def test_warmup_graph_capture_caps_batch_size() -> None:
+    """warmup_graph_capture should cap the batch size passed to the runner."""
+    pipeline = OverlapTextGenerationPipeline.__new__(
+        OverlapTextGenerationPipeline
+    )
+    mock_model = MagicMock()
+    mock_model.model = MagicMock()
+    mock_model.execute = MagicMock()
+    mock_model.max_seq_len = 2048
+    pipeline._pipeline_model = mock_model
+    pipeline._pipeline_config = MagicMock()
+    pipeline._pipeline_config.max_batch_size = 4096
+
+    with patch(
+        "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+        ".ServeGraphCaptureRunner"
+    ) as MockRunner:
+        mock_runner_instance = MockRunner.return_value
+        mock_runner_instance.warmup_pre_ready = MagicMock()
+
+        pipeline.warmup_graph_capture()
+
+        call_kwargs = MockRunner.call_args.kwargs
+        assert call_kwargs["max_batch_size"] == _MAX_GRAPH_CAPTURE_BATCH_SIZE
+        assert pipeline._max_graph_capture_batch_size == (
+            _MAX_GRAPH_CAPTURE_BATCH_SIZE
+        )
+
+
+def test_warmup_graph_capture_no_cap_when_small() -> None:
+    """warmup_graph_capture should not cap when max_batch_size <= 128."""
+    pipeline = OverlapTextGenerationPipeline.__new__(
+        OverlapTextGenerationPipeline
+    )
+    mock_model = MagicMock()
+    mock_model.model = MagicMock()
+    mock_model.execute = MagicMock()
+    mock_model.max_seq_len = 2048
+    pipeline._pipeline_model = mock_model
+    pipeline._pipeline_config = MagicMock()
+    pipeline._pipeline_config.max_batch_size = 32
+
+    with patch(
+        "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+        ".ServeGraphCaptureRunner"
+    ) as MockRunner:
+        mock_runner_instance = MockRunner.return_value
+        mock_runner_instance.warmup_pre_ready = MagicMock()
+
+        pipeline.warmup_graph_capture()
+
+        call_kwargs = MockRunner.call_args.kwargs
+        assert call_kwargs["max_batch_size"] == 32
+        assert pipeline._max_graph_capture_batch_size == 32
