@@ -233,6 +233,8 @@ def _execute_ragged_increment_cache_lengths_graph(
 
 
 class IncrementCacheLengthsProcessor:
+    """Processes KV cache length increments after each decoding step."""
+
     def __init__(
         self,
         session: InferenceSession,

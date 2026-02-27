@@ -41,6 +41,8 @@ logger = logging.getLogger("max.pipelines")
 
 
 class BlockPool:
+    """A pool of fixed-size memory blocks for the paged KV cache."""
+
     @traced
     def __init__(
         self,
