@@ -22,19 +22,19 @@ To use these features import the `Path` type from this module.
 Example:
 
 ```mojo
-from pathlib import Path
+from std.pathlib import Path
 var p = Path("a") / "b" / "c.txt"
 print(p)  # a/b/c.txt
 ```
 """
 
-import os
-from hashlib.hasher import Hasher
-from os import PathLike, listdir, stat_result
-from ffi import c_char, external_call
-from sys import CompilationTarget
+import std.os
+from std.hashlib.hasher import Hasher
+from std.os import PathLike, listdir, stat_result
+from std.ffi import c_char, external_call
+from std.sys import CompilationTarget
 
-from reflection import call_location
+from std.reflection import call_location
 
 comptime DIR_SEPARATOR = "/"
 """The directory separator character for path operations."""
@@ -52,7 +52,7 @@ fn cwd() raises -> Path:
     Example:
 
     ```mojo
-    from pathlib import cwd
+    from std.pathlib import cwd
 
     var string_path = cwd()
     print(string_path)
@@ -255,7 +255,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
         var p = Path()       # Path to cwd
         print(p.stat())      # os.stat_result(...)
         ```
@@ -285,7 +285,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("./path/to/nowhere/does-not-exist")
         print("Exists" if p.exists() else "Does not exist") # Does not exist
@@ -307,8 +307,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("~")
         assert_true(p.expanduser() == Path.home())
@@ -330,8 +330,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("~")
         assert_true(p.expanduser() == Path.home())
@@ -349,8 +349,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_false
+        from std.pathlib import Path
+        from std.testing import assert_false
 
         var p = Path.home()
         assert_true(p.is_dir())
@@ -368,8 +368,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_false
+        from std.pathlib import Path
+        from std.testing import assert_false
 
         var p = Path.home()
         assert_false(p.is_file())
@@ -389,7 +389,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("testfile.txt")
         p.write_text("Hello Mojo")
@@ -413,8 +413,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("testfile.txt")
         p.write_text("test")
@@ -441,7 +441,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("testfile")
         p.write_text("Hello")
@@ -465,7 +465,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("testfile")
         var s = "Hello"
@@ -489,8 +489,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("testfile.txt")
         print(p.suffix())
@@ -525,9 +525,9 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from tempfile import gettempdir
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.tempfile import gettempdir
+        from std.testing import assert_true
 
         # gettmpdir() has no guarantee of trailing /
         # Use joinpath to ensure path construction
@@ -564,7 +564,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path, cwd
+        from std.pathlib import Path, cwd
 
         for item in cwd().listdir():
             print(item) # each item name in working directory
@@ -587,7 +587,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         Path("a/path/foo.txt").name()  # returns "foo.txt"
         ```
@@ -603,8 +603,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         for p, q in zip(Path("a/path/foo.txt").parts(), ["a", "path", "foo.txt"]):
             assert_true(p == q)

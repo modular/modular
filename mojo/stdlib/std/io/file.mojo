@@ -31,16 +31,16 @@ with open("my_file.txt", "r") as f:
 
 """
 
-from format._utils import _WriteBufferStack
-from os import PathLike, abort, makedirs, remove
-from os import SEEK_END
-from os.path import dirname
-from ffi import c_int, c_ssize_t, external_call
-from sys import size_of
-from sys._libc_errno import ErrNo, get_errno
-from sys.info import platform_map
+from std.format._utils import _WriteBufferStack
+from std.os import PathLike, abort, makedirs, remove
+from std.os import SEEK_END
+from std.os.path import dirname
+from std.ffi import c_int, c_ssize_t, external_call
+from std.sys import size_of
+from std.sys._libc_errno import ErrNo, get_errno
+from std.sys.info import platform_map
 
-from memory import Span
+from std.memory import Span
 
 # ===----------------------------------------------------------------------=== #
 # open() syscall flags
@@ -242,7 +242,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         Read the first 8 bytes, skip 2 bytes, and then read the next 8 bytes:
 
         ```mojo
-        import os
+        import std.os
         var file = open("/tmp/example.txt", "r")
         var word1 = file.read(8)
         print(word1)
@@ -293,8 +293,8 @@ struct FileHandle(Defaultable, Movable, Writer):
         Examples:
 
         ```mojo
-        import os
-        from sys.info import size_of
+        import std.os
+        from std.sys.info import size_of
 
         comptime file_name = "/tmp/example.txt"
         var file = open(file_name, "r")
@@ -365,7 +365,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         8 bytes:
 
         ```mojo
-        import os
+        import std.os
         var file = open("/tmp/example.txt", "r")
         var list1 = file.read(8)
         _ = file.seek(2, os.SEEK_CUR)
@@ -375,7 +375,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         Reading the last 8 bytes in the file, then the first 8 bytes:
 
         ```mojo
-        import os
+        import std.os
         var file = open("/tmp/example.txt", "r")
         _ = file.seek(-8, os.SEEK_END)
         var last_data = file.read(8)
@@ -444,7 +444,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         Skip 32 bytes from the current read position:
 
         ```mojo
-        import os
+        import std.os
         var f = open("/tmp/example.txt", "r")
         _ = f.seek(32, os.SEEK_CUR)
         ```
@@ -452,7 +452,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         Start from 32 bytes from the end of the file:
 
         ```mojo
-        import os
+        import std.os
         var f = open("/tmp/example.txt", "r")
         _ = f.seek(-32, os.SEEK_END)
         ```

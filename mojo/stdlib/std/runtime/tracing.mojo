@@ -13,25 +13,25 @@
 """Provides tracing utilities."""
 
 
-from collections.list import List
-from collections.optional import Optional, OptionalReg
-from ffi import external_call
-from sys import stderr
-from sys.param_env import env_get_int, is_defined
+from std.collections.list import List
+from std.collections.optional import Optional, OptionalReg
+from std.ffi import external_call
+from std.sys import stderr
+from std.sys.param_env import env_get_int, is_defined
 
-import gpu.host._tracing as gpu_tracing
-import logger.logger as logger
-from gpu.host import DeviceContext
-from gpu.host._tracing import Color
-from gpu.host._tracing import _end_range as _end_gpu_range
-from gpu.host._tracing import _is_enabled as _gpu_is_enabled
-from gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
-from gpu.host._tracing import _mark as _mark_gpu
-from gpu.host._tracing import _start_range as _start_gpu_range
-from runtime.asyncrt import DeviceContextPtr
+import std.gpu.host._tracing as gpu_tracing
+import std.logger.logger as logger
+from std.gpu.host import DeviceContext
+from std.gpu.host._tracing import Color
+from std.gpu.host._tracing import _end_range as _end_gpu_range
+from std.gpu.host._tracing import _is_enabled as _gpu_is_enabled
+from std.gpu.host._tracing import _is_enabled_details as _gpu_is_enabled_details
+from std.gpu.host._tracing import _mark as _mark_gpu
+from std.gpu.host._tracing import _start_range as _start_gpu_range
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils import IndexList, Variant
-from os import abort
+from std.utils import IndexList, Variant
+from std.os import abort
 
 comptime log = logger.Logger[logger.Level.INFO](fd=sys.stderr, prefix="[OP] ")
 """Logger instance for operation tracing with INFO level and [OP] prefix."""

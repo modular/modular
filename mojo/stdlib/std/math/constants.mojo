@@ -15,7 +15,7 @@
 You can import these APIs from the `math` package. For example:
 
 ```mojo
-from math import pi
+from std.math import pi
 ```
 """
 

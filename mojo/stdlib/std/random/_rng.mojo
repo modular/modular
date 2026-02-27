@@ -24,10 +24,10 @@ This is an internal implementation detail and should not be used directly.
 Use the public API in `random.mojo` instead.
 """
 
-from math import sqrt, log, cos, pi
-from os import abort
-from ffi import _Global
-from utils.numerics import isnan, max_finite, FPUtils
+from std.math import sqrt, log, cos, pi
+from std.os import abort
+from std.ffi import _Global
+from std.utils.numerics import isnan, max_finite, FPUtils
 
 from .philox import Random as PhiloxRandom
 

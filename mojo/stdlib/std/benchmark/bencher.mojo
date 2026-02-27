@@ -18,16 +18,16 @@ It includes support for throughput metrics, warmup iterations, batch execution,
 and both CPU and GPU kernel benchmarking.
 """
 
-import time
-from collections import Dict, Optional
-from os import abort, getenv
-from pathlib import Path
-from sys.arg import argv
+import std.time
+from std.collections import Dict, Optional
+from std.os import abort, getenv
+from std.pathlib import Path
+from std.sys.arg import argv
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
-from utils.numerics import FlushDenormals
-from algorithm import sync_parallelize
+from std.utils.numerics import FlushDenormals
+from std.algorithm import sync_parallelize
 
 from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
@@ -529,7 +529,7 @@ struct Bench(Writable):
     Example:
 
     ```mojo
-    from benchmark import (
+    from std.benchmark import (
         Bench,
         BenchConfig,
         Bencher,
@@ -538,9 +538,9 @@ struct Bench(Writable):
         BenchMetric,
         Format,
     )
-    from utils import IndexList
-    from gpu.host import DeviceContext
-    from pathlib import Path
+    from std.utils import IndexList
+    from std.gpu.host import DeviceContext
+    from std.pathlib import Path
 
     fn example_kernel():
         print("example_kernel")

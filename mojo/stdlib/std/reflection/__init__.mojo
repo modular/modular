@@ -25,7 +25,7 @@ This module provides compile-time reflection capabilities including:
 
 Example:
 ```mojo
-from reflection import struct_field_count, struct_field_names
+from std.reflection import struct_field_count, struct_field_names
 
 struct Point:
     var x: Int

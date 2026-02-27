@@ -15,12 +15,12 @@
 You can import these APIs from the `base64` package. For example:
 
 ```mojo
-from base64 import b64encode
+from std.base64 import b64encode
 ```
 """
 
 
-from memory import Span
+from std.memory import Span
 
 from ._b64encode import _b64encode
 

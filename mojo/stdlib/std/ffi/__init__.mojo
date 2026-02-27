@@ -26,7 +26,7 @@ foreign code. It includes:
 Example:
 
 ```mojo
-from ffi import c_int, external_call
+from std.ffi import c_int, external_call
 
 fn get_random() -> c_int:
     return external_call["rand", c_int]()
@@ -35,7 +35,7 @@ fn get_random() -> c_int:
 For loading dynamic libraries:
 
 ```mojo
-from ffi import OwnedDLHandle
+from std.ffi import OwnedDLHandle
 
 fn main() raises:
     var lib = OwnedDLHandle("libm.so")
@@ -44,16 +44,19 @@ fn main() raises:
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string, get_static_string
-from os import PathLike, abort
-from pathlib import Path
-from sys._libc import dlclose, dlerror, dlopen, dlsym
-from sys._libc_errno import ErrNo, get_errno, set_errno
+from std.collections.string.string_slice import (
+    _get_kgen_string,
+    get_static_string,
+)
+from std.os import PathLike, abort
+from std.pathlib import Path
+from std.sys._libc import dlclose, dlerror, dlopen, dlsym
+from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
-from memory import OwnedPointer
+from std.memory import OwnedPointer
 
-from sys.info import CompilationTarget, is_32bit, is_64bit
-from sys.intrinsics import _mlirtype_is_eq
+from std.sys.info import CompilationTarget, is_32bit, is_64bit
+from std.sys.intrinsics import _mlirtype_is_eq
 from .cstring import CStringSlice
 from .unsafe_union import UnsafeUnion
 
@@ -199,7 +202,7 @@ struct OwnedDLHandle(Movable):
 
     Example usage:
     ```mojo
-    from ffi import OwnedDLHandle
+    from std.ffi import OwnedDLHandle
 
     fn main() raises:
         var lib = OwnedDLHandle("libm.so")

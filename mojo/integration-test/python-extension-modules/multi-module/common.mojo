@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
+from std.os import abort
 
-from python import PythonObject
+from std.python import PythonObject
 
 
 struct TestStruct(Defaultable, Movable, Representable):

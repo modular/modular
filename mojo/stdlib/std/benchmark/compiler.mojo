@@ -18,7 +18,7 @@ The `keep()` and `black_box()` functions provide hints to the compiler from
 overly optimizing away code being benchmarked.
 """
 
-from sys._assembly import inlined_assembly
+from std.sys._assembly import inlined_assembly
 
 # ===-----------------------------------------------------------------------===#
 # keep
@@ -112,7 +112,7 @@ fn black_box[
     To prevent said optimizations, you can use `black_box` (and `keep`):
 
     ```mojo
-    from benchmark import keep, black_box
+    from std.benchmark import keep, black_box
 
     fn benchmark_contains():
         var haystack = "abcdefghijklmnopqrstuvwxyz"

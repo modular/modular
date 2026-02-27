@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections.string.format import _FormatUtils
-import format._utils as fmt
+from std.collections.string.format import _FormatUtils
+import std.format._utils as fmt
 
 
 struct TString[

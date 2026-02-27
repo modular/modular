@@ -22,16 +22,16 @@ To use these features, import the desired functions or classes from this module.
 
 ```mojo
 # Import from the tempfile module
-from tempfile import gettempdir
+from std.tempfile import gettempdir
 ```
 """
 
-import os
-from format._utils import _WriteBufferStack
-from pathlib import Path
-from sys import CompilationTarget
+import std.os
+from std.format._utils import _WriteBufferStack
+from std.pathlib import Path
+from std.sys import CompilationTarget
 
-from memory import Span
+from std.memory import Span
 
 comptime TMP_MAX = 10_000
 """Maximum number of attempts when generating unique temporary file names."""
@@ -129,7 +129,7 @@ fn gettempdir() -> Optional[String]:
     Example:
 
     ```mojo
-    from tempfile import gettempdir
+    from std.tempfile import gettempdir
 
     print(gettempdir())
     ```
@@ -164,7 +164,7 @@ fn mkdtemp(
     Example:
 
     ```mojo
-    from tempfile import mkdtemp
+    from std.tempfile import mkdtemp
     from import os import rmdir
 
     var temp_dir = mkdtemp()
@@ -208,8 +208,8 @@ fn _rmtree(path: String, ignore_errors: Bool = False) raises:
     Example:
 
     ```mojo
-    from tempfile import mkdtemp, _rmtree
-    import os
+    from std.tempfile import mkdtemp, _rmtree
+    import std.os
 
     var dir_path = mkdtemp()
 
@@ -249,8 +249,8 @@ struct TemporaryDirectory:
 
     Creates a directory that's deleted when the context exits:
     ```mojo
-    from tempfile import TemporaryDirectory
-    import os
+    from std.tempfile import TemporaryDirectory
+    import std.os
 
     def main() raises:
         var temp_path: String
@@ -333,7 +333,7 @@ struct NamedTemporaryFile(Movable):
 
     Creates a file that's deleted when closed (by default):
     ```mojo
-    from tempfile import NamedTemporaryFile
+    from std.tempfile import NamedTemporaryFile
 
     with NamedTemporaryFile(mode="rw") as f:
         f.write("Hello world!")
@@ -424,8 +424,8 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
-        import os
+        from std.tempfile import NamedTemporaryFile
+        import std.os
 
         var temp_file = NamedTemporaryFile() # delete=True by default
         temp_file.write("Temporary data")
@@ -458,8 +458,8 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
-        from pathlib import Path
+        from std.tempfile import NamedTemporaryFile
+        from std.pathlib import Path
 
         var p: Path
         with NamedTemporaryFile(mode="rw") as f:
@@ -490,8 +490,8 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
-        from pathlib import Path
+        from std.tempfile import NamedTemporaryFile
+        from std.pathlib import Path
 
         var p: Path
         var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] # "Hello"
@@ -532,8 +532,8 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
-        from pathlib import Path
+        from std.tempfile import NamedTemporaryFile
+        from std.pathlib import Path
 
         var p: Path
         var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F] # "Hello"
@@ -561,8 +561,8 @@ struct NamedTemporaryFile(Movable):
 
         Example:
         ```mojo
-        from tempfile import NamedTemporaryFile
-        from pathlib import Path
+        from std.tempfile import NamedTemporaryFile
+        from std.pathlib import Path
 
         var p: Path
         with NamedTemporaryFile(mode="rw") as f:
@@ -593,7 +593,7 @@ struct NamedTemporaryFile(Movable):
         Example:
 
         ```mojo
-        from tempfile import NamedTemporaryFile
+        from std.tempfile import NamedTemporaryFile
 
         var bytes = [Byte(0x48), 0x65, 0x6C, 0x6C, 0x6F]  # "Hello" in ASCII
 

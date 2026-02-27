@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
+from std.os import abort
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import _unsafe_strlen
+from std.collections.string.string_slice import _unsafe_strlen
 
 
 @always_inline
@@ -66,7 +66,7 @@ struct CStringSlice[origin: ImmutOrigin](
         Example:
 
         ```mojo
-        from ffi import c_char, CStringSlice, external_call
+        from std.ffi import c_char, CStringSlice, external_call
 
         fn getenv_wrapper(
             name: CStringSlice,
@@ -100,8 +100,8 @@ struct CStringSlice[origin: ImmutOrigin](
         Example:
 
         ```mojo
-        from ffi import CStringSlice
-        from testing import assert_raises
+        from std.ffi import CStringSlice
+        from std.testing import assert_raises
 
         var string = String("Hello, World!")
 

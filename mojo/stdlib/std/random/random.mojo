@@ -15,7 +15,7 @@
 You can import these APIs from the `random` package. For example:
 
 ```mojo
-from random import seed
+from std.random import seed
 ```
 
 These functions use a shared, global pseudorandom number generator (PRNG)
@@ -29,9 +29,9 @@ Warning:
     authentication tokens, or encryption keys.
 """
 
-import math
-from math import floor
-from time import perf_counter_ns
+import std.math
+from std.math import floor
+from std.time import perf_counter_ns
 
 from ._rng import _get_global_random_state
 
@@ -42,7 +42,7 @@ fn seed():
     Example:
 
     ```mojo
-    from random import seed
+    from std.random import seed
 
     seed()
     ```
@@ -59,7 +59,7 @@ fn seed(a: Int):
     Example:
 
     ```mojo
-    from random import seed
+    from std.random import seed
 
     seed(123456)
     ```
@@ -79,7 +79,7 @@ fn random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
 
     Example:
     ```mojo
-    from random import random_float64, seed
+    from std.random import random_float64, seed
 
     seed()
     var rnd = random_float64(10.0, 20.0)
@@ -102,7 +102,7 @@ fn random_si64(min: Int64, max: Int64) -> Int64:
     Example:
 
     ```mojo
-    from random import random_si64, seed
+    from std.random import random_si64, seed
 
     seed()
     var rnd = random_si64(-100, 100)
@@ -125,7 +125,7 @@ fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
     Example:
 
     ```mojo
-    from random import random_ui64, seed
+    from std.random import random_ui64, seed
 
     seed()
     var rnd = random_ui64(0, 100)
@@ -157,8 +157,8 @@ fn randint[
     Example:
 
     ```mojo
-    from random import randint, seed
-    from memory import alloc
+    from std.random import randint, seed
+    from std.memory import alloc
     seed()
     var size: Int = 10
     var ptr = alloc[Int32](size)
@@ -209,8 +209,8 @@ fn rand[
     Example:
 
     ```mojo
-    from random import rand, seed
-    from memory import alloc
+    from std.random import rand, seed
+    from std.memory import alloc
 
     seed()
     var size: Int = 10
@@ -274,7 +274,7 @@ fn randn_float64(
     Example:
 
     ```mojo
-    from random import randn_float64, seed
+    from std.random import randn_float64, seed
     seed()
     var rnd = randn_float64(0.0, 1.0)
     print(rnd)  # Random Float64 from Normal(0.0, 1.0)
@@ -308,8 +308,8 @@ fn randn[
     Example:
 
     ```mojo
-    from random import randn, seed
-    from memory import alloc
+    from std.random import randn, seed
+    from std.memory import alloc
 
     seed()
     var size: Int = 10
@@ -340,8 +340,8 @@ fn shuffle[T: Copyable, //](mut list: List[T]):
     Example:
 
     ```mojo
-    from random import shuffle
-    from collections.list import List
+    from std.random import shuffle
+    from std.collections.list import List
     var list: List[Int] = [0, 1, 2, 3, 4, 5]
     shuffle(list)
     print(list)  # The list elements are now in random order

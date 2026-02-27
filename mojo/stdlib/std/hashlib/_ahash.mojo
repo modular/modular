@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
-from bit import rotate_bits_left
-from memory import Span, bitcast
+from std.sys import size_of
+from std.bit import rotate_bits_left
+from std.memory import Span, bitcast
 
 from .hasher import Hasher
 

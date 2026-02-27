@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Implements benchmark progress bar."""
 
-from os import getenv
+from std.os import getenv
 
-from builtin.range import _StridedRange
+from std.builtin.range import _StridedRange
 
 
 fn _get_terminal_size(fallback: Tuple[Int, Int] = (80, 24)) -> Tuple[Int, Int]:
@@ -60,7 +60,7 @@ struct Progress(ImplicitlyCopyable):
     Implements a basic progress bar with the following usage.
 
     ```mojo
-    import time
+    import std.time
 
 
     fn main():

@@ -15,21 +15,21 @@
 You can import these APIs from the `time` package. For example:
 
 ```mojo
-from time import perf_counter_ns
+from std.time import perf_counter_ns
 ```
 """
 
-from math import floor
-from os import abort
-from ffi import external_call
-from sys import (
+from std.math import floor
+from std.os import abort
+from std.ffi import external_call
+from std.sys import (
     CompilationTarget,
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
 )
-from sys._assembly import inlined_assembly
+from std.sys._assembly import inlined_assembly
 
 # ===-----------------------------------------------------------------------===#
 # Utilities

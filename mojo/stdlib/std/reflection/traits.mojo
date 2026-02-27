@@ -13,7 +13,7 @@
 """Compile-time meta functions for checking trait conformance across variadic type lists.
 """
 
-from builtin.variadics import _ReduceVariadicAndIdxToValue
+from std.builtin.variadics import _ReduceVariadicAndIdxToValue
 
 comptime AllWritable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
     BaseVal = Variadic.values[True],

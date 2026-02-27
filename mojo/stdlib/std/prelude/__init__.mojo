@@ -24,8 +24,8 @@ default namespace that makes Mojo code immediately usable without explicit
 imports.
 """
 
-from collections import Dict, InlineArray, KeyElement, List, Optional
-from collections.string import (
+from std.collections import Dict, InlineArray, KeyElement, List, Optional
+from std.collections.string import (
     Codepoint,
     StaticString,
     String,
@@ -36,40 +36,40 @@ from collections.string import (
     chr,
     ord,
 )
-from format import Writable, Writer
-from hashlib.hash import Hashable, hash
-from io.file import FileHandle, open
-from io.file_descriptor import FileDescriptor
-from io.io import input, print
+from std.format import Writable, Writer
+from std.hashlib.hash import Hashable, hash
+from std.io.file import FileHandle, open
+from std.io.file_descriptor import FileDescriptor
+from std.io.io import input, print
 
-from builtin.anytype import (
+from std.builtin.anytype import (
     AnyType,
     Some,
     ImplicitlyDestructible,
 )
-from builtin.bool import Bool, Boolable, all, any
-from builtin.breakpoint import breakpoint
-from builtin.builtin_slice import Slice, slice
-from builtin.comparable import Comparable, Equatable
-from builtin.constrained import constrained
-from builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
-from builtin.debug_assert import debug_assert
-from builtin.dtype import DType
-from builtin.error import Error
-from builtin.float_literal import FloatLiteral
-from builtin.floatable import Floatable, FloatableRaising
-from builtin.format_int import bin, hex, oct
-from builtin.identifiable import Identifiable
-from builtin.int import (
+from std.builtin.bool import Bool, Boolable, all, any
+from std.builtin.breakpoint import breakpoint
+from std.builtin.builtin_slice import Slice, slice
+from std.builtin.comparable import Comparable, Equatable
+from std.builtin.constrained import constrained
+from std.builtin.coroutine import AnyCoroutine, Coroutine, RaisingCoroutine
+from std.builtin.debug_assert import debug_assert
+from std.builtin.dtype import DType
+from std.builtin.error import Error
+from std.builtin.float_literal import FloatLiteral
+from std.builtin.floatable import Floatable, FloatableRaising
+from std.builtin.format_int import bin, hex, oct
+from std.builtin.identifiable import Identifiable
+from std.builtin.int import (
     Indexer,
     Int,
     Intable,
     IntableRaising,
     index,
 )
-from builtin.int_literal import IntLiteral
-from builtin.len import Sized, SizedRaising, UIntSized, len
-from math.math import (
+from std.builtin.int_literal import IntLiteral
+from std.builtin.len import Sized, SizedRaising, UIntSized, len
+from std.math.math import (
     Absable,
     Powable,
     Roundable,
@@ -80,17 +80,17 @@ from math.math import (
     pow,
     round,
 )
-from builtin.none import NoneType
-from builtin.range import range
-from builtin.rebind import (
+from std.builtin.none import NoneType
+from std.builtin.range import range
+from std.builtin.rebind import (
     rebind,
     rebind_var,
     trait_downcast,
     trait_downcast_var,
 )
-from builtin.repr import Representable, repr
-from builtin.reversed import ReversibleRange, reversed
-from builtin.simd import (
+from std.builtin.repr import Representable, repr
+from std.builtin.reversed import ReversibleRange, reversed
+from std.builtin.simd import (
     SIMD,
     BFloat16,
     Byte,
@@ -117,12 +117,12 @@ from builtin.simd import (
     UInt256,
     UInt,
 )
-from builtin.sort import partition, sort
-from builtin.str import Stringable
-from builtin.string_literal import StringLiteral
-from builtin.swap import swap
-from builtin.tuple import Tuple
-from builtin.type_aliases import (
+from std.builtin.sort import partition, sort
+from std.builtin.str import Stringable
+from std.builtin.string_literal import StringLiteral
+from std.builtin.swap import swap
+from std.builtin.tuple import Tuple
+from std.builtin.type_aliases import (
     __TypeOfAllTypes,
     AnyOrigin,
     ImmutAnyOrigin,
@@ -137,7 +137,7 @@ from builtin.type_aliases import (
     ImmutExternalOrigin,
     MutExternalOrigin,
 )
-from builtin.value import (
+from std.builtin.value import (
     Copyable,
     Defaultable,
     ImplicitlyCopyable,
@@ -146,14 +146,14 @@ from builtin.value import (
     RegisterPassable,
     TrivialRegisterPassable,
 )
-from builtin.variadics import (
+from std.builtin.variadics import (
     Variadic,
     VariadicList,
     VariadicListMem,
     VariadicPack,
 )
-from documentation import doc_private
-from iter import (
+from std.documentation import doc_private
+from std.iter import (
     Iterable,
     Iterator,
     StopIteration,
@@ -163,7 +163,7 @@ from iter import (
     next,
     zip,
 )
-from memory import (
+from std.memory import (
     alloc,
     AddressSpace,
     LegacyOpaquePointer,
