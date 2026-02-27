@@ -21,7 +21,7 @@ from testing import assert_equal, TestSuite
 from utils import IndexList
 
 
-def test_basic_construction():
+def test_basic_construction() raises:
     """Test basic ManagedTensorSlice construction from pointer and shape."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     # Shape-only constructor computes row-major strides automatically
@@ -34,7 +34,7 @@ def test_basic_construction():
     assert_equal(tensor.size(), 12)
 
 
-def test_shape_and_strides():
+def test_shape_and_strides() raises:
     """Test shape() and strides() methods."""
     var storage = InlineArray[Float32, 2 * 3 * 4](uninitialized=True)
     comptime spec = StaticTensorSpec[DType.float32, 3](DimList(2, 3, 4))
@@ -53,7 +53,7 @@ def test_shape_and_strides():
     assert_equal(strides[2], 1)
 
 
-def test_dim_size():
+def test_dim_size() raises:
     """Test dim_size methods (compile-time and runtime)."""
     var storage = InlineArray[Float32, 5 * 7](uninitialized=True)
     comptime spec = StaticTensorSpec[DType.float32, 2](DimList(5, 7))
@@ -70,7 +70,7 @@ def test_dim_size():
     assert_equal(tensor.dim_size(1), 7)
 
 
-def test_getitem_setitem():
+def test_getitem_setitem() raises:
     """Test __getitem__ and __setitem__ operations."""
     var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
     comptime spec = StaticTensorSpec[DType.float32, 2](DimList(2, 3))
@@ -99,7 +99,7 @@ def test_getitem_setitem():
     assert_equal(tensor[IndexList[2](1, 0)], 4.0)
 
 
-def test_simd_load_store():
+def test_simd_load_store() raises:
     """Test SIMD load and store operations."""
     var storage = InlineArray[Float32, 8](uninitialized=True)
     comptime spec = StaticTensorSpec[DType.float32, 1](DimList(8))
@@ -122,7 +122,7 @@ def test_simd_load_store():
     assert_equal(loaded2, SIMD[DType.float32, 4](5.0, 6.0, 7.0, 8.0))
 
 
-def test_to_layout_tensor():
+def test_to_layout_tensor() raises:
     """Test to_layout_tensor() conversion."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     comptime spec = StaticTensorSpec[DType.float32, 2](DimList(3, 4))
@@ -148,7 +148,7 @@ def test_to_layout_tensor():
     assert_equal(Int(layout_tensor.runtime_layout.shape[1]), 4)
 
 
-def test_stride_length():
+def test_stride_length() raises:
     """Test stride_length methods."""
     var storage = InlineArray[Float32, 3 * 5](uninitialized=True)
     comptime spec = StaticTensorSpec[DType.float32, 2](DimList(3, 5))
@@ -165,7 +165,7 @@ def test_stride_length():
     assert_equal(tensor.stride_length(1), 1)
 
 
-def test_simd_load_store_2d():
+def test_simd_load_store_2d() raises:
     """Test SIMD load and store operations on 2D tensor."""
     var storage = InlineArray[Float32, 4 * 8](uninitialized=True)
     comptime spec = StaticTensorSpec[DType.float32, 2](DimList(4, 8))
@@ -202,7 +202,7 @@ def test_simd_load_store_2d():
     assert_equal(loaded_row3, SIMD[DType.float32, 4](30.0, 31.0, 32.0, 33.0))
 
 
-def test_to_tile_tensor():
+def test_to_tile_tensor() raises:
     """Test to_tile_tensor() conversion."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     comptime spec = StaticTensorSpec[DType.float32, 2](DimList(3, 4))
@@ -229,5 +229,5 @@ def test_to_tile_tensor():
     assert_equal(tile_tensor.layout.shape[1]().value(), 4)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

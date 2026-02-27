@@ -17,7 +17,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
-def test_fp8_constructor(ctx: DeviceContext):
+def test_fp8_constructor(ctx: DeviceContext) raises:
     fn kernel(ptr: UnsafePointer[Float8_e5m2fnuz]):
         ptr[] = Float8_e5m2fnuz(42.0)
 
@@ -31,6 +31,6 @@ def test_fp8_constructor(ctx: DeviceContext):
     ]()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_fp8_constructor(ctx)

@@ -66,7 +66,9 @@ def run_elementwise[
             )
 
 
-def _test_exp[dtype: DType](ctx: DeviceContext) where dtype.is_floating_point():
+def _test_exp[
+    dtype: DType
+](ctx: DeviceContext) raises where dtype.is_floating_point():
     var input = ctx.enqueue_create_buffer[dtype](length)
     comptime epsilon = 0.001
     with input.map_to_host() as in_host:
@@ -77,7 +79,7 @@ def _test_exp[dtype: DType](ctx: DeviceContext) where dtype.is_floating_point():
 
 def _test_exp2[
     dtype: DType
-](ctx: DeviceContext) where dtype.is_floating_point():
+](ctx: DeviceContext) raises where dtype.is_floating_point():
     var input = ctx.enqueue_create_buffer[dtype](length)
     comptime epsilon = 0.001
     with input.map_to_host() as in_host:
@@ -88,7 +90,7 @@ def _test_exp2[
 
 def _test_cosh[
     dtype: DType
-](ctx: DeviceContext) where dtype.is_floating_point():
+](ctx: DeviceContext) raises where dtype.is_floating_point():
     var input = ctx.enqueue_create_buffer[dtype](length)
     with input.map_to_host() as in_host:
         for i in range(length):
@@ -98,7 +100,7 @@ def _test_cosh[
 
 def _test_sinh[
     dtype: DType
-](ctx: DeviceContext) where dtype.is_floating_point():
+](ctx: DeviceContext) raises where dtype.is_floating_point():
     var input = ctx.enqueue_create_buffer[dtype](length)
     with input.map_to_host() as in_host:
         for i in range(length):
@@ -106,7 +108,7 @@ def _test_sinh[
     run_elementwise[dtype, sinh](ctx, input)
 
 
-def test_math_accuracy():
+def test_math_accuracy() raises:
     with DeviceContext() as ctx:
         _test_exp[DType.float32](ctx)
         _test_exp[DType.float16](ctx)
@@ -122,5 +124,5 @@ def test_math_accuracy():
         _test_sinh[DType.bfloat16](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

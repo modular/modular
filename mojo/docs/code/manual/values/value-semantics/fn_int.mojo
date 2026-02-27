@@ -20,7 +20,7 @@ fn add_two(y: Int):
     print("z:", z)
 
 
-def main():
+def main() raises:
     var x = 1
     add_two(x)
     print("x:", x)

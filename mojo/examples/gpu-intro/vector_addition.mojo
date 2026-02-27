@@ -46,7 +46,7 @@ fn vector_addition(
         out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
 
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No compatible GPU found")

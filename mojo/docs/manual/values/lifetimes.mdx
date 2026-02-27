@@ -13,16 +13,16 @@ of variables and the validity of references.
 
 Specifically, an origin answers two questions:
 
-* What variable "owns" this value?
-* Can the value be mutated using this reference?
+- What variable "owns" this value?
+- Can the value be mutated using this reference?
 
 For example, consider the following code:
 
 ```mojo
-def print_str(s: String):
+def print_str(s: String) raises:
     print(s)
 
-def main():
+def main() raises:
     name: String = "Joan"
     print_str(name)
 ```
@@ -47,10 +47,10 @@ the lifetimes of values.
 Most of the time, origins are handled automatically by the compiler.
 However, in some cases you'll need to interact with origins directly:
 
-* When working with references—specifically `ref` arguments and `ref` return
+- When working with references—specifically `ref` arguments and `ref` return
   values.
 
-* When working with types like
+- When working with types like
   [`Pointer`](/mojo/std/memory/pointer/Pointer) or
   [`Span`](/mojo/std/memory/span/Span) which are parameterized on the
   origin of the data they refer to.
@@ -106,7 +106,7 @@ value.
 ```mojo
 from memory import Pointer
 
-def use_pointer():
+def use_pointer() raises:
     a = 10
     ptr = Pointer(to=a)
 ```
@@ -121,17 +121,17 @@ sets are used for tracking the lifetimes of values captured in closures.
 Most origin values are created by the compiler. As a developer, there are a
 few ways to specify origin values:
 
-* Static origin. The `StaticConstantOrigin` `comptime` value
+- Static origin. The `StaticConstantOrigin` `comptime` value
   represents immutable values that last for the duration of the program.
   String literal values have a `StaticConstantOrigin`.
-* Derived origin. The `origin_of()` magic function returns the origin
+- Derived origin. The `origin_of()` magic function returns the origin
   associated with the value (or values) passed in.
-* Inferred origin. You can use inferred parameters to capture the origin of a
+- Inferred origin. You can use inferred parameters to capture the origin of a
   value passed in to a function.
-* External origins. The external origins, `MutExternalOrigin` and
+- External origins. The external origins, `MutExternalOrigin` and
   `ImmutExternalOrigin` represent values that are not tracked by the lifetime
   checker, such as dynamically-allocated memory.
-* Wildcard origins. The `ImmutAnyOrigin` and `MutAnyOrigin` `comptime` values
+- Wildcard origins. The `ImmutAnyOrigin` and `MutAnyOrigin` `comptime` values
   are special cases indicating a reference that might access any live value.
 
 #### Static origins
@@ -259,12 +259,12 @@ mutability: that is, you don't need to know in advance whether the passed
 argument will be mutable or immutable. There are several reasons you might want
 to use a `ref` argument:
 
-* You want to accept an argument with parametric mutability.
+- You want to accept an argument with parametric mutability.
 
-* You want to tie the lifetime of one argument to the lifetime of another
+- You want to tie the lifetime of one argument to the lifetime of another
   argument.
 
-* When you want an argument that is guaranteed to be passed in memory: this can
+- When you want an argument that is guaranteed to be passed in memory: this can
   be important and useful for generic arguments that need an identity,
   irrespective of whether the concrete type is register passable.
 
@@ -282,9 +282,9 @@ from the value passed in. The second form includes an origin clause, consisting
 of one or more origin specifiers inside square brackets. An origin
 specifier can be either:
 
-* An origin value.
+- An origin value.
 
-* An arbitrary expression, which is treated as shorthand for
+- An arbitrary expression, which is treated as shorthand for
   `origin_of(expression)`. In other words, the following declarations are
   equivalent:
 
@@ -293,9 +293,9 @@ specifier can be either:
   ref[self]
   ```
 
-* An [`AddressSpace`](/mojo/std/memory/pointer/AddressSpace) value.
+- An [`AddressSpace`](/mojo/std/memory/pointer/AddressSpace) value.
 
-* An underscore character (`_`) to indicate that the origin is *unbound*. This
+- An underscore character (`_`) to indicate that the origin is *unbound*. This
   is equivalent to omitting the origin specifier.
 
   ```mojo
@@ -323,10 +323,10 @@ def to_byte_span[
     is_mutable: Bool,
     //,
     origin: Origin[mut=is_mutable],
-](ref[origin] list: List[Byte]) -> Span[Byte, origin]:
+](ref[origin] list: List[Byte]) raises -> Span[Byte, origin]:
     return Span(list)
 
-def main():
+def main() raises:
     list: List[Byte] = [77, 111, 106, 111]
     span = to_byte_span(list)
 ```
@@ -364,10 +364,10 @@ With a `ref` argument, `__getitem__()` can return a mutable reference that can
 be modified directly. This has pros and cons compared to using a `__setitem__()`
 method:
 
-* The mutable reference is more efficient—a single update isn't broken up across
+- The mutable reference is more efficient—a single update isn't broken up across
   two methods. However, the referenced value must be in memory.
 
-* A `__getitem__()`/`__setitem__()` pair allows for arbitrary code to be run
+- A `__getitem__()`/`__setitem__()` pair allows for arbitrary code to be run
   when values are retrieved and set. For example, `__setitem__()` can validate
   or constrain input values.
 
@@ -378,18 +378,18 @@ that returns a reference:
 struct NameList:
     var names: List[String]
 
-    def __init__(out self, *names: String):
+    def __init__(out self, *names: String) raises:
         self.names = []
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) -> ref[self.names] String:
+    def __getitem__(ref self, index: Int) raises -> ref[self.names] String:
         if (index >=0 and index < len(self.names)):
             return self.names[index]
         else:
             raise Error("index out of bounds")
 
-def main():
+def main() raises:
     list = NameList("Thor", "Athena", "Dana", "Vrinda")
     ref name = list[2]
     print(name)
@@ -421,7 +421,7 @@ mutability.  For example, recall the signature of the `__getitem__()` method
 above:
 
 ```mojo
-def __getitem__(ref self, index: Int) -> ref[self] String:
+def __getitem__(ref self, index: Int) raises -> ref[self] String:
 ```
 
 Since the `origin` of the return value is tied to the origin of `self`, the
@@ -434,7 +434,7 @@ fn pass_immutable_list(list: NameList) raises:
     print(list[2])
     # list[2] += "?" # Error, this list is immutable
 
-def main():
+def main() raises:
     list = NameList("Sophie", "Jack", "Diana")
     pass_immutable_list(list)
 ```
@@ -455,12 +455,12 @@ function returns a reference to one of the two input strings, with an origin
 that's a union of both origins.
 
 ```mojo
-def pick_one(cond: Bool, ref a: String, ref b: String) -> ref[a, b] String:
+def pick_one(cond: Bool, ref a: String, ref b: String) raises -> ref[a, b] String:
     return a if cond else b
 ```
 
 Because the compiler can't statically determine which branch will be picked,
 this function must use the union origin `[a, b]`. This ensures that the compiler
-extends the lifetime of _both_ values as long as the returned reference is live.
+extends the lifetime of *both* values as long as the returned reference is live.
 
 The returned reference is mutable if **both** `a` and `b` are mutable.

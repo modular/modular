@@ -36,7 +36,7 @@ def execute_index_tensor_test[
     ],
     expected_output_device_buffer: DeviceBuffer[data_type],
     ctx: DeviceContext,
-):
+) raises:
     # execute the kernel
     var actual_output_device = ctx.enqueue_create_buffer[
         expected_output_device.dtype
@@ -220,7 +220,7 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_index_tensor_DLRM(ctx)
         test_index_tensor_DLRM_batch(ctx)

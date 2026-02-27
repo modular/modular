@@ -29,7 +29,7 @@ fn vec_func(
     output[tid] = in0[tid] + in1[tid]
 
 
-def test_concurrent_copy():
+def test_concurrent_copy() raises:
     var ctx1 = create_test_device_context()
     var ctx2 = create_test_device_context()
     _run_test_concurrent_copy(ctx1, ctx2)
@@ -163,7 +163,7 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
 
 
-def test_concurrent_func():
+def test_concurrent_func() raises:
     var ctx1 = create_test_device_context()
     var ctx2 = create_test_device_context()
     _run_test_concurrent_func(ctx1, ctx2)
@@ -295,7 +295,7 @@ fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

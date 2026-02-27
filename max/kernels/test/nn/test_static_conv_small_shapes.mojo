@@ -113,7 +113,7 @@ fn static_conv(
 
 
 # CHECK-LABEL: test_static_conv
-def test_static_conv():
+def test_static_conv() raises:
     print("== test_static_conv")
 
     var output_stack = InlineArray[Scalar[value_type], N * HO * WO * F](
@@ -142,5 +142,5 @@ def test_static_conv():
     print(output[0, 0, 0, 0])
 
 
-def main():
+def main() raises:
     test_static_conv()

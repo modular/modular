@@ -875,5 +875,5 @@ fn test_mamba_combined_gpu_larger_shapes() raises:
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

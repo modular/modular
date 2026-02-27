@@ -232,13 +232,13 @@ struct SharedDict(Copyable):
     fn __init__(out self, *, copy: Self):
         self.attributes = copy.attributes
 
-    def __setitem__(mut self, key: String, value: String):
+    def __setitem__(mut self, key: String, value: String) raises:
         self.attributes[][key] = value
 
-    def __getitem__(self, key: String) -> String:
+    def __getitem__(self, key: String) raises -> String:
         return self.attributes[].get(key, default="")
 
-def main():
+def main() raises:
     thing1 = SharedDict()
     thing2 = thing1
     thing1["Flip"] = "Flop"

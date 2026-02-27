@@ -33,6 +33,6 @@ fn test():
     print_bits(Float8_e4m3fn(FloatLiteral.nan))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         ctx.enqueue_function_experimental[test](grid_dim=1, block_dim=1)

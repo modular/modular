@@ -16,7 +16,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     comptime res = test_debug_assert_compile_time()
 
     # CHECK: 33

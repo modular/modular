@@ -23,64 +23,64 @@ struct Point(Writable):
         writer.write(t"({self.x}, {self.y})")
 
 
-def test_basic_tstring():
+def test_basic_tstring() raises:
     assert_equal(String(t"Hello, World!"), "Hello, World!")
 
 
-def test_single_interpolation():
+def test_single_interpolation() raises:
     var name = "Alice"
     assert_equal(String(t"Hello, {name}!"), "Hello, Alice!")
 
 
-def test_multiple_interpolations():
+def test_multiple_interpolations() raises:
     var x = 10
     var y = 20
     assert_equal(String(t"{x} + {y} = {x + y}"), "10 + 20 = 30")
 
 
-def test_expression_interpolation():
+def test_expression_interpolation() raises:
     assert_equal(String(t"Result: {2 * 3 + 1}"), "Result: 7")
 
 
-def test_empty_tstring():
+def test_empty_tstring() raises:
     var s = t""
     assert_equal(String(s), "")
 
 
-def test_tstring_only_expression():
+def test_tstring_only_expression() raises:
     assert_equal(String(t"{42}"), "42")
 
 
-def test_escaped_braces():
+def test_escaped_braces() raises:
     assert_equal(String(t"Use {{braces}} like this"), "Use {braces} like this")
 
 
-def test_mixed_escaped_and_interpolation():
+def test_mixed_escaped_and_interpolation() raises:
     var value = 123
     assert_equal(
         String(t"The value {{value}} = {value}"), "The value {value} = 123"
     )
 
 
-def test_deeply_nested_escape_braces():
+def test_deeply_nested_escape_braces() raises:
     var x = 42
     assert_equal(String(t"{{{{{x}}}}}"), "{{42}}")
 
 
-def test_adjacent_interpolations():
+def test_adjacent_interpolations() raises:
     var a = "A"
     var b = "B"
     var c = "C"
     assert_equal(String(t"{a}{b}{c}"), "ABC")
 
 
-def test_boolean_interpolation():
+def test_boolean_interpolation() raises:
     assert_equal(
         String(t"True: {True}, False: {False}"), "True: True, False: False"
     )
 
 
-def test_integer_interpolation():
+def test_integer_interpolation() raises:
     var i8 = Int8(127)
     var i16 = Int16(32767)
     var i32 = Int32(2147483647)
@@ -91,61 +91,61 @@ def test_integer_interpolation():
     assert_equal(String(t"Int64: {i64}"), "Int64: 9223372036854775807")
 
 
-def test_string_interpolation():
+def test_string_interpolation() raises:
     var msg = "world"
     # TODO(KGEN): Same bug as test_single_interpolation
     assert_equal(String(t"Hello, {msg}"), "Hello, world")
 
 
-def test_writable_type():
+def test_writable_type() raises:
     var p = Point(10, 20)
     assert_equal(String(t"Point: {p}"), "Point: (10, 20)")
 
 
-def test_nested_expressions():
+def test_nested_expressions() raises:
     var x = 10
     var y = 5
     assert_equal(String(t"Calc: {(x + y) * 2}"), "Calc: 30")
 
 
-def test_multiple_same_variable():
+def test_multiple_same_variable() raises:
     var num = 5
     assert_equal(String(t"{num} * {num} = {num * num}"), "5 * 5 = 25")
 
 
-def test_complex_expression():
+def test_complex_expression() raises:
     var a = 2
     var b = 3
     var c = 4
     assert_equal(String(t"Result: {a * b * c + b * 2 + a * 5}"), "Result: 40")
 
 
-def test_tstring_in_variable():
+def test_tstring_in_variable() raises:
     var x = 100
     var message = t"The value is {x}"
     assert_equal(String(message), "The value is 100")
 
 
-def test_method_calls():
+def test_method_calls() raises:
     var s = String("hello")
     assert_equal(String(t"Uppercase: {s.upper()}"), "Uppercase: HELLO")
     assert_equal(String(t"Length: {s.__len__()}"), "Length: 5")
 
 
-def test_list_subscripting():
+def test_list_subscripting() raises:
     var numbers = [10, 20, 30, 40, 50]
     assert_equal(String(t"First: {numbers[0]}"), "First: 10")
     assert_equal(String(t"Third: {numbers[2]}"), "Third: 30")
     assert_equal(String(t"Last: {numbers[4]}"), "Last: 50")
 
 
-def test_attribute_access():
+def test_attribute_access() raises:
     var p = Point(15, 25)
     assert_equal(String(t"X coordinate: {p.x}"), "X coordinate: 15")
     assert_equal(String(t"Y coordinate: {p.y}"), "Y coordinate: 25")
 
 
-def test_chained_method_calls():
+def test_chained_method_calls() raises:
     var text = String("  hello world  ")
     assert_equal(
         String(t"Stripped and upper: {text.strip().upper()}"),
@@ -153,7 +153,7 @@ def test_chained_method_calls():
     )
 
 
-def test_subscript_with_expression():
+def test_subscript_with_expression() raises:
     var data = [100, 200, 300, 400]
     var index = 2
     assert_equal(
@@ -166,13 +166,13 @@ def test_subscript_with_expression():
     )
 
 
-def test_method_on_literal():
+def test_method_on_literal() raises:
     assert_equal(
         String(t"Upper case: {String('mojo').upper()}"), "Upper case: MOJO"
     )
 
 
-def test_complex_nested_expression():
+def test_complex_nested_expression() raises:
     var values = [5, 10, 15, 20]
     var multiplier = 3
     assert_equal(
@@ -181,21 +181,21 @@ def test_complex_nested_expression():
     )
 
 
-def test_conditional_expression():
+def test_conditional_expression() raises:
     var x = 10
     var y = 20
     var max_val = x if x > y else y
     assert_equal(String(t"Maximum: {max_val}"), "Maximum: 20")
 
 
-def test_comparison_in_interpolation():
+def test_comparison_in_interpolation() raises:
     var a = 5
     var b = 10
     assert_equal(String(t"{a} < {b}: {a < b}"), "5 < 10: True")
     assert_equal(String(t"{a} > {b}: {a > b}"), "5 > 10: False")
 
 
-def test_arithmetic_with_subscript():
+def test_arithmetic_with_subscript() raises:
     var nums = [2, 4, 6, 8]
     assert_equal(
         String(t"Sum of first two: {nums[0] + nums[1]}"), "Sum of first two: 6"
@@ -206,60 +206,60 @@ def test_arithmetic_with_subscript():
     )
 
 
-def test_string_method_with_args():
+def test_string_method_with_args() raises:
     var text = String("hello-world-test")
     assert_equal(
         String(t"Split count: {len(text.split('-'))}"), "Split count: 3"
     )
 
 
-def test_type_conversion_in_interpolation():
+def test_type_conversion_in_interpolation() raises:
     var num = 42
     var float_num = Float64(num)
     assert_equal(String(t"As float: {float_num}"), "As float: 42.0")
 
 
-def test_same_quote_nested_string_double():
+def test_same_quote_nested_string_double() raises:
     assert_equal(String(t"hello {"world"}"), "hello world")
 
 
-def test_same_quote_nested_string_single():
+def test_same_quote_nested_string_single() raises:
     assert_equal(String(t'hello {'world'}'), "hello world")
 
 
-def test_same_quote_multiple_nested():
+def test_same_quote_multiple_nested() raises:
     assert_equal(String(t"a {"b"} c {"d"}"), "a b c d")
 
 
-def test_same_quote_triple_quoted():
+def test_same_quote_triple_quoted() raises:
     assert_equal(String(t"""hello {"world"}"""), "hello world")
 
 
-def test_mixed_quotes_double_outer():
+def test_mixed_quotes_double_outer() raises:
     assert_equal(String(t"outer {'inner'}"), "outer inner")
 
 
-def test_mixed_quotes_single_outer():
+def test_mixed_quotes_single_outer() raises:
     assert_equal(String(t'outer {"inner"}'), "outer inner")
 
 
-def test_nested_string_with_expression():
+def test_nested_string_with_expression() raises:
     var count = 5
     assert_equal(String(t"Found {"item"} {count} times"), "Found item 5 times")
 
 
-def test_escaped_quote_in_nested_string():
+def test_escaped_quote_in_nested_string() raises:
     assert_equal(String(t'test {"say \"hello\""}'), 'test say "hello"')
 
 
-def test_mutating_tsring_interpolated_value_before_written():
+def test_mutating_tsring_interpolated_value_before_written() raises:
     var x = "C++"
     var s = t"{x} is the best language"
     x = "Mojo"
     assert_equal(String(s), "Mojo is the best language")
 
 
-def test_materialized_value_in_tstring():
+def test_materialized_value_in_tstring() raises:
     comptime world = "World"
     assert_equal(String(t"Hello {world}"), "Hello World")
 
@@ -269,22 +269,22 @@ def test_materialized_value_in_tstring():
 # =============================================================================
 
 
-def test_nested_tstring_different_quotes():
+def test_nested_tstring_different_quotes() raises:
     var x = 10
     assert_equal(String(t"Outer: {t'Inner: {x}'}"), "Outer: Inner: 10")
 
 
-def test_nested_tstring_same_quote_double():
+def test_nested_tstring_same_quote_double() raises:
     var value = 42
     assert_equal(String(t"Result: {t"{value}"}"), "Result: 42")
 
 
-def test_nested_tstring_same_quote_single():
+def test_nested_tstring_same_quote_single() raises:
     var num = 99
     assert_equal(String(t'Value: {t'{num}'}'), "Value: 99")
 
 
-def test_nested_tstring_multiple():
+def test_nested_tstring_multiple() raises:
     var a = 1
     var b = 2
     assert_equal(
@@ -292,7 +292,7 @@ def test_nested_tstring_multiple():
     )
 
 
-def test_nested_tstring_triple_level():
+def test_nested_tstring_triple_level() raises:
     var val = 7
     assert_equal(
         String(t"L1: {t'L2: {t"L3: {val}"}'}"),
@@ -300,7 +300,7 @@ def test_nested_tstring_triple_level():
     )
 
 
-def test_nested_tstring_triple_level_same_quotes():
+def test_nested_tstring_triple_level_same_quotes() raises:
     var n = 3
     assert_equal(
         String(t"A {t"B {t"C {n}"}"}"),
@@ -308,18 +308,18 @@ def test_nested_tstring_triple_level_same_quotes():
     )
 
 
-def test_nested_tstring_with_expression():
+def test_nested_tstring_with_expression() raises:
     var x = 5
     assert_equal(String(t"Double: {t'{x * 2}'}"), "Double: 10")
 
 
-def test_nested_tstring_adjacent():
+def test_nested_tstring_adjacent() raises:
     var a = 1
     var b = 2
     assert_equal(String(t"{t'{a}'}{t'{b}'}"), "12")
 
 
-def test_nested_tstring_with_escaped_braces():
+def test_nested_tstring_with_escaped_braces() raises:
     var x = 10
     assert_equal(
         String(t"Outer {{brace}} {t'Inner {x}'}"),
@@ -327,7 +327,7 @@ def test_nested_tstring_with_escaped_braces():
     )
 
 
-def test_nested_tstring_both_escaped_braces():
+def test_nested_tstring_both_escaped_braces() raises:
     var y = 20
     assert_equal(
         String(t"Out {{1}} {t'In {{2}} {y}'}"),
@@ -335,39 +335,39 @@ def test_nested_tstring_both_escaped_braces():
     )
 
 
-def test_nested_tstring_empty_outer():
+def test_nested_tstring_empty_outer() raises:
     var x = 123
     assert_equal(String(t"{t'{x}'}"), "123")
 
 
-def test_tstring_with_escape_character():
+def test_tstring_with_escape_character() raises:
     var x = 123
     assert_equal(String(t"abc\t{x}"), "abc\t123")
 
 
-def test_tstring_with_newline_escape():
+def test_tstring_with_newline_escape() raises:
     var val = 42
     assert_equal(String(t"line1\n{val}"), "line1\n42")
 
 
-def test_tstring_with_multiple_escapes():
+def test_tstring_with_multiple_escapes() raises:
     var num = 99
     assert_equal(
         String(t"tab\there\nnewline\r{num}\t"), "tab\there\nnewline\r99\t"
     )
 
 
-def test_tstring_with_punctuation_at_end():
+def test_tstring_with_punctuation_at_end() raises:
     var x = 10
     assert_equal(String(t"value: {x}!"), "value: 10!")
 
 
-def test_tstring_with_backslash_escape():
+def test_tstring_with_backslash_escape() raises:
     var x = 10
     assert_equal(String(t"path\\to\\{x}"), "path\\to\\10")
 
 
-def test_tstring_concatenation():
+def test_tstring_concatenation() raises:
     var x = 10
     var y = 20
     # fmt: off
@@ -375,7 +375,7 @@ def test_tstring_concatenation():
     # fmt: on
 
 
-def test_tstring_multiline_concatenation():
+def test_tstring_multiline_concatenation() raises:
     var x = 10
     var y = 20
     # fmt: off
@@ -392,5 +392,5 @@ def test_tstring_multiline_concatenation():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -17,19 +17,19 @@ from collections import List
 struct NameList:
     var names: List[String]
 
-    def __init__(out self, *names: String):
+    def __init__(out self, *names: String) raises:
         self.names = List[String]()
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) -> ref[self.names] String:
+    def __getitem__(ref self, index: Int) raises -> ref[self.names] String:
         if index >= 0 and index < len(self.names):
             return self.names[index]
         else:
             raise Error("index out of bounds")
 
 
-def main():
+def main() raises:
     list = NameList("Thor", "Athena", "Dana", "Vrinda")
     ref name = list[2]
     print(name)

@@ -135,7 +135,7 @@ trait SizedRaising:
     length:
 
     ```mojo
-    def main():
+    def main() raises:
         var foo = Foo(42)
         print(len(foo) == 42)
     ```

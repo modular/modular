@@ -34,7 +34,7 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
             raise Error("Out of bounds")
 
 
-def main():
+def main() raises:
     var array = GenericArray(1, 2, 3)
     for i in range(array.size):
         end = ", " if i < array.size - 1 else "\n"

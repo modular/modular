@@ -241,7 +241,7 @@ fn bench_p2p(
     _ = dst_buf
 
 
-def main():
+def main() raises:
     var m = Bench()
 
     var log2_length = arg_parse("log2_length", 20)

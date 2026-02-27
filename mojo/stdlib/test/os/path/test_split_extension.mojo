@@ -18,25 +18,25 @@ from testing import TestSuite, assert_equal
 
 def _split_extension_test(
     path: String, expected_head: String, expected_extension: String
-):
+) raises:
     head, extension = split_extension(path)
     assert_equal(head, expected_head)
     assert_equal(extension, expected_extension)
 
 
-def test_absolute_file_path():
+def test_absolute_file_path() raises:
     _split_extension_test("/usr/lib/file.txt", "/usr/lib/file", ".txt")
     _split_extension_test("//usr/lib/file.txt", "//usr/lib/file", ".txt")
     _split_extension_test("///usr/lib/file.txt", "///usr/lib/file", ".txt")
 
 
-def test_relative_file_path():
+def test_relative_file_path() raises:
     _split_extension_test("usr/lib/file.txt", "usr/lib/file", ".txt")
     _split_extension_test("./file.txt", "./file", ".txt")
     _split_extension_test(".././.././file.txt", ".././.././file", ".txt")
 
 
-def test_relative_directories():
+def test_relative_directories() raises:
     _split_extension_test("", "", "")
     _split_extension_test(".", ".", "")
     _split_extension_test("..", "..", "")
@@ -44,7 +44,7 @@ def test_relative_directories():
     _split_extension_test("usr/lib", "usr/lib", "")
 
 
-def test_file_names():
+def test_file_names() raises:
     _split_extension_test("foo.bar", "foo", ".bar")
     _split_extension_test("foo.boo.bar", "foo.boo", ".bar")
     _split_extension_test("foo.boo.biff.bar", "foo.boo.biff", ".bar")
@@ -55,5 +55,5 @@ def test_file_names():
     _split_extension_test("...manydots.ext", "...manydots", ".ext")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

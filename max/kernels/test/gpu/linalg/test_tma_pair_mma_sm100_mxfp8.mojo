@@ -753,7 +753,7 @@ def test_blockscaled_pair_cta_mxfp8[
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
@@ -1063,7 +1063,7 @@ def test_blockscaled_pair_cta_mxfp8[
     _ = b_scales_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.float8_e4m3fn
         comptime MMA_K = 32

@@ -478,7 +478,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Run minimal test first for debugging
         var run_minimal = False

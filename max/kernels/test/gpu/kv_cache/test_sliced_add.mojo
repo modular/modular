@@ -134,7 +134,7 @@ fn test_sliced_add_dtypes(ctx: DeviceContext) raises:
     test_sliced_add[DType.bfloat16, 16, 32, 8](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_sliced_add_boundary_cases(ctx)
         test_sliced_add_dtypes(ctx)

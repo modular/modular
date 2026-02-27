@@ -36,7 +36,7 @@ def test_warp_specialization_amd[
     b_producer_warps: Int,
     consumer_warps: Int,
     pipeline_stages: Int = 1,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     var device_a = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
     var device_b = ctx.enqueue_create_buffer[DType.bfloat16](N * K)
     var device_c = ctx.enqueue_create_buffer[DType.float32](M * N)
@@ -112,7 +112,7 @@ def test_warp_specialization_amd[
         assert_equal(errors, 0)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("Running AMD Warp Specialization Tests")
         # test_warp_specialization_amd[

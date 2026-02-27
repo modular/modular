@@ -28,7 +28,7 @@ comptime block_tile_shape[num_consumer: Int, wgmma_n: Int] = Index(
 comptime wgmma_shape[wgmma_n: Int] = Index(64, wgmma_n, 16)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime wgmma_n: List[Int] = [128, 256]
 

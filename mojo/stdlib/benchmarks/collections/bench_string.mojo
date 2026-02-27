@@ -389,7 +389,7 @@ fn bench_string_repr[
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=1))
     comptime filenames = (

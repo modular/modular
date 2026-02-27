@@ -17,7 +17,7 @@ from testing import assert_equal, assert_false, assert_raises, assert_true
 from testing import TestSuite
 
 
-def test_and():
+def test_and() raises:
     var c1 = Counter[String]()
     c1["a"] = 1
     c1["b"] = 2
@@ -39,7 +39,7 @@ def test_and():
     assert_equal(c1["c"], 0)
 
 
-def test_bool():
+def test_bool() raises:
     var c = Counter[String]()
     assert_false(c)
     c["a"] = 1
@@ -48,7 +48,7 @@ def test_bool():
     assert_false(c)
 
 
-def test_clear():
+def test_clear() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -59,7 +59,7 @@ def test_clear():
     assert_false(c)
 
 
-def test_contains():
+def test_contains() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -69,7 +69,7 @@ def test_contains():
     assert_false("c" in c)
 
 
-def test_copy():
+def test_copy() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -86,14 +86,14 @@ def test_copy():
     assert_equal(len(copy), 2)
 
 
-def test_counter_construction():
+def test_counter_construction() raises:
     _ = Counter[Int]()
     _ = Counter[Int](List[Int]())
     _ = Counter[String](List[String]())
     _ = Counter[Int](1, 2)
 
 
-def test_counter_getitem():
+def test_counter_getitem() raises:
     c = Counter[Int](1, 2, 2, 3, 3, 3, 4)
     assert_equal(c[1], 1)
     assert_equal(c[2], 2)
@@ -102,7 +102,7 @@ def test_counter_getitem():
     assert_equal(c[5], 0)
 
 
-def test_fromkeys():
+def test_fromkeys() raises:
     var keys = [String("a"), "b", "c"]
     var c = Counter[String].fromkeys(keys, 3)
 
@@ -112,7 +112,7 @@ def test_fromkeys():
     assert_equal(len(c), 3)
 
 
-def test_get():
+def test_get() raises:
     var counter = Counter[String]()
     counter["a"] = 1
     counter["b"] = 2
@@ -129,7 +129,7 @@ def test_get():
     assert_false(d)
 
 
-def test_iter():
+def test_iter() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -148,7 +148,7 @@ def test_iter():
         keys_count += 1
 
 
-def test_iter_keys():
+def test_iter_keys() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -160,7 +160,7 @@ def test_iter_keys():
     assert_equal(keys, "ab")
 
 
-def test_iter_values():
+def test_iter_values() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -172,7 +172,7 @@ def test_iter_values():
     assert_equal(sum, 3)
 
 
-def test_iter_values_mut():
+def test_iter_values_mut() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -185,7 +185,7 @@ def test_iter_values_mut():
     assert_equal(2, len(c))
 
 
-def test_iter_items():
+def test_iter_items() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -200,7 +200,7 @@ def test_iter_items():
     assert_equal(sum, 3)
 
 
-def test_len():
+def test_len() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -212,7 +212,7 @@ def test_len():
     assert_equal(len(c), 0)
 
 
-def test_total():
+def test_total() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -220,7 +220,7 @@ def test_total():
     assert_equal(c.total(), 3)
 
 
-def test_most_common():
+def test_most_common() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -234,7 +234,7 @@ def test_most_common():
     assert_equal(most_common[1][1][Int], 2)
 
 
-def test_eq_and_ne():
+def test_eq_and_ne() raises:
     var c1 = Counter[String]()
     c1["a"] = 1
     c1["b"] = 2
@@ -253,7 +253,7 @@ def test_eq_and_ne():
     assert_true(c1.__ne__(c2))
 
 
-def test_lt_le_gt_and_ge():
+def test_lt_le_gt_and_ge() raises:
     var c1 = Counter[String]()
     c1["a"] = 1
     c1["b"] = 2
@@ -296,7 +296,7 @@ def test_lt_le_gt_and_ge():
     assert_true(c2.ge(c1))
 
 
-def test_elements():
+def test_elements() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = 2
@@ -313,7 +313,7 @@ def test_elements():
     assert_equal(elements[5], "c")
 
 
-def test_update():
+def test_update() raises:
     var c1 = Counter[String]()
     c1["a"] = 1
     c1["b"] = 2
@@ -329,7 +329,7 @@ def test_update():
     assert_equal(c1["c"], 4)
 
 
-def test_add():
+def test_add() raises:
     var c1 = Counter[String]()
     c1["a"] = 3
     c1["b"] = 2
@@ -358,7 +358,7 @@ def test_add():
     assert_equal(c2["c"], 4)
 
 
-def test_subtract():
+def test_subtract() raises:
     var c1 = Counter[String]()
     c1["a"] = 4
     c1["b"] = 2
@@ -376,7 +376,7 @@ def test_subtract():
     assert_equal(c1["c"], -3)
 
 
-def test_sub():
+def test_sub() raises:
     var c1 = Counter[String]()
     c1["a"] = 4
     c1["b"] = 2
@@ -405,7 +405,7 @@ def test_sub():
     assert_equal(c2["c"], 3)
 
 
-def test_counter_setitem():
+def test_counter_setitem() raises:
     c = Counter[Int]()
     c[1] = 1
     c[2] = 2
@@ -414,7 +414,7 @@ def test_counter_setitem():
     assert_equal(c[3], 0)
 
 
-def test_neg():
+def test_neg() raises:
     var c = Counter[String]()
     c["a"] = 1
     c["b"] = -2
@@ -427,7 +427,7 @@ def test_neg():
     assert_equal(neg["c"], 0)
 
 
-def test_or():
+def test_or() raises:
     var c1 = Counter[String]()
     c1["a"] = 1
     c1["b"] = 2
@@ -452,7 +452,7 @@ def test_or():
     assert_equal(c1["d"], 0)
 
 
-def test_pop():
+def test_pop() raises:
     var counter = Counter[String]()
     counter["a"] = 1
     counter["b"] = 2
@@ -469,7 +469,7 @@ def test_pop():
         _ = counter.pop("not_a_key")
 
 
-def test_popitem():
+def test_popitem() raises:
     var counter = Counter[String]()
     counter["a"] = 1
     counter["b"] = 2
@@ -486,5 +486,5 @@ def test_popitem():
         _ = counter.popitem()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

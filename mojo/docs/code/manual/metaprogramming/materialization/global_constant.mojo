@@ -35,6 +35,6 @@ fn use_lookup(idx: Int) -> Int64:
         return 0
 
 
-def main():
+def main() raises:
     var x = use_lookup(3)
     assert_equal(x, 34)

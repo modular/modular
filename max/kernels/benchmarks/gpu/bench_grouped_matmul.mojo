@@ -719,7 +719,7 @@ fn string_to_list(string: String) raises -> List[Int]:
     return list^
 
 
-def main():
+def main() raises:
     comptime in_type = env_get_dtype["in_type", DType.bfloat16]()
     comptime out_type = env_get_dtype["out_type", DType.bfloat16]()
     comptime scaling_kind_str = env_get_string["scaling_kind", "1d2d"]()

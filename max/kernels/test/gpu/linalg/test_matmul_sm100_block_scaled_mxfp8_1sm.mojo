@@ -76,7 +76,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -424,7 +424,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     _ = b_scales_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.float8_e4m3fn
         comptime out_dtype = DType.bfloat16

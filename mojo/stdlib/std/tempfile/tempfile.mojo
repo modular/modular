@@ -252,7 +252,7 @@ struct TemporaryDirectory:
     from tempfile import TemporaryDirectory
     import os
 
-    def main():
+    def main() raises:
         var temp_path: String
         with TemporaryDirectory() as tmpdir:
             temp_path = tmpdir

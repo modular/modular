@@ -101,7 +101,7 @@ fn erf_libm[
     return libm_call["erff", "err"](arg)
 
 
-def main():
+def main() raises:
     test_elu()
     test_relu()
     test_relu_n1()

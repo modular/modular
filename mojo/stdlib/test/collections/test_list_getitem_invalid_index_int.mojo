@@ -15,7 +15,7 @@ from testing import TestSuite
 
 
 # CHECK-LABEL: test_fail_list_index
-def test_fail_list_index():
+def test_fail_list_index() raises:
     print("== test_fail_list_index")
     # CHECK: List index out of bounds: index (4) valid range: -3 <= index < 3
     nums = [1, 2, 3]
@@ -25,5 +25,5 @@ def test_fail_list_index():
     print("is never reached")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

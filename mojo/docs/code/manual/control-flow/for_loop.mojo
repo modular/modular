@@ -13,7 +13,7 @@
 from python import Python
 
 
-def main():
+def main() raises:
     states = [String("California"), "Hawaii", "Oregon"]
     for state in states:
         print(state)

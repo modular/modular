@@ -46,6 +46,6 @@ fn test_cluster_sync(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_cluster_sync(ctx)

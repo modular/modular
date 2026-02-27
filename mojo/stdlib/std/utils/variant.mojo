@@ -507,11 +507,11 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         ```mojo
         from utils import Variant
 
-        def takes_variant(mut arg: Variant):
+        def takes_variant(mut arg: Variant) raises:
             if arg.is_type_supported[Float64]():
                 arg = Float64(1.5)
 
-        def main():
+        def main() raises:
             var x = Variant[Int, Float64](1)
             takes_variant(x)
             if x.isa[Float64]():

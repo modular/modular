@@ -200,7 +200,7 @@ fn test_svg_swizzle() raises:
     )
 
 
-def main():
+def main() raises:
     test_svg_nvidia_shape()
     test_svg_nvidia_tile()
     test_svg_nvidia_tile_memory_bank()

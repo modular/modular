@@ -13,7 +13,7 @@
 from testing import assert_true
 
 
-def main():
+def main() raises:
     # start-basic-example
     comptime addOne[x: Int]: Int = x + 1
     comptime nine = addOne[8]

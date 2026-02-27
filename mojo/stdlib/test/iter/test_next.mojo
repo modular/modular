@@ -32,5 +32,5 @@ fn test_next() raises:
         _ = next(it2)  # raises StopIteration
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

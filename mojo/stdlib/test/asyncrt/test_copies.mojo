@@ -188,7 +188,7 @@ fn _run_cpu_ctx_memcpy_async(
         assert_equal(host_buf[i], Int64(2 * i))
 
 
-def test_copies():
+def test_copies() raises:
     var ctx = create_test_device_context()
 
     print("-------")
@@ -213,5 +213,5 @@ def test_copies():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

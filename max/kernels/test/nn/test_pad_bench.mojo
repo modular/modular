@@ -214,10 +214,10 @@ fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
 
 
 # CHECK-LABEL: test_pad_iterative
-def main():
+def main() raises:
     print("== test_pad_iterative")
 
-    def all[N: Int]():
+    def all[N: Int]() raises:
         bench[test_pad_constant_nd, 1, N, "test_pad_constant_1d"]()
         bench[test_pad_constant_nd, 2, N, "test_pad_constant_2d"]()
         bench[test_pad_constant_nd, 3, N, "test_pad_constant_3d"]()

@@ -21,17 +21,17 @@ from math.math import sin, cos
 from gpu.host.info import _get_h100_target
 
 
-def sin_func(x: Float64) -> Float64:
+def sin_func(x: Float64) raises -> Float64:
     # CHECK: constraint failed: DType.float64 is not supported on NVIDIA GPU
     return sin(x)
 
 
-def cos_func(x: Float64) -> Float64:
+def cos_func(x: Float64) raises -> Float64:
     # CHECK: constraint failed: DType.float64 is not supported on NVIDIA GPU
     return cos(x)
 
 
-def main():
+def main() raises:
     print(
         compile_info[
             sin_func, emission_kind="llvm", target = _get_h100_target()

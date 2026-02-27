@@ -113,7 +113,7 @@ def test_tma_multicast_load_row_major[
     dst_layout: Layout,
     CLUSTER_M: Int,
     CLUSTER_N: Int,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime src_M = src_layout.shape[0].value()
     comptime src_N = src_layout.shape[1].value()
     comptime tileM = tile_layout.shape[0].value()
@@ -254,7 +254,7 @@ def test_tma_sliced_multicast_load_row_major[
     dst_layout: Layout,
     CLUSTER_M: Int,
     CLUSTER_N: Int,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime src_M = src_layout.shape[0].value()
     comptime src_N = src_layout.shape[1].value()
     comptime tileM = tile_layout.shape[0].value()
@@ -305,7 +305,7 @@ def test_tma_sliced_multicast_load_row_major[
     _ = dst^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_multicast_load_row_major")
         test_tma_multicast_load_row_major[

@@ -35,7 +35,7 @@ def execute_gather_nd_test[
     expected_output_device: DeviceBuffer[data_type],
     output_shape: IndexList[output_rank],
     ctx: DeviceContext,
-):
+) raises:
     # Create output device buffer
     var actual_output_device = ctx.enqueue_create_buffer[data_type](
         output_shape.flattened_length()
@@ -651,7 +651,7 @@ fn test_gather_nd_eg8(ctx: DeviceContext) raises:
     )
 
 
-def main():
+def main() raises:
     """
     Note: Examples 1-5 are from:
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#GatherND.

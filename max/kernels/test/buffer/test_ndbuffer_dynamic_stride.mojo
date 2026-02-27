@@ -19,7 +19,7 @@ from utils.index import Index
 
 
 # CHECK-LABEL: test_sub_matrix
-def test_sub_matrix():
+def test_sub_matrix() raises:
     print("== test_sub_matrix")
     comptime num_row = 4
     comptime num_col = 4
@@ -81,7 +81,7 @@ def test_sub_matrix():
 
 
 # CHECK-LABEL: test_broadcast
-def test_broadcast():
+def test_broadcast() raises:
     print("== test_broadcast")
 
     # Create a buffer holding a single value with zero stride.
@@ -98,5 +98,5 @@ def test_broadcast():
     print(stride_buf[99])
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

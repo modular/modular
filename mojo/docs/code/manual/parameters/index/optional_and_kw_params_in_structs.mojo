@@ -28,5 +28,5 @@ fn use_kw_params():
     _ = c^
 
 
-def main():
+def main() raises:
     use_kw_params()

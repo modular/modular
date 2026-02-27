@@ -59,14 +59,14 @@ fn _verify_register_intrinsics(asm: StringSlice) raises -> None:
     assert_true("ld.global.nc.b64" in asm)
 
 
-def test_register_intrinsics_sm80():
+def test_register_intrinsics_sm80() raises:
     var asm = _compile_code[
         register_intrinsics, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_register_intrinsics(asm)
 
 
-def test_register_intrinsics_sm90():
+def test_register_intrinsics_sm90() raises:
     var asm = _compile_code[
         register_intrinsics,
         target = get_gpu_target["sm_90"](),
@@ -74,6 +74,6 @@ def test_register_intrinsics_sm90():
     _verify_register_intrinsics(asm)
 
 
-def main():
+def main() raises:
     test_register_intrinsics_sm80()
     test_register_intrinsics_sm90()

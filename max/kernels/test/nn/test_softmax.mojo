@@ -101,6 +101,6 @@ fn test_softmax_2pass():
     # CHECK-NEXT: 0.63640{{[0-9]+}}
 
 
-def main():
+def main() raises:
     test_logsoftmax()
     test_softmax_2pass()

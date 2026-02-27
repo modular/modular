@@ -22,7 +22,7 @@ from testing import (
 )
 
 
-def test_consistency_equality_comparable():
+def test_consistency_equality_comparable() raises:
     var ordering = Consistency.SEQUENTIAL
 
     assert_not_equal(ordering, Consistency(42))
@@ -35,7 +35,7 @@ def test_consistency_equality_comparable():
     assert_equal(ordering, Consistency.SEQUENTIAL)
 
 
-def test_consistency_representable():
+def test_consistency_representable() raises:
     assert_equal(repr(Consistency(42)), "Consistency.UNKNOWN")
     assert_equal(repr(Consistency.NOT_ATOMIC), "Consistency.NOT_ATOMIC")
     assert_equal(repr(Consistency.UNORDERED), "Consistency.UNORDERED")
@@ -48,7 +48,7 @@ def test_consistency_representable():
     assert_equal(repr(Consistency.SEQUENTIAL), "Consistency.SEQUENTIAL")
 
 
-def test_consistency_stringable():
+def test_consistency_stringable() raises:
     assert_equal(String(Consistency(42)), "UNKNOWN")
     assert_equal(String(Consistency.NOT_ATOMIC), "NOT_ATOMIC")
     assert_equal(String(Consistency.UNORDERED), "UNORDERED")
@@ -59,7 +59,7 @@ def test_consistency_stringable():
     assert_equal(String(Consistency.SEQUENTIAL), "SEQUENTIAL")
 
 
-def _test_atomic[dtype: DType]():
+def _test_atomic[dtype: DType]() raises:
     comptime scalar = Scalar[dtype]
     var atom = Atomic[dtype](3)
 
@@ -86,12 +86,12 @@ def _test_atomic[dtype: DType]():
     assert_equal(atom.value, scalar(0))
 
 
-def test_atomic():
+def test_atomic() raises:
     _test_atomic[DType.int32]()
     _test_atomic[DType.float64]()
 
 
-def _test_compare_exchange[dtype: DType]():
+def _test_compare_exchange[dtype: DType]() raises:
     comptime scalar = Scalar[dtype]
     var atom = Atomic[dtype](3)
 
@@ -112,12 +112,12 @@ def _test_compare_exchange[dtype: DType]():
     assert_equal(atom.load(), scalar(42))
 
 
-def test_compare_exchange():
+def test_compare_exchange() raises:
     _test_compare_exchange[DType.int32]()
     _test_compare_exchange[DType.float64]()
 
 
-def test_comptime_atomic():
+def test_comptime_atomic() raises:
     fn comptime_fn() -> Int:
         var atom = Atomic[DType.int](3)
         atom += 4
@@ -128,7 +128,7 @@ def test_comptime_atomic():
     assert_equal(value, 3)
 
 
-def test_comptime_fence():
+def test_comptime_fence() raises:
     fn comptime_fn() -> Int:
         fence()
         return 1
@@ -137,7 +137,7 @@ def test_comptime_fence():
     assert_equal(value, 1)
 
 
-def test_comptime_compare_exchange():
+def test_comptime_compare_exchange() raises:
     fn comptime_fn(expected_in: Int32) -> Tuple[Bool, Int32, Int32]:
         var expected = expected_in
         var atom = Atomic[DType.int32](0)
@@ -155,5 +155,5 @@ def test_comptime_compare_exchange():
     assert_equal(result_failure[2], 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

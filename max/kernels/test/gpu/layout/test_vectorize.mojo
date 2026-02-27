@@ -116,5 +116,5 @@ fn test_vectorize_2() raises:
     heap.free()
 
 
-def main():
+def main() raises:
     test_vectorize_2()

@@ -160,7 +160,7 @@ fn tiled_matmul_kernel(
         matrix_c[global_row, global_col] = accumulator
 
 
-def main():
+def main() raises:
     # Check for GPU availability
     comptime if not has_accelerator():
         print("No GPU detected - this example requires a supported GPU")

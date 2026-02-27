@@ -490,7 +490,7 @@ def create_tma_tile[
     tile_shape: IndexList[rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[...]) -> TmaOpType[
+](ctx: DeviceContext, tensor: LayoutTensor[...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
     """Create a TMATensorTile using new Layout types.
@@ -529,7 +529,7 @@ def create_tma_tile[
     tile_shape: IndexList[rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: TileTensor[...]) -> TmaOpType[
+](ctx: DeviceContext, tensor: TileTensor[...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
     """TileTensor overload of create_tma_tile.

@@ -17,7 +17,7 @@ import pwd
 from testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
-def test_pwuid():
+def test_pwuid() raises:
     # Test current process user works
     passwd = pwd.getpwuid(os.getuid())
     assert_true(len(passwd.pw_dir) > 2)
@@ -34,7 +34,7 @@ def test_pwuid():
         _ = pwd.getpwuid(456789431974)
 
 
-def test_pwnam():
+def test_pwnam() raises:
     # Test root user works
     passwd = pwd.getpwnam("root")
     assert_true(len(passwd.pw_dir) > 2)
@@ -46,5 +46,5 @@ def test_pwnam():
         _ = pwd.getpwnam("zxcvarahoijewklvnab")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

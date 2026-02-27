@@ -23,7 +23,7 @@ fn check_sm() -> Bool:
     return v
 
 
-def test_is_sm_9x():
+def test_is_sm_9x() raises:
     assert_true(
         "ret i1 true"
         in _compile_code[
@@ -42,5 +42,5 @@ def test_is_sm_9x():
     )
 
 
-def main():
+def main() raises:
     test_is_sm_9x()

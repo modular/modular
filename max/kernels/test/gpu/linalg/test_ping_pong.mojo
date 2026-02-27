@@ -41,7 +41,7 @@ def test_ping_pong_kernel_amd[
     N: Int,
     K: Int,
     enable_swizzle: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     """Test ping-pong kernel with parameterized input dtype."""
     var device_a = ctx.enqueue_create_buffer[in_dtype](M * K)
     var device_b = ctx.enqueue_create_buffer[in_dtype](N * K)
@@ -129,7 +129,7 @@ def test_ping_pong_kernel_amd[
         assert_equal(errors, 0)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("Running AMD Ping-Pong Kernel Tests")
         print("  Input dtype:", input_dtype)

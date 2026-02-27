@@ -116,7 +116,7 @@ obtains a reference to the GPU device. Using any editor, create a file named
 from gpu.host import DeviceContext
 from sys import has_accelerator
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No compatible GPU found")
@@ -242,7 +242,7 @@ fn print_threads():
     )
 
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No compatible GPU found")
@@ -516,7 +516,7 @@ comptime float_dtype = DType.float32
 comptime vector_size = 1000
 
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No compatible GPU found")
@@ -822,7 +822,7 @@ fn vector_addition(
         out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
 
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No compatible GPU found")

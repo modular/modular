@@ -49,7 +49,7 @@ fn fill_span[
 
 # TODO: Refactor tests
 # CHECK-LABEL: test_stencil_avg_pool
-def test_stencil_avg_pool():
+def test_stencil_avg_pool() raises:
     print("== test_stencil_avg_pool")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -169,7 +169,7 @@ def test_stencil_avg_pool():
 
 
 # CHECK-LABEL: test_stencil_avg_pool_padded
-def test_stencil_avg_pool_padded():
+def test_stencil_avg_pool_padded() raises:
     print("== test_stencil_avg_pool_padded")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -295,7 +295,7 @@ def test_stencil_avg_pool_padded():
 
 
 # CHECK-LABEL: test_stencil_avg_pool_stride_2
-def test_stencil_avg_pool_stride_2():
+def test_stencil_avg_pool_stride_2() raises:
     print("== test_stencil_avg_pool_stride_2")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -418,7 +418,7 @@ def test_stencil_avg_pool_stride_2():
 
 
 # CHECK-LABEL: test_stencil_max_pool_dilation_2
-def test_stencil_max_pool_dilation_2():
+def test_stencil_max_pool_dilation_2() raises:
     print("== test_stencil_max_pool_dilation_2")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -544,7 +544,7 @@ def test_stencil_max_pool_dilation_2():
 
 
 # CHECK-LABEL: test_stencil_size_0
-def test_stencil_size_0():
+def test_stencil_size_0() raises:
     comptime rank = 4
     comptime stencil_rank = 2
 
@@ -604,5 +604,5 @@ def test_stencil_size_0():
     ](output_shape, input_shape)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

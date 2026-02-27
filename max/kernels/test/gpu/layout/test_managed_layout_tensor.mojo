@@ -114,7 +114,7 @@ fn test_managed_layout_tensor_dynamic() raises:
     assert_equal(device_tensor_dynamic.dim[2](), 4)
 
 
-def main():
+def main() raises:
     """Main test function that runs all ManagedLayoutTensor tests."""
     test_managed_layout_tensor_1d()
     test_managed_layout_tensor_2d()

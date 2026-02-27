@@ -746,7 +746,7 @@ fn run_batched_matmul(
     _ = c_host_n
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime kernels = MatmulKernels[
             DType.bfloat16, DType.bfloat16, DType.bfloat16, False

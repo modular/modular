@@ -18,12 +18,12 @@
 from testing import TestSuite
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 # CHECK-LABEL: test_debug_assert
-def test_debug_assert():
+def test_debug_assert() raises:
     print("== test_debug_assert")
     debug_assert(True, "ok")
     debug_assert(Bool(3), Error("also ok"))
@@ -32,7 +32,7 @@ def test_debug_assert():
 
 
 # CHECK-LABEL: test_debug_assert_multiple_args
-def test_debug_assert_multiple_args():
+def test_debug_assert_multiple_args() raises:
     print("== test_debug_assert_multiple_args")
     debug_assert(True, "passing multiple args: ", 42, ", ", 4.2)
     # CHECK: is reached
@@ -40,7 +40,7 @@ def test_debug_assert_multiple_args():
 
 
 # CHECK-LABEL: test_debug_assert_writable
-def test_debug_assert_writable():
+def test_debug_assert_writable() raises:
     print("== test_debug_assert_writable")
     debug_assert(True, WritableOnly("failed with Writable arg"))
     # CHECK: is reached

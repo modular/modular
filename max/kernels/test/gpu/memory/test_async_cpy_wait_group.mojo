@@ -245,7 +245,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_copy_via_shared(ctx)
         test_copy_with_src_size(ctx)

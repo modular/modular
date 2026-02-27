@@ -89,7 +89,7 @@ fn test_key_element() raises:
     assert_false(DType.float32 in s)
 
 
-def test_from_str():
+def test_from_str() raises:
     comptime dt = DType._from_str("bool")
     assert_equal(dt, DType.bool)
 
@@ -109,5 +109,5 @@ def test_from_str():
         assert_equal(DType._from_str(String(dt)), dt)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

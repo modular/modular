@@ -31,7 +31,7 @@ struct Point(Stringable, Writable):
         return String.write(self)
 
 
-def test_writer_of_string():
+def test_writer_of_string() raises:
     #
     # Test write_to(String)
     #
@@ -47,7 +47,7 @@ def test_writer_of_string():
     assert_equal(s2, "Point(3, 8)")
 
 
-def test_string_write_seq():
+def test_string_write_seq() raises:
     var s1 = String.write("Hello, ", "World!")
     assert_equal(s1, "Hello, World!")
 
@@ -58,11 +58,11 @@ def test_string_write_seq():
     assert_equal(s3, "")
 
 
-def test_stringable_based_on_format():
+def test_stringable_based_on_format() raises:
     assert_equal(String(Point(10, 11)), "Point(10, 11)")
 
 
-def test_write_int_padded():
+def test_write_int_padded() raises:
     var s1 = String()
 
     Int(5).write_padded(s1, width=5)
@@ -100,7 +100,7 @@ def test_write_int_padded():
     assert_equal(s2, "12345-1-1")
 
 
-def test_write_simd_padded():
+def test_write_simd_padded() raises:
     # ----------------------------------
     # Test writing scalar Int32
     # ----------------------------------
@@ -162,7 +162,7 @@ def test_write_simd_padded():
     assert_equal(s3, "[   127,     1,    10,     0]")
 
 
-def test_hex_digits_to_hex_chars():
+def test_hex_digits_to_hex_chars() raises:
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
@@ -188,7 +188,7 @@ def test_hex_digits_to_hex_chars():
     assert_equal("ffffffff", S(ptr=ptr, length=8))
 
 
-def test_write_hex():
+def test_write_hex() raises:
     var s = String()
     _write_hex[amnt_hex_bytes=8](s, Scalar[DType.int](ord("🔥")))
     assert_equal(r"\U0001f525", s)
@@ -200,11 +200,13 @@ def test_write_hex():
     assert_equal(r"\xd6", s)
 
 
-def test_closure_non_capturing():
+def test_closure_non_capturing() raises:
     fn write_closure(mut writer: Some[Writer]):
         writer.write("Hello Mojo!")
 
-    def write_non_capturing[func: fn(mut writer: Some[Writer]) -> None]():
+    def write_non_capturing[
+        func: fn(mut writer: Some[Writer]) raises -> None
+    ]():
         var writer2 = String()
         func(writer2)
 
@@ -213,7 +215,7 @@ def test_closure_non_capturing():
     write_non_capturing[write_closure]()
 
 
-def _test_closure_capturing(mut writer: Some[Writer & Writable]):
+def _test_closure_capturing(mut writer: Some[Writer & Writable]) raises:
     fn write_closure() capturing:
         writer.write("Hello Mojo!")
 
@@ -228,10 +230,10 @@ def _test_closure_capturing(mut writer: Some[Writer & Writable]):
     assert_equal(result, "Hello Mojo!")
 
 
-def test_closure_capturing():
+def test_closure_capturing() raises:
     var writer = String()
     _test_closure_capturing(writer)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

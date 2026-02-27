@@ -234,7 +234,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     """It only includes shapes where F is multiple simd_size."""
 
     # likely partition in n_ho_wo or sequential

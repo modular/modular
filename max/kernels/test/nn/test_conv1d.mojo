@@ -200,7 +200,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
     # No packing or padding.
     test[dtype, False](1, 5, 1, 4, 4, 2, 1, Index(0, 0), 1)

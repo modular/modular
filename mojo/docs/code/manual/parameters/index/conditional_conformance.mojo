@@ -18,11 +18,11 @@ struct Container[ElementType: Movable & ImplicitlyDestructible]:
 
     def __str__[
         StrElementType: Writable & Copyable, //
-    ](self: Container[StrElementType]) -> String:
+    ](self: Container[StrElementType]) raises -> String:
         return String(self.element)
 
 
-def main():
+def main() raises:
     float_container = Container(5.0)
     string_container = Container("Hello")
     print(float_container.__str__())

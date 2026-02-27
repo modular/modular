@@ -689,5 +689,5 @@ fn test_varlen_selective_state_update_with_dt_softplus() raises:
     ](batch=2, nheads=2, dim=4, ngroups=1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

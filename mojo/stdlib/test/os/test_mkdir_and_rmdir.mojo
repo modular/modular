@@ -18,7 +18,7 @@ from pathlib import Path
 from testing import TestSuite, assert_false, assert_raises, assert_true
 
 
-def create_and_delete(path: String):
+def create_and_delete(path: String) raises:
     # verify that the test dir does not exist before starting the test
     assert_false(
         exists(path),
@@ -34,7 +34,7 @@ def create_and_delete(path: String):
         os.rmdir(path)
 
 
-def _test_mkdir_and_rmdir_str(path: String):
+def _test_mkdir_and_rmdir_str(path: String) raises:
     try:
         os.rmdir(path)
     except:
@@ -54,7 +54,7 @@ def _test_mkdir_and_rmdir_str(path: String):
         os.rmdir(path)
 
 
-def _test_mkdir_and_rmdir_path(path: Path):
+def _test_mkdir_and_rmdir_path(path: Path) raises:
     try:
         os.rmdir(path)
     except:
@@ -73,7 +73,7 @@ def _test_mkdir_and_rmdir_path(path: Path):
         os.rmdir(path)
 
 
-def _test_makedirs_and_removedirs(path: Path):
+def _test_makedirs_and_removedirs(path: Path) raises:
     try:
         os.removedirs(path)
     except:
@@ -91,7 +91,7 @@ def _test_makedirs_and_removedirs(path: Path):
     os.removedirs(path)
 
 
-def test_mkdir_mode():
+def test_mkdir_mode() raises:
     var my_dir_path = Path("my_dir")
 
     assert_false(
@@ -113,7 +113,7 @@ def test_mkdir_mode():
         os.rmdir(my_dir_path)
 
 
-def test_rmdir_not_empty():
+def test_rmdir_not_empty() raises:
     var my_dir_path = Path("my_dir")
     var file_name = my_dir_path / "file.txt"
 
@@ -134,17 +134,17 @@ def test_rmdir_not_empty():
     assert_false(exists(my_dir_path), "Failed to remove dir")
 
 
-def test_all_mkdir_and_rmdir():
+def test_all_mkdir_and_rmdir() raises:
     _test_mkdir_and_rmdir_str("my_dir")
     _test_mkdir_and_rmdir_path(Path("my_dir"))
     if os.env.getenv("HOME") or os.env.getenv("USERPROFILE"):
         _test_mkdir_and_rmdir_path(Path("~/my_dir").expanduser())
 
 
-def test_all_makedirs_and_removedirs():
+def test_all_makedirs_and_removedirs() raises:
     _test_makedirs_and_removedirs(os.path.join("dir1", "dir2", "dir3"))
     _test_makedirs_and_removedirs(Path("dir1") / "dir2" / "dir3")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

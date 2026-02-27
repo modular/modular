@@ -344,7 +344,7 @@ fn check_ldmatrix(
     _ = c_host_ref
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         check_ldmatrix(16, 8, 8, -100, 100, ctx)
         check_ldmatrix_transposed_bf16[DType.bfloat16, DType.bfloat16](ctx)

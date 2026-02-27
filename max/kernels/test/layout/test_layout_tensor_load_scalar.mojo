@@ -23,7 +23,7 @@ from layout.int_tuple import UNKNOWN_VALUE
 from testing import TestSuite, assert_equal
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 

@@ -17,7 +17,7 @@ from testing import assert_equal
 from testing import TestSuite
 
 
-def test_uppercase_conversion():
+def test_uppercase_conversion() raises:
     # a -> A
     count1, ref chars1 = _get_uppercase_mapping(Codepoint(97)).value()
     assert_equal(count1, 1)
@@ -44,5 +44,5 @@ def test_uppercase_conversion():
     assert_equal(chars3[2], Codepoint.from_u32(0x0301).value())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

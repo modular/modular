@@ -303,7 +303,7 @@ fn run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     _ = out_device
 
 
-def _test_elementwise_zero_dimension_3d(ctx: DeviceContext):
+def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     """Test elementwise operations with zero dimension in 3D tensor."""
     comptime dtype = DType.float32
     comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
@@ -362,7 +362,7 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext):
     _ = output_device_ptr
 
 
-def test_elementwise_gpu():
+def test_elementwise_gpu() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float32](ctx)
         run_elementwise_uneven_simd[DType.float32](ctx)
@@ -376,5 +376,5 @@ def test_elementwise_gpu():
         _test_elementwise_zero_dimension_3d(ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

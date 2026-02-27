@@ -18,7 +18,7 @@ from testing import assert_equal
 from testing import TestSuite
 
 
-def test_is_negative():
+def test_is_negative() raises:
     comptime dtypes = (
         DType.int8,
         DType.int16,
@@ -41,7 +41,7 @@ def test_is_negative():
                 assert_equal(S(0), is_negative(S(k)))
 
 
-def test_splat():
+def test_splat() raises:
     comptime dtypes = (
         DType.int8,
         DType.int16,
@@ -65,7 +65,7 @@ def test_splat():
             assert_equal(SIMD[D, w](0), splat[D](B(fill=False)))
 
 
-def test_compare():
+def test_compare() raises:
     comptime dtypes = (
         DType.int8,
         DType.int16,
@@ -97,5 +97,5 @@ def test_compare():
                 assert_equal(S(-1), splat[D]((-s_k).le(-s_k)))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

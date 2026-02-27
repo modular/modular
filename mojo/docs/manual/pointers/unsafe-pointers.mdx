@@ -445,7 +445,7 @@ data using a Mojo pointer:
 ```mojo
 from python import Python
 
-def share_array():
+def share_array() raises:
     np = Python.import_module("numpy")
     arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
     ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
@@ -453,7 +453,7 @@ def share_array():
         print(ptr[i], end=", ")
     print()
 
-def main():
+def main() raises:
     share_array()
 ```
 
@@ -481,7 +481,7 @@ external to the mojo program.
 ```mojo
 from ffi import external_call
 
-def get_foreign_pointer() -> UnsafePointer[Int, MutExternalOrigin]:
+def get_foreign_pointer() raises -> UnsafePointer[Int, MutExternalOrigin]:
     var ptr = external_call[
         "my_c_function", # external function name
         UnsafePointer[Int, MutExternalOrigin] # return type
@@ -525,7 +525,7 @@ in the chunk.
 ```mojo
 def read_chunks(
   var ptr: UnsafePointer[mut=False, UInt8],
-) -> List[List[UInt32]]:
+) raises -> List[List[UInt32]]:
     chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
     chunk_size = Int(ptr[])
@@ -596,7 +596,7 @@ that this function only handles images where the number of pixels is evenly
 divisible by eight.)
 
 ```mojo
-def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
+def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int) raises:
     # number of values loaded or stored at a time
     comptime simd_width = 8
     # bytes per pixel, which is also the stride size

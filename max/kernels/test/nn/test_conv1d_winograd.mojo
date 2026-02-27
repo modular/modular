@@ -129,7 +129,7 @@ fn test[dtype: DType](C: Int):  # Input Len
     print("Succeed")
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
 
     # Make sure to test both even and odd

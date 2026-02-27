@@ -39,7 +39,7 @@ fn warp_prefix_sum_kernel[
     output[tid] = warp.prefix_sum[exclusive=exclusive](input[tid])
 
 
-def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
+def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     comptime size = WARP_SIZE
     comptime BLOCK_SIZE = WARP_SIZE
 
@@ -109,7 +109,7 @@ fn block_prefix_sum_kernel[
     )
 
 
-def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
+def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     # Initialize a block with several warps. The prefix sum for each warp is
     # tested above.
     comptime BLOCK_SIZE = WARP_SIZE * 13
@@ -166,7 +166,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     out_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_warp_prefix_sum[exclusive=True](ctx)
         test_warp_prefix_sum[exclusive=False](ctx)

@@ -16,7 +16,7 @@ from conditional_context_mgr import ConditionalTimer, flaky_identity
 from testing import assert_raises, TestSuite
 
 
-def test_conditional_timer_no_error():
+def test_conditional_timer_no_error() raises:
     with ConditionalTimer():
         print("Beginning no-error execution")
         time.sleep(0.1)
@@ -25,7 +25,7 @@ def test_conditional_timer_no_error():
         print("Ending no-error execution")
 
 
-def test_conditional_timer_suppressed_error():
+def test_conditional_timer_suppressed_error() raises:
     i = 2
     with assert_raises(contains="just a warning"):
         _ = flaky_identity(i)
@@ -37,7 +37,7 @@ def test_conditional_timer_suppressed_error():
         print("Ending no-error execution")
 
 
-def test_conditional_timer_propagated_error():
+def test_conditional_timer_propagated_error() raises:
     with assert_raises(contains="really bad"):
         with ConditionalTimer():
             print("Beginning propagated error execution")
@@ -47,5 +47,5 @@ def test_conditional_timer_propagated_error():
             # We should not reach this line
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -160,7 +160,7 @@ fn test_layout_mma[
             testing.assert_true(isclose(out_val, out_ref, rtol=rtol))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime if has_nvidia_gpu_accelerator():
             comptime shape_884 = IndexList[3](8, 8, 4)

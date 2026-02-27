@@ -298,7 +298,7 @@ fn test_all_types[
     test_all_out_idx_types[DType.float32, fill_fn]()
 
 
-def main():
+def main() raises:
     print("\n====== Testing Fill Iota ======\n")
     test_all_types[fill_iota]()
     print("\n====== Testing Fill Random ======\n")

@@ -402,7 +402,7 @@ fn test_batched_dynamic_fp8_quant[
     _ = scales_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_static_scaled_fp8_quant[
             DType.float8_e4m3fn, DType.bfloat16, M=None, N = Int(16)

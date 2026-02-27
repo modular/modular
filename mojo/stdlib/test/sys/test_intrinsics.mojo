@@ -31,12 +31,12 @@ comptime iota_4 = F32x4(0.0, 1.0, 2.0, 3.0)
 comptime iota_8 = F32x8(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0)
 
 
-def test_intrinsic_comp_eval():
+def test_intrinsic_comp_eval() raises:
     comptime res = gcd(5, 4)
     assert_equal(res, gcd(5, 4))
 
 
-def test_compressed_store():
+def test_compressed_store() raises:
     var vector = alloc[Float32](5)
     memset_zero(vector, 5)
 
@@ -52,7 +52,7 @@ def test_compressed_store():
     vector.free()
 
 
-def test_masked_load():
+def test_masked_load() raises:
     var vector = alloc[Float32](5)
     for i in range(5):
         vector[i] = 1
@@ -82,7 +82,7 @@ def test_masked_load():
     vector.free()
 
 
-def test_masked_store():
+def test_masked_store() raises:
     var vector = alloc[Float32](5)
     memset_zero(vector, 5)
 
@@ -128,14 +128,14 @@ fn test_strided_store() raises:
     vector.free()
 
 
-def test_likely_unlikely():
+def test_likely_unlikely() raises:
     assert_equal(likely(True), True)
     assert_equal(unlikely(True), True)
 
 
-def test_assume():
+def test_assume() raises:
     assume(True)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

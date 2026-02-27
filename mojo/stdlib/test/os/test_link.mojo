@@ -18,7 +18,7 @@ from tempfile import gettempdir
 from testing import TestSuite, assert_equal
 
 
-def test_create_hardlink():
+def test_create_hardlink() raises:
     var tempdir = Path(gettempdir().value())
     var src = tempdir / "test_create_link"
     var link = tempdir / "test_create_link_link"
@@ -45,5 +45,5 @@ def test_create_hardlink():
     assert_equal(newstat.st_nlink, 2)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

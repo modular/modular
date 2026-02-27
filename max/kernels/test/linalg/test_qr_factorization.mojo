@@ -76,7 +76,7 @@ def all_almost_id[
     A: LayoutTensor[dtype, element_layout=element_layout, ...],
     atol: Float64,
     rtol: Float64,
-):
+) raises:
     m, n = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     for i in range(m):
         for j in range(n):
@@ -115,7 +115,7 @@ fn create_tensor[
     return {ptr, dynamic_layout}
 
 
-def main():
+def main() raises:
     atol = 1e-5
     rtol = 1e-3
     m, n = 80, 50

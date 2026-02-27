@@ -453,7 +453,7 @@ struct VariadicList[type: TrivialRegisterPassable](
 
         return total
 
-    def main():
+    def main() raises:
         print(sum_values(1, 2, 3, 4, 5))
     ```
 
@@ -787,7 +787,7 @@ struct VariadicPack[
 
         return total
 
-    def main():
+    def main() raises:
         print(count_many_things(5, 11.7, 12))  # Prints: 28
     ```
 

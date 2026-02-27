@@ -131,7 +131,7 @@ instead of repeating the entire type.
 Here's the standard way to call a function:
 
 ```mojo title="Calling a function"
-def process_pair(pair: MyPair):
+def process_pair(pair: MyPair) raises:
     ...
 
 process_pair(MyPair(2, 4))
@@ -150,7 +150,7 @@ Initializer lists support all Mojo argument styles, including keyword
 arguments. For example:
 
 ```mojo title="Initializer lists with a keyword argument"
-def utility_function(argument: CustomType):
+def utility_function(argument: CustomType) raises:
     ...
 
 utility_function(CustomType(0.5, fish="swordfish"))
@@ -367,7 +367,7 @@ storage, so they can be initialized at the point of declaration.
 ### Field conventions
 
 Like other Mojo elements, fields normally adhere to
-(certain conventions)[https://github.com/modular/modular/blob/main/mojo/stdlib/docs/style-guide.md#code-conventions]:
+[certain conventions](https://github.com/modular/modular/blob/main/mojo/stdlib/docs/style-guide.md#code-conventions):
 
 You should use conventional naming for field members:
 
@@ -386,8 +386,8 @@ You should use conventional naming for field members:
 
 Struct methods can be declared with either the `def` or `fn` keywords. One
 important difference is that an `fn` function without the `raises` keyword can't
-raise an error. When you call a function that *can* raise an error from inside a
-method that *can't* raise an error, Mojo requires you to handle any errors, as
+raise an error. When you call a function that _can_ raise an error from inside a
+method that _can't_ raise an error, Mojo requires you to handle any errors, as
 described in
 [Errors, error handling, and context managers](/mojo/manual/errors).
 
@@ -440,7 +440,7 @@ you can elide it because Mojo already knows its type (`MyPair` in this case).
 
 ### Static methods
 
-A struct can have *static methods*. A static method can be called without
+A struct can have _static methods_. A static method can be called without
 creating an instance of the struct. Unlike instance methods, a static method
 doesn't receive the implicit `self` argument, so it can't access any fields on
 the struct.
@@ -485,21 +485,21 @@ So, let's compare Mojo structs to Python classes. They both support methods,
 fields, operator overloading, decorators for metaprogramming, and more, but
 their key differences are as follows:
 
-* Python classes are dynamic: they allow for dynamic dispatch, monkey-patching
+- Python classes are dynamic: they allow for dynamic dispatch, monkey-patching
   (or "swizzling"), and dynamically binding instance fields at runtime.
 
-* Mojo structs are static: they are bound at compile-time (you cannot add
+- Mojo structs are static: they are bound at compile-time (you cannot add
   methods at runtime). Structs allow you to trade flexibility for performance
   while being safe and easy to use.
 
-* Mojo structs do not support inheritance ("sub-classing"), but a struct can
+- Mojo structs do not support inheritance ("sub-classing"), but a struct can
   implement [traits](/mojo/manual/traits).
 
-* Python classes support class attributes—values that are shared by all
+- Python classes support class attributes—values that are shared by all
   instances of the class, equivalent to class variables or static data members
   in other languages.
 
-* Mojo structs don't support static data members.
+- Mojo structs don't support static data members.
 
 Syntactically, the biggest difference compared to a Python class is that all
 fields in a struct must be explicitly declared with `var`.
@@ -545,12 +545,12 @@ they generally match all of [Python's special
 methods](https://docs.python.org/3/reference/datamodel#special-method-names)
 and they usually accomplish one of two types of tasks:
 
-* Operator overloading: A lot of special methods are designed to overload
+- Operator overloading: A lot of special methods are designed to overload
   operators such as `<` (less-than), `+` (add), and `|` (or) so they work
   appropriately with each type. For more information, see
   [Implement operators for custom types](/mojo/manual/operators#implement-operators-for-custom-types).
 
-* Lifecycle event handling: These special methods deal with the lifecycle and
+- Lifecycle event handling: These special methods deal with the lifecycle and
   value ownership of an instance. For example, `__init__()` and `__del__()`
   demarcate the beginning and end of an instance lifetime, and other special
   methods define the behavior for other lifecycle events such as how to copy or

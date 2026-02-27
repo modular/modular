@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     # Short-circuit "or" evaluation
-    def true_func() -> Bool:
+    def true_func() raises -> Bool:
         print("Executing true_func")
         return True
 
-    def false_func() -> Bool:
+    def false_func() raises -> Bool:
         print("Executing false_func")
         return False
 

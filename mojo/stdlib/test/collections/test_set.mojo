@@ -23,7 +23,7 @@ from testing import (
 )
 
 
-def test_set_construction():
+def test_set_construction() raises:
     # Constructors.
     _ = Set[Int]()
     _ = Set[String]()
@@ -38,19 +38,19 @@ def test_set_construction():
     assert_equal(s2, {"1", "2"})
 
 
-def test_set_move():
+def test_set_move() raises:
     var s1 = {1, 2, 3}
     var s2 = s1^
     assert_equal(s2, {1, 2, 3})
 
 
-def test_set_copy():
+def test_set_copy() raises:
     var s1 = {1, 2, 3}
     var s2 = s1.copy()
     assert_equal(s1, s2)
 
 
-def test_len():
+def test_len() raises:
     var s1 = Set[Int]()
     assert_equal(0, len(s1))
 
@@ -58,7 +58,7 @@ def test_len():
     assert_equal(3, len(s2))
 
 
-def test_in():
+def test_in() raises:
     var s1 = Set[Int]()
     assert_false(0 in s1)
     assert_false(1 in s1)
@@ -71,7 +71,7 @@ def test_in():
     assert_false(4 in s2)
 
 
-def test_equal():
+def test_equal() raises:
     var s1 = Set[Int]()
     var s2 = {1, 2, 3}
 
@@ -88,14 +88,14 @@ def test_equal():
     assert_true(s2 != {1, 2, 4})
 
 
-def test_bool():
+def test_bool() raises:
     assert_false(Set[Int]())
     assert_false(Set[Int](List[Int]()))
     assert_true(Set[Int](1))
     assert_true(Set[Int](1, 2, 3))
 
 
-def test_intersection():
+def test_intersection() raises:
     assert_equal(Set[Int]() & {}, {})
     assert_equal(Set[Int]() & {1, 2, 3}, {})
     assert_equal({1, 2, 3} & {1, 2, 3}, {1, 2, 3})
@@ -129,7 +129,7 @@ def test_intersection():
     assert_equal(x, {2})
 
 
-def test_union():
+def test_union() raises:
     assert_equal(Set[Int]() | {}, {})
     assert_equal(Set[Int]() | {1, 2, 3}, {1, 2, 3})
     assert_equal({1, 2, 3} | {1, 2, 3}, {1, 2, 3})
@@ -163,7 +163,7 @@ def test_union():
     assert_equal(x, {1, 2, 3})
 
 
-def test_subtract():
+def test_subtract() raises:
     var s1 = Set[Int]()
     var s2 = {1, 2, 3}
 
@@ -174,7 +174,7 @@ def test_subtract():
     assert_equal(s2 - {3, 4}, {1, 2})
 
 
-def test_difference_update():
+def test_difference_update() raises:
     var x = Set[Int]()
     x.difference_update({})
     assert_equal(x, {})
@@ -208,7 +208,7 @@ def test_difference_update():
     assert_equal(x, {1, 2})
 
 
-def test_iter():
+def test_iter() raises:
     var sum = 0
     for e in Set[Int]():
         sum += e
@@ -235,7 +235,7 @@ def test_iter():
         _ = it.__next__()  # raises StopIteration
 
 
-def test_add():
+def test_add() raises:
     var s = Set[Int]()
     s.add(1)
     assert_equal(s, {1})
@@ -251,7 +251,7 @@ def test_add():
     assert_equal(s, {1, 2, 3})
 
 
-def test_remove():
+def test_remove() raises:
     var s = {1, 2, 3}
     s.remove(1)
     assert_equal(s, {2, 3})
@@ -267,7 +267,7 @@ def test_remove():
         s.remove(1)
 
 
-def test_pop_insertion_order():
+def test_pop_insertion_order() raises:
     var s = {1, 2, 3}
     assert_equal(s.pop(), 3)
     assert_equal(s, {1, 2})
@@ -287,7 +287,7 @@ def test_pop_insertion_order():
         _ = s.pop()  # pop from empty set raises
 
 
-def test_issubset():
+def test_issubset() raises:
     assert_true(Set[Int]().issubset({1, 2, 3}))
     assert_true(Set[Int]() <= {1, 2, 3})
 
@@ -310,7 +310,7 @@ def test_issubset():
     assert_false({1, 2, 3} <= {4, 5, 6})
 
 
-def test_disjoint():
+def test_disjoint() raises:
     assert_true(Set[Int]().isdisjoint({}))
     assert_false({1, 2, 3}.isdisjoint({1, 2, 3}))
     assert_true({1, 2, 3}.isdisjoint({4, 5, 6}))
@@ -321,7 +321,7 @@ def test_disjoint():
     assert_true({1, 2, 3}.isdisjoint({4}))
 
 
-def test_issuperset():
+def test_issuperset() raises:
     assert_true({1, 2, 3}.issuperset({}))
     assert_true({1, 2, 3} >= {})
 
@@ -347,7 +347,7 @@ def test_issuperset():
     assert_true(Set[Int]() >= {})
 
 
-def test_greaterthan():
+def test_greaterthan() raises:
     assert_true({1, 2, 3, 4} > {2, 3})
     assert_false({2, 3} > {1, 2, 3, 4})
     assert_false({1, 2, 3} > {1, 2, 3})
@@ -355,7 +355,7 @@ def test_greaterthan():
     assert_true({1, 2, 3} > {})
 
 
-def test_lessthan():
+def test_lessthan() raises:
     assert_true({2, 3} < {1, 2, 3, 4})
     assert_false({1, 2, 3, 4} < {2, 3})
     assert_false({1, 2, 3} < {1, 2, 3})
@@ -363,7 +363,7 @@ def test_lessthan():
     assert_true(Set[Int]() < {1, 2, 3})
 
 
-def test_symmetric_difference():
+def test_symmetric_difference() raises:
     assert_true({1, 4} == {1, 2, 3}.symmetric_difference({2, 3, 4}))
     assert_true({1, 4} == {1, 2, 3} ^ {2, 3, 4})
 
@@ -383,7 +383,7 @@ def test_symmetric_difference():
     assert_true(Set[Int]() == {1, 2, 3} ^ {1, 2, 3})
 
 
-def test_symmetric_difference_update():
+def test_symmetric_difference_update() raises:
     # Test case 1
     set1 = {1, 2, 3}
     set2 = {2, 3, 4}
@@ -451,7 +451,7 @@ def test_symmetric_difference_update():
     assert_true(set11 == {})
 
 
-def test_discard():
+def test_discard() raises:
     set1 = {1, 2, 3}
     set1.discard(2)
     assert_true(set1 == {1, 3})
@@ -476,7 +476,7 @@ def test_discard():
     assert_true(set5 == {})
 
 
-def test_clear():
+def test_clear() raises:
     # Shouldn't fail when clearing a 0 length set
     set0 = Set[Int]()
     set0.clear()
@@ -507,7 +507,7 @@ def test_clear():
     assert_true(len(set5) == 0)
 
 
-def test_set_comprehension():
+def test_set_comprehension() raises:
     var s1 = {x * x for x in range(10) if x & 1}
     assert_equal(s1, {1, 9, 25, 49, 81})
 
@@ -515,7 +515,7 @@ def test_set_comprehension():
     assert_equal(s2, {0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162})
 
 
-def test_set_write_to():
+def test_set_write_to() raises:
     check_write_to(Set[Int](10, 20, 30), expected="{10, 20, 30}", is_repr=False)
     check_write_to(
         Set[String]("hello", "world"), expected="{hello, world}", is_repr=False
@@ -525,7 +525,7 @@ def test_set_write_to():
     check_write_to({1, 2, 3}, expected="{1, 2, 3}", is_repr=False)
 
 
-def test_set_write_repr_to():
+def test_set_write_repr_to() raises:
     # Test set with elements
     var s = {1, 2, 3}
     var output = String()
@@ -541,5 +541,5 @@ def test_set_write_repr_to():
     assert_true(empty_output.endswith("]({})"), empty_output)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

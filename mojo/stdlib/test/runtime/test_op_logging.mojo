@@ -24,13 +24,13 @@ def test_op_logging[
     op_name: StaticString,
     detail: StaticString = "",
     task_id: OptionalReg[Int] = None,
-):
+) raises:
     with Trace[level, target=target](op_name, detail, task_id=task_id):
         pass
 
 
 # CHECK-LABEL: test_op_logging
-def main():
+def main() raises:
     print("== test_op_logging")
 
     # CHECK-NOT: [OP]

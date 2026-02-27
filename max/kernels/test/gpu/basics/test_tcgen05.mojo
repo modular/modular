@@ -178,7 +178,7 @@ fn test_tcgen05_cp() raises:
     )
 
 
-def main():
+def main() raises:
     test_tcgen05_alloc()
     test_tcgen05_dealloc()
     test_tcgen05_ld()

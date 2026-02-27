@@ -52,5 +52,5 @@ fn test_coord_codegen_memory() raises:
     assert_true("st.global.b32 \t[%rd3+4], %rd1" in nvidia_asm)
 
 
-def main():
+def main() raises:
     test_coord_codegen_memory()

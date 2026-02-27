@@ -90,7 +90,7 @@ fn check_path(path: Path, mut files_without_license: List[Path]) raises:
         files_without_license.append(path)
 
 
-def main():
+def main() raises:
     target_paths = sys.argv()
 
     fix = False

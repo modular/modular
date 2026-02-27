@@ -26,5 +26,5 @@ fn test_iter() raises:
     assert_true(_type_is_eq[type_of(_it2), _ListIter[Int, origin_of(l)]]())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

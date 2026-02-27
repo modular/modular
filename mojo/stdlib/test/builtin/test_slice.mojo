@@ -16,7 +16,7 @@ from test_utils import check_write_to
 from testing import assert_equal, assert_true, TestSuite
 
 
-def test_none_end_folds():
+def test_none_end_folds() raises:
     var all_def_slice = slice(0, None, 1)
     assert_equal(all_def_slice.start.value(), 0)
     assert_true(all_def_slice.end is None)
@@ -51,7 +51,7 @@ struct Sliceable:
         return a
 
 
-def test_sliceable():
+def test_sliceable() raises:
     var sliceable = Sliceable()
 
     var new_slice = sliceable[1:"hello":4.0]
@@ -73,7 +73,7 @@ struct SliceStringable:
         return String(a)
 
 
-def test_slice_stringable():
+def test_slice_stringable() raises:
     var s = SliceStringable()
     assert_equal(s[2::-1], "Slice(2, None, -1)")
     assert_equal(s[1:-1:2], "Slice(1, -1, 2)")
@@ -84,7 +84,7 @@ def test_slice_stringable():
     assert_equal(repr(slice(10)), "Slice(start=None, end=10, step=None)")
 
 
-def test_strided_slice_write_to():
+def test_strided_slice_write_to() raises:
     check_write_to(
         StridedSlice(1, 10, 2), expected="Slice(1, 10, 2)", is_repr=False
     )
@@ -115,7 +115,7 @@ def test_strided_slice_write_to():
     )
 
 
-def test_contiguous_slice_write_to():
+def test_contiguous_slice_write_to() raises:
     check_write_to(
         ContiguousSlice(1, 5, None), expected="Slice(1, 5, None)", is_repr=False
     )
@@ -142,7 +142,7 @@ def test_contiguous_slice_write_to():
     )
 
 
-def test_slice_eq():
+def test_slice_eq() raises:
     assert_equal(slice(1, 2, 3), slice(1, 2, 3))
     assert_equal(slice(None, 1, None), slice(1))
     assert_true(slice(2, 3) != slice(4, 5))
@@ -150,7 +150,7 @@ def test_slice_eq():
     assert_equal(slice(1, 2), slice(1, 2, None))
 
 
-def test_slice_indices():
+def test_slice_indices() raises:
     var start: Int
     var end: Int
     var step: Int
@@ -196,5 +196,5 @@ def test_slice_indices():
     # assert_equal(len(range(start, end, step)), 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

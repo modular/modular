@@ -20,7 +20,7 @@ fn test_cannot_cast_from_immutable_any_to_named[
     pass
 
 
-def main():
+def main() raises:
     var x = 42
 
     var p = UnsafePointer(to=x).as_immutable().as_any_origin()

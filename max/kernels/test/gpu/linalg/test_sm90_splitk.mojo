@@ -233,7 +233,7 @@ fn test_warp_specialize_gemm_with_multicasting[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # NOTE: please note that cublaslt handle should be used for fp8-e4m3fn and cublas handle for bfloat16
         # because cublas does not support float8-e4m3fn. Also, fp8 tests should be run first and then bfloat16 tests

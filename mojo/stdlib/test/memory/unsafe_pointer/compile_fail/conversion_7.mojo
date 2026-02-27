@@ -20,7 +20,7 @@ fn test_cannot_cast_between_different_address_spaces[
     pass
 
 
-def main():
+def main() raises:
     var x = 42
 
     var p = UnsafePointer(to=x).address_space_cast[AddressSpace(2)]()

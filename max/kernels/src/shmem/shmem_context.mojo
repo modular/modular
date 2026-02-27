@@ -94,7 +94,7 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
         print("PE:", mype, "received message:", msg)
         assert_equal(msg, (mype + 1) % shmem_n_pes())
 
-    def main():
+    def main() raises:
         shmem_launch[simple_shift]()
     ```
 

@@ -33,7 +33,7 @@ fn use_update[
     return update_val
 
 
-def main():
+def main() raises:
     fn test_scatternd() raises:
         print("== test_scatternd")
         # data: 4x4x4 = 64 elements

@@ -18,7 +18,7 @@ from nn.spatial_merge import spatial_merge
 from testing import assert_equal
 
 
-def test_spatial_merge(ctx: DeviceContext):
+def test_spatial_merge(ctx: DeviceContext) raises:
     comptime dtype = DType.float32
     comptime merge_size = 2
     comptime hidden_size = 4
@@ -193,6 +193,6 @@ def test_spatial_merge(ctx: DeviceContext):
                     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_spatial_merge(ctx)

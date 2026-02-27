@@ -23,7 +23,7 @@ from testing import assert_equal, assert_raises, assert_true, TestSuite
 comptime DUMMY_FILE_SIZE: UInt = 954
 
 
-def test_file_read():
+def test_file_read() raises:
     var path = _dir_of_current_file() / "test_file_dummy_input.txt"
     with open(path, "r") as f:
         assert_true(
@@ -33,7 +33,7 @@ def test_file_read():
         )
 
 
-def test_file_read_multi():
+def test_file_read_multi() raises:
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
@@ -45,7 +45,7 @@ def test_file_read_multi():
         )
 
 
-def test_file_read_bytes_multi():
+def test_file_read_bytes_multi() raises:
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
@@ -69,7 +69,7 @@ def test_file_read_bytes_multi():
         assert_true(s.startswith("sit amet, consectetur adipiscing elit."))
 
 
-def test_file_read_bytes_all():
+def test_file_read_bytes_all() raises:
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
@@ -78,7 +78,7 @@ def test_file_read_bytes_all():
         assert_equal(len(bytes_all), Int(DUMMY_FILE_SIZE))
 
 
-def test_file_read_bytes_zero():
+def test_file_read_bytes_zero() raises:
     """Test reading 0 bytes returns empty list."""
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
@@ -88,7 +88,7 @@ def test_file_read_bytes_zero():
         assert_equal(len(bytes_zero), 0)
 
 
-def test_file_read_bytes_empty_file():
+def test_file_read_bytes_empty_file() raises:
     """Test reading from empty file returns empty list."""
     var temp_file = Path(gettempdir().value()) / "test_file_read_bytes_empty"
 
@@ -107,7 +107,7 @@ def test_file_read_bytes_empty_file():
         assert_equal(len(bytes_sized), 0)
 
 
-def test_file_read_bytes_large_with_resizing():
+def test_file_read_bytes_large_with_resizing() raises:
     """Test read_bytes() with size=-1 triggers buffer doubling for large files.
 
     The DUMMY_FILE_SIZE is 954 bytes, which exceeds the initial 256 byte buffer,
@@ -124,7 +124,7 @@ def test_file_read_bytes_large_with_resizing():
         assert_true(content.startswith("Lorem ipsum"))
 
 
-def test_file_read_bytes_from_write_only():
+def test_file_read_bytes_from_write_only() raises:
     """Test that read_bytes from write-only file raises error."""
     var temp_file = (
         Path(gettempdir().value()) / "test_file_read_bytes_writeonly"
@@ -143,7 +143,7 @@ def test_file_read_bytes_from_write_only():
     f.close()
 
 
-def test_file_read_bytes_sequential_small():
+def test_file_read_bytes_sequential_small() raises:
     """Test multiple small sequential read_bytes() calls."""
     var temp_file = Path(gettempdir().value()) / "test_file_read_bytes_seq"
 
@@ -167,7 +167,7 @@ def test_file_read_bytes_sequential_small():
         assert_equal(total_read, 100)
 
 
-def test_file_read_all():
+def test_file_read_all() raises:
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
@@ -176,7 +176,7 @@ def test_file_read_all():
         assert_equal(len(all), Int(DUMMY_FILE_SIZE))
 
 
-def test_file_read_path():
+def test_file_read_path() raises:
     var file_path = _dir_of_current_file() / "test_file_dummy_input.txt"
 
     with open(file_path, "r") as f:
@@ -187,7 +187,7 @@ def test_file_read_path():
         )
 
 
-def test_file_path_direct_read():
+def test_file_path_direct_read() raises:
     var file_path = _dir_of_current_file() / "test_file_dummy_input.txt"
     assert_true(
         file_path.read_text().startswith(
@@ -196,7 +196,7 @@ def test_file_path_direct_read():
     )
 
 
-def test_file_read_context():
+def test_file_read_context() raises:
     with open(
         _dir_of_current_file() / "test_file_dummy_input.txt",
         "r",
@@ -208,7 +208,7 @@ def test_file_read_context():
         )
 
 
-def test_file_read_to_address():
+def test_file_read_to_address() raises:
     comptime DUMMY_FILE_SIZE = 954
     # Test buffer size > file size
     with open(
@@ -275,7 +275,7 @@ def test_file_read_to_address():
         assert_equal(f.read(buffer_1000), 0)
 
 
-def test_file_seek():
+def test_file_seek() raises:
     import os
 
     with open(
@@ -306,12 +306,12 @@ def test_file_seek():
             assert_equal(String(e)[: len(expected_msg)], expected_msg)
 
 
-def test_file_open_nodir():
+def test_file_open_nodir() raises:
     var f = open(Path("test_file_open_nodir"), "w")
     f.close()
 
 
-def test_file_write():
+def test_file_write() raises:
     var content: String = "The quick brown fox jumps over the lazy dog"
     var TEMP_FILE = Path(gettempdir().value()) / "test_file_write"
     with open(TEMP_FILE, "w") as f:
@@ -321,7 +321,7 @@ def test_file_write():
         assert_equal(read_file.read(), content)
 
 
-def test_file_write_span():
+def test_file_write_span() raises:
     var content: String = "The quick brown fox jumps over the lazy dog"
     var TEMP_FILE = Path(gettempdir().value()) / "test_file_write_span"
 
@@ -338,7 +338,7 @@ def test_file_write_span():
         assert_equal(read_file.read(), content)
 
 
-def test_file_write_again():
+def test_file_write_again() raises:
     var unexpected_content: String = "foo bar baz"
     var expected_content: String = "foo bar"
     var TEMP_FILE = Path(gettempdir().value()) / "test_file_write_again"
@@ -352,7 +352,7 @@ def test_file_write_again():
         assert_equal(read_file.read(), expected_content)
 
 
-def test_file_rw_mode_preserves_content():
+def test_file_rw_mode_preserves_content() raises:
     """Test that opening a file in 'rw' mode does not truncate existing content.
 
     The FileHandle "rw" mode should not truncate file contents before reading,
@@ -390,7 +390,7 @@ def test_file_rw_mode_preserves_content():
         assert_equal(f.read(), "new content")
 
 
-def test_file_write_mode_truncates():
+def test_file_write_mode_truncates() raises:
     """Test that opening a file in 'w' mode truncates existing content."""
     var temp_file = Path(gettempdir().value()) / "test_file_write_mode"
 
@@ -415,7 +415,7 @@ def test_file_write_mode_truncates():
         )
 
 
-def test_file_get_raw_fd():
+def test_file_get_raw_fd() raises:
     # since JIT and build give different file descriptors, we test by checking
     # if we printed to the right file.
     # First, ensure the test files are empty by opening in write mode
@@ -475,7 +475,7 @@ def test_file_get_raw_fd():
     f3.close()
 
 
-def test_file_append_mode():
+def test_file_append_mode() raises:
     """Test that opening a file in 'a' mode appends to existing content."""
     var temp_file = Path(gettempdir().value()) / "test_file_append_mode"
 
@@ -519,7 +519,7 @@ def test_file_append_mode():
         )
 
 
-def test_file_append_mode_creates_file():
+def test_file_append_mode_creates_file() raises:
     """Test that append mode creates a new file if it doesn't exist."""
     var temp_file = Path(gettempdir().value()) / "test_file_append_new"
 
@@ -541,7 +541,7 @@ def test_file_append_mode_creates_file():
         )
 
 
-def test_file_append_mode_with_unicode():
+def test_file_append_mode_with_unicode() raises:
     """Test that append mode works correctly with Unicode characters."""
     var temp_file = Path(gettempdir().value()) / "test_file_append_unicode"
 
@@ -569,7 +569,7 @@ def test_file_append_mode_with_unicode():
         )
 
 
-def test_file_open_fifo():
+def test_file_open_fifo() raises:
     """Test that opening a FIFO in write mode doesn't attempt to remove it.
 
     Regression test for bug where `FileHandle` should not try to remove
@@ -660,7 +660,7 @@ def test_file_open_fifo():
         pass
 
 
-def test_file_read_from_closed_file():
+def test_file_read_from_closed_file() raises:
     """Test that reading from a closed file raises an error with proper message.
     """
     var temp_file = Path(gettempdir().value()) / "test_file_read_closed"
@@ -684,7 +684,7 @@ def test_file_read_from_closed_file():
         _ = f.read()
 
 
-def test_file_read_from_write_only_file():
+def test_file_read_from_write_only_file() raises:
     """Test that reading from a write-only file raises an error with errno."""
     var temp_file = Path(gettempdir().value()) / "test_file_read_writeonly"
 
@@ -704,7 +704,7 @@ def test_file_read_from_write_only_file():
     f.close()
 
 
-def test_file_seek_invalid_file():
+def test_file_seek_invalid_file() raises:
     """Test that seeking on a closed file raises an error with proper message.
     """
     var temp_file = Path(gettempdir().value()) / "test_file_seek_closed"
@@ -726,7 +726,7 @@ def test_file_seek_invalid_file():
         _ = f.seek(0)
 
 
-def test_file_read_bytes_to_span_from_closed():
+def test_file_read_bytes_to_span_from_closed() raises:
     """Test that reading bytes into a Span from a closed file raises an error.
     """
     var temp_file = Path(gettempdir().value()) / "test_file_read_span_closed"
@@ -749,7 +749,7 @@ def test_file_read_bytes_to_span_from_closed():
         _ = f.read(buffer)
 
 
-def test_file_multiple_close():
+def test_file_multiple_close() raises:
     """Test that closing a file multiple times is safe."""
     var temp_file = Path(gettempdir().value()) / "test_file_multiple_close"
 
@@ -777,7 +777,7 @@ def test_file_multiple_close():
         assert_true(False, "Second close should not raise: " + String(e))
 
 
-def test_file_invalid_mode():
+def test_file_invalid_mode() raises:
     """Test that invalid file mode strings raise proper error."""
     var temp_file = Path(gettempdir().value()) / "test_file_invalid_mode"
 
@@ -795,7 +795,7 @@ def test_file_invalid_mode():
         _ = open(temp_file, "")
 
 
-def test_file_read_nonexistent():
+def test_file_read_nonexistent() raises:
     """Test that opening a non-existent file in read mode raises proper error.
     """
     var nonexistent_file = (
@@ -813,5 +813,5 @@ def test_file_read_nonexistent():
         _ = open(nonexistent_file, "r")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

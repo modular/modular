@@ -17,7 +17,7 @@ from testing import TestSuite
 from testing import assert_equal, assert_not_equal, assert_true
 
 
-def test_copy_reference_explicitly():
+def test_copy_reference_explicitly() raises:
     var a = [1, 2, 3]
 
     var b = Pointer(to=a)
@@ -29,7 +29,7 @@ def test_copy_reference_explicitly():
     assert_equal(c[][0], 4)
 
 
-def test_equality():
+def test_equality() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
@@ -38,20 +38,20 @@ def test_equality():
     assert_true(Pointer(to=a) != Pointer(to=b))
 
 
-def test_str():
+def test_str() raises:
     var a = Int(42)
     var a_ref = Pointer(to=a)
     assert_true(String(a_ref).startswith("0x"))
 
 
-def test_write_to():
+def test_write_to() raises:
     var a = Int(42)
     check_write_to(Pointer(to=a), contains="0x", is_repr=False)
     var s = String("hello")
     check_write_to(Pointer(to=s), contains="0x", is_repr=False)
 
 
-def test_write_repr_to():
+def test_write_repr_to() raises:
     var n = Int(42)
     check_write_to(
         Pointer(to=n),
@@ -89,23 +89,23 @@ comptime ADDRESS_SPACE_STRINGS = [
 ]
 
 
-def test_address_space_write_to():
+def test_address_space_write_to() raises:
     for address_space, expected in materialize[ADDRESS_SPACE_STRINGS]():
         check_write_to(address_space, expected=expected, is_repr=False)
 
 
-def test_address_space_write_repr_to():
+def test_address_space_write_repr_to() raises:
     for address_space, expected in materialize[ADDRESS_SPACE_STRINGS]():
         check_write_to(address_space, expected=expected, is_repr=True)
 
 
-def test_pointer_to():
+def test_pointer_to() raises:
     var local = 1
     assert_not_equal(0, Pointer(to=local)[])
 
 
 # Test pointer merging with ternary operation.
-def test_merge():
+def test_merge() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
@@ -122,7 +122,7 @@ def test_merge():
 
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
-def _test_get_immutable() -> Int:
+def _test_get_immutable() raises -> Int:
     fn foo(x: Pointer[mut=False, Int], y: Pointer[mut=False, Int]) -> Int:
         return x[]
 
@@ -130,5 +130,5 @@ def _test_get_immutable() -> Int:
     return foo(Pointer(to=x), Pointer(to=x))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

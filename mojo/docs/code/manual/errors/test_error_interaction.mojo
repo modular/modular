@@ -19,27 +19,27 @@ from error_interaction import (
 )
 
 
-def test_wrapped_validate_pass():
+def test_wrapped_validate_pass() raises:
     assert_equal(wrapped_validate(5), 5)
 
 
-def test_wrapped_validate_fail():
+def test_wrapped_validate_fail() raises:
     with assert_raises(contains="cannot be negative"):
         _ = wrapped_validate(-5)
 
 
-def test_wrapped_validate_field_access():
+def test_wrapped_validate_field_access() raises:
     try:
         _ = wrapped_validate(-5)
     except e:
         assert_equal(e.field, "value")
 
 
-def test_validate_typed_pass():
+def test_validate_typed_pass() raises:
     assert_equal(validate_typed(5), 5)
 
 
-def test_validate_typed_fail():
+def test_validate_typed_fail() raises:
     with assert_raises(contains="cannot be negative"):
         _ = validate_typed(-5)
 
@@ -50,5 +50,5 @@ def test_bare_raises_erases_type():
         _ = validate_bare_raises(-5)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

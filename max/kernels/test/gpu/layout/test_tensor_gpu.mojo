@@ -27,7 +27,7 @@ from layout.layout_tensor import Layout, LayoutTensor
 from testing import assert_true
 
 
-def test_copy_dram_to_sram_async(ctx: DeviceContext):
+def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
     print("== test_copy_dram_to_sram_async")
     comptime tensor_layout = Layout.row_major(4, 16)
     var tensor = ManagedLayoutTensor[DType.float32, tensor_layout](ctx)
@@ -76,6 +76,6 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
     assert_true(check_state, "Inconsistent values in shared memory")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_copy_dram_to_sram_async(ctx)

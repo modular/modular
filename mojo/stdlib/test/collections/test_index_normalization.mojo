@@ -17,7 +17,7 @@ from testing import assert_equal
 from testing import TestSuite
 
 
-def test_out_of_bounds_message():
+def test_out_of_bounds_message() raises:
     # CHECK: index out of bounds
     _ = normalize_index[""](2, 2)
     # CHECK: index out of bounds
@@ -66,7 +66,7 @@ def test_out_of_bounds_message():
     _ = normalize_index[""](UInt.MAX, UInt.MAX - 10)
 
 
-def test_normalize_index():
+def test_normalize_index() raises:
     assert_equal(normalize_index[""](-3, 3), 0)
     assert_equal(normalize_index[""](-2, 3), 1)
     assert_equal(normalize_index[""](-1, 3), 2)
@@ -107,5 +107,5 @@ def test_normalize_index():
     assert_equal(normalize_index[""](Int.MIN, UInt(Int.MAX) + 1), 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

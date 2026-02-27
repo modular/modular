@@ -57,5 +57,5 @@ fn test_ulp_distance() raises:
     assert_true(ulp == 13)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -51,7 +51,7 @@ fn _timed_func(context: DeviceContext) raises:
     _timed_iter_func(context, 2)
 
 
-def test_timing():
+def test_timing() raises:
     var ctx = create_test_device_context()
     print("Running test_timing(" + ctx.name() + "):")
 
@@ -66,5 +66,5 @@ def test_timing():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

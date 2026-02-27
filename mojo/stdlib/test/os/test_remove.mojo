@@ -33,7 +33,7 @@ fn create_file_and_test_delete_path[
     assert_false(exists(filepath), "test with '" + name + "' failed")
 
 
-def test_remove():
+def test_remove() raises:
     var cwd_path = Path()
     var my_file_path = cwd_path / "my_file.test"
     var my_file_name = String(my_file_path)
@@ -60,5 +60,5 @@ def test_remove():
     create_file_and_test_delete_path[remove, "remove"](my_file_name)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

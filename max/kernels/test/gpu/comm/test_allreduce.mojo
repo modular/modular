@@ -287,7 +287,7 @@ fn _get_test_str[
     )
 
 
-def allreduce_naive_test() -> None:
+def allreduce_naive_test() raises -> None:
     """Explicit smoke test for the allreduce naive path."""
     print("====allreduce-naive-smoke-DType.float32-2-8Ki elements")
     comptime ngpus = 2
@@ -444,7 +444,7 @@ fn run_allreduce_sweep[use_multimem: Bool]() raises:
                 raise e^
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )

@@ -1012,7 +1012,7 @@ fn run_bench_uniform[
 # ===-----------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     seed(42)
 
     with DeviceContext() as ctx:

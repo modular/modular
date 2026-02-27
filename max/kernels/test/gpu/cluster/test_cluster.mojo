@@ -244,7 +244,7 @@ fn test_cluster_pipeline(ctx: DeviceContext) raises:
     # CHECK-DAG: cancelled:  False 2 3
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_cluster_launch_control(ctx)
         test_cluster_pipeline(ctx)

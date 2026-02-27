@@ -54,7 +54,7 @@ whether a supported GPU is available.
 ```mojo title="detect_gpu.mojo"
 from sys import has_accelerator
 
-def main():
+def main() raises:
     @parameter
     if has_accelerator():
         print("GPU detected")
@@ -153,7 +153,7 @@ fn scalar_add(
         vector[idx] += scalar
 
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No GPUs detected")
@@ -361,7 +361,7 @@ fn print_threads():
         "]",
     )
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No compatible GPU found")

@@ -25,7 +25,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
-def test_compile_function():
+def test_compile_function() raises:
     print("== test_compile_function")
 
     fn kernel(x: UnsafePointer[Int]):
@@ -37,5 +37,5 @@ def test_compile_function():
         _ = ctx.compile_function_experimental[kernel]()
 
 
-def main():
+def main() raises:
     test_compile_function()

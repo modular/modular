@@ -308,7 +308,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     _ = b_scales_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime in_dtype = DType.float8_e4m3fn

@@ -153,5 +153,5 @@ fn test_zip_bounds() raises:
     assert_false(Bool(zipD.bounds()[1]))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

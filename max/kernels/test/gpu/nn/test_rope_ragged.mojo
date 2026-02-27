@@ -28,7 +28,7 @@ from utils import IndexList
 
 def test_rope_ragged_gpu[
     rope_dim: Int, dtype: DType
-](ctx: DeviceContext) -> None:
+](ctx: DeviceContext) raises -> None:
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
     comptime assert (
@@ -222,7 +222,7 @@ def test_rope_ragged_gpu[
                     )
 
 
-def execute_rope_ragged_gpu(ctx: DeviceContext) -> None:
+def execute_rope_ragged_gpu(ctx: DeviceContext) raises -> None:
     """Execute GPU RoPE tests with different rope dimensions."""
     # Full head RoPE
     test_rope_ragged_gpu[8, DType.float32](ctx)
@@ -231,6 +231,6 @@ def execute_rope_ragged_gpu(ctx: DeviceContext) -> None:
     test_rope_ragged_gpu[4, DType.float32](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         execute_rope_ragged_gpu(ctx)

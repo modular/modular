@@ -11,8 +11,8 @@ not its *structure*.
 
 There are some types that aren't defined as structs:
 
-* Functions are typed based on their signatures.
-* `NoneType` is a type with one instance, the `None` object, which is used to
+- Functions are typed based on their signatures.
+- `NoneType` is a type with one instance, the `None` object, which is used to
   signal "no value."
 
 Mojo comes with a standard library that provides a number of useful types and
@@ -146,11 +146,11 @@ numbers are represented, see [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754).
 Because floating-point values are approximate, they often cannot represent the
 exact mathematical value they are intended to model.
 
-* **Rounding errors.** Rounding may produce unexpected results. For example,
+- **Rounding errors.** Rounding may produce unexpected results. For example,
   `1/3` cannot be represented exactly in floating-point formats. As more
   floating-point operations are performed, rounding errors may accumulate.
 
-* **Space between consecutive numbers.** The distance between consecutive
+- **Space between consecutive numbers.** The distance between consecutive
   representable values varies across the range of a floating-point type. Near
   zero, values are densely packed. For large positive or negative numbers, the
   spacing can exceed 1, making it impossible to represent some consecutive
@@ -308,9 +308,9 @@ allows you to perform an operation on an entire set of operands at once. Mojo's
 register. SIMD vectors are defined by two
 [*parameters*](/mojo/manual/parameters/):
 
-* A `DType` value, defining the data type in the vector (for example,
+- A `DType` value, defining the data type in the vector (for example,
   32-bit floating-point numbers).
-* The number of elements in the vector, which must be a power of two.
+- The number of elements in the vector, which must be a power of two.
 
 For example, you can define a vector of four `Float32` values like this:
 
@@ -372,7 +372,7 @@ same thing).
 ```mojo
 from utils.numerics import max_finite, min_finite
 
-def describeDType[dtype: DType]():
+def describeDType[dtype: DType]() raises:
     print(dtype, "is floating-point:", dtype.is_floating_point())
     print(dtype, "is integral:", dtype.is_integral())
     print("Min/max finite values for", dtype)
@@ -582,13 +582,13 @@ Example
 The Mojo standard library also includes a set of basic collection types that
 can be used to build more complex data structures:
 
-* [`List`](/mojo/std/collections/list/List), a dynamically-sized array of
+- [`List`](/mojo/std/collections/list/List), a dynamically-sized array of
   items.
-* [`Dict`](/mojo/std/collections/dict/Dict), an associative array of
+- [`Dict`](/mojo/std/collections/dict/Dict), an associative array of
   key-value pairs.
-* [`Set`](/mojo/std/collections/set/Set), an unordered collection of unique
+- [`Set`](/mojo/std/collections/set/Set), an unordered collection of unique
   items.
-* [`Optional`](/mojo/std/collections/optional/Optional)
+- [`Optional`](/mojo/std/collections/optional/Optional)
   represents a value that may or may not be present.
 
 The collection types are *generic types*: while a given collection can only
@@ -643,7 +643,6 @@ list.append(11)
 print("Popping last item from list: ", list.pop())
 for idx in range(len(list)):
       print(list[idx], end=", ")
-
 ```
 
 ```output
@@ -655,7 +654,7 @@ Note that the previous code sample leaves out the type parameter when creating
 the list. Because the list is being created with a set of `Int` values, Mojo can
 *infer* the type from the arguments.
 
-* Mojo supports list, set, and dictionary literals for collection initialization:
+- Mojo supports list, set, and dictionary literals for collection initialization:
 
   ```mojo
   # List literal, element type infers to Int.
@@ -674,7 +673,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   var list2 = [x*Int(y) for x in nums for y in list if x != 3]
   ```
 
-* You can't `print()` a list, or convert it directly into a string.
+- You can't `print()` a list, or convert it directly into a string.
 
   ```mojo
   # Does not work
@@ -684,7 +683,7 @@ the list. Because the list is being created with a set of `Int` values, Mojo can
   As shown above, you can print the individual elements in a list as long as
   they're a [`Stringable`](/mojo/std/builtin/str/Stringable) type.
 
-* Iterating a `List` returns an immutable
+- Iterating a `List` returns an immutable
   [reference](/mojo/manual/values/lifetimes#working-with-references) to each
   item:
 
@@ -837,7 +836,6 @@ print(custom_greeting.or_else("Hello"))
 
 custom_greeting = "Hi"
 print(custom_greeting.or_else("Hello"))
-
 ```
 
 ```output
@@ -851,7 +849,7 @@ In various places in the documentation you'll see references to
 register-passable, memory-only, and trivial types. Register-passable and
 memory-only types are distinguished based on how they hold data:
 
-* Register-passable types are composed exclusively of fixed-size data types,
+- Register-passable types are composed exclusively of fixed-size data types,
   which can (theoretically) be stored in a machine register. A register-passable
   type can include other types, as long as they are also register-passable.
   `Int`, `Bool`, and `SIMD`, for example, are all register-passable types. So
@@ -859,7 +857,7 @@ memory-only types are distinguished based on how they hold data:
   `String` field. Register-passable types are declared with the
   [`@register_passable`](/mojo/manual/decorators/register-passable) decorator.
 
-* Memory-only types consist of all other types that *aren't* specifically
+- Memory-only types consist of all other types that *aren't* specifically
   designated as register-passable types. These types often have pointers or
   references to dynamically-allocated memory. `String`, `List`, and `Dict` are
   all examples of memory-only types.
@@ -893,10 +891,10 @@ so in the future we intend to separate trivial types from the
 Two other things you'll see in Mojo APIs are references to `AnyType` and
 `__TypeOfAllTypes`. These are effectively *metatypes*, that is, types of types.
 
-* `AnyType` is a trait that represents a type with a destructor. You'll find
+- `AnyType` is a trait that represents a type with a destructor. You'll find
   more discussion of it on the
   [Traits page](/mojo/manual/traits#the-anytype-trait).
-* `__TypeOfAllTypes` is a metatype representing any Mojo type that's marked
+- `__TypeOfAllTypes` is a metatype representing any Mojo type that's marked
   as a trivial type.
 
 You'll see them in signatures like this:

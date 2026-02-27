@@ -122,7 +122,7 @@ Each Mojo cell must contain a complete program, including a `main()` function.
 ```mojo
 %%mojo
 
-def main():
+def main() raises:
   print("Hello Mojo")
 ```
 
@@ -148,7 +148,7 @@ fn threehello():
     repeat[3]("Hello 🔥!")
 
 # Run
-def main():
+def main() raises:
     threehello()
 ```
 
@@ -177,7 +177,7 @@ from gpu.host import DeviceContext
 fn kernel():
     print("Hello from the GPU")
 
-def main():
+def main() raises:
     # Launch GPU kernel
     with DeviceContext() as ctx:
         ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
@@ -215,7 +215,7 @@ fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
     output[idx] = left[idx] + right[idx]
 
 
-def main():
+def main() raises:
     # Ensure a supported GPU (NVIDIA or AMD) is available
     comptime assert has_accelerator(), "This example requires a supported GPU"
 

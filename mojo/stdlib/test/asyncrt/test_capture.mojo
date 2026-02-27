@@ -31,12 +31,12 @@ fn vec_func[
     output[tid] = op(in0[tid], in1[tid])
 
 
-def test_capture_2_5():
+def test_capture_2_5() raises:
     var ctx = create_test_device_context()
     run_captured_func(ctx, 2.5)
 
 
-def test_capture_neg_1_5():
+def test_capture_neg_1_5() raises:
     var ctx = create_test_device_context()
     run_captured_func(ctx, -1.5)
 
@@ -88,7 +88,7 @@ fn run_captured_func(ctx: DeviceContext, captured: Float32) raises:
             )
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

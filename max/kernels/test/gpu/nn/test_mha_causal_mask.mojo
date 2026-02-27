@@ -340,7 +340,7 @@ fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
     return depths^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime is_sm90orsm100 = ctx.default_device_info == H100 or ctx.default_device_info == B200
         comptime depths = construct_depths(is_sm90orsm100)

@@ -51,7 +51,7 @@ fn nested_modes():
     print()
 
 
-def main():
+def main() raises:
     row_and_column_major()
     coords_to_index()
     nested_modes()

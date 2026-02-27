@@ -18,5 +18,5 @@ fn repeat[count: Int](msg: String):
         print(msg)
 
 
-def main():
+def main() raises:
     repeat[3]("Hello")

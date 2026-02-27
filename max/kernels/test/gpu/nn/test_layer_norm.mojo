@@ -359,7 +359,7 @@ fn run_layer_norm_warp_tiling[
     beta_h.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_layer_norm_block[DType.float32, simd_width=1](ctx, rows=3, cols=5)
         run_layer_norm_block[DType.float32](ctx, rows=3, cols=8)

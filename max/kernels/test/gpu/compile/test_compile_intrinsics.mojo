@@ -33,7 +33,7 @@ fn kernel[
 
 
 # CHECK-LABEL: test_compile_code
-def test_compile_code():
+def test_compile_code() raises:
     print("== test_compile_code")
 
     # CHECK: st.release.sys.global.u32 [%rd1], %r1;
@@ -118,5 +118,5 @@ def test_compile_code():
     )
 
 
-def main():
+def main() raises:
     test_compile_code()

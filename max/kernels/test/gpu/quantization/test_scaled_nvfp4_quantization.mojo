@@ -244,7 +244,7 @@ fn test_dynamic_fp4_quant[
                             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Zero-row inputs should not launch kernels.
         test_dynamic_fp4_quant[

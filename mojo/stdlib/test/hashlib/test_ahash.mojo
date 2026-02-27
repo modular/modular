@@ -33,7 +33,7 @@ comptime hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 comptime hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
 
 
-def test_hash_byte_array():
+def test_hash_byte_array() raises:
     comptime a = StaticString("a")
     comptime b = StaticString("b")
     comptime c = StaticString("c")
@@ -56,7 +56,7 @@ def test_hash_byte_array():
     )
 
 
-def test_avalanche():
+def test_avalanche() raises:
     # test that values which differ just in one bit,
     # produce significatly different hash values
     var data = InlineArray[UInt8, 256](uninitialized=True)
@@ -86,7 +86,7 @@ def test_avalanche():
     assert_dif_hashes(hashes1, 12)
 
 
-def test_trailing_zeros():
+def test_trailing_zeros() raises:
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
     var data = InlineArray[UInt8, 8](uninitialized=True)
@@ -111,7 +111,7 @@ def test_trailing_zeros():
     assert_dif_hashes(hashes1, 18)
 
 
-def test_fill_factor():
+def test_fill_factor() raises:
     var words: List[String] = gen_word_pairs[words_ar]()
     assert_fill_factor["AR", hasher0](words, len(words), 0.63)
     assert_fill_factor["AR", hasher0](words, len(words) // 2, 0.86)
@@ -155,7 +155,7 @@ def test_fill_factor():
     assert_fill_factor["RU", hasher0](words, len(words) // 13, 1.0)
 
 
-def test_hash_simd_values():
+def test_hash_simd_values() raises:
     fn hash(value: SIMD) -> UInt64:
         hasher = hasher0()
         hasher._update_with_simd(value)
@@ -213,5 +213,5 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.int32, 64](0)), 810077408472869726)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

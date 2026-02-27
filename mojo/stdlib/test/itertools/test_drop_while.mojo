@@ -39,7 +39,7 @@ fn is_negative(x: Int) -> Bool:
     return x < 0
 
 
-def test_drop_while_basic():
+def test_drop_while_basic() raises:
     """Tests basic drop_while behavior."""
     var nums = [1, 2, 3, 4, 5, 6, 1, 2]
     var it = drop_while[less_than_5](nums)
@@ -53,7 +53,7 @@ def test_drop_while_basic():
         _ = next(it)
 
 
-def test_drop_while_yields_after_first_failure():
+def test_drop_while_yields_after_first_failure() raises:
     """Tests that drop_while yields all elements after first predicate failure.
     """
     var nums = [2, 4, 6, 7, 8, 10, 3]
@@ -68,7 +68,7 @@ def test_drop_while_yields_after_first_failure():
         _ = next(it)
 
 
-def test_drop_while_none_dropped():
+def test_drop_while_none_dropped() raises:
     """Tests drop_while when no elements are dropped (first fails predicate)."""
     var nums = [5, 1, 2, 3, 4]
     var it = drop_while[less_than_5](nums)
@@ -83,7 +83,7 @@ def test_drop_while_none_dropped():
         _ = next(it)
 
 
-def test_drop_while_all_dropped():
+def test_drop_while_all_dropped() raises:
     """Tests drop_while when all elements are dropped."""
     var nums = [1, 2, 3, 4]
     var it = drop_while[less_than_5](nums)
@@ -93,7 +93,7 @@ def test_drop_while_all_dropped():
         _ = next(it)
 
 
-def test_drop_while_empty():
+def test_drop_while_empty() raises:
     """Tests drop_while on an empty list."""
     var empty = List[Int]()
     var it = drop_while[less_than_5](empty)
@@ -102,7 +102,7 @@ def test_drop_while_empty():
         _ = next(it)
 
 
-def test_drop_while_single_dropped():
+def test_drop_while_single_dropped() raises:
     """Tests drop_while with single element that is dropped."""
     var nums = [3]
     var it = drop_while[less_than_5](nums)
@@ -111,7 +111,7 @@ def test_drop_while_single_dropped():
         _ = next(it)
 
 
-def test_drop_while_single_kept():
+def test_drop_while_single_kept() raises:
     """Tests drop_while with single element that is kept."""
     var nums = [10]
     var it = drop_while[less_than_5](nums)
@@ -121,7 +121,7 @@ def test_drop_while_single_kept():
         _ = next(it)
 
 
-def test_drop_while_in_for_loop():
+def test_drop_while_in_for_loop() raises:
     """Tests drop_while iterator in a for loop."""
     var nums = [1, 2, 3, 4, 5, 6, 7]
     var results = List[Int]()
@@ -135,7 +135,7 @@ def test_drop_while_in_for_loop():
     assert_equal(results[2], 7)
 
 
-def test_drop_while_always_true():
+def test_drop_while_always_true() raises:
     """Tests drop_while with a predicate that always returns True."""
     var nums = [1, 2, 3]
     var it = drop_while[always_true](nums)
@@ -145,7 +145,7 @@ def test_drop_while_always_true():
         _ = next(it)
 
 
-def test_drop_while_always_false():
+def test_drop_while_always_false() raises:
     """Tests drop_while with a predicate that always returns False."""
     var nums = [1, 2, 3]
     var it = drop_while[always_false](nums)
@@ -158,7 +158,7 @@ def test_drop_while_always_false():
         _ = next(it)
 
 
-def test_drop_while_from_range():
+def test_drop_while_from_range() raises:
     """Tests drop_while on a range."""
     var it = drop_while[less_than_5](range(10))
 
@@ -172,7 +172,7 @@ def test_drop_while_from_range():
         _ = next(it)
 
 
-def test_drop_while_negative_numbers():
+def test_drop_while_negative_numbers() raises:
     """Tests drop_while with negative numbers."""
     var nums = [-3, -2, -1, 0, 1, 2, -5]
     var it = drop_while[is_negative](nums)
@@ -186,7 +186,7 @@ def test_drop_while_negative_numbers():
         _ = next(it)
 
 
-def test_drop_while_only_yields_once_triggered():
+def test_drop_while_only_yields_once_triggered() raises:
     """Tests that drop_while yields all elements after first failure."""
     var nums = [0, 0, 0, 1, 0, 0, 0]
 
@@ -204,5 +204,5 @@ def test_drop_while_only_yields_once_triggered():
         _ = next(it)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

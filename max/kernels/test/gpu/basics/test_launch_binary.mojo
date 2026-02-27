@@ -32,7 +32,7 @@ fn vec_func(
     output[tid] = in0[tid] + in1[tid]
 
 
-def test_vec_add(ctx: DeviceContext):
+def test_vec_add(ctx: DeviceContext) raises:
     comptime length = 1024
 
     var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -70,6 +70,6 @@ def test_vec_add(ctx: DeviceContext):
             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_vec_add(ctx)

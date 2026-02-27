@@ -129,6 +129,6 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     _ = out_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_mandelbrot(ctx)

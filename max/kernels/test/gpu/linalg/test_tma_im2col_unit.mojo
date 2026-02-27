@@ -432,7 +432,7 @@ fn run_im2col_test[
     return errors == 0
 
 
-def main():
+def main() raises:
     print("=" * 70)
     print("TMA Im2Col Unit Tests (ported from CUTLASS)")
     print("=" * 70)

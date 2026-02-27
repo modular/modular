@@ -15,27 +15,27 @@ from testing import assert_equal, assert_false, TestSuite
 from testing.suite import TestSuiteReport
 
 
-def nonconforming_name():
+def nonconforming_name() raises:
     raise Error("should not be run")
 
 
-def test_failing():
+def test_failing() raises:
     raise Error("should be raised")
 
 
-def test_passing_1():
+def test_passing_1() raises:
     pass
 
 
-def test_passing_2():
+def test_passing_2() raises:
     pass
 
 
-def test_skipped():
+def test_skipped() raises:
     raise Error("should be skipped")
 
 
-def main():
+def main() raises:
     var suite = TestSuite.discover_tests[__functions_in_module()]()
     var report: TestSuiteReport
     try:

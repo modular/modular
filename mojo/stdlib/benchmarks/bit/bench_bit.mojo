@@ -151,7 +151,7 @@ fn bench_next_power_of_two_uint[func: fn(UInt) -> UInt](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=10))
     m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v1]](

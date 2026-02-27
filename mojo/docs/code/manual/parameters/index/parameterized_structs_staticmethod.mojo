@@ -45,7 +45,7 @@ struct GenericArray[ElementType: Copyable & ImplicitlyDestructible]:
         return Self(count=count, value=value)
 
 
-def main():
+def main() raises:
     var array = GenericArray[Float64].splat(8, 0)
     for i in range(array.size):
         end = ", " if i < array.size - 1 else "\n"

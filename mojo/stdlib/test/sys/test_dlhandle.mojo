@@ -23,17 +23,17 @@ from testing import TestSuite
 # ===----------------------------------------------------------------------=== #
 
 
-def test_owned_dlhandle_invalid_path():
+def test_owned_dlhandle_invalid_path() raises:
     with assert_raises(contains="dlopen failed"):
         _ = OwnedDLHandle("/an/invalid/library")
 
 
-def test_owned_dlhandle_invalid_path_obj():
+def test_owned_dlhandle_invalid_path_obj() raises:
     with assert_raises(contains="dlopen failed"):
         _ = OwnedDLHandle(Path("/an/invalid/library"))
 
 
-def test_owned_dlhandle_load_valid_library():
+def test_owned_dlhandle_load_valid_library() raises:
     try:
         # Try common locations for libc
         var lib = OwnedDLHandle("libc.so.6")  # Linux
@@ -55,7 +55,7 @@ def test_owned_dlhandle_load_valid_library():
                 )
 
 
-def test_owned_dlhandle_check_symbol():
+def test_owned_dlhandle_check_symbol() raises:
     try:
         var lib = OwnedDLHandle("libc.so.6")
         # Common C library functions that should exist
@@ -72,7 +72,7 @@ def test_owned_dlhandle_check_symbol():
             print("Warning: Could not load libc for symbol test")
 
 
-def test_owned_dlhandle_borrow():
+def test_owned_dlhandle_borrow() raises:
     """Test that borrow() returns a valid DLHandle reference."""
     try:
         var lib = OwnedDLHandle("libc.so.6")
@@ -93,7 +93,7 @@ def test_owned_dlhandle_borrow():
             print("Warning: Could not load libc for borrow test")
 
 
-def test_owned_dlhandle_global_symbols():
+def test_owned_dlhandle_global_symbols() raises:
     """Test loading global symbols from current process."""
     try:
         # Load symbols from the current process
@@ -104,7 +104,7 @@ def test_owned_dlhandle_global_symbols():
         print("Warning: Could not load global symbols")
 
 
-def test_owned_dlhandle_automatic_cleanup():
+def test_owned_dlhandle_automatic_cleanup() raises:
     """Test that OwnedDLHandle automatically closes on destruction."""
     # This test primarily verifies that the code compiles and runs
     # without crashes. The actual cleanup happens automatically.
@@ -124,5 +124,5 @@ def test_owned_dlhandle_automatic_cleanup():
     create_and_destroy_handle()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

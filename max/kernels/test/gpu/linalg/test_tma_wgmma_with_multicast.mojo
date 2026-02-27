@@ -288,7 +288,7 @@ def test_multicast_tma_wgmma[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     partitioned_multicast: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -441,7 +441,7 @@ def test_multicast_tma_wgmma[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # 2x1 cluster tests
         test_multicast_tma_wgmma[

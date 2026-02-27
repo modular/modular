@@ -72,7 +72,7 @@ def run_elementwise[
             )
 
 
-def test_log():
+def test_log() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float32, log](ctx)
         run_elementwise[DType.float32, log10](ctx)
@@ -85,5 +85,5 @@ def test_log():
         run_elementwise[DType.bfloat16, log2](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

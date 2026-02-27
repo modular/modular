@@ -246,7 +246,7 @@ fn overlap_matmul_allreduce_test[
     _ = C_reduced_list^
 
 
-def main():
+def main() raises:
     # Test hyperparameters.
     comptime test_dtypes = (DType.bfloat16,)
     comptime test_gpu_counts = (4, 8)

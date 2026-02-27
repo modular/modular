@@ -32,7 +32,7 @@ from testing import assert_equal
 from testing import TestSuite
 
 
-def test_count_leading_zeros():
+def test_count_leading_zeros() raises:
     assert_equal(count_leading_zeros(-(2**59)), 0)
     assert_equal(count_leading_zeros(-(2**20)), 0)
     assert_equal(count_leading_zeros(-1), 0)
@@ -46,7 +46,7 @@ def test_count_leading_zeros():
     assert_equal(count_leading_zeros(2**59), 4)
 
 
-def test_count_leading_zeros_simd():
+def test_count_leading_zeros_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -87,7 +87,7 @@ def test_count_leading_zeros_simd():
     assert_equal(alias7, SIMD[DType.uint8, 4](8, 8, 8, 8))
 
 
-def test_count_trailing_zeros():
+def test_count_trailing_zeros() raises:
     assert_equal(count_trailing_zeros(-(2**59)), 59)
     assert_equal(count_trailing_zeros(-(2**20)), 20)
     assert_equal(count_trailing_zeros(-1), 0)
@@ -100,7 +100,7 @@ def test_count_trailing_zeros():
     assert_equal(count_trailing_zeros(2**59), 59)
 
 
-def test_count_trailing_zeros_simd():
+def test_count_trailing_zeros_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -138,7 +138,7 @@ def test_count_trailing_zeros_simd():
     )
 
 
-def test_bit_reverse():
+def test_bit_reverse() raises:
     assert_equal(bit_reverse(-(2**32)), 4294967295)
     assert_equal(bit_reverse(-1), -1)
     assert_equal(bit_reverse(0), 0)
@@ -148,7 +148,7 @@ def test_bit_reverse():
     assert_equal(bit_reverse(2**63), 1)
 
 
-def test_bit_reverse_simd():
+def test_bit_reverse_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -178,7 +178,7 @@ def test_bit_reverse_simd():
     )
 
 
-def test_byte_swap():
+def test_byte_swap() raises:
     assert_equal(byte_swap(0x0000), 0x0000000000000000)
     assert_equal(byte_swap(0x0102), 0x0201000000000000)
     assert_equal(byte_swap(0x0201), 0x0102000000000000)
@@ -188,7 +188,7 @@ def test_byte_swap():
     assert_equal(byte_swap(0x23456789ABCDEF01), 0x01EFCDAB89674523)
 
 
-def test_byte_swap_simd():
+def test_byte_swap_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -231,7 +231,7 @@ def test_byte_swap_simd():
     )
 
 
-def test_pop_count():
+def test_pop_count() raises:
     assert_equal(pop_count(-111444444), 51)
     assert_equal(pop_count(0), 0)
     assert_equal(pop_count(1), 1)
@@ -242,7 +242,7 @@ def test_pop_count():
     assert_equal(pop_count(3000000), 10)
 
 
-def test_pop_count_simd():
+def test_pop_count_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -266,7 +266,7 @@ def test_pop_count_simd():
     assert_equal(pop_count(var4), SIMD[int64_t, simd_width](51, 0, 10, 1))
 
 
-def test_bit_not_simd():
+def test_bit_not_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -299,7 +299,7 @@ def test_bit_not_simd():
     )
 
 
-def test_bit_width():
+def test_bit_width() raises:
     assert_equal(bit_width(-(2**59)), 59)
     assert_equal(bit_width(-2), 1)
     assert_equal(bit_width(-1), 0)
@@ -311,7 +311,7 @@ def test_bit_width():
     assert_equal(bit_width(2**59), 60)
 
 
-def test_bit_width_simd():
+def test_bit_width_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -335,7 +335,7 @@ def test_bit_width_simd():
     assert_equal(bit_width(var4), SIMD[int64_t, simd_width](27, 0, 22, 60))
 
 
-def test_next_power_of_two():
+def test_next_power_of_two() raises:
     # test for Int
     assert_equal(next_power_of_two(Int(-(2**59))), 1)
     assert_equal(next_power_of_two(Int(-2)), 1)
@@ -356,7 +356,7 @@ def test_next_power_of_two():
     assert_equal(next_power_of_two(UInt(2**59 - 3)), UInt(2) ** 59)
 
 
-def test_next_power_of_two_simd():
+def test_next_power_of_two_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -398,7 +398,7 @@ def test_next_power_of_two_simd():
     )
 
 
-def test_prev_power_of_two():
+def test_prev_power_of_two() raises:
     assert_equal(prev_power_of_two(-(2**59)), 0)
     assert_equal(prev_power_of_two(-2), 0)
     assert_equal(prev_power_of_two(1), 1)
@@ -408,7 +408,7 @@ def test_prev_power_of_two():
     assert_equal(prev_power_of_two(2**59), 2**59)
 
 
-def test_prev_power_of_two_simd():
+def test_prev_power_of_two_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -450,7 +450,7 @@ def test_prev_power_of_two_simd():
     )
 
 
-def test_rotate_bits_int():
+def test_rotate_bits_int() raises:
     assert_equal(rotate_bits_left[0](104), 104)
     assert_equal(rotate_bits_left[2](104), 416)
     assert_equal(rotate_bits_left[-2](104), 26)
@@ -464,7 +464,7 @@ def test_rotate_bits_int():
     assert_equal(rotate_bits_right[-8](104), 26624)
 
 
-def test_rotate_bits_simd():
+def test_rotate_bits_simd() raises:
     comptime simd_width = 1
     comptime dtype = DType.uint8
 
@@ -516,7 +516,7 @@ fn _log2_ceil(n: Scalar) -> type_of(n):
     return {ceil(log2(Float64(n)))}
 
 
-def test_log2_floor():
+def test_log2_floor() raises:
     for i in range(1, 100):
         assert_equal(
             log2_floor(i),
@@ -595,7 +595,7 @@ def test_log2_floor():
     _check_alias[32](5)
 
 
-def test_log2_ceil():
+def test_log2_ceil() raises:
     assert_equal(log2_ceil(0), 0)
     for i in range(1, 100):
         assert_equal(
@@ -633,7 +633,7 @@ def test_log2_ceil():
     _check_alias[32](5)
 
 
-def test_log2_ceil32():
+def test_log2_ceil32() raises:
     assert_equal(log2_ceil(Int32(0)), 0)
     for i in range(Int32(1), Int32(100)):
         assert_equal(
@@ -671,5 +671,5 @@ def test_log2_ceil32():
     _check_alias[32](5)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

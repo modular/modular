@@ -17,7 +17,7 @@ from testing import assert_equal, assert_raises, assert_true
 from testing import TestSuite
 
 
-def test_basic_parsing():
+def test_basic_parsing() raises:
     """Test basic parsing functionality."""
     assert_equal(atof("123"), 123.0)
     assert_equal(atof("123.456"), 123.456)
@@ -25,7 +25,7 @@ def test_basic_parsing():
     assert_equal(atof("+123.456"), 123.456)
 
 
-def test_scientific_notation():
+def test_scientific_notation() raises:
     """Test scientific notation parsing, which contained the primary bug."""
     assert_equal(atof("1.23e2"), 123.0)
     assert_equal(atof("1.23e+2"), 123.0)
@@ -35,7 +35,7 @@ def test_scientific_notation():
     assert_equal(atof("1.23E-2"), 0.0123)
 
 
-def test_nan_and_inf():
+def test_nan_and_inf() raises:
     """Test NaN and infinity parsing."""
     assert_true(isnan(atof("nan")))
     assert_true(isnan(atof("NaN")))
@@ -46,26 +46,26 @@ def test_nan_and_inf():
     assert_true(isinf(atof("-infinity")))
 
 
-def test_leading_decimal():
+def test_leading_decimal() raises:
     """Test parsing with leading decimal point."""
     assert_equal(atof(".123"), 0.123)
     assert_equal(atof("-.123"), -0.123)
     assert_equal(atof("+.123"), 0.123)
 
 
-def test_trailing_f():
+def test_trailing_f() raises:
     """Test parsing with trailing 'f'."""
     assert_equal(atof("123.456f"), 123.456)
     assert_equal(atof("123.456F"), 123.456)
 
 
-def test_large_exponents():
+def test_large_exponents() raises:
     """Test handling of large exponents."""
     assert_equal(atof("1e309"), inf[DType.float64]())
     assert_equal(atof("1e-309"), 1e-309)
 
 
-def test_error_cases():
+def test_error_cases() raises:
     """Test error cases."""
     with assert_raises(
         contains=(
@@ -137,7 +137,7 @@ comptime numbers_to_test = [
 ]
 
 
-def test_atof_generate_cases():
+def test_atof_generate_cases() raises:
     for number, number_as_str in materialize[numbers_to_test]():
         for suffix in ["", "f", "F"]:
             for exponent in ["e", "E"]:
@@ -152,5 +152,5 @@ def test_atof_generate_cases():
                     assert_equal(atof(final_string), final_value)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

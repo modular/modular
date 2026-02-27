@@ -14,7 +14,7 @@
 from sys import has_accelerator
 
 
-def main():
+def main() raises:
     @parameter
     if has_accelerator():
         print("GPU detected")

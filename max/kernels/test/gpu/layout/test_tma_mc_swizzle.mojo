@@ -129,7 +129,7 @@ def test_tma_multicast_swizzle[
     CLUSTER_M: UInt,
     CLUSTER_N: UInt,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime tileM = cluster_tile_shape[0]
     comptime tileN = cluster_tile_shape[1]
     comptime subcluster_tile_shape = Index(
@@ -229,7 +229,7 @@ def test_tma_multicast_swizzle[
     _ = dst^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("bfloat16 single tma w/ no swizzle multicast")
         test_tma_multicast_swizzle[

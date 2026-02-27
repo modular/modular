@@ -22,7 +22,7 @@ struct Foo(Stringable):
         return self.s
 
 
-def main():
+def main() raises:
     var foo = Foo("test")
     print(String(foo) == "test")  # True
 

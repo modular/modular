@@ -26,7 +26,7 @@ from testing import assert_almost_equal
 from utils import IndexList
 
 
-def execute_ragged_flash_attention():
+def execute_ragged_flash_attention() raises:
     comptime num_q_heads = 32
     comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
     comptime type = DType.float32
@@ -356,5 +356,5 @@ def execute_ragged_flash_attention():
     mixed_ce_cache_lengths.ptr.free()
 
 
-def main():
+def main() raises:
     execute_ragged_flash_attention()

@@ -16,14 +16,14 @@ from test_utils import ObservableDel, check_write_to
 from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
-def test_basic():
+def test_basic() raises:
     var p = ArcPointer(4)
     var p2 = p
     p2[] = 3
     assert_equal(3, p[])
 
 
-def test_is():
+def test_is() raises:
     var p = ArcPointer(3)
     var p2 = p
     var p3 = ArcPointer(3)
@@ -33,7 +33,7 @@ def test_is():
     assert_true(p is not p3)
 
 
-def test_deleter_not_called_until_no_references():
+def test_deleter_not_called_until_no_references() raises:
     var deleted = False
     var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted).as_any_origin()))
     var p2 = p
@@ -48,7 +48,7 @@ def test_deleter_not_called_until_no_references():
     assert_true(deleted)
 
 
-def test_deleter_not_called_until_no_references_explicit_copy():
+def test_deleter_not_called_until_no_references_explicit_copy() raises:
     var deleted = False
     var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted).as_any_origin()))
     var p2 = p.copy()
@@ -63,7 +63,7 @@ def test_deleter_not_called_until_no_references_explicit_copy():
     assert_true(deleted)
 
 
-def test_count():
+def test_count() raises:
     var a = ArcPointer(10)
     var b = a.copy()
     var c = a
@@ -74,7 +74,7 @@ def test_count():
     assert_equal(UInt64(1), a.count())
 
 
-def test_steal_data_and_construct_from_raw_ptr():
+def test_steal_data_and_construct_from_raw_ptr() raises:
     var deleted = False
     var leaked = ArcPointer(
         ObservableDel(UnsafePointer(to=deleted).as_any_origin())
@@ -88,7 +88,7 @@ def test_steal_data_and_construct_from_raw_ptr():
     assert_true(deleted)
 
 
-def test_steal_data_does_not_decrement_refcount():
+def test_steal_data_does_not_decrement_refcount() raises:
     var leaked = ArcPointer(42)
     var copy = leaked.copy()
 
@@ -104,12 +104,12 @@ def test_steal_data_does_not_decrement_refcount():
     assert_equal(UInt64(1), p.count())
 
 
-def test_write_to():
+def test_write_to() raises:
     check_write_to(ArcPointer(42), expected="42", is_repr=False)
     check_write_to(ArcPointer("hello"), expected="hello", is_repr=False)
 
 
-def test_write_repr_to():
+def test_write_repr_to() raises:
     check_write_to(
         ArcPointer(42), expected="ArcPointer[Int](Int(42))", is_repr=True
     )
@@ -120,5 +120,5 @@ def test_write_repr_to():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

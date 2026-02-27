@@ -16,7 +16,7 @@ from os import getenv, setenv, unsetenv
 from testing import TestSuite, assert_equal
 
 
-def test_getenv():
+def test_getenv() raises:
     assert_equal(getenv("TEST_MYVAR"), "MyValue")
 
     assert_equal(getenv("TEST_MYVAR", "DefaultValue"), "MyValue")
@@ -24,7 +24,7 @@ def test_getenv():
     assert_equal(getenv("NON_EXISTENT_VAR", "DefaultValue"), "DefaultValue")
 
 
-def test_setenv():
+def test_setenv() raises:
     assert_equal(setenv("NEW_VAR", "FOO", True), True)
     assert_equal(getenv("NEW_VAR"), "FOO")
 
@@ -37,12 +37,12 @@ def test_setenv():
     assert_equal(setenv("=", "INVALID", True), False)
 
 
-def test_unsetenv():
+def test_unsetenv() raises:
     assert_equal(setenv("NEW_VAR", "FOO", True), True)
     assert_equal(getenv("NEW_VAR"), "FOO")
     assert_equal(unsetenv("NEW_VAR"), True)
     assert_equal(getenv("NEW_VAR"), "")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

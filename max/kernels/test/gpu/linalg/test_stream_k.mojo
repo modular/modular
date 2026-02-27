@@ -542,7 +542,7 @@ fn run_matmul_stream_k[
     _ = c_host_n
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_matmul_stream_k[DType.float32, 128, 128, 128](ctx)
         run_matmul_stream_k[DType.float32, 512, 2560, 8192](ctx)

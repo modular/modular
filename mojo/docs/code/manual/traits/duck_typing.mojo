@@ -43,7 +43,7 @@ fn take_two_quackers[
     pass
 
 
-def main():
+def main() raises:
     make_it_quack(Duck())
     make_it_quack(StealthCow())
     make_it_quack2(Duck())

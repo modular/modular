@@ -22,7 +22,7 @@ fn register_intrinsics():
     warpgroup_reg_dealloc[64]()
 
 
-def test_register_intrinsics_sm80():
+def test_register_intrinsics_sm80() raises:
     var asm = _compile_code[
         register_intrinsics, target = get_gpu_target["sm_80"]()
     ]().asm
@@ -30,7 +30,7 @@ def test_register_intrinsics_sm80():
     assert_false("setmaxnreg.dec.sync.aligned.u32" in asm)
 
 
-def test_register_intrinsics_sm90():
+def test_register_intrinsics_sm90() raises:
     var asm = _compile_code[
         register_intrinsics, target = get_gpu_target["sm_90a"]()
     ]().asm
@@ -38,6 +38,6 @@ def test_register_intrinsics_sm90():
     assert_true("setmaxnreg.dec.sync.aligned.u32" in asm)
 
 
-def main():
+def main() raises:
     test_register_intrinsics_sm80()
     test_register_intrinsics_sm90()

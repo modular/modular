@@ -38,13 +38,13 @@ fn _range_with_int_params_helper(start: Int, end: Int) -> Int:
     return sum
 
 
-def test_range_with_int_params_declaration_order():
+def test_range_with_int_params_declaration_order() raises:
     assert_equal(_range_with_int_params_helper(0, 5), 10)  # 0+1+2+3+4
     assert_equal(_range_with_int_params_helper(1, 4), 6)  # 1+2+3
     assert_equal(_range_with_int_params_helper(5, 5), 0)  # empty range
 
 
-def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
+def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int) raises:
     var iter = range_iter^
     for i in range(len):
         var lower, upper = iter.bounds()
@@ -59,7 +59,7 @@ def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
     assert_equal(0, upper.value())
 
 
-def test_range_int_bounds():
+def test_range_int_bounds() raises:
     _test_range_iter_bounds(range(0), 0)
     _test_range_iter_bounds(range(10), 10)
     _test_range_iter_bounds(range(0, 10), 10)
@@ -70,7 +70,7 @@ def test_range_int_bounds():
     _test_range_iter_bounds(range(38, -13, -23), 3)
 
 
-def test_range_uint_bounds():
+def test_range_uint_bounds() raises:
     _test_range_iter_bounds(range(UInt(0)), 0)
     _test_range_iter_bounds(range(UInt(10)), 10)
     _test_range_iter_bounds(range(UInt(0), UInt(10)), 10)
@@ -79,7 +79,7 @@ def test_range_uint_bounds():
     _test_range_iter_bounds(range(UInt(0), UInt(11), UInt(2)), 6)
 
 
-def _test_range_scalar_bounds[dtype: DType]():
+def _test_range_scalar_bounds[dtype: DType]() raises:
     comptime scalar = Scalar[dtype]
 
     _test_range_iter_bounds(range(scalar(0)), 0)
@@ -94,13 +94,13 @@ def _test_range_scalar_bounds[dtype: DType]():
         _test_range_iter_bounds(range(scalar(38), scalar(-13), scalar(-23)), 3)
 
 
-def test_range_scalar_bounds():
+def test_range_scalar_bounds() raises:
     comptime for dtype in DTYPES:
         _test_range_scalar_bounds[dtype]()
 
 
-def test_larger_than_int_max_bounds():
-    def test[I: Iterator](iter: I):
+def test_larger_than_int_max_bounds() raises:
+    def test[I: Iterator](iter: I) raises:
         var lower, upper = iter.bounds()
         assert_equal(lower, Int.MAX)
         assert_false(upper)
@@ -116,7 +116,7 @@ def test_larger_than_int_max_bounds():
     test(range(UInt64(1), UInt64.MAX, UInt64(1)))
 
 
-def test_range_len():
+def test_range_len() raises:
     # Usual cases
     assert_equal(range(10).__len__(), 10, "len(range(10))")
     assert_equal(range(0, 10).__len__(), 10, "len(range(0, 10))")
@@ -140,7 +140,7 @@ def test_range_len():
     assert_equal(range(10, 5, -20).__len__(), 1, "len(range(10, 5, -20))")
 
 
-def test_range_len_uint_maxuint():
+def test_range_len_uint_maxuint() raises:
     assert_equal(
         range(UInt(0), UInt.MAX).__len__(), UInt.MAX, "len(range(0, UInt.MAX))"
     )
@@ -151,7 +151,7 @@ def test_range_len_uint_maxuint():
     )
 
 
-def test_range_len_uint_empty():
+def test_range_len_uint_empty() raises:
     assert_equal(
         range(UInt(0), UInt(0), UInt(1)).__len__(), 0, "len(range(0, 0, 1))"
     )
@@ -160,7 +160,7 @@ def test_range_len_uint_empty():
     )
 
 
-def test_range_len_uint():
+def test_range_len_uint() raises:
     assert_equal(range(UInt(10)).__len__(), 10, "len(range(10))")
 
     # start < end
@@ -175,7 +175,7 @@ def test_range_len_uint():
     )
 
 
-def _test_range_len_scalar[dtype: DType]():
+def _test_range_len_scalar[dtype: DType]() raises:
     comptime scalar = Scalar[dtype]
 
     # empty
@@ -194,12 +194,12 @@ def _test_range_len_scalar[dtype: DType]():
     assert_equal(range(scalar(10), scalar(0), scalar(1)).__len__(), 0)
 
 
-def test_range_len_scalar():
+def test_range_len_scalar() raises:
     comptime for dtype in DTYPES:
         _test_range_len_scalar[dtype]()
 
 
-def test_range_getitem():
+def test_range_getitem() raises:
     # Usual cases
     assert_equal(range(10)[3], 3, "range(10)[3]")
     assert_equal(range(0, 10)[3], 3, "range(0, 10)[3]")
@@ -210,7 +210,7 @@ def test_range_getitem():
     assert_equal(range(38, -13, -23)[1], 15, "range(38, -13, -23)[1]")
 
 
-def test_range_getitem_uint():
+def test_range_getitem_uint() raises:
     assert_equal(range(UInt(10))[3], 3, "range(10)[3]")
 
     assert_equal(range(UInt(0), UInt(10))[3], 3, "range(0, 10)[3]")
@@ -226,7 +226,7 @@ def test_range_getitem_uint():
     assert_equal(UInt(0), bad_strided_uint_range_iter.__len__())
 
 
-def test_range_reversed():
+def test_range_reversed() raises:
     # Zero starting
     assert_equal(
         range(10).__reversed__().start, 9, "range(10).__reversed__().start"
@@ -266,7 +266,7 @@ def test_range_reversed():
 
     # Test a reversed range's sum and length compared to the original
     @parameter
-    def test_sum_reversed(start: Int, end: Int, step: Int):
+    def test_sum_reversed(start: Int, end: Int, step: Int) raises:
         var forward = range(start, end, step)
         var iforward = forward.__iter__()
         var ibackward = forward.__reversed__()
@@ -289,14 +289,14 @@ def test_range_reversed():
         test_sum_reversed(20, end, -3)
 
 
-def test_indexing():
+def test_indexing() raises:
     var r = range(10)
     assert_equal(r[True], 1)
     assert_equal(r[Int(4)], 4)
     assert_equal(r[3], 3)
 
 
-def test_range_bounds():
+def test_range_bounds() raises:
     var start = 0
     var end = 10
 
@@ -312,7 +312,7 @@ def test_range_bounds():
     assert_equal(r[ln - 1], last_seen)
 
 
-def test_scalar_range():
+def test_scalar_range() raises:
     r = range(UInt8(2), 16, 4)
     assert_equal(r.start, 2)
     assert_equal(r.end, 16)
@@ -330,7 +330,7 @@ def test_scalar_range():
     assert_equal(actual_elements, expected_elements)
 
 
-def test_range_compile_time():
+def test_range_compile_time() raises:
     """Tests that verify compile-time parameter loops work correctly with
     various scalar types.
     """
@@ -361,7 +361,7 @@ def test_range_compile_time():
         assert_true(i <= 10)
 
 
-def test_range_iterable():
+def test_range_iterable() raises:
     var ai = 0
     var bi = UInt8(0)
     var ci = 0
@@ -374,5 +374,5 @@ def test_range_iterable():
         ci += 2
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

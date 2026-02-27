@@ -15,16 +15,16 @@ from python import PythonObject
 from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
-def test_default():
+def test_default() raises:
     assert_equal(Bool(), False)
 
 
-def test_min_max():
+def test_min_max() raises:
     assert_equal(Bool.MIN, False)
     assert_equal(Bool.MAX, True)
 
 
-def test_bool_cast_to_int():
+def test_bool_cast_to_int() raises:
     assert_equal(False.__int__(), 0)
     assert_equal(True.__int__(), 1)
 
@@ -32,7 +32,7 @@ def test_bool_cast_to_int():
     assert_equal(Int(True), 1)
 
 
-def test_bool_none():
+def test_bool_none() raises:
     var test = None
     assert_equal(Bool(None), False)
     assert_equal(Bool(test), False)
@@ -44,16 +44,16 @@ struct MyTrue(Boolable):
         return True
 
 
-def test_convert_from_boolable():
+def test_convert_from_boolable() raises:
     assert_true(Bool(MyTrue()))
 
 
-def test_bool_representation():
+def test_bool_representation() raises:
     assert_equal(repr(True), "True")
     assert_equal(repr(False), "False")
 
 
-def test_bitwise():
+def test_bitwise() raises:
     var value: Bool
 
     # and
@@ -99,12 +99,12 @@ def test_bitwise():
     assert_false(value)
 
 
-def test_indexer():
+def test_indexer() raises:
     assert_true(1 == index(Bool(True)))
     assert_true(0 == index(Bool(False)))
 
 
-def test_comparisons():
+def test_comparisons() raises:
     assert_true(False == False)
     assert_true(True == True)
     assert_false(False == True)
@@ -136,12 +136,12 @@ def test_comparisons():
     assert_true(True <= True)
 
 
-def test_float_conversion():
+def test_float_conversion() raises:
     assert_equal((True).__float__(), 1.0)
     assert_equal((False).__float__(), 0.0)
 
 
-def test_all():
+def test_all() raises:
     assert_true(all([True, True, True]))
     assert_false(all({True, False, True}))
     # empty
@@ -156,7 +156,7 @@ def test_all():
     assert_false(all(map[gt0](l2)))
 
 
-def test_any():
+def test_any() raises:
     assert_true(any([True, True, True]))
     assert_false(any([False, False, False]))
     assert_false(any({False}))
@@ -172,5 +172,5 @@ def test_any():
     assert_false(any(map[gt0](l2)))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -27,11 +27,11 @@ fn get_current_home() -> String:
     return getenv("HOME")
 
 
-def set_home(path: String):
+def set_home(path: String) raises:
     _ = os.env.setenv("HOME", path)
 
 
-def test_expanduser():
+def test_expanduser() raises:
     comptime user_path = get_user_path()
     var original_home = get_current_home()
     set_home(user_path)
@@ -60,5 +60,5 @@ def test_expanduser():
     set_home(original_home)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

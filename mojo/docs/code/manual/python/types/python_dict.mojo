@@ -15,7 +15,7 @@
 from python import Python
 
 
-def main():
+def main() raises:
     py_dict = Python.dict()
     py_dict["item_name"] = "whizbang"
     py_dict["price"] = 11.75

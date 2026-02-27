@@ -575,7 +575,7 @@ fn bench_allreduce_rmsnorm_fp8[
     _ = gamma_dev^
 
 
-def main():
+def main() raises:
     comptime in_dtype = env_get_dtype["in_dtype", DType.bfloat16]()
     comptime out_dtype = env_get_dtype[
         "out_dtype",

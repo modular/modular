@@ -21,7 +21,7 @@ from sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
 from sys.compile import SanitizeAddress
 
 
-def test_compile_llvm():
+def test_compile_llvm() raises:
     @parameter
     fn my_add_function[
         dtype: DType, size: Int
@@ -53,7 +53,7 @@ comptime target_regular = __mlir_attr[
 ]
 
 
-def _test_data_layout_llvm[emission_kind: StaticString]():
+def _test_data_layout_llvm[emission_kind: StaticString]() raises:
     fn my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
         return
 
@@ -75,12 +75,12 @@ def _test_data_layout_llvm[emission_kind: StaticString]():
     )
 
 
-def test_data_layout_llvm():
+def test_data_layout_llvm() raises:
     _test_data_layout_llvm["llvm"]()
     _test_data_layout_llvm["llvm-opt"]()
 
 
-def test_data_layout_asm():
+def test_data_layout_asm() raises:
     fn my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
         var a = stack_allocation[
             20, Int32, address_space = AddressSpace.SHARED
@@ -99,7 +99,7 @@ def test_data_layout_asm():
     assert_false("mov.u64" in target_short_asm)
 
 
-def test_cross_compile():
+def test_cross_compile() raises:
     comptime if SanitizeAddress:
         # TODO: MOCO-2593, this test deadlocks in mojo build in ASAN
         return
@@ -115,5 +115,5 @@ def test_cross_compile():
     assert_true("amdgcn-amd-amdhsa--gfx950" in asm)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

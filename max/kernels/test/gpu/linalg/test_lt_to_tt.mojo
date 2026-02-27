@@ -72,7 +72,7 @@ fn test_fully_dynamic_layout() raises:
     print("  PASSED")
 
 
-def main():
+def main() raises:
     test_static_layout()
     test_dynamic_layout()
     test_fully_dynamic_layout()

@@ -33,7 +33,7 @@ fn print_threads():
     )
 
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No compatible GPU found")

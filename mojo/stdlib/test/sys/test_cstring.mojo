@@ -21,14 +21,14 @@ from testing import (
 from ffi import CStringSlice
 
 
-def test_default_slice():
+def test_default_slice() raises:
     var cslice = CStringSlice[MutExternalOrigin]()
     assert_equal(len(cslice), 0)
     assert_equal(String(cslice), "")
     assert_false(cslice.unsafe_ptr())
 
 
-def test_init_from_invalid_string():
+def test_init_from_invalid_string() raises:
     with assert_raises(contains="not nul-terminated"):
         _ = CStringSlice(String(""))
 
@@ -39,7 +39,7 @@ def test_init_from_invalid_string():
         _ = CStringSlice(String("mojo\0mojo"))
 
 
-def test_init_from_invalid_byte_span():
+def test_init_from_invalid_byte_span() raises:
     with assert_raises(contains="not nul-terminated"):
         _ = CStringSlice(Span[Byte, MutExternalOrigin]())
 
@@ -50,7 +50,7 @@ def test_init_from_invalid_byte_span():
         _ = CStringSlice(Span[Byte]([Byte(1), Byte(0), Byte(2)]))
 
 
-def test_c_string_slice_from_ptr():
+def test_c_string_slice_from_ptr() raises:
     var string = String("mojo!\0")
     var ptr = string.unsafe_ptr().bitcast[Int8]()
     var cslice = CStringSlice(unsafe_from_ptr=ptr)
@@ -59,7 +59,7 @@ def test_c_string_slice_from_ptr():
     assert_equal(Int(cslice.unsafe_ptr()), Int(ptr))
 
 
-def test_c_string_slice_from_nul_ptr():
+def test_c_string_slice_from_nul_ptr() raises:
     var cslice = CStringSlice[ImmutExternalOrigin](unsafe_from_ptr={})
     assert_equal(len(cslice), 0)
     assert_equal(String(cslice), "")
@@ -68,7 +68,7 @@ def test_c_string_slice_from_nul_ptr():
     assert_equal(len(cslice.as_bytes_with_nul()), 0)
 
 
-def test_c_string_slice_from_nul_string():
+def test_c_string_slice_from_nul_string() raises:
     var string = String("\0")
     var cslice = CStringSlice(string)
     assert_equal(len(cslice), 0)
@@ -76,7 +76,7 @@ def test_c_string_slice_from_nul_string():
     assert_equal(Int(cslice.unsafe_ptr()), Int(string.unsafe_ptr()))
 
 
-def test_c_string_slice_from_nul_span():
+def test_c_string_slice_from_nul_span() raises:
     var span: List[Byte] = [Byte(0)]
     var cslice = CStringSlice(span)
     assert_equal(len(cslice), 0)
@@ -84,7 +84,7 @@ def test_c_string_slice_from_nul_span():
     assert_equal(Int(cslice.unsafe_ptr()), Int(span.unsafe_ptr()))
 
 
-def test_c_string_slice_from_string():
+def test_c_string_slice_from_string() raises:
     var string = String("mojo!\0")
     var cslice = CStringSlice(string)
     assert_equal(len(cslice), 5)
@@ -92,7 +92,7 @@ def test_c_string_slice_from_string():
     assert_equal(Int(cslice.unsafe_ptr()), Int(string.unsafe_ptr()))
 
 
-def test_c_string_slice_from_span():
+def test_c_string_slice_from_span() raises:
     var string: List[Byte] = [
         Byte(109),
         Byte(111),
@@ -107,7 +107,7 @@ def test_c_string_slice_from_span():
     assert_equal(Int(cslice.unsafe_ptr()), Int(string.unsafe_ptr()))
 
 
-def test_c_string_copy():
+def test_c_string_copy() raises:
     var string = String("mojo!\0")
     var cslice = CStringSlice(string)
 
@@ -116,7 +116,7 @@ def test_c_string_copy():
     assert_equal(Int(copy.unsafe_ptr()), Int(cslice.unsafe_ptr()))
 
 
-def test_c_string_eq():
+def test_c_string_eq() raises:
     var first = CStringSlice(String("mojo!\0"))
     var second = CStringSlice(String("mojo!\0"))
     var third = CStringSlice(String("not mojo\0"))
@@ -128,7 +128,7 @@ def test_c_string_eq():
     assert_true(first != fourth)
 
 
-def test_c_string_as_bytes():
+def test_c_string_as_bytes() raises:
     var string = String("mojo!\0")
     var cslice = CStringSlice(string)
 
@@ -139,5 +139,5 @@ def test_c_string_as_bytes():
     assert_true(string.as_bytes() == cslice.as_bytes_with_nul())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

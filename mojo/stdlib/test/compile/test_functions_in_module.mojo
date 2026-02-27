@@ -28,7 +28,7 @@ fn bar(x: Int) -> Int:
 comptime funcs = __functions_in_module()
 
 
-def main():
+def main() raises:
     var expected_names = [
         "test_functions_in_module::foo()",
         "test_functions_in_module::bar(::Int)",
@@ -48,5 +48,5 @@ fn bar(y: Int, z: Int):
     pass
 
 
-def foobar(*, z: Float64 = 1.6):
+def foobar(*, z: Float64 = 1.6) raises:
     pass

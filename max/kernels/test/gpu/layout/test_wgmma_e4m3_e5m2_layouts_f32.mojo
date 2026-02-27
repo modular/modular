@@ -169,7 +169,7 @@ fn wgmma_f32_kernel[
 # CHECK: 40632.0 43068.0 45424.0 47692.0 50240.0 52668.0 55024.0 57676.0
 # CHECK: 41232.0 43704.0 46080.0 48376.0 50968.0 53456.0 55824.0 58504.0
 # CHECK: 41784.0 44304.0 46712.0 49024.0 51640.0 54168.0 56592.0 59280.0
-def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
+def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_e4m3_e4m3_f32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -304,7 +304,7 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
 # CHECK: 40992.0 43424.0 45792.0 48064.0 50176.0 52224.0 54976.0 57664.0
 # CHECK: 41568.0 44064.0 46432.0 48736.0 50944.0 52992.0 55744.0 58432.0
 # CHECK: 42112.0 44640.0 47072.0 49376.0 51616.0 53760.0 56512.0 59200.0
-def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
+def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_e5m2_e5m2_f32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -440,7 +440,7 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
 # CHECK: 40640.0 43068.0 45432.0 47716.0 49888.0 51964.0 54744.0 57348.0
 # CHECK: 41256.0 43712.0 46080.0 48384.0 50608.0 52720.0 55504.0 58224.0
 # CHECK: 41816.0 44328.0 46720.0 49024.0 51264.0 53424.0 56240.0 58960.0
-def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
+def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_e4m3_e5m2_f32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -576,7 +576,7 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
 # CHECK: 40960.0 43392.0 45744.0 48016.0 50560.0 52992.0 55360.0 58016.0
 # CHECK: 41552.0 44032.0 46400.0 48688.0 51280.0 53760.0 56128.0 58816.0
 # CHECK: 42096.0 44624.0 47040.0 49344.0 51952.0 54480.0 56896.0 59584.0
-def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
+def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_e5m2_e4m3_f32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -647,7 +647,7 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
     _ = res^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         wgmma_e4m3_e4m3_f32_64x8x32(ctx)
         wgmma_e5m2_e5m2_f32_64x8x32(ctx)

@@ -256,7 +256,7 @@ fn bench_reducescatter[
         host_buffers[i].free()
 
 
-def main():
+def main() raises:
     var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()

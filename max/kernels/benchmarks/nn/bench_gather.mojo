@@ -104,7 +104,7 @@ struct GatherSpec(ImplicitlyCopyable, Stringable):
         # fmt: on
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
     bench_gather(m, GatherSpec(axis=1, m1=400, m2=400, n1=200, n2=200))
     bench_gather(m, GatherSpec(axis=1, m1=1000, m2=1000, n1=200, n2=200))

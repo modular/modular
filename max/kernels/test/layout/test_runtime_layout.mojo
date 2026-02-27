@@ -26,7 +26,7 @@ from layout.runtime_layout import (
 from testing import assert_equal
 
 
-def test_runtime_layout_const():
+def test_runtime_layout_const() raises:
     print("== test_runtime_layout_const")
 
     comptime shape = IntTuple(UNKNOWN_VALUE, 8)
@@ -49,7 +49,7 @@ def test_runtime_layout_const():
     assert_equal(String(layout_r), "((16, 8):(8, 1))")
 
 
-def test_static_and_dynamic_size():
+def test_static_and_dynamic_size() raises:
     print("== test_static_and_dynamic_size")
     comptime d_layout = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
     var layout = RuntimeLayout[
@@ -61,7 +61,7 @@ def test_static_and_dynamic_size():
     assert_equal(layout.size(), 32)
 
 
-def test_tiled_layout_indexing():
+def test_tiled_layout_indexing() raises:
     print("== test_tiled_layout_indexing")
 
     comptime shape = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
@@ -94,7 +94,7 @@ def test_tiled_layout_indexing():
                     )
 
 
-def test_tiled_layout_indexing_linear_idx():
+def test_tiled_layout_indexing_linear_idx() raises:
     print("== test_tiled_layout_indexing_linear_idx")
 
     comptime shape = IntTuple(IntTuple(2, 2), IntTuple(2, 2))
@@ -124,7 +124,7 @@ def test_tiled_layout_indexing_linear_idx():
         )
 
 
-def test_sublayout_indexing():
+def test_sublayout_indexing() raises:
     print("== test_sublayout_indexing")
     comptime layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     comptime layout = RuntimeLayout[
@@ -137,7 +137,7 @@ def test_sublayout_indexing():
     assert_equal(String(layout.sublayout[1]()), "(4:1)")
 
 
-def test_coalesce():
+def test_coalesce() raises:
     print("== test_coalesce")
     comptime layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var layout = RuntimeLayout[
@@ -173,7 +173,7 @@ def test_coalesce():
     )
 
 
-def test_make_layout():
+def test_make_layout() raises:
     print("== test_make_layout")
     comptime layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var l_a = RuntimeLayout[
@@ -193,7 +193,7 @@ def test_make_layout():
     )
 
 
-def test_large_layout_linear_index():
+def test_large_layout_linear_index() raises:
     print("== test_large_layout_linear_index")
     # Shape size exceeds Int32 max but stays within UInt32 max.
     # This ensures the runtime layout uses Int64 for linear indexing.
@@ -211,7 +211,7 @@ def test_large_layout_linear_index():
     assert_equal(Int(idx), expected)
 
 
-def main():
+def main() raises:
     test_runtime_layout_const()
     test_static_and_dynamic_size()
     test_tiled_layout_indexing()

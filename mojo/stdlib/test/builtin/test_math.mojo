@@ -16,7 +16,7 @@ from testing import assert_equal, TestSuite
 from utils.numerics import isnan
 
 
-def test_abs():
+def test_abs() raises:
     assert_equal(0, abs(0))
     assert_equal(1, abs(1))
     assert_equal(1, abs(-1))
@@ -26,7 +26,7 @@ def test_abs():
     assert_equal(expected, abs(lhs))
 
 
-def test_divmod():
+def test_divmod() raises:
     var t = divmod(0, 1)
     assert_equal(0, t[0])
     assert_equal(0, t[1])
@@ -41,7 +41,7 @@ def test_divmod():
     assert_equal(1, t[1])
 
 
-def test_min():
+def test_min() raises:
     assert_equal(-2, min(-2, -1))
     assert_equal(-1, min(0, -1))
     assert_equal(0, min(0, 1))
@@ -65,7 +65,7 @@ def test_min():
     assert_equal(min(500, 1, 2, 3, 4), 1)
 
 
-def test_max():
+def test_max() raises:
     assert_equal(-1, max(-2, -1))
     assert_equal(0, max(0, -1))
     assert_equal(1, max(0, 1))
@@ -89,7 +89,7 @@ def test_max():
     assert_equal(max(-10, 2, 3, 4, -10), 4)
 
 
-def test_round():
+def test_round() raises:
     assert_equal(0.0, round(0.0))
     assert_equal(1.0, round(1.0))
     assert_equal(1.0, round(1.1))
@@ -114,7 +114,7 @@ def test_round():
     assert_equal(r2, 2.33)
 
 
-def test_pow():
+def test_pow() raises:
     comptime F = SIMD[DType.float32, 4]
     var base = F(0.0, 1.0, 2.0, 3.0)
     assert_equal(pow(base, 2.0), F(0.0, 1.0, 4.0, 9.0))
@@ -123,7 +123,7 @@ def test_pow():
     assert_equal(pow(I(0, 1, 2, 3), Int(2)), I(0, 1, 4, 9))
 
 
-def test_isnan():
+def test_isnan() raises:
     # Check that we can run llvm intrinsics returning bool at comptime.
     comptime x1 = isnan(SIMD[DType.float32, 4](SIMD[DType.float64, 4](1.0)))
     assert_equal(x1, SIMD[DType.bool, 4](fill=False))
@@ -132,5 +132,5 @@ def test_isnan():
     assert_equal(x2, SIMD[DType.bool, 4](fill=True))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

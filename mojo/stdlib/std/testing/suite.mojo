@@ -343,13 +343,13 @@ struct TestSuite(Movable):
     ```mojo
     from testing import assert_equal, TestSuite
 
-    def test_something():
+    def test_something() raises:
         assert_equal(1 + 1, 2)
 
-    def test_some_other_thing():
+    def test_some_other_thing() raises:
         assert_equal(2 + 2, 4)
 
-    def main():
+    def main() raises:
         TestSuite.discover_tests[__functions_in_module()]().run()
     ```
 
@@ -358,10 +358,10 @@ struct TestSuite(Movable):
     ```mojo
     from testing import assert_equal, TestSuite
 
-    def some_test():
+    def some_test() raises:
         assert_equal(1 + 1, 2)
 
-    def main():
+    def main() raises:
         var suite = TestSuite()
         suite.test[some_test]()
         suite^.run()

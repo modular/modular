@@ -25,5 +25,5 @@ fn test_dim() raises:
     assert_equal(String(Dim((4, 2, 3))), "(x=4, y=2, z=3)")
 
 
-def main():
+def main() raises:
     test_dim()

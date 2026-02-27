@@ -489,7 +489,7 @@ fn create_matmul_bench[
     )
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 128))

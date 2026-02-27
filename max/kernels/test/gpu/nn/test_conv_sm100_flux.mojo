@@ -222,7 +222,7 @@ fn test_flux_conv_layer[
     _ = out_cudnn_dev^
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("FLUX VAE Decoder Conv2D Integration Test")
     print("SM100 dispatch through conv_gpu vs cuDNN reference")

@@ -124,7 +124,7 @@ following lines of code:
 
 ```mojo title="life.mojo"
 # My first Mojo program!
-def main():
+def main() raises:
     print("Hello, World!")
 ```
 
@@ -211,7 +211,7 @@ Let's declare a variable, assign the return value from `input()` to it, and
 build a customized greeting.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     var name: String = input("Who are you? ")
     var greeting: String = "Hi, " + name + "!"
     print(greeting)
@@ -240,7 +240,7 @@ We can replace the code we just entered with the following, and it works
 exactly the same.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     name = input("Who are you? ")
     greeting = "Hi, " + name + "!"
     print(greeting)
@@ -358,7 +358,7 @@ Let's update the `main()` function with the following code that defines an
 pattern.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     num_rows = 8
     num_cols = 8
     glider = [
@@ -507,7 +507,7 @@ for value in nums:
 Now that we've defined our `grid_str()` function, let's invoke it from `main()`.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     ...
     result = grid_str(num_rows, num_cols, glider)
     print(result)
@@ -682,7 +682,7 @@ fn grid_str(grid: Grid) -> String:
             str += "\n"     # Add a newline between rows, but not at the end
     return str
 
-def main():
+def main() raises:
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -795,7 +795,7 @@ update the code in `life.mojo` where we invoke it from `main()`:
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-def main():
+def main() raises:
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -850,7 +850,7 @@ struct Grid(Copyable, Stringable):
 Now let's verify that `String()` works with an instance of `Grid`.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     ...
     start = Grid(8, 8, glider^)
     print(String(start))
@@ -1067,7 +1067,7 @@ and print it.
 ```mojo title="life.mojo"
 ...
 
-def main():
+def main() raises:
     start = Grid.random(8, 16)
     print(String(start))
 ```
@@ -1192,7 +1192,7 @@ the updated version of `life.mojo`:
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-def run_display(var grid: Grid) -> None:
+def run_display(var grid: Grid) raises -> None:
     while True:
         print(String(grid))
         print()
@@ -1200,7 +1200,7 @@ def run_display(var grid: Grid) -> None:
             break
         grid = grid.evolve()
 
-def main():
+def main() raises:
     start = Grid.random(16, 16)
     run_display(start^)
 ```
@@ -1250,7 +1250,7 @@ functions and objects in the module. For example:
 ```mojo
 from python import Python
 
-def run_display():
+def run_display() raises:
     # This is roughly equivalent to Python's `import pygame`
     pygame = Python.import_module("pygame")
 
@@ -1288,7 +1288,7 @@ def run_display(
     background_color: String = "black",
     cell_color: String = "green",
     pause: Float64 = 0.1,
-) -> None:
+) raises -> None:
     # Import the pygame Python package
     pygame = Python.import_module("pygame")
 
@@ -1347,7 +1347,7 @@ def run_display(
     pygame.quit()
 
 
-def main():
+def main() raises:
     start = Grid.random(128, 128)
     run_display(start^)
 ```

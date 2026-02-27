@@ -21,7 +21,7 @@ from testing import TestSuite
 from utils.index import IndexList
 
 
-def test_elementwise_1d():
+def test_elementwise_1d() raises:
     comptime num_elements = 64
     var ptr = alloc[Float32](num_elements)
 
@@ -49,5 +49,5 @@ def test_elementwise_1d():
     ptr.free()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

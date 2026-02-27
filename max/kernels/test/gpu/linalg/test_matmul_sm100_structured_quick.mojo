@@ -68,7 +68,9 @@ def test_structured[
     num_split_k: Int = 1,
     test_lambda: Bool = False,
     register_based_epilogue: Bool = True,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim, test_name: String):
+](
+    ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim, test_name: String
+) raises:
     """Test structured kernel with given configuration."""
     var M = m.value
     var N = n.value
@@ -212,7 +214,7 @@ def test_structured[
     _ = b_device
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("SM100 STRUCTURED KERNEL QUICK TEST")
     print("=" * 60)

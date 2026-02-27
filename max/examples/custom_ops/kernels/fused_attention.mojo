@@ -358,7 +358,7 @@ def fused_attention_gpu[
     K: LayoutTensor,
     V: LayoutTensor,
     O: LayoutTensor[mut=True, ...],
-):
+) raises:
     comptime kernel_func = fused_attention_kernel[
         Q.dtype,
         Q.layout,

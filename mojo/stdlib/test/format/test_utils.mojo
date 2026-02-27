@@ -43,43 +43,43 @@ struct TestWritable(ImplicitlyCopyable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-def test_write_sequence_empty():
+def test_write_sequence_empty() raises:
     var result = String()
     write_sequence_to(result, start="[", end="]")
     assert_equal(result, "[]")
 
 
-def test_write_sequence_single_element():
+def test_write_sequence_single_element() raises:
     var result = String()
     write_sequence_to(result, 42, start="[", end="]")
     assert_equal(result, "[42]")
 
 
-def test_write_sequence_multiple_elements():
+def test_write_sequence_multiple_elements() raises:
     var result = String()
     write_sequence_to(result, 1, 2, 3, start="[", end="]")
     assert_equal(result, "[1, 2, 3]")
 
 
-def test_write_sequence_custom_delimiters():
+def test_write_sequence_custom_delimiters() raises:
     var result = String()
     write_sequence_to(result, 1, 2, 3, start="(", end=")")
     assert_equal(result, "(1, 2, 3)")
 
 
-def test_write_sequence_custom_separator():
+def test_write_sequence_custom_separator() raises:
     var result = String()
     write_sequence_to(result, 1, 2, 3, start="[", end="]", sep="; ")
     assert_equal(result, "[1; 2; 3]")
 
 
-def test_write_sequence_custom_all():
+def test_write_sequence_custom_all() raises:
     var result = String()
     write_sequence_to(result, "a", "b", "c", start="<", end=">", sep=" | ")
     assert_equal(result, "<a | b | c>")
 
 
-def test_write_sequence_writable_objects():
+def test_write_sequence_writable_objects() raises:
     var result = String()
     write_sequence_to(
         result, TestWritable(10), TestWritable(20), start="[", end="]"
@@ -87,13 +87,13 @@ def test_write_sequence_writable_objects():
     assert_equal(result, "[TestWritable(10), TestWritable(20)]")
 
 
-def test_write_sequence_mixed_types():
+def test_write_sequence_mixed_types() raises:
     var result = String()
     write_sequence_to(result, 1, "hello", TestWritable(42), start="[", end="]")
     assert_equal(result, "[1, hello, TestWritable(42)]")
 
 
-def test_write_sequence_empty_separator():
+def test_write_sequence_empty_separator() raises:
     var result = String()
     write_sequence_to(result, 1, 2, 3, start="[", end="]", sep="")
     assert_equal(result, "[123]")
@@ -104,13 +104,13 @@ def test_write_sequence_empty_separator():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_repr_basic():
+def test_repr_basic() raises:
     var v = TestWritable(42)
     # Repr should call write_repr_to
     assert_equal(String(Repr(v)), "TestWritable[repr](42)")
 
 
-def test_repr_vs_direct():
+def test_repr_vs_direct() raises:
     var v = TestWritable(100)
     var repr_result = String(Repr(v))
     var direct_result = String(v)
@@ -124,7 +124,7 @@ def test_repr_vs_direct():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_named():
+def test_named() raises:
     # basic
     assert_equal(String(Named("value", 42)), "value=42")
 
@@ -142,49 +142,49 @@ def test_named():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_format_struct_name_only():
+def test_format_struct_name_only() raises:
     var result = String()
     FormatStruct(result, "MyStruct").fields()
     assert_equal(result, "MyStruct()")
 
 
-def test_format_struct_with_fields():
+def test_format_struct_with_fields() raises:
     var result = String()
     FormatStruct(result, "Point").fields(10, 20)
     assert_equal(result, "Point(10, 20)")
 
 
-def test_format_struct_with_params():
+def test_format_struct_with_params() raises:
     var result = String()
     FormatStruct(result, "Array").params("Int", 10).fields()
     assert_equal(result, "Array[Int, 10]()")
 
 
-def test_format_struct_with_params_and_fields():
+def test_format_struct_with_params_and_fields() raises:
     var result = String()
     FormatStruct(result, "Container").params("String").fields("value", 42)
     assert_equal(result, "Container[String](value, 42)")
 
 
-def test_format_struct_multiple_params():
+def test_format_struct_multiple_params() raises:
     var result = String()
     FormatStruct(result, "Pair").params("Int", "String").fields(1, "test")
     assert_equal(result, "Pair[Int, String](1, test)")
 
 
-def test_format_struct_single_param():
+def test_format_struct_single_param() raises:
     var result = String()
     FormatStruct(result, "Optional").params("String").fields()
     assert_equal(result, "Optional[String]()")
 
 
-def test_format_struct_single_field():
+def test_format_struct_single_field() raises:
     var result = String()
     FormatStruct(result, "Wrapper").fields(42)
     assert_equal(result, "Wrapper(42)")
 
 
-def test_format_struct_empty():
+def test_format_struct_empty() raises:
     var result = String()
     FormatStruct(result, "Empty").fields()
     assert_equal(result, "Empty()")
@@ -195,7 +195,7 @@ def test_format_struct_empty():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_struct_repr():
+def test_struct_repr() raises:
     var result = String()
     FormatStruct(result, "MyPoint").fields(
         Named("x", Repr(10)),
@@ -205,7 +205,7 @@ def test_struct_repr():
     assert_equal(result, "MyPoint(x=Int(10), y=Int(20), name='point')")
 
 
-def test_parametric_struct():
+def test_parametric_struct() raises:
     var result = String()
     FormatStruct(result, "Array").params("Int", 10).fields(
         Named("data", 42), Named("len", 5)
@@ -213,7 +213,7 @@ def test_parametric_struct():
     assert_equal(result, "Array[Int, 10](data=42, len=5)")
 
 
-def test_nested_formatting():
+def test_nested_formatting() raises:
     var inner_result = String()
     FormatStruct(inner_result, "Inner").fields(Named("x", 1), Named("y", 2))
 
@@ -230,5 +230,5 @@ def test_nested_formatting():
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

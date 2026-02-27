@@ -81,25 +81,25 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             )
 
 
-def test_elementwise_float32():
+def test_elementwise_float32() raises:
     var ctx = create_test_device_context()
     run_elementwise[DType.float32](ctx)
 
 
-def test_elementwise_bfloat16():
+def test_elementwise_bfloat16() raises:
     var ctx = create_test_device_context()
     run_elementwise[DType.bfloat16](ctx)
 
 
-def test_elementwise_float16():
+def test_elementwise_float16() raises:
     var ctx = create_test_device_context()
     run_elementwise[DType.float16](ctx)
 
 
-def test_elementwise_int8():
+def test_elementwise_int8() raises:
     var ctx = create_test_device_context()
     run_elementwise[DType.int8](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

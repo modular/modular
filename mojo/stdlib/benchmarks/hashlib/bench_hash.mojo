@@ -610,7 +610,7 @@ fn bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[
         bench_small_keys[words_ar, AHasher[SIMD[DType.uint64, 4](0)]]

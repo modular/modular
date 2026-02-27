@@ -174,7 +174,7 @@ fn bench_concat[
     _ = output_device_buffer
 
 
-def main():
+def main() raises:
     comptime num_inputs = env_get_int["num_inputs", 2]()
     comptime axis = env_get_int["axis", 0]()
     comptime W0 = env_get_int["W0", 1]()

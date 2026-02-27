@@ -18,7 +18,7 @@ from testing import assert_equal, assert_false, assert_true
 from testing import TestSuite
 
 
-def test_arch_query():
+def test_arch_query() raises:
     assert_true(CompilationTarget.has_neon())
 
     assert_equal(simd_bit_width(), 128)
@@ -26,5 +26,5 @@ def test_arch_query():
     assert_false(CompilationTarget.has_avx512f())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

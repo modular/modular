@@ -98,7 +98,7 @@ struct Ind(Intable):
         return 1
 
 
-def test_bin_scalar():
+def test_bin_scalar() raises:
     assert_equal(bin(Int8(2)), "0b10")
     assert_equal(bin(Int32(123)), "0b1111011")
     assert_equal(bin(Int32(-123)), "-0b1111011")
@@ -106,7 +106,7 @@ def test_bin_scalar():
     assert_equal(bin(Scalar[DType.bool](False)), "0b0")
 
 
-def test_bin_int():
+def test_bin_int() raises:
     assert_equal(bin(0), "0b0")
     assert_equal(bin(1), "0b1")
     assert_equal(bin(-1), "-0b1")
@@ -116,12 +116,12 @@ def test_bin_int():
     assert_equal(bin(-10), "-0b1010")
 
 
-def test_bin_bool():
+def test_bin_bool() raises:
     assert_equal(bin(True), "0b1")
     assert_equal(bin(False), "0b0")
 
 
-def test_oct_scalar():
+def test_oct_scalar() raises:
     assert_equal(oct(Int32(234)), "0o352")
     assert_equal(oct(Int32(-23)), "-0o27")
     assert_equal(oct(Int32(0)), "0o0")
@@ -129,7 +129,7 @@ def test_oct_scalar():
     assert_equal(oct(Scalar[DType.bool](False)), "0o0")
 
 
-def test_oct_int():
+def test_oct_int() raises:
     assert_equal(oct(768), "0o1400")
     assert_equal(oct(-12), "-0o14")
     assert_equal(oct(23623564), "0o132073614")
@@ -138,18 +138,18 @@ def test_oct_int():
     assert_equal(oct(Int(7658)), "0o16752")
 
 
-def test_oct_bool():
+def test_oct_bool() raises:
     assert_equal(oct(True), "0o1")
     assert_equal(oct(False), "0o0")
 
 
-def test_intable():
+def test_intable() raises:
     assert_equal(bin(Ind()), "0b1")
     assert_equal(hex(Ind()), "0x1")
     assert_equal(oct(Ind()), "0o1")
 
 
-def test_different_prefix():
+def test_different_prefix() raises:
     assert_equal(bin(Int8(1), prefix="binary"), "binary1")
     assert_equal(hex(Int8(1), prefix="hexadecimal"), "hexadecimal1")
     assert_equal(oct(Int8(1), prefix="octal"), "octal1")
@@ -167,5 +167,5 @@ def test_different_prefix():
     assert_equal(oct(Scalar[DType.bool](True), prefix="test"), "test1")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

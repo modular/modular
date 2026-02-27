@@ -21,7 +21,7 @@ from utils import IndexList
 
 
 # CHECK-LABEL: test_where_size
-def test_where_size():
+def test_where_size() raises:
     print("== test_where_size")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
@@ -46,7 +46,7 @@ def test_where_size():
 
 
 # CHECK-LABEL: test_where_size_bool
-def test_where_size_bool():
+def test_where_size_bool() raises:
     print("== test_where_size_bool")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
@@ -71,7 +71,7 @@ def test_where_size_bool():
 
 
 # CHECK-LABEL: test_where
-def test_where():
+def test_where() raises:
     print("== test_where")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
@@ -119,7 +119,7 @@ def test_where():
 
 
 # CHECK-LABEL: test_where_1d
-def test_where_1d():
+def test_where_1d() raises:
     print("== test_where_1d")
     comptime num_elements = 12
     comptime num_indices = 6
@@ -169,7 +169,7 @@ def test_where_1d():
 
 
 # CHECK-LABEL: test_where_bool
-def test_where_bool():
+def test_where_bool() raises:
     print("== test_where_bool")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
@@ -210,7 +210,7 @@ def test_where_bool():
         assert_equal(computed_outputs[i, j], golden_outputs[i, j])
 
 
-def main():
+def main() raises:
     test_where_size()
     test_where_size_bool()
     test_where()

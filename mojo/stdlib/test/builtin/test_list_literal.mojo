@@ -14,9 +14,9 @@
 from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
-def test_variadic_list():
+def test_variadic_list() raises:
     @parameter
-    def check_list(*nums: Int):
+    def check_list(*nums: Int) raises:
         assert_equal(nums[0], 5)
         assert_equal(nums[1], 8)
         assert_equal(nums[2], 6)
@@ -27,7 +27,7 @@ def test_variadic_list():
     check_list(5, 8, 6)
 
 
-def test_contains():
+def test_contains() raises:
     # There are additional tests for `List.__contains__` in the `test_list.mojo` file.
     var l = ["Hello", ",", "World", "!"]
     assert_true("Hello" in l)
@@ -40,5 +40,5 @@ def test_contains():
     assert_true("Hello" in l and "Hello" in l)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

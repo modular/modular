@@ -39,7 +39,7 @@ from testing import assert_equal
 from utils import Index, IndexList
 
 
-def accessing_tensor_elements_example():
+def accessing_tensor_elements_example() raises:
     comptime rows = 4
     comptime columns = 8
     comptime layout = Layout.row_major(rows, columns)
@@ -68,7 +68,7 @@ def accessing_tensor_elements_example():
     assert_equal(element, 4)
 
 
-def accessing_nested_tensor_elements_example():
+def accessing_nested_tensor_elements_example() raises:
     comptime rows = 4
     comptime columns = 6
     comptime tiler = Layout.row_major(2, 3)
@@ -85,7 +85,7 @@ def accessing_nested_tensor_elements_example():
     assert_equal(element, 5)
 
 
-def layout_tensor_on_cpu_example():
+def layout_tensor_on_cpu_example() raises:
     # start-layout-tensor-on-cpu-example
     comptime rows = 8
     comptime columns = 16
@@ -97,7 +97,7 @@ def layout_tensor_on_cpu_example():
     _ = tensor
 
 
-def layout_tensor_from_pointer_example():
+def layout_tensor_from_pointer_example() raises:
     # start-layout-tensor-from-pointer-example
     comptime rows = 1024
     comptime columns = 1024
@@ -111,7 +111,7 @@ def layout_tensor_from_pointer_example():
     _ = tensor
 
 
-def layout_tensor_tile_example():
+def layout_tensor_tile_example() raises:
     # start-layout-tensor-tile-example
     comptime rows = 2
     comptime columns = 4
@@ -139,7 +139,7 @@ def layout_tensor_tile_example():
 # Iterates through a block of memory one tile at a time.
 # This essentially treats the memory as a flat array of
 # tiles (or a 2D row-major matrix of tiles).
-def layout_tensor_iterator_example():
+def layout_tensor_iterator_example() raises:
     # start-layout-tensor-iterator-example-1
     comptime buf_size = 128
     var storage = InlineArray[Int16, buf_size](uninitialized=True)
@@ -159,7 +159,7 @@ def layout_tensor_iterator_example():
         assert_equal(tile[0, 0][0], Int16(i * tile_size))
 
 
-def layout_tensor_iterator_example2():
+def layout_tensor_iterator_example2() raises:
     # TODO: set up a tiled layout tensor as input and
     # validate output.
     comptime rows = 4
@@ -188,7 +188,7 @@ def layout_tensor_iterator_example2():
             _ = tile
 
 
-def main():
+def main() raises:
     accessing_tensor_elements_example()
     accessing_nested_tensor_elements_example()
     layout_tensor_on_cpu_example()

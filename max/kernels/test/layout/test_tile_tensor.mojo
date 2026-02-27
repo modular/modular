@@ -26,7 +26,7 @@ from testing import (
 )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
@@ -210,7 +210,7 @@ fn test_tile() raises:
         assert_equal(data[i], UInt32(expected[i]))
 
 
-def test_tensor_span_constructor():
+def test_tensor_span_constructor() raises:
     var bytes: List[UInt8] = [0, 1, 2, 3]
     var _tensor = TileTensor(
         bytes,
@@ -218,7 +218,7 @@ def test_tensor_span_constructor():
     )
 
 
-def test_fill():
+def test_fill() raises:
     var stack = InlineArray[UInt32, 16](fill=0)
     var tensor = TileTensor(stack, row_major[4, 4]()).fill(1)
     for i in range(tensor.layout.shape[0]().value()):
@@ -226,7 +226,7 @@ def test_fill():
             assert_equal(tensor[(Idx(i), Idx(j))], 1)
 
 
-def test_fill_large():
+def test_fill_large() raises:
     # layout._fillers.BATCH_SIZE is 2048, so we do 4096
     var stack = InlineArray[UInt32, 4096](fill=0)
     var tensor = TileTensor(stack, row_major[2048, 2]()).fill(1)
@@ -452,14 +452,14 @@ fn test_vectorize_1d() raises:
     assert_equal(vectorized[(Idx(3),)][0], 12)
 
 
-def test_indexing():
+def test_indexing() raises:
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
     var tensor = TileTensor(stack, row_major[2, 2]())
     assert_equal(tensor[Int32(0), Int64(0)], 1)
     assert_equal(tensor[Int(1), Int64(0)], 3)
 
 
-def test_to_layout_tensor_square():
+def test_to_layout_tensor_square() raises:
     var stack: InlineArray[UInt8, 4] = [1, 2, 3, 4]
     var tensor = TileTensor(stack, row_major[2, 2]()).to_layout_tensor()
     assert_equal(materialize[tensor.layout](), layout.Layout.row_major(2, 2))
@@ -472,7 +472,7 @@ def test_to_layout_tensor_square():
     )
 
 
-def test_to_layout_tensor_3d():
+def test_to_layout_tensor_3d() raises:
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
     var tensor = TileTensor(stack, row_major[64, 8, 4]())
     var lt = tensor.to_layout_tensor()
@@ -486,7 +486,7 @@ def test_to_layout_tensor_3d():
     )
 
 
-def test_to_layout_tensor_3d_dynamic():
+def test_to_layout_tensor_3d_dynamic() raises:
     var stack = InlineArray[UInt8, 64 * 8 * 4](fill=0)
     var tensor = TileTensor(
         stack, row_major((Idx[64](), Idx[8](), Idx(Int(4))))

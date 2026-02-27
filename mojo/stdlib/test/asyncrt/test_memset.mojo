@@ -67,7 +67,7 @@ fn _run_memset_cascade[
             )
 
 
-def test_memset():
+def test_memset() raises:
     var ctx = create_test_device_context()
 
     print("-------")
@@ -92,5 +92,5 @@ def test_memset():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

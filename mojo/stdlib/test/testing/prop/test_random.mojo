@@ -22,7 +22,7 @@ from testing import (
 from testing.prop.random import Rng
 
 
-def test_rng_xoshiro_float():
+def test_rng_xoshiro_float() raises:
     var rng = Rng(seed=1234)
     for _ in range(100):
         var f = rng._xoshiro_float()
@@ -30,15 +30,15 @@ def test_rng_xoshiro_float():
         assert_true(f <= 1.0)
 
 
-def test_rng_rand_bool():
+def test_rng_rand_bool() raises:
     var rng = Rng(seed=1234)
     for _ in range(100):
         assert_true(rng.rand_bool(true_probability=1.0))
         assert_false(rng.rand_bool(true_probability=0.0))
 
 
-def test_rng_rand_scalar():
-    def test_dtype[dtype: DType](min: Scalar[dtype], max: Scalar[dtype]):
+def test_rng_rand_scalar() raises:
+    def test_dtype[dtype: DType](min: Scalar[dtype], max: Scalar[dtype]) raises:
         var rng = Rng(seed=1234)
         for _ in range(100):
             var value = rng.rand_scalar[dtype](min=min, max=max)
@@ -76,5 +76,5 @@ def test_rng_rand_scalar_raises():
         var _ = rng.rand_scalar[DType.int32](min=10, max=5)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

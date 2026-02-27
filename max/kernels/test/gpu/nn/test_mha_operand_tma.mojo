@@ -796,7 +796,7 @@ fn test_ragged[
     print("    RaggedTensor test passed!")
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         comptime batch_size = 4

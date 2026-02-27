@@ -375,7 +375,7 @@ fn create_bmm_bench[
     )
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var b = Int(arg_parse("B", 1))

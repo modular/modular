@@ -62,7 +62,7 @@ fn vec_func(
     output[tid] = in0[tid] + in1[tid] + s.s1 + s.s0
 
 
-def test_function_checked():
+def test_function_checked() raises:
     var ctx = create_test_device_context()
     _run_test_function_checked(ctx)
 
@@ -112,7 +112,7 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
             )
 
 
-def test_function_experimental():
+def test_function_experimental() raises:
     var ctx = create_test_device_context()
     _run_test_function_experimental(ctx)
 
@@ -162,7 +162,7 @@ fn _run_test_function_experimental(ctx: DeviceContext) raises:
             )
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

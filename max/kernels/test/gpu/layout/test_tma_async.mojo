@@ -231,7 +231,7 @@ def test_tma_ragged_store[
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     max_descriptor_length: Int = 8,
     using_max_descriptor_size: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime depth = swizzle_mode.bytes() // size_of[dtype]()
     comptime total_num_sequences = sum_index_list[sequence_lengths]()
     comptime global_layout = Layout.row_major(total_num_sequences, depth)
@@ -312,7 +312,7 @@ def test_tma_load_row_major[
     src_layout: Layout,
     tile_layout: Layout,
     load_along_last_dim: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = src_layout.shape[0].value()
     comptime N = src_layout.shape[1].value()
     comptime tileM = tile_layout.shape[0].value()
@@ -456,7 +456,7 @@ def test_tma_async_store[
     tile_layout: Layout,
     dst_layout: Layout,
     load_along_last_dim: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime src_M = src_layout.shape[0].value()
     comptime src_N = src_layout.shape[1].value()
     comptime tileM = tile_layout.shape[0].value()
@@ -590,7 +590,7 @@ def test_tma_async_reduce[
     tile_layout: Layout,
     dst_layout: Layout,
     load_along_last_dim: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime src_M = src_layout.shape[0].value()
     comptime src_N = src_layout.shape[1].value()
     comptime tileM = tile_layout.shape[0].value()
@@ -733,7 +733,7 @@ fn test_tma_loads_two_buffers_kernel[
 
 def test_tma_load_two_buffers_row_major[
     src_layout: Layout, tile_layout: Layout, load_along_last_dim: Bool = False
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = src_layout.shape[0].value()
     comptime N = src_layout.shape[1].value()
     comptime tileM = tile_layout.shape[0].value()
@@ -900,7 +900,7 @@ fn test_tma_loads_and_store_two_buffers_kernel[
 
 def test_tma_load_and_store_two_buffers_row_major[
     src_layout: Layout, tile_layout: Layout, dst_layout: Layout
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = src_layout.shape[0].value()
     comptime N = src_layout.shape[1].value()
     comptime tileM = tile_layout.shape[0].value()
@@ -995,7 +995,7 @@ def test_tma_load_and_store_two_buffers_row_major[
     _ = b_dst^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_load_f32")
         test_tma_load_row_major[

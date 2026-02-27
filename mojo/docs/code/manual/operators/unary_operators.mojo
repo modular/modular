@@ -16,11 +16,11 @@
 struct MyInt:
     var value: Int
 
-    def __neg__(self) -> Self:
+    def __neg__(self) raises -> Self:
         return Self(-self.value)
 
 
-def main():
+def main() raises:
     pos = MyInt(1)
     neg = -pos
     print(pos.value, neg.value)

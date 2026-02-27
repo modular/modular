@@ -680,7 +680,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     _ = input_stack^
 
 
-def main():
+def main() raises:
     test_index_tensor_DLRM()
     test_index_tensor_DLRM_batch()
     test_index_tensor_CLIPVIT()

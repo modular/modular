@@ -35,7 +35,7 @@ fn gpu_kernel(
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         var vec_a_ptr = UnsafePointer[Float32].alloc(16)
         var vec_b_ptr = UnsafePointer[Float32].alloc(16)

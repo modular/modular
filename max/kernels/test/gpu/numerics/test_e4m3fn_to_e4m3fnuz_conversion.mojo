@@ -89,5 +89,5 @@ fn test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
         )
 
 
-def main():
+def main() raises:
     test_convert_e4m3fn_to_e4m3fnuz_basic()

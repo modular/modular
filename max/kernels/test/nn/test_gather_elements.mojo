@@ -17,7 +17,7 @@ from nn.gather_scatter import gather_elements
 from testing import assert_equal
 
 
-def main():
+def main() raises:
     fn test_gather_ax1() raises:
         print("== test_gather_ax1")
 

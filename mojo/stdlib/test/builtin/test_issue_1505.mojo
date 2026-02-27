@@ -27,7 +27,7 @@ fn gen_perm() -> IndexList[64]:
     return result
 
 
-def test_issue_1505():
+def test_issue_1505() raises:
     comptime p = gen_perm()
 
     # generate random data to prevent that everything gets simplified
@@ -106,5 +106,5 @@ def test_issue_1505():
         assert_equal(data1[p[i]], data2[i])
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

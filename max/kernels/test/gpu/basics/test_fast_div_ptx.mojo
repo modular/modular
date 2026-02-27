@@ -21,7 +21,7 @@ from testing import assert_true
 from utils.fast_div import FastDiv
 
 
-def contains_fastdiv_div_sequence(asm: String) -> Bool:
+def contains_fastdiv_div_sequence(asm: String) raises -> Bool:
     var re = Python.import_module("re")
     var fastdiv_pattern = String(
         r"ld\.global\.b32\s+[^;]+;\s*"
@@ -37,7 +37,7 @@ def contains_fastdiv_div_sequence(asm: String) -> Bool:
     return result is not PythonObject(None)
 
 
-def contains_power_of_2_sequence(asm: String) -> Bool:
+def contains_power_of_2_sequence(asm: String) raises -> Bool:
     var re = Python.import_module("re")
     var shift_pattern = String(
         r"ld\.global\.b32\s+[^;]+;\s*"
@@ -59,7 +59,7 @@ fn fast_div_kernel[
     input[0] = result.cast[dtype]()
 
 
-def main():
+def main() raises:
     comptime dtype = DType.uint32
     comptime layout = Layout(IntTuple(1))
     comptime kernel_fast_div_4 = fast_div_kernel[dtype, layout, 4]

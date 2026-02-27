@@ -579,7 +579,7 @@ def test_blackwell_kernel_5[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     print(
         "mma_"
         + "s"
@@ -797,7 +797,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
         ](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             # Run the benchmark

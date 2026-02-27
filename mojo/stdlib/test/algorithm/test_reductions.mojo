@@ -26,7 +26,7 @@ from utils.index import Index, IndexList, StaticTuple
 
 
 # CHECK-LABEL: test_reductions
-def test_reductions():
+def test_reductions() raises:
     print("== test_reductions")
 
     comptime simd_width = 4
@@ -48,7 +48,7 @@ def test_reductions():
     print(sum(vector))
 
 
-def test_reductions_zero_size():
+def test_reductions_zero_size() raises:
     print("== test_reductions_zero_size")
 
     comptime size = 0
@@ -60,7 +60,7 @@ def test_reductions_zero_size():
 
 
 # CHECK-LABEL: test_fused_reductions_inner
-def test_fused_reductions_inner():
+def test_fused_reductions_inner() raises:
     print("== test_fused_redtest_fused_reductions_inneructions")
 
     comptime size = 100
@@ -139,7 +139,7 @@ def test_fused_reductions_inner():
 
 
 # CHECK-LABEL: test_fused_reductions_outer
-def test_fused_reductions_outer():
+def test_fused_reductions_outer() raises:
     print("== test_fused_reductions_outer")
 
     comptime size = 100
@@ -221,7 +221,7 @@ def test_fused_reductions_outer():
 
 # We use a smaller vector so that we do not overflow
 # CHECK-LABEL: test_product
-def test_product():
+def test_product() raises:
     print("== test_product")
 
     comptime simd_width = 4
@@ -238,7 +238,7 @@ def test_product():
 
 
 # CHECK-LABEL: test_mean_variance
-def test_mean_variance():
+def test_mean_variance() raises:
     print("== test_mean_variance")
 
     comptime simd_width = 4
@@ -258,7 +258,7 @@ def test_mean_variance():
 
 
 # CHECK-LABEL: test_cumsum
-def test_cumsum():
+def test_cumsum() raises:
     print("== test_cumsum")
 
     var vector = InlineArray[Float32, 150](fill=0)
@@ -313,5 +313,5 @@ def test_cumsum():
         print(cumsum_out2[i], ",", end="")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

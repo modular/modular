@@ -64,7 +64,7 @@ fn test_enumerate_destructure() raises:
         count += 1
 
 
-def test_enumerate_bounds():
+def test_enumerate_bounds() raises:
     var list = [1, 2, 3]
     var e = enumerate(list)
 
@@ -72,5 +72,5 @@ def test_enumerate_bounds():
     assert_equal(iter(list).bounds()[1].value(), e.bounds()[1].value())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -65,7 +65,7 @@ struct Poison(ImplicitlyCopyable):
 comptime TestVariant = Variant[MoveCopyCounter, Poison]
 
 
-def test_basic():
+def test_basic() raises:
     comptime IntOrString = Variant[Int, String]
     var i = IntOrString(4)
     var s = IntOrString("4")
@@ -89,7 +89,7 @@ def test_basic():
     assert_equal("i", i[String])
 
 
-def test_copy():
+def test_copy() raises:
     var v1 = TestVariant(MoveCopyCounter())
     var v2 = v1
     # didn't call copyinit
@@ -99,7 +99,7 @@ def test_copy():
     assert_no_poison()
 
 
-def test_explicit_copy():
+def test_explicit_copy() raises:
     var v1 = TestVariant(MoveCopyCounter())
 
     # Perform explicit copy
@@ -113,7 +113,7 @@ def test_explicit_copy():
     assert_no_poison()
 
 
-def test_move():
+def test_move() raises:
     var v1 = TestVariant(MoveCopyCounter())
     var v2 = v1
     # didn't call moveinit
@@ -123,7 +123,7 @@ def test_move():
     assert_no_poison()
 
 
-def test_del():
+def test_del() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
@@ -133,7 +133,7 @@ def test_del():
     assert_no_poison()
 
 
-def test_set_calls_deleter():
+def test_set_calls_deleter() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var deleted2: Bool = False
@@ -147,14 +147,14 @@ def test_set_calls_deleter():
     assert_no_poison()
 
 
-def test_replace():
+def test_replace() raises:
     var v1: Variant[Int, String] = 998
     var x = v1.replace[String, Int]("hello")
 
     assert_equal(x, 998)
 
 
-def test_take_doesnt_call_deleter():
+def test_take_doesnt_call_deleter() raises:
     comptime TestDeleterVariant = Variant[ObservableDel[], Poison]
     var deleted: Bool = False
     var v1 = TestDeleterVariant(ObservableDel(UnsafePointer(to=deleted)))
@@ -167,7 +167,7 @@ def test_take_doesnt_call_deleter():
     assert_no_poison()
 
 
-def test_get_returns_mutable_reference():
+def test_get_returns_mutable_reference() raises:
     var v1: Variant[Int, String] = 42
     var x = v1[Int]
     assert_equal(42, x)
@@ -181,7 +181,7 @@ def test_get_returns_mutable_reference():
     assert_equal(v2[String], "something else")
 
 
-def test_is_type_supported():
+def test_is_type_supported() raises:
     var _x: Variant[Float64, Int32]
     assert_equal(_x.is_type_supported[Float64](), True)
     assert_equal(_x.is_type_supported[Int32](), True)
@@ -193,13 +193,13 @@ def test_is_type_supported():
     assert_equal(_y.is_type_supported[SIMD[DType.uint8, 8]](), False)
 
 
-def test_variant_works_with_move_only_types():
+def test_variant_works_with_move_only_types() raises:
     var v1 = Variant[MoveOnly[Int], MoveOnly[String]](MoveOnly[Int](42))
     var v2 = v1^
     assert_equal(v2[MoveOnly[Int]].data, 42)
 
 
-def test_variant_linear_type_take():
+def test_variant_linear_type_take() raises:
     var v = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
 
     var x = v^.take[ExplicitDelOnly]()
@@ -210,7 +210,7 @@ def test_variant_linear_type_take():
     assert_equal(data, 5)
 
 
-def test_variant_linear_type_destroy_with():
+def test_variant_linear_type_destroy_with() raises:
     # Test destroying a linear variant element in-place
     var v1 = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
     v1^.destroy_with(ExplicitDelOnly.destroy)
@@ -220,14 +220,14 @@ def test_variant_linear_type_destroy_with():
     v2^.destroy_with(String.__del__)
 
 
-def test_variant_linear_type_move():
+def test_variant_linear_type_move() raises:
     var v1 = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
     var v2 = v1^
 
     v2^.destroy_with(ExplicitDelOnly.destroy)
 
 
-def test_variant_trivial_del():
+def test_variant_trivial_del() raises:
     comptime yes = ConfigureTrivial[del_is_trivial=True]
     comptime no = ConfigureTrivial[del_is_trivial=False]
 
@@ -240,7 +240,7 @@ def test_variant_trivial_del():
     # assert_false(Variant[LinearType].__del__is_trivial)
 
 
-def test_variant_trivial_copyinit():
+def test_variant_trivial_copyinit() raises:
     comptime yes = ConfigureTrivial[copyinit_is_trivial=True]
     comptime no = ConfigureTrivial[copyinit_is_trivial=False]
 
@@ -252,7 +252,7 @@ def test_variant_trivial_copyinit():
     assert_false(Variant[MoveOnly[Int]].__copy_ctor_is_trivial)
 
 
-def test_variant_trivial_moveinit():
+def test_variant_trivial_moveinit() raises:
     comptime yes = ConfigureTrivial[moveinit_is_trivial=True]
     comptime no = ConfigureTrivial[moveinit_is_trivial=False]
 
@@ -264,19 +264,19 @@ def test_variant_trivial_moveinit():
     assert_false(Variant[NonMovable].__move_ctor_is_trivial)
 
 
-def test_variant_write_to():
+def test_variant_write_to() raises:
     var v = Variant[Int, String](42)
     check_write_to(v, expected="42", is_repr=False)
     v = "hello"
     check_write_to(v, expected="hello", is_repr=False)
 
 
-def test_variant_write_repr_to():
+def test_variant_write_repr_to() raises:
     var v = Variant[Int, String](42)
     check_write_to(v, expected="Variant[Int, String](Int(42))", is_repr=True)
     v = "hello"
     check_write_to(v, expected="Variant[Int, String]('hello')", is_repr=True)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

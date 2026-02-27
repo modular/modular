@@ -51,7 +51,7 @@ struct Dog(Copyable, Representable, Stringable, Writable):
         )
 
 
-def main():
+def main() raises:
     # Sized example
     print(len(MyList()))
 

@@ -579,7 +579,7 @@ fn test_decoding[
     ](1, 5120, ctx, use_index_input=use_index_input)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # experimental kernel only supports depth == 128
         comptime experimental_kernel = env_get_bool[

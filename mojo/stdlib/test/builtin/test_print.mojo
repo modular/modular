@@ -81,7 +81,7 @@ struct PrintChecker(Movable):
         self.cursor += UInt64(len(result) + 1)
 
 
-def test_print():
+def test_print() raises:
     with PrintChecker() as checker:
         print("Hello", file=checker.stream())
         checker.check_line("Hello")
@@ -120,13 +120,13 @@ def test_print():
         checker.check_line("Hello world")
 
 
-def test_print_end():
+def test_print_end() raises:
     with PrintChecker() as checker:
         print("Hello", end=" World\n", file=checker.stream())
         checker.check_line("Hello World")
 
 
-def test_print_sep():
+def test_print_sep() raises:
     with PrintChecker() as checker:
         print("a", "b", "c", sep="/", file=checker.stream())
         checker.check_line("a/b/c")
@@ -135,5 +135,5 @@ def test_print_sep():
         checker.check_line("a/1/2xx")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

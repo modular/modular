@@ -25,7 +25,7 @@ from ffi import UnsafeUnion
 from memory import UnsafePointer
 
 
-def test_basic_int_storage():
+def test_basic_int_storage() raises:
     var u = UnsafeUnion[Int32, Int64](Int32(42))
     assert_equal(u.unsafe_get[Int32](), 42)
 
@@ -34,12 +34,12 @@ def test_basic_int_storage():
     assert_equal(u.unsafe_get[Int32](), -100)
 
 
-def test_basic_float_storage():
+def test_basic_float_storage() raises:
     var u = UnsafeUnion[Float32, Float64](Float32(3.14))
     assert_almost_equal(u.unsafe_get[Float32](), 3.14, atol=0.01)
 
 
-def test_type_punning():
+def test_type_punning() raises:
     # IEEE 754: 1.0f = 0x3F800000 = 1065353216
     var u = UnsafeUnion[Int32, Float32](Float32(1.0))
     assert_equal(u.unsafe_get[Int32](), 1065353216)
@@ -49,7 +49,7 @@ def test_type_punning():
     assert_almost_equal(u2.unsafe_get[Float32](), 1.0, atol=0.01)
 
 
-def test_union_size():
+def test_union_size() raises:
     # Union uses !pop.union directly, so size is max of element sizes
     # with no discriminant overhead - exactly like C unions.
 
@@ -79,7 +79,7 @@ def test_union_size():
     assert_equal(size_of[UnsafeUnion[Int16, Int8]](), 2)
 
 
-def test_union_alignment():
+def test_union_alignment() raises:
     # Int64 has 8-byte alignment - union should have at least this
     comptime U1 = UnsafeUnion[Int8, Int64]
     assert_true(align_of[U1]() >= 8)
@@ -89,7 +89,7 @@ def test_union_alignment():
     assert_true(align_of[U2]() >= 4)
 
 
-def test_unsafe_ptr():
+def test_unsafe_ptr() raises:
     var u = UnsafeUnion[Int32, Float32](Int32(0))
 
     # Write through pointer
@@ -102,7 +102,7 @@ def test_unsafe_ptr():
     assert_equal(ptr[], 123)
 
 
-def test_unsafe_get():
+def test_unsafe_get() raises:
     var u = UnsafeUnion[Int32, Float32](Int32(42))
 
     # Read via unsafe_get
@@ -113,7 +113,7 @@ def test_unsafe_get():
     assert_equal(u.unsafe_get[Int32](), 100)
 
 
-def test_copy():
+def test_copy() raises:
     var u1 = UnsafeUnion[Int32, Float32](Int32(42))
     var u2 = u1  # Copy via copy ctor
     assert_equal(u2.unsafe_get[Int32](), 42)
@@ -124,13 +124,13 @@ def test_copy():
     assert_equal(u1.unsafe_get[Int32](), 100)
 
 
-def test_move():
+def test_move() raises:
     var u1 = UnsafeUnion[Int32, Float32](Int32(42))
     var u2 = u1^  # Move via move constructor
     assert_equal(u2.unsafe_get[Int32](), 42)
 
 
-def test_unsafe_take():
+def test_unsafe_take() raises:
     var u = UnsafeUnion[Int32, Float32](Int32(42))
     var val = u.unsafe_take[Int32]()
     assert_equal(val, 42)
@@ -140,7 +140,7 @@ def test_unsafe_take():
     assert_almost_equal(u.unsafe_get[Float32](), 3.14, atol=0.01)
 
 
-def test_multiple_types():
+def test_multiple_types() raises:
     comptime BigUnion = UnsafeUnion[Int8, Int16, Int32, Int64, Float32, Float64]
 
     # Test storing and retrieving each type
@@ -154,21 +154,21 @@ def test_multiple_types():
     assert_almost_equal(u.unsafe_get[Float64](), 2.718281828, atol=0.01)
 
 
-def test_explicit_construction():
+def test_explicit_construction() raises:
     # UnsafeUnion requires explicit construction (no @implicit)
     # This is intentional for safety - users must be explicit about unsafe types
     var u = UnsafeUnion[Int32, Float32](Int32(42))
     assert_equal(u.unsafe_get[Int32](), 42)
 
 
-def test_uninitialized():
+def test_uninitialized() raises:
     var u = UnsafeUnion[Int32, Float32](unsafe_uninitialized=())
     # Set before reading
     u.unsafe_set(Int32(42))
     assert_equal(u.unsafe_get[Int32](), 42)
 
 
-def test_simd_types():
+def test_simd_types() raises:
     """Test union with SIMD types as members.
 
     SIMD types are common in FFI for vectorized operations.
@@ -195,7 +195,7 @@ def test_simd_types():
     assert_equal(u.unsafe_get[Int32](), 42)
 
 
-def test_simd_type_punning():
+def test_simd_type_punning() raises:
     # Store 4 floats and read as integers
     comptime SimdIntUnion = UnsafeUnion[
         SIMD[DType.float32, 4], SIMD[DType.int32, 4]
@@ -225,7 +225,7 @@ struct TrivialSingle(ImplicitlyCopyable, Movable):
     var value: Int64
 
 
-def test_trivial_struct_types():
+def test_trivial_struct_types() raises:
     comptime TrivialUnion = UnsafeUnion[TrivialPair, TrivialSingle]
 
     # TrivialPair is 8 bytes (2x Int32), TrivialSingle is 8 bytes (1x Int64)
@@ -243,7 +243,7 @@ def test_trivial_struct_types():
     assert_equal(single.value, Int64.MAX_FINITE)
 
 
-def test_writable():
+def test_writable() raises:
     var u = UnsafeUnion[Int32, Float32](Int32(42))
     var s = String(u)
 
@@ -256,7 +256,7 @@ def test_writable():
     assert_true("align=4" in s)
 
 
-def test_nested_unions():
+def test_nested_unions() raises:
     # Two-level nesting
     comptime InnerUnion = UnsafeUnion[Int32, Float32]
     comptime OuterUnion = UnsafeUnion[InnerUnion, Int64]
@@ -297,5 +297,5 @@ def test_nested_unions():
     assert_equal(retrieved_l1.unsafe_get[Int16](), 1000)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -21,7 +21,7 @@ comptime MI300X_TARGET = MI300X.target()
 
 
 # CHECK-LABEL: test_barrier
-def test_barrier():
+def test_barrier() raises:
     print("== test_barrier")
 
     fn barrier_kernel():
@@ -40,5 +40,5 @@ def test_barrier():
     )
 
 
-def main():
+def main() raises:
     test_barrier()

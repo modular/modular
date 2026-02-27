@@ -5693,7 +5693,7 @@ struct LayoutTensor[
         ```mojo
         from layout import Layout, LayoutTensor
 
-        def main():
+        def main() raises:
             var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,
@@ -5771,7 +5771,7 @@ struct LayoutTensor[
         ```mojo
         from layout import Layout, LayoutTensor
 
-        def main():
+        def main() raises:
             var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,

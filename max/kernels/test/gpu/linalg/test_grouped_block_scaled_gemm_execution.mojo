@@ -1509,7 +1509,7 @@ fn test_grouped_kernel_two_groups_different_ptrs[
     sfb_ptrs_host.free()
 
 
-def main():
+def main() raises:
     print("\n" + "=" * 60)
     print("Test: Incremental Grouped Block-Scaled GEMM Execution")
     print("=" * 60)

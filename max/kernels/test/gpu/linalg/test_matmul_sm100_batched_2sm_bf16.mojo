@@ -60,7 +60,9 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     block_swizzle_size: Int = 0,
     swapAB: Bool = False,
     k_group_size: Int = 1,
-](ctx: DeviceContext, batch: ValOrDim, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](
+    ctx: DeviceContext, batch: ValOrDim, m: ValOrDim, n: ValOrDim, k: ValOrDim
+) raises:
     var B = batch.value
     var M = m.value
     var N = n.value
@@ -266,7 +268,7 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.bfloat16
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B

@@ -19,13 +19,13 @@ from test_utils import libm_call
 from testing import assert_almost_equal, assert_equal, TestSuite
 
 
-def test_exp_bfloat16():
+def test_exp_bfloat16() raises:
     assert_equal(exp(BFloat16(2.0)), 7.375)
     assert_equal(exp(5.0) * exp(6.0), exp(5.0 + 6.0))
     assert_equal(exp(5.0) / exp(2.0), exp(5.0 - 2.0))
 
 
-def test_exp_float16():
+def test_exp_float16() raises:
     assert_almost_equal(exp(Float16(-0.1)), 0.9047)
     assert_almost_equal(exp(Float16(0.1)), 1.105)
     assert_almost_equal(exp(Float16(2)), 7.389)
@@ -33,7 +33,7 @@ def test_exp_float16():
     assert_equal(String(exp(Float16(108.5230))), "inf")
 
 
-def test_exp_float32():
+def test_exp_float32() raises:
     assert_almost_equal(exp(Float32(-0.1)), 0.90483)
     assert_almost_equal(exp(Float32(0.1)), 1.10517)
     assert_almost_equal(exp(Float32(2)), 7.38905)
@@ -41,7 +41,7 @@ def test_exp_float32():
     assert_equal(String(exp(Float32(108.5230))), "inf")
 
 
-def test_exp_float64():
+def test_exp_float64() raises:
     assert_almost_equal(exp(Float64(-0.1)), 0.90483)
     assert_almost_equal(exp(Float64(0.1)), 1.10517)
     assert_almost_equal(exp(Float64(2)), 7.38905)
@@ -53,11 +53,11 @@ def test_exp_float64():
 @always_inline
 def exp_libm[
     dtype: DType, simd_width: Int
-](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+](arg: SIMD[dtype, simd_width]) raises -> SIMD[dtype, simd_width]:
     return libm_call["expf", "exp"](arg)
 
 
-def _test_exp_libm[dtype: DType]() where dtype.is_floating_point():
+def _test_exp_libm[dtype: DType]() raises where dtype.is_floating_point():
     seed(0)
     comptime N = 8192
     for _i in range(N):
@@ -67,7 +67,7 @@ def _test_exp_libm[dtype: DType]() where dtype.is_floating_point():
         )
 
 
-def test_exp_libm():
+def test_exp_libm() raises:
     _test_exp_libm[DType.float32]()
     _test_exp_libm[DType.float64]()
 
@@ -106,10 +106,10 @@ struct FakeExpable(Equatable, Stringable, _Expable):
         return String("FakeExpable(", self.x, ")")
 
 
-def test_exapble_trait():
+def test_exapble_trait() raises:
     assert_equal(exp(Float32Expable(1.0)), Float32Expable(exp(Float32(1.0))))
     assert_equal(exp(FakeExpable(1)), FakeExpable(99))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

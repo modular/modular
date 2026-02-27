@@ -1824,7 +1824,7 @@ fn run_ragged_q_both_kv_types[
 # ===-----------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     seed(42)
 
     with DeviceContext() as ctx:

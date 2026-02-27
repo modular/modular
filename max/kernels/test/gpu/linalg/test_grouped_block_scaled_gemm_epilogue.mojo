@@ -446,7 +446,7 @@ fn test_grouped_gemm_epilogue[
     _ = sfb_ptrs_device^
 
 
-def main():
+def main() raises:
     comptime a_type = DType.float8_e4m3fn
     comptime b_type = DType.float8_e4m3fn
     comptime c_type = DType.bfloat16

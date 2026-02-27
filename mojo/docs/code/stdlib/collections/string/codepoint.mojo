@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def summary():
+def summary() raises:
     from collections.string import Codepoint
     from testing import assert_true, assert_equal
 
@@ -28,7 +28,7 @@ def summary():
     assert_equal(s, "A")
 
 
-def run_is_python_space():
+def run_is_python_space() raises:
     from testing import assert_true, assert_false
 
     # ASCII space characters
@@ -42,6 +42,6 @@ def run_is_python_space():
     assert_false(Codepoint.ord("a").is_python_space())
 
 
-def main():
+def main() raises:
     summary()
     run_is_python_space()

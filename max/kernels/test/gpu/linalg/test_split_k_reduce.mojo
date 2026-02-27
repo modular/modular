@@ -91,7 +91,7 @@ fn _split_k_reduce_verify[
 def test_split_k_reduce_rank3[
     c_type: DType,
     work_space_type: DType,
-](M: Int, N: Int, num_partitions: Int, ctx: DeviceContext):
+](M: Int, N: Int, num_partitions: Int, ctx: DeviceContext) raises:
     print(
         "test_split_k_reduce_rank3",
         work_space_type,
@@ -191,7 +191,7 @@ def test_split_k_reduce_rank3[
     work_space_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Rank-3 work space.
         test_split_k_reduce_rank3[DType.bfloat16, DType.bfloat16](

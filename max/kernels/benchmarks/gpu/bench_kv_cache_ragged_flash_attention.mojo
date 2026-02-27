@@ -76,7 +76,7 @@ def execute_kv_cache_ragged_flash_attention[
     use_random_seq_lengths: Bool,
     cache_len: Int,
     use_random_cache_lengths: Bool,
-):
+) raises:
     comptime num_layers = 1
     comptime layer_idx = 0
 
@@ -321,7 +321,7 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     comptime head_dim = env_get_int["head_dim", 128]()

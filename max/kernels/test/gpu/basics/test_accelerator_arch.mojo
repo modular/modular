@@ -16,7 +16,7 @@ from sys.info import _accelerator_arch
 from testing import *
 
 
-def main():
+def main() raises:
     var accelerator_arch = _accelerator_arch()
 
     assert_true(

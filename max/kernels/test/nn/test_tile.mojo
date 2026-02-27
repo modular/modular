@@ -899,7 +899,7 @@ fn test_tile_1d() raises:
         assert_equal(output[i], expected[i])
 
 
-def main():
+def main() raises:
     test_tile_1d()
     test_tile_eg1()
     test_tile_eg2()

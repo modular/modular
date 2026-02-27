@@ -26,7 +26,7 @@ from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 

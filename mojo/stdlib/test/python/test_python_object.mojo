@@ -24,7 +24,7 @@ from testing import (
 )
 
 
-def _test_dunder_methods(mut python: Python):
+def _test_dunder_methods(mut python: Python) raises:
     var a = PythonObject(34)
     var b = PythonObject(10)
     var d = PythonObject(2)
@@ -139,7 +139,7 @@ def _test_dunder_methods(mut python: Python):
     assert_equal_pyobj(c, -35)
 
 
-def _test_inplace_dunder_methods(mut python: Python):
+def _test_inplace_dunder_methods(mut python: Python) raises:
     # test dunder methods that don't fall back to their non-inplace counterparts
     var list_obj: PythonObject = [1, 2]
 
@@ -168,13 +168,13 @@ def _test_inplace_dunder_methods(mut python: Python):
     assert_equal_pyobj(a, 1)
 
 
-def test_num_conversion():
+def test_num_conversion() raises:
     comptime n = UInt64(0xFEDC_BA09_8765_4321)
     comptime n_str = String(n)
     assert_equal(n_str, String(py=PythonObject(n)))
 
 
-def test_boolean_operations():
+def test_boolean_operations() raises:
     # Test boolean conversion and context
     var x: PythonObject = 1
     assert_true(x == 1)
@@ -219,7 +219,7 @@ fn _test_string_conversions(mut python: Python) raises -> None:
     assert_equal(String(py=type_obj), "<class 'float'>")
 
 
-def test_len():
+def test_len() raises:
     var empty_list: PythonObject = []
     assert_equal(len(empty_list), 0)
 
@@ -234,7 +234,7 @@ def test_len():
         _ = len(x)
 
 
-def test_is():
+def test_is() raises:
     var x = PythonObject(500)
     var y = PythonObject(500)
     assert_false(x is y)
@@ -254,7 +254,7 @@ def test_is():
     assert_true(l1 is not l2)
 
 
-def test_nested_object():
+def test_nested_object() raises:
     var a: PythonObject = [1, 2, 3]
     var b: PythonObject = [4, 5, 6]
     var nested_list: PythonObject = [a, b]
@@ -577,7 +577,7 @@ fn test_py_slice() raises:
         _ = with_2d[0:1][4]
 
 
-def test_contains_dunder():
+def test_contains_dunder() raises:
     with assert_raises(contains="'int' object is not iterable"):
         var z = PythonObject(0)
         _ = 5 in z
@@ -613,7 +613,7 @@ struct Person(Defaultable, Movable, Representable):
         return String("Person(", self.name, ", ", self.age, ")")
 
 
-def test_python_mojo_object_operations():
+def test_python_mojo_object_operations() raises:
     # TODO(MOTO-1186): Fix test case on Python 3.9 and remove this return.
     var sys = Python.import_module("sys")
     if sys.version.startswith("3.9"):
@@ -633,7 +633,7 @@ def test_python_mojo_object_operations():
     assert_equal(person_ptr[].name, "John Smith")
 
 
-def test_conversion_to_simd():
+def test_conversion_to_simd() raises:
     var py_float = PythonObject(0.123456789121212)
     var py_int = PythonObject(256)
 
@@ -657,7 +657,7 @@ def test_conversion_to_simd():
     assert_equal(UInt8(py=py_int), UInt8(0))
 
 
-def test_hash():
+def test_hash() raises:
     # Test __hash__ method
     var obj1 = PythonObject(42)
     var obj2 = PythonObject(42)
@@ -675,7 +675,7 @@ def test_hash():
         _ = list_obj.__hash__()
 
 
-def test_call_with_kwargs():
+def test_call_with_kwargs() raises:
     # Test calling Python functions with keyword arguments
     var print_func = Python.import_module("builtins").print
 
@@ -688,7 +688,7 @@ def test_call_with_kwargs():
     assert_equal(String(py=output).strip(), "test")
 
 
-def test_attribute_access():
+def test_attribute_access() raises:
     # Test __getattr__ and __setattr__
     var test_dict: PythonObject = {"attr": "value"}
 
@@ -707,7 +707,7 @@ def test_attribute_access():
         _ = test_dict.__getattr__("nonexistent")
 
 
-def test_copy():
+def test_copy() raises:
     # Test that copy constructor works correctly
     var original = PythonObject(42)
     var copied = original
@@ -724,7 +724,7 @@ def test_copy():
     assert_true(list_original is list_copied)
 
 
-def _test_python_eval_and_evaluate(mut python: Python):
+def _test_python_eval_and_evaluate(mut python: Python) raises:
     # Test Python.eval() method
     var success = python.eval("x = 42")
     assert_true(success)
@@ -734,7 +734,7 @@ def _test_python_eval_and_evaluate(mut python: Python):
     assert_equal_pyobj(result, 5)
 
 
-def test_python_module_operations():
+def test_python_module_operations() raises:
     # Test Python.import_module()
     var math_module = Python.import_module("math")
     var pi_value = math_module.pi
@@ -746,7 +746,7 @@ def test_python_module_operations():
     Python.add_to_path(".")
 
 
-def test_python_type_functions():
+def test_python_type_functions() raises:
     # Test Python.type()
     var int_obj = PythonObject(42)
     var int_type = Python.type(int_obj)
@@ -767,7 +767,7 @@ def test_python_type_functions():
     assert_equal_pyobj(float_result, 42.0)
 
 
-def test_advanced_slicing():
+def test_advanced_slicing() raises:
     # Test more complex slicing scenarios
     var data: PythonObject = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
@@ -784,7 +784,7 @@ def test_advanced_slicing():
     # but this might not be supported in current implementation
 
 
-def test_error_handling():
+def test_error_handling() raises:
     # Test various error conditions
     var zero = PythonObject(0)
     var one = PythonObject(1)
@@ -799,27 +799,27 @@ def test_error_handling():
         _ = none_obj + one
 
 
-def test_with_python_dunder_methods():
+def test_with_python_dunder_methods() raises:
     var python = Python()
     _test_dunder_methods(python)
 
 
-def test_with_python_inplace_dunder_methods():
+def test_with_python_inplace_dunder_methods() raises:
     var python = Python()
     _test_inplace_dunder_methods(python)
 
 
-def test_with_python_string_conversions():
+def test_with_python_string_conversions() raises:
     var python = Python()
     _test_string_conversions(python)
 
 
-def test_with_python_eval_and_evaluate():
+def test_with_python_eval_and_evaluate() raises:
     var python = Python()
     _test_python_eval_and_evaluate(python)
 
 
-def test_python_object_string():
+def test_python_object_string() raises:
     var s = String(py=PythonObject("hello"))
     assert_equal(s, "hello")
 
@@ -830,5 +830,5 @@ def test_python_object_string():
         _ = String(py=a)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

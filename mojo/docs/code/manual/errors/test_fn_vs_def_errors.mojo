@@ -15,25 +15,25 @@ from testing import assert_equal, assert_raises, TestSuite
 from fn_vs_def_errors import validate_def, validate_fn, validated_operation
 
 
-def test_validate_def_pass():
+def test_validate_def_pass() raises:
     assert_equal(validate_def(5), 5)
 
 
-def test_validate_def_fail():
+def test_validate_def_fail() raises:
     with assert_raises(contains="cannot be negative"):
         _ = validate_def(-1)
 
 
-def test_validate_fn_pass():
+def test_validate_fn_pass() raises:
     assert_equal(validate_fn(5), 5)
 
 
-def test_validate_fn_fail():
+def test_validate_fn_fail() raises:
     with assert_raises(contains="cannot be negative"):
         _ = validate_fn(-1)
 
 
-def test_validate_fn_field_access():
+def test_validate_fn_field_access() raises:
     try:
         _ = validate_fn(-1)
     except e:
@@ -41,14 +41,14 @@ def test_validate_fn_field_access():
         assert_equal(e.reason, "cannot be negative")
 
 
-def test_wrapper_pass():
+def test_wrapper_pass() raises:
     assert_equal(validated_operation(5), 5)
 
 
-def test_wrapper_fail():
+def test_wrapper_fail() raises:
     with assert_raises(contains="cannot be negative"):
         _ = validated_operation(-1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

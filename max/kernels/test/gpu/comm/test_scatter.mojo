@@ -216,7 +216,7 @@ fn _test_dp4_large_chunks() raises:
     _test_pull[ngpus=8, dp_size=4](expected)
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )

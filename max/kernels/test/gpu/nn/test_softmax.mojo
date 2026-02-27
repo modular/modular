@@ -136,7 +136,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     _ = out_device_ptr
 
 
-def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
+def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     print("== test_gpu_softmax_half")
     comptime seed_val = 42
     seed(seed_val)
@@ -542,7 +542,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     _ = scaled_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_gpu_softmax(ctx)
         test_gpu_softmax_half[DType.bfloat16](ctx)

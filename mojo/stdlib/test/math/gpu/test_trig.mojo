@@ -46,7 +46,7 @@ fn run_func[
         )
 
 
-def test_trig():
+def test_trig() raises:
     @parameter
     fn cos_fn(val: Float16) -> Float16:
         return cos(val)
@@ -70,5 +70,5 @@ def test_trig():
         run_func[DType.float16, sin_fn]("sin", 10, -0.5439453125, ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

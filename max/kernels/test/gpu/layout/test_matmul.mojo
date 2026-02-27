@@ -162,7 +162,7 @@ struct test_matmul[
                     )
 
 
-def main():
+def main() raises:
     comptime N = 4096
     comptime M = N
     comptime K = M

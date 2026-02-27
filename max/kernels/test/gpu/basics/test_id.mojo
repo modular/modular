@@ -19,7 +19,7 @@ comptime buffer_size = 1024
 comptime block_dim = 32
 
 
-def test_fill_thread_idx(ctx: DeviceContext):
+def test_fill_thread_idx(ctx: DeviceContext) raises:
     var output_host = alloc[Scalar[DType.int]](buffer_size)
     var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
     output_buffer.enqueue_fill(9)
@@ -43,7 +43,7 @@ def test_fill_thread_idx(ctx: DeviceContext):
     output_host.free()
 
 
-def test_fill_block_idx(ctx: DeviceContext):
+def test_fill_block_idx(ctx: DeviceContext) raises:
     var output_host = alloc[Scalar[DType.int]](buffer_size)
     var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
     output_buffer.enqueue_fill(9)
@@ -67,7 +67,7 @@ def test_fill_block_idx(ctx: DeviceContext):
     output_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_fill_thread_idx(ctx)
         test_fill_block_idx(ctx)

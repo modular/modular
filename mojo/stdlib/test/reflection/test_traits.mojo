@@ -28,47 +28,47 @@ struct NoConformances:
     pass
 
 
-def test_all_writable():
+def test_all_writable() raises:
     assert_true(comptime (AllWritable[Int]))
     assert_true(comptime (AllWritable[Int, String, Float64]))
     assert_false(comptime (AllWritable[Int, NoConformances]))
     assert_false(comptime (AllWritable[NoConformances]))
 
 
-def test_all_movable():
+def test_all_movable() raises:
     assert_true(comptime (AllMovable[Int]))
     assert_true(comptime (AllMovable[Int, String, Float64]))
     assert_false(comptime (AllMovable[Int, NoConformances]))
     assert_false(comptime (AllMovable[NoConformances]))
 
 
-def test_all_copyable():
+def test_all_copyable() raises:
     assert_true(comptime (AllCopyable[Int]))
     assert_true(comptime (AllCopyable[Int, String, Float64]))
     assert_false(comptime (AllCopyable[Int, NoConformances]))
     assert_false(comptime (AllCopyable[NoConformances]))
 
 
-def test_all_implicitly_copyable():
+def test_all_implicitly_copyable() raises:
     assert_true(comptime (AllImplicitlyCopyable[Int]))
     assert_true(comptime (AllImplicitlyCopyable[Int, Float64, Bool]))
     assert_false(comptime (AllImplicitlyCopyable[Int, NoConformances]))
     assert_false(comptime (AllImplicitlyCopyable[NoConformances]))
 
 
-def test_all_defaultable():
+def test_all_defaultable() raises:
     assert_true(comptime (AllDefaultable[Int]))
     assert_true(comptime (AllDefaultable[Int, Float64, Bool]))
     assert_false(comptime (AllDefaultable[Int, NoConformances]))
     assert_false(comptime (AllDefaultable[NoConformances]))
 
 
-def test_all_equatable():
+def test_all_equatable() raises:
     assert_true(comptime (AllEquatable[Int]))
     assert_true(comptime (AllEquatable[Int, String, Bool]))
     assert_false(comptime (AllEquatable[Int, NoConformances]))
     assert_false(comptime (AllEquatable[NoConformances]))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

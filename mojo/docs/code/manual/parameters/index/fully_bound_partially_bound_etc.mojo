@@ -18,27 +18,27 @@ struct MyType[s: String, i: Int, i2: Int, b: Bool = True]:
 
 
 # Fully-bound
-def my_fn1(mt: MyType["Hello", 3, 4, True]):
+def my_fn1(mt: MyType["Hello", 3, 4, True]) raises:
     pass
 
 
 # Partially-bound
-def my_fn2(mt: MyType["Hola", _, _, True]):
+def my_fn2(mt: MyType["Hola", _, _, True]) raises:
     pass
 
 
 # Unbound
-def my_fn3(mt: MyType[_, _, _, _]):
+def my_fn3(mt: MyType[_, _, _, _]) raises:
     pass
 
 
 # Partially-bound with omitted parameters
-def my_fn4(mt: MyType["Hi there!"]):
+def my_fn4(mt: MyType["Hi there!"]) raises:
     pass
 
 
 # Unbound with omitted parameters
-def my_fn5(mt: MyType):
+def my_fn5(mt: MyType) raises:
     pass
 
 
@@ -69,7 +69,7 @@ fn use_kw_struct(k: KeyWordStruct[...]):
     pass
 
 
-def main():
+def main() raises:
     # start-partially-bound-example
     comptime StringKeyDict = Dict[String, _]
     var b: StringKeyDict[UInt8] = {"answer": 42}

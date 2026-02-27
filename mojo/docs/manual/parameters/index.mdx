@@ -100,7 +100,7 @@ def my_sort[
     values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: fn(Scalar[dtype], Scalar[dtype]) -> Int,
+    compare: fn(Scalar[dtype], Scalar[dtype]) raises -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,
@@ -149,7 +149,7 @@ fn repeat[MsgType: Writable, //, count: Int](msg: MsgType):
         print(msg)
 
 
-def main():
+def main() raises:
     # MsgType is always inferred, so first positional keyword `2` is
     # passed to `count`
     repeat[2](42)
@@ -313,11 +313,11 @@ struct Container[ElementType: Movable & ImplicitlyDestructible]:
 
     def __str__[
         StrElementType: Writable & Movable, //
-    ](self: Container[StrElementType]) -> String:
+    ](self: Container[StrElementType]) raises -> String:
         return String(self.element)
 
 
-def main():
+def main() raises:
     float_container = Container(5.0)
     string_container = Container("Hello")
     print(float_container.__str__())
@@ -336,7 +336,7 @@ traits.
 
 ```mojo
 def __str__[StrElementType: Writable & Movable, //](
-        self: Container[StrElementType]) -> String:
+        self: Container[StrElementType]) raises -> String:
 ```
 
 The trait bound on `StrElementType` must include `ElementType`'s original trait
@@ -433,7 +433,7 @@ specifies the data type and `size` specifies the length of the SIMD vector (it
 must be a power of 2):
 
 ```mojo
-def main():
+def main() raises:
     # Make a vector of 4 floats.
     var small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 
@@ -479,7 +479,7 @@ from math import sqrt
 fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
-def main():
+def main() raises:
     var v = Scalar[DType.float16](42)
     print(rsqrt(v))
 ```
@@ -505,7 +505,7 @@ from math import sqrt
 fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
-def main():
+def main() raises:
     var v = Scalar[DType.float16](33)
     print(rsqrt(v))
 ```
@@ -554,7 +554,7 @@ struct One[Type: Writable & Copyable]:
         self.value = value.copy()
 
 
-def use_one():
+def use_one() raises:
     s1 = One(123)  # equivalent to One[Int](123)
     s2 = One("Hello")  # equivalent to One[String]("Hello")
 ```
@@ -579,7 +579,7 @@ struct Two[Type: Writable & Copyable]:
     fn fire(thing1: One[Self.Type], thing2: One[Self.Type]):
         print("🔥", String(thing1.value), String(thing2.value))
 
-def use_two():
+def use_two() raises:
     s3 = Two(One("infer"), One("me"))
     Two.fire(One(1), One(2))
     # Two.fire(One("mixed"), One(0)) # Error: parameter inferred to two
@@ -751,7 +751,7 @@ create an instance of `Span`. Binding the `mut` parameter by keyword lets you
 define a `Span` that requires a mutable origin.
 
 ```mojo
-def mutate_span(span: Span[mut=True, Byte]):
+def mutate_span(span: Span[mut=True, Byte]) raises:
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
             span.swap_elements(i, i + 1)
@@ -862,7 +862,7 @@ fn reduce_add(x: SIMD) -> Int:
     return reduce_add(lhs + rhs)
 
 
-def main():
+def main() raises:
     var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))
@@ -1426,7 +1426,6 @@ fn nibble(f: Fudge[5]):
     print("Ate", String(f))
 
 nibble(Fudge[5, 4, 7]())
-
 ```
 
 ```output

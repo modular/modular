@@ -18,7 +18,7 @@ from testing import TestSuite
 from test_utils import MoveOnly, check_write_to
 
 
-def test_basic():
+def test_basic() raises:
     # Assign to vars to remove compiler warnings.
     var false = False
     var true = True
@@ -65,7 +65,7 @@ def test_basic():
     assert_equal(a2.value(), 2)
 
 
-def test_optional_reg_basic():
+def test_optional_reg_basic() raises:
     # Assign to vars to remove compiler warnings
     var false = False
     var true = True
@@ -88,7 +88,7 @@ def test_optional_reg_basic():
     assert_equal(OptionalReg[Int](42).or_else(33), 42)
 
 
-def test_optional_is():
+def test_optional_is() raises:
     a = Optional(1)
     assert_false(a is None)
 
@@ -96,7 +96,7 @@ def test_optional_is():
     assert_true(a is None)
 
 
-def test_optional_isnot():
+def test_optional_isnot() raises:
     a = Optional(1)
     assert_true(a is not None)
 
@@ -104,7 +104,7 @@ def test_optional_isnot():
     assert_false(a is not None)
 
 
-def test_optional_reg_is():
+def test_optional_reg_is() raises:
     a = OptionalReg(1)
     assert_false(a is None)
 
@@ -112,7 +112,7 @@ def test_optional_reg_is():
     assert_true(a is None)
 
 
-def test_optional_reg_isnot():
+def test_optional_reg_isnot() raises:
     a = OptionalReg(1)
     assert_true(a is not None)
 
@@ -120,7 +120,7 @@ def test_optional_reg_isnot():
     assert_false(a is not None)
 
 
-def test_optional_take_mutates():
+def test_optional_take_mutates() raises:
     var opt1 = Optional[Int](5)
 
     assert_true(opt1)
@@ -132,7 +132,7 @@ def test_optional_take_mutates():
     assert_false(opt1)
 
 
-def test_optional_explicit_copy():
+def test_optional_explicit_copy() raises:
     var v1 = Optional[String]("test")
 
     var v2 = v1.copy()
@@ -146,16 +146,16 @@ def test_optional_explicit_copy():
     assert_equal(v2.value(), "testing")
 
 
-def test_optional_conformance():
+def test_optional_conformance() raises:
     assert_true(conforms_to(Optional[Int], Writable))
 
 
-def test_optional_write_to():
+def test_optional_write_to() raises:
     check_write_to(Optional[Int](None), expected="None", is_repr=False)
     check_write_to(Optional[Int](42), expected="42", is_repr=False)
 
 
-def test_optional_write_repr_to():
+def test_optional_write_repr_to() raises:
     check_write_to(
         Optional[Int](None), expected="Optional[Int](None)", is_repr=True
     )
@@ -164,7 +164,7 @@ def test_optional_write_repr_to():
     )
 
 
-def test_optional_equality():
+def test_optional_equality() raises:
     o = Optional(10)
     n = Optional[Int]()
     assert_true(o == 10)
@@ -176,7 +176,7 @@ def test_optional_equality():
     assert_true(n == None)
 
 
-def test_optional_copied():
+def test_optional_copied() raises:
     var data = "foo"
 
     var opt_ref: Optional[Pointer[String, origin_of(data)]] = Optional(
@@ -189,7 +189,7 @@ def test_optional_copied():
     assert_equal(opt_owned.value(), "foo")
 
 
-def test_optional_unwrap():
+def test_optional_unwrap() raises:
     var a = Optional(123)
     assert_true(a)
     assert_equal(123, a[])
@@ -198,14 +198,14 @@ def test_optional_unwrap():
         _ = a[]
 
 
-def test_optional_repr_wrap():
+def test_optional_repr_wrap() raises:
     var o = Optional(10)
     assert_equal(repr(o), "Optional[Int](Int(10))")
     o = None
     assert_equal(repr(o), "Optional[Int](None)")
 
 
-def test_optional_iter():
+def test_optional_iter() raises:
     var o = Optional(10)
     var it = o.__iter__()
     assert_equal(it.bounds()[0], 1)
@@ -221,7 +221,7 @@ def test_optional_iter():
     assert_true(called)
 
 
-def test_optional_iter_empty():
+def test_optional_iter_empty() raises:
     var o = Optional[Int](None)
     var it = o.__iter__()
     assert_equal(it.bounds()[0], 0)
@@ -236,7 +236,7 @@ def test_optional_iter_empty():
     assert_false(called)
 
 
-def test_optional_of_move_only_type():
+def test_optional_of_move_only_type() raises:
     var opt1 = Optional(MoveOnly[Int](5))
     # Test moving the optional
     var opt2 = opt1^
@@ -251,5 +251,5 @@ def test_optional_of_move_only_type():
     assert_equal(val.data, 10)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -667,7 +667,7 @@ def test_block_scaled_mxfp8[
     block_tile_shape: IndexList[3],
     umma_shape: IndexList[3],
     transpose_b: Bool = True,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
@@ -972,7 +972,7 @@ def test_block_scaled_mxfp8[
     _ = b_scales_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.float8_e4m3fn
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B

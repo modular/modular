@@ -38,7 +38,7 @@ from utils import Index, IndexList
 
 def execute_fused_qk_rope_ragged(
     ctx: DeviceContext,
-):
+) raises:
     comptime num_q_heads = 32
     comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
     comptime dtype = DType.float32
@@ -622,7 +622,7 @@ def execute_fused_qk_rope_ragged(
 # and the first 128 elements in each head are simply copied from the input Q tensor.
 # For KV cache, we confirm that the only the last 64 elements in each head are correctly roped,
 # and the first 512 elements are left unchanged.
-def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
+def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     comptime num_q_heads = 16
     comptime q_head_size = 192
     comptime kv_params = KVCacheStaticParams(num_heads=1, head_size=576)
@@ -1110,7 +1110,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     _ = cache_lengths_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         execute_fused_qk_rope_ragged(ctx)
         execute_fused_qk_rope_ragged_mla(ctx)

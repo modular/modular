@@ -16,7 +16,7 @@ from sys._io import stdin, stdout, stderr
 from testing import TestSuite, assert_equal, assert_false
 
 
-def test_isatty_matches_file_descriptor():
+def test_isatty_matches_file_descriptor() raises:
     """Test that os.isatty(fd) matches FileDescriptor.isatty() for standard streams.
     """
     assert_equal(isatty(0), stdin.isatty())
@@ -24,7 +24,7 @@ def test_isatty_matches_file_descriptor():
     assert_equal(isatty(2), stderr.isatty())
 
 
-def test_isatty_with_invalid_fd():
+def test_isatty_with_invalid_fd() raises:
     """Test that isatty returns False for invalid file descriptors."""
     # Test with negative file descriptor
     assert_false(isatty(-1))
@@ -33,5 +33,5 @@ def test_isatty_with_invalid_fd():
     assert_false(isatty(9999))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

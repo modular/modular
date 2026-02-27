@@ -22,7 +22,7 @@ from testing import (
 )
 
 
-def test_string():
+def test_string() raises:
     var py_string = PythonObject("mojo")
     var py_string_capitalized = py_string.capitalize()
 
@@ -34,7 +34,7 @@ def test_string():
     assert_true(String(os.environ).startswith("environ({"))
 
 
-def test_int():
+def test_int() raises:
     assert_equal(Int(py=PythonObject(5)), 5)
     assert_equal(Int(py=PythonObject(-1)), -1)
 
@@ -46,13 +46,13 @@ def test_int():
     assert_equal_pyobj(Int(-1).to_python_object(), PythonObject(-1))
 
 
-def test_float():
+def test_float() raises:
     var py_float = PythonObject(1.0)
     var mojo_float = Float64(1.0)
     assert_equal(Float64(py=py_float), mojo_float)
 
 
-def test_bool():
+def test_bool() raises:
     assert_true(Bool(PythonObject(True)))
     assert_false(Bool(PythonObject(False)))
 
@@ -60,19 +60,19 @@ def test_bool():
     assert_equal_pyobj(Bool(False).to_python_object(), PythonObject(False))
 
 
-def test_numpy_int():
+def test_numpy_int() raises:
     var np = Python.import_module("numpy")
     var py_numpy_int = np.int64(1)
     var mojo_int = Int(1)
     assert_equal(Int(py=py_numpy_int), mojo_int)
 
 
-def test_numpy_float():
+def test_numpy_float() raises:
     var np = Python.import_module("numpy")
     var py_numpy_float = np.float64(1.0)
     var mojo_float = Float64(1.0)
     assert_equal(Float64(py=py_numpy_float), mojo_float)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -202,13 +202,13 @@ struct GenericOffsetContainer[T: Copyable & Movable & ImplicitlyDestructible]:
 # ===----------------------------------------------------------------------=== #
 
 
-def test_is_struct_type_with_user_structs():
+def test_is_struct_type_with_user_structs() raises:
     assert_true(is_struct_type[Bar[2]]())
     assert_true(is_struct_type[Foo[Bar[2](y=3, z=0.125), True]]())
     assert_true(is_struct_type[StructWithMLIRField]())
 
 
-def test_is_struct_type_with_stdlib_structs():
+def test_is_struct_type_with_stdlib_structs() raises:
     assert_true(is_struct_type[Int]())
     assert_true(is_struct_type[String]())
     assert_true(is_struct_type[Float64]())
@@ -216,7 +216,7 @@ def test_is_struct_type_with_stdlib_structs():
     assert_true(is_struct_type[Optional[String]]())
 
 
-def test_is_struct_type_with_empty_struct():
+def test_is_struct_type_with_empty_struct() raises:
     assert_true(is_struct_type[EmptyStruct]())
 
 
@@ -225,7 +225,7 @@ fn _is_struct_generic[T: AnyType]() -> Bool:
     return is_struct_type[T]()
 
 
-def test_is_struct_type_through_generic_function():
+def test_is_struct_type_through_generic_function() raises:
     """Test is_struct_type works correctly through a generic function."""
     # Mojo struct types should return True
     assert_true(_is_struct_generic[Int]())
@@ -242,7 +242,7 @@ def test_is_struct_type_through_generic_function():
     assert_true(_is_struct_generic[__mlir_type.index]())
 
 
-def test_is_struct_type_field_types_through_generic():
+def test_is_struct_type_field_types_through_generic() raises:
     """Test is_struct_type with field types passed through a generic function.
 
     This tests the scenario where you get field types from a struct using
@@ -274,7 +274,7 @@ fn safe_field_count[T: AnyType]() -> Int:
         return -1
 
 
-def test_is_struct_type_as_guard():
+def test_is_struct_type_as_guard() raises:
     """Test using is_struct_type as a guard before calling reflection APIs."""
     # User-defined struct should have field count > 0
     assert_equal(safe_field_count[Bar[2]]() >= 0, True)
@@ -286,7 +286,7 @@ def test_is_struct_type_as_guard():
     assert_equal(safe_field_count[EmptyStruct](), 0)
 
 
-def test_is_struct_type_with_mlir_primitive_types():
+def test_is_struct_type_with_mlir_primitive_types() raises:
     """Test is_struct_type returns False for MLIR primitive types.
 
     This is the key use case from issue #5734: when iterating over struct fields,
@@ -298,7 +298,7 @@ def test_is_struct_type_with_mlir_primitive_types():
     assert_false(is_struct_type[field_types[1]]())
 
 
-def test_is_struct_type_guard_with_mlir_types():
+def test_is_struct_type_guard_with_mlir_types() raises:
     """Test using is_struct_type to safely iterate over mixed field types.
 
     This demonstrates the use case from issue #5734: safely iterating over
@@ -326,12 +326,12 @@ def test_is_struct_type_guard_with_mlir_types():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_struct_field_count_simple():
+def test_struct_field_count_simple() raises:
     comptime count = struct_field_count[SimpleStruct]()
     assert_equal(count, 2)
 
 
-def test_struct_field_count_nested():
+def test_struct_field_count_nested() raises:
     comptime outer_count = struct_field_count[Outer]()
     assert_equal(outer_count, 3)
 
@@ -339,37 +339,37 @@ def test_struct_field_count_nested():
     assert_equal(inner_count, 2)
 
 
-def test_struct_field_count_empty():
+def test_struct_field_count_empty() raises:
     comptime count = struct_field_count[EmptyStruct]()
     assert_equal(count, 0)
 
 
-def test_struct_field_count_mixed_visibility():
+def test_struct_field_count_mixed_visibility() raises:
     comptime count = struct_field_count[MixedVisibility]()
     assert_equal(count, 3)
 
 
-def test_struct_field_names():
+def test_struct_field_names() raises:
     # Test field names via indexing - returns InlineArray[StaticString, N]
     var names = struct_field_names[SimpleStruct]()
     assert_equal(names[0], "x")
     assert_equal(names[1], "y")
 
 
-def test_struct_field_types():
+def test_struct_field_types() raises:
     # Test field types via indexing (detailed verification in test_struct_field_types_are_correct)
     comptime types = struct_field_types[SimpleStruct]()
     _ = types
 
 
-def test_nested_struct_returns_struct_type():
+def test_nested_struct_returns_struct_type() raises:
     # When a struct contains another struct, we get the struct type
     # not flattened fields. Users can recursively introspect.
     comptime outer_count = struct_field_count[Outer]()
     assert_equal(outer_count, 3)  # name, inner, count - not flattened
 
 
-def test_struct_field_iteration():
+def test_struct_field_iteration() raises:
     # Test iterating over struct fields with @parameter for
     var count = 0
 
@@ -382,7 +382,7 @@ def test_struct_field_iteration():
     assert_equal(count, 2)
 
 
-def test_struct_field_types_are_correct():
+def test_struct_field_types_are_correct() raises:
     # Verify that field types match expected types using type names.
     # Note: _type_is_eq doesn't work across !kgen.type / Mojo type boundary.
     comptime types = struct_field_types[SimpleStruct]()
@@ -395,7 +395,7 @@ def test_struct_field_types_are_correct():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_struct_field_index_simple():
+def test_struct_field_index_simple() raises:
     # Test getting field index by name for SimpleStruct
     comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
     assert_equal(x_idx, 0)
@@ -404,7 +404,7 @@ def test_struct_field_index_simple():
     assert_equal(y_idx, 1)
 
 
-def test_struct_field_index_nested():
+def test_struct_field_index_nested() raises:
     # Test getting field index for nested struct
     comptime name_idx = struct_field_index_by_name[Outer, "name"]()
     assert_equal(name_idx, 0)
@@ -416,7 +416,7 @@ def test_struct_field_index_nested():
     assert_equal(count_idx, 2)
 
 
-def test_struct_field_index_mixed_visibility():
+def test_struct_field_index_mixed_visibility() raises:
     # Test that all fields are accessible, including private-like names
     comptime public_idx = struct_field_index_by_name[
         MixedVisibility, "public_field"
@@ -434,7 +434,7 @@ def test_struct_field_index_mixed_visibility():
     assert_equal(dunder_idx, 2)
 
 
-def test_struct_field_type_by_index_simple():
+def test_struct_field_type_by_index_simple() raises:
     # Test getting field type by index (using composition of index lookup and types)
     comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
     comptime x_type = struct_field_types[SimpleStruct]()[x_idx]
@@ -445,14 +445,14 @@ def test_struct_field_type_by_index_simple():
     assert_equal(get_type_name[y_type](), "SIMD[DType.float64, 1]")
 
 
-def test_struct_field_type_by_index_nested():
+def test_struct_field_type_by_index_nested() raises:
     # Test that nested struct fields return the struct type, not flattened
     comptime inner_idx = struct_field_index_by_name[Outer, "inner"]()
     comptime inner_type = struct_field_types[Outer]()[inner_idx]
     assert_equal(get_type_name[inner_type](), "test_struct_fields.Inner")
 
 
-def test_struct_field_index_consistent():
+def test_struct_field_index_consistent() raises:
     # Verify that struct_field_index_by_name returns consistent indices
     # for field names - test with literal strings
     comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
@@ -464,7 +464,7 @@ def test_struct_field_index_consistent():
     assert_equal(x_idx != y_idx, True)
 
 
-def test_struct_field_type_matches_index():
+def test_struct_field_type_matches_index() raises:
     # Verify that field index lookup correctly corresponds to field types
     comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
     comptime x_type_by_idx = struct_field_types[SimpleStruct]()[x_idx]
@@ -480,7 +480,7 @@ def test_struct_field_type_matches_index():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_struct_field_type_by_name_simple():
+def test_struct_field_type_by_name_simple() raises:
     # Test getting field type by name for SimpleStruct
     comptime x_type = struct_field_type_by_name[SimpleStruct, "x"]()
     assert_equal(get_type_name[x_type.T](), "Int")
@@ -489,13 +489,13 @@ def test_struct_field_type_by_name_simple():
     assert_equal(get_type_name[y_type.T](), "SIMD[DType.float64, 1]")
 
 
-def test_struct_field_type_by_name_nested():
+def test_struct_field_type_by_name_nested() raises:
     # Test that nested struct fields return the struct type, not flattened
     comptime inner_type = struct_field_type_by_name[Outer, "inner"]()
     assert_equal(get_type_name[inner_type.T](), "test_struct_fields.Inner")
 
 
-def test_struct_field_type_by_name_matches_index():
+def test_struct_field_type_by_name_matches_index() raises:
     # Verify that struct_field_type_by_name returns the same type
     # as get_struct_field_types with the corresponding index
     comptime x_idx = struct_field_index_by_name[SimpleStruct, "x"]()
@@ -506,7 +506,7 @@ def test_struct_field_type_by_name_matches_index():
     )
 
 
-def test_struct_field_type_by_name_as_type_annotation():
+def test_struct_field_type_by_name_as_type_annotation() raises:
     # Test that ReflectedType.T can be used as a type annotation.
     # This tests the fix for: https://github.com/modularml/modular/issues/5754
     comptime x_type = struct_field_type_by_name[SimpleStruct, "x"]()
@@ -518,7 +518,7 @@ def test_struct_field_type_by_name_as_type_annotation():
     assert_true(float_value > 3.0)
 
 
-def test_struct_field_type_by_name_nested_struct():
+def test_struct_field_type_by_name_nested_struct() raises:
     # Test that ReflectedType.T works with nested struct types.
     comptime inner_type = struct_field_type_by_name[Outer, "inner"]()
     assert_equal(get_type_name[inner_type.T](), "test_struct_fields.Inner")
@@ -529,7 +529,7 @@ def test_struct_field_type_by_name_nested_struct():
     assert_equal(count_value, 42)
 
 
-def test_struct_field_type_by_name_parametric_struct():
+def test_struct_field_type_by_name_parametric_struct() raises:
     # Test that ReflectedType.T works with parametric struct fields.
     comptime list_type = struct_field_type_by_name[
         StructWithMultipleParametricFields, "list_field"
@@ -565,7 +565,7 @@ fn generic_field_info_printer[T: AnyType]():
         _ = field_type
 
 
-def test_generic_iteration():
+def test_generic_iteration() raises:
     # Test that we can iterate over struct fields generically
     generic_field_info_printer[GenericTestPoint]()
     generic_field_info_printer[SimpleStruct]()
@@ -577,7 +577,7 @@ fn count_fields_generically[T: AnyType]() -> Int:
     return struct_field_count[T]()
 
 
-def test_count_through_generic_function():
+def test_count_through_generic_function() raises:
     # Verify generic function returns correct counts for different types
     assert_equal(count_fields_generically[SimpleStruct](), 2)
     assert_equal(count_fields_generically[Outer](), 3)
@@ -592,7 +592,7 @@ fn get_first_field_name_generically[T: AnyType]() -> StaticString:
     return struct_field_names[T]()[0]
 
 
-def test_magic_field_name_through_generic_function():
+def test_magic_field_name_through_generic_function() raises:
     # Verify generic function returns correct first field name
     assert_equal(get_first_field_name_generically[SimpleStruct](), "x")
     assert_equal(get_first_field_name_generically[Outer](), "name")
@@ -607,7 +607,7 @@ def test_magic_field_name_through_generic_function():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_parametric_struct_field_count():
+def test_parametric_struct_field_count() raises:
     # Test that parametric structs work correctly with reflection.
     # SIMD is a parametric struct with type and size parameters.
     comptime simd_count = struct_field_count[SIMD[DType.float32, 4]]()
@@ -621,7 +621,7 @@ def test_parametric_struct_field_count():
     assert_equal(array_count >= 0, True)
 
 
-def test_parametric_struct_in_generic_function():
+def test_parametric_struct_in_generic_function() raises:
     # Verify parametric structs work through generic functions
     _ = count_fields_generically[SIMD[DType.float32, 4]]()
     _ = count_fields_generically[InlineArray[Int, 3]]()
@@ -639,7 +639,7 @@ struct ParametricTestStruct[T: Copyable & ImplicitlyDestructible, size: Int]:
         self.count = count
 
 
-def test_user_defined_parametric_struct():
+def test_user_defined_parametric_struct() raises:
     # Test user-defined parametric structs
     comptime count = struct_field_count[ParametricTestStruct[Float64, 10]]()
     assert_equal(count, 2)
@@ -656,7 +656,7 @@ fn generic_parametric_inspector[
     return struct_field_count[ParametricTestStruct[T, size]]()
 
 
-def test_generic_with_parametric_struct():
+def test_generic_with_parametric_struct() raises:
     # Test generic function instantiated with different parameter values
     assert_equal(generic_parametric_inspector[Int, 5](), 2)
     assert_equal(generic_parametric_inspector[Float64, 100](), 2)
@@ -667,7 +667,7 @@ def test_generic_with_parametric_struct():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_get_type_name_ctor_param_from_field_types():
+def test_get_type_name_ctor_param_from_field_types() raises:
     """Ensure get_type_name works with constructor calls in type params.
 
     Issue #5732: using get_type_name on types with constructor calls (like
@@ -684,7 +684,7 @@ def test_get_type_name_ctor_param_from_field_types():
     )
 
 
-def test_get_type_name_memory_only_ctor_param_from_field_types():
+def test_get_type_name_memory_only_ctor_param_from_field_types() raises:
     """Ensure memory-only types with constructor calls work.
 
     Memory-only types use `apply_result_slot` instead of `apply`, which was also
@@ -701,7 +701,7 @@ def test_get_type_name_memory_only_ctor_param_from_field_types():
     )
 
 
-def test_get_type_name_nested_parametric_from_field_types():
+def test_get_type_name_nested_parametric_from_field_types() raises:
     """Test that get_type_name works with nested parametric types from struct_field_types.
     """
     # Both fields should work
@@ -714,7 +714,7 @@ def test_get_type_name_nested_parametric_from_field_types():
     assert_equal(name1, "test_struct_fields.GenericWrapper[List[String]]")
 
 
-def test_get_type_name_deeply_nested_parametric_from_field_types():
+def test_get_type_name_deeply_nested_parametric_from_field_types() raises:
     """Test deeply nested parametric types from struct_field_types works.
 
     This tests the case where we have GenericWrapper[GenericWrapper[T]] - both
@@ -734,7 +734,7 @@ def test_get_type_name_deeply_nested_parametric_from_field_types():
     )
 
 
-def test_get_type_name_multiple_type_params_from_field_types():
+def test_get_type_name_multiple_type_params_from_field_types() raises:
     """Test parametric types with multiple type parameters from struct_field_types.
     """
     comptime types = struct_field_types[StructWithPair]()
@@ -742,7 +742,7 @@ def test_get_type_name_multiple_type_params_from_field_types():
     assert_equal(name, "test_struct_fields.Pair[String, List[Int]]")
 
 
-def test_get_type_name_various_stdlib_parametric_from_field_types():
+def test_get_type_name_various_stdlib_parametric_from_field_types() raises:
     """Test various stdlib parametric types (List, Optional, SIMD) from struct_field_types.
     """
     comptime types = struct_field_types[StructWithMultipleParametricFields]()
@@ -758,7 +758,7 @@ def test_get_type_name_various_stdlib_parametric_from_field_types():
     assert_equal(name2, "SIMD[DType.float32, 4]")
 
 
-def test_get_type_name_triple_nested_from_field_types():
+def test_get_type_name_triple_nested_from_field_types() raises:
     """Test three levels of nesting from struct_field_types."""
     comptime types = struct_field_types[TripleNested]()
     var name = get_type_name[types[0]]()
@@ -768,7 +768,7 @@ def test_get_type_name_triple_nested_from_field_types():
     )
 
 
-def test_iterate_parametric_field_types_no_crash():
+def test_iterate_parametric_field_types_no_crash() raises:
     """Test that iterating over parametric field types in a loop doesn't crash.
 
     This tests the common pattern of using struct_field_types in a @parameter for loop.
@@ -809,7 +809,7 @@ fn _get_type_name_generic[T: AnyType]() -> StaticString:
     return get_type_name[T]()
 
 
-def test_reflection_on_int():
+def test_reflection_on_int() raises:
     """Test that reflection functions work on Int (issue #5731).
 
     Int is a struct with one field (_mlir_value). Previously passing Int
@@ -826,7 +826,7 @@ def test_reflection_on_int():
     assert_equal(_get_type_name_generic[Int](), "Int")
 
 
-def test_reflection_on_origin():
+def test_reflection_on_origin() raises:
     """Test that reflection functions work on Origin (issue #5731).
 
     Origin is a struct with one field (_mlir_origin). Previously this would
@@ -843,7 +843,7 @@ def test_reflection_on_origin():
     _ = int  # silence unused warning.
 
 
-def test_reflection_on_nonetype():
+def test_reflection_on_nonetype() raises:
     """Test that reflection functions work on NoneType (issue #5731).
 
     NoneType is a struct with one field (_value). Previously this would crash
@@ -869,7 +869,7 @@ struct TraitTestStruct:
     var writable_field: String  # String is Writable
 
 
-def test_conforms_to_with_field_types():
+def test_conforms_to_with_field_types() raises:
     """Test that conforms_to works with types from struct_field_types."""
     comptime types = struct_field_types[TraitTestStruct]()
 
@@ -880,7 +880,7 @@ def test_conforms_to_with_field_types():
     assert_true(comptime (conforms_to(types[1], Writable)))
 
 
-def test_conforms_to_field_iteration():
+def test_conforms_to_field_iteration() raises:
     """Test iterating over field types and checking trait conformance."""
     var copyable_count = 0
 
@@ -907,7 +907,7 @@ fn count_copyable_fields[T: AnyType]() -> Int:
     return count
 
 
-def test_conforms_to_generic_function():
+def test_conforms_to_generic_function() raises:
     """Test conforms_to with field types in a generic context."""
     # SimpleStruct has 2 Copyable fields (Int, Float64)
     assert_equal(count_copyable_fields[SimpleStruct](), 2)
@@ -959,7 +959,7 @@ struct PointForRef:
         self.y = y
 
 
-def test___struct_field_ref_basic_read():
+def test___struct_field_ref_basic_read() raises:
     """Test reading struct fields through __struct_field_ref."""
     var p = PointForRef(10, 20)
 
@@ -972,7 +972,7 @@ def test___struct_field_ref_basic_read():
     assert_equal(y_ref, 20)
 
 
-def test___struct_field_ref_mutation():
+def test___struct_field_ref_mutation() raises:
     """Test mutating struct fields through __struct_field_ref."""
     var p = PointForRef(1, 2)
 
@@ -994,7 +994,7 @@ def test___struct_field_ref_mutation():
     assert_equal(p2.y, 99)
 
 
-def test___struct_field_ref_non_copyable():
+def test___struct_field_ref_non_copyable() raises:
     """Test that __struct_field_ref doesn't copy non-copyable fields.
 
     This is the key use case: accessing fields without copying them,
@@ -1017,7 +1017,7 @@ def test___struct_field_ref_non_copyable():
     assert_equal(c.resource.data, 999)
 
 
-def test___struct_field_ref_with_names():
+def test___struct_field_ref_with_names() raises:
     """Test combining __struct_field_ref with struct_field_names."""
     var p = PointForRef(30, 40)
     var names = struct_field_names[PointForRef]()
@@ -1054,7 +1054,7 @@ fn print_struct_debug[T: AnyType](ref s: T):
         _ = __struct_field_ref(i, s)
 
 
-def test___struct_field_ref_parametric_index():
+def test___struct_field_ref_parametric_index() raises:
     """Test __struct_field_ref with parametric indices (loop variables)."""
     var p = PointForRef(10, 20)
     var c = ContainerWithNonCopyable(1, 2, 3)
@@ -1069,7 +1069,7 @@ def test___struct_field_ref_parametric_index():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_offset_of_first_field_is_zero():
+def test_offset_of_first_field_is_zero() raises:
     """Test that the first field always has offset 0."""
     comptime off = offset_of[SimpleOffsetStruct, name="x"]()
     assert_equal(off, 0)
@@ -1081,7 +1081,7 @@ def test_offset_of_first_field_is_zero():
     assert_equal(off3, 0)
 
 
-def test_offset_of_sequential_fields():
+def test_offset_of_sequential_fields() raises:
     """Test offsets of sequential same-type fields."""
     comptime x_off = offset_of[SimpleOffsetStruct, name="x"]()
     comptime y_off = offset_of[SimpleOffsetStruct, name="y"]()
@@ -1091,7 +1091,7 @@ def test_offset_of_sequential_fields():
     assert_equal(y_off, 8)
 
 
-def test_offset_of_with_alignment_padding():
+def test_offset_of_with_alignment_padding() raises:
     """Test that alignment padding is correctly accounted for."""
     # OffsetTestStruct layout:
     # a: Int8 at offset 0 (1 byte)
@@ -1112,7 +1112,7 @@ def test_offset_of_with_alignment_padding():
     assert_equal(d_off, 20)  # Aligned to 4 bytes (16 + 1 + 3 padding)
 
 
-def test_offset_of_by_index_basic():
+def test_offset_of_by_index_basic() raises:
     """Test offset_of[index=] with basic structs."""
     comptime off0 = offset_of[SimpleOffsetStruct, index=0]()
     comptime off1 = offset_of[SimpleOffsetStruct, index=1]()
@@ -1121,7 +1121,7 @@ def test_offset_of_by_index_basic():
     assert_equal(off1, 8)
 
 
-def test_offset_of_by_index_with_padding():
+def test_offset_of_by_index_with_padding() raises:
     """Test offset_of[index=] accounts for alignment padding."""
     comptime off0 = offset_of[OffsetTestStruct, index=0]()
     comptime off1 = offset_of[OffsetTestStruct, index=1]()
@@ -1134,7 +1134,7 @@ def test_offset_of_by_index_with_padding():
     assert_equal(off3, 20)
 
 
-def test_offset_of_by_name_basic():
+def test_offset_of_by_name_basic() raises:
     """Test offset_of[name=] with basic structs."""
     comptime x_off = offset_of[SimpleOffsetStruct, name="x"]()
     comptime y_off = offset_of[SimpleOffsetStruct, name="y"]()
@@ -1143,7 +1143,7 @@ def test_offset_of_by_name_basic():
     assert_equal(y_off, 8)
 
 
-def test_offset_of_index_and_name_are_consistent():
+def test_offset_of_index_and_name_are_consistent() raises:
     """Test that offset_of[index=] and offset_of[name=] return consistent values.
     """
     # index and name should be consistent for same field
@@ -1176,7 +1176,7 @@ fn get_offset_generically[T: AnyType, idx: Int]() -> Int:
     return offset_of[T, index=idx]()
 
 
-def test_offset_through_generic_function():
+def test_offset_through_generic_function() raises:
     """Test that offset calculation works through generic functions."""
     comptime off0 = get_offset_generically[SimpleOffsetStruct, 0]()
     comptime off1 = get_offset_generically[SimpleOffsetStruct, 1]()
@@ -1185,7 +1185,7 @@ def test_offset_through_generic_function():
     assert_equal(off1, 8)
 
 
-def test_offset_iteration_with_parameter_for():
+def test_offset_iteration_with_parameter_for() raises:
     """Test iterating over field offsets with @parameter for."""
     var offsets = InlineArray[Int, 4](uninitialized=True)
 
@@ -1198,7 +1198,7 @@ def test_offset_iteration_with_parameter_for():
     assert_equal(offsets[3], 20)
 
 
-def test_offset_with_nested_struct():
+def test_offset_with_nested_struct() raises:
     """Test offset calculation with nested struct fields."""
     # Inner has two Int fields (2 * 8 = 16 bytes on 64-bit)
     # Outer has: name (String), inner (Inner), count (Int)
@@ -1214,7 +1214,7 @@ def test_offset_with_nested_struct():
     assert_true(count_off > inner_off)
 
 
-def test_offset_with_size_of_verification():
+def test_offset_with_size_of_verification() raises:
     """Test that field offsets are consistent with size_of for packed fields."""
     from sys.info import size_of
 
@@ -1229,7 +1229,7 @@ def test_offset_with_size_of_verification():
     assert_equal(y_off, x_off + int64_size)
 
 
-def test_offset_by_name_with_generic_type():
+def test_offset_by_name_with_generic_type() raises:
     """Test that offset_of[name=] works with generic type parameters."""
 
     # Test offset_of through a generic function
@@ -1262,7 +1262,7 @@ fn get_all_offsets_generically[T: AnyType]() -> InlineArray[Int, 4]:
     return offsets^
 
 
-def test_generic_offset_iteration():
+def test_generic_offset_iteration() raises:
     """Test getting all offsets through a generic function."""
     var offsets = get_all_offsets_generically[OffsetTestStruct]()
 
@@ -1272,7 +1272,7 @@ def test_generic_offset_iteration():
     assert_equal(offsets[3], 20)
 
 
-def test_offset_single_field_struct():
+def test_offset_single_field_struct() raises:
     """Test offset calculation for struct with a single field."""
     comptime off = offset_of[SingleFieldStruct, index=0]()
     assert_equal(off, 0)
@@ -1281,7 +1281,7 @@ def test_offset_single_field_struct():
     assert_equal(off_by_name, 0)
 
 
-def test_offset_all_same_type_fields():
+def test_offset_all_same_type_fields() raises:
     """Test offset calculation when all fields have the same type."""
     from sys.info import size_of
 
@@ -1296,7 +1296,7 @@ def test_offset_all_same_type_fields():
     assert_equal(c_off, 2 * int64_size)
 
 
-def test_offset_consistency_by_index_and_by_name():
+def test_offset_consistency_by_index_and_by_name() raises:
     """Verify index= and name= overloads return identical values for all fields.
     """
     # OffsetTestStruct has fields: a, b, c, d
@@ -1318,7 +1318,7 @@ def test_offset_consistency_by_index_and_by_name():
     assert_equal(off_d_idx, off_d_name)
 
 
-def test_offset_with_parametric_struct_varying_field_type():
+def test_offset_with_parametric_struct_varying_field_type() raises:
     """Test offset calculation for parametric struct where field type varies.
 
     This tests that offset_of correctly handles generic type parameters where
@@ -1357,7 +1357,7 @@ def test_offset_with_parametric_struct_varying_field_type():
     assert_true(footer_off_int64 > footer_off_int8)
 
 
-def test_offset_matches_runtime_memory_layout():
+def test_offset_matches_runtime_memory_layout() raises:
     """Verify that offset_of matches actual memory layout using pointer arithmetic.
 
     This test creates struct instances and verifies that the compile-time
@@ -1393,5 +1393,5 @@ def test_offset_matches_runtime_memory_layout():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -766,7 +766,7 @@ fn bench_residual[
     _ = source_dev^
 
 
-def main():
+def main() raises:
     print("=" * 70)
     print("SM100 CONV2D BENCHMARK: 1-SM vs 2-SM vs cuDNN")
     print("=" * 70)

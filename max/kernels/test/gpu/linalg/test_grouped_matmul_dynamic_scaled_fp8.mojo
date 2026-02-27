@@ -39,7 +39,11 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     num_experts: Int = 4,
     N: Int = 256,
     K: Int = 256,
-](num_active_experts: Int, max_num_tokens_per_expert: Int, ctx: DeviceContext,):
+](
+    num_active_experts: Int,
+    max_num_tokens_per_expert: Int,
+    ctx: DeviceContext,
+) raises:
     """Test grouped_matmul_dynamic_scaled_fp8 with zero edge cases.
 
     This test verifies that the function returns early without errors when
@@ -258,7 +262,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     _ = b_scales_device_buffer^
 
 
-def main():
+def main() raises:
     """Run all edge case tests for grouped_matmul_dynamic_scaled_fp8."""
     with DeviceContext() as ctx:
         # Test zero num_active_experts (with non-zero max_num_tokens_per_expert)

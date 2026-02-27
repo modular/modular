@@ -935,7 +935,7 @@ def rms_norm_kv_cache_ragged_paged[
     total_seq_len: UInt32,
     input_row_offsets: LayoutTensor[DType.uint32, ...],
     context: DeviceContextPtr,
-):
+) raises:
     """Performs RMSNorm in place on new entries in the key cache.
 
     This is done by first creating the ragged tensor weight_shape
@@ -1092,7 +1092,7 @@ def _print_cache[
     kv_collection: collection_t,
     valid_lengths: LayoutTensor[DType.uint32, ...],
     is_print_compact: Bool,
-) -> None:
+) raises -> None:
     """Prints a cache buffer, abbreviating output with ellipses."""
     comptime kv_params = collection_t.CacheType.kv_params
 
@@ -1134,7 +1134,7 @@ def print_kv_cache_cont_batch_generic_cpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
@@ -1166,7 +1166,7 @@ def print_kv_cache_paged_generic_cpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
@@ -1197,7 +1197,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
@@ -1304,7 +1304,7 @@ def print_kv_cache_paged_generic_gpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin

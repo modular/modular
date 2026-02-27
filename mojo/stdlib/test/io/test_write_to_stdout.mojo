@@ -15,7 +15,7 @@ import sys
 from testing import TestSuite
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
@@ -29,7 +29,7 @@ struct Point(Writable):
 
 
 # CHECK-LABEL: test_write_to_stdout
-def test_write_to_stdout():
+def test_write_to_stdout() raises:
     print("== test_write_to_stdout")
 
     var stdout = sys.stdout

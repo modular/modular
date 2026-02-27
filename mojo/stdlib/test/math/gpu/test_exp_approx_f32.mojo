@@ -20,7 +20,7 @@ from utils import Index, IndexList
 
 
 @parameter
-def run_exp_approx_test[simd_width: Int](ctx: DeviceContext):
+def run_exp_approx_test[simd_width: Int](ctx: DeviceContext) raises:
     comptime dtype = DType.float32
     comptime length = 256
 
@@ -76,7 +76,7 @@ def run_exp_approx_test[simd_width: Int](ctx: DeviceContext):
             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_exp_approx_test[1](ctx)
         run_exp_approx_test[2](ctx)

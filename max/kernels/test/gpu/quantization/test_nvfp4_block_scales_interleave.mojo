@@ -133,7 +133,7 @@ fn test_block_scales_interleave_fp4[
                         )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_block_scales_interleave_fp4[
             NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(4)

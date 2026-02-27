@@ -1289,5 +1289,5 @@ fn test_varlen_causal_conv1d_update_gpu_various_widths() raises:
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -21,7 +21,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal, assert_true
 
 
-def test_constant_memory_compile(ctx: DeviceContext):
+def test_constant_memory_compile(ctx: DeviceContext) raises:
     fn alloc[
         n: Int
     ]() -> UnsafePointer[Float32, address_space = AddressSpace.CONSTANT]:
@@ -36,7 +36,7 @@ def test_constant_memory_compile(ctx: DeviceContext):
     )
 
 
-def test_constant_mem(ctx: DeviceContext):
+def test_constant_mem(ctx: DeviceContext) raises:
     print("== test_constant_mem")
 
     fn _fill_impl[
@@ -67,7 +67,7 @@ def test_constant_mem(ctx: DeviceContext):
             assert_equal(res_host[i], Float32(i))
 
 
-def test_constant_mem_via_func(ctx: DeviceContext):
+def test_constant_mem_via_func(ctx: DeviceContext) raises:
     print("== test_constant_mem_via_func")
 
     fn _fill_impl[
@@ -102,7 +102,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
             assert_equal(res_host[i], Float32(i))
 
 
-def test_external_constant_mem(ctx: DeviceContext):
+def test_external_constant_mem(ctx: DeviceContext) raises:
     print("== test_external_constant_mem")
 
     fn static_constant_kernel(data: UnsafePointer[Float32]):
@@ -158,7 +158,7 @@ def test_external_constant_mem(ctx: DeviceContext):
             assert_equal(res_host[i], Float32(i))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_constant_memory_compile(ctx)
         test_constant_mem(ctx)

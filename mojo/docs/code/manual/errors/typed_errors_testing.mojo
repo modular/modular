@@ -117,7 +117,7 @@ def demonstrate_assert_raises():
 # =============================================================================
 
 
-def demonstrate_type_verification():
+def demonstrate_type_verification() raises:
     """Shows how to verify specific error type was raised."""
     print("\n=== Pattern 2: Type verification ===")
 
@@ -143,7 +143,7 @@ def demonstrate_type_verification():
 # =============================================================================
 
 
-def demonstrate_multiple_scenarios():
+def demonstrate_multiple_scenarios() raises:
     """Shows testing various error conditions."""
     print("\n=== Pattern 3: Multiple scenarios ===")
 
@@ -175,7 +175,7 @@ def demonstrate_multiple_scenarios():
 # =============================================================================
 
 
-def demonstrate_workaround():
+def demonstrate_workaround() raises:
     """Shows workaround for the error type mixing limitation."""
     print("\n=== Pattern 4: Error type workaround ===")
 
@@ -200,7 +200,7 @@ def demonstrate_workaround():
 # =============================================================================
 
 
-def main():
+def main() raises:
     demonstrate_assert_raises()
     demonstrate_type_verification()
     demonstrate_multiple_scenarios()

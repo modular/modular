@@ -29,7 +29,7 @@ comptime wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
 ) if a_dtype == DType.float8_e4m3fn else Index(64, wgmma_n, 16)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_matmul_sm90[
             DType.bfloat16,

@@ -242,7 +242,7 @@ def test_2D_swizzle[
     swizzle_mode: SwizzleMode,
     global_shape: IntTuple,
     load_shape: IntTuple,
-](reference_tensor: LayoutTensor, result_tensor: LayoutTensor,) -> Int:
+](reference_tensor: LayoutTensor, result_tensor: LayoutTensor,) raises -> Int:
     var total_errors = 0
 
     comptime load_shape_m = product(load_shape[0])
@@ -285,7 +285,7 @@ def test_3D_swizzle[
     swizzle_mode: SwizzleMode,
     global_shape: IntTuple,
     load_shape: IntTuple,
-](reference_tensor: LayoutTensor, result_tensor: LayoutTensor,) -> Int:
+](reference_tensor: LayoutTensor, result_tensor: LayoutTensor,) raises -> Int:
     comptime load_shape_b = product(load_shape[0])
     comptime load_shape_m = product(load_shape[1])
     comptime load_shape_n = product(load_shape[2])
@@ -341,7 +341,7 @@ def test_tma_load[
     dtype: DType,
     swizzle_mode: SwizzleMode = SwizzleMode.NONE,
     OOB_access: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime assert (
         depth(global_shape) == depth(load_shape) and depth(load_shape) == 1
     ), "Global shape and SMEM shape must have the same depth"
@@ -437,7 +437,7 @@ def test_tma_load[
         assert_equal(total_errors, 0)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("Test TMA horizontal loads")
 

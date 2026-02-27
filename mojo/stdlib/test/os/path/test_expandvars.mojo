@@ -32,7 +32,7 @@ struct EnvVar(ImplicitlyCopyable):
         _ = os.unsetenv(self.name)
 
 
-def test_expansion():
+def test_expansion() raises:
     with EnvVar("TEST_VAR", "World"):
         assert_equal(expandvars("Hello $TEST_VAR!"), "Hello World!")
         assert_equal(expandvars("漢字 $TEST_VAR🔥!"), "漢字 World🔥!")
@@ -46,7 +46,7 @@ def test_expansion():
         )
 
 
-def test_braced_expansion():
+def test_braced_expansion() raises:
     with EnvVar("BRACE_VAR", "World"):
         assert_equal(expandvars("Hello ${BRACE_VAR}!"), "Hello World!")
         assert_equal(expandvars("漢字 ${BRACE_VAR}🔥!"), "漢字 World🔥!")
@@ -62,7 +62,7 @@ def test_braced_expansion():
         )
 
 
-def test_unset_expansion():
+def test_unset_expansion() raises:
     # Unset variables should not be expanded.
     assert_equal(
         expandvars("Hello $NONEXISTENT_VAR!"), "Hello $NONEXISTENT_VAR!"
@@ -72,7 +72,7 @@ def test_unset_expansion():
     )
 
 
-def test_dollar_sign():
+def test_dollar_sign() raises:
     # A lone `$` should not be expanded.
     assert_equal(expandvars("A lone $ sign"), "A lone $ sign")
 
@@ -83,17 +83,17 @@ def test_dollar_sign():
     )
 
 
-def test_short_variable():
+def test_short_variable() raises:
     with EnvVar("a", "World"):
         assert_equal(expandvars("$a"), "World")
         assert_equal(expandvars("${a}"), "World")
 
 
-def test_invalid_syntax():
+def test_invalid_syntax() raises:
     # Invalid syntax should be written as is.
     assert_equal(expandvars("${}"), "${}")
     assert_equal(expandvars("${"), "${")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

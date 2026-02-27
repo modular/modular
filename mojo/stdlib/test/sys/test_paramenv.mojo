@@ -17,30 +17,30 @@ from testing import assert_equal, assert_false, assert_true
 from testing import TestSuite
 
 
-def test_is_defined():
+def test_is_defined() raises:
     assert_true(is_defined["bar"]())
     assert_true(is_defined["foo"]())
     assert_true(is_defined["baz"]())
     assert_false(is_defined["boo"]())
 
 
-def test_get_string():
+def test_get_string() raises:
     assert_equal(env_get_string["baz"](), "hello")
 
 
-def test_env_get_int():
+def test_env_get_int() raises:
     assert_equal(env_get_int["bar"](), 99)
     assert_equal(env_get_int["foo", 42](), 11)
     assert_equal(env_get_int["bar", 42](), 99)
     assert_equal(env_get_int["boo", 42](), 42)
 
 
-def test_env_get_bool():
+def test_env_get_bool() raises:
     assert_equal(env_get_bool["my_true"](), True)
     assert_equal(env_get_bool["my_on"](), True)
     assert_equal(env_get_bool["my_false"](), False)
     assert_equal(env_get_bool["my_off"](), False)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

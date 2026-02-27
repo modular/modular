@@ -277,7 +277,7 @@ fn test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
         assert_almost_equal(output_host[i], expected, atol=1e-6)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_external_shared_mem(ctx)
         test_occupancy_max_active_blocks(ctx)

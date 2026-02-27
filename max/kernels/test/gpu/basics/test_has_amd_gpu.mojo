@@ -16,9 +16,9 @@ from sys import has_amd_gpu_accelerator
 from testing import assert_true
 
 
-def test_has_amd_gpu_accelerator():
+def test_has_amd_gpu_accelerator() raises:
     assert_true(has_amd_gpu_accelerator())
 
 
-def main():
+def main() raises:
     test_has_amd_gpu_accelerator()

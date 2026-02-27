@@ -20,7 +20,7 @@ from nn.slice import slice_dim_as_view
 from utils.index import IndexList
 
 
-def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]):
+def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     var shape = coord_to_index_list(tensor.layout.shape_coord())
     var stride = coord_to_index_list(tensor.layout.stride_coord())
     print("New shape:", shape)
@@ -41,7 +41,7 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]):
 # slice_dim
 def test_slice_dim[
     dtype: DType, numelems: Int, outer_rank: Int, dim: Int
-](dims: IndexList[outer_rank], start: Int, stop: Int, step: Int):
+](dims: IndexList[outer_rank], start: Int, stop: Int, step: Int) raises:
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
         memory1.unsafe_ptr(),
@@ -68,7 +68,7 @@ def test_slice_dim[
 
 
 # CHECK-LABEL: == test_slice_dim_basic
-def test_slice_dim_basic():
+def test_slice_dim_basic() raises:
     print("== test_slice_dim_basic")
 
     # CHECK-NEXT: In shape: (4, 4)
@@ -104,5 +104,5 @@ def test_slice_dim_basic():
     test_slice_dim[DType.float32, 16, 2, 1](IndexList[2](4, 4), 2, 4, 1)
 
 
-def main():
+def main() raises:
     test_slice_dim_basic()

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     comptime big_int = (1 << 65) + 123456789  # IntLiteral
     var not_too_big_int: Int = big_int // 10
     print("Result:", not_too_big_int)

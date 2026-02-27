@@ -24,10 +24,10 @@ fn _test_python_version(mut python: Python) raises:
     assert_equal(python_version.patch, 8)
 
 
-def test_with_python_version():
+def test_with_python_version() raises:
     var python = Python()
     _test_python_version(python)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

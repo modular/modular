@@ -49,7 +49,7 @@ struct Pair(TrivialRegisterPassable):
     var hi: Int
 
 
-def test_memcpy():
+def test_memcpy() raises:
     var pair1 = Pair(1, 2)
     var pair2 = Pair(0, 0)
 
@@ -65,7 +65,7 @@ def test_memcpy():
     assert_equal(pair2.hi, 2)
 
     @parameter
-    def _test_memcpy_buf[size: Int]():
+    def _test_memcpy_buf[size: Int]() raises:
         var buf = alloc[UInt8](size * 2)
         memset_zero(buf + size, size)
         var src = alloc[UInt8](size * 2)
@@ -94,7 +94,7 @@ def test_memcpy():
     _ = pair2
 
 
-def test_memcpy_dtype():
+def test_memcpy_dtype() raises:
     var a = alloc[Int32](4)
     var b = alloc[Int32](4)
     for i in range(4):
@@ -117,7 +117,7 @@ def test_memcpy_dtype():
     b.free()
 
 
-def test_memcmp():
+def test_memcmp() raises:
     var pair1 = Pair(1, 2)
     var pair2 = Pair(1, 2)
 
@@ -138,7 +138,7 @@ struct SixByteStruct(TrivialRegisterPassable):
     var c: Int16
 
 
-def test_memcmp_non_multiple_of_int32():
+def test_memcmp_non_multiple_of_int32() raises:
     var triple1 = SixByteStruct(0, 0, 0)
     var triple2 = SixByteStruct(0, 0, 1)
 
@@ -153,7 +153,7 @@ def test_memcmp_non_multiple_of_int32():
     _ = triple2
 
 
-def test_memcmp_overflow():
+def test_memcmp_overflow() raises:
     p1 = alloc[Byte](1)
     p2 = alloc[Byte](1)
     p1.store(-120)
@@ -169,7 +169,7 @@ def test_memcmp_overflow():
     p2.free()
 
 
-def test_memcmp_simd():
+def test_memcmp_simd() raises:
     var length = simd_width_of[DType.int8]() + 10
 
     var p1 = alloc[Int8](length)
@@ -207,7 +207,7 @@ def test_memcmp_simd():
 
 def _test_memcmp_extensive[
     dtype: DType, extermes: StaticString = ""
-](count: Int):
+](count: Int) raises:
     var ptr1 = alloc[Scalar[dtype]](count)
     var ptr2 = alloc[Scalar[dtype]](count)
 
@@ -266,7 +266,7 @@ def _test_memcmp_extensive[
     dptr2.free()
 
 
-def test_memcmp_extensive():
+def test_memcmp_extensive() raises:
     _test_memcmp_extensive[DType.int8](1)
     _test_memcmp_extensive[DType.int8](3)
 
@@ -295,7 +295,7 @@ def test_memcmp_extensive():
     _test_memcmp_extensive[DType.float32, "inf"](254)
 
 
-def test_memcmp_simd_boundary():
+def test_memcmp_simd_boundary() raises:
     """Test edge cases in SIMD memcmp implementation that could expose bugs."""
     comptime simd_width = simd_width_of[DType.int8]()
 
@@ -327,7 +327,7 @@ def test_memcmp_simd_boundary():
     ptr2.free()
 
 
-def test_memcmp_simd_overlap():
+def test_memcmp_simd_overlap() raises:
     """Test overlapping region handling in SIMD memcmp."""
     comptime simd_width = simd_width_of[DType.int8]()
 
@@ -362,7 +362,7 @@ def test_memcmp_simd_overlap():
         ptr2.free()
 
 
-def test_memcmp_simd_index_finding():
+def test_memcmp_simd_index_finding() raises:
     """Test index finding logic in SIMD memcmp."""
     var simd_width = simd_width_of[DType.int8]()
 
@@ -398,7 +398,7 @@ def test_memcmp_simd_index_finding():
         ptr2.free()
 
 
-def test_memcmp_simd_signed_overflow():
+def test_memcmp_simd_signed_overflow() raises:
     """Test signed byte overflow cases in SIMD memcmp."""
     var ptr1 = alloc[Int8](4)
     var ptr2 = alloc[Int8](4)
@@ -430,7 +430,7 @@ def test_memcmp_simd_signed_overflow():
     ptr2.free()
 
 
-def test_memcmp_simd_alignment():
+def test_memcmp_simd_alignment() raises:
     """Test alignment-related bugs in SIMD memcmp."""
     var size = 64
     var large_ptr1 = alloc[Int8](size)
@@ -468,7 +468,7 @@ def test_memcmp_simd_alignment():
     large_ptr2.free()
 
 
-def test_memcmp_simd_width_edge_cases():
+def test_memcmp_simd_width_edge_cases() raises:
     """Test edge cases around different SIMD widths."""
     var simd_width = simd_width_of[DType.int8]()
 
@@ -516,7 +516,7 @@ def test_memcmp_simd_width_edge_cases():
         ptr2.free()
 
 
-def test_memcmp_simd_zero_bytes():
+def test_memcmp_simd_zero_bytes() raises:
     """Test handling of zero bytes in SIMD memcmp."""
     comptime size = simd_width_of[DType.int8]() * 2
     var ptr1 = alloc[Int8](size)
@@ -562,7 +562,7 @@ def test_memcmp_simd_zero_bytes():
     ptr2.free()
 
 
-def test_memset():
+def test_memset() raises:
     var pair = Pair(1, 2)
 
     var ptr = UnsafePointer(to=pair)
@@ -600,7 +600,7 @@ def test_memset():
     _ = pair
 
 
-def test_pointer_string():
+def test_pointer_string() raises:
     var nullptr = UnsafePointer[Int, MutAnyOrigin]()
     assert_equal(String(nullptr), "0x0")
 
@@ -610,7 +610,7 @@ def test_pointer_string():
     ptr.free()
 
 
-def test_dtypepointer_string():
+def test_dtypepointer_string() raises:
     var nullptr = UnsafePointer[Float32, MutAnyOrigin]()
     assert_equal(String(nullptr), "0x0")
 
@@ -620,7 +620,7 @@ def test_dtypepointer_string():
     ptr.free()
 
 
-def test_pointer_explicit_copy():
+def test_pointer_explicit_copy() raises:
     var ptr = alloc[Int](1)
     ptr[] = 42
     var copy = ptr.copy()
@@ -628,14 +628,14 @@ def test_pointer_explicit_copy():
     ptr.free()
 
 
-def test_pointer_refitem():
+def test_pointer_refitem() raises:
     var ptr = alloc[Int](1)
     ptr[] = 42
     assert_equal(ptr[], 42)
     ptr.free()
 
 
-def test_pointer_refitem_string():
+def test_pointer_refitem_string() raises:
     comptime payload = "$Modular!Mojo!HelloWorld^"
     var ptr = alloc[String](1)
     __get_address_as_uninit_lvalue(ptr.address) = String()
@@ -644,7 +644,7 @@ def test_pointer_refitem_string():
     ptr.free()
 
 
-def test_pointer_refitem_pair():
+def test_pointer_refitem_pair() raises:
     var ptr = alloc[Pair](1)
     ptr[].lo = 42
     ptr[].hi = 24
@@ -655,19 +655,19 @@ def test_pointer_refitem_pair():
     ptr.free()
 
 
-def test_address_space_str():
+def test_address_space_str() raises:
     assert_equal(String(AddressSpace.GENERIC), "AddressSpace.GENERIC")
     assert_equal(String(AddressSpace(17)), "AddressSpace(17)")
 
 
-def test_dtypepointer_gather():
+def test_dtypepointer_gather() raises:
     var ptr = alloc[Float32](4)
     ptr.store(0, SIMD[ptr.type.dtype, 4](0.0, 1.0, 2.0, 3.0))
 
     @parameter
     def _test_gather[
         width: Int
-    ](offset: SIMD[_, width], desired: SIMD[ptr.type.dtype, width]):
+    ](offset: SIMD[_, width], desired: SIMD[ptr.type.dtype, width]) raises:
         var actual = ptr.gather(offset)
         assert_almost_equal(
             actual, desired, msg="_test_gather", atol=0.0, rtol=0.0
@@ -681,7 +681,7 @@ def test_dtypepointer_gather():
         mask: SIMD[DType.bool, width],
         default: SIMD[ptr.type.dtype, width],
         desired: SIMD[ptr.type.dtype, width],
-    ):
+    ) raises:
         var actual = ptr.gather(offset, mask, default)
         assert_almost_equal(
             actual, desired, msg="_test_masked_gather", atol=0.0, rtol=0.0
@@ -707,7 +707,7 @@ def test_dtypepointer_gather():
     ptr.free()
 
 
-def test_dtypepointer_scatter():
+def test_dtypepointer_scatter() raises:
     var ptr = alloc[Float32](4)
     ptr.store(0, SIMD[ptr.type.dtype, 4](0.0))
 
@@ -718,7 +718,7 @@ def test_dtypepointer_scatter():
         offset: SIMD[_, width],
         val: SIMD[ptr.type.dtype, width],
         desired: SIMD[ptr.type.dtype, 4],
-    ):
+    ) raises:
         ptr.scatter(offset, val)
         var actual = ptr.load[width=4](0)
         assert_almost_equal(
@@ -733,7 +733,7 @@ def test_dtypepointer_scatter():
         val: SIMD[ptr.type.dtype, width],
         mask: SIMD[DType.bool, width],
         desired: SIMD[ptr.type.dtype, 4],
-    ):
+    ) raises:
         ptr.scatter(offset, val, mask)
         var actual = ptr.load[width=4](0)
         assert_almost_equal(
@@ -784,7 +784,7 @@ def test_dtypepointer_scatter():
     ptr.free()
 
 
-def test_indexing():
+def test_indexing() raises:
     var ptr = alloc[Float32](4)
     for i in range(4):
         ptr[i] = Float32(i)
@@ -795,7 +795,7 @@ def test_indexing():
     ptr.free()
 
 
-def test_memmove_overlapping_regions():
+def test_memmove_overlapping_regions() raises:
     var list = [1, 2, 3, 4, 5, 6, 7]
     # shift all values down by 1
     memmove(
@@ -804,7 +804,7 @@ def test_memmove_overlapping_regions():
     assert_equal(list, [2, 3, 4, 5, 6, 7, 7])
 
 
-def test_memmove_non_overlapping_regions():
+def test_memmove_non_overlapping_regions() raises:
     var list1 = [1, 2, 3]
     var list2 = [4, 5, 6]
     # shift all values down by 1
@@ -813,7 +813,7 @@ def test_memmove_non_overlapping_regions():
     assert_equal(list2, [4, 5, 6])
 
 
-def test_uninit_move_n_trivial():
+def test_uninit_move_n_trivial() raises:
     # Test with trivial move type - should use memcpy, not call move constructor
     comptime Counter = MoveCounter[Int, trivial_move=True]
     var src = alloc[Counter](3)
@@ -841,7 +841,7 @@ def test_uninit_move_n_trivial():
     dest.free()
 
 
-def test_uninit_move_n_nontrivial():
+def test_uninit_move_n_nontrivial() raises:
     # Test with non-trivial type that tracks moves
     var src = alloc[MoveCounter[String]](3)
     (src + 0).init_pointee_move(MoveCounter("foo"))
@@ -870,7 +870,7 @@ def test_uninit_move_n_nontrivial():
     dest.free()
 
 
-def test_uninit_copy_n_trivial():
+def test_uninit_copy_n_trivial() raises:
     # Test with trivial copy type - should use memcpy, not call copy ctor
     comptime Counter = CopyCounter[Int, trivial_copy=True]
     var src = alloc[Counter](3)
@@ -899,7 +899,7 @@ def test_uninit_copy_n_trivial():
     dest.free()
 
 
-def test_uninit_copy_n_nontrivial():
+def test_uninit_copy_n_nontrivial() raises:
     # Test with non-trivial type that tracks copies
     var src = alloc[CopyCounter[String]](3)
     src.init_pointee_move(CopyCounter("alpha"))
@@ -934,7 +934,7 @@ def test_uninit_copy_n_nontrivial():
     dest.free()
 
 
-def test_destroy_n_trivial():
+def test_destroy_n_trivial() raises:
     # Test with trivial destructor - should be no-op, not call __del__
     var del_count = 0
     var counter_ptr = UnsafePointer(to=del_count)
@@ -953,7 +953,7 @@ def test_destroy_n_trivial():
     ptr.free()
 
 
-def test_destroy_n_nontrivial():
+def test_destroy_n_nontrivial() raises:
     # Test with non-trivial type that tracks destructor calls
     var del_count = 0
     var counter_ptr = UnsafePointer(to=del_count)
@@ -971,7 +971,7 @@ def test_destroy_n_nontrivial():
     ptr.free()
 
 
-def test_uninit_move_n_zero_count():
+def test_uninit_move_n_zero_count() raises:
     # Test with zero count - should be no-op
     var src = alloc[MoveCounter[String]](1)
     # Use memcpy to initialize without calling move constructor
@@ -991,7 +991,7 @@ def test_uninit_move_n_zero_count():
     dest.free()
 
 
-def test_uninit_copy_n_zero_count():
+def test_uninit_copy_n_zero_count() raises:
     # Test with zero count - should be no-op
     var src = alloc[CopyCounter[String]](1)
     src.init_pointee_move(CopyCounter("test"))
@@ -1009,7 +1009,7 @@ def test_uninit_copy_n_zero_count():
     dest.free()
 
 
-def test_destroy_n_zero_count():
+def test_destroy_n_zero_count() raises:
     # Test with zero count - should be no-op
     var del_count = 0
     var counter_ptr = UnsafePointer(to=del_count)
@@ -1027,5 +1027,5 @@ def test_destroy_n_zero_count():
     ptr.free()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

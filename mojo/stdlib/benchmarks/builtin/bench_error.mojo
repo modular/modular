@@ -172,7 +172,7 @@ fn bench_error_create_only(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=3))
 
     m.bench_function[bench_error_create_only](BenchId("error_create_only"))

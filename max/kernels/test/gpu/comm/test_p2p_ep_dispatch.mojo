@@ -1236,7 +1236,7 @@ def test_dispatch_bf16[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]):
+](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = BF16DispatchTest[
         hidden_size, top_k, n_experts, n_ranks, n_slots, n_tokens_per_rank
     ]
@@ -1253,7 +1253,7 @@ def test_dispatch_blockwise_fp8[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]):
+](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = BlockwiseFP8DispatchTest[
         fp8_dtype = DType.float8_e4m3fn,
         scales_dtype = DType.float32,
@@ -1277,7 +1277,7 @@ def test_dispatch_nvfp4[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]):
+](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = NVFP4DispatchTest[
         fp4_dtype = DType.uint8,
         scales_dtype = DType.float8_e4m3fn,
@@ -1293,7 +1293,7 @@ def test_dispatch_nvfp4[
     ](list_of_ctx)
 
 
-def main():
+def main() raises:
     comptime test_gpu_counts = (2, 4, 8)
 
     if enable_p2p():

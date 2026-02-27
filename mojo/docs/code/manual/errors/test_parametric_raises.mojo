@@ -15,19 +15,19 @@ from testing import assert_equal, assert_raises, TestSuite
 from parametric_raises import run_action, fetch_data, parse_config, get_value
 
 
-def test_run_action_network_error():
+def test_run_action_network_error() raises:
     with assert_raises(contains="NetworkError"):
         _ = run_action(fetch_data)
 
 
-def test_run_action_parse_error():
+def test_run_action_parse_error() raises:
     with assert_raises(contains="ParseError"):
         _ = run_action(parse_config)
 
 
-def test_run_action_no_error():
+def test_run_action_no_error() raises:
     assert_equal(run_action(get_value), 99)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

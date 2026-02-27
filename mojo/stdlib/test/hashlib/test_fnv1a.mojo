@@ -29,7 +29,7 @@ from test_utils import (
 from testing import assert_equal, TestSuite
 
 
-def test_hash_byte_array():
+def test_hash_byte_array() raises:
     assert_equal(
         hash[HasherType=Fnv1a]("a"),
         hash[HasherType=Fnv1a]("a"),
@@ -54,7 +54,7 @@ def test_hash_byte_array():
     )
 
 
-def test_avalanche():
+def test_avalanche() raises:
     # test that values which differ just in one bit,
     # produce significantly different hash values
     var buffer = InlineArray[UInt8, 256](fill=0)
@@ -70,7 +70,7 @@ def test_avalanche():
     assert_dif_hashes(hashes, 15)
 
 
-def test_trailing_zeros():
+def test_trailing_zeros() raises:
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
     var buffer = InlineArray[UInt8, 8](fill=0)
@@ -82,7 +82,7 @@ def test_trailing_zeros():
     assert_dif_hashes(hashes, 21)
 
 
-def test_fill_factor():
+def test_fill_factor() raises:
     words = gen_word_pairs[words_ar]()
     assert_fill_factor["AR", Fnv1a](words, len(words), 0.63)
     assert_fill_factor["AR", Fnv1a](words, len(words) // 2, 0.86)
@@ -126,7 +126,7 @@ def test_fill_factor():
     assert_fill_factor["RU", Fnv1a](words, len(words) // 14, 1.0)
 
 
-def test_hash_simd_values():
+def test_hash_simd_values() raises:
     fn hash(value: SIMD) -> UInt64:
         hasher = Fnv1a()
         hasher._update_with_simd(value)
@@ -175,10 +175,10 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.int32, 64](0)), 13380826962402805797)
 
 
-def test_hash_at_compile_time():
+def test_hash_at_compile_time() raises:
     comptime h = hash[HasherType=Fnv1a]("hello")
     assert_equal(h, 11831194018420276491)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

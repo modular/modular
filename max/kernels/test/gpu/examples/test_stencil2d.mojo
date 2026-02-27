@@ -199,7 +199,7 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     _ = b_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_stencil2d[False](ctx)
         run_stencil2d[True](ctx)

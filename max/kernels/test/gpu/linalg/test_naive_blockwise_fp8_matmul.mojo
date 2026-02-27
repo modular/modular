@@ -249,7 +249,7 @@ fn test_naive_blockwise_fp8_matmul[
     _ = b_scale_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for transpose_b in range(0, 2):
             test_naive_blockwise_fp8_matmul[

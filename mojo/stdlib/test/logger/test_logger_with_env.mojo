@@ -15,7 +15,7 @@ from logger import Logger
 from testing import TestSuite
 
 
-def test_log_with_env():
+def test_log_with_env() raises:
     var log = Logger()
 
     # CHECK: {{.*}}DEBUG{{.*}}::: hello world

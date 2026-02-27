@@ -44,7 +44,7 @@ fn _run_badbuf(ctx: DeviceContext) raises:
     raise "Test failed: Should not reach here."
 
 
-def test_buffer():
+def test_buffer() raises:
     var ctx = create_test_device_context()
 
     print("-------")
@@ -55,5 +55,5 @@ def test_buffer():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

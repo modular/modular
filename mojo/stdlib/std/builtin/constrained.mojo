@@ -44,7 +44,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
         comptime assert dtype.is_numeric(), "dtype must be numeric."
         return a / 2
 
-    def main():
+    def main() raises:
         print(half(UInt8(5)))  # prints 2
         print(half(Scalar[DType.bool](True)))  # constraint failed:
                                                #     dtype must be numeric.

@@ -36,7 +36,7 @@ fn foo[value: SIMD]():
     pass
 
 
-def main():
+def main() raises:
     var v = SIMD[DType.float64, 4](1.0, 2.0, 3.0, 4.0)
     print_params(v)
 

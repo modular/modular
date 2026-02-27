@@ -34,7 +34,7 @@ def execute_gather_nd_test[
     indices_host_ptr: UnsafePointer[Scalar[indices_type]],
     indices_shape: IndexList[indices_rank],
     ctx: DeviceContext,
-):
+) raises:
     # Compute sizes
     var data_size = 1
     for i in range(data_rank):
@@ -144,7 +144,7 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     indices_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK: {{.*}}data index out of bounds{{.*}}
         test_gather_nd_oob(ctx)
