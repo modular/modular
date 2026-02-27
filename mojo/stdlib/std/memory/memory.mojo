@@ -30,13 +30,41 @@ from std.sys import (
     env_get_string,
     is_compile_time,
     is_gpu,
+    CompilationTarget,
     llvm_intrinsic,
     simd_bit_width,
     simd_width_of,
     size_of,
+    masked_store,
 )
+from bit import count_trailing_zeros
 
 from std.algorithm import vectorize
+
+# ===-----------------------------------------------------------------------===#
+# helpers
+# ===-----------------------------------------------------------------------===#
+
+
+@doc_private
+@always_inline("nodebug")
+fn get_active_mask[width: Int](evl: Int) -> SIMD[DType.bool, width]:
+    """Generates a mask with the first `evl` lanes active.
+
+    Parameters:
+        width: The total width of the SIMD vector.
+
+    Args:
+        evl: The effective vector length (number of active lanes).
+
+    Returns:
+        A SIMD boolean vector where the first `evl` lanes are `True` (active)
+        and the remaining lanes are `False` (inactive).
+    """
+    return llvm_intrinsic["llvm.get.active.lane.mask", SIMD[DType.bool, width]](
+        Int64(0), Int64(evl)
+    )
+
 
 # ===-----------------------------------------------------------------------===#
 # memcmp
@@ -316,8 +344,42 @@ fn memmove[
 fn _memset_impl(
     ptr: UnsafePointer[mut=True, Byte, ...], value: Byte, count: Int
 ):
-    fn fill[width: Int](offset: Int) unified {mut}:
-        ptr.store(offset, SIMD[DType.uint8, width](value))
+    fn fill[width: Int](offset: Int, evl: Int) unified {mut}:
+        if width == evl:
+            ptr.store(offset, SIMD[DType.uint8, width](value))
+
+        else:
+
+            @parameter
+            if is_gpu():
+                for i in range(evl):
+                    ptr.store(offset + i, SIMD[DType.uint8, 1](value))
+
+                return
+
+            elif CompilationTarget.has_avx512f():
+                # TODO: SVE could also benefit from masked_store if available
+                var mask = get_active_mask[width](evl)
+
+                masked_store[width](
+                    SIMD[DType.uint8, width](value),
+                    ptr + offset,
+                    mask,
+                )
+            else:
+                # Overlap chunks to fill the required evl lanes
+                @parameter
+                for i in range(count_trailing_zeros(width)):
+                    comptime chunk_len = width >> (i + 1)
+
+                    if evl >= chunk_len:
+                        ptr.store(offset, SIMD[DType.uint8, chunk_len](value))
+                        ptr.store(
+                            offset + evl - chunk_len,
+                            SIMD[DType.uint8, chunk_len](value),
+                        )
+
+                        return
 
     comptime simd_width = simd_width_of[Byte]()
     vectorize[simd_width](count, fill)
