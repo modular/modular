@@ -25,7 +25,9 @@ Checkpoint weight names and shapes (vision_tower.patch_embed.*, BF16):
 from __future__ import annotations
 
 from collections.abc import Iterable
+from functools import cached_property
 
+import numpy as np
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -35,18 +37,21 @@ from max.graph import (
     ops,
 )
 from max.nn.conv import Conv2d
+from max.nn.kernels import learnable_2d_interp_pos_emb
 from max.nn.layer import Module, Shardable
 
 
 class Learnable2DInterpPosEmbDividedFixed(Module, Shardable):
     """Learnable 2D spatial position grid for MoonVision3dPatchEmbed.
 
-    Holds the weight so checkpoint key patch_embed.pos_emb.weight loads.
-    Reference forward: for each (t, h, w) in grid_thws, interpolate this grid
-    to (h, w) if needed, add 1D temporal sincos, add to the corresponding
-    slice of x. That requires per-image variable (h,w), dynamic slicing, and
-    bicubic interpolation, which are not expressible in the graph API yet.
-    So __call__ returns x unchanged; the weight is present for loading only.
+    Holds the weight so checkpoint key ``patch_embed.pos_emb.weight`` loads.
+    For each ``(t, h, w)`` in ``grid_thws``, bicubic-interpolates the 2D grid
+    to ``(h, w)`` if needed, adds a 1D sincos temporal embedding when ``t > 1``,
+    and adds the result element-wise to the patch embeddings ``x``.
+
+    ``time_weight`` is pre-computed once via ``@cached_property`` and reused,
+    following the same caching pattern as ``freqs_cis`` in rotary embeddings.
+
     Shardable by replication only.
     """
 
@@ -55,6 +60,7 @@ class Learnable2DInterpPosEmbDividedFixed(Module, Shardable):
         height: int = 64,
         width: int = 64,
         dim: int = 1152,
+        num_frames: int = 4,
         dtype: DType = DType.bfloat16,
         device: DeviceRef = DeviceRef.CPU(),
         is_sharding: bool = False,
@@ -65,6 +71,7 @@ class Learnable2DInterpPosEmbDividedFixed(Module, Shardable):
             height: Height of the learnable 2D grid (init_pos_emb_height).
             width: Width of the learnable 2D grid (init_pos_emb_width).
             dim: Embedding dimension (vt_hidden_size).
+            num_frames: Maximum temporal frames for sincos embedding.
             dtype: Data type for the weight.
             device: Device to place the weight on.
             is_sharding: If True, skip weight creation; used by :meth:`shard`.
@@ -73,18 +80,35 @@ class Learnable2DInterpPosEmbDividedFixed(Module, Shardable):
         self.height = height
         self.width = width
         self.dim = dim
+        self.num_frames = num_frames
         self.dtype = dtype
+        self.device = device
         self._sharding_strategy: ShardingStrategy | None = None
 
         if not is_sharding:
-            # Learnable 2D grid. Name "weight" so when used as patch_embed.pos_emb
-            # the checkpoint key patch_embed.pos_emb.weight loads.
             self.weight = Weight(
                 name="weight",
                 dtype=dtype,
                 shape=(height, width, dim),
                 device=device,
             )
+
+    @cached_property
+    def time_weight(self) -> TensorValue:
+        """Pre-computed 1D sincos temporal positional embedding.
+
+        Shape ``(num_frames, dim)``, dtype float32, matching the reference
+        ``get_1d_sincos_pos_embed``.
+        """
+        half = self.dim // 2
+        omega = np.arange(half, dtype=np.float32)
+        omega /= self.dim / 2.0
+        omega = 1.0 / (10000.0**omega)
+        grid_t = np.arange(self.num_frames, dtype=np.float32)
+        out = np.einsum("m,d->md", grid_t, omega)
+        emb = np.concatenate([np.sin(out), np.cos(out)], axis=1)
+        tw = ops.constant(emb, dtype=DType.float32, device=DeviceRef.CPU())
+        return tw.to(self.device)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -121,6 +145,7 @@ class Learnable2DInterpPosEmbDividedFixed(Module, Shardable):
                 height=self.height,
                 width=self.width,
                 dim=self.dim,
+                num_frames=self.num_frames,
                 dtype=self.dtype,
                 device=device,
                 is_sharding=True,
@@ -135,21 +160,25 @@ class Learnable2DInterpPosEmbDividedFixed(Module, Shardable):
         x: TensorValue,
         grid_thws: TensorValue,
     ) -> TensorValue:
-        """Add position embeddings to x. Currently a no-op; weight is for loading only.
+        """Adds interpolated 2D position embeddings to x via GPU kernel.
 
-        Full application would: for each (t, h, w) in grid_thws, slice x by
-        cumulative lengths, interpolate self.weight to (h, w) if (h,w) != (64,64),
-        add time_weight[0:t], add to slice. Not implemented in graph API.
+        For each video described by ``grid_thws``, bicubic-interpolates
+        ``self.weight`` from (H, W) to (h, w), adds temporal sincos
+        embedding when ``t > 1``, and adds the result to ``x``.
 
         Args:
             x: (L, dim) patch embeddings.
-            grid_thws: (N, 3) temporal, height, width per image (unused).
+            grid_thws: (N, 3) temporal, height, width per video, int64.
 
         Returns:
-            x unchanged until full implementation is added.
+            (L, dim) tensor with position embeddings added.
         """
-        _ = grid_thws  # Reserved for when per-image interpolation/slicing is implemented.
-        return x
+        return learnable_2d_interp_pos_emb(
+            x=x,
+            weight=self.weight.tensor,
+            grid_thws=grid_thws,
+            time_weight=self.time_weight,
+        )
 
 
 class PatchEmbeddingLayer(Module, Shardable):
@@ -157,10 +186,11 @@ class PatchEmbeddingLayer(Module, Shardable):
 
     Implements:
     1. Projection: Conv2d(in_channels, hidden_size, kernel_size=patch_size,
-       stride=patch_size). Same as reference. Input (L, 3, patch_size, patch_size)
-       -> output (L, hidden_size).
-    2. Position embedding: Learnable2DInterpPosEmbDividedFixed (pos_emb) holds
-       the 2D grid weight; full application with grid_thws is not yet implemented.
+       stride=patch_size). Input (L, 3, patch_size, patch_size) ->
+       output (L, hidden_size).
+    2. Position embedding: Learnable2DInterpPosEmbDividedFixed (pos_emb)
+       applies bicubic-interpolated 2D spatial + 1D sincos temporal position
+       embeddings via a GPU kernel.
 
     Shardable by replication only.
     """
@@ -219,13 +249,11 @@ class PatchEmbeddingLayer(Module, Shardable):
                 name="proj",
             )
 
-            # 2. Position embedding (Learnable2DInterpPosEmbDivided_fixed). Holds 2D grid
-            #    so checkpoint key patch_embed.pos_emb.weight loads. Full application
-            #    (per-image (t,h,w), interpolation, time_weight) is not implemented in graph.
             self.pos_emb = Learnable2DInterpPosEmbDividedFixed(
                 height=init_pos_emb_height,
                 width=init_pos_emb_width,
                 dim=hidden_size,
+                num_frames=init_pos_emb_time,
                 dtype=dtype,
                 device=device,
             )
@@ -283,10 +311,10 @@ class PatchEmbeddingLayer(Module, Shardable):
         pixel_values: TensorValue,
         grid_thws: TensorValue,
     ) -> TensorValue:
-        """Patch projection. Optionally add position embedding when supported.
+        """Patch projection followed by 2D interpolated position embedding.
 
-        Matches reference: x = self.proj(x).view(x.size(0), -1) then x = self.pos_emb(x, grid_thws).
-        pos_emb currently returns x unchanged (full application not in graph yet).
+        Matches reference: ``x = self.proj(x).view(x.size(0), -1)`` then
+        ``x = self.pos_emb(x, grid_thws)``.
 
         Args:
             pixel_values: (n_patches, in_channels, patch_size, patch_size) in NCHW format,

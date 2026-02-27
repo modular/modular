@@ -17,8 +17,8 @@ Reference: nvidia/Kimi-K2.5-NVFP4 modeling_kimi_k25.py
 - MoonVision3dPatchEmbed: proj (Conv2d) + pos_emb (Learnable2DInterpPosEmbDivided_fixed).
 - Forward: x = proj(x).view(x.size(0), -1); x = pos_emb(x, grid_thws).
 
-MAX PatchEmbeddingLayer implements the same proj; pos_emb is currently a no-op
-in the graph, so we compare against torch proj(x).view only.
+MAX PatchEmbeddingLayer implements the same proj + pos_emb via a custom Mojo
+GPU kernel for learnable 2D interpolated positional embeddings.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.kimik2_5.layers.patch_embedding import (
+    Learnable2DInterpPosEmbDividedFixed,
     PatchEmbeddingLayer,
 )
 from torch.utils.dlpack import from_dlpack
@@ -90,28 +91,6 @@ def _create_patch_embedding(
         device=device,
         has_bias=has_bias,
     )
-
-
-def _torch_proj_only(
-    pixel_values: torch.Tensor,
-    state_dict: dict[str, torch.Tensor],
-    has_bias: bool,
-) -> torch.Tensor:
-    """Reference: Conv2d(3, 1152, 14, stride=14) then view to (L, 1152)."""
-    conv = nn.Conv2d(
-        IN_CHANNELS,
-        HIDDEN_SIZE,
-        kernel_size=PATCH_SIZE,
-        stride=PATCH_SIZE,
-        bias=has_bias,
-    ).to(dtype=TORCH_DTYPE)
-    conv.weight = nn.Parameter(state_dict["proj.proj.weight"])
-    if has_bias:
-        conv.bias = nn.Parameter(state_dict["proj.proj.bias"])
-    conv.eval()
-    with torch.no_grad():
-        out = conv(pixel_values)
-    return out.view(out.size(0), -1)
 
 
 def _build_and_run_max(
@@ -301,16 +280,119 @@ def _torch_full_patch_embed(
         return model(pixel_values, grid_thws)
 
 
-@pytest.mark.skip(
-    reason="MAX pos_emb is not yet implemented; enable when PatchEmbeddingLayer applies position embeddings."
-)
-def test_patch_embedding_full_matches_torch() -> None:
-    """Compare full PatchEmbeddingLayer (proj + pos_emb) to torch MoonVision3dPatchEmbed.
+def _build_and_run_pos_emb(
+    x: torch.Tensor,
+    grid_thws: torch.Tensor,
+    pos_emb_weight: torch.Tensor,
+    height: int,
+    width: int,
+    dim: int,
+    num_frames: int,
+    dtype: DType,
+) -> torch.Tensor:
+    """Build a MAX graph with just Learnable2DInterpPosEmbDividedFixed and run it."""
+    devices: list[Device] = [Accelerator(0)]
+    device_ref = DeviceRef.GPU()
 
-    Enable this test once Learnable2DInterpPosEmbDividedFixed applies position
-    embeddings in the graph (interpolation + time_weight + per-image slicing).
+    layer = Learnable2DInterpPosEmbDividedFixed(
+        height=height,
+        width=width,
+        dim=dim,
+        num_frames=num_frames,
+        dtype=dtype,
+        device=device_ref,
+    )
+    layer.load_state_dict({"weight": pos_emb_weight})
+
+    session = InferenceSession(devices=devices)
+
+    x_type = TensorType(dtype, x.shape, device_ref)
+    grid_type = TensorType(DType.int64, grid_thws.shape, device_ref)
+
+    with Graph(
+        "kimi2_5_pos_emb_test",
+        input_types=(x_type, grid_type),
+    ) as graph:
+        x_in, grid_in = graph.inputs
+        out = layer(x_in.tensor, grid_in.tensor)
+        graph.output(out)
+
+    compiled = session.load(graph, weights_registry=layer.state_dict())
+    result = compiled.execute(
+        Buffer.from_dlpack(x.cuda()),
+        Buffer.from_dlpack(grid_thws.cuda()),
+    )
+    return from_dlpack(result[0])
+
+
+def _run_torch_pos_emb(
+    x: torch.Tensor,
+    grid_thws: torch.Tensor,
+    pos_emb_weight: torch.Tensor,
+    height: int,
+    width: int,
+    dim: int,
+    num_frames: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """Run the torch reference Learnable2DInterpPosEmbDivided_fixed."""
+    model = _Learnable2DInterpPosEmbDividedFixedTorch(
+        height=height,
+        width=width,
+        num_frames=num_frames,
+        dim=dim,
+    ).to(device=device, dtype=x.dtype)
+    model.weight = nn.Parameter(pos_emb_weight.to(device))
+    model.eval()
+    with torch.no_grad():
+        return model(x.to(device), grid_thws.to(device))
+
+
+@pytest.mark.parametrize(
+    "grid_thws_list, description",
+    [
+        ([[1, 4, 4]], "no interp, single image, t=1"),
+        ([[3, 4, 4]], "no interp, single video, t=3"),
+        ([[1, 8, 6]], "bicubic interp, single image"),
+        ([[1, 4, 4], [2, 8, 6]], "mixed: no-interp image + interp video"),
+    ],
+    ids=["no_interp_t1", "no_interp_t3", "bicubic", "multi_mixed"],
+)
+def test_pos_emb_matches_torch(
+    grid_thws_list: list[list[int]], description: str
+) -> None:
+    """Learnable2DInterpPosEmbDividedFixed matches torch reference.
+
+    Tests no-interpolation, bicubic interpolation, temporal embedding,
+    and multi-image/video batches.
     """
     torch.manual_seed(42)
+    height, width, dim, num_frames = 4, 4, 32, 4
+
+    grid_thws = torch.tensor(grid_thws_list, dtype=torch.int64)
+    total_patches = sum(t * h * w for t, h, w in grid_thws_list)
+
+    pos_emb_weight = _generate_tensor((height, width, dim))
+    x = _generate_tensor((total_patches, dim))
+
+    device = torch.device("cuda")
+    torch_out = _run_torch_pos_emb(
+        x, grid_thws, pos_emb_weight, height, width, dim, num_frames, device
+    )
+
+    max_out = _build_and_run_pos_emb(
+        x, grid_thws, pos_emb_weight, height, width, dim, num_frames, MAX_DTYPE
+    )
+
+    _assert_close(torch_out, max_out)
+    assert max_out.shape == (total_patches, dim), (
+        f"{description}: expected shape ({total_patches}, {dim}), "
+        f"got {max_out.shape}"
+    )
+
+
+def test_patch_embedding_full_matches_torch() -> None:
+    """Compare full PatchEmbeddingLayer (proj + pos_emb) to torch MoonVision3dPatchEmbed."""
     has_bias = True
     pixel_values = _generate_tensor(
         (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
@@ -321,26 +403,6 @@ def test_patch_embedding_full_matches_torch() -> None:
     torch_out = _torch_full_patch_embed(
         pixel_values, grid_thws, state_dict, has_bias
     )
-    max_out = _build_and_run_max(
-        pixel_values, grid_thws, state_dict, has_bias, n_gpus=1
-    )
-
-    _assert_close(torch_out, max_out)
-    assert max_out.shape == (N_PATCHES, HIDDEN_SIZE)
-
-
-def test_patch_embedding_forward_matches_torch_proj() -> None:
-    """PatchEmbeddingLayer output matches torch Conv2d projection (pos_emb is no-op)."""
-    torch.manual_seed(42)
-    has_bias = True  # Model uses bias in patch_embed.proj
-    pixel_values = _generate_tensor(
-        (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
-    )
-    grid_thws = torch.tensor([[GRID_T, GRID_H, GRID_W]], dtype=torch.int64)
-
-    state_dict = _create_state_dict(has_bias)
-
-    torch_out = _torch_proj_only(pixel_values, state_dict, has_bias)
     max_out = _build_and_run_max(
         pixel_values, grid_thws, state_dict, has_bias, n_gpus=1
     )
