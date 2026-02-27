@@ -140,6 +140,22 @@ what we publish.
     # take.__del__() runs here.
   ```
 
+- `def` functions now allows a `raises` specifier, and support typed errors.
+  `def` will soon *require* an exception specifier to throw, so we strongly
+  recommend changing `def` functions to have an explicit `raises` keyword.
+
+  ```mojo
+  # Older behavior
+  def foo():        # implicitly raises Error.
+  def bar() raises: # was invalid
+  # Current behavior
+  def bar():        # Still implicitly raises Error (not recommended)
+  def bar() raises: # Explicit raises Error (recommended)
+  # Near future behavior
+  def bar():        # Does not raise.
+  def bar() raises: # Explicit raises Error (required)
+  ```
+
 ### Language changes
 
 - `**_` and `*_` are no longer supported in parameter binding lists. Use a more
