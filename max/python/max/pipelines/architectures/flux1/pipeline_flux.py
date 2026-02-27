@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from queue import Queue
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -101,13 +101,8 @@ class FluxPipeline(DiffusionPipeline):
         self.build_scheduler_step()
         self.build_decode_latents()
 
-        # Save attributes needed after unwrap.
         self._transformer_device: Device = self.transformer.devices[0]
         self._guidance_embeds: bool = self.transformer.config.guidance_embeds
-
-        # A workaround to remove overhead from `functional.wrapped`.
-        if unwrapped_transformer := self.transformer.unwrap_model():
-            self.transformer = cast(Any, unwrapped_transformer)
 
         # Tensor caches.
         self._cached_guidance: dict[str, Tensor] = {}
@@ -453,7 +448,6 @@ class FluxPipeline(DiffusionPipeline):
                 text_ids,
                 guidance,
             )[0]
-            noise_pred = Tensor.from_dlpack(noise_pred)
 
             if model_inputs.do_true_cfg:
                 assert negative_prompt_embeds is not None
@@ -468,7 +462,6 @@ class FluxPipeline(DiffusionPipeline):
                     negative_text_ids,
                     guidance,
                 )[0]
-                neg_noise_pred = Tensor.from_dlpack(neg_noise_pred)
 
                 noise_pred = neg_noise_pred + model_inputs.true_cfg_scale * (
                     noise_pred - neg_noise_pred

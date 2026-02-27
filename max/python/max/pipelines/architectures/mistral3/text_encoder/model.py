@@ -80,8 +80,8 @@ class Mistral3TextEncoderModel(ComponentModel):
         self.model = model.compile(*model.input_types(), weights=state_dict)
         return self.model
 
-    def __call__(self, tokens: Tensor) -> tuple[Tensor, ...]:
+    def __call__(self, tokens: Tensor) -> Tensor:
         outputs = self.model(tokens)
-        if isinstance(outputs, list):
-            return tuple(outputs)
+        if isinstance(outputs, (list, tuple)):
+            return outputs[0]
         return outputs
