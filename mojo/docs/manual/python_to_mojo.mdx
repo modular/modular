@@ -268,7 +268,7 @@ that enumerates permitted types. Variant lets a single element type represent
 multiple concrete value types:
 
 ```mojo
-from utils import Variant
+from std.utils import Variant
 
 comptime MixedType = Variant[Int, Float64, String, Bool]
 
@@ -521,8 +521,8 @@ The variable itself remains statically typed as a `Variant`, even though
 the concrete value it holds may change:
 
 ```mojo
-from utils import Variant
-from testing import *
+from std.utils import Variant
+from std.testing import *
 
 comptime StringOrInt = Variant[String, Int]
 
