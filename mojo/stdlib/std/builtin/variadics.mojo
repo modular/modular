@@ -707,9 +707,7 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[mut = Self.elt_is_mutable](
-            unsafe_mut_cast=origin_of(Self.origin, self)
-        )
+        origin_of(Self.origin, self).unsafe_mut_cast[Self.elt_is_mutable]()
     ] Self.element_type:
         """Gets a single element on the variadic list.
 
