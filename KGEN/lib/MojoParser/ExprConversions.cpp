@@ -791,7 +791,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
     evaluator.appendIndexBinding(
         UnboundAttr::get(evaluator.getReboundType(type)));
   }
-  evaluator.appendIndexBinding(calleeParam);
+  appendThunkCallee(evaluator, calleeParam);
 
   SymbolConstantAttr symbol = thunk.getBoundSymbolRef(
       emitter.shared.getEvaluationContext(),

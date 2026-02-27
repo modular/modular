@@ -118,6 +118,10 @@ public:
   DebugInfoLanguage debugInfoLanguage = kLangMojo;
 
   std::string saveTempsPrefix;
+  /// When set, GPU kernel ASM files are written alongside the host assembly.
+  /// Each file is named <prefix>_<kernel_name>.ptx/.amdgcn/.ll (Metal).
+  /// Colliding names (same kernel, multiple instantiations) get _1/_2/...
+  std::string gpuAsmOutputPrefix;
   std::string searchPaths;
   SmallVector<std::string> extraSearchPaths;
 
