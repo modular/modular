@@ -201,9 +201,9 @@ fn load_AB[
         scheduler.static_MN
     )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1]
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1])
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -223,14 +223,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * UInt(BK), UInt(a_gmem_slice_coord)),
+            (Int(iter_idx) * BK, Int(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * UInt(BK), b_gmem_slice_coord),
+            (Int(iter_idx) * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -565,7 +565,7 @@ fn multi_stage_store_C[
             + UInt(BN * Int(warp_id // 2))
         )
 
-        var coord_n = (
+        var coord_n = Int(
             coord_n_mma_m256 if MMA_M == 256
             or cta_group == 1 else coord_n_mma_m128
         )
@@ -589,7 +589,7 @@ fn multi_stage_store_C[
                         c_tma_op.async_store(
                             c_smem_warp_tile,
                             (
-                                work_tile_coord[0] + UInt(i * 16),
+                                Int(work_tile_coord[0]) + i * 16,
                                 coord_n,
                             ),
                         )
@@ -603,7 +603,7 @@ fn multi_stage_store_C[
                         (
                             coord_n,
                             # UInt(work_tile_coord[0] * BM),
-                            work_tile_coord[0],
+                            Int(work_tile_coord[0]),
                         ),
                     )
                 c_tma_op.commit_group()

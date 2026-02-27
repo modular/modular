@@ -1461,31 +1461,31 @@ struct TMATensorTile[
         comptime assert rank in (2, 3, 4, 5)
 
         comptime if rank == 2:
-            self.async_store(dst, (UInt(coords[0]), UInt(coords[1])))
+            self.async_store(dst, (Int(coords[0]), Int(coords[1])))
         elif rank == 3:
             self.async_store_3d(
                 dst,
-                (UInt(coords[0]), UInt(coords[1]), UInt(coords[2])),
+                (Int(coords[0]), Int(coords[1]), Int(coords[2])),
             )
         elif rank == 4:
             self.async_store_4d(
                 dst,
                 (
-                    UInt(coords[0]),
-                    UInt(coords[1]),
-                    UInt(coords[2]),
-                    UInt(coords[3]),
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
                 ),
             )
         elif rank == 5:
             self.async_store_5d(
                 dst,
                 (
-                    UInt(coords[0]),
-                    UInt(coords[1]),
-                    UInt(coords[2]),
-                    UInt(coords[3]),
-                    UInt(coords[4]),
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
+                    Int(coords[4]),
                 ),
             )
 
@@ -1515,11 +1515,11 @@ struct TMATensorTile[
         comptime assert rank in (2, 3)
 
         comptime if rank == 2:
-            self.async_store(dst, (UInt(coords[0]), UInt(coords[1])))
+            self.async_store(dst, (Int(coords[0]), Int(coords[1])))
         elif rank == 3:
             self.async_store_3d(
                 dst,
-                (UInt(coords[0]), UInt(coords[1]), UInt(coords[2])),
+                (Int(coords[0]), Int(coords[1]), Int(coords[2])),
             )
 
     @always_inline
@@ -1531,7 +1531,7 @@ struct TMATensorTile[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
         multicast_mask: UInt16,
     ):
         """
@@ -1552,7 +1552,7 @@ struct TMATensorTile[
                 Must be 128-byte aligned.
             mem_barrier: SharedMemBarrierArray
                 The memory barrier used to track and synchronize the asynchronous transfer.
-            coords: Tuple[UInt, UInt]
+            coords: Tuple[Int, Int]
                 The 2D coordinates in the source tensor from which to copy data.
             multicast_mask: UInt16
                 A bit mask specifying which CTAs should receive the data.
@@ -1584,8 +1584,8 @@ struct TMATensorTile[
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
-                        coords[0] + UInt(j * copy_dim1),
-                        coords[1] + UInt(i * copy_dim0),
+                        coords[0] + j * copy_dim1,
+                        coords[1] + i * copy_dim0,
                     ),
                     multicast_mask,
                 )
@@ -1602,7 +1602,7 @@ struct TMATensorTile[
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
         multicast_mask: UInt16,
     ):
         """
@@ -1640,8 +1640,8 @@ struct TMATensorTile[
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
-                        coords[0] + UInt(j * copy_dim1),
-                        coords[1] + UInt(i * copy_dim0),
+                        coords[0] + j * copy_dim1,
+                        coords[1] + i * copy_dim0,
                     ),
                     multicast_mask,
                 )
@@ -1655,7 +1655,7 @@ struct TMATensorTile[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int],
         multicast_mask: UInt16,
     ):
         """
@@ -1676,8 +1676,7 @@ struct TMATensorTile[
                 Must be 128-byte aligned.
             mem_barrier: SharedMemBarrierArray
                 The memory barrier used to track and synchronize the asynchronous transfer.
-            coords: Tuple[UInt, UInt, UInt]
-                The 2D coordinates in the source tensor from which to copy data.
+            coords: The 2D coordinates in the source tensor from which to copy data.
             multicast_mask: UInt16
                 A bit mask specifying which CTAs should receive the data.
 
@@ -1732,9 +1731,9 @@ struct TMATensorTile[
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
-                            coords[0] + UInt(j * copy_dim2),
-                            coords[1] + UInt(i * copy_dim1),
-                            coords[2] + UInt(m * copy_dim0),
+                            coords[0] + j * copy_dim2,
+                            coords[1] + i * copy_dim1,
+                            coords[2] + m * copy_dim0,
                         ),
                         multicast_mask,
                     )
@@ -1751,7 +1750,7 @@ struct TMATensorTile[
             ...,
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        coords: Tuple[UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int],
         multicast_mask: UInt16,
     ):
         """
@@ -1804,9 +1803,9 @@ struct TMATensorTile[
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         mem_barrier.unsafe_ptr(),
                         Index(
-                            coords[0] + UInt(j * copy_dim2),
-                            coords[1] + UInt(i * copy_dim1),
-                            coords[2] + UInt(m * copy_dim0),
+                            coords[0] + j * copy_dim2,
+                            coords[1] + i * copy_dim1,
+                            coords[2] + m * copy_dim0,
                         ),
                         multicast_mask,
                     )
@@ -1826,7 +1825,7 @@ struct TMATensorTile[
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         rank: UInt,
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
         multicast_mask: UInt16,
     ):
         """
@@ -1864,7 +1863,7 @@ struct TMATensorTile[
         self.async_multicast_load(
             dst_slice,
             mem_barrier,
-            (coords[0], coords[1] + rank * UInt(tma_rows)),
+            (coords[0], coords[1] + Int(rank) * tma_rows),
             multicast_mask,
         )
 
@@ -1874,7 +1873,7 @@ struct TMATensorTile[
         src: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """
         Schedules an asynchronous store from shared memory to global memory.
@@ -1886,8 +1885,7 @@ struct TMATensorTile[
             src: LayoutTensor
                 The source tensor in shared memory from which data will be copied.
                 Must be 128-byte aligned.
-            coords: Tuple[UInt, UInt]
-                The 2D coordinates in the destination tensor where data will be stored.
+            coords: The 2D coordinates in the destination tensor where data will be stored.
 
         Constraints:
             The source tensor must be 128-byte aligned in shared memory.
@@ -1917,8 +1915,8 @@ struct TMATensorTile[
                     src.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     Index(
-                        coords[0] + UInt(j * copy_dim1),
-                        coords[1] + UInt(i * copy_dim0),
+                        coords[0] + j * copy_dim1,
+                        coords[1] + i * copy_dim0,
                     ),
                 )
 
@@ -1928,7 +1926,7 @@ struct TMATensorTile[
         src: TileTensor[
             dtype = Self.dtype, address_space = AddressSpace.SHARED, ...
         ],
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """
         Schedules an asynchronous store from shared memory to global memory.
@@ -1960,8 +1958,8 @@ struct TMATensorTile[
                     src.ptr + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     Index(
-                        coords[0] + UInt(j * copy_dim1),
-                        coords[1] + UInt(i * copy_dim0),
+                        coords[0] + j * copy_dim1,
+                        coords[1] + i * copy_dim0,
                     ),
                 )
 
@@ -1971,7 +1969,7 @@ struct TMATensorTile[
         src: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        coords: Tuple[UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int],
     ):
         """
         Schedules an asynchronous store from shared memory to global memory at specified 3D coordinates.
@@ -2035,9 +2033,9 @@ struct TMATensorTile[
                         src.ptr + copy_offset,
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         Index(
-                            coords[0] + UInt(j * copy_dim2),
-                            coords[1] + UInt(i * copy_dim1),
-                            coords[2] + UInt(m * copy_dim0),
+                            coords[0] + j * copy_dim2,
+                            coords[1] + i * copy_dim1,
+                            coords[2] + m * copy_dim0,
                         ),
                     )
 
@@ -2047,7 +2045,7 @@ struct TMATensorTile[
         src: TileTensor[
             dtype = Self.dtype, address_space = AddressSpace.SHARED, ...
         ],
-        coords: Tuple[UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int],
     ):
         """
         Schedules an asynchronous store from shared memory to global memory at 3D coordinates.
@@ -2090,9 +2088,9 @@ struct TMATensorTile[
                         src.ptr + copy_offset,
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                         Index(
-                            coords[0] + UInt(j * copy_dim2),
-                            coords[1] + UInt(i * copy_dim1),
-                            coords[2] + UInt(m * copy_dim0),
+                            coords[0] + j * copy_dim2,
+                            coords[1] + i * copy_dim1,
+                            coords[2] + m * copy_dim0,
                         ),
                     )
 
@@ -2102,7 +2100,7 @@ struct TMATensorTile[
         src: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        coords: Tuple[UInt, UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int, Int],
     ):
         """
         Schedules an asynchronous store from shared memory to global memory at specified 4D coordinates.
@@ -2163,10 +2161,10 @@ struct TMATensorTile[
                                 NoneType
                             ](),
                             Index(
-                                coords[0] + UInt(j * copy_dim3),
-                                coords[1] + UInt(i * copy_dim2),
-                                coords[2] + UInt(m * copy_dim1),
-                                coords[3] + UInt(n * copy_dim0),
+                                coords[0] + j * copy_dim3,
+                                coords[1] + i * copy_dim2,
+                                coords[2] + m * copy_dim1,
+                                coords[3] + n * copy_dim0,
                             ),
                         )
 
@@ -2176,7 +2174,7 @@ struct TMATensorTile[
         src: LayoutTensor[
             Self.dtype, _, address_space = AddressSpace.SHARED, ...
         ],
-        coords: Tuple[UInt, UInt, UInt, UInt, UInt],
+        coords: Tuple[Int, Int, Int, Int, Int],
     ):
         """
         Schedules an asynchronous store from shared memory to global memory at specified 5D coordinates.
@@ -2251,11 +2249,11 @@ struct TMATensorTile[
                                     NoneType
                                 ](),
                                 Index(
-                                    coords[0] + UInt(j * copy_dim4),
-                                    coords[1] + UInt(i * copy_dim3),
-                                    coords[2] + UInt(m * copy_dim2),
-                                    coords[3] + UInt(n * copy_dim1),
-                                    coords[4] + UInt(o * copy_dim0),
+                                    coords[0] + j * copy_dim4,
+                                    coords[1] + i * copy_dim3,
+                                    coords[2] + m * copy_dim2,
+                                    coords[3] + n * copy_dim1,
+                                    coords[4] + o * copy_dim0,
                                 ),
                             )
 
@@ -2267,7 +2265,7 @@ struct TMATensorTile[
         src: LayoutTensor[
             Self.dtype, Self.layout, address_space = AddressSpace.SHARED, ...
         ],
-        coords: Tuple[UInt, UInt],
+        coords: Tuple[Int, Int],
     ):
         """
         Schedules an asynchronous reduction operation from shared memory to global memory.

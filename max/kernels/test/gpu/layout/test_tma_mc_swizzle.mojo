@@ -103,7 +103,7 @@ fn tma_swizzle_multicast_load_kernel[
         tma_tile.async_multicast_load(
             type_of(tile)(tile.ptr + copy_offset),
             mbar[0],
-            (UInt(slice_cord_x), UInt(slice_cord_y)),
+            (Int(slice_cord_x), Int(slice_cord_y)),
             UInt16(tma_multicast_mask),
         )
 

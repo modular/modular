@@ -385,8 +385,8 @@ fn kernel_4[
         c_tma_op.async_store(
             c_tma_tile,
             (
-                block_idx.x * UInt(BN) + thread_idx.x * UInt(TMA_BN),
-                block_idx.y * UInt(BM),
+                Int(block_idx.x) * BN + Int(thread_idx.x) * TMA_BN,
+                Int(block_idx.y) * BM,
             ),
         )
         c_tma_op.commit_group()

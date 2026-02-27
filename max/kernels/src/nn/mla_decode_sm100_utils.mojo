@@ -3073,7 +3073,7 @@ struct MLA_SM100_Decode_Common[
         )
         elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(offset_position.out_row_offset)
+        var row: Int = offset_position.out_row_offset
 
         #   0       64     128     192      256      320      384     448     512
         #   |-------|-------|-------|--------|--------|--------|-------|-------|
@@ -3085,7 +3085,7 @@ struct MLA_SM100_Decode_Common[
 
                 comptime for k in range(0, blocks_per_stage):
                     var stage_ptr = out_cons.stage_base_ptr(k)
-                    var col: UInt = UInt(
+                    var col: Int = (
                         n * Self.config.MMA_PV_N
                         + m * Self.config.BN
                         + k * col_per_warp

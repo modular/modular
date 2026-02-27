@@ -408,7 +408,7 @@ fn test_tma_async_store_kernel[
 
     if thread_idx.x == 0:
         tma_tile.async_store(
-            tile, (block_idx.x * UInt(tileN), block_idx.y * UInt(tileM))
+            tile, (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM)
         )
         cp_async_bulk_commit_group()
 
@@ -443,9 +443,7 @@ fn test_tma_async_multiple_store_kernel[
         fence_async_view_proxy()
 
         if thread_idx.x == 0:
-            tma_tile.async_store(
-                tile, (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM))
-            )
+            tma_tile.async_store(tile, (i * tileN, Int(block_idx.y) * tileM))
             cp_async_bulk_commit_group()
 
     cp_async_bulk_wait_group[0]()
@@ -542,7 +540,7 @@ fn test_tma_async_reduce_kernel[
 
     if thread_idx.x == 0:
         tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
-            tile, (block_idx.x * UInt(tileN), block_idx.y * UInt(tileM))
+            tile, (Int(block_idx.x) * tileN, Int(block_idx.y) * tileM)
         )
         cp_async_bulk_commit_group()
 
@@ -578,7 +576,7 @@ fn test_tma_async_multiple_reduce_kernel[
 
         if thread_idx.x == 0:
             tma_tile.async_reduce[reduction_kind = ReduceOp.ADD](
-                tile, (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM))
+                tile, (i * tileN, Int(block_idx.y) * tileM)
             )
             cp_async_bulk_commit_group()
 
@@ -888,10 +886,10 @@ fn test_tma_loads_and_store_two_buffers_kernel[
 
         if thread_idx.x == 0:
             a_tma_dst_tile.async_store(
-                a_tile, (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM))
+                a_tile, (i * tileN, Int(block_idx.y) * tileM)
             )
             b_tma_dst_tile.async_store(
-                b_tile, (UInt(i) * UInt(tileN), block_idx.y * UInt(tileM))
+                b_tile, (i * tileN, Int(block_idx.y) * tileM)
             )
             cp_async_bulk_commit_group()
 

@@ -89,8 +89,8 @@ fn test_tma_mcast_load_kernel[
                 tile,
                 mbar[0],
                 (
-                    UInt(block_idx.x * UInt(tileN)),
-                    UInt(block_idx.y * UInt(tileM)),
+                    Int(block_idx.x) * tileN,
+                    Int(block_idx.y) * tileM,
                 ),
                 multicast_mask.cast[DType.uint16](),
             )
@@ -232,7 +232,7 @@ fn test_tma_sliced_multicast_load_kernel[
                 // CLUSTER_N
             ),
             mbar[0],
-            (UInt(0), UInt(slice_cord)),
+            (0, slice_cord),
             multicast_mask.cast[DType.uint16](),
         )
 

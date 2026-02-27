@@ -110,7 +110,7 @@ struct TileLoaderTMA[
             row_coord: Row coordinate (M for A, N for B) in global memory (elements).
         """
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (k_coord, row_coord), self.multicast_mask
+            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
         )
 
     @always_inline
@@ -139,7 +139,7 @@ struct TileLoaderTMA[
         """
         # TileTensor overload of async_multicast_load - no conversion needed
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (k_coord, row_coord), self.multicast_mask
+            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
         )
 
     @always_inline
@@ -169,7 +169,7 @@ struct TileLoaderTMA[
             row_coord: Row coordinate (M for A, N for B) in global memory (elements).
         """
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (k_coord, row_coord), self.multicast_mask
+            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
         )
 
 
@@ -230,7 +230,7 @@ struct TileLoader[
     ):
         """Load a tile using TMA async multicast load."""
         self.tma_op[].async_multicast_load[Self.cta_group](
-            dest, barrier, (k_coord, row_coord), self.multicast_mask
+            dest, barrier, (Int(k_coord), Int(row_coord)), self.multicast_mask
         )
 
 

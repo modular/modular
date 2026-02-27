@@ -247,7 +247,10 @@ struct TileLoaderTMA[
             (k_elements, row/col_elements) for TMA's K-major ordering.
         """
         # Switch coordinates to k-minor and multiply k by BK to match the CPAsync API.
-        var coords = (_coords[1] * Self.BK, _coords[0])  # (m/n, k) -> (k, m/n)
+        var coords = (
+            Int(_coords[1] * Self.BK),
+            Int(_coords[0]),
+        )  # (m/n, k) -> (k, m/n)
 
         comptime tma_load_size = Self.desc_layout.size()
         comptime tma_rows = Self.desc_layout.shape[0].value()
@@ -284,7 +287,7 @@ struct TileLoaderTMA[
             self.tma_op[].async_copy(
                 dst,
                 mem_barrier[],
-                (Int(coords[0]), Int(coords[1])),
+                (coords[0], coords[1]),
             )
 
 
