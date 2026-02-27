@@ -88,6 +88,12 @@ fn compute_topk_mask[
     comptime assert values.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert mask.flat_rank == 2, "expected rank-2 TileTensor"
     for b in range(batch_size):
+        # K == -1 means no top-k filtering; all tokens are valid.
+        if K == -1:
+            for i in range(N):
+                mask[b, i] = True
+            continue
+
         var values_list = List[Scalar[dtype]]()
         for i in range(N):
             values_list.append(values.load[width=1]((Idx(b), Idx(i))))
@@ -963,6 +969,7 @@ fn test_topk_topp_sampling_fi[
     K: Int,
     p: Float32 = 1.0,
     T: Float32 = 1.0,
+    max_k: Int = 1,
 ) raises:
     """Test _topk_topp_sampling_fi (logits → softmax → top-k+top-p sampling).
 
@@ -995,6 +1002,12 @@ fn test_topk_topp_sampling_fi[
     )
     var out_buf = ctx.enqueue_create_buffer[out_idx_type](batch_size)
     var temp_buf = ctx.enqueue_create_buffer[DType.float32](batch_size)
+
+    # Per-row K, P, and seed arrays.
+    var k_buf = ctx.enqueue_create_buffer[out_idx_type](batch_size)
+    var p_buf = ctx.enqueue_create_buffer[DType.float32](batch_size)
+    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var batch_layout = row_major(Idx(batch_size))
 
     # CPU reference buffers: probs after softmax, and masks.
     var probs_buf = ctx.enqueue_create_buffer[DType.float32](
@@ -1033,33 +1046,45 @@ fn test_topk_topp_sampling_fi[
         for i in range(batch_size):
             temp_host[i] = T
 
+    # Fill per-row K array (same value for all rows).
+    with k_buf.map_to_host() as k_host:
+        for i in range(batch_size):
+            k_host[i] = Scalar[out_idx_type](K)
+
+    # Fill per-row P array (same value for all rows).
+    with p_buf.map_to_host() as p_host:
+        for i in range(batch_size):
+            p_host[i] = p
+
     # Create kernel input tensors.
     var logits_tt = TileTensor(logits_buf, input_layout)
     var out_tt = TileTensor(
         out_buf, row_major(Coord(IndexList[2](batch_size, 1)))
     )
-    var temp_tt = TileTensor(temp_buf, row_major(Idx(batch_size)))
-
-    # Create a 1-element seed buffer on device.
-    var seed_buf = ctx.enqueue_create_buffer[DType.uint64](1)
-    var seed_layout = row_major(Idx(1))
+    var temp_tt = TileTensor(temp_buf, batch_layout)
+    var k_tt = TileTensor(k_buf, batch_layout)
+    var p_tt = TileTensor(p_buf, batch_layout)
 
     # Run trials with different seeds.
     var num_passed = 0
     for trial in range(NUM_VALIDATION_TRIALS):
+        # Fill per-row seed array (different seed per row).
         with seed_buf.map_to_host() as seed_host:
-            seed_host[0] = UInt64(42 + trial)
+            for i in range(batch_size):
+                seed_host[i] = UInt64(42 + trial * batch_size + i)
         var seed_tt = (
-            TileTensor(seed_buf, seed_layout).as_any_origin().as_immut()
+            TileTensor(seed_buf, batch_layout).as_any_origin().as_immut()
         )
 
         _topk_topp_sampling_fi(
             ctx,
-            K,
+            max_k,
             p,
             logits_tt,
             out_tt,
+            k=k_tt.as_any_origin().as_immut(),
             temperature=temp_tt.as_any_origin().as_immut(),
+            top_p=p_tt.as_any_origin().as_immut(),
             rng_seed=seed_tt,
         )
 
@@ -1457,23 +1482,31 @@ def main():
 
         # Top-k only (p=1.0), default temperature.
         test_topk_topp_sampling_fi[float32_dtype](
-            ctx, batch_size=1, N=1024, K=10
+            ctx, batch_size=1, N=1024, K=10, max_k=10
         )
         test_topk_topp_sampling_fi[float32_dtype](
-            ctx, batch_size=4, N=32000, K=50
+            ctx, batch_size=4, N=32000, K=50, max_k=50
         )
 
         # Top-k + top-p.
         test_topk_topp_sampling_fi[float32_dtype](
-            ctx, batch_size=4, N=32000, K=50, p=0.9
+            ctx, batch_size=4, N=32000, K=50, p=0.9, max_k=50
         )
         test_topk_topp_sampling_fi[float32_dtype](
-            ctx, batch_size=8, N=1024, K=20, p=0.5, T=0.8
+            ctx, batch_size=8, N=1024, K=20, p=0.5, T=0.8, max_k=20
         )
 
         # bfloat16.
         test_topk_topp_sampling_fi[bf16_type](
-            ctx, batch_size=4, N=1024, K=20, p=0.9
+            ctx, batch_size=4, N=1024, K=20, p=0.9, max_k=20
+        )
+
+        # K=-1 in array (no top-k filtering), top-p only.
+        test_topk_topp_sampling_fi[float32_dtype](
+            ctx, batch_size=4, N=1024, K=-1, p=0.9, max_k=1024
+        )
+        test_topk_topp_sampling_fi[float32_dtype](
+            ctx, batch_size=8, N=32000, K=-1, p=0.95, max_k=32000
         )
 
         print("\n" + "=" * 80)

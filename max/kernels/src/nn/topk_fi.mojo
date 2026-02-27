@@ -927,6 +927,10 @@ fn TopKTopPSamplingFromProbKernel[
     var bx = Int(block_idx.x)
     var tx = Int(thread_idx.x)
 
+    var row_idx = bx
+    if indices:
+        row_idx = Int(indices.load(bx))
+
     var sampled_id_sram = stack_allocation[
         1, Int, address_space = AddressSpace.SHARED
     ]()
@@ -936,14 +940,14 @@ fn TopKTopPSamplingFromProbKernel[
 
     var seed_val = UInt64(0)
     if rng_seed:
-        seed_val = rng_seed[0]
+        seed_val = rng_seed[row_idx]
+
     var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
-    var k = top_k_val
-    if top_k_arr:
-        k = Int(top_k_arr.load(bx))
-    var row_idx = bx
-    if indices:
-        row_idx = Int(indices.load(bx))
+
+    var k = Int(top_k_arr.load(row_idx)) if top_k_arr else top_k_val
+    if k == -1:
+        k = top_k_val
+
     var p = top_p_val
     if top_p_arr:
         p = top_p_arr[row_idx]
@@ -1015,8 +1019,7 @@ fn TopKTopPSamplingFromProbKernel[
             var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
             var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
 
-            @parameter
-            for j in range(vec_size):
+            comptime for j in range(vec_size):
                 var idx = (i * block_size + tx) * vec_size + j
                 var is_valid = idx < d
 

@@ -1676,6 +1676,7 @@ fn topk_gpu[
 fn _topk_topp_sampling_fi[
     dtype: DType,
     out_idx_type: DType,
+    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
         RuntimeInt[DType.int64]
     ],
@@ -1687,6 +1688,7 @@ fn _topk_topp_sampling_fi[
     min_top_p: Float32,
     input: TileTensor[dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
+    k: Optional[TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]] = None,
     temperature: Optional[
         TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
     ] = None,
@@ -1732,6 +1734,7 @@ fn _topk_topp_sampling_fi[
         out_1d,
         max_k,
         top_p_val=min_top_p,
+        top_k_arr=k,
         top_p_arr=top_p,
         rng_seed=rng_seed,
     )
@@ -1791,18 +1794,24 @@ fn fused_token_sampling_gpu[
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
 
-    var bound_max_k = 255 if max_k == -1 else max_k
+    comptime assert input.flat_rank == 2
+
+    var vocab_size = input.layout.shape[1]().value()
+    var adjusted_max_k = vocab_size if max_k == -1 else max_k
 
     # softmax with temperature, then top-k+top-p
     # rejection sampling. Enabled via compile-time env var.
-    @parameter
-    if env_get_bool["USE_FI_TOPK_KERNEL", False]():
+
+    if adjusted_max_k >= 75:
         _topk_topp_sampling_fi[dtype, out_idx_type](
             ctx,
-            bound_max_k,
+            adjusted_max_k,
             min_top_p,
             input,
             out_idxs,
+            k=rebind[
+                Optional[TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]]
+            ](k),
             temperature=temperature,
             top_p=top_p,
             rng_seed=seed,
@@ -1810,7 +1819,7 @@ fn fused_token_sampling_gpu[
         return
 
     var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
-    out_vals_shape[input.rank - 1] = bound_max_k
+    out_vals_shape[input.rank - 1] = adjusted_max_k
     var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
     )
@@ -1821,7 +1830,7 @@ fn fused_token_sampling_gpu[
 
     topk_gpu[sampling=True, largest=True](
         ctx,
-        bound_max_k,
+        adjusted_max_k,
         input,
         out_vals,
         out_idxs,
