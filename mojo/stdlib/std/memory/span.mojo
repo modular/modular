@@ -838,13 +838,16 @@ struct Span[
     fn count[
         dtype: DType,
         //,
-        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
-    ](self: Span[Scalar[dtype]]) -> UInt:
+        F: fn[w: Int](v: SIMD[dtype, w]) unified -> SIMD[DType.bool, w],
+    ](self: Span[Scalar[dtype]], func: F) -> UInt:
         """Count the amount of times the function returns `True`.
 
         Parameters:
             dtype: The DType.
-            func: The function to evaluate.
+            F: The function type to evaluate.
+
+        Args:
+            func: The function value to evaluate.
 
         Returns:
             The amount of times the function returns `True`.
@@ -855,8 +858,10 @@ struct Span[
         var length = len(self)
         var count = 0
 
-        fn do_count[width: Int](idx: Int) unified {mut count, read ptr}:
-            var mask = func(ptr.load[width=width](idx))
+        fn do_count[
+            width: Int
+        ](idx: Int) unified {mut count, read ptr, read func}:
+            var mask = func[width](ptr.load[width=width](idx))
             count += mask.reduce_bit_count()
 
         vectorize[simdwidth](length, do_count)
