@@ -22,8 +22,7 @@ from std.gpu.host import DeviceAttribute, DeviceContext
 
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No GPU detected")
         exit(0)
     else:
@@ -48,8 +47,7 @@ def main() raises:
             ctx.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK),
         )
 
-        @parameter
-        if not has_apple_gpu_accelerator():
+        comptime if not has_apple_gpu_accelerator():
             # Not currently defined for Apple GPUs
 
             print(
@@ -77,8 +75,9 @@ def main() raises:
                 ctx.get_attribute(DeviceAttribute.MAX_REGISTERS_PER_BLOCK),
             )
 
-        @parameter
-        if not (has_amd_gpu_accelerator() or has_apple_gpu_accelerator()):
+        comptime if not (
+            has_amd_gpu_accelerator() or has_apple_gpu_accelerator()
+        ):
             # Not currently defined for AMD and Apple GPUs
 
             print(

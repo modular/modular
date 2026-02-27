@@ -117,8 +117,7 @@ from std.gpu.host import DeviceContext
 from std.sys import has_accelerator
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
         ctx = DeviceContext()
@@ -143,7 +142,8 @@ Found GPU: NVIDIA A10G
 Mojo requires a [compatible GPU development
 environment](/max/faq/#gpu-requirements) to compile kernel functions, otherwise
 it raises a compile-time error. In our code, we're using the
-[`@parameter`](/mojo/manual/decorators/parameter) decorator to evaluate the
+[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+statement to evaluate the
 `has_accelerator()` function at compile time and compile only the corresponding
 branch of the `if` statement. As a result, if you don't have a compatible GPU
 development environment, you'll see the following message when you run the
@@ -243,8 +243,7 @@ fn print_threads():
 
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     elif has_apple_gpu_accelerator():
         print(
@@ -517,8 +516,7 @@ comptime vector_size = 1000
 
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
         # Get the context for the attached GPU
@@ -823,8 +821,7 @@ fn vector_addition(
 
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
         # Get the context for the attached GPU

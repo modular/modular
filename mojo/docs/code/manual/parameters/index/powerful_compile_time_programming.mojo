@@ -23,8 +23,7 @@ fn slice[
 
 
 fn reduce_add(x: SIMD) -> Int:
-    @parameter
-    if x.size == 1:
+    comptime if x.size == 1:
         return Int(x[0])
     elif x.size == 2:
         return Int(x[0]) + Int(x[1])

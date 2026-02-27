@@ -483,8 +483,7 @@ for block in range(b.dim[0]() // BK):
 
     barrier()
 
-    @parameter
-    for k in range(BK):
+    comptime for k in range(BK):
         dst_reg += a_smem[row, k] * b_smem[k, col]
 
     barrier()
@@ -493,7 +492,7 @@ for block in range(b.dim[0]() // BK):
 The `async_copy_wait_all()` and `barrier()` calls ensure that all threads have
 completed their memory copies before proceeding to the next step, the inner loop,
 which accumulates the partial results for the current output tile. The
-`@parameter for` construct tells the compiler that this loop can be unrolled at
+`comptime for` construct tells the compiler that this loop can be unrolled at
 compile time, since `BK` is a parameter, static at runtime.
 
 Finally, after all of the tiles have been processed, the results are written to
@@ -565,14 +564,12 @@ for block in range(b.dim[0]() // BK):
     async_copy_wait_all()
     barrier()
 
-    @parameter
-    for k in range(BK):
+    comptime for k in range(BK):
         var a_tile = a_smem.tile[TM, 1](Int(row), k)
         var b_tile = b_smem.tile[1, BN](k, 0)
         var b_val = b_tile[0, col]
 
-        @parameter
-        for t in range(TM):
+        comptime for t in range(TM):
             dst_reg[t] += a_tile[t, 0] * b_val
 
     barrier()
@@ -624,8 +621,7 @@ for block in range(ntiles):
     async_copy_wait_all()
     barrier()
 
-    @parameter
-    for k in range(BK):
+    comptime for k in range(BK):
         var a_tile = a_smem.tile[TM, 1](partition_row, k)
         var b_tile = b_smem.tile[1, TN](k, partition_col)
         a_reg.copy_from(a_tile)
@@ -688,8 +684,7 @@ for block in range(ntiles):
     async_copy_wait_all()
     barrier()
 
-    @parameter
-    for k in range(BK):
+    comptime for k in range(BK):
         var a_tile = a_smem.tile[TM, 1](partition_row, k)
         var b_tile = b_smem.tile[1, TN](k, partition_col)
         a_reg.copy_from(a_tile)
@@ -778,14 +773,11 @@ fn tensor_core_matrix_multiplication[
         A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
         B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
 
-        @parameter
-        for mma_k in range(BK // MMA_K):
+        comptime for mma_k in range(BK // MMA_K):
 
-            @parameter
-            for mma_m in range(WM // MMA_M):
+            comptime for mma_m in range(WM // MMA_M):
 
-                @parameter
-                for mma_n in range(WN // MMA_N):
+                comptime for mma_n in range(WN // MMA_N):
                     c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
 
                     A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
@@ -802,11 +794,9 @@ fn tensor_core_matrix_multiplication[
 
                     c_reg_m_n.copy_from(d_reg_m_n)
 
-    @parameter
-    for mma_m in range(WM // MMA_M):
+    comptime for mma_m in range(WM // MMA_M):
 
-        @parameter
-        for mma_n in range(WN // MMA_N):
+        comptime for mma_n in range(WN // MMA_N):
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
             mma_op.store_d(C_mma_tile, c_reg_m_n)

@@ -42,8 +42,7 @@ fn print_threads():
 
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     elif has_apple_gpu_accelerator():
         print(

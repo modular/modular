@@ -41,8 +41,7 @@ struct ResourceGuard(ImplicitlyCopyable):
         print("Releasing:", self.name)
         print("  Error type:", type_name)
 
-        @parameter
-        if conforms_to(ErrType, Writable):
+        comptime if conforms_to(ErrType, Writable):
             print("  Message:", trait_downcast[Writable](err))
 
         return self.suppress_errors

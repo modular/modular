@@ -54,8 +54,7 @@ fn scalar_add(
 
 
 def main() raises:
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No GPUs detected")
         exit(0)
     else:

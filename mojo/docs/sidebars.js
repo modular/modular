@@ -71,6 +71,7 @@ const mojoSidebars = {
       collapsed : false,
       items : [
         "mojo/manual/traits",
+        "mojo/manual/metaprogramming/comptime-evaluation",
         "mojo/manual/parameters/index",
         "mojo/manual/generics/generics",
         "mojo/manual/metaprogramming/materialization",

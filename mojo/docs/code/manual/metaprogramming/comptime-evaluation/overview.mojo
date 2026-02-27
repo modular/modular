@@ -11,15 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# simple examples from the intro section
+comptime NUM_TILES = 1024 // 32
 
-fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
-    var total = 0
-
-    comptime for i in range(args.__len__()):
-        total += Int(args[i])
-
-    return total
+comptime SIZE = 3
 
 
-def main() raises:
-    print(count_many_things(5, 11.7, 12))
+fn get_array_size() -> Int:
+    return 32
+
+
+def main():
+    comptime for i in range(4):
+        print(i)
+
+    var array = InlineArray[Int, get_array_size()](fill=0)
+    _ = array
