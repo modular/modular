@@ -382,3 +382,70 @@ struct DisprovedWithWhereNot[T: Movable](
 
     fn __moveinit__(out self, deinit take: Self):
         pass
+
+
+# ===========================================================================
+# Synthesized default trait method gated by conformance constraint
+# ===========================================================================
+# When a struct conditionally conforms to a trait, synthesized default method
+# wrappers must carry the conformance constraint. Calling the default method
+# without evidence that the constraint is satisfied should be rejected.
+
+
+trait DefaultMethodTrait:
+    # expected-note @below {{cannot prove constraint for candidate}}
+    # expected-note @below {{generated function with type}}
+    fn custom_default(self) -> Int:
+        return 42
+
+
+struct ConditionalDefaultMethod[T: Movable](
+    # expected-note @below {{constraint declared here}}
+    DefaultMethodTrait where conforms_to(T, Copyable),
+    Movable,
+):
+    fn __init__(out self):
+        pass
+
+    fn __moveinit__(out self, deinit take: Self):
+        pass
+
+
+fn call_default_externally[T: Movable](x: ConditionalDefaultMethod[T]):
+    # expected-error @below {{lacking evidence to prove correctness}}
+    # expected-note @below {{provide evidence for the constraint}}
+    var a = x.custom_default()
+
+
+# ===========================================================================
+# Zero-field struct: synthesized copy/move init gated by constraint
+# ===========================================================================
+# A zero-field struct with conditional conformance. The compiler auto-
+# synthesizes an empty copy/move init whose body trivially succeeds, so
+# the conformance constraint on the FnOp is the only thing preventing
+# misuse.
+
+
+trait ZeroFieldTrait:
+    # expected-note @below {{cannot prove constraint for candidate}}
+    # expected-note @below {{generated function with type}}
+    fn zero_field_method(self) -> Int:
+        return 0
+
+
+struct ZeroFieldConditional[T: Movable](
+    # expected-note @below {{constraint declared here}}
+    ZeroFieldTrait where conforms_to(T, Copyable),
+    Movable,
+):
+    fn __init__(out self):
+        pass
+
+    fn __moveinit__(out self, deinit take: Self):
+        pass
+
+
+fn call_on_zero_field[T: Movable](x: ZeroFieldConditional[T]):
+    # expected-error @below {{lacking evidence to prove correctness}}
+    # expected-note @below {{provide evidence for the constraint}}
+    var a = x.zero_field_method()
