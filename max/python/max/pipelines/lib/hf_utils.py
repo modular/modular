@@ -273,18 +273,22 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
 
     for attempt, delay_in_seconds in enumerate(retry_delays_in_seconds):
         try:
-            return huggingface_hub.revision_exists(
-                repo_id=repo_id, revision=revision
-            )
+            # We don't use revision_exists because its implementation turns
+            # GatedRepo errors into 'False' return values, which are
+            # uninformative.
+            _ = huggingface_hub.repo_info(repo_id=repo_id, revision=revision)
         except (
-            hf_hub_errors.RepositoryNotFoundError,
             hf_hub_errors.GatedRepoError,
-            hf_hub_errors.RevisionNotFoundError,
             hf_hub_errors.EntryNotFoundError,
         ) as e:
             # Forward these specific errors to the user
             logger.error(f"Hugging Face repository error: {str(e)}")
             raise
+        except (
+            hf_hub_errors.RepositoryNotFoundError,
+            hf_hub_errors.RevisionNotFoundError,
+        ):
+            return False
         except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
             # Do not retry if Too Many Requests error received
             if e.response.status_code == 429:
