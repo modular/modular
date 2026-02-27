@@ -381,11 +381,11 @@ fn get_partition(
 
 @fieldwise_init
 struct ConvTransposedPacked[
-    input_element_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_element_size: Int,
     input_linear_idx_type: DType,
-    filter_element_shape_types: Variadic.TypesOfTrait[CoordLike],
+    filter_element_size: Int,
     filter_linear_idx_type: DType,
-    output_element_shape_types: Variadic.TypesOfTrait[CoordLike],
+    output_element_size: Int,
     output_linear_idx_type: DType,
     InputLayoutType: TensorLayout,
     FilterLayoutType: TensorLayout,
@@ -405,21 +405,21 @@ struct ConvTransposedPacked[
         Self.output_type,
         Self.OutputLayoutType,
         Self.output_origin,
-        element_shape_types = Self.output_element_shape_types,
+        element_size = Self.output_element_size,
         linear_idx_type = Self.output_linear_idx_type,
     ]
     var input: TileTensor[
         Self.input_type,
         Self.InputLayoutType,
         Self.input_origin,
-        element_shape_types = Self.input_element_shape_types,
+        element_size = Self.input_element_size,
         linear_idx_type = Self.input_linear_idx_type,
     ]
     var filter: TileTensor[
         Self.filter_type,
         Self.FilterLayoutType,
         Self.filter_origin,
-        element_shape_types = Self.filter_element_shape_types,
+        element_size = Self.filter_element_size,
         linear_idx_type = Self.filter_linear_idx_type,
     ]
 
@@ -439,7 +439,7 @@ struct ConvTransposedPacked[
             Self.output_type,
             Self.OutputLayoutType,
             Self.output_origin,
-            element_shape_types = Self.output_element_shape_types,
+            element_size = Self.output_element_size,
             linear_idx_type = Self.output_linear_idx_type,
             address_space = AddressSpace.GENERIC,
             ...,
@@ -448,7 +448,7 @@ struct ConvTransposedPacked[
             Self.input_type,
             Self.InputLayoutType,
             Self.input_origin,
-            element_shape_types = Self.input_element_shape_types,
+            element_size = Self.input_element_size,
             linear_idx_type = Self.input_linear_idx_type,
             address_space = AddressSpace.GENERIC,
             ...,
@@ -457,7 +457,7 @@ struct ConvTransposedPacked[
             Self.filter_type,
             Self.FilterLayoutType,
             Self.filter_origin,
-            element_shape_types = Self.filter_element_shape_types,
+            element_size = Self.filter_element_size,
             linear_idx_type = Self.filter_linear_idx_type,
             address_space = AddressSpace.GENERIC,
             ...,

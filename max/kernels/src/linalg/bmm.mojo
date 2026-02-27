@@ -237,7 +237,7 @@ fn _reshape_tile_tensor_with_batch_to_3d(
         origin = tensor.origin,
         address_space = tensor.address_space,
         linear_idx_type = tensor.linear_idx_type,
-        element_shape_types = tensor.element_shape_types,
+        element_size = tensor.element_size,
     ],
 ):
     """
