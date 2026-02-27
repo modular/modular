@@ -1605,9 +1605,22 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 
 @register_internal("mogg.async.error")
 @no_inline
-fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
-    """Indicates to the C++ runtime that the kernel has failed."""
+fn mogg_async_error(
+    async_ptr: AnyAsyncValueRefPtr,
+    err: Error,
+    source_notes: String = "",
+):
+    """Indicates to the C++ runtime that the kernel has failed.
+
+    When source_notes is non-empty it is prepended to the error message as a
+    Python stack trace so users can locate the failing op in their code.
+    See GEX-2678.
+    """
     var error_message = String(err)
+    if source_notes:
+        error_message = (
+            "\nSource Traceback:\n" + source_notes + "\n\n" + error_message
+        )
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
         error_message.as_c_string_slice().unsafe_ptr(),
