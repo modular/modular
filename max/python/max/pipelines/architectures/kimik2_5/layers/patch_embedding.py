@@ -181,7 +181,7 @@ class Learnable2DInterpPosEmbDividedFixed(Module, Shardable):
         )
 
 
-class PatchEmbeddingLayer(Module, Shardable):
+class PatchEmbedding(Module, Shardable):
     """Equivalent to MoonVision3dPatchEmbed from Kimi K2.5 (MoonViT3d).
 
     Implements:
@@ -268,17 +268,17 @@ class PatchEmbeddingLayer(Module, Shardable):
         """Set the sharding strategy. Only replication is supported."""
         if not strategy.is_replicate:
             raise ValueError(
-                "PatchEmbeddingLayer only supports replicate sharding strategy"
+                "PatchEmbedding only supports replicate sharding strategy"
             )
         self.proj.sharding_strategy = strategy
         self.pos_emb.sharding_strategy = strategy
         self._sharding_strategy = strategy
 
-    def shard(self, devices: Iterable[DeviceRef]) -> list[PatchEmbeddingLayer]:
+    def shard(self, devices: Iterable[DeviceRef]) -> list[PatchEmbedding]:
         """Creates sharded views of this layer across devices (replicated)."""
         if not self._sharding_strategy:
             raise ValueError(
-                "PatchEmbeddingLayer cannot be sharded because no sharding "
+                "PatchEmbedding cannot be sharded because no sharding "
                 "strategy was set."
             )
         device_list = list(devices)
@@ -288,7 +288,7 @@ class PatchEmbeddingLayer(Module, Shardable):
         for device, proj_shard, pos_emb_shard in zip(
             device_list, proj_shards, pos_emb_shards, strict=True
         ):
-            sharded = PatchEmbeddingLayer(
+            sharded = PatchEmbedding(
                 patch_size=self.patch_size,
                 in_channels=self.in_channels,
                 hidden_size=self.hidden_size,

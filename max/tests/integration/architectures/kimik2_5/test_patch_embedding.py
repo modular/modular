@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for Kimi K2.5 PatchEmbeddingLayer (MoonVision3dPatchEmbed).
+"""Tests for Kimi K2.5 PatchEmbedding (MoonVision3dPatchEmbed).
 
 Reference: nvidia/Kimi-K2.5-NVFP4 modeling_kimi_k25.py
 - MoonVision3dPatchEmbed: proj (Conv2d) + pos_emb (Learnable2DInterpPosEmbDivided_fixed).
 - Forward: x = proj(x).view(x.size(0), -1); x = pos_emb(x, grid_thws).
 
-MAX PatchEmbeddingLayer implements the same proj + pos_emb via a custom Mojo
+MAX PatchEmbedding implements the same proj + pos_emb via a custom Mojo
 GPU kernel for learnable 2D interpolated positional embeddings.
 """
 
@@ -36,7 +36,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.kimik2_5.layers.patch_embedding import (
     Learnable2DInterpPosEmbDividedFixed,
-    PatchEmbeddingLayer,
+    PatchEmbedding,
 )
 from torch.utils.dlpack import from_dlpack
 
@@ -78,9 +78,9 @@ def _create_state_dict(has_bias: bool) -> dict[str, torch.Tensor]:
 
 def _create_patch_embedding(
     device: DeviceRef, has_bias: bool = True
-) -> PatchEmbeddingLayer:
-    """Build PatchEmbeddingLayer with config values (no JSON)."""
-    return PatchEmbeddingLayer(
+) -> PatchEmbedding:
+    """Build PatchEmbedding with config values (no JSON)."""
+    return PatchEmbedding(
         patch_size=PATCH_SIZE,
         in_channels=IN_CHANNELS,
         hidden_size=HIDDEN_SIZE,
@@ -100,7 +100,7 @@ def _build_and_run_max(
     has_bias: bool,
     n_gpus: int = 0,
 ) -> torch.Tensor:
-    """Build MAX graph, run PatchEmbeddingLayer, return output as torch tensor."""
+    """Build MAX graph, run PatchEmbedding, return output as torch tensor."""
     devices: list[Device] = (
         [Accelerator(i) for i in range(n_gpus)] if n_gpus > 0 else [CPU(0)]
     )
@@ -392,7 +392,7 @@ def test_pos_emb_matches_torch(
 
 
 def test_patch_embedding_full_matches_torch() -> None:
-    """Compare full PatchEmbeddingLayer (proj + pos_emb) to torch MoonVision3dPatchEmbed."""
+    """Compare full PatchEmbedding (proj + pos_emb) to torch MoonVision3dPatchEmbed."""
     has_bias = True
     pixel_values = _generate_tensor(
         (N_PATCHES, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)

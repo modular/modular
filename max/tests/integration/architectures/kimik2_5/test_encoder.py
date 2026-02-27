@@ -30,7 +30,7 @@ from max.pipelines.architectures.kimik2_5.layers.data_processing import (
 )
 from max.pipelines.architectures.kimik2_5.layers.encoder import (
     Encoder,
-    EncoderLayer,
+    EncoderBlock,
 )
 
 TORCH_DTYPE = torch.bfloat16
@@ -93,7 +93,7 @@ def torch_eager_attention(
     return attn_output
 
 
-class TorchEncoderLayer(nn.Module):
+class TorchEncoderBlock(nn.Module):
     """PyTorch reference for a single vision encoder layer."""
 
     def __init__(self) -> None:
@@ -197,7 +197,7 @@ def _build_and_run_encoder_layer(
     device = Accelerator(0)
     device_ref = DeviceRef.from_device(device)
 
-    encoder = EncoderLayer(
+    encoder = EncoderBlock(
         num_heads=NUM_HEADS,
         hidden_dim=HIDDEN_DIM,
         mlp_dim=MLP_DIM,
@@ -259,7 +259,7 @@ def _build_and_run_encoder_layer(
     ids=["single_sequence", "multiple_sequences"],
 )
 def test_encoder_layer(grid_thws: list[tuple[int, int, int]]) -> None:
-    """Test EncoderLayer E2E on single GPU."""
+    """Test EncoderBlock E2E on single GPU."""
     torch.manual_seed(42)
     seq_lens = [t * h * w for t, h, w in grid_thws]
     n_patches = sum(seq_lens)
@@ -285,7 +285,7 @@ def test_encoder_layer(grid_thws: list[tuple[int, int, int]]) -> None:
         state_dict, x, input_row_offsets, max_seq_len, rope_freqs_cis_real
     )
 
-    ref = TorchEncoderLayer()
+    ref = TorchEncoderBlock()
     # Strip "attn." prefix so keys match the torch reference module.
     torch_state_dict = {
         k.removeprefix("attn."): v for k, v in state_dict.items()
@@ -309,7 +309,7 @@ class TorchEncoder(nn.Module):
             HEAD_DIM, ROPE_MAX_HEIGHT, ROPE_MAX_WIDTH, ROPE_THETA
         )
         self.blocks = nn.ModuleList(
-            [TorchEncoderLayer() for _ in range(num_layers)]
+            [TorchEncoderBlock() for _ in range(num_layers)]
         )
         self.norm = nn.LayerNorm(HIDDEN_DIM)
 
