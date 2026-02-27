@@ -197,7 +197,7 @@ struct VariadicPackStruct(VariadicPackTrait):
     pass
 
 
-def main():
+def main() raises:
     var b = Bar(-20)
 
     # CHECK: b.rp_return_params[10]() = 70

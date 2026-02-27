@@ -22,7 +22,7 @@ struct OverloadedKwArgs:
         self.val = triple * 3
 
 
-def test_keyword_name_overload():
+def test_keyword_name_overload() raises:
     assert_equal(OverloadedKwArgs(1).val, 1)
     assert_equal(OverloadedKwArgs(double=1).val, 2)
     assert_equal(OverloadedKwArgs(triple=1).val, 3)
@@ -50,7 +50,7 @@ struct OverloadedIndexers:
         self.vals[idx2 * 2] = val
 
 
-def test_indexer_overload():
+def test_indexer_overload() raises:
     var x = OverloadedIndexers()
     assert_equal(x[1], 1)
     assert_equal(x[idx2=1], 2)
@@ -85,7 +85,7 @@ fn out_mut_kw_argument(*, mut x: Int):
     x = 84
 
 
-def test_overloading_argument_conventions():
+def test_overloading_argument_conventions() raises:
     var res = OverloadArgumentConventions(x=1)
     assert_equal(res.val, 1)
 
@@ -113,7 +113,7 @@ struct KeywordOverloadDefaultArgs:
         self.val = x2 * 2
 
 
-def test_keyword_overload_default_args():
+def test_keyword_overload_default_args() raises:
     var res = KeywordOverloadDefaultArgs()
     assert_equal(res.val, 1)
 
@@ -124,7 +124,7 @@ def test_keyword_overload_default_args():
     assert_equal(res.val, 4)
 
 
-def main():
+def main() raises:
     test_keyword_name_overload()
     test_indexer_overload()
     test_overloading_argument_conventions()

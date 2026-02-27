@@ -18,7 +18,7 @@ fn aThing(y: Int):
     defineIt(y)
 
 
-def main():
+def main() raises:
     # CHECK: 8
     # CHECK: 8
     var x = atol(argv()[1])

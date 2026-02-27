@@ -7,7 +7,7 @@
 
 
 # CHECK-LABEL: lit.fn @"test0(::Int,::Int)"
-def test0(a: Int, b: Int) -> Bool:
+def test0(a: Int, b: Int) raises -> Bool:
     comptime pred_attr = __mlir_attr.`#index<cmp_predicate sle>`
 
     # CHECK: kgen.deferred "index.cmp"(%{{.*}}, %{{.*}} : !Int, !Int) {pred = #kgen<deferred #index<cmp_predicate sle>> : !kgen.deferred} : i1
@@ -16,7 +16,7 @@ def test0(a: Int, b: Int) -> Bool:
 
 
 # CHECK-LABEL: lit.fn @"test1[::Bool](::Int,::Int)"
-def test1[cmp: Bool](a: Int, b: Int) -> Bool:
+def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
     # CHECK: lit.fn *"select_pred[::Bool]()"<*"cmp`2x": !Bool>() -> !kgen.deferred
     fn select_pred[cmp: Bool]() -> __mlir_type.`!kgen.deferred`:
         comptime if cmp:
@@ -109,3 +109,4 @@ fn test3[
         ],
         index = __mlir_attr.`1:index`,
     ](e0, x)
+

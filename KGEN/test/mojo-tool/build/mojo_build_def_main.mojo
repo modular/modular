@@ -10,7 +10,7 @@
 from sys import argv
 
 
-def main():
+def main() raises:
     # CHECK: This was called inside of `def` main
     print("This was called inside of `def` main")
 

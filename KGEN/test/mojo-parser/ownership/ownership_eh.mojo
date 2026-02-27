@@ -19,7 +19,7 @@ fn use(x: String):
     pass
 
 
-def use_and_raise(x: Int):
+def use_and_raise(x: Int) raises:
     pass
 
 
@@ -79,7 +79,7 @@ struct MemExample(ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"error_handling_int_let
 # https://github.com/modularml/modular/issues/25419
-def error_handling_int_let():
+def error_handling_int_let() raises:
     # CHECK: lit.var.decl "x"
     var x: Int = 1
     _ = use_and_raise(x)
@@ -452,3 +452,4 @@ fn doesnt_actually_raise() raises Never:
 fn test_doesnt_actually_raise() -> Int:
     doesnt_actually_raise()
     return 42
+

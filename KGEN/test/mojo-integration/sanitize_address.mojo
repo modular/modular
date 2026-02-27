@@ -12,7 +12,7 @@
 from compile import compile_info
 
 
-def main():
+def main() raises:
     # CHECK: ERROR: AddressSanitizer: heap-buffer-overflow
     # CHECK: WRITE of size 8
     # CHECK: #0 {{.*}} in sanitize_address::main() {{.*}}sanitize_address.mojo:[[@LINE+3]]

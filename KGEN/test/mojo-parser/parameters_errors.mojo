@@ -134,11 +134,11 @@ fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
 
 
 # expected-note @+1 {{function declared here}}
-def generic_fn[a: FloatLiteral, b: Int](c: Int):
+def generic_fn[a: FloatLiteral, b: Int](c: Int) raises:
     pass
 
 
-def call_generic[dt: FloatLiteral]():
+def call_generic[dt: FloatLiteral]() raises:
     # expected-error @+1 {{invalid call to 'generic_fn': 'generic_fn' expects 2 positional parameters, but 3 were specified}}
     generic_fn[dt, 1, 42](57)
 
@@ -151,7 +151,7 @@ fn meta_param_then_param_redef[
 
 # expected-note @below {{previous definition here}}
 # expected-error @below {{invalid redefinition of 'x'}}
-def param_redef(x: __mlir_type.index, x: __mlir_type.index):
+def param_redef(x: __mlir_type.index, x: __mlir_type.index) raises:
     pass
 
 
@@ -635,3 +635,4 @@ struct SomeStruct[a: Int, b: Int, c: Int]:
 
 # expected-error @+1 {{parameter after `...` must be passed by keyword}}
 comptime S = SomeStruct[..., 3]
+

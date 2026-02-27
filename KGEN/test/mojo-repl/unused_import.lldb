@@ -20,3 +20,4 @@ from imported_module import called_function
 # CHECK: called_function was called
 from imported_module import called_function
 called_function()
+

@@ -24,5 +24,5 @@
 # WNO-THEN-WERROR-NOT: warning: assignment to 'foo' was never used
 
 
-def main():
+def main() raises:
     var foo = 1

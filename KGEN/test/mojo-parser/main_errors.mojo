@@ -14,7 +14,7 @@ fn main(arg: Int):
 # // -----
 
 # expected-error @below {{expected 'main' function to have no arguments}}
-def main(arg: Int):
+def main(arg: Int) raises:
     return
 
 # // -----
@@ -42,3 +42,4 @@ fn main():
 @export("main")
 fn fooMain():
     return
+

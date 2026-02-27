@@ -18,7 +18,7 @@ fn printIt[T: AnyType & ImplicitlyCopyable]():
         print("copy trivial")
 
 
-def main():
+def main() raises:
     # CHECK: del trivial
     # CHECK: move trivial
     # CHECK: copy trivial

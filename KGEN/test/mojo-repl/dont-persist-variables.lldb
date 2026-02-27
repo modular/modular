@@ -25,3 +25,4 @@ z = 1/0
 %%python
 a = 2
 # CHECK: (PythonObject) a =
+

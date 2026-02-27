@@ -35,7 +35,7 @@ fn foo[position_t: Position](x: position_t) -> OptionalReg[position_t]:
     return xx
 
 
-def main():
+def main() raises:
     # CHECK: 4 5
     pi = PositionImpl(atol(argv()[1]), atol(argv()[2]))
     _ = foo(pi)

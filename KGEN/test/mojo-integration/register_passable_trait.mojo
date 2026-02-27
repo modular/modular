@@ -30,7 +30,7 @@ fn bar[x: RGTrivialTrait](y: x):
     y.doSomething()
 
 
-def main():
+def main() raises:
     var t = Conforms(atol(argv()[1]))
     # CHECK: 3
     bar(t)

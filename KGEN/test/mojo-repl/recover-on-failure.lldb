@@ -31,3 +31,4 @@ fn foo() -> Int:
 
 # Test declaration of an uninitialized value.
 var some_uninit : String
+

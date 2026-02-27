@@ -13,7 +13,7 @@ from python import Python
 from sys import argv
 
 
-def main():
+def main() raises:
     var python = Python()
 
     # CHECK: This was built inside of python

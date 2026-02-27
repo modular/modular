@@ -20,7 +20,7 @@ fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
     return b + Int(M[0])
 
 
-def main():
+def main() raises:
     comptime myCompiledFn = compiled_fn[DType.uint32]
     # compile myCompileFn into a shared object binary
     var myShared = compile_info[myCompiledFn, emission_kind="object"]()

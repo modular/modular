@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 @export("foo", ABI="C")
-def foo(x: Int):
+def foo(x: Int) raises:
     print("hello from foo:", x)

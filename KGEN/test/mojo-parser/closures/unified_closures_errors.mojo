@@ -66,7 +66,7 @@ fn takeDevicePassable[T: DevicePassable](impl: T):
     pass
 
 
-def foo(bar: Bar):
+def foo(bar: Bar) raises:
     # COM: This should fail because Bar is not trivial.
 
     fn closure(number: Int) unified register_passable {var bar} -> Int:
@@ -84,7 +84,7 @@ fn takeTrivialRegisterPassable[T: TrivialRegisterPassable](impl: T):
     pass
 
 
-def testNonTrivialClosureNotTrivialRegisterPassable(bar: Bar):
+def testNonTrivialClosureNotTrivialRegisterPassable(bar: Bar) raises:
     fn closure() unified register_passable {var bar} -> Int:
         return bar.x
 
@@ -97,7 +97,7 @@ fn changeIt(mut aString: String):
     pass
 
 
-def nestedCaptureAll(mut aString: String):
+def nestedCaptureAll(mut aString: String) raises:
     fn aFinalThing(x:Int) unified {read}:
         # expected-error @below {{invalid call to 'changeIt': value passed to mutable argument 'aString' must be mutable}}
         changeIt(aString)
@@ -199,7 +199,7 @@ fn callee_no_params[
     closure()
 
 
-def incompatible_param_signature():
+def incompatible_param_signature() raises:
     var x = 42
 
     @always_inline
@@ -208,3 +208,4 @@ def incompatible_param_signature():
 
     # expected-error @below {{does not conform to trait 'fn() -> None'}}
     callee_no_params(my_func)
+

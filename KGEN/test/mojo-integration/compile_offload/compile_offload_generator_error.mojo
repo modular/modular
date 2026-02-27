@@ -19,6 +19,6 @@ fn my_wrapper[f: fn() -> Int]() -> fn() -> Int:
     return f
 
 
-def main():
+def main() raises:
     # intentionally passing a function ptr instead of a generator
     print(compile_info[my_wrapper[param_fn[1, 2]]()]())

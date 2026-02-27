@@ -8,6 +8,6 @@
 # RUN: %mojo -debug-level=full %s | FileCheck %s
 
 
-def main() -> None:
+def main() raises -> None:
     # CHECK: Hello, world!
     print("Hello, world!\n")

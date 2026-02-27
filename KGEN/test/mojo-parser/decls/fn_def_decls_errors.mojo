@@ -44,7 +44,7 @@ fn missing_argument_name(*: Int): pass
 fn missing_parameter_name[: Int](): pass
 
 # expected-error @+1 {{use of unknown declaration 'InvalidType'}}
-fn test_unknown_arg_type(a: InvalidType):
+fn test_unknown_arg_type(a: InvalidType) raises:
     _ = a.value  # Should not produce a follow-on error.
     return
 
@@ -104,7 +104,7 @@ struct NonCopyable:
     fn __init__(out self):
        pass
 
-def defTests() -> None:
+def defTests() raises -> None:
   comptime abc = 1
 
   # MOCO-83: [mojo][Bug] def methods can't shadow names via assignment
@@ -192,3 +192,4 @@ fn testOverloadedMethod():
 
   _: Int = x^.method()
   _: String = x^.method() # expected-error {{cannot implicitly convert 'Int' value to 'String'}}
+

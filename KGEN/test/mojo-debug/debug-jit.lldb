@@ -18,3 +18,4 @@
 # CHECK: stop reason = breakpoint 1.1
 # CHECK: JIT(0x{{.*}})`{{.*}}jitbp{{.*}} at jit.mojo:9:
 # CHECK: -> 9        print("hello\n")
+

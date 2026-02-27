@@ -33,7 +33,7 @@ fn _get_country_codes() -> List[String]:
     return result^
 
 
-def main():
+def main() raises:
     var COUNTRY_CODES = _get_country_codes()
     for v in COUNTRY_CODES:
         print(v)

@@ -512,7 +512,7 @@ struct Value(ImplicitlyCopyable):
     fn mutate(mut self): pass
 
 # CHECK-LABEL: lit.fn @"entry
-def entry(mut value: MyDict[String, Value], name: String):
+def entry(mut value: MyDict[String, Value], name: String) raises:
     # CHECK: lit.call {{.*}}::@MyDict::@"__getitem__
     # CHECK-NEXT: [[V1:%.*]] = lit.load.consume
     # CHECK-NEXT: [[V2:%.*]] = lit.ref.struct.ger [[V1]]
@@ -587,3 +587,4 @@ fn check_tail_call(str_arg: String, var var_str_arg: String):
     use_string(var_str_arg)
     # CHECK: lit.call tail @{{.*}}@"use_string{{.*}}(%str_arg)
     use_string(str_arg)
+

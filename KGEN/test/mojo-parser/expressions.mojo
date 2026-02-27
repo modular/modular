@@ -172,7 +172,7 @@ fn func_arg_conversion(f: DummyFunc): pass
 
 # CHECK-LABEL: lit.fn @"implicit_func_conversion()"
 fn implicit_func_conversion():
-    def take_int(x: Int):
+    def take_int(x: Int) raises:
         pass
 
     # CHECK: %f = lit.var.decl "f"
@@ -754,7 +754,7 @@ fn basic_assignments(a0: Int, b: Int, c: RegPassable, d: RegPassable):
 
 # Issue #20145: Walrus operator should implicitly declare variable in def functions.
 # CHECK-LABEL: lit.fn @"walrus_implicit_decl
-def walrus_implicit_decl():
+def walrus_implicit_decl() raises:
   # CHECK:      %d = lit.var.decl "d" imp
   # CHECK:      %c = lit.var.decl "c" imp
   # CHECK:      %b = lit.var.decl "b" imp
@@ -783,7 +783,7 @@ def walrus_implicit_decl():
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"literals
-def literals():
+def literals() raises:
     a = 5             # CHECK: 5
     a = 55            # CHECK: 55
     a = 10500         # CHECK: 10500
@@ -1242,3 +1242,4 @@ fn testHasOverloadedFooMethods():
     foo.foo()
     # CHECK: lit.call {{.*}}@HasOverloadedFooMethods::@"foo{{.*}}(%foo){{.*}}owned_in_mem) -> !kgen.none>
     foo^.foo()
+

@@ -29,7 +29,7 @@ trait Trait:
 
     # CHECK: lit.fn @"f3{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> i1
     # CHECK-NEXT: kgen.unreachable
-    def f3(self):
+    def f3(self) raises:
         ...
 
     # CHECK: lit.fn @"f4{{.*}}(%self: !lit.ref<{{.*}}> read_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> i1
@@ -38,12 +38,12 @@ trait Trait:
     # CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
     # CHECK-NEXT: lit.return %0 : i1
     # CHECK-NEXT: lit.end_fn
-    def f4(self):
+    def f4(self) raises:
         pass
 
     # CHECK: lit.fn @"f5{{.*}}(%self: !lit.ref<{{.*}}> mut, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: kgen.unreachable
-    def f5(mut self):
+    def f5(mut self) raises:
         ...
 
     # CHECK: lit.fn @"f6{{.*}}(%self: !lit.ref<{{.*}}> mut, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, {{.*}}> byref_result) throws -> i1
@@ -52,7 +52,7 @@ trait Trait:
     # CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
     # CHECK-NEXT: lit.return %0 : i1
     # CHECK-NEXT: lit.end_fn
-    def f6(mut self):
+    def f6(mut self) raises:
         pass
 
     fn overloaded(self):
@@ -1041,3 +1041,4 @@ struct TestKWArgs(HasFooKw, HasBarKw):
 
     fn __init__(out self, *, bar: Self):
         pass
+

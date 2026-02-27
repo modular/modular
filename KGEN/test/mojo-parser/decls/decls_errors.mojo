@@ -47,15 +47,15 @@ fn testThingWithStaticMethod():
   ThingWithStaticMethod.splat(4.0)
 
 
-def top_level_fn(a: Int):
+def top_level_fn(a: Int) raises:
     # expected-error @below {{TODO: closures cannot have parameters}}
     fn bar[b: Int]() -> Int:
       return a
 
-def use_non_copyable_type(a: ThingWithStaticMethod):
+def use_non_copyable_type(a: ThingWithStaticMethod) raises:
   pass
 
-def test_use_non_copyable_type(var b: ThingWithStaticMethod):
+def test_use_non_copyable_type(var b: ThingWithStaticMethod) raises:
   use_non_copyable_type(b^)
 
 
@@ -98,7 +98,7 @@ struct BadInitType:
         pass
 
 # expected-error @+1 {{argument type must be specified}}
-def defaultArgumentUntyped(a=1):
+def defaultArgumentUntyped(a=1) raises:
     pass
 
 ##===----------------------------------------------------------------------===##
@@ -127,7 +127,7 @@ def missing_default(
     b: Int,  # expected-error {{equired positional argument follows optional positional argument}}
     c: Int=0,
     d: Int,  # expected-error {{required positional argument follows optional positional argument}}
-):
+) raises:
     pass
 
 # expected-error @+1 {{use of unknown declaration 'unknown'}}
@@ -186,7 +186,7 @@ fn ownedVariadicReg(var *args: WrongType): pass
 # expected-note @+1 {{struct declared here}}
 struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
     # expected-note @+1 {{function declared here}}
-    def __init__(out self, *args: Self.T):
+    def __init__(out self, *args: Self.T) raises:
         pass
 
 struct BadResultParams[a: Int]:
@@ -456,7 +456,7 @@ def fn_redecl(): pass
 def fn_redecl(): pass
 
 # expected-note @+1 {{previous definition here}}
-def fn_redecl2() -> Int: pass
+def fn_redecl2() raises -> Int: pass
 # expected-error @+1 {{redefinition of function 'fn_redecl2' cannot overload on return type only}}
 def fn_redecl2() -> FloatDyn: pass
 
@@ -490,7 +490,7 @@ struct TestOverloading:
   fn a(self):  # expected-error {{invalid redefinition of 'a'}}
     pass
 
-  fn test(self, a: Int, b: FloatDyn):
+  fn test(self, a: Int, b: FloatDyn) raises:
     # expected-note @below {{did you mean to call it?}}
     # expected-error @below {{cannot form a reference to overloaded declaration}}
     var bad = overloadIntFloat32
@@ -756,7 +756,7 @@ struct WrongSelfType[a: Int]:
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
   @implicit
-  fn __init__(out self, elem: BadInit[Int(1)._mlir_value]):
+  fn __init__(out self, elem: BadInit[Int(1)._mlir_value]) raises:
     var x : __mlir_type[`!pop.simd<`, Self.size, `, FloatDyn>`]
     # expected-error @+1 {{cannot implicitly convert '__mlir_type.`!pop.simd<size, FloatDyn>`' value to 'BadInit[size]'}}
     self = x
@@ -807,7 +807,7 @@ struct BadDtor1:
   fn bad2(deinit *self): pass
 
 # expected-error @+1 {{only struct methods may be 'deinit'}}
-fn invalid_deinit(deinit self: Int):
+fn invalid_deinit(deinit self: Int) raises:
     pass
 
 struct GoodDtor:
@@ -866,7 +866,7 @@ struct HasBadCtor:
     # expected-error @below {{function cannot have both an 'out' argument and an explicit result type}}
     fn __init__(out self, v: Int) -> Self:
         self.v = v
-def useBadCtor():
+def useBadCtor() raises:
     # Note that the key thing we're checking for here is that this does NOT have
     # a spurious error about HasBadCtor not being constructable from IntLiteral
     var fromBadCtor = HasBadCtor(123)
@@ -919,7 +919,7 @@ struct ImplicitCopyableStructWithExplicitBody(ImplicitlyCopyable, RegisterPassab
 struct StructWithSpecificInit[X: Int]:
     fn __init__(out self: StructWithSpecificInit[4]): # expected-note {{function declared here}}
         pass
-def testStructWithSpecificInit():
+def testStructWithSpecificInit() raises:
     # expected-error @+1 {{invalid initialization: return type 'StructWithSpecificInit[4]' parameter 'X' value '4' doesn't match expected value '1'}}
     var a = StructWithSpecificInit[1]()  # Infers to A[4]
 
@@ -1052,7 +1052,7 @@ struct copy_init_def:
   var field: Int
 
   # expected-error @+1 {{cannot define copy constructor as 'def'; 'def' implicitly raises}}
-  def __copyinit__(out self, copy: Self):
+  def __copyinit__(out self, copy: Self) raises:
     self.field = existing.field
 
 struct copy_init_raises:
@@ -1252,3 +1252,4 @@ fn bar[n: Int]():
 
 
 comptime _ = MyParam.p # expected-error {{'p' refers to an unbound parameter in 'MyParam[?]'}}
+

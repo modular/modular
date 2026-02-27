@@ -56,7 +56,7 @@ fn takeIt[f: fn(z: Int) unified -> Int](impl: f, y: Int):
     print(impl(y))
 
 
-def main():
+def main() raises:
     var y: Int = atol(argv()[1])
     var one = atol(argv()[2])
     var four = atol(argv()[3])

@@ -91,7 +91,7 @@ fn test_shadowing_reference_shadowed(cond: Bool):
 
 
 # CHECK-LABEL: lit.fn @"var_decls_implicit()
-def var_decls_implicit() -> None:
+def var_decls_implicit() raises -> None:
     # Implicit declaration is mutable.
     # CHECK: %x = lit.var.decl "x" imp
     x = 123
@@ -111,7 +111,7 @@ fn use_int(x: Int):
 
 
 # CHECK-LABEL: lit.fn @"walrus_control_flow
-def walrus_control_flow(a: Int):
+def walrus_control_flow(a: Int) raises:
     # CHECK: %b = lit.var.decl
     # CHECK: %curr = lit.var.decl "curr"
     curr = a
@@ -127,7 +127,7 @@ def walrus_control_flow(a: Int):
 
 # Check that we only get one implicit declaration and all three scopes use it.
 # CHECK-LABEL: lit.fn @"reuse_implicit
-def reuse_implicit(a: Int, cond: __mlir_type.i1):
+def reuse_implicit(a: Int, cond: __mlir_type.i1) raises:
     # CHECK: %implicit = lit.var.decl
 
     # CHECK: hlcf.elif
@@ -168,3 +168,4 @@ fn redundant_var_ref():
   var n = 1
   # expected-warning @+1 {{nested 'var' or 'ref' patterns are redundant, remove the outer pattern}}
   var ref a = n
+

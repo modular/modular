@@ -13,3 +13,4 @@ a = 1/0
 
 # CHECK: ZeroDivisionError: division by zero
 # CHECK-NOT: Error: No module named '__lldb_python_module_
+

@@ -22,7 +22,7 @@ fn variadic_kwargs(
 
 
 # CHECK-LABEL: lit.fn @"variadic_kwargs_def_with_type
-def variadic_kwargs_def_with_type(**kwargs: Int):
+def variadic_kwargs_def_with_type(**kwargs: Int) raises:
     pass
 
 
@@ -108,3 +108,4 @@ fn test_takes_kw_in_assignment(x: MemOnly):
     # CHECK: %b = lit.var.decl "b" var : !lit.ref<!Int,
     # CHECK: lit.ref.store %[[RES]], %b
     var b = takes_kw(y=x, z=x)
+

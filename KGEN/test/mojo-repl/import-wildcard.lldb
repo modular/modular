@@ -12,3 +12,4 @@ from sys import *
 
 # CHECK: 1
 print(len(argv()))
+

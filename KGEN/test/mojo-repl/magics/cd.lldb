@@ -17,3 +17,4 @@ called_function()
 %cd -
 from imported_module_2 import called_function
 called_function()
+

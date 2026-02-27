@@ -11,7 +11,7 @@ from sys import argv
 from closure import emitLoad
 
 
-def main():
+def main() raises:
     var x = SIMD[DType.int, 1](atol(argv()[1]))
     # CHECK: 4
     emitLoad(x)

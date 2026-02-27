@@ -18,3 +18,4 @@ print(value)
 print(return_value())
 
 # CHECK: 10
+

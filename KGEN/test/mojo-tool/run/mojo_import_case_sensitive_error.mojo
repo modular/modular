@@ -13,6 +13,6 @@
 from TEST_BINARY_PACKAGE.inner1.myfile import print10
 
 
-def main():
+def main() raises:
     # CHECK: 10
     print10()

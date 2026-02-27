@@ -768,7 +768,7 @@ fn callee[
 # CHECK: lit.struct.decl @"fn[simd_width: Int, rank: Int, alignment: Int = 1]() -> None_{{.*}}"
 # CHECK: kgen.conformance @"fn[width: Int, rank: Int, alignment: Int = 1]() -> None" {
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
-def main():
+def main() raises:
     var x = 42
 
     @always_inline
@@ -920,3 +920,4 @@ fn repro_symbol_attr():
         return Dispatch[identity](x)
 
     symbol_callee[1, type_of(my_fn)](my_fn)
+

@@ -24,7 +24,7 @@ fn needs_default[
     return iter(iterable_a)
 
 
-def main():
+def main() raises:
     # COM: The motivating bug. Ensure no regression.
     # CHECK: 77 88
     # CHECK: 99 66

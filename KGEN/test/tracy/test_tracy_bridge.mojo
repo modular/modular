@@ -8,7 +8,7 @@ from testing import assert_equal, assert_true
 from ffi import external_call
 
 
-def test_tracy_bridge_symbols_exist_and_disabled_by_default():
+def test_tracy_bridge_symbols_exist_and_disabled_by_default() raises:
     # Query whether CompilerRT was built with TRACY_ENABLE.
     enabled = external_call["KGEN_CompilerRT_TracyIsEnabled", Int]()
 
@@ -24,5 +24,5 @@ def test_tracy_bridge_symbols_exist_and_disabled_by_default():
     external_call["KGEN_CompilerRT_TracyZoneEnd", NoneType](ctx)
 
 
-def main():
+def main() raises:
     test_tracy_bridge_symbols_exist_and_disabled_by_default()

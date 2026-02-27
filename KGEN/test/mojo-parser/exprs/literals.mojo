@@ -381,7 +381,7 @@ fn useIt(expr: List[Int]):
 
 
 # CHECK-LABEL: lit.fn @"comprehensionInForLoop
-def comprehensionInForLoop(data: List[List[Int]], rows: Int, cols: Int):
+def comprehensionInForLoop(data: List[List[Int]], rows: Int, cols: Int) raises:
     # CHECK: lit.loop {
     # CHECK: lit.call {{.*}}::@List::@"__init__
     # CHECK: lit.loop {
@@ -391,3 +391,4 @@ def comprehensionInForLoop(data: List[List[Int]], rows: Int, cols: Int):
             1 if data[row][col] == 1 else 0 for col in IterRange(cols)
         ]
         useIt(my_list)
+

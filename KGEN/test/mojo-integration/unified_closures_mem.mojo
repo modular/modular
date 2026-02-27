@@ -44,7 +44,7 @@ fn takeIt[T: fn() unified -> String](state: T):
     print("captures: ", state())
 
 
-def main():
+def main() raises:
     var byCopy: String = String(unsafe_from_utf8=argv()[1].as_bytes())
 
     fn mutateCopy() unified {var byCopy} -> String:

@@ -43,8 +43,8 @@ fn take_bar(b: Bar) -> Int:
     return 1
 
 
-# CHECK-LABEL: def main():
-def main():
+# CHECK-LABEL: def main() raises:
+def main() raises:
     old_origin_of(1)
     old_origin_of_2(2)
 

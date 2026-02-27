@@ -12,7 +12,7 @@ comptime keys: List[Int] = [1, 2, 3, 7, 5]
 comptime num_set = Set(keys)
 
 
-def main():
+def main() raises:
     # CHECK: 5
     comptime l = len(num_set)
     print(l)
