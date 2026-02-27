@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from max._core.dialects import mo
+from max._core.dialects.builtin import IntegerAttr, IntegerType
 
 from ..graph import Graph
 from ..type import _ChainType
@@ -38,7 +39,7 @@ def sum(
     Args:
         inputs: The input tensors to reduce and scatter.
         signal_buffers: Device buffer values used for synchronization.
-        axis: The axis along which to scatter the reduced result. Defaults to 0.
+        axis: The axis along which to scatter the reduced result. Defaults to -1.
 
     Returns:
         An iterable of outputs where each device receives its portion of the
@@ -67,7 +68,8 @@ def sum(
             f"input tensors. Got: {devices=}"
         )
 
-    # Compute output shape: input shape with scatter axis divided by num_devices
+    # Resolve negative axis before passing to MLIR. The kernel treats axis=-1
+    # as a distinct flat-1D codepath, so we must always pass a non-negative value.
     input_shape = inputs[0].shape
     input_dtype = inputs[0].dtype
     if axis < 0:
@@ -75,12 +77,6 @@ def sum(
     if axis < 0 or axis >= input_shape.rank:
         raise ValueError(
             f"axis {axis} is out of bounds for tensor with rank {input_shape.rank}"
-        )
-
-    # TODO(KERN-2337): Support axis != -1 in the kernel.
-    if axis != input_shape.rank - 1:
-        raise NotImplementedError(
-            f"reducescatter.sum only supports axis=-1, got axis={axis}"
         )
 
     # Per-device execution model:
@@ -109,6 +105,7 @@ def sum(
         )
 
         # Each op takes all inputs but only produces output for its device.
+        axis_attr = IntegerAttr(IntegerType(64), axis)
         result, out_chain = Graph.current._add_op_generated(
             mo.DistributedReducescatterSumOp,
             # Single output tensor type.
@@ -119,6 +116,7 @@ def sum(
             signal_buffers,
             in_chain,
             device,
+            axis_attr,
         )
 
         results.append(result.tensor)

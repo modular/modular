@@ -153,7 +153,120 @@ class ReduceScatterAdd(Module):
         return [x + y for x, y in zip(results, biases, strict=True)]
 
 
-@pytest.mark.parametrize("num_gpus", [2, 4])
+def _reducescatter_axis_graph(
+    signals: Signals, axis: int, shape: tuple[int, int]
+) -> Graph:
+    """Build a reducescatter graph that scatters along the given axis."""
+    devices = signals.devices
+    num_devices = len(devices)
+
+    input_types = [
+        TensorType(dtype=DType.float32, shape=list(shape), device=devices[i])
+        for i in range(num_devices)
+    ]
+    all_input_types = input_types + list(signals.input_types())
+
+    with Graph(
+        "reducescatter_axis",
+        input_types=all_input_types,
+    ) as graph:
+        tensor_inputs = [graph.inputs[i].tensor for i in range(num_devices)]
+        reducescatter_outputs = ops.reducescatter.sum(
+            tensor_inputs,
+            [inp.buffer for inp in graph.inputs[num_devices:]],
+            axis=axis,
+        )
+        graph.output(*reducescatter_outputs)
+        return graph
+
+
+@pytest.mark.parametrize("num_gpus", [2, 4, 8])
+def test_reducescatter_axis0_execution(num_gpus: int) -> None:
+    """Tests reducescatter with scatter on axis 0 (rows)."""
+    if (available_gpus := accelerator_count()) < num_gpus:
+        pytest.skip(
+            f"skipping {num_gpus=} test since only {available_gpus} available"
+        )
+
+    shape = (M, N)
+    graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+    graph = _reducescatter_axis_graph(signals, axis=0, shape=shape)
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    session = InferenceSession(devices=[host] + devices)
+    compiled = session.load(graph)
+
+    # Use row-varying data so incorrect axis would produce wrong values.
+    # Each device sends the same data: row i has value (i+1).
+    base = np.repeat(
+        np.arange(1, M + 1, dtype=np.float32).reshape(M, 1), N, axis=1
+    )
+    input_tensors = [Buffer.from_numpy(base).to(dev) for dev in devices]
+
+    outputs = compiled.execute(*input_tensors, *signals.buffers())
+
+    # After reduction (sum of num_gpus identical inputs), values = base * num_gpus.
+    # Scatter axis=0: rows are partitioned across devices.
+    expected_rows = M // num_gpus
+    reduced = base * num_gpus
+    for dev_idx, (out_tensor, device) in enumerate(
+        zip(outputs, devices, strict=True)
+    ):
+        assert isinstance(out_tensor, Buffer)
+        assert out_tensor.device == device
+        result = out_tensor.to(host).to_numpy()
+        assert result.shape == (expected_rows, N)
+        row_start = dev_idx * expected_rows
+        expected = reduced[row_start : row_start + expected_rows, :]
+        assert np.allclose(expected, result)
+
+
+@pytest.mark.parametrize("num_gpus", [2, 4, 8])
+def test_reducescatter_axis1_execution(num_gpus: int) -> None:
+    """Tests reducescatter with scatter on axis 1 (columns)."""
+    if (available_gpus := accelerator_count()) < num_gpus:
+        pytest.skip(
+            f"skipping {num_gpus=} test since only {available_gpus} available"
+        )
+
+    shape = (M, N)
+    graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+    graph = _reducescatter_axis_graph(signals, axis=1, shape=shape)
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    session = InferenceSession(devices=[host] + devices)
+    compiled = session.load(graph)
+
+    # Use column-varying data so incorrect axis would produce wrong values.
+    # Each device sends the same data: column j has value (j+1).
+    base = np.repeat(
+        np.arange(1, N + 1, dtype=np.float32).reshape(1, N), M, axis=0
+    )
+    input_tensors = [Buffer.from_numpy(base).to(dev) for dev in devices]
+
+    outputs = compiled.execute(*input_tensors, *signals.buffers())
+
+    # After reduction, values = base * num_gpus.
+    # Scatter axis=1: columns are partitioned across devices.
+    expected_cols = N // num_gpus
+    reduced = base * num_gpus
+    for dev_idx, (out_tensor, device) in enumerate(
+        zip(outputs, devices, strict=True)
+    ):
+        assert isinstance(out_tensor, Buffer)
+        assert out_tensor.device == device
+        result = out_tensor.to(host).to_numpy()
+        assert result.shape == (M, expected_cols)
+        col_start = dev_idx * expected_cols
+        expected = reduced[:, col_start : col_start + expected_cols]
+        assert np.allclose(expected, result)
+
+
+@pytest.mark.parametrize("num_gpus", [2, 4, 8])
 def test_reducescatter_epilogue_fusion(num_gpus: int) -> None:
     """Tests that an elementwise add correctly follows a reducescatter operation."""
     if (available_gpus := accelerator_count()) < num_gpus:
