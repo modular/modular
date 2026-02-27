@@ -444,44 +444,91 @@ convert them to `Int` and then to `UInt`.
 
 ## Strings
 
-Mojo's `String` type represents a mutable string. (For Python programmers, note
-that this is different from Python's standard string, which is immutable.)
-Strings support a variety of operators and common methods.
+Strings are Mojo's primary text type. They store UTF-8 encoded text and
+provide a safe, ergonomic interface for string manipulation.
+
+Mojo's `String` type is a mutable string. `String` supports a variety
+of operators and common methods:
 
 ```mojo
 var s: String = "Testing"
 s += " Mojo strings"
-print(s)
+print(s) # Testing Mojo strings
 ```
 
-```output
-Testing Mojo strings
-```
+### Construction
 
-Most standard library types conform to the
-[`Stringable`](/mojo/std/builtin/str/Stringable) trait, which represents
-a type that can be converted to a string. Use `String(value)` to
-explicitly convert a value to a string:
+Many standard library types conform to the
+[`Stringable`](/mojo/std/builtin/str/Stringable) trait, which indicates
+that a value can be converted into a `String` using the `String(...)`
+constructor.
+
+The built-in [`print()`](/mojo/std/io/io/print) function accepts values
+that conform to the `Writable` trait. For values that are only
+`Stringable`, use `String(value)` first and then pass the resulting
+`String` to `print()`.
+
+Use `String(value)` to explicitly convert a value to a `String`:
 
 ```mojo
 var s = "Items in list: " + String(5)
-print(s)
+print(s) # Items in list: 5
 ```
 
-```output
-Items in list: 5
-```
-
-Or use `String.write` to take variadic `Stringable` types, so you don't have to
-call `String()` on each value:
+Or, use the string constructor with variadic `Stringable` types,
+so you don't have to call `String()` on each value:
 
 ```mojo
 var s = String("Items in list: ", 5)
-print(s)
+print(s) # Items in list: 5
 ```
 
-```output
-Items in list: 5
+### String formatting
+
+The `format()` method inserts values into a string using manual or
+automatic positional indexing. Replacement fields use braces:
+
+```mojo
+print("{0} {1} {0}".format("Mojo", 1.125))  # Mojo 1.125 Mojo
+print("{} {}".format(True, "hello world"))  # True hello world
+```
+
+Mojo's `TString` (template string) replaces the functionality of
+the `format()` method with direct expressions and better
+performance characteristics.
+
+`TString`s work like `format()`, but they insert
+[`Writable`](/mojo/std/format/Writable) representations of expressions
+into replacement fields. This provides safe and flexible string
+processing:
+
+```mojo
+var count = 3
+var items = "apples"
+var template = t"Give me {count} {items}." # Template string
+print(template) # Output: Give me 3 apples.
+```
+
+`TString` values are lazy. They don't allocate until you explicitly
+construct a `String`:
+
+```mojo
+var x = 41
+print(t"The answer is {x + 1}")  # The answer is 42 (no allocation)
+
+var name = "Nate"
+var template = t"Hello, {name}!" # template creation
+
+print(template)          # Hello, Nate! (no allocation)
+var s = String(template) # explicitly construct a string
+var r: String = template # implicitly construct a string
+```
+
+`TStrings` can add arbitrary expressions within the replacement fields:
+
+```mojo
+var list = [1, 2, 3]
+print(t"{list[0] + list[1]}") # 3
 ```
 
 ### String literals
