@@ -4334,7 +4334,29 @@ class ParallelOp(max._core.Operation):
     in parallel for each set of inputs.
 
     The results of the `mo.parallel` op are the operands of the
-    `mo.yield` op from each iteration, which must all have the same type.
+    `mo.yield` op from each iteration. Each result has the same type as its
+    corresponding input.
+
+    Inputs may have different device IDs but must all have the same device
+    label (e.g., all "gpu" or all "cpu"). The body block argument uses the
+    first input's type as the representative type.
+
+    Example with shared type (all inputs same type):
+    ```mlir
+    %res:2 = mo.parallel %arg in (%a, %b : !mo.tensor<[3], f32, gpu:0>) {
+      %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
+      mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
+
+    Example with individual types (different device IDs):
+    ```mlir
+    %res:2 = mo.parallel %arg in (%a : !mo.tensor<[3], f32, gpu:0>,
+                                  %b : !mo.tensor<[3], f32, gpu:1>) {
+      %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
+      mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
     """
 
     def __init__(
