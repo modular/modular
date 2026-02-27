@@ -20,12 +20,12 @@ from typing import Any, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental import functional as F
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import PixelModelInputs
-from max.experimental.tensor import Tensor
 from PIL import Image
 from tqdm import tqdm
 
@@ -63,6 +63,7 @@ class Flux2KleinPipelineOutput:
 
 class Flux2KleinPipeline(Flux2Pipeline):
     """Flux2 Klein diffusion pipeline with Qwen3 text encoder."""
+
     prompt_embedding_hidden_states_layers: tuple[int, ...] = (9, 18, 27)
 
     components = {
@@ -72,35 +73,41 @@ class Flux2KleinPipeline(Flux2Pipeline):
     }
 
     def prepare_inputs(self, context: PixelContext) -> Flux2KleinModelInputs:  # type: ignore[override]
+        pil_image = None
         if context.input_image is not None and isinstance(
             context.input_image, np.ndarray
         ):
-            context.input_image = Image.fromarray(
-                context.input_image.astype(np.uint8)
-            )
-        return Flux2KleinModelInputs.from_context(context)
+            pil_image = Image.fromarray(context.input_image.astype(np.uint8))
+
+        original_input_image = context.input_image
+        if pil_image is not None:
+            context.input_image = pil_image  # type: ignore[assignment]
+
+        result = Flux2KleinModelInputs.from_context(context)
+        context.input_image = original_input_image
+        return result
 
     def prepare_prompt_embeddings(
         self,
         tokens: TokenBuffer,
-        mask: npt.NDArray[np.bool_],
         num_images_per_prompt: int = 1,
+        hidden_states_layers: list[int] | None = None,
+        mask: npt.NDArray[np.bool_] | None = None,
     ) -> tuple[Tensor, Tensor]:
+        layers = hidden_states_layers or list(
+            self.prompt_embedding_hidden_states_layers
+        )
         token_ids = np.asarray(tokens.array, dtype=np.int64)
         if token_ids.ndim != 1:
             raise ValueError(
                 f"Flux2Klein expects 1D tokens, got shape {token_ids.shape}."
             )
-        padded_seq_len = int(token_ids.shape[0])
-        if mask.shape[0] != padded_seq_len:
+        target_seq_len = int(token_ids.shape[0])
+        if mask is not None and mask.shape[0] != target_seq_len:
             raise ValueError(
                 "Prompt mask length must match token length. "
-                f"Got mask={mask.shape[0]}, tokens={padded_seq_len}."
+                f"Got mask={mask.shape[0]}, tokens={target_seq_len}."
             )
-
-        # NOTE: Qwen3TextEncoderModel currently does not support attention_mask input.
-        # Keep the full padded sequence to avoid divergence from diffusers prompt geometry.
-        target_seq_len = int(mask.shape[0])
 
         text_input_ids = Tensor.constant(
             token_ids,
@@ -109,7 +116,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
         )
         hidden_states_all = self.text_encoder(text_input_ids)
         hidden_states_selected = []
-        for i in self.prompt_embedding_hidden_states_layers:
+        for i in layers:
             hs = hidden_states_all[i - 1]
             if hs.rank == 3:
                 hs = hs[0]
@@ -163,8 +170,8 @@ class Flux2KleinPipeline(Flux2Pipeline):
     ) -> Flux2KleinPipelineOutput:
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
-            mask=model_inputs.mask,
             num_images_per_prompt=model_inputs.num_images_per_prompt,
+            mask=model_inputs.mask,
         )
 
         diff_cfg = self.pipeline_config.model.diffusers_config or {}
@@ -189,8 +196,8 @@ class Flux2KleinPipeline(Flux2Pipeline):
             negative_prompt_embeds, negative_text_ids = (
                 self.prepare_prompt_embeddings(
                     tokens=model_inputs.negative_tokens,
-                    mask=negative_mask,
                     num_images_per_prompt=model_inputs.num_images_per_prompt,
+                    mask=negative_mask,
                 )
             )
         elif do_cfg:
@@ -256,13 +263,9 @@ class Flux2KleinPipeline(Flux2Pipeline):
             if is_img2img:
                 assert image_latents is not None
                 assert image_latent_ids is not None
-                latents_concat, latent_image_ids_concat = (
-                    self.concat_image_latents(
-                        latents,
-                        image_latents,
-                        latent_image_ids,
-                        image_latent_ids,
-                    )
+                latents_concat = F.concat([latents, image_latents], axis=1)
+                latent_image_ids_concat = F.concat(
+                    [latent_image_ids, image_latent_ids], axis=1
                 )
             else:
                 latents_concat = latents

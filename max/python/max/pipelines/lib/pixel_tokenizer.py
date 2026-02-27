@@ -759,9 +759,9 @@ class PixelGenerationTokenizer(
             token_ids,
             attn_mask,
             token_ids_2,
-            attn_mask_2,
+            _attn_mask_2,
             negative_token_ids,
-            negative_attn_mask,
+            _negative_attn_mask,
             negative_token_ids_2,
         ) = await self._generate_tokens_ids(
             prompt,
