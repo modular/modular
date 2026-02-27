@@ -400,34 +400,29 @@ class Flux2Pipeline(DiffusionPipeline):
         self,
         tokens: TokenBuffer,
         num_images_per_prompt: int = 1,
-        hidden_states_layers: list[int] | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Create prompt embeddings and text position IDs for the transformer.
 
-        Flux2 uses multiple hidden-state layers from the text encoder. Selected
-        layers are padded/trimmed to a common sequence length, stacked, and then
-        flattened across the layer/hidden dimensions.
+        Flux2 uses multiple hidden-state layers from the text encoder. The
+        encoder is configured to return only the needed layers directly, which
+        are then stacked and flattened across the layer/hidden dimensions.
 
         Args:
             tokens: TokenBuffer produced by tokenization / chat templating.
             num_images_per_prompt: Number of image generations per prompt.
-            hidden_states_layers: Optional indices of hidden-state layers to use.
 
         Returns:
             A tuple of:
                 - prompt_embeds: Tensor of shape (B', S, L*D)
                 - text_ids: Tensor[int64] of shape (B', S, 4)
         """
-        layers = hidden_states_layers or [10, 20, 30]
-
         with Tracer("text_encoder"):
             text_input_ids = Tensor.constant(
                 tokens.array,
                 dtype=DType.int64,
                 device=self.text_encoder.devices[0],
             )
-            hidden_states_all = self.text_encoder(text_input_ids)
-            hidden_states_selected = [hidden_states_all[i] for i in layers]
+            hidden_states_selected = self.text_encoder(text_input_ids)
 
         with Tracer("prompt_embeddings"):
             prompt_embeds = self._prepare_prompt_embeddings(

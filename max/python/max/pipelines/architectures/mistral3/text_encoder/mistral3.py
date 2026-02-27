@@ -102,7 +102,8 @@ class EncoderTransformerBlock(Module[..., Tensor]):
 class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
     """Mistral3 text encoder transformer without KV cache dependency.
 
-    Returns hidden states from all layers for use in diffusion pipelines.
+    Returns hidden states from the configured layers only, avoiding
+    materializing unused intermediate outputs.
     """
 
     def __init__(self, config: Mistral3TextEncoderConfigBase) -> None:
@@ -111,6 +112,8 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
         self.device = config.device
+        self._hidden_state_layers = set(config.hidden_state_layers)
+        self._sorted_hidden_state_layers = sorted(config.hidden_state_layers)
 
         self.rope = RotaryEmbedding(
             dim=config.hidden_size,
@@ -150,19 +153,24 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
         )
 
     def forward(self, tokens: Tensor) -> tuple[Tensor, ...]:
-        """Forward pass returning hidden states from all layers.
+        """Forward pass returning hidden states from selected layers only.
 
         Args:
             tokens: Input token IDs [total_seq_len]
 
         Returns:
-            Tuple of hidden states from all layers, each with shape [seq_len, hidden_dim]
+            Tuple of hidden states from the configured layers (in ascending layer
+            order), each with shape [seq_len, hidden_dim].
         """
         h = self.embed_tokens(tokens)
 
-        all_hidden_states: list[Tensor] = []
-        for layer in self.layers:
+        selected: dict[int, Tensor] = {}
+        max_layer = self._sorted_hidden_state_layers[-1]
+        for i, layer in enumerate(self.layers):
             h = layer(h, self.rope)
-            all_hidden_states.append(h)
+            if i in self._hidden_state_layers:
+                selected[i] = h
+            if i == max_layer:
+                break
 
-        return tuple(all_hidden_states)
+        return tuple(selected[i] for i in self._sorted_hidden_state_layers)
