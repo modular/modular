@@ -1059,7 +1059,7 @@ class ImageGenerationOracle(PipelineOracle):
                 model_path=self.model_path,
                 device_specs=device_specs,
             ),
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(prefer_module_v3=True),
         )
 
         # Step 2: Initialize the tokenizer

@@ -465,7 +465,9 @@ def test_config_post_init__with_weight_path_but_no_model_path() -> None:
                 )
             ],
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
     assert config.model.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
@@ -487,7 +489,9 @@ def test_config_post_init__other_repo_weights(
                 )
             ],
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
     assert (
@@ -510,7 +514,9 @@ def test_config_init__reformats_with_str_weights_path(
                 )
             ],
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
     assert isinstance(config.model.weight_path, list)
@@ -530,7 +536,9 @@ def test_validate_model_path__correct_repo_id_provided(
             model_path=modular_ai_llama_3_1_local_path,
             quantization_encoding="bfloat16",
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
     assert config.model.model_path == modular_ai_llama_3_1_local_path
@@ -556,7 +564,9 @@ def test_config__test_incompatible_quantization_encoding(
                 max_length=1,
             ),
             max_batch_size=1,
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
     # This should not raise, as float32 == f32.
@@ -573,7 +583,9 @@ def test_config__test_incompatible_quantization_encoding(
             max_length=1,
         ),
         max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
 
@@ -598,7 +610,9 @@ def test_config__test_quantization_encoding_with_dtype_casting(
                 max_length=1,
             ),
             max_batch_size=1,
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
 
@@ -622,7 +636,9 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
             max_length=1,
         ),
         max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
     assert config.model.kv_cache.cache_dtype == DType.float32
 
@@ -647,7 +663,9 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
             max_length=1,
         ),
         max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
     assert config.model.kv_cache.cache_dtype == DType.bfloat16
 
@@ -670,7 +688,9 @@ def test_config__test_quantization_encoding_with_dtype_casting4(
                 allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
                 # Note: quantization_encoding is not provided, which should cause the error
             ),
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
 
@@ -691,7 +711,9 @@ def test_config__test_retrieve_factory_with_known_architecture(
             max_length=1,
         ),
         max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
@@ -713,7 +735,9 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
                 model_path=gemma_3_1b_it_local_path, max_length=1
             ),
             max_batch_size=1,
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
 
@@ -741,7 +765,9 @@ def test_config_is_picklable(
             model_path=modular_ai_llama_3_1_local_path,
             quantization_encoding="bfloat16",
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
     config.model._huggingface_config = None
@@ -774,7 +800,9 @@ def test_config__validates_supported_device(
             quantization_encoding="float32",
             max_length=1,
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
     if accelerator_count() == 0:
@@ -786,7 +814,9 @@ def test_config__validates_supported_device(
                     quantization_encoding="float32",
                     max_length=1,
                 ),
-                prefer_module_v3=True,
+                runtime=PipelineRuntimeConfig(
+                    prefer_module_v3=True,
+                ),
             )
     else:
         _ = PipelineConfig(
@@ -796,7 +826,9 @@ def test_config__validates_supported_device(
                 quantization_encoding="bfloat16",
                 max_length=1,
             ),
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
     with pytest.raises(
@@ -810,7 +842,9 @@ def test_config__validates_supported_device(
                 quantization_encoding="bfloat16",
                 max_length=1,
             ),
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
 
@@ -835,7 +869,9 @@ def test_config__validates_lora_configuration(
         lora=LoRAConfig(
             enable_lora=True, lora_paths=[llama_3_1_8b_lora_local_path]
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
     assert config.lora is not None
     assert config.lora.lora_paths[0] == llama_3_1_8b_lora_local_path
@@ -866,7 +902,9 @@ def test_config__validates_lora_only_supported_for_llama(
                 max_length=1,
             ),
             lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
 
@@ -891,7 +929,9 @@ def test_config__validates_lora_works_for_llama(
             max_length=1,
         ),
         lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
     # Verify LoRA config was created successfully
@@ -922,7 +962,9 @@ def test_config__validates_lora_incompatible_with_prefix_caching(
                 max_length=1,
             ),
             lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
 
@@ -946,7 +988,9 @@ def test_config__validates_lora_single_device_only(
             max_length=1,
         ),
         lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
     assert config.lora is not None
     assert config.lora.enable_lora is True
@@ -981,7 +1025,9 @@ def test_config__validates_lora_fails_with_multiple_devices(
                 max_length=1,
             ),
             lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
     config = PipelineConfig(
@@ -992,7 +1038,9 @@ def test_config__validates_lora_fails_with_multiple_devices(
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
     assert config.lora is None
 

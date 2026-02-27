@@ -56,6 +56,7 @@ from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
@@ -249,11 +250,13 @@ async def generate_image(args: argparse.Namespace) -> None:
             model_path=args.model,
             device_specs=[DeviceSpec.accelerator()],
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.model.huggingface_weight_repo,
-        prefer_module_v3=config.prefer_module_v3,
+        prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
     assert arch is not None, (

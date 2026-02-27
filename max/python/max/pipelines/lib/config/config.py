@@ -129,15 +129,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    prefer_module_v3: bool = Field(
-        default=False,
-        description=(
-            "Whether to prefer the ModuleV3 architecture (default=False for backward "
-            "compatibility). When False, tries the ModuleV2 architecture first and falls back "
-            "to ModuleV3. When True, tries ModuleV3 first and falls back to ModuleV2."
-        ),
-    )
-
     model: MAXModelConfig = Field(
         default_factory=MAXModelConfig, description="The model config."
     )
@@ -648,7 +639,7 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.enable_overlap_scheduler:
             arch = PIPELINE_REGISTRY.retrieve_architecture(
                 huggingface_repo=self.model.huggingface_model_repo,
-                prefer_module_v3=self.prefer_module_v3,
+                prefer_module_v3=self.runtime.prefer_module_v3,
             )
             if (
                 arch is not None
@@ -757,12 +748,12 @@ class PipelineConfig(ConfigFileModel):
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.draft_model.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if not draft_arch:
             # Check if a ModuleV3 version exists when ModuleV2 lookup failed
-            if not self.prefer_module_v3:
+            if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.draft_model.huggingface_model_repo,
                     prefer_module_v3=True,
@@ -779,11 +770,11 @@ class PipelineConfig(ConfigFileModel):
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
         if not target_arch:
             # Check if a ModuleV3 version exists when ModuleV2 lookup failed
-            if not self.prefer_module_v3:
+            if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.model.huggingface_model_repo,
                     prefer_module_v3=True,
@@ -864,13 +855,13 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=model_config.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         # If nothing is provided, we should not update any more params.
         if not arch:
             # Check if a ModuleV3 version exists when ModuleV2 lookup failed
-            if not self.prefer_module_v3:
+            if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=model_config.huggingface_model_repo,
                     prefer_module_v3=True,
@@ -1040,7 +1031,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:
@@ -1153,7 +1144,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:

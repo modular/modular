@@ -659,7 +659,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                prefer_module_v3=pipeline_config.prefer_module_v3,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
                 task=task,
             )
 
@@ -730,7 +730,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                prefer_module_v3=pipeline_config.prefer_module_v3,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
                 task=task,
             )
 
@@ -856,7 +856,7 @@ class PipelineRegistry:
         if pipeline_config.draft_model is not None:
             draft_arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.draft_model.huggingface_weight_repo,
-                prefer_module_v3=pipeline_config.prefer_module_v3,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
                 task=task,
             )
             if draft_arch is None:
@@ -913,7 +913,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                prefer_module_v3=pipeline_config.prefer_module_v3,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
                 task=task,
             )
 
@@ -940,7 +940,7 @@ class PipelineRegistry:
         """
         if arch := self.retrieve_architecture(
             huggingface_repo=pipeline_config.model.huggingface_model_repo,
-            prefer_module_v3=pipeline_config.prefer_module_v3,
+            prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
         ):
             return arch.task
 

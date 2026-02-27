@@ -19,6 +19,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
 from test_common.pipeline_model_dummy import (
@@ -202,7 +203,7 @@ def test_config__prefer_module_v3_default_is_false() -> None:
         max_batch_size=1,
     )
 
-    assert config.prefer_module_v3 is False
+    assert config.runtime.prefer_module_v3 is False
 
 
 @prepare_registry
@@ -236,10 +237,10 @@ def test_config__prefer_module_v3_can_be_set_to_true() -> None:
             max_length=128,
         ),
         max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(prefer_module_v3=True),
     )
 
-    assert config.prefer_module_v3 is True
+    assert config.runtime.prefer_module_v3 is True
 
 
 @prepare_registry
@@ -272,9 +273,9 @@ def test_config__prefer_module_v3_true_falls_back_to_v2_arch() -> None:
             max_length=128,
         ),
         max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(prefer_module_v3=True),
     )
-    assert config.prefer_module_v3 is True
+    assert config.runtime.prefer_module_v3 is True
 
 
 @prepare_registry
@@ -346,14 +347,14 @@ def test_config__prefer_module_v3_with_draft_model() -> None:
             max_length=128,
         ),
         max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(prefer_module_v3=True),
     )
 
-    assert config.prefer_module_v3 is True
+    assert config.runtime.prefer_module_v3 is True
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         huggingface_repo=config.model.huggingface_model_repo,
-        prefer_module_v3=config.prefer_module_v3,
+        prefer_module_v3=config.runtime.prefer_module_v3,
     )
 
     assert arch is v3_arch
