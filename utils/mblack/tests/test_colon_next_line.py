@@ -107,6 +107,26 @@ def test_trailing_comment_colon_next_line():
     assert_mojo_format(source, expected)
 
 
+def test_colon_next_line_fmt_off():
+    """A colon on the next line inside a fmt: off block should not be joined.
+
+    Tests ``_normalize_mojo_source`` directly because the un-normalized
+    colon-on-next-line syntax crashes the lib2to3 parser.  If the parser
+    learns to handle this syntax natively, this test can be changed to
+    use ``assert_mojo_format`` instead.
+    """
+    from mblib2to3.pgen2.driver import _normalize_mojo_source
+
+    source = (
+        "# fmt: off\n"
+        "fn foo()\n"
+        "    :\n"
+        "    pass\n"
+        "# fmt: on\n"
+    )
+    assert _normalize_mojo_source(source) == source
+
+
 def test_colon_in_docstring_preserved():
     """A colon-only line inside a docstring must not be altered."""
     source = (
