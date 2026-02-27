@@ -10,6 +10,7 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max:tensor",  # Provides max.functional and max.tensor.Tensor
+        requirement("torch"),
     ],
 )
 
