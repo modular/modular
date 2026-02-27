@@ -657,7 +657,7 @@ class PipelineConfig(ConfigFileModel):
                     "LlamaForCausalLM",
                     "DeepseekV2ForCausalLM",
                     "DeepseekV3ForCausalLM",
-                    "DeepseekV3_2ForCausalLM",
+                    "DeepseekV32ForCausalLM",
                     "DeepseekV3ForCausalLMNextN",
                 )
                 and self.pipeline_role == "prefill_and_decode"
