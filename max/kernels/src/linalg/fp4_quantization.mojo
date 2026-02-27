@@ -1351,7 +1351,7 @@ fn block_scaled_matmul[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                    pdl_level = PDLLevel(1),
+                    pdl_level=pdl_level,
                 ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
 
                 if status == DISPATCH_HIT:

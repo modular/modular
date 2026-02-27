@@ -1500,7 +1500,7 @@ fn matmul_dispatch_sm100_bf16[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level = PDLLevel(1),
+            pdl_level=pdl_level,
         ](c, a, b, ctx)
 
     comptime if static_NK in miscellaneous_NK:
