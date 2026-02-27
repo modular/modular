@@ -52,6 +52,8 @@ logger = logging.getLogger("max.pipelines")
 
 
 class BlockManager:
+    """Manages allocation and deallocation of paged KV cache blocks."""
+
     @traced
     def __init__(
         self,
