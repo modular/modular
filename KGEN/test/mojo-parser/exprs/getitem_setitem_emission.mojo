@@ -113,9 +113,7 @@ fn takes_inout_int(mut a: Int):
 
 
 # CHECK-LABEL: lit.fn @"test_writeback1
-fn test_writeback1[
-    x: Int, y: Int
-](mut a: IndexArray, mut b: IndexArrayArray):
+fn test_writeback1[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
     # CHECK: %[[V0:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
     # CHECK-NEXT: %[[LT:.*]] = lit.var.decl "anonymous*" synth
@@ -126,10 +124,9 @@ fn test_writeback1[
     # CHECK-NEXT: lit.call {{.*}}__setitem__{{.*}}(%a, %[[V3]], %[[V4]])
     takes_inout_int(a[x])
 
+
 # CHECK-LABEL: lit.fn @"test_writeback2
-fn test_writeback2[
-    x: Int, y: Int
-](mut a: IndexArray, mut b: IndexArrayArray):
+fn test_writeback2[x: Int, y: Int](mut a: IndexArray, mut b: IndexArrayArray):
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant: !Int = <x>
     # CHECK-NEXT: %[[LT2:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: %[[V4:.*]] = {{.*}}__getitem__{{.*}}(%b, %[[C1]], %[[LT2]])
@@ -167,30 +164,32 @@ fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: Int]():
     comptime x = arr[y]
 
 
-
-
 struct XYZ:
-   fn __getattr__[name: StringLiteral](self) -> Int:
-      comptime if name == "x":
-        return 4
-      elif name == "y":
-        return 6
-      else:
-        comptime assert name == "z", "can only index with x, y, or z"
-        return 8
+    fn __getattr__[name: StringLiteral](self) -> Int:
+        comptime if name == "x":
+            return 4
+        elif name == "y":
+            return 6
+        else:
+            comptime assert name == "z", "can only index with x, y, or z"
+            return 8
+
+
 struct ParamIndex:
-  fn __getitem__[a: Int, b: Int](self) -> Int: return 42
+    fn __getitem__[a: Int, b: Int](self) -> Int:
+        return 42
 
 
 # CHECK-LABEL: lit.fn @"test_param_indexing
 fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
-  # Issue #35662: Support parameter input to getattr
-  # CHECK: lit.call {{.*}}__getattr__{{.*}}!lit.struct<#StringLiteral <:string "x">> *?>(%a)
-  _ = a.x
-  # CHECK: lit.call {{.*}}__getattr__{{.*}}!lit.struct<#StringLiteral <:string "y">> *?>(%a)
-  _ = a.y
-  # CHECK: lit.call {{.*}}__getitem__{{.*}}<:!Int {2}, :!Int {4}>(%b)
-  _ = b[2, 4]
+    # Issue #35662: Support parameter input to getattr
+    # CHECK: lit.call {{.*}}__getattr__{{.*}}!lit.struct<#StringLiteral <:string "x">> *?>(%a)
+    _ = a.x
+    # CHECK: lit.call {{.*}}__getattr__{{.*}}!lit.struct<#StringLiteral <:string "y">> *?>(%a)
+    _ = a.y
+    # CHECK: lit.call {{.*}}__getitem__{{.*}}<:!Int {2}, :!Int {4}>(%b)
+    _ = b[2, 4]
+
 
 struct TestCompTime[wa: WeirdArray, value: Int = wa[4]]:
     fn test1[a: Int](self):
@@ -201,9 +200,9 @@ struct TestCompTime[wa: WeirdArray, value: Int = wa[4]]:
         self.test1[Self.value]()
 
 
-
 # ===----------------------------------------------------------------------=== #
 # Keyword arguments in setters
+
 
 @fieldwise_init
 struct VariadicIndexList:
@@ -212,6 +211,7 @@ struct VariadicIndexList:
 
     fn __setitem__(mut self, *indices: Int, val: Int):
         pass
+
 
 # CHECK-LABEL: lit.fn @"testVariadicIndexList
 # MOCO-696: Support variadic length keys in __setitem__
@@ -229,51 +229,88 @@ fn testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
 
 # MOCO-1244:
 
-struct RefResultInOverloaded:
-  var x: String
-  fn __getitem__(self) raises -> ref[self.x] String:
-    return self.x
 
-  fn __setitem__(mut self, var x: String): pass
+struct RefResultInOverloaded:
+    var x: String
+
+    fn __getitem__(self) raises -> ref[self.x] String:
+        return self.x
+
+    fn __setitem__(mut self, var x: String):
+        pass
+
 
 # CHECK-LABEL: lit.fn @"testRefResultInOverloaded
-fn testRefResultInOverloaded(mut rrio: RefResultInOverloaded, var str: String) raises:
-  # CHECK: lit.call {{.*}}__getitem__
-  # CHECK: lit.call {{.*}}unsafe_ptr
-  _ = rrio[].unsafe_ptr()
-  # CHECK-NOT: __init__{{.*}}"copy"
-  # CHECK: lit.call {{.*}}__setitem__
-  rrio[] = str^
+fn testRefResultInOverloaded(
+    mut rrio: RefResultInOverloaded, var str: String
+) raises:
+    # CHECK: lit.call {{.*}}__getitem__
+    # CHECK: lit.call {{.*}}unsafe_ptr
+    _ = rrio[].unsafe_ptr()
+    # CHECK-NOT: __init__{{.*}}"copy"
+    # CHECK: lit.call {{.*}}__setitem__
+    rrio[] = str^
 
 
 # ===----------------------------------------------------------------------=== #
 # DLV Subcript -> Ref binding resolution
 # ===----------------------------------------------------------------------=== #
 
+
 struct MinimalDict:
     var state: Int
-    fn __getitem__(
-        self, key: Int
-    ) raises -> ref [self.state] Int:
+
+    fn __getitem__(self, key: Int) raises -> ref[self.state] Int:
         return self.state
 
     fn __setitem__(mut self, key: Int, value: Int):
         self.state = value
 
-fn take_ref(ref x: Int): pass
+
+fn take_ref(ref x: Int):
+    pass
+
 
 # CHECK-LABEL: lit.fn @"test_ref_subscript_binding
-fn test_ref_subscript_binding(mut d: MinimalDict) raises -> ref [d[0]] Int:
-  # Check that a ref returned by the getitem is directly passed.
+fn test_ref_subscript_binding(mut d: MinimalDict) raises -> ref[d[0]] Int:
+    # Check that a ref returned by the getitem is directly passed.
 
-  # CHECK-NEXT: [[DIMM:%.*]] = lit.ref.immut %d
-  # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
-  # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
-  # CHECK-NEXT: lit.call {{.*}}@MinimalDict::@"__getitem__{{.*}}([[DIMM]], [[ZERO]], %__error__, %__call_result_tmp__)
-  # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
-  # CHECK-NEXT: lit.call {{.*}}take_ref{{.*}}([[REF]])
-  take_ref(d[0])
+    # CHECK-NEXT: [[DIMM:%.*]] = lit.ref.immut %d
+    # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant: !Int = <{0}>
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__"
+    # CHECK-NEXT: lit.call {{.*}}@MinimalDict::@"__getitem__{{.*}}([[DIMM]], [[ZERO]], %__error__, %__call_result_tmp__)
+    # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
+    # CHECK-NEXT: lit.call {{.*}}take_ref{{.*}}([[REF]])
+    take_ref(d[0])
 
-  ref some_ref = d[0]
+    ref some_ref = d[0]
 
-  return d[0]
+    return d[0]
+
+
+# ===----------------------------------------------------------------------=== #
+# By-Ref Result on __getattr__handled correctly
+# ===----------------------------------------------------------------------=== #
+
+
+trait FromInt:
+    fn __init__(out self, *, from_int: Int):
+        ...
+
+
+struct MyInt(FromInt):
+    fn __init__(out self, *, from_int: Int):
+        pass
+
+
+@fieldwise_init
+struct Test[T: FromInt](ImplicitlyCopyable):
+    # CHECK:       lit.fn @"__getattr__
+    # CHECK-SAME:  byref_result
+    fn __getattr__[dim: StringLiteral](self) -> Self.T:
+        return Self.T(from_int=42)
+
+
+comptime t = Test[MyInt]()
+# CHECK: lit.alias.decl *"tx{{.*}}": !MyInt = <{{.*}}@"__getattr__
+comptime tx = t.x

@@ -1545,11 +1545,12 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // Check for a getitem with no arguments.
     for (ASTDecl *elt : getterSet.fnDecls) {
       // TODO: This is really naive: it doesn't account for default arguments,
-      // variadic, byref_result, parameter names, etc etc etc.
-      if (cast<FnOp>(elt->getIfOperation())
-              .getFuncTypeGenerator()
-              .getArguments()
-              .size() != /*self*/ 1) {
+      // variadic, parameter names, etc etc etc.
+      FnTypeGeneratorType sig =
+          cast<FnOp>(elt->getIfOperation()).getFuncTypeGenerator();
+      // If there is no argument for the attr label, bind the label as
+      // parameter.
+      if (sig.getNumArguments() != /*self*/ 1 + sig.hasMemoryOnlyResult()) {
         shouldBindParameters = false;
         break;
       }
