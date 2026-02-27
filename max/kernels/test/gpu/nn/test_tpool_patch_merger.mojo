@@ -96,23 +96,23 @@ fn test_tpool_patch_merger(ctx: DeviceContext) raises:
 
     # Host buffers for input and grid_thws
     var x_host = ctx.enqueue_create_host_buffer[dtype](total_in * D)
-    var bounds_host = ctx.enqueue_create_host_buffer[DType.int32](n_videos * 3)
+    var bounds_host = ctx.enqueue_create_host_buffer[DType.int64](n_videos * 3)
     ctx.synchronize()
 
     seed(42)
     rand[dtype](x_host.unsafe_ptr(), total_in * D, min=0.0, max=1.0)
 
-    bounds_host[0] = Int32(t0)
-    bounds_host[1] = Int32(h0)
-    bounds_host[2] = Int32(w0)
-    bounds_host[3] = Int32(t1)
-    bounds_host[4] = Int32(h1)
-    bounds_host[5] = Int32(w1)
+    bounds_host[0] = Int64(t0)
+    bounds_host[1] = Int64(h0)
+    bounds_host[2] = Int64(w0)
+    bounds_host[3] = Int64(t1)
+    bounds_host[4] = Int64(h1)
+    bounds_host[5] = Int64(w1)
 
     # Device buffers
     var x_dev = ctx.enqueue_create_buffer[dtype](total_in * D)
     var out_dev = ctx.enqueue_create_buffer[dtype](total_out * D)
-    var bounds = ctx.enqueue_create_buffer[DType.int32](n_videos * 3)
+    var bounds = ctx.enqueue_create_buffer[DType.int64](n_videos * 3)
     ctx.enqueue_copy(x_dev, x_host)
     ctx.enqueue_copy(bounds, bounds_host)
     ctx.enqueue_memset(out_dev, 0)
