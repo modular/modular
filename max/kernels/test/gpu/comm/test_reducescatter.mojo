@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from sys import size_of, simd_width_of
 from itertools import product
 
 from layout import Coord, Idx, TileTensor
@@ -43,7 +43,7 @@ comptime test_lengths = (
 
 # Test hyperparameters
 comptime test_dtypes = (DType.bfloat16, DType.float32)
-comptime test_gpu_counts = (2, 4)
+comptime test_gpu_counts = (2, 4, 8)
 
 
 fn reducescatter_test[
@@ -236,9 +236,7 @@ fn reducescatter_test[
         host_buffers[i].free()
 
 
-fn run_reducescatter_sweep[
-    use_multimem: Bool = False,
-]() raises:
+fn run_reducescatter_sweep() raises:
     """Run a sweep of reduce-scatter tests across configurations."""
     var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
     for i in range(DeviceContext.number_of_devices()):
@@ -266,12 +264,288 @@ fn run_reducescatter_sweep[
         ](list_of_ctx, length)
 
 
+fn reducescatter_axis_test[
+    dtype: DType,
+    ngpus: Int,
+    axis: Int,
+    use_custom_epilogue: Bool = False,
+](list_of_ctx: List[DeviceContext], M: Int, D: Int) raises:
+    """Test 2D axis-aware reduce-scatter.
+
+    Each GPU gets a partition of the 2D (M, D) tensor along the specified axis.
+    Verifies that each output element equals the sum of corresponding elements
+    across all GPUs. When use_custom_epilogue is True, tests with a negating
+    epilogue.
+    """
+    comptime assert ngpus in (2, 4, 8), "ngpus must be 2, 4, or 8"
+    comptime assert axis == 0 or axis == 1
+    comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
+
+    print(
+        String(
+            "====reducescatter-axis",
+            axis,
+            "-",
+            dtype,
+            "-",
+            ngpus,
+            "gpus-(",
+            M,
+            "x",
+            D,
+            ")-custom_epilogue=" if use_custom_epilogue else ")",
+        )
+    )
+
+    # Compute partitioning to match what reducescatter entry point does.
+    var axis_size: Int
+    var unit_numel: Int
+    if axis == 0:
+        axis_size = M
+        unit_numel = D
+    else:
+        axis_size = D // simd_width
+        unit_numel = M * simd_width
+
+    var config = ReduceScatterConfig[dtype, ngpus](axis_size, unit_numel, 0)
+
+    var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var host_in = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
+        capacity=ngpus
+    )
+
+    var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
+    var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
+        fill={}
+    )
+
+    for gpu_idx in range(ngpus):
+        in_bufs_list.append(
+            list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](M * D)
+        )
+        out_bufs_list.append(
+            list_of_ctx[gpu_idx].enqueue_create_buffer[dtype](
+                config.rank_num_elements(gpu_idx)
+            )
+        )
+
+        var h = alloc[Scalar[dtype]](M * D)
+        host_in.append(h)
+        for row in range(M):
+            for col in range(D):
+                h[row * D + col] = test_value_for_gpu_element[dtype](
+                    gpu_idx, row * D + col
+                )
+
+        list_of_ctx[gpu_idx].enqueue_copy(in_bufs_list[gpu_idx], h)
+
+        signal_buffers.append(
+            list_of_ctx[gpu_idx].create_buffer_sync[DType.uint8](
+                size_of[Signal]()
+            )
+        )
+        list_of_ctx[gpu_idx].enqueue_memset[DType.uint8](
+            signal_buffers[gpu_idx], 0
+        )
+        rank_sigs[gpu_idx] = (
+            signal_buffers[gpu_idx].unsafe_ptr().bitcast[Signal]()
+        )
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # Create 2D TileTensors.
+    comptime InputTileType = type_of(
+        TileTensor[mut=False](
+            in_bufs_list[0].unsafe_ptr(), row_major((Idx(M), Idx(D)))
+        )
+    )
+    var in_bufs = InlineArray[InputTileType, ngpus](uninitialized=True)
+
+    comptime OutputTileType = type_of(
+        TileTensor[mut=True](
+            out_bufs_list[0].unsafe_ptr(), row_major((Idx(M), Idx(D)))
+        )
+    )
+    var out_bufs = StaticTuple[OutputTileType, ngpus]()
+
+    for i in range(ngpus):
+        in_bufs[i] = InputTileType(
+            in_bufs_list[i].unsafe_ptr(), row_major((Idx(M), Idx(D)))
+        )
+
+        if axis == 0:
+            var my_rows = config.rank_units(i)
+            out_bufs[i] = OutputTileType(
+                out_bufs_list[i].unsafe_ptr(),
+                row_major((Idx(my_rows), Idx(D))),
+            )
+        else:
+            var my_cols = config.rank_units(i) * simd_width
+            out_bufs[i] = OutputTileType(
+                out_bufs_list[i].unsafe_ptr(),
+                row_major((Idx(M), Idx(my_cols))),
+            )
+
+    # Custom epilogue that negates values to distinguish from default.
+    @always_inline
+    @parameter
+    @__copy_capture(out_bufs)
+    fn outputs_lambda[
+        input_index: Int,
+        _dtype: DType,
+        _width: Int,
+        *,
+        _alignment: Int,
+    ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
+        coords.flat_rank == 2
+    ):
+        out_bufs[input_index].store[width=_width, alignment=_alignment](
+            coords,
+            rebind[SIMD[dtype, _width]](-val),
+        )
+
+    comptime for i in range(ngpus):
+        reducescatter[
+            ngpus=ngpus,
+            axis=axis,
+            output_lambda = Optional[elementwise_epilogue_type](
+                outputs_lambda[input_index=i]
+            ) if use_custom_epilogue else None,
+        ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # Verify results.
+    for gpu_idx in range(ngpus):
+        var out_size = config.rank_num_elements(gpu_idx)
+        var result_host = alloc[Scalar[dtype]](out_size)
+        list_of_ctx[gpu_idx].enqueue_copy(result_host, out_bufs_list[gpu_idx])
+        list_of_ctx[gpu_idx].synchronize()
+
+        if axis == 0:
+            var row_start = config.rank_unit_start(gpu_idx)
+            var my_rows = config.rank_units(gpu_idx)
+            for r in range(my_rows):
+                for c in range(D):
+                    var global_flat = (row_start + r) * D + c
+                    comptime accum_t = get_accum_type[dtype]()
+                    var accum = Scalar[accum_t](0)
+                    comptime for k in range(ngpus):
+                        accum += Scalar[accum_t](
+                            test_value_for_gpu_element[dtype](k, global_flat)
+                        )
+                    var expected_sum = Scalar[dtype](accum)
+                    var expected = (
+                        -expected_sum if use_custom_epilogue else expected_sum
+                    )
+                    assert_almost_equal(
+                        result_host[r * D + c],
+                        expected,
+                        msg=String(
+                            "GPU ",
+                            gpu_idx,
+                            " axis=0 (",
+                            r,
+                            ",",
+                            c,
+                            ") mismatch",
+                        ),
+                    )
+        else:
+            var col_start = config.rank_unit_start(gpu_idx) * simd_width
+            var my_cols = config.rank_units(gpu_idx) * simd_width
+            for r in range(M):
+                for c in range(my_cols):
+                    var global_flat = r * D + (col_start + c)
+                    comptime accum_t = get_accum_type[dtype]()
+                    var accum = Scalar[accum_t](0)
+                    comptime for k in range(ngpus):
+                        accum += Scalar[accum_t](
+                            test_value_for_gpu_element[dtype](k, global_flat)
+                        )
+                    var expected_sum = Scalar[dtype](accum)
+                    var expected = (
+                        -expected_sum if use_custom_epilogue else expected_sum
+                    )
+                    assert_almost_equal(
+                        result_host[r * my_cols + c],
+                        expected,
+                        msg=String(
+                            "GPU ",
+                            gpu_idx,
+                            " axis=1 (",
+                            r,
+                            ",",
+                            c,
+                            ") mismatch",
+                        ),
+                    )
+
+        result_host.free()
+
+    for i in range(ngpus):
+        host_in[i].free()
+
+
+# 2D test shapes: (M, D)
+comptime test_2d_shapes = (
+    (16, 128),
+    (15, 128),  # Ragged rows (odd number not divisible by ngpus)
+    (9, 7168),  # Ragged, Deepseek V3.1 token dim
+    (32, 256),
+)
+
+
+fn run_reducescatter_axis_sweep() raises:
+    """Run a sweep of 2D axis-aware reduce-scatter tests."""
+    var list_of_ctx = List[DeviceContext](capacity=MAX_GPUS)
+    for i in range(DeviceContext.number_of_devices()):
+        list_of_ctx.append(DeviceContext(i))
+
+    comptime for dtype_idx, ngpus_idx, shape_idx, epilogue_idx in product(
+        range(len(test_dtypes)),
+        range(len(test_gpu_counts)),
+        range(len(test_2d_shapes)),
+        range(2),
+    ):
+        comptime dtype = test_dtypes[dtype_idx]
+        comptime ngpus = test_gpu_counts[ngpus_idx]
+        comptime M = test_2d_shapes[shape_idx][0]
+        comptime D = test_2d_shapes[shape_idx][1]
+        comptime use_custom_epilogue = epilogue_idx == 1
+
+        if DeviceContext.number_of_devices() < ngpus:
+            continue
+
+        # axis=0: scatter rows
+        reducescatter_axis_test[
+            dtype=dtype,
+            ngpus=ngpus,
+            axis=0,
+            use_custom_epilogue=use_custom_epilogue,
+        ](list_of_ctx, M, D)
+
+        # axis=1: scatter columns
+        reducescatter_axis_test[
+            dtype=dtype,
+            ngpus=ngpus,
+            axis=1,
+            use_custom_epilogue=use_custom_epilogue,
+        ](list_of_ctx, M, D)
+
+
 def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
 
-    # Run standard reduce-scatter sweep
+    # Run standard 1D reduce-scatter sweep
     run_reducescatter_sweep()
+
+    # Run 2D axis-aware reduce-scatter sweep
+    run_reducescatter_axis_sweep()
 
     print("All reduce-scatter tests passed!")

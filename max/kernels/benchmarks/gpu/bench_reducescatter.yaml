@@ -14,8 +14,14 @@
 name: bench_reducescatter
 file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_reducescatter.mojo
 
+commons_2d: &commons_2d
+  dtype: [DType.bfloat16, DType.float32]
+  num_gpus: [2, 4, 8]
+  axis: [0, 1]
+  multimem: [False]
+
 params:
-# Test hyperparameters
+# 1D flat reduce-scatter
 - dtype: [DType.bfloat16, DType.float32]
   num_gpus: [2, 4, 8]
   rank: [1]
@@ -29,3 +35,20 @@ params:
 
   multimem: [False]
   ragged: [False, True]
+
+# 2D axis-aware reduce-scatter (shapes from test_reducescatter)
+- <<: *commons_2d
+  $M: [16]
+  $D: [128]
+
+- <<: *commons_2d
+  $M: [15]
+  $D: [128]
+
+- <<: *commons_2d
+  $M: [9]
+  $D: [7168]
+
+- <<: *commons_2d
+  $M: [32]
+  $D: [256]

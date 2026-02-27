@@ -288,6 +288,23 @@ struct Layout[
         )
 
     @always_inline("nodebug")
+    fn reverse(
+        self,
+    ) -> Layout[
+        Variadic.reverse[*Self.shape_types],
+        Variadic.reverse[*Self.stride_types],
+    ]:
+        """Reverse the order of dimensions in the layout.
+
+        Turns row-major into column-major ordering where the stride-1
+        dimension comes first, enabling coalesced scalar iteration.
+
+        Returns:
+            A new Layout with shape and stride Coords reversed.
+        """
+        return Layout(self._shape.reverse(), self._stride.reverse())
+
+    @always_inline("nodebug")
     fn make_dynamic[
         dtype: DType
     ](self) -> Layout[

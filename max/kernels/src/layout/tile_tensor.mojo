@@ -516,7 +516,7 @@ struct TileTensor[
         alignment: Int = align_of[SIMD[Self.dtype, Self.element_size]](),
         invariant: Bool = False,
     ](self, coord: Coord) -> SIMD[Self.dtype, width] where (
-        coord.flat_rank == Self.flat_rank
+        coord.flat_rank == Self.flat_rank or coord.flat_rank == 1
     ):
         """Load elements from the tensor at the specified coordinates.
 
@@ -1245,6 +1245,83 @@ struct TileTensor[
             Layout[
                 shape_types=NewShapeTypes,
                 stride_types = Self.LayoutType._stride_types,
+            ],
+            Self.origin,
+            address_space = Self.address_space,
+            linear_idx_type = Self.linear_idx_type,
+            element_shape_types = Self.element_shape_types,
+        ](self.ptr + offset, new_layout)
+
+    @always_inline
+    fn slice(
+        self,
+        *slices: Tuple[Int, Int],
+    ) -> TileTensor[
+        Self.dtype,
+        Layout[
+            _CoordToDynamic[
+                Self.linear_idx_type, *Self.LayoutType._shape_types
+            ],
+            Self.LayoutType._stride_types,
+        ],
+        Self.origin,
+        address_space = Self.address_space,
+        linear_idx_type = Self.linear_idx_type,
+        element_shape_types = Self.element_shape_types,
+    ]:
+        """Slice tensor with runtime start/end indices.
+
+        Unlike `slice[]()` which requires compile-time bounds, this method
+        accepts runtime indices for fully dynamic slicing. Each argument is
+        a (start, end) tuple for that dimension, matching the dimension-major
+        ordering of the compile-time `slice` method.
+
+        Args:
+            slices: Variadic (start, end) tuples, one per dimension.
+
+        Returns:
+            A view into the sliced region with RuntimeInt shape.
+
+        Example:
+            ```mojo
+            # For a 2D tensor, slice rows 1:3 and columns 2:5
+            var sliced = tensor.slice((1, 3), (2, 5))
+            ```
+        """
+        debug_assert(
+            len(slices) == Self.rank,
+            "slice requires one (start, end) tuple per dimension",
+        )
+
+        var offset = 0
+
+        @parameter
+        for i in range(Self.rank):
+            offset += slices[i][0] * self.layout.stride[i]().value()
+
+        comptime NewShapeTypes = _CoordToDynamic[
+            Self.linear_idx_type, *Self.LayoutType._shape_types
+        ]
+        # comptime NewShapeTypes = Self.DynamicShapeTypes
+        var new_shape = Coord[*NewShapeTypes]()
+
+        @parameter
+        for i in range(Self.rank):
+            new_shape[i] = rebind[NewShapeTypes[i]](
+                RuntimeInt[Self.linear_idx_type](
+                    Scalar[Self.linear_idx_type](slices[i][1] - slices[i][0])
+                )
+            )
+
+        var new_layout = Layout(new_shape, self.layout.stride_coord())
+
+        return TileTensor[
+            Self.dtype,
+            Layout[
+                _CoordToDynamic[
+                    Self.linear_idx_type, *Self.LayoutType._shape_types
+                ],
+                Self.LayoutType._stride_types,
             ],
             Self.origin,
             address_space = Self.address_space,
