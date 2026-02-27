@@ -195,7 +195,7 @@ fn check_ldmatrix_fp8[
     _ = c_host_ref
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         check_ldmatrix_fp8[DType.float8_e4m3fn](ctx)
         check_ldmatrix_fp8[DType.float8_e5m2](ctx)

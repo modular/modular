@@ -585,7 +585,7 @@ fn bench_dispatch[
     shmem_free(recv_count)
 
 
-def main():
+def main() raises:
     comptime hidden_size = env_get_int["hidden_size", 3584]()
     comptime top_k = env_get_int["top_k", 8]()
     comptime n_experts = env_get_int["n_experts", 256]()

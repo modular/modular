@@ -15,7 +15,7 @@
 from gridv1_step9 import Grid
 
 
-def main():
+def main() raises:
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],

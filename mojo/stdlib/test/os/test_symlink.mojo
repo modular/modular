@@ -19,7 +19,7 @@ from tempfile import gettempdir
 from testing import TestSuite, assert_equal
 
 
-def test_create_symlink():
+def test_create_symlink() raises:
     var tempdir = Path(gettempdir().value())
     var src = tempdir / "test_create_symlink"
     var link = tempdir / "test_create_symlink_symlink"
@@ -41,5 +41,5 @@ def test_create_symlink():
         assert_equal(f.read(), "test_create_symlink")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

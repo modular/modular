@@ -858,13 +858,13 @@ Individual structs can define custom type merging logic by defining a
 struct MyType(Copyable):
     var val: Int
 
-    def __bool__(self) -> Bool:
+    def __bool__(self) raises -> Bool:
         return self.val > 0
 
-    def __merge_with__[other_type: type_of(Int)](self) -> Int:
+    def __merge_with__[other_type: type_of(Int)](self) raises -> Int:
         return self.val
 
-def main():
+def main() raises:
     i = 0
     m = MyType(9)
     print(i if i > 0 else m)  # prints "9"
@@ -931,7 +931,7 @@ operator. For example, you could implement the `-` negative operator for a
 struct MyInt:
     var value: Int
 
-    def __neg__(self) -> Self:
+    def __neg__(self) raises -> Self:
         return Self(-self.value)
 ```
 
@@ -994,19 +994,19 @@ type.
 struct MyInt:
     var value: Int
 
-    def __add__(self, rhs: MyInt) -> Self:
+    def __add__(self, rhs: MyInt) raises -> Self:
         return MyInt(self.value + rhs.value)
 
-    def __add__(self, rhs: Int) -> Self:
+    def __add__(self, rhs: Int) raises -> Self:
         return MyInt(self.value + rhs)
 
-    def __radd__(self, lhs: Int) -> Self:
+    def __radd__(self, lhs: Int) raises -> Self:
         return MyInt(self.value + lhs)
 
-    def __iadd__(mut self, rhs: MyInt) -> None:
+    def __iadd__(mut self, rhs: MyInt) raises -> None:
         self.value += rhs.value
 
-    def __iadd__(mut self, rhs: Int) -> None:
+    def __iadd__(mut self, rhs: Int) raises -> None:
         self.value += rhs
 ```
 
@@ -1144,7 +1144,6 @@ struct MySeq[type: Copyable]:
     # Return a new MySeq with a subset of elements
     fn __getitem__(self, span: Slice) -> Self:
         ...
-
 ```
 
 A `Slice` contains three fields:
@@ -1173,7 +1172,6 @@ struct MySeq[type: Copyable]:
         var step: Int
         start, end, step = span.indices(self.size)
         ...
-
 ```
 
 ## An example of implementing operators for a custom type
@@ -1328,7 +1326,7 @@ this example.
 
 ```mojo
     # ...
-    def __getitem__(self, idx: Int) -> Float64:
+    def __getitem__(self, idx: Int) raises -> Float64:
         if idx == 0:
             return self.re
         elif idx == 1:
@@ -1336,7 +1334,7 @@ this example.
         else:
             raise "index out of bounds"
 
-    def __setitem__(mut self, idx: Int, value: Float64) -> None:
+    def __setitem__(mut self, idx: Int, value: Float64) raises -> None:
         if idx == 0:
             self.re = value
         elif idx == 1:
@@ -1376,10 +1374,10 @@ negated.
 
 ```mojo
     # ...
-    def __pos__(self) -> Self:
+    def __pos__(self) raises -> Self:
         return self
 
-    def __neg__(self) -> Self:
+    def __neg__(self) raises -> Self:
         return Self(-self.re, -self.im)
 ```
 
@@ -1412,29 +1410,29 @@ from math import sqrt
 
 # ...
 
-    def __add__(self, rhs: Self) -> Self:
+    def __add__(self, rhs: Self) raises -> Self:
         return Self(self.re + rhs.re, self.im + rhs.im)
 
-    def __sub__(self, rhs: Self) -> Self:
+    def __sub__(self, rhs: Self) raises -> Self:
         return Self(self.re - rhs.re, self.im - rhs.im)
 
-    def __mul__(self, rhs: Self) -> Self:
+    def __mul__(self, rhs: Self) raises -> Self:
         return Self(
             self.re * rhs.re - self.im * rhs.im,
             self.re * rhs.im + self.im * rhs.re
         )
 
-    def __truediv__(self, rhs: Self) -> Self:
+    def __truediv__(self, rhs: Self) raises -> Self:
         denom = rhs.squared_norm()
         return Self(
             (self.re * rhs.re + self.im * rhs.im) / denom,
             (self.im * rhs.re - self.re * rhs.im) / denom
         )
 
-    def squared_norm(self) -> Float64:
+    def squared_norm(self) raises -> Float64:
         return self.re * self.re + self.im * self.im
 
-    def norm(self) -> Float64:
+    def norm(self) raises -> Float64:
         return sqrt(self.squared_norm())
 ```
 
@@ -1480,28 +1478,28 @@ implementing the following eight methods.
 
 ```mojo
     # ...
-    def __add__(self, rhs: Float64) -> Self:
+    def __add__(self, rhs: Float64) raises -> Self:
         return Self(self.re + rhs, self.im)
 
-    def __radd__(self, lhs: Float64) -> Self:
+    def __radd__(self, lhs: Float64) raises -> Self:
         return Self(self.re + lhs, self.im)
 
-    def __sub__(self, rhs: Float64) -> Self:
+    def __sub__(self, rhs: Float64) raises -> Self:
         return Self(self.re - rhs, self.im)
 
-    def __rsub__(self, lhs: Float64) -> Self:
+    def __rsub__(self, lhs: Float64) raises -> Self:
         return Self(lhs - self.re, -self.im)
 
-    def __mul__(self, rhs: Float64) -> Self:
+    def __mul__(self, rhs: Float64) raises -> Self:
         return Self(self.re * rhs, self.im * rhs)
 
-    def __rmul__(self, lhs: Float64) -> Self:
+    def __rmul__(self, lhs: Float64) raises -> Self:
         return Self(lhs * self.re, lhs * self.im)
 
-    def __truediv__(self, rhs: Float64) -> Self:
+    def __truediv__(self, rhs: Float64) raises -> Self:
         return Self(self.re / rhs, self.im / rhs)
 
-    def __rtruediv__(self, lhs: Float64) -> Self:
+    def __rtruediv__(self, lhs: Float64) raises -> Self:
         denom = self.squared_norm()
         return Self(
             (lhs * self.re) / denom,
@@ -1545,38 +1543,38 @@ definitions to support both a `Complex` and a `Float64` operand.
 
 ```mojo
     # ...
-    def __iadd__(mut self, rhs: Self) -> None:
+    def __iadd__(mut self, rhs: Self) raises -> None:
         self.re += rhs.re
         self.im += rhs.im
 
-    def __iadd__(mut self, rhs: Float64) -> None:
+    def __iadd__(mut self, rhs: Float64) raises -> None:
         self.re += rhs
 
-    def __isub__(mut self, rhs: Self) -> None:
+    def __isub__(mut self, rhs: Self) raises -> None:
         self.re -= rhs.re
         self.im -= rhs.im
 
-    def __isub__(mut self, rhs: Float64) -> None:
+    def __isub__(mut self, rhs: Float64) raises -> None:
         self.re -= rhs
 
-    def __imul__(mut self, rhs: Self) -> None:
+    def __imul__(mut self, rhs: Self) raises -> None:
         new_re = self.re * rhs.re - self.im * rhs.im
         new_im = self.re * rhs.im + self.im * rhs.re
         self.re = new_re
         self.im = new_im
 
-    def __imul__(mut self, rhs: Float64) -> None:
+    def __imul__(mut self, rhs: Float64) raises -> None:
         self.re *= rhs
         self.im *= rhs
 
-    def __itruediv__(mut self, rhs: Self) -> None:
+    def __itruediv__(mut self, rhs: Self) raises -> None:
         denom = rhs.squared_norm()
         new_re = (self.re * rhs.re + self.im * rhs.im) / denom
         new_im = (self.im * rhs.re - self.re * rhs.im) / denom
         self.re = new_re
         self.im = new_im
 
-    def __itruediv__(mut self, rhs: Float64) -> None:
+    def __itruediv__(mut self, rhs: Float64) raises -> None:
         self.re /= rhs
         self.im /= rhs
 ```

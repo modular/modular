@@ -93,7 +93,7 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
 
 def test_tma_replace_global_addr_in_gmem_descriptor[
     src_layout: Layout,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = src_layout.shape[0].value()
     comptime N = src_layout.shape[1].value()
 
@@ -247,7 +247,7 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
 
 def test_tma_replace_global_addr_in_smem_descriptor[
     src_layout: Layout,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = src_layout.shape[0].value()
     comptime N = src_layout.shape[1].value()
 
@@ -420,7 +420,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     cta_tile_layout: Layout,
     size_of_subtensors: Int,
     swizzle_mode: TensorMapSwizzle,
-](ctx: DeviceContext, subtensors_m: IndexList[size_of_subtensors]):
+](ctx: DeviceContext, subtensors_m: IndexList[size_of_subtensors]) raises:
     comptime M = src_layout.shape[0].value()
     comptime N = src_layout.shape[1].value()
 
@@ -530,7 +530,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     _ = dst^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_replace_global_addr_in_gmem_descriptor")
         test_tma_replace_global_addr_in_gmem_descriptor[

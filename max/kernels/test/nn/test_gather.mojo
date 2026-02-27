@@ -207,7 +207,7 @@ fn test_gather_empty_indices() raises:
     _test_gather[DType.int64]()
 
 
-def main():
+def main() raises:
     test_gather()
     test_gather_3d()
     test_gather_empty_indices()

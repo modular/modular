@@ -26,7 +26,7 @@ from utils.numerics import isnan
 from internal_utils import assert_almost_equal
 
 
-def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext):
+def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
@@ -359,7 +359,7 @@ fn run_matvec_with_epilogue_fn(
     _ = c_host_naive
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # gemv for matrix vector multiply
         run_matvec(4096, 1, 4096, ctx=ctx)

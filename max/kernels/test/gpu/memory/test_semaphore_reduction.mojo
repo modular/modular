@@ -199,7 +199,7 @@ fn run_matrix_reduction[
     c_host_ref.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_vector_reduction[DType.float32, 128, 4](ctx)
         run_matrix_reduction[DType.float32, 128, 128, 4](ctx)

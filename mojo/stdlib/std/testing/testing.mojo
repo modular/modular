@@ -17,7 +17,7 @@ You can import these APIs from the `testing` package. For example:
 ```mojo
 from testing import assert_true
 
-def main():
+def main() raises:
     x = 1
     y = 2
     try:

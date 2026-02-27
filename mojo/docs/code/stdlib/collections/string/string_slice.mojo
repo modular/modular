@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def string_slice_summary():
+def string_slice_summary() raises:
     from testing import assert_equal, assert_raises
 
     # Create a string slice
@@ -40,5 +40,5 @@ def string_slice_summary():
     # --------
 
 
-def main():
+def main() raises:
     string_slice_summary()

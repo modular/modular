@@ -18,12 +18,12 @@
 from testing import TestSuite
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 # CHECK-LABEL: test_debug_assert_mode_none_true
-def test_debug_assert_mode_none_true():
+def test_debug_assert_mode_none_true() raises:
     print("== test_debug_assert_mode_none_true")
 
     debug_assert[assert_mode="safe"](True, "ok")
@@ -33,7 +33,7 @@ def test_debug_assert_mode_none_true():
 
 
 # CHECK-LABEL: test_debug_assert_mode_none_false
-def test_debug_assert_mode_none_false():
+def test_debug_assert_mode_none_false() raises:
     print("== test_debug_assert_mode_none_false")
     debug_assert(False, "ok")
     debug_assert[assert_mode="safe"](False, "ok")

@@ -39,7 +39,7 @@ fn is_even(x: Int) -> Bool:
     return x % 2 == 0
 
 
-def test_take_while_basic():
+def test_take_while_basic() raises:
     """Tests basic take_while behavior."""
     var nums = [1, 2, 3, 4, 5, 6, 7]
     var it = take_while[less_than_5](nums)
@@ -52,7 +52,7 @@ def test_take_while_basic():
         _ = next(it)  # 5 fails predicate
 
 
-def test_take_while_stops_at_first_failure():
+def test_take_while_stops_at_first_failure() raises:
     """Tests that take_while stops at the first element failing the predicate.
     """
     var nums = [2, 4, 6, 7, 8, 10]  # 7 is odd
@@ -65,7 +65,7 @@ def test_take_while_stops_at_first_failure():
         _ = next(it)  # 7 is odd, stops
 
 
-def test_take_while_all_pass():
+def test_take_while_all_pass() raises:
     """Tests take_while when all elements pass the predicate."""
     var nums = [1, 2, 3, 4]
     var it = take_while[less_than_5](nums)
@@ -78,7 +78,7 @@ def test_take_while_all_pass():
         _ = next(it)  # exhausted
 
 
-def test_take_while_none_pass():
+def test_take_while_none_pass() raises:
     """Tests take_while when no elements pass the predicate."""
     var nums = [5, 6, 7, 8]
     var it = take_while[less_than_5](nums)
@@ -87,7 +87,7 @@ def test_take_while_none_pass():
         _ = next(it)  # first element fails
 
 
-def test_take_while_empty():
+def test_take_while_empty() raises:
     """Tests take_while on an empty list."""
     var empty = List[Int]()
     var it = take_while[less_than_5](empty)
@@ -96,7 +96,7 @@ def test_take_while_empty():
         _ = next(it)
 
 
-def test_take_while_single_pass():
+def test_take_while_single_pass() raises:
     """Tests take_while with single element that passes."""
     var nums = [3]
     var it = take_while[less_than_5](nums)
@@ -106,7 +106,7 @@ def test_take_while_single_pass():
         _ = next(it)
 
 
-def test_take_while_single_fail():
+def test_take_while_single_fail() raises:
     """Tests take_while with single element that fails."""
     var nums = [10]
     var it = take_while[less_than_5](nums)
@@ -115,7 +115,7 @@ def test_take_while_single_fail():
         _ = next(it)
 
 
-def test_take_while_in_for_loop():
+def test_take_while_in_for_loop() raises:
     """Tests take_while iterator in a for loop."""
     var nums = [1, 2, 3, 4, 5, 6, 7]
     var results = List[Int]()
@@ -130,7 +130,7 @@ def test_take_while_in_for_loop():
     assert_equal(results[3], 4)
 
 
-def test_take_while_always_true():
+def test_take_while_always_true() raises:
     """Tests take_while with a predicate that always returns True."""
     var nums = [1, 2, 3]
     var it = take_while[always_true](nums)
@@ -142,7 +142,7 @@ def test_take_while_always_true():
         _ = next(it)
 
 
-def test_take_while_always_false():
+def test_take_while_always_false() raises:
     """Tests take_while with a predicate that always returns False."""
     var nums = [1, 2, 3]
     var it = take_while[always_false](nums)
@@ -151,7 +151,7 @@ def test_take_while_always_false():
         _ = next(it)
 
 
-def test_take_while_is_positive():
+def test_take_while_is_positive() raises:
     """Tests take_while with is_positive predicate."""
     var nums = [5, 3, 1, 0, -1, 2]
     var it = take_while[is_positive](nums)
@@ -163,7 +163,7 @@ def test_take_while_is_positive():
         _ = next(it)  # 0 is not positive
 
 
-def test_take_while_from_range():
+def test_take_while_from_range() raises:
     """Tests take_while on a range."""
     var it = take_while[less_than_5](range(10))
 
@@ -176,7 +176,7 @@ def test_take_while_from_range():
         _ = next(it)
 
 
-def test_take_while_exhausted_stays_exhausted():
+def test_take_while_exhausted_stays_exhausted() raises:
     """Tests that once exhausted, take_while stays exhausted."""
     var nums = [1, 2, 10, 3, 4]
     var it = take_while[less_than_5](nums)
@@ -191,5 +191,5 @@ def test_take_while_exhausted_stays_exhausted():
         _ = next(it)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

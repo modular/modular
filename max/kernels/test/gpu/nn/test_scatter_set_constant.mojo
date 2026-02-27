@@ -77,6 +77,6 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
                 )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_scatter_set_constant(ctx)

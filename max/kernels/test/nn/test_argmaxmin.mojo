@@ -18,7 +18,7 @@ from nn.argmaxmin import argmax, argmin
 
 
 # CHECK-LABEL: test_argn
-def test_argn():
+def test_argn() raises:
     print("== test_argn")
 
     comptime size = 93
@@ -58,7 +58,7 @@ def test_argn():
 
 
 # CHECK-LABEL: test_argn_2
-def test_argn_2():
+def test_argn_2() raises:
     print("== test_argn_2")
 
     comptime batch_size = 4
@@ -108,7 +108,7 @@ def test_argn_2():
 
 
 # CHECK-LABEL: test_argn_2_test_2
-def test_argn_2_test_2():
+def test_argn_2_test_2() raises:
     print("== test_argn_2_test_2")
 
     comptime batch_size = 2
@@ -156,7 +156,7 @@ def test_argn_2_test_2():
 
 
 # CHECK-LABEL: test_argn_2_neg_axis
-def test_argn_2_neg_axis():
+def test_argn_2_neg_axis() raises:
     print("== test_argn_2_neg_axis")
 
     comptime batch_size = 2
@@ -204,7 +204,7 @@ def test_argn_2_neg_axis():
 
 
 # CHECK-LABEL: test_argn_test_zeros
-def test_argn_test_zeros():
+def test_argn_test_zeros() raises:
     print("== test_argn_test_zeros")
 
     comptime batch_size = 1
@@ -248,7 +248,7 @@ def test_argn_test_zeros():
 
 
 # CHECK-LABEL: test_argn_test_identity
-def test_argn_test_identity():
+def test_argn_test_identity() raises:
     print("== test_argn_test_identity")
 
     comptime batch_size = 3
@@ -301,7 +301,7 @@ def test_argn_test_identity():
 
 
 # CHECK-LABEL: test_argn_3d_identity
-def test_argn_3d_identity():
+def test_argn_3d_identity() raises:
     print("== test_argn_3d_identity")
 
     comptime batch_size = 2
@@ -364,7 +364,7 @@ def test_argn_3d_identity():
             print("argmin = ", output[i, j, 0])
 
 
-def test_argn_less_than_simd():
+def test_argn_less_than_simd() raises:
     print("== test_argn_less_than_simd")
 
     comptime batch_size = 2
@@ -420,7 +420,7 @@ def test_argn_less_than_simd():
 
 
 # CHECK-LABEL: test_argn_simd_edge_case
-def test_argn_simd_index_order():
+def test_argn_simd_index_order() raises:
     print("== test_argn_simd_edge_case")
 
     # Checks the case where the maximal value is found in two simd_chunks, where
@@ -472,7 +472,7 @@ def test_argn_simd_index_order():
 
 
 # CHECK-LABEL: test_argn_parallelize
-def test_argn_parallelize():
+def test_argn_parallelize() raises:
     print("== test_argn_parallelize")
 
     # Checks argn's performance when the size of the TileTensor exceeds the threshold to enable parallelism
@@ -555,7 +555,7 @@ def test_argn_parallelize():
     input_ptr.free()
 
 
-def main():
+def main() raises:
     test_argn()
     test_argn_2()
     test_argn_2_test_2()

@@ -336,7 +336,7 @@ struct MHA_cfg(ImplicitlyCopyable):
         # fmt: on
 
 
-def main():
+def main() raises:
     comptime qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
     comptime mask_type = env_get_dtype["mask_type", DType.float32]()
     comptime depth = env_get_int["depth", 128]()

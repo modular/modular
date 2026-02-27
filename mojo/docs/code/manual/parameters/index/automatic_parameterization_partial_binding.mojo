@@ -36,7 +36,7 @@ fn nibble(f: Fudge[5]):
     print("Ate", String(f))
 
 
-def main():
+def main() raises:
     eat(Fudge[5, 5, 7]())
     eat(Fudge[5, 8, 9]())
     # eat(Fudge[12, 5, 7]()) # invalid call to 'eat': failed to infer implicit

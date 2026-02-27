@@ -763,5 +763,5 @@ fn test_selective_scan_update_larger_dimensions() raises:
     ](batch=2, dim=4, n_groups=1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

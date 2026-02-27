@@ -45,7 +45,7 @@ def execute_ragged_flash_attention[
     cache_lengths: List[Int],
     num_layers: Int,
     layer_idx: Int,
-):
+) raises:
     comptime num_continuous_blocks = 32
     comptime page_size = 512
     comptime num_paged_blocks = 512
@@ -368,7 +368,7 @@ def execute_ragged_flash_attention[
 comptime dtype = DType.float32
 
 
-def execute_flash_attention_suite():
+def execute_flash_attention_suite() raises:
     for bs in [1, 16]:
         ce_cache_sizes = List[Int]()
         ce_seq_lens = List[Int]()
@@ -398,6 +398,6 @@ def execute_flash_attention_suite():
     )
 
 
-def main():
+def main() raises:
     seed(42)
     execute_flash_attention_suite()

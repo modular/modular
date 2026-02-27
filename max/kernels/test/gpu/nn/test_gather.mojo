@@ -101,6 +101,6 @@ fn test_gather(ctx: DeviceContext) raises:
     _test_gather[DType.int64]()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_gather(ctx)

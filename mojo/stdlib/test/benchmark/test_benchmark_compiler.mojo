@@ -15,7 +15,7 @@ from compile import compile_info
 from testing import TestSuite, assert_true, assert_false
 
 
-def use_keep(var x: Int32):
+def use_keep(var x: Int32) raises:
     keep(x)
 
 
@@ -29,21 +29,21 @@ struct NotMovable:
 
 def use_black_box_ref(
     x: NotRegisterPassable,
-) -> ref[origin_of(x)] NotRegisterPassable:
+) raises -> ref[origin_of(x)] NotRegisterPassable:
     return black_box(x)
 
 
 def use_black_box_ref_not_movable(
     x: NotMovable,
-) -> ref[origin_of(x)] NotMovable:
+) raises -> ref[origin_of(x)] NotMovable:
     return black_box(x)
 
 
-def use_black_box_var(var x: NotRegisterPassable) -> NotRegisterPassable:
+def use_black_box_var(var x: NotRegisterPassable) raises -> NotRegisterPassable:
     return black_box(take=x^)
 
 
-def test_has_asm_side_effect():
+def test_has_asm_side_effect() raises:
     comptime expected_llvm_ir = 'call void asm sideeffect "", "r,~{memory}"'
     assert_true(
         expected_llvm_ir
@@ -73,7 +73,7 @@ fn _yes_constant_folding() -> Int64:
     return Int64(1) + Int64(2)
 
 
-def test_black_box_prevents_constant_folding():
+def test_black_box_prevents_constant_folding() raises:
     comptime folded_return_value_ir = "ret i64 3"
     assert_false(
         folded_return_value_ir
@@ -85,5 +85,5 @@ def test_black_box_prevents_constant_folding():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

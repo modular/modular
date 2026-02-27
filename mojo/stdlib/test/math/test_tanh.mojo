@@ -26,7 +26,7 @@ fn tanh_libm[
     return libm_call["tanhf", "tanh"](arg)
 
 
-def test_tanh_tfvals_fp32():
+def test_tanh_tfvals_fp32() raises:
     comptime dtype = DType.float32
 
     # The following input values for x are taken from
@@ -73,7 +73,7 @@ def test_tanh_tfvals_fp32():
             assert_almost_equal(err[i], abs_rel_err[i])
 
 
-def test_tanh_tfvals_fp64():
+def test_tanh_tfvals_fp64() raises:
     comptime dtype = DType.float64
 
     # The following input values for x are taken from
@@ -130,7 +130,7 @@ def test_tanh_tfvals_fp64():
             assert_almost_equal(err[i], abs_rel_err[i])
 
 
-def _test_tanh_libm[N: Int = 8192]():
+def _test_tanh_libm[N: Int = 8192]() raises:
     seed(0)
     comptime test_dtype = DType.float32
     var x32 = alloc[Scalar[test_dtype]](N)
@@ -167,7 +167,7 @@ def _test_tanh_libm[N: Int = 8192]():
     libm_out.free()
 
 
-def test_direct():
+def test_direct() raises:
     comptime F32x4 = SIMD[DType.float32, 4]
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)
     assert_almost_equal(
@@ -187,9 +187,9 @@ def test_direct():
     )
 
 
-def test_tanh_libm():
+def test_tanh_libm() raises:
     _test_tanh_libm[]()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

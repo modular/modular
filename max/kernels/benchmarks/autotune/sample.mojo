@@ -58,7 +58,7 @@ fn bench_func[
         print("pretending to run the kernel...PASS")
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.float16]()
     comptime shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
     comptime shape = int_list_to_tuple[shape_int_list]()

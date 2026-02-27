@@ -6066,7 +6066,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ```mojo
         from std.gpu.host import DeviceAttribute, DeviceContext
 
-        def main():
+        def main() raises:
             var ctx = DeviceContext()
             var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
             var max_blocks = ctx.get_attribute(attr)

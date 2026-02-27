@@ -19,7 +19,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory, gettempdir, mkdtemp
 from testing import assert_equal, assert_false, assert_true, TestSuite
 
 
-def test_mkdtemp():
+def test_mkdtemp() raises:
     var dir_name: String
 
     dir_name = mkdtemp()
@@ -61,7 +61,7 @@ struct TempEnvWithCleanup:
         self._vars_back = Dict[String, String]()
         self.clean_up_function = clean_up_function
 
-    def __enter__(mut self):
+    def __enter__(mut self) raises:
         for key_value in self.vars_to_set.items():
             var key = key_value.key
             var value = key_value.value
@@ -74,13 +74,13 @@ struct TempEnvWithCleanup:
             var value = key_value.value
             _ = os.setenv(key, value, overwrite=True)
 
-    def __exit__(mut self, error: Error) -> Bool:
+    def __exit__(mut self, error: Error) raises -> Bool:
         self.__exit__()
         self.clean_up_function()
         return False
 
 
-def _clean_up_gettempdir_test():
+def _clean_up_gettempdir_test() raises:
     var dir_without_writing_access = Path() / "dir_without_writing_access"
     if exists(dir_without_writing_access):
         os.rmdir(dir_without_writing_access)
@@ -91,7 +91,7 @@ def _clean_up_gettempdir_test():
 
 def _set_up_gettempdir_test(
     dir_with_writing_access: Path, dir_without_writing_access: Path
-):
+) raises:
     os.mkdir(dir_with_writing_access, mode=0o700)
     try:
         os.mkdir(dir_without_writing_access, mode=0o100)
@@ -102,7 +102,7 @@ def _set_up_gettempdir_test(
         )
 
 
-def test_gettempdir():
+def test_gettempdir() raises:
     var non_existing_dir = Path() / "non_existing_dir"
     assert_false(
         exists(non_existing_dir), String("Unexpected dir", non_existing_dir)
@@ -162,7 +162,7 @@ def test_gettempdir():
     _clean_up_gettempdir_test()
 
 
-def test_temporary_directory() -> None:
+def test_temporary_directory() raises -> None:
     var tmp_dir2 = String()
     with TemporaryDirectory(suffix="my_suffix", prefix="my_prefix") as tmp_dir:
         assert_true(exists(tmp_dir), "Failed to create temp dir " + tmp_dir)
@@ -180,7 +180,7 @@ def test_temporary_directory() -> None:
     assert_false(exists(tmp_dir2), "Failed to delete temp dir " + tmp_dir2)
 
 
-def test_named_temporary_file_deletion():
+def test_named_temporary_file_deletion() raises:
     var tmp_file: NamedTemporaryFile
     var file_path: String
 
@@ -215,7 +215,7 @@ def test_named_temporary_file_deletion():
     os.remove(file_path)
 
 
-def test_named_temporary_file_write():
+def test_named_temporary_file_write() raises:
     var file_name: String
     var contents: String
 
@@ -229,5 +229,5 @@ def test_named_temporary_file_write():
     os.remove(file_name)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -46,7 +46,7 @@ def execute_flash_attention[
     layer_idx: Int,
     cache_valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
     ctx: DeviceContext,
-):
+) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
@@ -286,7 +286,7 @@ def execute_flash_attention[
                     )
 
 
-def execute_flash_attention_suite(ctx: DeviceContext):
+def execute_flash_attention_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.float32, DType.bfloat16)
     var bs = 2
     var valid_length_managed = ManagedLayoutTensor[
@@ -349,7 +349,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         )
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         execute_flash_attention_suite(ctx)

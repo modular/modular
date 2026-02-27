@@ -645,7 +645,7 @@ struct TileTensor[
         from layout import TileTensor
         from layout._layout import row_major
 
-        def main():
+        def main() raises:
             var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
             var tensor = TileTensor(storage, row_major[2, 3]()).fill(1.0)
             print(tensor)  # Internally calls `write_to` with a StringWriter
@@ -1044,7 +1044,7 @@ struct TileTensor[
         from layout._layout import row_major
         from layout import TileTensor
 
-        def main():
+        def main() raises:
             var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
             var tensor = TileTensor(storage, row_major[3,4]()).fill(0.0)
             print(tensor)

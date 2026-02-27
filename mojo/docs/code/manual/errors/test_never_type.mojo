@@ -20,19 +20,19 @@ def test_panic_always_raises():
         panic("boom")
 
 
-def test_get_value_with_some():
+def test_get_value_with_some() raises:
     assert_equal(get_value_or_panic(Optional(42)), 42)
 
 
-def test_get_value_with_none():
+def test_get_value_with_none() raises:
     with assert_raises(contains="value is missing"):
         _ = get_value_or_panic(Optional[Int]())
 
 
-def test_safe_add():
+def test_safe_add() raises:
     assert_equal(safe_add(3, 4), 7)
     assert_equal(safe_add(0, 0), 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

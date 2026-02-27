@@ -94,7 +94,7 @@ fn test_shape[
         assert_true(errors == 0, msg=String("Test failed:", errors, "errors"))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("Testing Ping-Pong Kernel Shape Compatibility")
         print("=" * 60)

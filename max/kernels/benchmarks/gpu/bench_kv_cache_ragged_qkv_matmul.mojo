@@ -59,7 +59,7 @@ def execute_kv_cache_ragged_matmul[
     batch_size: Int,
     seq_len: Int,
     use_random_lengths: Bool,
-):
+) raises:
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(
@@ -304,7 +304,7 @@ def execute_kv_cache_ragged_matmul[
     )
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
     comptime head_dim = env_get_int["head_dim", 128]()
     comptime num_q_heads = env_get_int["num_q_heads", 128]()

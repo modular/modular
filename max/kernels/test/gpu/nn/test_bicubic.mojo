@@ -720,7 +720,7 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     _ = output_dev^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_bicubic_kernel[DType.float32,](  # data_type
             coord[1, 3, 5, 5](),  # input  (NCHW)

@@ -22,7 +22,7 @@ from testing import (
 from test_utils import CopyCounter, MoveOnly
 
 
-def test_tuple_contains():
+def test_tuple_contains() raises:
     var a = (123, True, StaticString("Mojo is awesome"))
 
     assert_true(StaticString("Mojo is awesome") in a)
@@ -116,7 +116,7 @@ def test_tuple_contains():
     assert_false(d_alias.__contains__("Hello world"))
 
 
-def test_tuple_unpack():
+def test_tuple_unpack() raises:
     (var list) = [a + b for a, b in [(1, 2), (3, 4)]]
     assert_equal(list, [3, 7])
 
@@ -124,14 +124,14 @@ def test_tuple_unpack():
     assert_equal(list2, [3, 7])
 
 
-def test_tuple_default():
+def test_tuple_default() raises:
     var t: Tuple[Int, String, Float32] = {}
     assert_equal(t[0], 0)
     assert_equal(t[1], "")
     assert_equal(t[2], 0.0)
 
 
-def test_tuple_comparison():
+def test_tuple_comparison() raises:
     assert_equal((1, 2, 3), (1, 2, 3))
     assert_false((1, 2, 3) != (1, 2, 3))
     assert_not_equal((1, 2, 3), (1, 2, 4))
@@ -149,14 +149,14 @@ def test_tuple_comparison():
     assert_true((1, 2, 3) >= (1, 2, 2))
 
 
-def test_tuple_comparison_different_types():
+def test_tuple_comparison_different_types() raises:
     assert_false((1, "foo") == (1, "bar"))
     assert_true((1, "foo") != (1, "bar"))
     assert_false((1, "foo") < (1, "bar"))
     assert_true((1, "foo") > (1, "bar"))
 
 
-def test_tuple_comparison_different_lengths():
+def test_tuple_comparison_different_lengths() raises:
     assert_false((1, 2, 3) == (1, 2))
     assert_true((1, 2, 3) != (1, 2))
     assert_false((1, 2, 3) < (1, 2))
@@ -165,7 +165,7 @@ def test_tuple_comparison_different_lengths():
     assert_true((1, 2, 3) >= (1, 2))
 
 
-def test_tuple_comparison_different_types_and_lengths():
+def test_tuple_comparison_different_types_and_lengths() raises:
     assert_false((1, "foo") == (1, "bar", "baz"))
     assert_true((1, "foo") != (1, "bar", "baz"))
     assert_false((1, "foo") < (1, "bar", "baz"))
@@ -174,52 +174,52 @@ def test_tuple_comparison_different_types_and_lengths():
     assert_true((1, "foo") >= (1, "bar", "baz"))
 
 
-def test_tuple_reverse_odd():
+def test_tuple_reverse_odd() raises:
     var t = ("hi", 1, 4.5)
     var reversed_t = t^.reverse()
     assert_equal(reversed_t, (4.5, 1, "hi"))
 
 
-def test_tuple_reverse_empty():
+def test_tuple_reverse_empty() raises:
     var t = Tuple[]()
     var t_reversed = t^.reverse()
     assert_equal(t_reversed, ())
 
 
-def test_tuple_reverse_even():
+def test_tuple_reverse_even() raises:
     var t = (Bool(True), Int(42))
     var t_reversed = t^.reverse()
     assert_equal(t_reversed, (Int(42), Bool(True)))
 
 
-def test_tuple_reverse_copy_count():
+def test_tuple_reverse_copy_count() raises:
     var t = (CopyCounter(),)
     var t2 = t^.reverse()
     assert_equal(t2[0].copy_count, 0)
 
 
-def test_tuple_concat():
+def test_tuple_concat() raises:
     var t = ("hi", "hey", 1)
     var t2 = (4.5, "hello")
     var concatted = t^.concat(t2^)
     assert_equal(concatted, ("hi", "hey", 1, 4.5, "hello"))
 
 
-def test_tuple_empty_concat():
+def test_tuple_empty_concat() raises:
     var t = ()
     var t2 = ()
     var concatted = t^.concat(t2^)
     assert_equal(concatted, ())
 
 
-def test_tuple_identity_concat():
+def test_tuple_identity_concat() raises:
     var t = (Bool(True),)
     var t2 = ()
     var concatted = t^.concat(t2^)
     assert_equal(concatted, (Bool(True),))
 
 
-def test_tuple_concat_copy_count():
+def test_tuple_concat_copy_count() raises:
     var t = (CopyCounter(),)
     var t2 = (String(""),)
     var t3 = t^.concat(t2^)
@@ -227,28 +227,28 @@ def test_tuple_concat_copy_count():
 
 
 # This test doesn't need to run, it just needs to compile
-def test_tuple_size_parse_time():
+def test_tuple_size_parse_time() raises:
     fn func_with_where_clause(t: Tuple) where type_of(t).__len__() < 4:
         pass
 
     func_with_where_clause((1, 3, 2))
 
 
-def test_tuple_conforms_copyable():
+def test_tuple_conforms_copyable() raises:
     assert_true(conforms_to(Tuple[], Copyable))
     assert_true(conforms_to(Tuple[Int], Copyable))
     assert_true(conforms_to(Tuple[Int, String], Copyable))
     assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Copyable))
 
 
-def test_tuple_works_with_non_copyable_types():
+def test_tuple_works_with_non_copyable_types() raises:
     var tuple = (MoveOnly[Int](42), 55)
     var moved = tuple^
     assert_equal(moved[0].data, 42)
     assert_equal(moved[1], 55)
 
 
-def test_tuple_write_to():
+def test_tuple_write_to() raises:
     var s = String()
     (1, 2, 3).write_to(s)
     assert_equal(s, "(1, 2, 3)")
@@ -271,7 +271,7 @@ def test_tuple_write_to():
     assert_equal(s, "(True, 42, hi)")
 
 
-def test_tuple_write_repr_to():
+def test_tuple_write_repr_to() raises:
     var s = String()
     (1, 2, 3).write_repr_to(s)
     assert_equal(s, "Tuple[Int, Int, Int](Int(1), Int(2), Int(3))")
@@ -294,7 +294,7 @@ def test_tuple_write_repr_to():
     assert_equal(s, "Tuple[Bool, Int, String](True, Int(42), 'hi')")
 
 
-def test_tuple_assert_equal():
+def test_tuple_assert_equal() raises:
     # Direct tuple-to-tuple comparisons via assert_equal.
     assert_equal((), ())
     assert_equal((1,), (1,))
@@ -303,16 +303,16 @@ def test_tuple_assert_equal():
     assert_equal((True, 42, "hi"), (True, 42, "hi"))
 
 
-def test_tuple_assert_not_equal():
+def test_tuple_assert_not_equal() raises:
     assert_not_equal((1, 2), (1, 3))
     assert_not_equal((1, "foo"), (1, "bar"))
     assert_not_equal((1, 2, 3), (1, 2))
 
 
-def test_tuple_assert_equal_failure_message():
+def test_tuple_assert_equal_failure_message() raises:
     with assert_raises(contains="Tuple[Int, Int](Int(1), Int(2))"):
         assert_equal((1, 2), (1, 3))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

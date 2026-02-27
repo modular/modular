@@ -21,7 +21,7 @@ struct Foobat(ImplicitlyCopyable):
         print("copy ctor")
 
 
-def main():
+def main() raises:
     # start-extension-example
     # Without explicit extension: `s` is last used at the print, so it is destroyed after it.
     var s = "abc"

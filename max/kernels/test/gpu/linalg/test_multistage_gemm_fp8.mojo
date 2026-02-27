@@ -204,7 +204,7 @@ fn test_fp8_multistage_gemm[
     _ = c_tensor
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_fp8_multistage_gemm[
             DType.float8_e4m3fn, 128, 128, 64, transpose_b=True

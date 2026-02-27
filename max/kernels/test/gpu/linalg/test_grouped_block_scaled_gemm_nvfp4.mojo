@@ -244,7 +244,7 @@ fn test_nvf4_vs_mxf8_comparison(ctx: DeviceContext) raises:
 # =============================================================================
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("Test: Grouped Block-Scaled GEMM (NVF4)")
     print("=" * 60)

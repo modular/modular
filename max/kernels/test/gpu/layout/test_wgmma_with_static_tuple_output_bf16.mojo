@@ -197,7 +197,7 @@ fn wgmma_bf16_bf16_f32[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for n in range(8, 264, 8):
             wgmma_bf16_bf16_f32[64, n, 16, True](ctx)

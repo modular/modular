@@ -26,7 +26,7 @@ fn layout_size() -> Int:
     return size
 
 
-def main():
+def main() raises:
     var x = lookup_fn[1](4)
     assert_equal(x, 24)
 

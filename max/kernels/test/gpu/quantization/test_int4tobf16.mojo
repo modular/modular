@@ -70,7 +70,7 @@ fn call_int4tobf16[
     out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[DType.int32, 4](v))
 
 
-def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
+def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
     var out_host = NDBuffer[
         DType.bfloat16, 1, MutAnyOrigin, 8
     ].stack_allocation()
@@ -87,7 +87,7 @@ def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
         assert_equal(out_host[2 * i + 1], BFloat16(i + 4))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_int4tobfloat16[no_lop=False](ctx)
         test_int4tobfloat16[no_lop=True](ctx)

@@ -28,9 +28,9 @@ struct SimpleStrategy(Movable, Strategy):
         return 42
 
 
-def test_prop_test_runner_propagates_error():
+def test_prop_test_runner_propagates_error() raises:
     @parameter
-    def properties(_n: Int):
+    def properties(_n: Int) raises:
         raise Error("prop test error 123")
 
     with assert_raises(contains="prop test error 123"):
@@ -49,9 +49,9 @@ struct RecordingStrategy[origin: MutOrigin](Movable, Strategy):
         return random
 
 
-def test_prop_test_runner_executes_specified_number_of_runs():
+def test_prop_test_runner_executes_specified_number_of_runs() raises:
     @parameter
-    def properties(_n: Int):
+    def properties(_n: Int) raises:
         pass
 
     var list = List[Int]()
@@ -61,9 +61,9 @@ def test_prop_test_runner_executes_specified_number_of_runs():
     assert_equal(10, len(list))
 
 
-def test_prop_test_runner_using_same_seed_produces_deterministic_results():
+def test_prop_test_runner_using_same_seed_produces_deterministic_results() raises:
     @parameter
-    def properties(_n: Int):
+    def properties(_n: Int) raises:
         pass
 
     var config = PropTestConfig(runs=5, seed=1234)
@@ -81,5 +81,5 @@ def test_prop_test_runner_using_same_seed_produces_deterministic_results():
     assert_equal(initial_list, second_list)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

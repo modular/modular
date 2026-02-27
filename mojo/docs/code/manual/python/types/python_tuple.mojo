@@ -15,7 +15,7 @@
 from python import Python
 
 
-def main():
+def main() raises:
     py_tuple = Python.tuple("cat", 2, 3.1415, "cat")
     n = py_tuple[2]
     print("n =", n)

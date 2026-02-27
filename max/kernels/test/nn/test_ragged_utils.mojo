@@ -18,7 +18,7 @@ from testing import assert_equal
 from utils import Index
 
 
-def test_get_batch_from_row_offsets():
+def test_get_batch_from_row_offsets() raises:
     comptime batch_size = 9
     var storage = InlineArray[UInt32, batch_size + 1](uninitialized=True)
     prefix_sums = LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
@@ -54,5 +54,5 @@ def test_get_batch_from_row_offsets():
     )
 
 
-def main():
+def main() raises:
     test_get_batch_from_row_offsets()

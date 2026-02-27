@@ -23,9 +23,9 @@ convert into corresponding Python types.
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     py_module = """
-def type_printer(value):
+def type_printer(value) raises:
     print(type(value))
 """
     py_utils = Python.evaluate(py_module, file=True, name="py_utils")
@@ -71,7 +71,7 @@ For example, to create a Python dictionary, use the
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     py_dict = Python.dict()
     py_dict["item_name"] = "whizbang"
     py_dict["price"] = 11.75
@@ -89,7 +89,7 @@ can create a Python list and optionally initialize it:
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     py_list = Python.list("cat", 2, 3.14159, 4)
     n = py_list[2]
     print("n =", n)
@@ -109,7 +109,7 @@ Python tuple of values:
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     py_tuple = Python.tuple("cat", 2, 3.1415, "cat")
     n = py_tuple[2]
     print("n =", n)
@@ -129,7 +129,7 @@ example, to create a Python `set`:
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     var py_set = Python.evaluate('{2, 3, 2, 7, 11, 3}')
     num_items = len(py_set)
     print(num_items, "items in the set.")
@@ -156,7 +156,7 @@ from python import Python
 from python import PythonObject
 
 
-def main():
+def main() raises:
     var py_string = PythonObject("Hello, Mojo!")
     var py_bool = PythonObject(True)
     var py_int = PythonObject(123)
@@ -183,7 +183,7 @@ type as shown below:
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     var value1 = PythonObject(3.7)
     value2 = Python.evaluate("10/3")
 

@@ -474,7 +474,7 @@ fn test_all_types[
     test_all_out_idx_types[DType.bfloat16, fill_fn](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("\n====== Testing Fill Iota ======\n")
         test_all_types[fill_iota](ctx)

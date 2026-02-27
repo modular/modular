@@ -226,7 +226,7 @@ fn run_broadcast_sweep[]() raises:
                 raise e^
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )

@@ -881,7 +881,7 @@ fn size_of[type: AnyType, target: _TargetType = _current_target()]() -> Int:
     Example:
     ```mojo
     from std.sys.info import size_of
-    def main():
+    def main() raises:
         print(
             size_of[UInt8]() == 1,
             size_of[UInt16]() == 2,

@@ -27,7 +27,7 @@ from testdata.fused_qk_rope_goldens import (
 from utils import IndexList
 
 
-def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
+def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -196,7 +196,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
                 )
 
 
-def main() -> None:
+def main() raises -> None:
     # Full head RoPE - this works correctly and is production ready
     print("Full head RoPE")
     test_rope_ragged[8, DType.float32]()

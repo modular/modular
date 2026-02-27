@@ -29,7 +29,7 @@ from sys.info import size_of
 # CHECK: target datalayout = "e-m:e-p:32:32
 
 
-def main():
+def main() raises:
     # Compile-time assertions to verify correct sizes on 32-bit target
     # ILP32: long is 32-bit (4 bytes), long long is 64-bit (8 bytes)
     comptime assert size_of[c_long]() == 4, "c_long should be 4 bytes on 32-bit"

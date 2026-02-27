@@ -46,7 +46,7 @@ def reference_attention_bshd[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
-):
+) raises:
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
     comptime layout_4d = Layout.row_major[4]()
 
@@ -178,7 +178,7 @@ def reference_attention_bshd_with_sinks[
     sink_weights_nd: LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE)],
     output_nd: LayoutTensor[mut=True, dtype, ...],
     scale: Float32,
-):
+) raises:
     """Reference implementation of attention with sink weights."""
     comptime assert dtype.is_floating_point(), "dtype must be floating point"
 
@@ -378,7 +378,7 @@ def verify_output[
     output: LayoutTensor[dtype, ...],
     ref_output: LayoutTensor[dtype, ...],
     cfg: TestCaseConfig[batch_rank],
-) -> None:
+) raises -> None:
     """Compares `output` and `ref_output` elementwise, printing up to 5 mismatches.
     """
     var mismatches = 0
@@ -418,7 +418,7 @@ def build_ndbuffer[
     rank: Int,
     *,
     static_shape: IndexList[rank] = IndexList[rank](fill=UNKNOWN_VALUE),
-](shape: IndexList[rank]) -> LayoutTensor[
+](shape: IndexList[rank]) raises -> LayoutTensor[
     dtype, Layout.row_major(static_shape), MutAnyOrigin
 ]:
     var ptr = UnsafePointer[Scalar[dtype]].alloc(shape.flattened_length())
@@ -435,7 +435,7 @@ def test_case[
     output_static_shape: IndexList[batch_rank + 2] = IndexList[batch_rank + 2](
         fill=UNKNOWN_VALUE
     ),
-](cfg: TestCaseConfig[batch_rank]):
+](cfg: TestCaseConfig[batch_rank]) raises:
     seed(42)
 
     # Allocate the QKV tensors.
@@ -505,7 +505,7 @@ def test_case[
     ref_output.ptr.free()
 
 
-def test_flash_attention[dtype: DType]():
+def test_flash_attention[dtype: DType]() raises:
     test_case[dtype](
         TestCaseConfig(
             batch_dims=Index(1, 8),
@@ -596,7 +596,7 @@ def test_case_split_kv[
     output_static_shape: IndexList[batch_rank + 2] = IndexList[batch_rank + 2](
         fill=UNKNOWN_VALUE
     ),
-](cfg: TestCaseConfig[batch_rank]):
+](cfg: TestCaseConfig[batch_rank]) raises:
     # For now only allow Q.shape = [B, S, H, D].
     comptime assert batch_rank == 2
 
@@ -714,7 +714,7 @@ def test_case_split_kv[
     ref_output.ptr.free()
 
 
-def test_flash_attention_split_kv[dtype: DType]():
+def test_flash_attention_split_kv[dtype: DType]() raises:
     for kv_seq_len in range(1, 128):
         test_case_split_kv[dtype](
             TestCaseConfig(
@@ -768,7 +768,7 @@ def test_flash_attention_split_kv[dtype: DType]():
     )
 
 
-def test_flash_attention_with_sinks[dtype: DType]():
+def test_flash_attention_with_sinks[dtype: DType]() raises:
     """Test flash attention with and without sink weights."""
     print("Testing flash attention with sink weights...")
 
@@ -949,7 +949,7 @@ def test_flash_attention_with_sinks[dtype: DType]():
     ref_output_with_sinks.ptr.free()
 
 
-def main():
+def main() raises:
     test_flash_attention[DType.float32]()
     test_flash_attention_split_kv[DType.float32]()
     test_flash_attention_with_sinks[DType.float32]()

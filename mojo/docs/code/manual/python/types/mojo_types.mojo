@@ -15,7 +15,7 @@
 from python import Python
 
 
-def main():
+def main() raises:
     py_module = """
 def type_printer(value):
     print(type(value))

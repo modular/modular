@@ -890,7 +890,7 @@ def test_blackwell_kernel_7[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     benchmark: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -1124,7 +1124,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             print("error")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Run the benchmark
         if is_benchmark():

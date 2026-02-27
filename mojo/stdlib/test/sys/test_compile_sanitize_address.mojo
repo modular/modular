@@ -18,7 +18,7 @@
 from sys.compile import SanitizeAddress
 
 
-def main():
+def main() raises:
     print(SanitizeAddress)
     # CHECK-ON: True
     # CHECK-OFF: False

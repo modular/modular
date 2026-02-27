@@ -24,7 +24,7 @@ from utils import IndexList
 
 def run_elementwise[
     dtype: DType,
-    kernel_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) -> SIMD[
+    kernel_fn: fn[dtype: DType, width: Int](SIMD[dtype, width]) raises -> SIMD[
         dtype, width
     ],
 ](ctx: DeviceContext) where dtype.is_floating_point():
@@ -86,7 +86,7 @@ def run_elementwise[
                 )
 
 
-def test_rsqrt():
+def test_rsqrt() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float16, sqrt](ctx)
         run_elementwise[DType.float32, sqrt](ctx)
@@ -96,5 +96,5 @@ def test_rsqrt():
         run_elementwise[DType.float64, rsqrt](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

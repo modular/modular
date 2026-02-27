@@ -230,7 +230,7 @@ fn test_dynamic_mxfp8_quant[
                 )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_dynamic_mxfp8_quant[
             DType.bfloat16,

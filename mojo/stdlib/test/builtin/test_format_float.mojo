@@ -15,7 +15,7 @@ from builtin._format_float import _write_float
 from testing import assert_equal, TestSuite
 
 
-def test_float64():
+def test_float64() raises:
     var cases = Dict[String, Float64]()
     # Zero values
     cases["0.0"] = Float64(0.0)
@@ -93,7 +93,7 @@ def test_float64():
         assert_equal(entry.key, mojo_f64_str)
 
 
-def test_float32():
+def test_float32() raises:
     var cases = Dict[String, Float32]()
     # Zero values
     cases["0.0"] = Float32(0.0)
@@ -188,5 +188,5 @@ def test_float32():
         assert_equal(entry.key, mojo_f32_str)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

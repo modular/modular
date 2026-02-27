@@ -40,7 +40,7 @@ from testdata.fused_qk_rope_goldens import (
 from utils import IndexList
 
 
-def test_fused_qk_rope[dtype: DType]() -> None:
+def test_fused_qk_rope[dtype: DType]() raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -214,5 +214,5 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     _ = valid_lengths_buffer^
 
 
-def main() -> None:
+def main() raises -> None:
     test_fused_qk_rope[DType.float32]()

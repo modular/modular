@@ -28,12 +28,12 @@ from testing import (
 )
 
 
-def test_basic_ref():
+def test_basic_ref() raises:
     var b = OwnedPointer(1)
     assert_equal(1, b[])
 
 
-def test_from_unsafe_pointer_constructor():
+def test_from_unsafe_pointer_constructor() raises:
     var deleted = False
     var unsafe_ptr = alloc[ObservableDel[]](1)
     unsafe_ptr.init_pointee_move(
@@ -46,7 +46,7 @@ def test_from_unsafe_pointer_constructor():
     assert_true(deleted)
 
 
-def test_owned_pointer_copy_constructor():
+def test_owned_pointer_copy_constructor() raises:
     var b = OwnedPointer(1)
     var b2 = OwnedPointer(other=b)
 
@@ -56,7 +56,7 @@ def test_owned_pointer_copy_constructor():
     assert_false(b.unsafe_ptr() == b2.unsafe_ptr())
 
 
-def test_copying_constructor():
+def test_copying_constructor() raises:
     var v = ImplicitCopyOnly(1)
     var b = OwnedPointer(v)
 
@@ -64,7 +64,7 @@ def test_copying_constructor():
     assert_equal(b[].copy_count, 1)  # this should only ever require one copy
 
 
-def test_explicitly_copying_constructor():
+def test_explicitly_copying_constructor() raises:
     var v = ExplicitCopyOnly(1)
     var b = OwnedPointer(copy_value=v)
 
@@ -72,14 +72,14 @@ def test_explicitly_copying_constructor():
     assert_equal(b[].copy_count, 1)  # this should only ever require one copy
 
 
-def test_moving_constructor():
+def test_moving_constructor() raises:
     var v = MoveOnly[Int](1)
     var b = OwnedPointer(v^)
 
     assert_equal(b[].data, 1)
 
 
-def test_basic_ref_mutate():
+def test_basic_ref_mutate() raises:
     var b = OwnedPointer(1)
     assert_equal(1, b[])
 
@@ -88,7 +88,7 @@ def test_basic_ref_mutate():
     assert_equal(2, b[])
 
 
-def test_multiple_refs():
+def test_multiple_refs() raises:
     var b = OwnedPointer(1)
 
     var borrow1 = b[]
@@ -97,7 +97,7 @@ def test_multiple_refs():
     assert_equal(2, borrow1 + borrow2)
 
 
-def test_basic_del():
+def test_basic_del() raises:
     var deleted = False
     var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
 
@@ -108,13 +108,13 @@ def test_basic_del():
     assert_true(deleted)
 
 
-def test_take():
+def test_take() raises:
     var b = OwnedPointer(1)
     var v = b^.take()
     assert_equal(1, v)
 
 
-def test_moveinit():
+def test_moveinit() raises:
     var deleted = False
     var b = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
     var p1 = Int(b.unsafe_ptr())
@@ -130,7 +130,7 @@ def test_moveinit():
     _ = b2^
 
 
-def test_steal_data():
+def test_steal_data() raises:
     var deleted = False
 
     var owned_ptr = OwnedPointer(ObservableDel(UnsafePointer(to=deleted)))
@@ -143,12 +143,12 @@ def test_steal_data():
     _ = OwnedPointer(unsafe_from_raw_pointer=ptr)
 
 
-def test_write_to():
+def test_write_to() raises:
     check_write_to(OwnedPointer(42), expected="42", is_repr=False)
     check_write_to(OwnedPointer("hello"), expected="hello", is_repr=False)
 
 
-def test_write_repr_to():
+def test_write_repr_to() raises:
     check_write_to(
         OwnedPointer(42), expected="OwnedPointer[Int](Int(42))", is_repr=True
     )
@@ -159,5 +159,5 @@ def test_write_repr_to():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

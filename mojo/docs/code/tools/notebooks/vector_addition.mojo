@@ -31,7 +31,7 @@ fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
     output[idx] = left[idx] + right[idx]
 
 
-def main():
+def main() raises:
     # Ensure a supported GPU (NVIDIA or AMD) is available
     comptime assert has_accelerator(), "This example requires a supported GPU"
 

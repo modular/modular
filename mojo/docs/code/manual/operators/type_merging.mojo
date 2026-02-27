@@ -16,14 +16,14 @@
 struct MyType(Copyable):
     var val: Int
 
-    def __bool__(self) -> Bool:
+    def __bool__(self) raises -> Bool:
         return self.val > 0
 
-    def __merge_with__[other_type: type_of(Int)](self) -> Int:
+    def __merge_with__[other_type: type_of(Int)](self) raises -> Int:
         return self.val
 
 
-def main():
+def main() raises:
     list = [0.5, 1, 2]
     for value in list:
         print(value)

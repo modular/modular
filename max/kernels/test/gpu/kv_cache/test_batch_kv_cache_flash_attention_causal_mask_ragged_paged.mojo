@@ -44,7 +44,7 @@ def execute_ragged_flash_attention[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     comptime page_size = 512
 
     var batch_size = len(valid_lengths)
@@ -405,7 +405,7 @@ def execute_ragged_flash_attention[
                         ref_out[ragged_offset + s, h, Int(d)] = 123.4567
 
 
-def execute_flash_attention_suite(ctx: DeviceContext):
+def execute_flash_attention_suite(ctx: DeviceContext) raises:
     comptime types = (DType.float32, DType.bfloat16)
 
     for bs in [1, 4, 16]:
@@ -468,7 +468,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     ](tg_seq_lens, tg_variable_cache_lens, 2, 0, ctx)
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         execute_flash_attention_suite(ctx)

@@ -200,6 +200,6 @@ fn test_tpool_patch_merger(ctx: DeviceContext) raises:
     print("test_tpool_patch_merger: PASSED")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_tpool_patch_merger(ctx)

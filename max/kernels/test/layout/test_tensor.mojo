@@ -2030,7 +2030,7 @@ fn test_merge():
     print(a)
 
 
-def main():
+def main() raises:
     test_basic_tensor_ops()
     test_tesnsor_fragments()
     test_tensor_tile_and_distribute()

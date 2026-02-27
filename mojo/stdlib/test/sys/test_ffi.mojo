@@ -266,7 +266,7 @@ comptime error_message_macos: List[Tuple[ErrNo, String]] = [
 ]
 
 
-def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]():
+def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]() raises:
     comptime for i in range(len(error_message)):
         errno, msg = materialize[error_message[i]]()
         set_errno(errno)
@@ -275,7 +275,7 @@ def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]():
     set_errno(ErrNo.SUCCESS)
 
 
-def test_errno_message():
+def test_errno_message() raises:
     comptime if CompilationTarget.is_linux():
         _test_errno_message[error_message_linux]()
     elif CompilationTarget.is_macos():
@@ -284,7 +284,7 @@ def test_errno_message():
         comptime assert False, "test not implemented for the platform"
 
 
-def test_errno():
+def test_errno() raises:
     # test it raises the correct libc error
     with assert_raises(contains=String(ErrNo.ENOENT)):
         _ = realpath("does/not/exist")
@@ -303,5 +303,5 @@ def test_errno():
         raise Error("Failed to set errno to EPERM")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

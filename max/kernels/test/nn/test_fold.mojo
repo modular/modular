@@ -18,7 +18,7 @@ Script to generate random inputs and expected output values:
 import math
 import torch
 
-def run_fold(output_size, kernel_size, stride=1, dilation=1, padding=0, batch=1, channel=1):
+def run_fold(output_size, kernel_size, stride=1, dilation=1, padding=0, batch=1, channel=1) raises:
     # Compute dimension of input tensor.
     L = 1
     dilation = dilation if isinstance(dilation, tuple) else (dilation, dilation)
@@ -157,7 +157,7 @@ fn _copy_values_to_tile_tensor[
         tensor.ptr[i] = values[i]
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
     # fmt: off
     test[

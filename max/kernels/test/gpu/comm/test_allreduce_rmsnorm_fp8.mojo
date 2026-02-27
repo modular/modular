@@ -332,7 +332,7 @@ fn test_fused_allreduce_rmsnorm_fp8[
 comptime test_gpu_counts = (2, 4, 8)
 
 
-def main():
+def main() raises:
     var num_devices = DeviceContext.number_of_devices()
     assert_true(num_devices >= 2, "need at least 2 GPUs")
 

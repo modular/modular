@@ -245,7 +245,7 @@ def gemv_tma[
     N: Int,
     K: Int,
     ctx: DeviceContext,
-):
+) raises:
     # TODO: Tune further.
     comptime THREAD_NUM = 1024
     comptime BLOCK_SIZE_M = 64
@@ -323,7 +323,7 @@ def test_gemv_tma[
     n: ValOrDim,
     k: ValOrDim,
     benchmark: Bool = False,
-):
+) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -477,7 +477,7 @@ def test_gemv_tma[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         var benchmark = is_benchmark()
         test_gemv_tma[DType.bfloat16](

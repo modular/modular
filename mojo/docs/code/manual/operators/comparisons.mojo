@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     # Elementwise comparison methods for SIMD-to-SIMD
     simd1 = SIMD[DType.int16, 4](-1, 2, -3, 4)
     simd2 = SIMD[DType.int16, 4](0, 1, 2, 3)

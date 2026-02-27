@@ -39,7 +39,7 @@ def build_ChunkedCausalMask[
     seq_len: Int,
     num_keys: Int,
     mask: LayoutTensor[mut=True, mask_type, ...],
-):
+) raises:
     # Initialize causal mask.
     for b in range(batch_size):
         for h in range(num_heads):
@@ -271,7 +271,7 @@ fn test_attention[
     flash_output_ptr.free()
 
 
-def test_attention_suite(ctx: DeviceContext):
+def test_attention_suite(ctx: DeviceContext) raises:
     comptime types = (DType.bfloat16, DType.float32)
 
     comptime for type_idx in range(len(types)):
@@ -321,7 +321,7 @@ def test_attention_suite(ctx: DeviceContext):
         ](1, 11, ctx)
 
 
-def test_mask_status():
+def test_mask_status() raises:
     var mask = ChunkedCausalMask[local_window_size=4]()
 
     assert_equal(
@@ -373,7 +373,7 @@ def test_mask_status():
     )
 
 
-def test_mask_apply():
+def test_mask_apply() raises:
     comptime local_window_size = 4
     var mask = ChunkedCausalMask[local_window_size]()
 
@@ -417,7 +417,7 @@ def test_mask_apply():
     )
 
 
-def main():
+def main() raises:
     test_mask_status()
     test_mask_apply()
     with DeviceContext() as ctx:

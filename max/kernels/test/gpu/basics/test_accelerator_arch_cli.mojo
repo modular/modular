@@ -18,7 +18,7 @@
 from sys.info import _accelerator_arch
 
 
-def main():
+def main() raises:
     # CHECK-NV80: nvidia:sm80
     # CHECK-NV90: nvidia:sm90
     # CHECK-A300: some_amd:300

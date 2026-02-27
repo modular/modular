@@ -44,7 +44,7 @@ fn bench2(mut b: Bencher, mystr: String) raises:
     b.iter[to_bench]()
 
 
-def test_mojobench():
+def test_mojobench() raises:
     var m = Bench(BenchConfig(max_iters=10_000))
     m.bench_function[bench1](
         BenchId("bench1"),
@@ -97,7 +97,7 @@ def test_mojobench():
     # CHECK-TEST-COUNT-1: hello
 
 
-def main():
+def main() raises:
     # NOTE: we pass an empty list since the benchmark infra also tries to parse
     # the arguments for its own purposes.
     TestSuite.discover_tests[__functions_in_module()](

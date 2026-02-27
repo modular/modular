@@ -14,25 +14,25 @@ from handle_error import process_record
 from testing import assert_equal, assert_raises, TestSuite
 
 
-def test_process_record_success():
+def test_process_record_success() raises:
     assert_equal(process_record(0), "record_0")
     assert_equal(process_record(5), "record_5")
     assert_equal(process_record(999), "record_999")
 
 
-def test_process_record_not_found():
+def test_process_record_not_found() raises:
     with assert_raises(contains="record not found"):
         _ = process_record(1000)
     with assert_raises(contains="record not found"):
         _ = process_record(1001)
 
 
-def test_process_record_invalid_id():
+def test_process_record_invalid_id() raises:
     with assert_raises(contains="invalid record ID: must be non-negative"):
         _ = process_record(-1)
     with assert_raises(contains="invalid record ID: must be non-negative"):
         _ = process_record(-3)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

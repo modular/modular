@@ -37,7 +37,7 @@ fn _tuple_to_list[
     return output^
 
 
-def test_concat():
+def test_concat() raises:
     print("== test_concat")
 
     comptime dtype = DType.float32
@@ -104,7 +104,7 @@ def test_concat():
         print(output_flat.load[1]((Idx(i),)))
 
 
-def test_concat_parallel():
+def test_concat_parallel() raises:
     print("== test_concat_parallel")
 
     comptime dtype = DType.float32
@@ -176,7 +176,7 @@ def test_concat_parallel():
 
 
 # CHECK-LABEL: test_concat_inner
-def test_concat_inner():
+def test_concat_inner() raises:
     print("== test_concat_inner")
 
     comptime dtype = DType.float32
@@ -241,7 +241,7 @@ def test_concat_inner():
         print(output_flat.load[1]((Idx(i),)))
 
 
-def main():
+def main() raises:
     test_concat()
     test_concat_parallel()
     test_concat_inner()

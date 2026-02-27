@@ -27,7 +27,7 @@ fn argv() -> VariadicList[StaticString]:
     ```mojo title="app.mojo"
     from std.sys import argv
 
-    def main():
+    def main() raises:
         args = argv()
         for arg in args:
             print(arg)

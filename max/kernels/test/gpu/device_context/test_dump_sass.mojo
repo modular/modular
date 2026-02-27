@@ -20,7 +20,7 @@ comptime ptxas_path = Path("/usr/local/cuda/bin/ptxas")
 comptime nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
 
 
-def test__dump_sass():
+def test__dump_sass() raises:
     fn kernel_inlined_assembly():
         inlined_assembly["nanosleep.u32 $0;", NoneType, constraints="r"](
             UInt32(100)
@@ -32,6 +32,6 @@ def test__dump_sass():
         ]()
 
 
-def main():
+def main() raises:
     if ptxas_path.exists() and nvdisasm_path.exists():
         test__dump_sass()

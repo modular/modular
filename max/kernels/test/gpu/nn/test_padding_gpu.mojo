@@ -126,7 +126,7 @@ fn test_pad_constant_gpu[
     _ = out_device
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
     with DeviceContext() as ctx:
         # 1D test

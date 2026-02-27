@@ -108,7 +108,7 @@ fn dummy(
     return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9)
 
 
-def test_overloaded():
+def test_overloaded() raises:
     var qb = QuickBench()
 
     qb.run[T_out = NoneType._mlir_type](
@@ -266,7 +266,7 @@ fn tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
     return math.tanh(x)
 
 
-def test_mojo_math():
+def test_mojo_math() raises:
     var qb = QuickBench()
 
     qb.run(
@@ -285,7 +285,7 @@ def test_mojo_math():
     qb.dump_report()
 
 
-def test_custom():
+def test_custom() raises:
     comptime N = 1024
     comptime alignment = 64
     comptime dtype = DType.int32
@@ -320,7 +320,7 @@ def test_custom():
     y.free()
 
 
-def test_all():
+def test_all() raises:
     # Width of columns is dynamic based on the longest value as a string, so
     # only test the first column.
 
@@ -349,7 +349,7 @@ def test_all():
     test_overloaded()
 
 
-def main():
+def main() raises:
     # NOTE: we pass an empty list since the benchmark infra also tries to parse
     # the arguments for its own purposes.
     TestSuite.discover_tests[__functions_in_module()](

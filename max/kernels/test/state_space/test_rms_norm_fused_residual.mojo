@@ -279,5 +279,5 @@ fn test_rms_norm_fused_residual_dropout_bfloat16() raises:
         )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

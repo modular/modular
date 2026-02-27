@@ -104,8 +104,8 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
     print("[", mype, "of", npes, "] run complete. use_nbi=", use_nbi)
 
 
-def main():
-    def test_both(ctx: SHMEMContext):
+def main() raises:
+    def test_both(ctx: SHMEMContext) raises:
         test_shmem_put[False](ctx)
         # Test the non-blocking version of `shmem_put` primitive, which returns
         # after initiating the operation.

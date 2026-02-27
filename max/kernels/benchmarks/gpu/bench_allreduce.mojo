@@ -336,7 +336,7 @@ fn _get_test_str[
     )
 
 
-def main():
+def main() raises:
     var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()

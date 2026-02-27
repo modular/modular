@@ -15,33 +15,33 @@ from testing import assert_equal, assert_raises, assert_true, TestSuite
 from enumerated_errors import FileError, open_file
 
 
-def test_open_file_success():
+def test_open_file_success() raises:
     assert_equal(open_file("/data"), "Contents of /data")
 
 
-def test_not_found():
+def test_not_found() raises:
     with assert_raises(contains="not_found"):
         _ = open_file("")
 
 
-def test_permission_denied():
+def test_permission_denied() raises:
     with assert_raises(contains="permission_denied"):
         _ = open_file("/secret")
 
 
-def test_already_exists():
+def test_already_exists() raises:
     with assert_raises(contains="already_exists"):
         _ = open_file("/existing")
 
 
-def test_variant_equality():
+def test_variant_equality() raises:
     assert_true(FileError.not_found == FileError.not_found)
     assert_true(FileError.permission_denied == FileError.permission_denied)
 
 
-def test_variant_inequality():
+def test_variant_inequality() raises:
     assert_true(FileError.not_found != FileError.permission_denied)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

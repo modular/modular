@@ -44,7 +44,7 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     shmem_p(destination, mype, peer)
 
 
-def main():
+def main() raises:
     # Initializes SHMEM/MPI and finalizes at the end of the scope
     with SHMEMContext() as ctx:
         # Set up buffers to test devices are communicating with the correct IDs

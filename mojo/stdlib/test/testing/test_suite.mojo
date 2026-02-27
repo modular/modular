@@ -15,27 +15,27 @@ from testing import assert_raises, assert_equal, assert_false, TestSuite
 from testing.suite import TestSuiteReport
 
 
-def nonconforming_name():
+def nonconforming_name() raises:
     raise Error("should not be run")
 
 
-def test_failing():
+def test_failing() raises:
     raise Error("should be raised")
 
 
-def test_passing_1():
+def test_passing_1() raises:
     pass
 
 
-def test_passing_2():
+def test_passing_2() raises:
     pass
 
 
-def test_skipped():
+def test_skipped() raises:
     raise Error("should be skipped")
 
 
-def main():
+def main() raises:
     comptime funcs = __functions_in_module()
     var suite = TestSuite.discover_tests[funcs]()
 
@@ -86,7 +86,7 @@ def main():
     # The `__functions_in_module()` reflection returns a Tuple, which we can't
     # slice into, so we manually build a list of functions to test that
     # discovery fails if a test function has a nonconforming signature.
-    def test_nonconforming_signature(x: Int):
+    def test_nonconforming_signature(x: Int) raises:
         raise Error("should not be run")
 
     comptime failing_funcs = Tuple(

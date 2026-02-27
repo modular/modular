@@ -112,7 +112,7 @@ def test_matmul[
     n: Int,
     k: Int,
     kernel_type_m: Int,
-) -> Int:
+) raises -> Int:
     var c1_ptr = UnsafePointer[Scalar[c_type]].alloc(m * n, alignment=alignment)
     var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
     for i in range(m):
@@ -234,7 +234,7 @@ def test_matmul[
     b_packed: Bool,
     mixed_kernels: Bool,
     transpose_b: Bool,
-](m: Int, n: Int, k: Int):
+](m: Int, n: Int, k: Int) raises:
     print("== test_matmul")
     var errors: Int
     var kernel_type_m = m if mixed_kernels else 0
@@ -372,9 +372,11 @@ def test_shapes[
     c_type: DType,
     b_packed: Bool,
     mixed_kernels: Bool,
-]():
+]() raises:
     @parameter
-    def test_shapes_helper[transpose_b: Bool = False](m: Int, n: Int, k: Int):
+    def test_shapes_helper[
+        transpose_b: Bool = False
+    ](m: Int, n: Int, k: Int) raises:
         # Test without output fusion.
         test_matmul[
             False,
@@ -433,7 +435,7 @@ def test_shapes[
     test_shapes_helper[True](1, 32768, 3072)
 
 
-def test_types[b_packed: Bool, mixed_kernels: Bool]():
+def test_types[b_packed: Bool, mixed_kernels: Bool]() raises:
     test_shapes[
         DType.float32,
         DType.float32,
@@ -482,7 +484,7 @@ def test_batched_matmul[
     m: Int,
     n: Int,
     k: Int,
-):
+) raises:
     var golden_ptr = UnsafePointer[Scalar[c.type]].alloc(
         batches * m * n, alignment=alignment
     )
@@ -592,7 +594,7 @@ def test_batched_matmul[
     golden_ptr.free()
 
 
-def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
+def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     comptime c_type = DType.float32
     comptime a_type = DType.float32
     comptime b_type = DType.float32
@@ -619,7 +621,7 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
     a_ptr.free()
 
 
-def test_batched_matmul():
+def test_batched_matmul() raises:
     for batch in [1, 2, 4, 9, 12]:
         test_batched_matmul(batch, 256, 1024, 4096)
         test_batched_matmul(batch, 4, 5, 6)
@@ -631,7 +633,7 @@ def test_batched_matmul():
         test_batched_matmul(batch, 2, 65, 1200)
 
 
-def main():
+def main() raises:
     test_types[b_packed=True, mixed_kernels=False]()
     test_types[b_packed=True, mixed_kernels=True]()
     test_types[b_packed=False, mixed_kernels=False]()

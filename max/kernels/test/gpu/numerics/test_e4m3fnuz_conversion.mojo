@@ -684,7 +684,7 @@ fn test_simd_float8[
         print("")
 
 
-def main():
+def main() raises:
     test_e4m3fnuz_initialization()
 
     test_simd_e4m3fnuz_to_f32()

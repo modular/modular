@@ -77,7 +77,7 @@ fn tcgen05_st_ld_roundtrip_kernel[
             data[thread_idx.x, n] = data_ld[n]
 
 
-def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext):
+def test_tcgen05_st_ld_roundtrip(ctx: DeviceContext) raises:
     comptime M = 128
     comptime N = 8
     var data = ManagedLayoutTensor[
@@ -231,7 +231,7 @@ fn tcgen05_cp_ld_roundtrip_kernel[
             data[thread_idx.x, n] = data_ld[n]
 
 
-def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext):
+def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext) raises:
     comptime M = 32
     comptime N = 4
     var data = ManagedLayoutTensor[
@@ -256,7 +256,7 @@ def test_tcgen05_cp_ld_roundtrip(ctx: DeviceContext):
             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_tcgen05_st_ld_roundtrip(ctx)
         test_tcgen05_cp_ld_roundtrip(ctx)

@@ -16,7 +16,7 @@ from layout.int_tuple import abs  # override builtin abs and min
 from testing import assert_equal, assert_false, assert_true, assert_raises
 
 
-def test_tuple_basic():
+def test_tuple_basic() raises:
     print("== test_tuple_basic")
 
     # Test len() operator
@@ -77,7 +77,7 @@ def test_tuple_basic():
     )
 
 
-def test_tuple_slicing():
+def test_tuple_slicing() raises:
     print("== test_tuple_slicing")
 
     comptime tr = IntTuple(0, 1, 2, 3, 4)
@@ -101,7 +101,7 @@ def test_tuple_slicing():
     assert_equal(sl8, "(0, 1, 2, 3)")
 
 
-def test_tuple_basic_ops():
+def test_tuple_basic_ops() raises:
     print("== test_tuple_basic_ops")
 
     comptime p0 = product(2)
@@ -165,7 +165,7 @@ def test_tuple_basic_ops():
     )
 
 
-def test_sorted():
+def test_sorted() raises:
     print("== test_sorted")
 
     comptime t0 = sorted(IntTuple(7, 3, 1, 5, 0))
@@ -180,7 +180,7 @@ def test_sorted():
     assert_true(IntTuple(4, 6, 8) < IntTuple(5, 6, 7))
 
 
-def test_product():
+def test_product() raises:
     print("== test_product")
 
     assert_equal(product(2), 2)
@@ -188,7 +188,7 @@ def test_product():
     assert_equal(product(product(IntTuple(IntTuple(2, 3), 4))), 24)
 
 
-def test_inner_product():
+def test_inner_product() raises:
     print("== test_inner_product")
 
     assert_equal(inner_product(2, 3), 6)
@@ -199,7 +199,7 @@ def test_inner_product():
     )
 
 
-def test_shape_div():
+def test_shape_div() raises:
     print("== test_shape_div")
 
     assert_equal(shape_div(IntTuple(3, 4), 6), IntTuple(1, 2))
@@ -213,7 +213,7 @@ def test_shape_div():
     )
 
 
-def test_prefix_product():
+def test_prefix_product() raises:
     print("== test_prefix_product")
 
     assert_equal(prefix_product(2), 1)
@@ -234,7 +234,7 @@ def test_prefix_product():
     )
 
 
-def test_crd2idx():
+def test_crd2idx() raises:
     print("== test_crd2idx")
 
     comptime cx0 = crd2idx(IntTuple(0, 0), IntTuple(4, 2), IntTuple(1, 4))
@@ -255,7 +255,7 @@ def test_crd2idx():
     assert_equal(cx7, 7)
 
 
-def test_idx2crd():
+def test_idx2crd() raises:
     print("== test_idx2crd")
 
     comptime xc0 = idx2crd(0, IntTuple(4, 2), IntTuple(1, 4))
@@ -276,7 +276,7 @@ def test_idx2crd():
     assert_equal(String(xc7), "(3, 1)")
 
 
-def test_weakly_congruent():
+def test_weakly_congruent() raises:
     print("== test_weakly_congruent")
     comptime a = IntTuple(1)
     comptime b = IntTuple(2)
@@ -323,7 +323,7 @@ def test_weakly_congruent():
     assert_true(weakly_congruent(a2, b3))
 
 
-def test_weakly_compatible():
+def test_weakly_compatible() raises:
     print("== test_weakly_compatible")
     comptime a = IntTuple(16)
     comptime b = IntTuple(12)
@@ -368,7 +368,7 @@ def test_weakly_compatible():
     assert_false(weakly_compatible(a3, a2))
 
 
-def test_fill_like():
+def test_fill_like() raises:
     print("== test_fill_like")
     comptime t1 = IntTuple(2, IntTuple(2, 2), IntTuple(1))
     comptime t2 = IntTuple(IntTuple(3, 4), 2, IntTuple(3))
@@ -376,7 +376,7 @@ def test_fill_like():
     assert_equal(fill_like(t2, 1), IntTuple(IntTuple(1, 1), 1, IntTuple(1)))
 
 
-def test_reverse():
+def test_reverse() raises:
     print("== test_reverse")
     comptime t1 = IntTuple(2, IntTuple(3, 4))
     comptime t2 = IntTuple(IntTuple(1, 2), 3, 4, IntTuple(5, 6, 7))
@@ -384,14 +384,14 @@ def test_reverse():
     assert_equal(reverse(t2), IntTuple(IntTuple(7, 6, 5), 4, 3, IntTuple(2, 1)))
 
 
-def test_depth():
+def test_depth() raises:
     print("== test_depth")
     assert_equal(depth(IntTuple(1)), 0)
     assert_equal(depth(IntTuple(1, 2)), 1)
     assert_equal(depth(IntTuple(1, IntTuple(2, 3))), 2)
 
 
-def test_unknown_value_arith():
+def test_unknown_value_arith() raises:
     print("== test_unknown_value_arith")
     var t = IntTuple(UNKNOWN_VALUE, IntTuple(2, 3), 4)
     assert_equal(
@@ -401,7 +401,7 @@ def test_unknown_value_arith():
     assert_equal(sum(t), UNKNOWN_VALUE)
 
 
-def test_compact_order():
+def test_compact_order() raises:
     print("== test_compact_order")
     assert_equal(
         compact_order(IntTuple(2, 3, 4, 5), IntTuple(1, 4, 3, 5)),
@@ -423,7 +423,7 @@ def test_compact_order():
     )
 
 
-def test_iter():
+def test_iter() raises:
     var a = IntTuple(2, 3)
     var it = iter(a)
 
@@ -459,7 +459,7 @@ def test_iter():
         _ = it.__next__()  # raises StopIteration
 
 
-def test_value_nested_tuple():
+def test_value_nested_tuple() raises:
     """Test that value() correctly extracts values from nested single-element tuples.
     """
     # Create a tuple where elements are stored as nested single-element tuples
@@ -495,7 +495,7 @@ def test_value_nested_tuple():
     assert_equal(Int(stride[1]), 1)
 
 
-def main():
+def main() raises:
     test_tuple_basic()
     test_tuple_slicing()
     test_tuple_basic_ops()

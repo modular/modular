@@ -16,7 +16,7 @@ from sys import has_accelerator
 from gpu.host import DeviceContext
 
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No compatible GPU found")

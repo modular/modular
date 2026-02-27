@@ -61,6 +61,6 @@ fn test_grid_dim(ctx: DeviceContext) raises:
     output_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_grid_dim(ctx)

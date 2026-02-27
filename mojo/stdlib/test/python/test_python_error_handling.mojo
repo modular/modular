@@ -49,5 +49,5 @@ fn test_python_exception_call() raises:
             _ = my_module.AbstractPerson()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

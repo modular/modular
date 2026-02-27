@@ -358,7 +358,7 @@ fn test_non_row_major_layout[
     c_host_ref_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Test zero-dimension edge cases
         test_dynamic_shapes[

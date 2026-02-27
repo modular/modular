@@ -46,7 +46,7 @@ fn time_capturing_function(iters: Int) -> Int:
     return Int(time_function[time_fn]())
 
 
-def test_time():
+def test_time() raises:
     comptime ns_per_sec = 1_000_000_000
 
     assert_true(perf_counter() > 0)
@@ -73,5 +73,5 @@ def test_time():
     assert_true((t5 - t4) < 10 * ns_per_sec)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

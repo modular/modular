@@ -52,7 +52,7 @@ fn use_connection() raises ConnectionError:
     raise ConnectionError("connection timed out")
 
 
-def main():
+def main() raises:
     # No error — calls __exit__(self)
     print("--- No error ---")
     with ResourceGuard("database"):

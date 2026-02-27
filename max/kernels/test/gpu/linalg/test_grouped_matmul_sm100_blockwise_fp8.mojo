@@ -52,7 +52,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
     ctx: DeviceContext,
-):
+) raises:
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
     comptime transpose_b = True
@@ -376,7 +376,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     _ = expert_ids
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,

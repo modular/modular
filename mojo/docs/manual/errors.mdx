@@ -67,7 +67,7 @@ You **don't** include `raises` in the signature (doing so results in a
 compiler error):
 
 ```mojo
-def read_file(path: String) -> String:
+def read_file(path: String) raises -> String:
     if not path:
         raise "path cannot be empty"
     return "contents of " + path
@@ -146,7 +146,7 @@ fn process_record(id: Int) raises -> String:
     return String("record_", id)
 
 
-def main():
+def main() raises:
     try:
         for id in [5, 0, 1001, -3, 42]:
             var result: String
@@ -190,6 +190,7 @@ re-raised error: invalid record ID: must be non-negative
 ```
 
 Notice:
+
 - When `id` is 5: `process_record()` succeeds, so `else` runs, then `finally`.
 - When `id` is 0: `continue` exits the `try` block, skipping both `except`
   and `else`. Only `finally` runs.
@@ -633,7 +634,7 @@ A `def` function can raise the built-in `Error` type without declaring it in the
 signature:
 
 ```mojo
-def validate_def(value: Int) -> Int:
+def validate_def(value: Int) raises -> Int:
     if value < 0:
         raise "value cannot be negative"
     return value
@@ -705,7 +706,7 @@ When calling `def` functions or other `Error`-raising code from a function that
 uses typed errors, catch the `Error` and convert it:
 
 ```mojo
-def validate_with_error(value: Int) -> Int:
+def validate_with_error(value: Int) raises -> Int:
     if value < 0:
         raise "value cannot be negative"
     return value
@@ -760,7 +761,7 @@ A `def` function can call a function that raises a typed error and catch it
 with full field access:
 
 ```mojo
-def error_caller():
+def error_caller() raises:
     try:
         _ = validate_typed(-5)
     except e:
@@ -784,7 +785,7 @@ You can't call functions that raise different error types in the same `try`
 block. The compiler rejects the mismatch:
 
 ```mojo
-def error_func() -> Int:
+def error_func() raises -> Int:
     raise "something went wrong"
 
 fn typed_func() raises ValidationError -> Int:
@@ -864,15 +865,15 @@ default, so often your stack trace won't be very useful.
 Consider this program:
 
 ```mojo title="stacktrace_error.mojo"
-def func2() -> None:
+def func2() raises -> None:
     raise Error("Intentional error")
 
 
-def func1() -> None:
+def func1() raises -> None:
     func2()
 
 
-def main():
+def main() raises:
     func1()
 ```
 
@@ -940,15 +941,15 @@ to get the stack trace as an `Optional[String]`. The method returns `None` if
 stack trace collection was disabled or unavailable:
 
 ```mojo title="stacktrace_error_capture.mojo"
-def func2() -> None:
+def func2() raises -> None:
     raise Error("Intentional error")
 
 
-def func1() -> None:
+def func1() raises -> None:
     func2()
 
 
-def main():
+def main() raises:
     try:
         func1()
     except e:
@@ -1137,7 +1138,7 @@ struct Timer(ImplicitlyCopyable):
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
-def main():
+def main() raises:
     with Timer():
         print("Beginning execution")
         time.sleep(1.0)
@@ -1222,7 +1223,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
             self.__exit__()
             return False
 
-def flaky_identity(n: Int) -> Int:
+def flaky_identity(n: Int) raises -> Int:
     if (n % 4) == 0:
         raise "really bad"
     elif (n % 2) == 0:
@@ -1230,7 +1231,7 @@ def flaky_identity(n: Int) -> Int:
     else:
         return n
 
-def main():
+def main() raises:
     for i in range(1, 9):
         with ConditionalTimer():
             print("\nBeginning execution")

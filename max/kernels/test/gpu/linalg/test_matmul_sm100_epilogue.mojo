@@ -58,7 +58,7 @@ def test_matmul_sm100_epilogue[
     register_based_epilogue: Bool = False,
     swapAB: Bool = False,
     k_group_size: Int = 1,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -276,7 +276,7 @@ comptime QUICK_TEST = env_get_bool["QUICK_TEST", False]()
 comptime FASTER_TEST = env_get_bool["FASTER_TEST", False]()
 
 
-def main():
+def main() raises:
     comptime dtype = DType.bfloat16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[dtype]())
     comptime MMA_K = 16

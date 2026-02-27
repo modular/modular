@@ -135,7 +135,7 @@ fn _run_peer_access(ctx: DeviceContext) raises:
             print("Enabled peer access.")
 
 
-def test_smoke():
+def test_smoke() raises:
     var ctx = create_test_device_context()
     print("-------")
     print("Running test_smoke(" + ctx.name() + "):")
@@ -151,5 +151,5 @@ def test_smoke():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

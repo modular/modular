@@ -20,7 +20,7 @@ from builtin.globals import global_constant
 
 
 # CHECK: global_constant requires a type with trivial copy and destroy semantics
-def main():
+def main() raises:
     comptime s = String("hello")
     ref global_ptr = global_constant[s]()
     print(global_ptr)

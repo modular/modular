@@ -24,7 +24,7 @@ from utils import IndexList
 
 def run_elementwise[
     dtype: DType
-](ctx: DeviceContext) where dtype.is_floating_point():
+](ctx: DeviceContext) raises where dtype.is_floating_point():
     comptime length = 256
 
     comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
@@ -86,12 +86,12 @@ def run_elementwise[
                 )
 
 
-def test_exp():
+def test_exp() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float16](ctx)
         run_elementwise[DType.bfloat16](ctx)
         run_elementwise[DType.float32](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

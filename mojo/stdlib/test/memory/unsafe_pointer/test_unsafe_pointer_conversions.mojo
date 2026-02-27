@@ -39,7 +39,7 @@ fn v1_unbound(_p: LegacyUnsafePointer[Int, ...]):
     pass
 
 
-def test_v2_mutable_converts_to_v1():
+def test_v2_mutable_converts_to_v1() raises:
     var x = 42
     var p = UnsafePointer(to=x)
 
@@ -50,7 +50,7 @@ def test_v2_mutable_converts_to_v1():
     v1_unbound(p)
 
 
-def test_v2_immutable_converts_to_v1():
+def test_v2_immutable_converts_to_v1() raises:
     var x = 42
     var p = UnsafePointer(to=x).as_immutable()
 
@@ -61,7 +61,7 @@ def test_v2_immutable_converts_to_v1():
     v1_unbound(p)
 
 
-def test_v2_mutable_any_converts_to_v1():
+def test_v2_mutable_any_converts_to_v1() raises:
     var x = 42
     var p = UnsafePointer(to=x).as_any_origin()
 
@@ -72,7 +72,7 @@ def test_v2_mutable_any_converts_to_v1():
     v1_unbound(p)
 
 
-def test_v2_immutable_any_converts_to_v1():
+def test_v2_immutable_any_converts_to_v1() raises:
     var x = 42
     var p = UnsafePointer(to=x).as_immutable().as_any_origin()
 
@@ -106,7 +106,7 @@ fn v2_unbound(_p: UnsafePointer[Int, ...]):
     pass
 
 
-def test_v1_mutable_converts_to_v2():
+def test_v1_mutable_converts_to_v2() raises:
     var x = 42
     var p = LegacyUnsafePointer(to=x)
 
@@ -115,7 +115,7 @@ def test_v1_mutable_converts_to_v2():
     v2_unbound(p)
 
 
-def test_v1_immutable_converts_to_v2():
+def test_v1_immutable_converts_to_v2() raises:
     var x = 42
     var p = LegacyUnsafePointer(to=x).as_immutable()
 
@@ -123,7 +123,7 @@ def test_v1_immutable_converts_to_v2():
     v2_unbound(p)
 
 
-def test_v1_mutable_any_converts_to_v2():
+def test_v1_mutable_any_converts_to_v2() raises:
     var x = 42
     var p = LegacyUnsafePointer(to=x).as_any_origin()
 
@@ -133,7 +133,7 @@ def test_v1_mutable_any_converts_to_v2():
     v2_unbound(p)
 
 
-def test_v1_immutable_any_converts_to_v2():
+def test_v1_immutable_any_converts_to_v2() raises:
     var x = 42
     var p = LegacyUnsafePointer(to=x).as_immutable().as_any_origin()
 
@@ -142,11 +142,11 @@ def test_v1_immutable_any_converts_to_v2():
     v2_unbound(p)
 
 
-def test_v1_to_v2_external():
+def test_v1_to_v2_external() raises:
     _: UnsafePointer[Int, MutExternalOrigin] = LegacyUnsafePointer[
         Int, origin=MutExternalOrigin
     ]()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

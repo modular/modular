@@ -215,7 +215,7 @@ fn test_index_fp8[
     o_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_index_fp8[num_heads=128, depth=128](2, 128, 128, ctx)
         test_index_fp8[num_heads=128, depth=128](2, 32, 32, ctx)

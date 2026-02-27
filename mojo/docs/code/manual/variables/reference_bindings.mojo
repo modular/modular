@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     # start-returned-references-no-copy
     animals: List[String] = ["Cats", "Dogs", "Zebras"]
     print(animals[2])  # Prints "Zebras", does not copy the value.

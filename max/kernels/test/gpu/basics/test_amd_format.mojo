@@ -88,7 +88,7 @@ fn test_format_float8_e4m3fn():
     check_8e4m3["-104.0"](-104)
 
 
-def main():
+def main() raises:
     # TODO(KERN-1259): Add tests for fnuz types when they're working
     with DeviceContext() as ctx:
         print("== test_format_float8_e5m2")

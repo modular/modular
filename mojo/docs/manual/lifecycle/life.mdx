@@ -274,7 +274,7 @@ the `@fieldwise_init("implicit")` decorator.
 struct Counter:
     var count: Int
 
-def main():
+def main() raises:
     var c: Counter = 5  # implicitly converts from Int
 ```
 
@@ -477,7 +477,7 @@ struct MyPair(ImplicitlyCopyable):
     var first: Int
     var second: Int
 
-def main():
+def main() raises:
     pair = MyPair(3, 4)
     copy = pair
     print(pair.first, copy.second)

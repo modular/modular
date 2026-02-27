@@ -117,7 +117,7 @@ fn test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
         assert_equal(shared_host[i], Int32(i))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_named_barrier_semaphore_equal(ctx)
         test_named_barrier_semaphore_less_than(ctx)

@@ -48,7 +48,7 @@ fn print_tile2d_static[
 
 
 # CHECK-LABEL: test_static_tile
-def test_static_tile():
+def test_static_tile() raises:
     print("test_static_tile")
     # CHECK: (0, 4)
     # CHECK: (4, 6)
@@ -62,7 +62,7 @@ def test_static_tile():
 
 
 # CHECK-LABEL: test_static_tile2d
-def test_static_tile2d():
+def test_static_tile2d() raises:
     print("test_static_tile2d")
     # CHECK: (2, 2, 0, 0)
     # CHECK: (2, 2, 2, 0)
@@ -109,7 +109,7 @@ def test_static_tile2d():
 
 
 # CHECK-LABEL: test_dynamic_tile
-def test_dynamic_tile():
+def test_dynamic_tile() raises:
     print("test_dynamic_tile")
     # CHECK: (1, 4)
     # CHECK: (4, 5)
@@ -126,7 +126,7 @@ def test_dynamic_tile():
 
 
 # CHECK-LABEL: test_unswitched_tile
-def test_unswitched_tile():
+def test_unswitched_tile() raises:
     print("test_unswitched_tile")
 
     # A tiled function that takes a start and a dynamic boundary.
@@ -156,7 +156,7 @@ def test_unswitched_tile():
 
 
 # CHECK-LABEL: test_unswitched_2d_tile
-def test_unswitched_2d_tile():
+def test_unswitched_2d_tile() raises:
     print("test_unswitched_2d_tile")
 
     # A tiled function that takes a start and a dynamic boundary.
@@ -197,7 +197,7 @@ def test_unswitched_2d_tile():
 
 
 # CHECK-LABEL: test_tile_and_unswitch
-def test_tile_and_unswitch():
+def test_tile_and_unswitch() raises:
     print("test_tile_and_unswitch")
 
     @parameter
@@ -237,7 +237,7 @@ def test_tile_and_unswitch():
     )
 
 
-def test_tile_middle_unswitch_boundaries():
+def test_tile_middle_unswitch_boundaries() raises:
     print("test_tile_middle_unswitch_boundaries")
 
     @parameter
@@ -277,7 +277,7 @@ def test_tile_middle_unswitch_boundaries():
     ](0, 2, 10, 14)
 
 
-def test_tile_middle_unswitch_boundaries_static():
+def test_tile_middle_unswitch_boundaries_static() raises:
     print("test_tile_middle_unswitch_boundaries_static")
 
     @parameter
@@ -299,5 +299,5 @@ def test_tile_middle_unswitch_boundaries_static():
     tile_middle_unswitch_boundaries[print_wrapper, 3, 11]()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

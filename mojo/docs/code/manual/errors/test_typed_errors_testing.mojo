@@ -67,7 +67,7 @@ def test_assert_raises_config_invalid():
 # =============================================================================
 
 
-def test_verify_validation_error_fields():
+def test_verify_validation_error_fields() raises:
     """Test verifying ValidationError type via field access."""
     var field = ""
     var reason = ""
@@ -82,7 +82,7 @@ def test_verify_validation_error_fields():
     assert_equal(reason, "cannot be empty")
 
 
-def test_verify_config_error_fields():
+def test_verify_config_error_fields() raises:
     """Test verifying ConfigError type via field access."""
     var key = ""
     var message = ""
@@ -97,7 +97,7 @@ def test_verify_config_error_fields():
     assert_equal(message, "key not found")
 
 
-def test_verify_age_validation():
+def test_verify_age_validation() raises:
     """Test age validation error fields."""
     var field = ""
     var reason = ""
@@ -117,7 +117,7 @@ def test_verify_age_validation():
 # =============================================================================
 
 
-def test_flag_pattern_error_raised():
+def test_flag_pattern_error_raised() raises:
     """Test flag pattern confirms error was raised."""
     var raised = False
     try:
@@ -129,7 +129,7 @@ def test_flag_pattern_error_raised():
     assert_true(raised, "Error should be raised")
 
 
-def test_flag_pattern_no_error():
+def test_flag_pattern_no_error() raises:
     """Test flag pattern when no error is raised."""
     var raised = False
     try:
@@ -140,7 +140,7 @@ def test_flag_pattern_no_error():
     assert_true(not raised, "No error should be raised")
 
 
-def test_flag_pattern_multiple_conditions():
+def test_flag_pattern_multiple_conditions() raises:
     """Test flag pattern with multiple error conditions."""
     var empty_raised = False
     var short_raised = False
@@ -166,22 +166,22 @@ def test_flag_pattern_multiple_conditions():
 # =============================================================================
 
 
-def test_valid_username():
+def test_valid_username() raises:
     """Test valid username does not raise."""
     # Should complete without error
     validate_username("validuser")
 
 
-def test_valid_age():
+def test_valid_age() raises:
     """Test valid age does not raise."""
     validate_age(25)
 
 
-def test_valid_config():
+def test_valid_config() raises:
     """Test valid config key returns value."""
     var value = load_config("database")
     assert_equal(value, "value_for_database")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

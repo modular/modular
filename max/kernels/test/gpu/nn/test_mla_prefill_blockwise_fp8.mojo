@@ -560,7 +560,7 @@ fn test_mla_prefill[
     ](120, 240, ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_mla_prefill[
             0,

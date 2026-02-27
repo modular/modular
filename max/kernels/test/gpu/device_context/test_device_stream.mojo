@@ -40,7 +40,7 @@ fn simple_kernel(
     output[tid] = input[tid] * multiplier
 
 
-def test_stream_priority_range(ctx: DeviceContext):
+def test_stream_priority_range(ctx: DeviceContext) raises:
     print("Test that stream_priority_range() returns a valid priority range.")
     var priority_range = ctx.stream_priority_range()
 
@@ -52,7 +52,7 @@ def test_stream_priority_range(ctx: DeviceContext):
     )
 
 
-def test_create_stream_default(ctx: DeviceContext):
+def test_create_stream_default(ctx: DeviceContext) raises:
     print("Test creating a stream with default parameters (blocking=True).")
     var stream = ctx.create_stream()
 
@@ -60,7 +60,7 @@ def test_create_stream_default(ctx: DeviceContext):
     stream.synchronize()
 
 
-def test_create_stream_with_priority(ctx: DeviceContext):
+def test_create_stream_with_priority(ctx: DeviceContext) raises:
     print("Test creating streams with different priority values.")
     var priority_range = ctx.stream_priority_range()
 
@@ -141,7 +141,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
         mid_priority_stream.synchronize()
 
 
-def test_multiple_priority_streams(ctx: DeviceContext):
+def test_multiple_priority_streams(ctx: DeviceContext) raises:
     print(
         "Test creating multiple streams with different priorities and"
         " concurrent kernel execution."
@@ -220,7 +220,7 @@ def test_multiple_priority_streams(ctx: DeviceContext):
             assert_equal(output_host[i], expected)
 
 
-def test_concurrent_priority_streams(ctx: DeviceContext):
+def test_concurrent_priority_streams(ctx: DeviceContext) raises:
     print("Test concurrent execution on streams with different priorities.")
     var priority_range = ctx.stream_priority_range()
 
@@ -299,7 +299,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
         assert_equal(low_output_host[i], expected_low_val)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_stream_priority_range(ctx)
         test_create_stream_default(ctx)

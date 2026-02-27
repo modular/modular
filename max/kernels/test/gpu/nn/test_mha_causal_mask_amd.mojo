@@ -403,7 +403,7 @@ fn test_helper[depth: Int](ctx: DeviceContext) raises:
     ](1, 5000, ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # experimental kernel only supports depth == 128
         comptime experimental_kernel = env_get_bool[

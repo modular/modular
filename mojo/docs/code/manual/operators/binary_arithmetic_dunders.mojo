@@ -16,23 +16,23 @@
 struct MyInt:
     var value: Int
 
-    def __add__(self, rhs: MyInt) -> Self:
+    def __add__(self, rhs: MyInt) raises -> Self:
         return MyInt(self.value + rhs.value)
 
-    def __add__(self, rhs: Int) -> Self:
+    def __add__(self, rhs: Int) raises -> Self:
         return MyInt(self.value + rhs)
 
-    def __radd__(self, lhs: Int) -> Self:
+    def __radd__(self, lhs: Int) raises -> Self:
         return MyInt(self.value + lhs)
 
-    def __iadd__(mut self, rhs: MyInt) -> None:
+    def __iadd__(mut self, rhs: MyInt) raises -> None:
         self.value += rhs.value
 
-    def __iadd__(mut self, rhs: Int) -> None:
+    def __iadd__(mut self, rhs: Int) raises -> None:
         self.value += rhs
 
 
-def main():
+def main() raises:
     m1 = MyInt(5)
     m2 = MyInt(2)
     m3 = m1 + m2

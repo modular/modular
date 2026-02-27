@@ -100,7 +100,7 @@ fn host_elementwise_fma(
         c[i] = c_temp
 
 
-def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
+def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext) raises:
     comptime thread_count = 32
     comptime block_count = 1
     comptime buff_size = thread_count * block_count * width
@@ -178,7 +178,7 @@ def _test_arithmetic[width: Int, mode: String](ctx: DeviceContext):
         assert_equal(c_result[i], c_expected[i])
 
 
-def test_arithmetic_sm100():
+def test_arithmetic_sm100() raises:
     with DeviceContext() as ctx:
         _test_arithmetic[2, "add"](ctx)
         _test_arithmetic[4, "add"](ctx)
@@ -191,5 +191,5 @@ def test_arithmetic_sm100():
         _test_arithmetic[8, "fma"](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

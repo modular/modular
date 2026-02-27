@@ -41,7 +41,7 @@ from sys import exit
 
 
 # start-initialize-tensor-from-cpu-example
-def initialize_tensor_from_cpu_example():
+def initialize_tensor_from_cpu_example() raises:
     comptime dtype = DType.float32
     comptime rows = 32
     comptime cols = 8
@@ -95,7 +95,7 @@ def initialize_tensor_from_cpu_example():
 # end-initialize-tensor-from-cpu-example
 
 
-def shared_memory_alloc_example():
+def shared_memory_alloc_example() raises:
     comptime dtype = DType.float32
     comptime in_size = 128
     comptime block_size = 16
@@ -168,7 +168,7 @@ fn simd_width_example():
     # end-simd-width-example
 
 
-def layout_tensor_vectorized_example():
+def layout_tensor_vectorized_example() raises:
     comptime dtype = DType.int32
     comptime vector_width = 4
 
@@ -372,7 +372,7 @@ fn copy_from_async_example():
 # TODO: Currently doesn't run on Apple silicon GPU
 
 
-def main():
+def main() raises:
     if has_accelerator():
         initialize_tensor_from_cpu_example()
         shared_memory_alloc_example()

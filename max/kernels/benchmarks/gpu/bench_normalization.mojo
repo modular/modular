@@ -193,7 +193,7 @@ fn bench_rms_norm_gpu[
     gamma_h.free()
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
     comptime shape = int_list_to_tuple[env_get_shape["shape", "256x256"]()]()
 

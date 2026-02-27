@@ -14,7 +14,7 @@
 
 # The following inputs and golden values were generated using the upstream code
 # [here](https://github.com/meta-llama/llama/blob/8fac8befd776bc03242fe7bc2236cdb41b6c609c/llama/model.py).
-def k_cache_input[dtype: DType]() -> List[Scalar[dtype]]:
+def k_cache_input[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -35,7 +35,7 @@ def k_cache_input[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def q_input[dtype: DType]() -> List[Scalar[dtype]]:
+def q_input[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -56,7 +56,7 @@ def q_input[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def freqs_cis_table_input[dtype: DType]() -> List[Scalar[dtype]]:
+def freqs_cis_table_input[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -97,7 +97,7 @@ def freqs_cis_table_input[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def q_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
+def q_out_golden[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -118,7 +118,7 @@ def q_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def k_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
+def k_out_golden[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -140,7 +140,7 @@ def k_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
 
 
 # Data generated with custom position ids
-def position_ids_input[dtype: DType]() -> List[Scalar[dtype]]:
+def position_ids_input[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -152,7 +152,9 @@ def position_ids_input[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def q_out_golden_with_position_ids[dtype: DType]() -> List[Scalar[dtype]]:
+def q_out_golden_with_position_ids[
+    dtype: DType
+]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -173,7 +175,9 @@ def q_out_golden_with_position_ids[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def k_out_golden_with_position_ids[dtype: DType]() -> List[Scalar[dtype]]:
+def k_out_golden_with_position_ids[
+    dtype: DType
+]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off

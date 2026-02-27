@@ -17,7 +17,7 @@ from pathlib import Path
 from testing import TestSuite, assert_equal
 
 
-def test_join():
+def test_join() raises:
     # TODO uncomment lines using Path when unpacking is supported
     assert_equal("path/to/file", join("path", "to", "file"))
     # assert_equal("path/to/file", join(Path("path"), Path("to"), Path("file")))
@@ -50,5 +50,5 @@ def test_join():
     # )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

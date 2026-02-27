@@ -16,7 +16,7 @@ from collections.set import Set
 from testing import assert_false, assert_true, TestSuite
 
 
-def test_list_any():
+def test_list_any() raises:
     # List[Int]
     assert_true(any([-1, 2]))
     assert_true(any([-0, 2, 3]))
@@ -41,7 +41,7 @@ def test_list_any():
     assert_false(any(List[Bool]()))
 
 
-def test_list_all():
+def test_list_all() raises:
     # List[Int]
     assert_true(all([-1, 2, 3]))
     assert_false(all([1, 2, 0]))
@@ -66,7 +66,7 @@ def test_list_all():
     assert_true(all(List[Bool]()))
 
 
-def test_set_any():
+def test_set_any() raises:
     # Set[Int]
     assert_true(any(Set(-1)))
     assert_true(any(Set(-1, 0, 3)))
@@ -81,7 +81,7 @@ def test_set_any():
     assert_false(any(Set[String]()))
 
 
-def test_set_all():
+def test_set_all() raises:
     # Set[Int]
     assert_true(all(Set(-1)))
     assert_false(all(Set(0, 1, 3)))
@@ -96,9 +96,9 @@ def test_set_all():
     assert_true(all(Set[String]()))
 
 
-def test_simd_any():
+def test_simd_any() raises:
     @parameter
-    def _test_dtype[dtype: DType]():
+    def _test_dtype[dtype: DType]() raises:
         assert_true(any(Scalar[dtype](1)))
         assert_false(any(Scalar[dtype](0)))
         assert_true(any(SIMD[dtype, 4](1, 2, 3, 4)))
@@ -122,9 +122,9 @@ def test_simd_any():
     _test_dtype[DType.float64]()
 
 
-def test_simd_all():
+def test_simd_all() raises:
     @parameter
-    def _test_dtype[dtype: DType]():
+    def _test_dtype[dtype: DType]() raises:
         assert_true(all(Scalar[dtype](1)))
         assert_false(all(Scalar[dtype](0)))
         assert_true(all(SIMD[dtype, 4](1, 2, 3, 4)))
@@ -148,5 +148,5 @@ def test_simd_all():
     _test_dtype[DType.float64]()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -37,7 +37,7 @@ particular language.
 Here's the traditional "Hello world" program in Mojo:
 
 ```mojo
-def main():
+def main() raises:
     print("Hello, world!")
 ```
 
@@ -54,7 +54,7 @@ In Mojo, you can declare a variable by simply assigning a value to
 a new named variable:
 
 ```mojo
-def main():
+def main() raises:
     x = 10
     y = x * x
     print(y)
@@ -70,7 +70,7 @@ When declaring a variable with `var`, you can also declare a variable type, with
 or without an assignment:
 
 ```mojo
-def main():
+def main() raises:
     var x: Int = 10
     var sum: Int
     sum = x + x
@@ -95,7 +95,7 @@ Code blocks such as functions, conditions, and loops are defined
 with a colon followed by indented lines. For example:
 
 ```mojo
-def loop():
+def loop() raises:
     for x in range(5):
         if x % 2 == 0:
             print(x)
@@ -109,7 +109,7 @@ multiple lines if you indent the following lines. For example, this long string
 spans two lines:
 
 ```mojo
-def print_line():
+def print_line() raises:
     long_text = "This is a long line of text that is a lot easier to read if"
                 " it is broken up across two lines instead of one long line."
     print(long_text)
@@ -118,7 +118,7 @@ def print_line():
 And you can chain function calls across lines:
 
 ```mojo
-def print_hello():
+def print_hello() raises:
     text = ",".join("Hello", " world!")
     print(text)
 ```
@@ -133,7 +133,7 @@ example, the following uses the `def` keyword to define a function named
 `greet` that requires a single `String` argument and returns a `String`:
 
 ```mojo
-def greet(name: String) -> String:
+def greet(name: String) raises -> String:
     return "Hello, " + name + "!"
 ```
 
@@ -205,14 +205,14 @@ struct MyPair(Copyable):
         self.first = copy.first
         self.second = copy.second
 
-    def dump(self):
+    def dump(self) raises:
         print(self.first, self.second)
 ```
 
 And here's how you can use it:
 
 ```mojo
-def use_mypair():
+def use_mypair() raises:
     var mine = MyPair(2, 4)
     mine.dump()
 ```
@@ -237,7 +237,7 @@ struct MyPair(Copyable):
     var first: Int
     var second: Int
 
-    def dump(self):
+    def dump(self) raises:
         print(self.first, self.second)
 ```
 
@@ -330,7 +330,7 @@ ice just a little bit here. To get you started, let's look at a parametric
 function:
 
 ```mojo
-def repeat[count: Int](msg: String):
+def repeat[count: Int](msg: String) raises:
     @parameter # evaluate the following for loop at compile time
     for i in range(count):
         print(msg)
@@ -341,7 +341,7 @@ This function has one parameter of type `Int` and one argument of type
 argument:
 
 ```mojo
-def call_repeat():
+def call_repeat() raises:
     repeat[3]("Hello")
     # Prints "Hello" 3 times
 ```
@@ -372,7 +372,7 @@ For example, here's how you can import and use NumPy:
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     var np = Python.import_module("numpy")
     var ar = np.arange(15).reshape(3, 5)
     print(ar)

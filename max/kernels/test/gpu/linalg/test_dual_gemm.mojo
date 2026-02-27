@@ -396,7 +396,7 @@ fn test_dual_matmul[
     _ = mat_c01^
 
 
-def main():
+def main() raises:
     var do_benchmark: Bool = False
     var args = argv()
     for i in range(len(args)):

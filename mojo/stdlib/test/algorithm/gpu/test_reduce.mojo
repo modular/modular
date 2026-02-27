@@ -230,7 +230,7 @@ fn reduce_inner_test[
     _ = res_device
 
 
-def test_reduce():
+def test_reduce() raises:
     @parameter
     fn reduce_add[
         dtype: DType,
@@ -427,5 +427,5 @@ def test_reduce():
         )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

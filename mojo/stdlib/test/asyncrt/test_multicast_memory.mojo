@@ -32,7 +32,7 @@ fn _test_multicast_memory(contexts: List[DeviceContext]) raises:
     print(multicast_buf.unicast_buffer_for(contexts[0]))
 
 
-def test_multicast():
+def test_multicast() raises:
     var ctx0 = create_test_device_context(device_id=0)
     if not ctx0.supports_multicast():
         print("Multicast memory not supported")
@@ -48,5 +48,5 @@ def test_multicast():
     _test_multicast_memory([ctx0, ctx1])
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

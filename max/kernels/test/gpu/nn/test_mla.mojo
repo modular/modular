@@ -1100,7 +1100,7 @@ fn test_mla_prefill[
     ](120, 240, ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime if has_nvidia_gpu_accelerator():
             # tests with mask tensor

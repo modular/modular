@@ -245,7 +245,7 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     d_host.free()
 
 
-def main():
+def main() raises:
     comptime length = env_get_int["length", 4096]()
     var m = Bench()
 

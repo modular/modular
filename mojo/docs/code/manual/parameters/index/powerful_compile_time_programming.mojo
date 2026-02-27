@@ -36,7 +36,7 @@ fn reduce_add(x: SIMD) -> Int:
     return reduce_add(lhs + rhs)
 
 
-def main():
+def main() raises:
     var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))

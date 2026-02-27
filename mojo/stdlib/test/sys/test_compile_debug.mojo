@@ -17,10 +17,10 @@ from testing import assert_equal
 from testing import TestSuite
 
 
-def test_compile_debug_options():
+def test_compile_debug_options() raises:
     assert_equal(Int(OptimizationLevel), 0)
     assert_equal(String(DebugLevel), "none")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

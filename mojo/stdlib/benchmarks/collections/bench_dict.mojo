@@ -185,7 +185,7 @@ fn total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=5))
     m.bench_function[bench_dict_init](BenchId("bench_dict_init"))

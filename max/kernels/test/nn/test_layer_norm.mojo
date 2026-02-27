@@ -104,7 +104,7 @@ fn run_layer_norm_cpu[
     beta_ptr.free()
 
 
-def main():
+def main() raises:
     print("0")
     run_layer_norm_cpu[DType.float32](Index(3, 5))
     print("1")

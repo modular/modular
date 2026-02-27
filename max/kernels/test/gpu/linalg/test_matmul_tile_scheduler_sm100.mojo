@@ -239,6 +239,6 @@ fn test_tile_scheduler(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_tile_scheduler(ctx)

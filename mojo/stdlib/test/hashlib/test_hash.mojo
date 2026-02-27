@@ -24,12 +24,12 @@ from testing import TestSuite
 from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
 
 
-def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) -> UInt8:
+def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) raises -> UInt8:
     var mask = (1 << bits) - 1
     return UInt8(Int(not (i1 ^ i2) & UInt64(mask)))
 
 
-def test_hash_byte_array():
+def test_hash_byte_array() raises:
     # Test that values hash deterministically
     assert_equal(hash("a".unsafe_ptr(), 1), hash("a".unsafe_ptr(), 1))
     assert_equal(hash("b".unsafe_ptr(), 1), hash("b".unsafe_ptr(), 1))
@@ -67,7 +67,9 @@ def test_hash_byte_array():
     # assert_true(num_same < 6, "too little entropy in hash fn low bits")
 
 
-def _test_hash_int_simd[dtype: DType](bits: Int = 4, max_num_same: Int = 2):
+def _test_hash_int_simd[
+    dtype: DType
+](bits: Int = 4, max_num_same: Int = 2) raises:
     var a = Scalar[dtype](0)
     var b = Scalar[dtype](1)
     var c = Scalar[dtype](2)
@@ -93,7 +95,7 @@ def _test_hash_int_simd[dtype: DType](bits: Int = 4, max_num_same: Int = 2):
     )
 
 
-def test_hash_simd():
+def test_hash_simd() raises:
     _test_hash_int_simd[DType.int8]()
     _test_hash_int_simd[DType.int16]()
     _test_hash_int_simd[DType.int32]()
@@ -136,11 +138,11 @@ def test_hash_simd():
     )
 
 
-def test_issue_31111():
+def test_issue_31111() raises:
     _ = hash(Int(1))
 
 
-def test_hash_comptime():
+def test_hash_comptime() raises:
     comptime hash_123 = hash[HasherType=default_comp_time_hasher](
         StaticString("123")
     )
@@ -159,7 +161,7 @@ struct TestStruct(Hashable):
     var z: Float32
 
 
-def test_default_conformance():
+def test_default_conformance() raises:
     # Test that two instances with the same values hash to the same value
     var a = TestStruct("hello", 42, 3.14)
     var b = TestStruct("hello", 42, 3.14)
@@ -175,7 +177,7 @@ def test_default_conformance():
     assert_not_equal(hash(a), hash(e))  # different z
 
 
-def test_default_conformance_deterministic():
+def test_default_conformance_deterministic() raises:
     var a = TestStruct("hello", 42, 3.14)
     var b = TestStruct("world", 42, 3.14)
     # Test that hash is deterministic across multiple calls
@@ -183,7 +185,7 @@ def test_default_conformance_deterministic():
     assert_equal(hash(b), hash(b))
 
 
-def test_default_hash_simple():
+def test_default_hash_simple() raises:
     """Test the reflection-based default __hash__ with a simple struct."""
     var p1 = SimplePoint(1, 2)
     var p2 = SimplePoint(1, 2)
@@ -201,7 +203,7 @@ def test_default_hash_simple():
     assert_equal(hash(p1), hash(p1))
 
 
-def test_default_hash_nested():
+def test_default_hash_nested() raises:
     """Test the reflection-based default __hash__ with nested structs."""
     var s1 = NestedStruct(SimplePoint(1, 2), "hello")
     var s2 = NestedStruct(SimplePoint(1, 2), "hello")
@@ -216,7 +218,7 @@ def test_default_hash_nested():
     assert_not_equal(hash(s1), hash(s4))
 
 
-def test_default_hash_empty():
+def test_default_hash_empty() raises:
     """Test the reflection-based default __hash__ with an empty struct."""
     var e1 = EmptyStruct()
     var e2 = EmptyStruct()
@@ -225,7 +227,7 @@ def test_default_hash_empty():
     assert_equal(hash(e1), hash(e2))
 
 
-def test_default_hash_equatable_consistency():
+def test_default_hash_equatable_consistency() raises:
     """Test that default __hash__ is consistent with default __eq__."""
     var p1 = SimplePoint(42, 99)
     var p2 = SimplePoint(42, 99)
@@ -240,5 +242,5 @@ def test_default_hash_equatable_consistency():
     assert_not_equal(hash(p1), hash(p3))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

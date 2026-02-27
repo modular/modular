@@ -24,5 +24,5 @@ fn test_read_until_delimiter_raises_eof() raises:
         _ = stdin.read_until_delimiter("\n")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

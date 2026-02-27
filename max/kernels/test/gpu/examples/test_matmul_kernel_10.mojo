@@ -517,7 +517,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     _ = c_host_naive
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         var m = Bench()
         bench_matmuls(m, ctx)

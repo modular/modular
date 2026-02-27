@@ -179,7 +179,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](
         return 2 * self.m * self.n * self.k
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
 
     comptime packed_float32 = MatmulSpecStatic(

@@ -19,7 +19,7 @@ from runtime.asyncrt import create_task
 from runtime.tracing import Trace, TraceLevel
 
 
-def test_tracing[level: TraceLevel, enabled: Bool]():
+def test_tracing[level: TraceLevel, enabled: Bool]() raises:
     @parameter
     async fn test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
         comptime s1 = "ENABLED: trace event 2" if enabled else StaticString(
@@ -51,7 +51,7 @@ def test_tracing[level: TraceLevel, enabled: Bool]():
         _ = task.wait()
 
 
-def main():
+def main() raises:
     # CHECK-LABEL: test_tracing_enabled
     print("== test_tracing_enabled")
     test_tracing[TraceLevel.ALWAYS, True]()

@@ -28,7 +28,7 @@ from utils.index import IndexList
 
 def all_gather_test[
     dtype: DType, rank: Int, ngpus: Int
-](list_of_ctx: List[DeviceContext], lengths: List[Int]) -> None:
+](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
     """Test allgather with new variadic output semantics.
 
     Each device should receive individual copies of all inputs,
@@ -242,7 +242,7 @@ fn _verify_results[
                     raise e^
 
 
-def main() -> None:
+def main() raises -> None:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )

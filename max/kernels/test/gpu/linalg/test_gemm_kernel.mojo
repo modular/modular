@@ -310,6 +310,6 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_gemm_kernel_dynamic(ctx)

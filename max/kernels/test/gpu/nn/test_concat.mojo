@@ -276,7 +276,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     _ = output_device_buffer
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_concat_4_inputs_rank5[True](ctx)
         test_concat_4_inputs_rank5[False](ctx)

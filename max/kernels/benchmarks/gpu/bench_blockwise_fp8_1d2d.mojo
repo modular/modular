@@ -428,7 +428,7 @@ fn bench_blockwise_fp8_1d2d[
     _ = expert_scales_dev_buf^
 
 
-def main():
+def main() raises:
     """Benchmark blockwise FP8 1D2D: legacy vs structured.
 
     Default shapes match DeepSeek V3 MoE dimensions.

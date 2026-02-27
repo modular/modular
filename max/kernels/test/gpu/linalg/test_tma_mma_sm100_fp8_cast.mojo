@@ -450,7 +450,7 @@ def test_tma_umma_fp8_b[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     """Test for FP8 B with gmem->registers->cast->smem pattern.
 
     Matrix A: Loaded via TMA to shared memory (bfloat16)
@@ -618,7 +618,7 @@ def test_tma_umma_fp8_b[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Test FP8 B with gmem->cast->smem pattern (sgs kernel)
         # A: bfloat16 via TMA, B: FP8 in gmem -> cast to BF16 -> smem, MMA: BF16

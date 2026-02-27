@@ -31,12 +31,12 @@ fn my_func() -> Int:
     return 0
 
 
-def test_get_linkage_name():
+def test_get_linkage_name() raises:
     var name = get_linkage_name[my_func]()
     assert_equal(name, "test_type_info::my_func()")
 
 
-def test_get_linkage_name_nested():
+def test_get_linkage_name_nested() raises:
     fn nested_func(x: Int) -> Int:
         return x
 
@@ -51,22 +51,22 @@ fn your_func[x: Int]() raises -> Int:
     return x
 
 
-def test_get_linkage_name_parameterized():
+def test_get_linkage_name_parameterized() raises:
     var name = get_linkage_name[your_func[7]]()
     assert_equal(name, "test_type_info::your_func[::Int](),x=7")
 
 
-def test_get_linkage_name_on_itself():
+def test_get_linkage_name_on_itself() raises:
     var name = get_linkage_name[_current_target]()
     assert_equal(name, "std::sys::info::_current_target()")
 
 
-def test_get_function_name():
+def test_get_function_name() raises:
     var name = get_function_name[my_func]()
     assert_equal(name, "my_func")
 
 
-def test_get_function_name_nested():
+def test_get_function_name_nested() raises:
     fn nested_func(x: Int) -> Int:
         return x
 
@@ -74,7 +74,7 @@ def test_get_function_name_nested():
     assert_equal(name2, "nested_func")
 
 
-def test_get_function_name_parameterized():
+def test_get_function_name_parameterized() raises:
     var name = get_function_name[your_func]()
     assert_equal(name, "your_func")
 
@@ -90,7 +90,7 @@ struct ImGeneric[T: AnyType]:
     pass
 
 
-def test_unqualified_type_name():
+def test_unqualified_type_name() raises:
     assert_equal(_unqualified_type_name[WhatsMyName](), "WhatsMyName")
     assert_equal(_unqualified_type_name[Int](), "Int")
     assert_equal(_unqualified_type_name[String](), "String")
@@ -103,7 +103,7 @@ def test_unqualified_type_name():
     )
 
 
-def test_get_type_name():
+def test_get_type_name() raises:
     var name = get_type_name[Int]()
     assert_equal(name, "Int")
 
@@ -111,7 +111,7 @@ def test_get_type_name():
     assert_equal(name, "std.builtin.int.Int")
 
 
-def test_get_type_name_nested():
+def test_get_type_name_nested() raises:
     fn nested_func[T: AnyType]() -> StaticString:
         return get_type_name[T]()
 
@@ -119,7 +119,7 @@ def test_get_type_name_nested():
     assert_equal(name, "String")
 
 
-def test_get_type_name_simd():
+def test_get_type_name_simd() raises:
     var name = get_type_name[Float32]()
     assert_equal(name, "SIMD[DType.float32, 1]")
 
@@ -145,7 +145,7 @@ struct Foo[
     pass
 
 
-def test_get_type_name_non_scalar_simd_value():
+def test_get_type_name_non_scalar_simd_value() raises:
     var name = get_type_name[
         Foo[SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0), True]
     ]()
@@ -170,7 +170,7 @@ def test_get_type_name_non_scalar_simd_value():
     )
 
 
-def test_get_type_name_struct():
+def test_get_type_name_struct() raises:
     var name = get_type_name[Foo[Bar[2](y=3, z=4.1), True]]()
     assert_equal(
         name,
@@ -183,7 +183,7 @@ def test_get_type_name_struct():
     )
 
 
-def test_get_type_name_partially_bound_type():
+def test_get_type_name_partially_bound_type() raises:
     var name = get_type_name[Foo[Bar[2](y=3, z=0.125)]]()
     assert_equal(
         name,
@@ -195,7 +195,7 @@ def test_get_type_name_partially_bound_type():
     )
 
 
-def test_get_type_name_unprintable():
+def test_get_type_name_unprintable() raises:
     var name = get_type_name[CompilationTarget[_current_target()]]()
     assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
 
@@ -210,7 +210,7 @@ struct SimpleParam(TrivialRegisterPassable):
     var b: Bool
 
 
-def test_get_type_name_ctor_param_direct():
+def test_get_type_name_ctor_param_direct() raises:
     """Test that direct usage of types with constructor calls works."""
     var name = get_type_name[WrapperWithValue[SimpleParam(True)]]()
     assert_equal(
@@ -229,7 +229,7 @@ struct Pair[T: AnyType, U: AnyType]:
     pass
 
 
-def test_get_type_name_nested_parametric_direct():
+def test_get_type_name_nested_parametric_direct() raises:
     """Test that directly using nested parametric types works."""
     # Direct usage works fine
     var name = get_type_name[GenericWrapper[List[String]]]()
@@ -243,7 +243,7 @@ def test_get_type_name_nested_parametric_direct():
     )
 
 
-def test_get_type_name_alias():
+def test_get_type_name_alias() raises:
     comptime T = Bar[5]
     var name = get_type_name[T]()
     assert_equal(
@@ -263,7 +263,7 @@ fn _get_type_name_generic[T: AnyType]() -> StaticString:
     return get_type_name[T]()
 
 
-def test_get_type_name_through_generic():
+def test_get_type_name_through_generic() raises:
     """Test get_type_name through a generic function."""
     assert_equal(_get_type_name_generic[Int](), "Int")
     assert_equal(_get_type_name_generic[String](), "String")
@@ -277,7 +277,7 @@ struct IndexParam[value: Scalar[DType.int]]:
     pass
 
 
-def test_get_type_name_uint_int_simd_value():
+def test_get_type_name_uint_int_simd_value() raises:
     """Test that DType.uint and DType.int SIMD values are printed correctly."""
 
     # Test unsigned uindex value - should print as large positive number
@@ -311,7 +311,7 @@ def test_get_type_name_uint_int_simd_value():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_get_base_type_name_basic():
+def test_get_base_type_name_basic() raises:
     """Test get_base_type_name with simple and parameterized types."""
     # For non-parameterized types, get_base_type_name returns the type's name
     assert_equal(get_base_type_name[Int](), "Int")
@@ -325,7 +325,7 @@ def test_get_base_type_name_basic():
     )
 
 
-def test_get_base_type_name_user_defined():
+def test_get_base_type_name_user_defined() raises:
     """Test get_base_type_name with user-defined generic types."""
     # User-defined generics should have the same base name
     assert_equal(
@@ -337,5 +337,5 @@ def test_get_base_type_name_user_defined():
     assert_equal(get_base_type_name[Pair[Int, String]](), "Pair")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

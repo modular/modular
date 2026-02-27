@@ -15,17 +15,17 @@ from my_math import inc
 from testing import assert_equal, assert_raises, TestSuite
 
 
-def test_inc_valid():
+def test_inc_valid() raises:
     assert_equal(inc(0), 1)
     assert_equal(inc(1), 2)
 
 
-def test_inc_max():
+def test_inc_max() raises:
     with assert_raises():
         # Assign the return value to the discard pattern to prevent the Mojo
         # compiler from warning that it is unused.
         _ = inc(Int.MAX)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -17,7 +17,7 @@ from benchmark import Report, clobber_memory, keep, run
 from testing import TestSuite, assert_true
 
 
-def test_stopping_criteria():
+def test_stopping_criteria() raises:
     # Stop when min_runtime_secs has elapsed and either max_runtime_secs or max_iters
     # is reached
 
@@ -107,7 +107,7 @@ struct SomeTrivialStruct(TrivialRegisterPassable):
 
 
 # There is nothing to test here other than the code executes and does not crash.
-def test_keep():
+def test_keep() raises:
     keep(False)
     keep(33)
 
@@ -128,19 +128,19 @@ fn sleeper():
     sleep(0.001)
 
 
-def test_non_capturing():
+def test_non_capturing() raises:
     var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     assert_true(report.mean() > 0.001)
 
 
-def test_change_units():
+def test_change_units() raises:
     var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
     assert_true(report.mean("ms") > 1.0)
     assert_true(report.mean("us") > 1_000)
     assert_true(report.mean("ns") > 1_000_000.0)
 
 
-def test_report():
+def test_report() raises:
     var report = run[func2=sleeper](min_runtime_secs=0.1, max_runtime_secs=0.3)
 
     var report_string = report.as_string()
@@ -153,5 +153,5 @@ def test_report():
     assert_true("Slowest Mean: " in report_string)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

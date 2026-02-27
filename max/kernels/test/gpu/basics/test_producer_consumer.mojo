@@ -51,7 +51,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
             print("Consumer thread_idx:", thread_idx.x, "warp_idx: ", warp_id)
 
 
-def test_producer_consumer_kernel(ctx: DeviceContext):
+def test_producer_consumer_kernel(ctx: DeviceContext) raises:
     comptime kernel = producer_consumer_kernel[64]
     ctx.enqueue_function_experimental[kernel](
         grid_dim=(1),
@@ -123,7 +123,7 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
         k_tile_iters -= 1
 
 
-def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
+def test_producer_consumer_pipeline_kernel(ctx: DeviceContext) raises:
     comptime kernel = producer_consumer_pipeline_kernel[4]
     ctx.enqueue_function_experimental[kernel](
         4,
@@ -231,7 +231,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 
 def test_cpasync_producer_consumer_pipeline[
     num_stages: Int
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime size_per_stage = 128 * (16 // size_of[DType.float32]())
     comptime size = num_stages * size_per_stage
     comptime shape1d = IndexList[1](size)
@@ -283,7 +283,7 @@ def test_cpasync_producer_consumer_pipeline[
                     assert_equal(src[idx] + Float32(i), dst[idx])
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_producer_consumer_kernel(ctx)
         test_producer_consumer_pipeline_kernel(ctx)

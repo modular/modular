@@ -697,7 +697,7 @@ fn bench_stencil_avg_pool_padded[
     h_output_ref_ptr.free()
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
     comptime batch_size = env_get_int["batch_size", 128]()
     comptime input_height = env_get_int["input_height", 1024]()

@@ -26,7 +26,7 @@ from utils.index import Index, IndexList
 
 def compute_group_stats[
     t: DType
-](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) -> Tuple[
+](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) raises -> Tuple[
     Scalar[t],
     Scalar[t],
 ]:
@@ -144,7 +144,7 @@ fn run_group_norm_gpu[
     beta_h.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime default_simd = simd_width_of[
             DType.float32, target = get_gpu_target()

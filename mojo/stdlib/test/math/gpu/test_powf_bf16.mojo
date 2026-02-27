@@ -23,7 +23,7 @@ from utils import IndexList
 comptime type = DType.float32
 
 
-def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
+def run_elementwise(exponent: BFloat16, ctx: DeviceContext) raises:
     comptime length = 256
 
     comptime pack_size = simd_width_of[type, target = get_gpu_target()]()
@@ -76,12 +76,12 @@ def run_elementwise(exponent: BFloat16, ctx: DeviceContext):
             )
 
 
-def test_powf_bf16():
+def test_powf_bf16() raises:
     # NOTE: This is expected to fail. Keeping this around as a negative test
     # so we know when its fixed.
     with DeviceContext() as ctx:
         run_elementwise(0.375, ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

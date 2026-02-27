@@ -17,7 +17,7 @@ from compile import compile_info
 from testing import TestSuite, assert_false, assert_true
 
 
-def test_compile_atomic():
+def test_compile_atomic() raises:
     @parameter
     fn my_add_function[
         dtype: DType
@@ -34,7 +34,7 @@ def test_compile_atomic():
     )
 
 
-def test_compile_fence():
+def test_compile_fence() raises:
     @parameter
     fn my_fence_function():
         fence[scope="agent"]()
@@ -44,7 +44,7 @@ def test_compile_fence():
     assert_true('fence syncscope("agent") seq_cst' in asm)
 
 
-def test_compile_compare_exchange():
+def test_compile_compare_exchange() raises:
     fn my_cmpxchg_function(mut atm: Atomic[DType.int32, scope="agent"]) -> Bool:
         var expected = Int32(0)
         return atm.compare_exchange(expected, 42)
@@ -58,5 +58,5 @@ def test_compile_compare_exchange():
     assert_false("cmpxchg weak" in asm)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

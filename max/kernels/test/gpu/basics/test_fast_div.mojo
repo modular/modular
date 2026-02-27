@@ -22,7 +22,7 @@ from utils.fast_div import FastDiv
 from utils.index import Index, IndexList
 
 
-def test_fast_div():
+def test_fast_div() raises:
     var divisor = 7
     var fast_div = FastDiv[DType.uint32](divisor)
 
@@ -34,7 +34,7 @@ def test_fast_div():
         )
 
 
-def test_fast_div_print():
+def test_fast_div_print() raises:
     var fast_div = FastDiv[DType.uint32](33)
     assert_equal(
         """div: 33
@@ -48,7 +48,7 @@ log2_shift: 6
     )
 
 
-def run_elementwise[type: DType](ctx: DeviceContext):
+def run_elementwise[type: DType](ctx: DeviceContext) raises:
     comptime length = 256
 
     var divisors = NDBuffer[
@@ -110,7 +110,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     _ = remainders
 
 
-def main():
+def main() raises:
     test_fast_div()
     test_fast_div_print()
     with DeviceContext() as ctx:

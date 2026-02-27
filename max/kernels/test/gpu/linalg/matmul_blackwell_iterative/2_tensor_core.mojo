@@ -505,7 +505,7 @@ def test_kernel_2[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     print(M, "x", N, "x", K)
 
     comptime a_layout = Layout.row_major(M, K)
@@ -629,7 +629,7 @@ def test_kernel_2[
     b_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             # Run the benchmark

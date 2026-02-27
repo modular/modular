@@ -541,7 +541,7 @@ fn bench_rms_norm_fused_fp8[
     gamma_h.free()
 
 
-def main():
+def main() raises:
     comptime in_dtype = env_get_dtype["in_dtype", DType.bfloat16]()
     comptime out_dtype = env_get_dtype["out_dtype", DType.float8_e4m3fn]()
     comptime shape = int_list_to_tuple[

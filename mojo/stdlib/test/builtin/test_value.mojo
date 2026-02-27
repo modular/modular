@@ -73,7 +73,7 @@ struct StructInheritTriviality[T: Copyable & ImplicitlyDestructible](Copyable):
 # ===-----------------------------------------------------------------------===#
 
 
-def _test_type_trivial[T: Copyable & ImplicitlyDestructible]():
+def _test_type_trivial[T: Copyable & ImplicitlyDestructible]() raises:
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
@@ -90,11 +90,11 @@ def _test_type_trivial[T: Copyable & ImplicitlyDestructible]():
     )
 
 
-def test_type_trivial():
+def test_type_trivial() raises:
     _test_type_trivial[Int]()
 
 
-def _test_type_not_trivial[T: Copyable & ImplicitlyDestructible]():
+def _test_type_not_trivial[T: Copyable & ImplicitlyDestructible]() raises:
     var events = List[Int]()
     var value = ConditionalTriviality[T](events)
     var value_copy = value.copy()
@@ -111,11 +111,13 @@ def _test_type_not_trivial[T: Copyable & ImplicitlyDestructible]():
     )
 
 
-def test_type_not_trivial():
+def test_type_not_trivial() raises:
     _test_type_not_trivial[String]()
 
 
-def _test_type_inherit_triviality[T: Copyable & ImplicitlyDestructible]():
+def _test_type_inherit_triviality[
+    T: Copyable & ImplicitlyDestructible
+]() raises:
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)
     var value_copy = value.copy()
@@ -132,12 +134,14 @@ def _test_type_inherit_triviality[T: Copyable & ImplicitlyDestructible]():
     )
 
 
-def test_type_inherit_triviality():
+def test_type_inherit_triviality() raises:
     _test_type_inherit_triviality[Float64]()
     # _test_type_inherit_triviality[InlineArray[InlineArray[Int, 4], 4]]()
 
 
-def _test_type_inherit_non_triviality[T: Copyable & ImplicitlyDestructible]():
+def _test_type_inherit_non_triviality[
+    T: Copyable & ImplicitlyDestructible
+]() raises:
     var events = List[Int]()
     var value = ConditionalTriviality[StructInheritTriviality[T]](events)
     var value_copy = value.copy()
@@ -154,10 +158,10 @@ def _test_type_inherit_non_triviality[T: Copyable & ImplicitlyDestructible]():
     )
 
 
-def test_type_inherit_non_triviality():
+def test_type_inherit_non_triviality() raises:
     _test_type_inherit_non_triviality[String]()
     # _test_type_inherit_non_triviality[InlineArray[InlineArray[String, 4], 4]]()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

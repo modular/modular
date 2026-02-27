@@ -71,6 +71,6 @@ fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
     )
 
 
-def main():
+def main() raises:
     test_codegen_memory[kernel_mixed_dimensions]()
     test_codegen_memory[kernel_thread_idx]()

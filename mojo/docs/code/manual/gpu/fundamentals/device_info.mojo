@@ -21,7 +21,7 @@ from sys import (
 from gpu.host import DeviceAttribute, DeviceContext
 
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No GPU detected")

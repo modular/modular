@@ -119,7 +119,7 @@ fn bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         var m = Bench(
             BenchConfig(

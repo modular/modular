@@ -28,7 +28,7 @@ from testing import assert_almost_equal
 
 def test_vendor_blas[
     dtype: DType, transpose_b: Bool
-](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
+](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
     var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
     var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
     var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
@@ -114,7 +114,7 @@ def test_vendor_blas[
 
 def dispatch_test_vendor_blas[
     transpose_b: Bool
-](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
+](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
     test_vendor_blas[dtype = DType.bfloat16, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
@@ -123,7 +123,7 @@ def dispatch_test_vendor_blas[
     )
 
 
-def test_vendor_blas_multi_gpu():
+def test_vendor_blas_multi_gpu() raises:
     """Test vendor BLAS on multiple GPUs to ensure device contexts work correctly.
     """
 
@@ -172,7 +172,7 @@ def test_vendor_blas_multi_gpu():
             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         dispatch_test_vendor_blas[transpose_b=True](M=550, N=2048, K=8, ctx=ctx)
         dispatch_test_vendor_blas[transpose_b=False](M=63, N=65, K=66, ctx=ctx)

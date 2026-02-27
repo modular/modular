@@ -426,7 +426,7 @@ fn test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     _ = paged_lut^
 
 
-def main():
+def main() raises:
     seed(42)  # Set seed for reproducible tests
 
     with DeviceContext() as ctx:

@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def add_one(var y: Int):
+def add_one(var y: Int) raises:
     y += 1
     print("y:", y)
 
 
-def main():
+def main() raises:
     var x = 1
     add_one(x)
     print("x:", x)

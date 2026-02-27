@@ -18,12 +18,12 @@ from reflection import source_location
 from testing import TestSuite, assert_false, assert_true
 
 
-def test_isfile():
+def test_isfile() raises:
     assert_true(isfile(source_location().file_name))
     assert_false(isfile("this/file/does/not/exist"))
 
     assert_false(isfile(Path()))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

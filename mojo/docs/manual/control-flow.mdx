@@ -76,11 +76,11 @@ semantics for boolean operators. If the first argument to an `or` operator
 evaluates to `True`, the second argument is not evaluated.
 
 ```mojo
-def true_func() -> Bool:
+def true_func() raises -> Bool:
     print("Executing true_func")
     return True
 
-def false_func() -> Bool:
+def false_func() raises -> Bool:
     print("Executing false_func")
     return False
 
@@ -204,7 +204,6 @@ while n < 4:
     n += 1
 else:
     print("Loop completed")
-
 ```
 
 ```output
@@ -454,7 +453,7 @@ The following is a simple example of iterating over a mixed-type Python list.
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     # Create a mixed-type Python list
     py_list = Python.list(42, "cat", 3.14159)
     for py_obj in py_list:  # Each element is of type "PythonObject"
@@ -473,7 +472,7 @@ iterate directly using the dictionary, which produces a sequence of its keys.
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     # Create a mixed-type Python dictionary
     py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
     for py_key in py_dict:  # Each key is of type "PythonObject"
@@ -493,7 +492,7 @@ Within the loop body, you can then access the key and value by index.
 ```mojo
 from python import Python
 
-def main():
+def main() raises:
     # Create a mixed-type Python dictionary
     py_dict = Python.evaluate("{'a': 1, 'b': 2.71828, 'c': 'sushi'}")
     for py_tuple in py_dict.items():  # Each 2-tuple is of type "PythonObject"

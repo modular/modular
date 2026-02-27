@@ -79,7 +79,7 @@ fn bench_gather_reduce(mut b: Bencher):
     indices.ptr.free()
 
 
-def main():
+def main() raises:
     var m = Bench()
     m.bench_function[bench_gather_reduce](
         BenchId("gather_reduce_dlrm1_multihot")

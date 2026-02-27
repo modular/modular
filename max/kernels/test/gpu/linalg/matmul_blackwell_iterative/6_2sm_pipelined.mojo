@@ -983,7 +983,7 @@ def test_blackwell_kernel_6[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     if not benchmark:
         print(
             String(
@@ -1187,7 +1187,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             print("error")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             # Run the benchmark

@@ -23,7 +23,7 @@ from test_utils import (
 from testing import *
 
 
-def test_maybe_uninitialized():
+def test_maybe_uninitialized() raises:
     # Every time an Int is destroyed, it's going to be recorded here.
     var destructor_recorder = List[Int]()
 
@@ -47,7 +47,7 @@ def test_maybe_uninitialized():
     assert_equal(len(destructor_recorder), 1)
 
 
-def test_write_does_not_trigger_destructor():
+def test_write_does_not_trigger_destructor() raises:
     var a = UnsafeMaybeUninit[AbortOnDel]()
     a.init_from(AbortOnDel(42))
 
@@ -58,7 +58,7 @@ def test_write_does_not_trigger_destructor():
     # caused a crash since we assume uninitialized memory.
 
 
-def test_init_from():
+def test_init_from() raises:
     var a = "hello"
     var uninit = UnsafeMaybeUninit[String]()
     uninit.init_from(a^)
@@ -66,14 +66,14 @@ def test_init_from():
     uninit.unsafe_assume_init_destroy()
 
 
-def test_take():
+def test_take() raises:
     var a = MoveCounter(0)
     var uninit = UnsafeMaybeUninit[MoveCounter[Int]](a^)
     var moved = uninit.unsafe_assume_init_take()
     assert_equal(moved.move_count, 2)
 
 
-def test_zeroed():
+def test_zeroed() raises:
     # For Int, zeroed memory is valid and should be 0.
     var a = UnsafeMaybeUninit[Int].zeroed()
     assert_equal(a.unsafe_assume_init_ref(), 0)
@@ -92,7 +92,7 @@ def test_zeroed():
     )
 
 
-def test_triviality():
+def test_triviality() raises:
     comptime Trivial = UnsafeMaybeUninit[Int]
     comptime NotTrivial = UnsafeMaybeUninit[
         ConfigureTrivial[
@@ -111,5 +111,5 @@ def test_triviality():
     assert_true(NotTrivial.__del__is_trivial)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

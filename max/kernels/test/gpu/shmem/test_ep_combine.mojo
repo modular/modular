@@ -489,7 +489,7 @@ fn test_combine[
     shmem_free(recv_count)
 
 
-def main():
+def main() raises:
     comptime test_gpu_counts = (8,)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):

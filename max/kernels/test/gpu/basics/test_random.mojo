@@ -26,7 +26,7 @@ from utils.index import Index, IndexList
 
 def run_elementwise[
     dtype: DType, distribution: String = "uniform"
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime length = 256
 
     comptime pack_size = simd_width_of[dtype, target = get_gpu_target()]()
@@ -90,7 +90,7 @@ def run_elementwise[
     _ = out_device
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float16](ctx)
         run_elementwise[DType.float32](ctx)

@@ -15,7 +15,7 @@ from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
 from testing import assert_true, assert_false, TestSuite
 
 
-def test_default_eq_simple():
+def test_default_eq_simple() raises:
     """Test the reflection-based default __eq__ with a simple struct."""
     var p1 = SimplePoint(1, 2)
     var p2 = SimplePoint(1, 2)
@@ -29,7 +29,7 @@ def test_default_eq_simple():
     assert_false(p1 == p4)
 
 
-def test_default_eq_nested():
+def test_default_eq_nested() raises:
     """Test the reflection-based default __eq__ with nested structs."""
     var s1 = NestedStruct(SimplePoint(1, 2), "hello")
     var s2 = NestedStruct(SimplePoint(1, 2), "hello")
@@ -41,7 +41,7 @@ def test_default_eq_nested():
     assert_false(s1 == s4)
 
 
-def test_default_eq_empty():
+def test_default_eq_empty() raises:
     """Test the reflection-based default __eq__ with an empty struct."""
     var e1 = EmptyStruct()
     var e2 = EmptyStruct()
@@ -49,5 +49,5 @@ def test_default_eq_empty():
     assert_true(e1 == e2)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

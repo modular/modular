@@ -165,7 +165,7 @@ fn tma_reduction_kernel[
 
 def test_tma_block_reduce[
     dtype: DType, use_tma: Bool
-](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,):
+](ctx: DeviceContext, rows: Int, cols: Int, benchmark: Bool = False,) raises:
     var n = rows * cols
     comptime simd_width = simd_width_of[dtype, target = get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
@@ -289,7 +289,7 @@ def test_tma_block_reduce[
     _ = d_out
 
 
-def main():
+def main() raises:
     var test_sizes = [128, 256, 512, 1024]
     var depths = [64, 128, 256]
     comptime dtype = DType.bfloat16

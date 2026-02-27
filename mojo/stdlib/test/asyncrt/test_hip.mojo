@@ -37,15 +37,15 @@ fn _run_hip_stream(ctx: DeviceContext) raises:
     print("hipStream_t: " + String(hip_stream))
 
 
-def test_hip_context():
+def test_hip_context() raises:
     var ctx = create_test_device_context()
     _run_hip_context(ctx)
 
 
-def test_hip_stream():
+def test_hip_stream() raises:
     var ctx = create_test_device_context()
     _run_hip_stream(ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1104,7 +1104,7 @@ fn test_topk_topp_sampling_fi[
     print("  All", num_passed, "trials passed!")
 
 
-def main():
+def main() raises:
     """Test suite for topk_mask_logits kernel.
 
     This function tests the topk_mask_logits kernel by comparing its output

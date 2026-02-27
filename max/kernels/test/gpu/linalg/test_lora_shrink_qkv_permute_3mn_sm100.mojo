@@ -247,7 +247,7 @@ fn test[
     _ = expert_ids_dev_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # QKV perm dim test
 

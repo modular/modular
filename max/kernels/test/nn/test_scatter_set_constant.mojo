@@ -64,5 +64,5 @@ fn test_scatter_set_constant() raises:
                 )
 
 
-def main():
+def main() raises:
     test_scatter_set_constant()

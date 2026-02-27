@@ -1041,7 +1041,7 @@ fn run_mma_fp16_fp16(
     _ = c_host_ref
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Run tensor core versions of matmul, verify correctness & compare to naive.
         run_mma_fp32_fp16(16, 8, 8, -100, 100, 10, 0.01, ctx)

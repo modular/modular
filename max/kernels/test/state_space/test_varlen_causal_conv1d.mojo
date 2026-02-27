@@ -768,5 +768,5 @@ fn test_varlen_causal_conv1d_states_variable_lengths() raises:
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

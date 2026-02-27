@@ -21,7 +21,7 @@ fn test_mut_cast_fails_if_mutabilities_do_not_match[
     var _p = p.mut_cast[True]()
 
 
-def main():
+def main() raises:
     var x = 42
     var p = UnsafePointer(to=x).as_immutable()
     test_mut_cast_fails_if_mutabilities_do_not_match(p)

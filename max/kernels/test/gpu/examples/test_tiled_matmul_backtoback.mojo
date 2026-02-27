@@ -748,6 +748,6 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_b2b_matmul(ctx)

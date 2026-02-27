@@ -126,7 +126,7 @@ fn run_rms_norm_tests[dtype: DType](rtol: Float64 = 0.001) raises:
     # run_rms_norm_cpu[dtype](Index(1, 5, 6, 10, 128), rtol)
 
 
-def main():
+def main() raises:
     run_rms_norm_tests[DType.float32]()
 
     comptime if not CompilationTarget.has_neon():

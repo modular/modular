@@ -43,7 +43,9 @@ comptime K_BATCH_SIZE = 512
 
 def matmul_qint4_pack_b[
     group_size: Int
-](b: LayoutTensor[DType.uint8, ...], b_rot: LayoutTensor[DType.uint8, ...]):
+](
+    b: LayoutTensor[DType.uint8, ...], b_rot: LayoutTensor[DType.uint8, ...]
+) raises:
     comptime assert b.rank == 2
     comptime assert b_rot.rank == 2
     comptime n_tiles = 2

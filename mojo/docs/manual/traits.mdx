@@ -767,10 +767,10 @@ The following code exercises this new trait by defining a generic method,
 `add_to_stack()` that adds an item to any `Stacklike` type.
 
 ```mojo
-def add_to_stack[S: Stacklike](mut stack: S, var item: S.EltType):
+def add_to_stack[S: Stacklike](mut stack: S, var item: S.EltType) raises:
     stack.push(item^)
 
-def main():
+def main() raises:
     s = MyStack[Int]()
     add_to_stack(s, 12)
     add_to_stack(s, 33)

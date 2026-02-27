@@ -48,7 +48,7 @@ All of the optional parts of the function can be omitted, so the minimal
 function is something like this:
 
 ```mojo
-def do_nothing():
+def do_nothing() raises:
     pass
 ```
 
@@ -65,7 +65,7 @@ familiar from many other languages: they are run-time values passed into the
 function.
 
 ```mojo
-def add(a: Int, b: Int) -> Int:
+def add(a: Int, b: Int) raises -> Int:
     return a+b
 ```
 
@@ -74,7 +74,7 @@ becomes a run-time constant. For example, consider the following function with a
 parameter:
 
 ```mojo
-def add_tensors[rank: Int](a: MyTensor[rank], b: MyTensor[rank]) -> MyTensor[rank]:
+def add_tensors[rank: Int](a: MyTensor[rank], b: MyTensor[rank]) raises -> MyTensor[rank]:
     # ...
 ```
 
@@ -112,9 +112,9 @@ on this page. For more information on parameters, see
 Defining a function using `def` and `fn` have much in common. They both have the
 following requirements:
 
-* You must declare the type of each function parameter and argument.
+- You must declare the type of each function parameter and argument.
 
-* If a function doesn't return a value, you can either omit the return type or
+- If a function doesn't return a value, you can either omit the return type or
   declare `None` as the return type.
 
   ```mojo
@@ -127,7 +127,7 @@ following requirements:
     print("Hello," name)
   ```
 
-* If the function returns a value, you must either declare the return type using
+- If the function returns a value, you must either declare the return type using
   the <code><strong>-></strong> <var>type</var></code> syntax or provide a
   [named result](#named-results) in the argument list.
 
@@ -146,9 +146,9 @@ following requirements:
 
 Where `def` and `fn` differ is error handling.
 
-* The compiler doesn't allow a function declared with `fn` to raise an error
+- The compiler doesn't allow a function declared with `fn` to raise an error
   condition unless it explicitly includes a `raises` declaration. In contrast,
-  the compiler assumes that *all* functions declared with `def` *might* raise an
+  the compiler assumes that _all_ functions declared with `def` _might_ raise an
   error. See the [Raising and non-raising
   functions](#raising-and-non-raising-functions) section of this page for more
   information.
@@ -169,7 +169,7 @@ You might see the following characters in
 place of arguments: slash (`/`) and/or star (`*`). For example:
 
 ```mojo
-def myfunc(pos_only, /, pos_or_keyword, *, keyword_only):
+def myfunc(pos_only, /, pos_or_keyword, *, keyword_only) raises:
 ```
 
 Arguments **before** the `/` can be passed only by position. Arguments **after**
@@ -179,8 +179,9 @@ the `*` can be passed only by keyword. For details, see
 You may also see argument names prefixed with one or two stars (`*`):
 
 ```mojo
-def myfunc2(*names, **attributes):
+def myfunc2(*names, **attributes) raises:
 ```
+
 An argument name prefixed by a single star character, like `*names` identifies a
 [variadic argument](#variadic-arguments), while an argument name prefixed with
 a double star, like `**attributes` identifies a
@@ -253,9 +254,9 @@ specified by keyword (see
 
 Variadic arguments can be divided into two categories:
 
-* Homogeneous variadic arguments, where all of the passed arguments are the same
+- Homogeneous variadic arguments, where all of the passed arguments are the same
   type—all `Int`, or all `String`, for example.
-* Heterogeneous variadic arguments, which can accept a set of different argument
+- Heterogeneous variadic arguments, which can accept a set of different argument
   types.
 
 The following sections describe how to work with homogeneous and heterogeneous
@@ -263,7 +264,7 @@ variadic arguments.
 
 :::note Variadic parameters
 
-Mojo also supports variadic *parameters*, but with some limitations—for details
+Mojo also supports variadic _parameters_, but with some limitations—for details
 see [variadic parameters](/mojo/manual/parameters/#variadic-parameters).
 
 :::
@@ -274,7 +275,7 @@ When defining a homogeneous variadic argument (all arguments must be the same
 type), use <code>*<var>argument_name</var>: <var>argument_type</var></code>:
 
 ```mojo
-def greet(*names: String):
+def greet(*names: String) raises:
     ...
 ```
 
@@ -310,7 +311,7 @@ the `ref` binding pattern to capture a mutable reference if you
 want to mutate the elements of the list:
 
 ```mojo
-def make_worldly(mut *strs: String):
+def make_worldly(mut *strs: String) raises:
     for ref i in strs:
         i += " world"
 ```
@@ -337,7 +338,7 @@ The signature for a function with a heterogeneous variadic argument looks like
 this:
 
 ```mojo
-def count_many_things[*ArgTypes: Intable](*args: *ArgTypes):
+def count_many_things[*ArgTypes: Intable](*args: *ArgTypes) raises:
     ...
 ```
 
@@ -373,7 +374,7 @@ fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
 
     return total
 
-def main():
+def main() raises:
     print(count_many_things(5, 11.7, 12))
 ```
 
@@ -384,7 +385,6 @@ def main():
 Notice that when calling `count_many_things()`, you don't actually pass in
 a list of argument types. You only need to pass in the arguments, and Mojo
 generates the `ArgTypes` list itself.
-
 
 #### Variadic keyword arguments
 
@@ -412,7 +412,7 @@ an instance of
 
 There are currently a few limitations:
 
-* Variadic keyword arguments are always implicitly treated as if they
+- Variadic keyword arguments are always implicitly treated as if they
   were declared with the `var` [argument
   convention](/mojo/manual/values/ownership#argument-conventions), and
   can't be declared otherwise:
@@ -422,22 +422,22 @@ There are currently a few limitations:
   fn read_var_kwargs(read **kwargs: Int): ...
   ```
 
-* All the variadic keyword arguments must have the same type, and this
+- All the variadic keyword arguments must have the same type, and this
   determines the type of the argument dictionary. For example, if the argument
   is `**kwargs: Float64` then the argument dictionary will be a
   `OwnedKwargsDict[Float64]`.
 
-* The argument type must conform to the
+- The argument type must conform to the
   [`Copyable`](/mojo/std/builtin/value/Copyable) trait.
 
-* Dictionary unpacking is not supported yet:
+- Dictionary unpacking is not supported yet:
 
   ```mojo
   fn takes_dict(d: Dict[String, Int]):
     print_nicely(**d)  # Not supported yet.
   ```
 
-* Variadic keyword *parameters* are not supported yet:
+- Variadic keyword _parameters_ are not supported yet:
 
   ```mojo
   # Not supported yet.
@@ -465,8 +465,8 @@ keywords, like `min(a=1, b=2)`.
 There are several reasons you might want to write a function with
 positional-only arguments:
 
-* The argument names aren't meaningful for the caller.
-* You want the freedom to change the argument names later on without breaking
+- The argument names aren't meaningful for the caller.
+- You want the freedom to change the argument names later on without breaking
   backward compatibility.
 
 For example, in the `min()` function, the argument names don't add any real
@@ -477,7 +477,7 @@ Positional-Only Parameters](https://peps.python.org/pep-0570/).
 
 Keyword-only arguments are the inverse of positional-only arguments: they can
 be specified only by keyword. If a function accepts variadic arguments, any
-arguments defined *after* the variadic arguments are treated as keyword-only.
+arguments defined _after_ the variadic arguments are treated as keyword-only.
 For example:
 
 ```mojo
@@ -504,20 +504,20 @@ fn kw_only_args(a1: Int, a2: Int, *, double: Bool) -> Int:
 ```
 
 Keyword-only arguments often have default values, but this is not required. If a
-keyword-only argument doesn't have a default value, it is a *required
-keyword-only argument*. It must be specified, and it must be specified by
+keyword-only argument doesn't have a default value, it is a _required
+keyword-only argument_. It must be specified, and it must be specified by
 keyword.
 
 Any required keyword-only arguments must appear in the signature before
 any optional keyword-only arguments. That is, arguments appear in the following
 sequence a function signature:
 
-* Required positional arguments.
-* Optional positional arguments.
-* Variadic arguments.
-* Required keyword-only arguments.
-* Optional keyword-only arguments.
-* Variadic keyword arguments.
+- Required positional arguments.
+- Optional positional arguments.
+- Variadic arguments.
+- Required keyword-only arguments.
+- Optional keyword-only arguments.
+- Variadic keyword arguments.
 
 For more information on keyword-only arguments, see [PEP 3102 – Keyword-Only
 Arguments](https://peps.python.org/pep-3102/).
@@ -682,7 +682,7 @@ passed using the `return` keyword, which ends the function and returns the
 identified value (if any) to the caller.
 
 ```mojo
-def get_greeting() -> String:
+def get_greeting() raises -> String:
     return "Hello"
 ```
 
@@ -707,7 +707,7 @@ copied. Named result syntax lets you specify a named, uninitialized variable to
 return to the caller using the `out` argument convention:
 
 ```mojo
-def get_name_tag(var name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag) raises:
     name_tag = NameTag(name^)
 ```
 
@@ -731,9 +731,9 @@ The fact that a function uses a named result is transparent to the caller. That
 is, these two signatures are interchangeable to the caller:
 
 ```mojo
-def get_name_tag(var name: String) -> NameTag:
+def get_name_tag(var name: String) raises -> NameTag:
     ...
-def get_name_tag(var name: String, out name_tag: NameTag):
+def get_name_tag(var name: String, out name_tag: NameTag) raises:
     ...
 ```
 
@@ -755,19 +755,19 @@ struct ImmovableObject:
     fn __init__(out self, var name: String):
         self.name = name^
 
-def create_immovable_object(var name: String, out obj: ImmovableObject):
+def create_immovable_object(var name: String, out obj: ImmovableObject) raises:
     obj = ImmovableObject(name^)
     obj.name += "!"
     # obj is implicitly returned
 
-def main():
+def main() raises:
     my_obj = create_immovable_object("Blob")
 ```
 
 By contrast, the following function with a standard return value doesn't work:
 
 ```mojo
-def create_immovable_object2(var name: String) -> ImmovableObject:
+def create_immovable_object2(var name: String) raises -> ImmovableObject:
     obj = ImmovableObject(name^)
     obj.name += "!"
     return obj^ # Error: ImmovableObject is not copyable or movable
@@ -779,7 +779,7 @@ or copied to the callee. This isn't an issue if the newly-created value is
 returned immediately:
 
 ```mojo
-def create_immovable_object3(var name: String) -> ImmovableObject:
+def create_immovable_object3(var name: String) raises -> ImmovableObject:
     return ImmovableObject(name^) # OK
 ```
 
@@ -794,12 +794,12 @@ def raises_error():
     raise Error("There was an error.")
 ```
 
-The Mojo compiler *always* treats a function declared with `def` as a *raising
-function*, even if the body of the function doesn't contain any code that could
+The Mojo compiler _always_ treats a function declared with `def` as a _raising
+function_, even if the body of the function doesn't contain any code that could
 raise an error.
 
-Functions declared with `fn` without the `raises` keyword are *non-raising
-functions*—that is, they are not allowed to propagate an error to the calling
+Functions declared with `fn` without the `raises` keyword are _non-raising
+functions_—that is, they are not allowed to propagate an error to the calling
 function. If a non-raising function calls a raising function, it **must handle
 any possible errors.**
 
@@ -818,7 +818,6 @@ fn handle_error():
 # Explicitly propagate the error
 fn propagate_error() raises:
     raises_error()
-
 ```
 
 All of the examples above use the built-in `Error` type. Mojo also supports

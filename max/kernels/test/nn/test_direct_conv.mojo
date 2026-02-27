@@ -218,7 +218,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     """It only includes shapes where F is multiple simd_size."""
     # No packing or padding.
     test[DType.float32, False](

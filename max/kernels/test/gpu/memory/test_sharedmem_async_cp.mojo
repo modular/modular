@@ -105,6 +105,6 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     _ = copy_via_shared_gpu^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_copy_via_shared(ctx)

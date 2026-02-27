@@ -2701,7 +2701,7 @@ struct TMATensorTile[
 def create_tma_tile[
     *tile_sizes: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor) -> TMATensorTile[
+](ctx: DeviceContext, tensor: LayoutTensor) raises -> TMATensorTile[
     tensor.dtype,
     Layout.row_major(_to_int_tuple[*tile_sizes]()),
 ]:
@@ -2775,7 +2775,7 @@ def _create_tma_descriptor_helper[
     //,
     desc_index_list: IndexList[rank],
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[dtype, ...]) -> TMADescriptor:
+](ctx: DeviceContext, tensor: LayoutTensor[dtype, ...]) raises -> TMADescriptor:
     """
     Helper function to create a TMA descriptor from a global memory layout tensor.
 
@@ -2862,7 +2862,7 @@ def create_tensor_tile[
     __desc_layout: Layout = _tma_desc_tile_layout[
         dtype, rank, tile_shape, swizzle_mode
     ](),
-](ctx: DeviceContext, tensor: LayoutTensor[dtype, ...]) -> TMATensorTile[
+](ctx: DeviceContext, tensor: LayoutTensor[dtype, ...]) raises -> TMATensorTile[
     dtype,
     __tile_layout,
     __desc_layout,
@@ -3083,7 +3083,7 @@ def create_tensor_tile[
     __desc_layout: Layout = _tma_desc_tile_layout[
         dtype, rank, tile_shape, swizzle_mode
     ](),
-](ctx: DeviceContext, tensor: TileTensor[dtype, ...]) -> TMATensorTile[
+](ctx: DeviceContext, tensor: TileTensor[dtype, ...]) raises -> TMATensorTile[
     dtype,
     __tile_layout,
     __desc_layout,
@@ -3504,7 +3504,7 @@ def create_tma_tile_template[
     __desc_layout: Layout = _tma_desc_tile_layout[
         dtype, rank, tile_shape, swizzle_mode
     ](),
-]() -> TMATensorTile[dtype, __tile_layout, __desc_layout]:
+]() raises -> TMATensorTile[dtype, __tile_layout, __desc_layout]:
     """
     Same as create_tma_tile expect the descriptor is only a placeholder or a template for later replacement.
 

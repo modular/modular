@@ -567,5 +567,5 @@ fn test_varlen_selective_scan_fwd_gpu_with_delta_softplus() raises:
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -19,7 +19,7 @@ from testing import *
 from utils import IndexList
 
 
-def test_roi_align_avg[scale_type: DType]():
+def test_roi_align_avg[scale_type: DType]() raises:
     print("=== test_roi_align_avg")
 
     comptime in_layout = row_major[1, 10, 10, 1]()
@@ -90,7 +90,7 @@ def test_roi_align_avg[scale_type: DType]():
     assert_almost_equal(output[0, 4, 4, 0], 39.600006103515625)
 
 
-def test_roi_align_max():
+def test_roi_align_max() raises:
     print("=== test_roi_align_max")
 
     comptime in_layout = row_major[1, 10, 10, 1]()
@@ -161,7 +161,7 @@ def test_roi_align_max():
     assert_almost_equal(output[0, 4, 4, 0], 28.160013198852539)
 
 
-def test_roi_align_KERN_692():
+def test_roi_align_KERN_692() raises:
     print("=== test_roi_align_KERN_692")
 
     comptime in_layout = row_major[1, 6, 6, 1]()
@@ -214,7 +214,7 @@ def test_roi_align_KERN_692():
     assert_almost_equal(output[0, 2, 2, 0], 32.5)
 
 
-def main():
+def main() raises:
     test_roi_align_avg[DType.float32]()
     test_roi_align_avg[DType.float64]()
     test_roi_align_max()

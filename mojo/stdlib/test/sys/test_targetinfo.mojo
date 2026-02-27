@@ -68,5 +68,5 @@ fn test_target_has_feature() raises:
     _has_feature = CompilationTarget.has_vnni()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

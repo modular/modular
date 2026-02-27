@@ -27,7 +27,7 @@ from testing import (
 )
 
 
-def test_unsafepointer_of_move_only_type():
+def test_unsafepointer_of_move_only_type() raises:
     var actions = List[String]()
     var actions_ptr = LegacyUnsafePointer(to=actions).as_immutable()
 
@@ -54,7 +54,7 @@ def test_unsafepointer_of_move_only_type():
     assert_equal(actions_ptr[0][3], "__del__")
 
 
-def test_unsafepointer_move_pointee_move_count():
+def test_unsafepointer_move_pointee_move_count() raises:
     var ptr = LegacyUnsafePointer[mut=True, MoveCounter[Int]].alloc(1)
 
     var value = MoveCounter(5)
@@ -73,7 +73,7 @@ def test_unsafepointer_move_pointee_move_count():
     assert_equal(2, ptr_2[].move_count)
 
 
-def test_unsafepointer_init_pointee_copy():
+def test_unsafepointer_init_pointee_copy() raises:
     var ptr = LegacyUnsafePointer[mut=True, ExplicitCopyOnly].alloc(1)
 
     var orig = ExplicitCopyOnly(5)
@@ -86,7 +86,7 @@ def test_unsafepointer_init_pointee_copy():
     assert_equal(ptr[].copy_count, 1)
 
 
-def test_refitem():
+def test_refitem() raises:
     var ptr = LegacyUnsafePointer[mut=True, Int].alloc(1)
     ptr[0] = 0
     ptr[] += 1
@@ -94,7 +94,7 @@ def test_refitem():
     ptr.free()
 
 
-def test_refitem_offset():
+def test_refitem_offset() raises:
     var ptr = LegacyUnsafePointer[mut=True, Int].alloc(5)
     for i in range(5):
         ptr[i] = i
@@ -103,18 +103,18 @@ def test_refitem_offset():
     ptr.free()
 
 
-def test_address_of():
+def test_address_of() raises:
     var local = 1
     assert_not_equal(0, Int(LegacyUnsafePointer[mut=True, Int](to=local)))
     _ = local
 
 
-def test_pointer_to():
+def test_pointer_to() raises:
     var local = 1
     assert_not_equal(0, LegacyUnsafePointer(to=local)[])
 
 
-def test_explicit_copy_of_pointer_address():
+def test_explicit_copy_of_pointer_address() raises:
     var local = 1
     var ptr = LegacyUnsafePointer[mut=True, Int](to=local)
     var copy = LegacyUnsafePointer(other=ptr)
@@ -122,7 +122,7 @@ def test_explicit_copy_of_pointer_address():
     _ = local
 
 
-def test_bitcast():
+def test_bitcast() raises:
     var local = 1
     var ptr = LegacyUnsafePointer[mut=True, Int](to=local)
     var aliased_ptr = ptr.bitcast[SIMD[DType.uint8, 4]]()
@@ -134,7 +134,7 @@ def test_bitcast():
     _ = local
 
 
-def test_unsafepointer_string():
+def test_unsafepointer_string() raises:
     var nullptr = LegacyUnsafePointer[mut=True, Int]()
     assert_equal(String(nullptr), "0x0")
 
@@ -144,7 +144,7 @@ def test_unsafepointer_string():
     ptr.free()
 
 
-def test_eq():
+def test_eq() raises:
     var local = 1
     # FIXME(#5133): should just be LegacyUnsafePointer[mut=False](to=local)
     var p1 = LegacyUnsafePointer(to=local).as_immutable()
@@ -161,7 +161,7 @@ def test_eq():
     _ = other_local
 
 
-def test_comparisons():
+def test_comparisons() raises:
     var p1 = LegacyUnsafePointer[mut=True, Int].alloc(1)
 
     assert_true((p1 - 1) < p1)
@@ -174,7 +174,7 @@ def test_comparisons():
     p1.free()
 
 
-def test_unsafepointer_address_space():
+def test_unsafepointer_address_space() raises:
     var p1 = LegacyUnsafePointer[
         mut=True, Int, address_space = AddressSpace(0)
     ].alloc(1)
@@ -186,7 +186,7 @@ def test_unsafepointer_address_space():
     p2.free()
 
 
-def test_unsafepointer_aligned_alloc():
+def test_unsafepointer_aligned_alloc() raises:
     comptime alignment_1 = 32
     var ptr = LegacyUnsafePointer[mut=True, UInt8].alloc(
         1, alignment=alignment_1
@@ -214,7 +214,7 @@ def test_unsafepointer_aligned_alloc():
 
 # Test that `LegacyUnsafePointer.alloc()` no longer artificially extends the lifetime
 # of every local variable in methods where its used.
-def test_unsafepointer_alloc_origin():
+def test_unsafepointer_alloc_origin() raises:
     # -----------------------------------------
     # Test with MutAnyOrigin alloc() origin
     # -----------------------------------------
@@ -266,7 +266,7 @@ def test_unsafepointer_alloc_origin():
 #     assert_true(start_ptr != dest_ptr)
 
 
-def test_indexing():
+def test_indexing() raises:
     var ptr = LegacyUnsafePointer[mut=True, Int].alloc(4)
     for i in range(4):
         ptr[i] = i
@@ -277,7 +277,7 @@ def test_indexing():
     ptr.free()
 
 
-def test_indexing_simd():
+def test_indexing_simd() raises:
     var ptr = LegacyUnsafePointer[mut=True, Int].alloc(4)
     for i in range(4):
         ptr[UInt8(i)] = i
@@ -302,7 +302,7 @@ def test_indexing_simd():
     ptr.free()
 
 
-def test_bool():
+def test_bool() raises:
     var nullptr = LegacyUnsafePointer[mut=True, Int]()
     var ptr = LegacyUnsafePointer[mut=True, Int].alloc(1)
 
@@ -312,7 +312,7 @@ def test_bool():
     ptr.free()
 
 
-def test_alignment():
+def test_alignment() raises:
     var ptr = LegacyUnsafePointer[mut=True, Int64].alloc(8, alignment=64)
     assert_equal(Int(ptr) % 64, 0)
     ptr.free()
@@ -322,7 +322,7 @@ def test_alignment():
     ptr_2.free()
 
 
-def test_pointer_arithmetic():
+def test_pointer_arithmetic() raises:
     var ptr = LegacyUnsafePointer[mut=True, Int].alloc(5)
     for i in range(5):
         ptr[i] = i
@@ -344,7 +344,7 @@ def test_pointer_arithmetic():
     ptr2.free()
 
 
-def test_load_and_store_simd():
+def test_load_and_store_simd() raises:
     var ptr = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(16):
         ptr[i] = Int8(i)
@@ -364,7 +364,7 @@ def test_load_and_store_simd():
     ptr2.free()
 
 
-def test_volatile_load_and_store_simd():
+def test_volatile_load_and_store_simd() raises:
     var ptr = LegacyUnsafePointer[mut=True, Int8].alloc(16)
     for i in range(16):
         ptr[i] = Int8(i)
@@ -385,7 +385,7 @@ def test_volatile_load_and_store_simd():
 
 
 # Test pointer merging with ternary operation.
-def test_merge():
+def test_merge() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
@@ -402,7 +402,7 @@ def test_merge():
     assert_equal(b, [4, 5, 6, 8])
 
 
-def test_swap_pointees_trivial_move():
+def test_swap_pointees_trivial_move() raises:
     var a = 42
     LegacyUnsafePointer(to=a).as_any_origin().swap_pointees(
         LegacyUnsafePointer(to=a).as_any_origin()
@@ -416,7 +416,7 @@ def test_swap_pointees_trivial_move():
     assert_equal(y, 1)
 
 
-def test_swap_pointees_non_trivial_move():
+def test_swap_pointees_non_trivial_move() raises:
     var counter = MoveCounter[Int](42)
     LegacyUnsafePointer(to=counter).as_any_origin().swap_pointees(
         LegacyUnsafePointer(to=counter).as_any_origin()
@@ -438,7 +438,7 @@ def test_swap_pointees_non_trivial_move():
     assert_equal(counterB.move_count, 2)
 
 
-def test_as_any_origin_mutable():
+def test_as_any_origin_mutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](
         LegacyUnsafePointer(to=deleted)
@@ -453,7 +453,7 @@ def test_as_any_origin_mutable():
     assert_true(deleted)  # AnyOrigin extends all lifetimes
 
 
-def test_as_any_origin_immutable():
+def test_as_any_origin_immutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](
         LegacyUnsafePointer(to=deleted)
@@ -468,14 +468,14 @@ def test_as_any_origin_immutable():
     assert_true(deleted)  # AnyOrigin extends all lifetimes
 
 
-def test_as_immutable():
+def test_as_immutable() raises:
     var x = 42
     var mutable = LegacyUnsafePointer(to=x)
     assert_true(mutable.mut)
     assert_false(mutable.as_immutable().mut)
 
 
-def test_unsafe_mut_cast():
+def test_unsafe_mut_cast() raises:
     var x = 42
     var ptr = LegacyUnsafePointer(to=x)
     var immutable = ptr.unsafe_mut_cast[False]()
@@ -488,7 +488,7 @@ fn _ref_to[origin: ImmutOrigin](ref[origin] to: String):
     pass
 
 
-def test_unsafe_origin_cast():
+def test_unsafe_origin_cast() raises:
     var x = "hello"
     var y = "world"
 
@@ -497,7 +497,7 @@ def test_unsafe_origin_cast():
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
-def test_write_to():
+def test_write_to() raises:
     check_write_to(
         LegacyUnsafePointer[Int, origin=MutAnyOrigin](),
         expected="0x0",
@@ -511,7 +511,7 @@ def test_write_to():
     check_write_to(LegacyUnsafePointer(to=s), contains="0x", is_repr=False)
 
 
-def test_write_repr_to():
+def test_write_repr_to() raises:
     check_write_to(
         LegacyUnsafePointer[Int, origin=MutAnyOrigin](),
         expected=(
@@ -542,5 +542,5 @@ def test_write_repr_to():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

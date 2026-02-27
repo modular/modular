@@ -74,6 +74,6 @@ fn test_dual_matmul[
     print("returned from test_elementwise_print")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_dual_matmul(ctx)

@@ -161,25 +161,25 @@ fn _test_naive_matmul[size: Int]():
     print_matrix[size](c)
 
 
-def test_naive_matmul_2():
+def test_naive_matmul_2() raises:
     # CHECK: 4.0
     _test_naive_matmul[2]()
 
 
-def test_naive_matmul_4():
+def test_naive_matmul_4() raises:
     # CHECK: 72.0
     _test_naive_matmul[4]()
 
 
-def test_naive_matmul_8():
+def test_naive_matmul_8() raises:
     # CHECK: 784.0
     _test_naive_matmul[8]()
 
 
-def test_naive_matmul_16():
+def test_naive_matmul_16() raises:
     # CHECK: 7200.0
     _test_naive_matmul[16]()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

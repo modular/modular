@@ -307,7 +307,7 @@ fn bench_broadcast[
     _ = cb_in^
 
 
-def main():
+def main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
     var root = arg_parse("root", 0)
 

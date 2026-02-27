@@ -45,14 +45,14 @@ struct SomeHashableStruct(Hashable, ImplicitlyCopyable):
     var _value: Int64
 
 
-def test_hasher():
+def test_hasher() raises:
     var hasher = DummyHasher()
     var hashable = SomeHashableStruct(42)
     hasher.update(hashable)
     assert_equal(hasher^.finish(), 42)
 
 
-def test_hash_with_hasher():
+def test_hash_with_hasher() raises:
     var hashable = SomeHashableStruct(10)
     assert_equal(hash[HasherType=DummyHasher](hashable), 10)
 
@@ -67,7 +67,7 @@ struct ComplexHashableStruct(Hashable):
         hasher.update(self._value2)
 
 
-def test_complex_hasher():
+def test_complex_hasher() raises:
     var hasher = DummyHasher()
     var hashable = ComplexHashableStruct(
         SomeHashableStruct(42), SomeHashableStruct(10)
@@ -76,7 +76,7 @@ def test_complex_hasher():
     assert_equal(hasher^.finish(), 52)
 
 
-def test_complex_hash_with_hasher():
+def test_complex_hash_with_hasher() raises:
     var hashable = ComplexHashableStruct(
         SomeHashableStruct(42), SomeHashableStruct(10)
     )
@@ -117,7 +117,7 @@ struct ComplexHashableStructWithListAndWideSIMD(Hashable):
         hasher.update(self._value4)
 
 
-def test_update_with_bytes():
+def test_update_with_bytes() raises:
     var hasher = DummyHasher()
     var hashable = ComplexHashableStructWithList(
         SomeHashableStruct(42), SomeHashableStruct(10), [UInt8(1), 2, 3]
@@ -131,7 +131,7 @@ comptime _hash_with_hasher = hash[
 ]
 
 
-def test_with_ahasher():
+def test_with_ahasher() raises:
     var hashable1 = ComplexHashableStructWithList(
         SomeHashableStruct(42), SomeHashableStruct(10), [UInt8(1), 2, 3]
     )
@@ -147,7 +147,7 @@ def test_with_ahasher():
     assert_equal(hash_value, 1754891767834419861)
 
 
-def test_hash_hashable_with_hasher_types():
+def test_hash_hashable_with_hasher_types() raises:
     assert_equal(_hash_with_hasher(DType.uint64), 6529703120343940753)
     assert_equal(_hash_with_hasher(StaticString("")), 11583516797109448887)
     assert_equal(_hash_with_hasher(String()), 11583516797109448887)
@@ -161,5 +161,5 @@ def test_hash_hashable_with_hasher_types():
     assert_equal(_hash_with_hasher(Path("/tmp")), 16491058316913697698)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

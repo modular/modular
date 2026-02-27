@@ -29,7 +29,7 @@ from testing import (
 )
 
 
-def test_construction():
+def test_construction() raises:
     var l1 = LinkedList[Int]()
     assert_equal(len(l1), 0)
 
@@ -40,7 +40,7 @@ def test_construction():
     assert_equal(l2[2], 3)
 
 
-def test_linkedlist_literal():
+def test_linkedlist_literal() raises:
     var l: LinkedList[Int] = [1, 2, 3]
     assert_equal(3, len(l))
     assert_equal(1, l[0])
@@ -56,7 +56,7 @@ def test_linkedlist_literal():
     assert_equal(0, len(l3))
 
 
-def test_append():
+def test_append() raises:
     var l1 = LinkedList[Int]()
     l1.append(1)
     l1.append(2)
@@ -67,7 +67,7 @@ def test_append():
     assert_equal(l1[2], 3)
 
 
-def test_prepend():
+def test_prepend() raises:
     var l1 = LinkedList[Int]()
     l1.prepend(1)
     l1.prepend(2)
@@ -78,7 +78,7 @@ def test_prepend():
     assert_equal(l1[2], 1)
 
 
-def test_copy():
+def test_copy() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     var l2 = l1.copy()
     assert_equal(len(l2), 3)
@@ -87,7 +87,7 @@ def test_copy():
     assert_equal(l2[2], 3)
 
 
-def test_reverse():
+def test_reverse() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     l1.reverse()
     assert_equal(len(l1), 3)
@@ -96,7 +96,7 @@ def test_reverse():
     assert_equal(l1[2], 1)
 
 
-def test_reverse_prev_pointers():
+def test_reverse_prev_pointers() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     l1.reverse()
 
@@ -108,7 +108,7 @@ def test_reverse_prev_pointers():
     assert_equal(riter.__next__(), 3)
 
 
-def test_pop():
+def test_pop() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     assert_equal(l1.pop(), 3)
     assert_equal(len(l1), 2)
@@ -116,7 +116,7 @@ def test_pop():
     assert_equal(l1[1], 2)
 
 
-def test_pop_copies():
+def test_pop_copies() raises:
     var l1 = LinkedList[CopyCounter[]](
         CopyCounter(),
         CopyCounter(),
@@ -136,7 +136,7 @@ def test_pop_copies():
     assert_equal(len(l1), 0)
 
 
-def test_getitem():
+def test_getitem() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     assert_equal(l1[0], 1)
     assert_equal(l1[1], 2)
@@ -147,7 +147,7 @@ def test_getitem():
     assert_equal(l1[-3], 1)
 
 
-def test_setitem():
+def test_setitem() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     l1[0] = 4
     assert_equal(l1[0], 4)
@@ -160,19 +160,19 @@ def test_setitem():
     assert_equal(l1[2], 5)
 
 
-def test_pop_on_empty_list():
+def test_pop_on_empty_list() raises:
     with assert_raises():
         var ll = LinkedList[Int]()
         _ = ll.pop()
 
 
-def test_optional_pop_on_empty_linked_list():
+def test_optional_pop_on_empty_linked_list() raises:
     var ll = LinkedList[Int]()
     var result = ll.maybe_pop()
     assert_false(Bool(result))
 
 
-def test_list():
+def test_list() raises:
     var list = LinkedList[Int]()
 
     for i in range(5):
@@ -200,7 +200,7 @@ def test_list():
     assert_equal(7, list[-1])
 
 
-def test_list_clear():
+def test_list_clear() raises:
     var list = LinkedList[Int](1, 2, 3)
     assert_equal(len(list), 3)
     list.clear()
@@ -208,14 +208,14 @@ def test_list_clear():
     assert_equal(len(list), 0)
 
 
-def test_list_to_bool_conversion():
+def test_list_to_bool_conversion() raises:
     assert_false(LinkedList[String]())
     assert_true(LinkedList[String]("a"))
     assert_true(LinkedList[String]("", "a"))
     assert_true(LinkedList[String](""))
 
 
-def test_list_pop():
+def test_list_pop() raises:
     var list = LinkedList[Int]()
     # Test pop with index
     for i in range(6):
@@ -247,7 +247,7 @@ def test_list_pop():
     assert_equal(0, len(list))
 
 
-def test_list_variadic_constructor():
+def test_list_variadic_constructor() raises:
     var l = LinkedList[Int](2, 4, 6)
     assert_equal(3, len(l))
     assert_equal(2, l[0])
@@ -272,7 +272,7 @@ def test_list_variadic_constructor():
     assert_equal(l2[2].copy_count, 0)
 
 
-def test_list_reverse():
+def test_list_reverse() raises:
     #
     # Test reversing the list []
     #
@@ -338,7 +338,7 @@ def test_list_reverse():
     assert_equal(vec[1], 5)
 
 
-def test_list_insert():
+def test_list_insert() raises:
     #
     # Test the list [1, 2, 3] created with insert
     #
@@ -400,7 +400,7 @@ def test_list_insert():
         assert_equal(value, i + 1)
 
 
-def test_list_extend_non_trivial():
+def test_list_extend_non_trivial() raises:
     # Tests three things:
     #   - extend() for non-plain-old-data types
     #   - extend() with mixed-length self and other lists
@@ -430,7 +430,7 @@ def test_list_extend_non_trivial():
     assert_equal(v1[4].move_count, 1)
 
 
-def test_2d_dynamic_list():
+def test_2d_dynamic_list() raises:
     var list = LinkedList[LinkedList[Int]]()
 
     for i in range(2):
@@ -458,7 +458,7 @@ def test_2d_dynamic_list():
     assert_equal(0, len(list))
 
 
-def test_list_explicit_copy():
+def test_list_explicit_copy() raises:
     var list = LinkedList[CopyCounter[]]()
     list.append(CopyCounter())
     var list_copy = list.copy()
@@ -475,7 +475,7 @@ def test_list_explicit_copy():
         assert_equal(value, l2_copy[i])
 
 
-def test_no_extra_copies_with_sugared_set_by_field():
+def test_no_extra_copies_with_sugared_set_by_field() raises:
     var list = LinkedList[LinkedList[CopyCountedStruct]]()
     var child_list = LinkedList[CopyCountedStruct]()
     child_list.append(CopyCountedStruct("Hello"))
@@ -502,12 +502,12 @@ def test_no_extra_copies_with_sugared_set_by_field():
     assert_equal(0, list[0][1].counter.copy_count)
 
 
-def test_list_boolable():
+def test_list_boolable() raises:
     assert_true(LinkedList[Int](1))
     assert_false(LinkedList[Int]())
 
 
-def test_list_count():
+def test_list_count() raises:
     var list = LinkedList[Int](1, 2, 3, 2, 5, 6, 7, 8, 9, 10)
     assert_equal(1, Int(list.count(1)))
     assert_equal(2, Int(list.count(2)))
@@ -517,7 +517,7 @@ def test_list_count():
     assert_equal(0, Int(list2.count(1)))
 
 
-def test_list_contains():
+def test_list_contains() raises:
     var x = LinkedList[Int](1, 2, 3)
     assert_false(0 in x)
     assert_true(1 in x)
@@ -530,7 +530,7 @@ def test_list_contains():
     # assert_equal(LinkedList(0,1) in y,False)
 
 
-def test_list_eq_ne():
+def test_list_eq_ne() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     var l2 = LinkedList[Int](1, 2, 3)
     assert_true(l1 == l2)
@@ -553,7 +553,7 @@ def test_list_eq_ne():
     assert_false(l6 == l8)
 
 
-def test_indexing():
+def test_indexing() raises:
     var l = LinkedList[Int](1, 2, 3)
     assert_equal(l[Int(1)], 2)
     assert_equal(l[False], 1)
@@ -566,7 +566,7 @@ def test_indexing():
 # ===-------------------------------------------------------------------===#
 
 
-def test_list_dtor():
+def test_list_dtor() raises:
     var dtor_count = 0
 
     var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
@@ -580,7 +580,7 @@ def test_list_dtor():
     assert_equal(dtor_count, 1)
 
 
-def test_iter():
+def test_iter() raises:
     var l = LinkedList[Int](1, 2, 3)
     var it = l.__iter__()
     assert_equal(it.__next__(), 1)
@@ -612,12 +612,12 @@ def test_iter():
         _ = it.__next__()  # raises StopIteration
 
 
-def test_repr_wrap():
+def test_repr_wrap() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     assert_equal(repr(l1), "LinkedList[Int]([Int(1), Int(2), Int(3)])")
 
 
-def test_write_to():
+def test_write_to() raises:
     """Test Writable trait implementation."""
     check_write_to(
         LinkedList[Int](10, 20, 30), expected="[10, 20, 30]", is_repr=False
@@ -626,7 +626,7 @@ def test_write_to():
     check_write_to(LinkedList[Int](42), expected="[42]", is_repr=False)
 
 
-def test_write_repr_to():
+def test_write_repr_to() raises:
     """Test write_repr_to implementation."""
     check_write_to(
         LinkedList[Int](1, 2, 3),
@@ -641,5 +641,5 @@ def test_write_repr_to():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

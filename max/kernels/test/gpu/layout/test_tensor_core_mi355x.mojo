@@ -162,7 +162,7 @@ comptime bf8_dtype = DType.float8_e5m2
 # CHECK: 1945568.0 1949565.0 1961682.0 1973799.0 1977796.0 1981793.0 1993910.0 2006027.0 2010024.0 2014021.0 2026138.0 2038255.0 2042252.0 2046249.0 2058366.0 2070483.0 2074480.0 2078477.0 2090594.0 2102711.0 2106708.0 2110705.0 2122822.0 2134939.0 2138936.0 2142933.0 2155050.0 2167167.0 2171164.0 2175161.0 2187278.0 2199395.0
 
 
-def test_load_and_mma_f32_bf16_32x32x16(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_32x32x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_32x32x16")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(32, 32, 16), False
@@ -307,7 +307,7 @@ def test_load_and_mma_f32_bf16_32x32x16(ctx: DeviceContext):
 # CHECK: 61760.0 190657.0 319554.0 448451.0 577348.0 706245.0 835142.0 964039.0 1092936.0 1221833.0 1350730.0 1479627.0 1608524.0 1737421.0 1866318.0 1995215.0 2124128.0 2253025.0 2381922.0 2510819.0 2639716.0 2768613.0 2897510.0 3026407.0 3155304.0 3284201.0 3413098.0 3541995.0 3670892.0 3799789.0 3928686.0 4057583.0
 
 
-def test_load_and_mma_f32_bf16_32x32x16_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_32x32x16_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_32x32x16_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(32, 32, 16), True
@@ -452,7 +452,7 @@ def test_load_and_mma_f32_bf16_32x32x16_transpose(ctx: DeviceContext):
 # CHECK: 1945312.0 1953369.0 1961426.0 1969483.0 1977540.0 1985597.0 1993654.0 2001711.0 2009768.0 2017825.0 2025882.0 2033939.0 2041996.0 2050053.0 2058110.0 2066167.0 2074224.0 2082281.0 2090338.0 2098395.0 2106452.0 2114509.0 2122566.0 2130623.0 2138680.0 2146737.0 2154794.0 2162851.0 2170908.0 2178965.0 2187022.0 2195079.0
 
 
-def test_load_and_mma_f32_f16_32x32x16(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_32x32x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_32x32x16")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(32, 32, 16), False
@@ -597,7 +597,7 @@ def test_load_and_mma_f32_f16_32x32x16(ctx: DeviceContext):
 # CHECK: 61752.0 190649.0 319546.0 448443.0 577340.0 706237.0 835134.0 964031.0 1092928.0 1221825.0 1350722.0 1479619.0 1608516.0 1737413.0 1866310.0 1995207.0 2124104.0 2253001.0 2381898.0 2510795.0 2639692.0 2768589.0 2897486.0 3026383.0 3155280.0 3284177.0 3413074.0 3541971.0 3670868.0 3799765.0 3928662.0 4057559.0
 
 
-def test_load_and_mma_f32_f16_32x32x16_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_32x32x16_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_32x32x16_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(32, 32, 16), True
@@ -710,7 +710,7 @@ def test_load_and_mma_f32_f16_32x32x16_transpose(ctx: DeviceContext):
 # CHECK: 521.9414 552.2539 583.3594 613.41406 644.3125 674.21875 704.4219 735.6719 763.90625 796.53125 826.46875 856.875 888.3125 916.34375 948.875 978.59375
 
 
-def test_load_and_mma_f32_f8_16x16x32(ctx: DeviceContext):
+def test_load_and_mma_f32_f8_16x16x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f8_16x16x32")
     test_load_and_mma_and_multiply_operands[
         DType.float32, fp8_dtype, Index(16, 16, 32), False
@@ -823,14 +823,14 @@ def test_load_and_mma_f32_f8_16x16x32(ctx: DeviceContext):
 # CHECK: 803.8828 821.6367 835.71875 852.91406 866.5078 883.21875 899.5156 914.9531 930.71875 945.8125 961.1406 978.78125 992.8281 1010.03125 1023.5625 1040.5781
 
 
-def test_load_and_mma_f32_f8_16x16x32_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f8_16x16x32_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f8_16x16x32_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, fp8_dtype, Index(16, 16, 32), True
     ](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_load_and_mma_f32_bf16_32x32x16(ctx)
         test_load_and_mma_f32_bf16_32x32x16_transpose(ctx)

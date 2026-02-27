@@ -16,7 +16,7 @@ from compile import compile_info
 from testing import TestSuite, assert_false, assert_true
 
 
-def test_simd_fma_fastmath():
+def test_simd_fma_fastmath() raises:
     fn my_fma(a: Float32, b: Float32, c: Float32) -> Float32:
         return a.fma[FastMathFlag.FAST](c, b)
 
@@ -25,7 +25,7 @@ def test_simd_fma_fastmath():
     assert_true(" call fast float @llvm.fma.f32" in asm)
 
 
-def main():
+def main() raises:
     var suite = TestSuite()
 
     suite.test[test_simd_fma_fastmath]()

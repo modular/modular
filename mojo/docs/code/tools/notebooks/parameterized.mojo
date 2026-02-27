@@ -25,5 +25,5 @@ fn threehello():
 
 
 # Run
-def main():
+def main() raises:
     threehello()

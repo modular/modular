@@ -16,7 +16,7 @@ from testing import TestSuite, assert_equal
 from utils import StaticTuple
 
 
-def test_getitem():
+def test_getitem() raises:
     # Should be constructible from a single element
     # as well as a variadic list of elements.
     var tup1 = StaticTuple[Int, 1](1)
@@ -34,7 +34,7 @@ def test_getitem():
     assert_equal(tup1[Int(0)], 1)
 
 
-def test_setitem():
+def test_setitem() raises:
     var t = StaticTuple[Int, 3](1, 2, 3)
 
     t[0] = 100
@@ -51,5 +51,5 @@ def test_setitem():
     assert_equal(t[0], 400)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

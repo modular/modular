@@ -875,7 +875,7 @@ fn test_quantized[
     _ = b_tensor
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_repack_Q4_0_for_sm8x(
             ctx,

@@ -17,7 +17,7 @@ from testing import TestSuite
 
 
 # CHECK-LABEL: test_ndbuffer_dynamic_shape
-def test_ndbuffer_dynamic_shape():
+def test_ndbuffer_dynamic_shape() raises:
     print("== test_ndbuffer_dynamic_shape")
 
     # Create a buffer of size 16
@@ -49,5 +49,5 @@ def test_ndbuffer_dynamic_shape():
     print(matrix2.dim[1]())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

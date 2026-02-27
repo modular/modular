@@ -18,6 +18,6 @@ fn repeat[MsgType: Writable, //, count: Int](msg: MsgType):
         print(msg)
 
 
-def main():
+def main() raises:
     # MsgType is always inferred, so first positional keyword `2` is passed to `count`
     repeat[2](42)

@@ -33,7 +33,7 @@ fn test_os_query() raises:
     assert_false(is_big_endian())
 
 
-def test_os_version():
+def test_os_version() raises:
     var major, minor, patch = _macos_version()
 
     assert_true(major >= 12)
@@ -41,5 +41,5 @@ def test_os_version():
     assert_true(patch >= 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

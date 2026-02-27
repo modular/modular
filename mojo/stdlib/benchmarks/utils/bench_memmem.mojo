@@ -226,7 +226,7 @@ fn bench_find_optimized(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_find_baseline](BenchId("find_baseline"))
     m.bench_function[bench_find_optimized](BenchId("find_optimized"))

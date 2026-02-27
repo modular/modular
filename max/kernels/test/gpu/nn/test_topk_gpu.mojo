@@ -647,7 +647,7 @@ fn test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank3)
 
 
-def main():
+def main() raises:
     comptime llama3_vocab_size = 128256
     with DeviceContext() as ctx:
         comptime dtype = DType.float32

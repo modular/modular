@@ -50,7 +50,7 @@ fn bench_writer_simd[n: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_writer_int[42]](BenchId("bench_writer_int_42"))
     m.bench_function[bench_writer_int[2**64]](

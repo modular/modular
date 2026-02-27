@@ -16,7 +16,7 @@ from collections import Deque
 from testing import assert_equal, TestSuite
 
 
-def test_reversed_list():
+def test_reversed_list() raises:
     var list = [1, 2, 3, 4, 5, 6]
     var check: Int = 6
 
@@ -25,7 +25,7 @@ def test_reversed_list():
         check -= 1
 
 
-def test_reversed_deque():
+def test_reversed_deque() raises:
     var deque = Deque[Int](1, 2, 3, 4, 5, 6)
     var check: Int = 6
 
@@ -34,7 +34,7 @@ def test_reversed_deque():
         check -= 1
 
 
-def test_reversed_dict():
+def test_reversed_dict() raises:
     var dict = Dict[String, Int]()
     dict["a"] = 1
     dict["b"] = 2
@@ -140,5 +140,5 @@ def test_reversed_dict():
     assert_equal(check, 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

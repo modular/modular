@@ -15,12 +15,12 @@
 struct NameList:
     var names: List[String]
 
-    def __init__(out self, *names: String):
+    def __init__(out self, *names: String) raises:
         self.names = List[String]()
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) -> ref[self.names] String:
+    def __getitem__(ref self, index: Int) raises -> ref[self.names] String:
         if index >= 0 and index < len(self.names):
             return self.names[index]
         else:
@@ -32,6 +32,6 @@ fn pass_immutable_list(list: NameList) raises:
     # list[2] += "?" # Error, this list is immutable
 
 
-def main():
+def main() raises:
     list = NameList("Sophie", "Jack", "Diana")
     pass_immutable_list(list)

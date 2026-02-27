@@ -176,7 +176,7 @@ fn bench_bitset_difference[width: Int](mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-def main():
+def main() raises:
     seed()
     comptime widths = (1, 2, 4, 8, 16)
     comptime sizes = (10, 30, 50, 100, 1000)

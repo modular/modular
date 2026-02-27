@@ -45,7 +45,7 @@ from testdata.fused_qk_rope_3d_goldens import (
 from utils import IndexList
 
 
-def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
+def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     """Verifies fused_qk_rope_ragged with 3D position_ids and mrope sections
     against golden values computed with PyTorch.
     """
@@ -315,6 +315,6 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     _ = position_ids_input_buffer^
 
 
-def main() -> None:
+def main() raises -> None:
     # Full head RoPE
     test_fused_qk_rope[64, DType.float32]()

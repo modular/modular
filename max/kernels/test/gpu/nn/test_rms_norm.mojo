@@ -114,7 +114,7 @@ fn run_rms_norm_gpu[
     gamma_h.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_rms_norm_gpu[DType.float32](ctx, Index(5))
         run_rms_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))

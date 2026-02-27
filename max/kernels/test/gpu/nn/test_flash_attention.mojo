@@ -902,7 +902,7 @@ fn test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
     sinks_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_context_encoding(ctx)
         # Test flash attention with sink kernel during encoding

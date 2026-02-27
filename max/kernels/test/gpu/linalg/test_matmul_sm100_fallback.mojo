@@ -49,7 +49,7 @@ def test_matmul_sm100_fallback[
     transpose_b: Bool = True,
     BK: Int = 64,
     use_epilogue: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -224,7 +224,7 @@ def test_matmul_sm100_fallback[
     _ = c
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for dtype in [DType.float8_e4m3fn, DType.bfloat16]:
             comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:

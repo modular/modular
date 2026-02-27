@@ -46,7 +46,7 @@ fn bench_parsing_all_floats_in_file[
 # ===-----------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     var bench = Bench()
     comptime files = ["canada", "mesh"]
 

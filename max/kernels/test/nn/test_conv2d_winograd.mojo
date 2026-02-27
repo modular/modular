@@ -238,7 +238,7 @@ fn test[dtype: DType, H: Int, W: Int]():  # Input Height/Width
     print("Succeed")
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
 
     # power of 2

@@ -30,7 +30,7 @@ from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
 def execute_ragged_flash_attention(
     ctx: DeviceContext,
-):
+) raises:
     comptime num_q_heads = 32
     comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
     comptime type = DType.float32
@@ -265,6 +265,6 @@ def execute_ragged_flash_attention(
     _ = paged_lut^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         execute_ragged_flash_attention(ctx)

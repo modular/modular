@@ -491,7 +491,7 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
         print("")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK: === test_naive_matmul_kernel
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0

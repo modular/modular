@@ -26,10 +26,10 @@ CPU-based algorithms.
 
 A `LayoutTensor` consists of three main properties:
 
-* A [layout](/mojo/manual/layout/layouts), defining how the elements are
+- A [layout](/mojo/manual/layout/layouts), defining how the elements are
   laid out in memory.
-* A `DType`, defining the data type stored in the tensor.
-* A pointer to memory where the data is stored.
+- A `DType`, defining the data type stored in the tensor.
+- A pointer to memory where the data is stored.
 
 Figure 1 shows the relationship between the layout and the storage.
 
@@ -153,9 +153,9 @@ been [*tiled*](#tiling-tensors), which yields a tensor with a simple layout.
 There are several ways to create a `LayoutTensor`, depending on where the tensor
 data resides:
 
-* On the CPU.
-* In GPU global memory.
-* In GPU shared or local memory.
+- On the CPU.
+- In GPU global memory.
+- In GPU shared or local memory.
 
 In addition to methods for creating a tensor from scratch, `LayoutTensor`
 provides a number of methods for producing a new view of an existing tensor.
@@ -194,7 +194,6 @@ target-dependent limits on how much memory can be allocated this way, however.
 You can also create a `LayoutTensor` using an `UnsafePointer`. This may be
 preferable for very large tensors.
 
-
 ```mojo
 comptime rows = 1024
 comptime columns = 1024
@@ -205,20 +204,18 @@ memset(ptr, 0, buf_size)
 var tensor = LayoutTensor[DType.float32, layout](ptr)
 ```
 
-
 Note that this example uses [`memset()`](/mojo/std/memory/memory/memset/)
 instead of the `LayoutTensor` `fill()` method. The `fill()` method performs
 elementwise initialization of the tensor, so it may be slow for large tensors.
-
 
 ### Creating a `LayoutTensor` on the GPU
 
 When creating a `LayoutTensor` for use on the GPU, you need to consider which
 memory space the tensor data will be stored in:
 
-* GPU global memory can only be allocated from the host (CPU), as a
+- GPU global memory can only be allocated from the host (CPU), as a
   `DeviceBuffer`.
-* GPU shared or local memory can be statically allocated on the GPU.
+- GPU shared or local memory can be statically allocated on the GPU.
 
 #### Creating a `LayoutTensor` in global memory
 
@@ -228,11 +225,11 @@ either construct a `LayoutTensor` using this memory on the host side, before
 invoking a GPU kernel, or you can construct a LayoutTensor inside the kernel
 itself:
 
-* On the CPU, you can construct a `LayoutTensor` using a `DeviceBuffer` as its
+- On the CPU, you can construct a `LayoutTensor` using a `DeviceBuffer` as its
   storage. Although you can create this tensor on the CPU and pass it in to a
   kernel function, you can't directly modify its values on the CPU, since the
   memory is on the GPU.
-* On the GPU: When a `DeviceBuffer` is passed in to
+- On the GPU: When a `DeviceBuffer` is passed in to
   `enqueue_function()`, the kernel receives a corresponding
   `UnsafePointer` in place of the `DeviceBuffer.` The kernel can then create a
   `LayoutTensor` using the `pointer`.
@@ -246,7 +243,7 @@ on the buffer prior to invoking the kernel. The following example shows
 initializing a `LayoutTensor` from the CPU and passing it to a GPU kernel.
 
 ```mojo
-def initialize_tensor_from_cpu_example():
+def initialize_tensor_from_cpu_example() raises:
     comptime dtype = DType.float32
     comptime rows = 32
     comptime cols = 8
@@ -323,7 +320,7 @@ var shared_tile = LayoutTensor[
 In the case of shared memory, all threads in a thread block see the same
 allocation. For local memory, each thread gets a separate allocation.
 
-There's no way to explicitly allocate _register_ memory. However, the
+There's no way to explicitly allocate *register* memory. However, the
 compiler can promote some local memory allocations to registers. To enable
 this optimization, keep the size of the tensor small, and all indexing into the
 tensor static—for example, using `@parameter for` loops.
@@ -336,7 +333,6 @@ C/C++ stack allocation in that its lifetime ends when the function in which it
 was allocated returns. This API may be subject to change in the near future.
 
 :::
-
 
 ## Tiling tensors
 
@@ -430,10 +426,9 @@ The [`LayoutTensorIter`](/mojo/kernels/layout/layout_tensor/LayoutTensorIter/)
 struct provides a way to iterate through a block of memory, generating a layout
 tensor for each position. There are two ways to use `LayoutTensorIter`:
 
-* Starting with a memory buffer, you can generate a series of tiles.
-* Given an existing layout tensor, you can extract a set of tiles along a given
+- Starting with a memory buffer, you can generate a series of tiles.
+- Given an existing layout tensor, you can extract a set of tiles along a given
   axis.
-
 
 #### Tiling a memory buffer
 
@@ -480,7 +475,7 @@ for i in range(num_tiles):
 ```
 
 `LayoutTensorIter` also has an optional boolean `circular` parameter. A
-`LayoutTensorIter `created with `circular=True` treats the memory buffer as
+`LayoutTensorIter`created with `circular=True` treats the memory buffer as
 circular; when it hits the end of the buffer, it starts over again at the
 beginning.
 
@@ -579,7 +574,6 @@ Given a 16x16 tile size, a warp size of 32 and a `simd_size` of 4, this code
 produces a 16x4 tensor of 1x4 vectors. The thread layout is an 8x4 row major
 layout.
 
-
 ## Copying tensors
 
 The `layout-tensor` package provides a large set of utilities for copying
@@ -589,10 +583,10 @@ can transform a tensor by copying it to a tensor with a different layout.
 
 `LayoutTensor` itself provides two methods for copying tensor data:
 
-* [`copy_from()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#copy_from)
+- [`copy_from()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#copy_from)
   copies data from a source tensor to the current tensor, which may be in a
   different memory space.
-* [`copy_from_async()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#copy_from_async)
+- [`copy_from_async()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#copy_from_async)
   is an optimized copy mechanism for asynchronously copying from GPU global
   memory to shared memory.
 

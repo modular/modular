@@ -123,7 +123,7 @@ fn test_argsort_helper[
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=1024)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:  # argmax tests
         test_argsort_helper[
             dtype = DType.float32, filler=linear_filler, ascending=True

@@ -17,7 +17,7 @@ from testing import assert_equal, assert_false, assert_not_equal, assert_true
 from testing import TestSuite
 
 
-def test_interval():
+def test_interval() raises:
     # Create an interval from 1 to 10 (exclusive)
     var interval = Interval(1, 10)
 
@@ -150,7 +150,7 @@ struct MyType(
         return String.write(self)
 
 
-def test_interval_floating():
+def test_interval_floating() raises:
     # Create an interval with floating point values using MyType wrapper.
     var interval = Interval(MyType(2.4), MyType(3.5))
 
@@ -168,7 +168,7 @@ def test_interval_floating():
     assert_equal(len(union), 2)
 
 
-def test_interval_tree():
+def test_interval_tree() raises:
     var tree = IntervalTree[Int, MyType]()
     tree.insert((15, 20), MyType(33.0))
     tree.insert((10, 30), MyType(34.0))
@@ -185,5 +185,5 @@ def test_interval_tree():
     assert_equal(Float64(elems[2]), 36.0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

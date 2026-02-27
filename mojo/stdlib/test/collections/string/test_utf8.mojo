@@ -104,21 +104,21 @@ comptime BAD_SEQUENCES: List[List[Byte]] = [
 # ===----------------------------------------------------------------------=== #
 
 
-def validate_utf8[span: Span[Byte]]() -> Bool:
+def validate_utf8[span: Span[Byte]]() raises -> Bool:
     comptime comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comp_time, runtime)
     return comp_time
 
 
-def validate_utf8(span: Span[Byte]) -> Bool:
+def validate_utf8(span: Span[Byte]) raises -> Bool:
     var comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comp_time, runtime)
     return comp_time
 
 
-def test_utf8_validation():
+def test_utf8_validation() raises:
     comptime text = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam
     varius tellus quis tincidunt dictum. Donec eros orci, ultricies ac metus non
     , rutrum faucibus neque. Nunc ultricies turpis ut lacus consequat dapibus.
@@ -199,17 +199,17 @@ def test_utf8_validation():
         assert_false(validate_utf8[negative[i]]())
 
 
-def test_good_utf8_sequences():
+def test_good_utf8_sequences() raises:
     comptime for i in range(len(GOOD_SEQUENCES)):
         assert_true(validate_utf8[GOOD_SEQUENCES[i]]())
 
 
-def test_bad_utf8_sequences():
+def test_bad_utf8_sequences() raises:
     comptime for i in range(len(BAD_SEQUENCES)):
         assert_false(validate_utf8[BAD_SEQUENCES[i]]())
 
 
-def test_stringslice_from_utf8():
+def test_stringslice_from_utf8() raises:
     for sequence in materialize[GOOD_SEQUENCES]():
         _ = StringSlice(from_utf8=Span(sequence))
 
@@ -218,7 +218,7 @@ def test_stringslice_from_utf8():
             _ = StringSlice(from_utf8=Span(sequence))
 
 
-def test_combination_good_utf8_sequences():
+def test_combination_good_utf8_sequences() raises:
     # any combination of good sequences should be good
     var good_sequence = materialize[GOOD_SEQUENCES]()
     for i in range(0, len(good_sequence)):
@@ -227,7 +227,7 @@ def test_combination_good_utf8_sequences():
             assert_true(validate_utf8(Span(sequence)))
 
 
-def test_combination_bad_utf8_sequences():
+def test_combination_bad_utf8_sequences() raises:
     # any combination of bad sequences should be bad
     var bad_sequence = materialize[BAD_SEQUENCES]()
     for i in range(0, len(bad_sequence)):
@@ -236,7 +236,7 @@ def test_combination_bad_utf8_sequences():
             assert_false(validate_utf8(Span(sequence)))
 
 
-def test_combination_good_bad_utf8_sequences():
+def test_combination_good_bad_utf8_sequences() raises:
     # any combination of good and bad sequences should be bad
     var good_sequence = materialize[GOOD_SEQUENCES]()
     var bad_sequence = materialize[BAD_SEQUENCES]()
@@ -246,7 +246,7 @@ def test_combination_good_bad_utf8_sequences():
             assert_false(validate_utf8(Span(sequence)))
 
 
-def test_combination_10_good_utf8_sequences():
+def test_combination_10_good_utf8_sequences() raises:
     # any 10 combination of good sequences should be good
     var good_sequence = materialize[GOOD_SEQUENCES]()
     for i in range(0, len(good_sequence)):
@@ -255,7 +255,7 @@ def test_combination_10_good_utf8_sequences():
             assert_true(validate_utf8(Span(sequence)))
 
 
-def test_combination_10_good_10_bad_utf8_sequences():
+def test_combination_10_good_10_bad_utf8_sequences() raises:
     # any 10 combination of good and bad sequences should be bad
     var good_sequence = materialize[GOOD_SEQUENCES]()
     var bad_sequence = materialize[BAD_SEQUENCES]()
@@ -265,7 +265,7 @@ def test_combination_10_good_10_bad_utf8_sequences():
             assert_false(validate_utf8(Span(sequence)))
 
 
-def test_count_utf8_continuation_bytes():
+def test_count_utf8_continuation_bytes() raises:
     comptime c = UInt8(0b1000_0000)
     comptime b1 = UInt8(0b0100_0000)
     comptime b2 = UInt8(0b1100_0000)
@@ -281,7 +281,7 @@ def test_count_utf8_continuation_bytes():
     for i in range(b2, UInt8.MAX):
         assert_false(_is_utf8_continuation_byte(i))
 
-    def _test(amnt: Int, items: List[UInt8]):
+    def _test(amnt: Int, items: List[UInt8]) raises:
         var p = items.unsafe_ptr()
         var span = Span(ptr=p, length=len(items))
         assert_equal(amnt, _count_utf8_continuation_bytes(span))
@@ -301,7 +301,7 @@ def test_count_utf8_continuation_bytes():
     _test(3, [b2, c, b3, c, c])
 
 
-def test_utf8_byte_type():
+def test_utf8_byte_type() raises:
     for i in range(UInt8(0b1000_0000)):
         assert_equal(_utf8_byte_type(i), 0)
     for i in range(UInt8(0b1000_0000), UInt8(0b1100_0000)):
@@ -314,5 +314,5 @@ def test_utf8_byte_type():
         assert_equal(_utf8_byte_type(i), 4)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

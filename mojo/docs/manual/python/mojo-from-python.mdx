@@ -183,10 +183,10 @@ initializers](#constructing-mojo-objects-in-python), below) and methods.
 Any Mojo type bound using a `PythonTypeBuilder` has the resulting Python
 'type' object globally registered, enabling two features:
 
-* Constructing Python objects that wrap Mojo values for use from Python using
+- Constructing Python objects that wrap Mojo values for use from Python using
   `PythonObject(alloc=Person(..))`.
 
-* Downcasting using `python_obj.downcast_value_ptr[Person]()`
+- Downcasting using `python_obj.downcast_value_ptr[Person]()`
 
 :::note
 
@@ -315,11 +315,11 @@ argument of a particular type.
 There are two ways in which a `PythonObject` can be turned into a native
 Mojo value:
 
-* **Converting** a Python object into a newly constructed Mojo value that has
+- **Converting** a Python object into a newly constructed Mojo value that has
   the same logical value as the original Python object.
   This is handled by the [`ConvertibleFromPython`][ConvertibleFromPython] trait.
 
-* **Downcasting** a Python object that holds a native Mojo value to a pointer
+- **Downcasting** a Python object that holds a native Mojo value to a pointer
   to that inner value.
   This is handled by [`PythonObject.downcast_value_ptr()`][downcast_value_ptr].
 
@@ -387,11 +387,11 @@ Unchecked downcasting can be used to eliminate overhead when optimizing a tight
 inner loop with Mojo, and you've benchmarked and measured that type checking
 downcasts is a significant bottleneck.
 
-{/* <!-- TODO:
+{/*<!-- TODO:
 Since `PythonObject` are reference counted, and Mojo `Pointer` is guaranteed
 to be either immutable or a unique pointer, safe object downcasting currently
 only works to immutable pointers.
---> */}
+-->*/}
 
 ### Methods
 
@@ -500,7 +500,6 @@ print(Person.is_valid_age(-1)) # Prints 'False'
 2. [Variadic keyword arguments](/manual/functions/#variadic-keyword-arguments): `fn foo(**kwargs: Int)`
     This is supported in Python Mojo bindings when used in the unsugared form: `fn foo(kwargs: OwnedKwargsDict)`. (The `**kwargs` syntax limitation will be removed in the future.)
 
-
 You can define Mojo functions that accept variadic keyword arguments using [`OwnedKwargsDict[PythonObject]`](/mojo/std/collections/dict/OwnedKwargsDict) as the last argument. A simple example looks like:
 
 ```python
@@ -512,7 +511,7 @@ result = mojo_module.sum_kwargs_ints(a=10, b=20, c=30)  # returns 60
 ```mojo
 from collections import OwnedKwargsDict
 
-def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject:
+def sum_kwargs_ints(kwargs: OwnedKwargsDict[PythonObject]) raises -> PythonObject:
     var total = 0
     for entry in kwargs.items():
         total += Int(entry.value)
@@ -528,7 +527,7 @@ def duration_in_seconds(
     hours_obj: PythonObject,
     minutes_obj: PythonObject,
     kwargs: OwnedKwargsDict[PythonObject]
-) -> PythonObject:
+) raises -> PythonObject:
     var hours = Int(hours_obj)
     var minutes = Int(minutes_obj)
 
@@ -633,13 +632,13 @@ fn foo(x: PythonObject, y: PythonObject, z: PythonObject) -> PythonObject:
 You can create and distribute your Mojo modules for Python in the following
 ways:
 
-* As source files, compiled on demand using the Python Mojo importer hook.
+- As source files, compiled on demand using the Python Mojo importer hook.
 
   The advantage of this approach is that it's easy to get started with, and
   keeps your project structure simple, while ensuring that your imported Mojo
   code is always up to date after you make an edit.
 
-* As pre-built Python extension module `.so` dynamic libraries, compiled using:
+- As pre-built Python extension module `.so` dynamic libraries, compiled using:
 
   ```bash
   mojo build mojo_module.mojo --emit shared-lib -o mojo_module.so
@@ -656,17 +655,17 @@ Mojo to be the best way to extend Python—this feature is still in early and
 active development, and there are some limitations to be aware of. These will
 be lifted over time.
 
-* **Functions taking more than 6 arguments.**
+- **Functions taking more than 6 arguments.**
   Currently `PyTypeBuilder.add_function()` and related
   function bindings only support Mojo functions that take up to 6 `PythonObject`
   arguments: `fn(PythonObject, PythonObject, PythonObject, PythonObject, PythonObject, PythonObject)`.
 
-* **Keyword arguments syntax.**
+- **Keyword arguments syntax.**
   Currently, Mojo functions called from Python only accept keyword arguments
   when using a trailing `kwargs: OwnedKwargsDict[PythonObject]` argument.
   Support for native `**kwargs` syntax will be added in the future.
 
-* **Mojo package dependencies.**
+- **Mojo package dependencies.**
   Mojo code that has dependencies on packages other than the Mojo stdlib
   (like those in the ever-growing
   [Modular Community](https://github.com/modular/modular-community) package
@@ -674,10 +673,10 @@ be lifted over time.
   manually, as the Mojo import hook does not currently support a way to
   specify import paths for Mojo package dependencies.
 
-* **Properties.**
+- **Properties.**
   Computed properties getter and setters are not currently supported.
 
-* **Expected type conversions.**
+- **Expected type conversions.**
   A handful of Mojo standard library types can be constructed directly from
   equivalent Python builtin object types, by implementing the
   [`ConvertibleFromPython`][ConvertibleFromPython] trait.

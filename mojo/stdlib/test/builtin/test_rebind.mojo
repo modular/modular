@@ -26,7 +26,7 @@ fn indirect_rebind_reg[X: Int](a: SIMD[DType.int32, X]) -> String:
     return String(rebind[SIMD[DType.int32, 4]](a))
 
 
-def test_rebind_register():
+def test_rebind_register() raises:
     var value = SIMD[DType.int32, 4](17)
 
     var string = indirect_rebind_reg(value)
@@ -50,7 +50,7 @@ fn indirect_with_rebind[X: Int](a: MyMemStruct[X]) -> Tuple[Int, Int]:
     return rebind[MyMemStruct[4]](a).sizes()
 
 
-def test_rebind_memory():
+def test_rebind_memory() raises:
     var mem = MyMemStruct[4](17)
 
     var size, value = indirect_with_rebind(mem)
@@ -67,21 +67,21 @@ fn indirect_with_rebind_var[x: Int](var a: MyMemStruct[x]) -> MyMemStruct[4]:
     return rebind_var[MyMemStruct[4]](a^)
 
 
-def test_rebind_var():
+def test_rebind_var() raises:
     var value = MyMemStruct[4](17)
     var rebound = indirect_with_rebind_var(value^)
     assert_equal(rebound.size, 4)
     assert_equal(rebound.value, 17)
 
 
-def test_rebind_var_does_not_copy_only_moves():
+def test_rebind_var_does_not_copy_only_moves() raises:
     var counter = MoveCopyCounter()
     var rebound = rebind_var[MoveCopyCounter](counter^)
     assert_equal(rebound.copied, 0)
     assert_equal(rebound.moved, 1)
 
 
-def test_rebind_does_not_call_del():
+def test_rebind_does_not_call_del() raises:
     var n_dels = 0
     var counter = DelCounter(UnsafePointer(to=n_dels))
     var rebound = rebind_var[type_of(counter)](counter^)
@@ -90,7 +90,7 @@ def test_rebind_does_not_call_del():
     assert_equal(n_dels, 1)
 
 
-def test_downcast():
+def test_downcast() raises:
     comptime DefaultWitnessTable = downcast[String, Defaultable]()
     var a = String()
     var b = DefaultWitnessTable.__init__()
@@ -107,7 +107,7 @@ struct TestStructForRebindDowncast:
     var x: Int
 
 
-def test_rebind_downcasted_struct_field_type():
+def test_rebind_downcasted_struct_field_type() raises:
     """Test that rebind accepts downcasted struct field types.
 
     When using struct_field_types with downcast and then rebinding back to the
@@ -130,5 +130,5 @@ def test_rebind_downcasted_struct_field_type():
     assert_equal(original2, 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

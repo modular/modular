@@ -23,7 +23,7 @@
 from sys.arg import argv
 
 
-def main():
+def main() raises:
     if len(argv()) <= 1:
         return
     var test = argv()[1]

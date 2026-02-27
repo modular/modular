@@ -26,7 +26,7 @@ from random._rng import _PhiloxWrapper
 from testing import assert_equal, assert_true, TestSuite
 
 
-def test_philox_wrapper_basic():
+def test_philox_wrapper_basic() raises:
     """Test basic functionality of the Philox wrapper.
 
     This verifies that the wrapper correctly generates random values
@@ -56,7 +56,7 @@ def test_philox_wrapper_basic():
         assert_true(f < 1.0, "Float64 should be < 1")
 
 
-def test_float64_precision():
+def test_float64_precision() raises:
     """Test precision properties of next_float64().
 
     The Philox wrapper implementation should:
@@ -101,5 +101,5 @@ def test_float64_precision():
     assert_true(found_large, "Should generate values > 0.9")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

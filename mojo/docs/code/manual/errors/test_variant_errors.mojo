@@ -15,21 +15,21 @@ from testing import assert_equal, assert_raises, assert_true, TestSuite
 from variant_errors import FileError, NotFoundError, PermissionError, open_file
 
 
-def test_open_file_success():
+def test_open_file_success() raises:
     assert_equal(open_file("/data"), "Contents of /data")
 
 
-def test_not_found_error():
+def test_not_found_error() raises:
     with assert_raises(contains="file not found"):
         _ = open_file("")
 
 
-def test_permission_denied_error():
+def test_permission_denied_error() raises:
     with assert_raises(contains="permission denied"):
         _ = open_file("/secret")
 
 
-def test_not_found_fields():
+def test_not_found_fields() raises:
     var caught = False
     var path = String("")
     try:
@@ -42,7 +42,7 @@ def test_not_found_fields():
     assert_equal(path, "")
 
 
-def test_permission_denied_fields():
+def test_permission_denied_fields() raises:
     var caught = False
     var path = String("")
     var role = String("")
@@ -58,7 +58,7 @@ def test_permission_denied_fields():
     assert_equal(role, "admin")
 
 
-def test_variant_isa_identification():
+def test_variant_isa_identification() raises:
     var is_not_found = False
     var is_permission = False
     try:
@@ -70,5 +70,5 @@ def test_variant_isa_identification():
     assert_true(not is_permission, "Expected isa[PermissionError] to be False")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

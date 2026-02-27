@@ -52,7 +52,7 @@ fn test_assert_raises_no_match() raises:
         assert_equal(String(e), "OtherError")
 
 
-def main():
+def main() raises:
     test_assert_raises_catches_error()
     test_assert_raises_catches_matched_error()
     test_assert_raises_no_error()

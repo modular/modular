@@ -52,7 +52,7 @@ fn test(ctx: DeviceContext, i: Int) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     i = atol(argv()[1])
     with DeviceContext() as ctx:
         test(ctx, i)

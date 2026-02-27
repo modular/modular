@@ -17,7 +17,7 @@ from utils.type_functions import ConditionalType
 from testing import assert_true, assert_false, TestSuite
 
 
-def test_conditional_type_with_bool_literal():
+def test_conditional_type_with_bool_literal() raises:
     comptime IsInt = ConditionalType[
         Trait=AnyType, If=True, Then=Int, Else=String
     ]
@@ -29,7 +29,7 @@ def test_conditional_type_with_bool_literal():
     assert_true(_type_is_eq[IsString, String]())
 
 
-def test_conditional_type_with_bool_function():
+def test_conditional_type_with_bool_function() raises:
     fn bool[b: Bool]() -> Bool:
         return b
 
@@ -44,7 +44,7 @@ def test_conditional_type_with_bool_function():
     assert_true(_type_is_eq[IsString, String]())
 
 
-def test_conditional_type_nested():
+def test_conditional_type_nested() raises:
     comptime IsInt = ConditionalType[
         Trait=AnyType, If=True, Then=Int, Else=String
     ]
@@ -58,7 +58,7 @@ def test_conditional_type_nested():
     assert_true(_type_is_eq[FinalType, Int]())
 
 
-def test_conditional_type_same_types():
+def test_conditional_type_same_types() raises:
     comptime Int1 = ConditionalType[Trait=AnyType, If=True, Then=Int, Else=Int]
     comptime Int2 = ConditionalType[Trait=AnyType, If=False, Then=Int, Else=Int]
 
@@ -66,7 +66,7 @@ def test_conditional_type_same_types():
     assert_true(_type_is_eq[Int2, Int]())
 
 
-def test_conditional_type_ternary_tree():
+def test_conditional_type_ternary_tree() raises:
     comptime PickAType[outer: Bool, inner: Bool] = ConditionalType[
         Trait=AnyType,
         If=outer,
@@ -82,5 +82,5 @@ def test_conditional_type_ternary_tree():
     assert_true(_type_is_eq[PickAType[False, False], List[Int]]())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

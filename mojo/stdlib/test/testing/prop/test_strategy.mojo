@@ -45,7 +45,7 @@ struct TestStructStrategy(Movable, Strategy):
         return {rng.rand_int(min=self.min, max=self.max)}
 
 
-def test_strategy_returns_correct_value():
+def test_strategy_returns_correct_value() raises:
     var strategy = TestStruct.strategy()
     var rng = Rng(seed=1234)
     for _ in range(10):
@@ -53,7 +53,7 @@ def test_strategy_returns_correct_value():
         assert_true(n >= 0 and n <= 10)
 
 
-def test_simd_strategy():
+def test_simd_strategy() raises:
     var min = Int64(-10)
     var max = Int64(30)
     var strat = SIMD[DType.int64, 8].strategy(min=min, max=max)
@@ -64,7 +64,7 @@ def test_simd_strategy():
         assert_true(all(v.le(max)))
 
 
-def test_string_ascii_strategy():
+def test_string_ascii_strategy() raises:
     var s = String.ascii_strategy(min_len=1, max_len=10, only_printable=True)
     var rng = Rng(seed=1234)
     for _ in range(10):
@@ -81,7 +81,7 @@ def test_string_ascii_strategy():
             assert_true(c.to_u32() <= UInt32(127))
 
 
-def test_string_utf8_strategy():
+def test_string_utf8_strategy() raises:
     var s = String.utf8_strategy(min_len=1, max_len=10)
     var rng = Rng(seed=1234)
     for _ in range(10):
@@ -90,7 +90,7 @@ def test_string_utf8_strategy():
         assert_true(_is_valid_utf8(s.as_bytes()), s)
 
 
-def test_list_strategy():
+def test_list_strategy() raises:
     var s = List[Int8].strategy(
         Int8.strategy(min=0, max=100), min_len=2, max_len=45
     )
@@ -105,5 +105,5 @@ def test_list_strategy():
             assert_true(Int8(0) <= el <= Int8(100))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

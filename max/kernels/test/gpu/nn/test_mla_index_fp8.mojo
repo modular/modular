@@ -360,7 +360,7 @@ fn test_mla_index_fp8_paged_variable_lengths[
     o_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("Testing mla_indexer_ragged_float8_paged...")
 

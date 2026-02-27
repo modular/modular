@@ -53,7 +53,7 @@ fn scalar_add(
         vector[idx] += scalar
 
 
-def main():
+def main() raises:
     @parameter
     if not has_accelerator():
         print("No GPUs detected")

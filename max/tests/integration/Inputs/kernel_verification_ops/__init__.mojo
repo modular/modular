@@ -248,7 +248,7 @@ struct ExternalCubinVecAdd:
         lhs: InputTensor[dtype = output.dtype, rank = output.rank],
         rhs: InputTensor[dtype = output.dtype, rank = output.rank],
         ctx: DeviceContextPtr,
-    ):
+    ) raises:
         comptime assert target == "gpu"
         gpu_ctx = ctx.get_device_context()
 

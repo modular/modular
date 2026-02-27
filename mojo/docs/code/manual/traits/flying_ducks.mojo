@@ -48,6 +48,6 @@ struct ToyDuck(Copyable, DuckLike):
         print("Boing!")
 
 
-def main():
+def main() raises:
     quack_and_go(FlyingDuck())
     quack_and_go(ToyDuck())

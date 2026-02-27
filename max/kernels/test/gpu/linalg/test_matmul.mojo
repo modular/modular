@@ -315,7 +315,7 @@ fn test[
     _ = c_device_ref_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("===> tfloat32-float32 mma")
         test[

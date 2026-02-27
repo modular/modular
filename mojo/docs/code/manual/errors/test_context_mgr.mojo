@@ -16,14 +16,14 @@ from context_mgr import Timer
 from testing import assert_raises, TestSuite
 
 
-def test_timer_no_error():
+def test_timer_no_error() raises:
     with Timer():
         print("Beginning no-error execution")
         time.sleep(0.1)
         print("Ending no-error execution")
 
 
-def test_timer_error():
+def test_timer_error() raises:
     with assert_raises(contains="simulated error"):
         with Timer():
             print("Beginning error execution")
@@ -32,5 +32,5 @@ def test_timer_error():
             # We should not reach this line
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -243,7 +243,7 @@ fn run_rms_norm_fused_residual_add_gpu[
                         )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Test various shapes similar to test_rms_norm.mojo
         run_rms_norm_fused_residual_add_gpu[DType.float32](ctx, Index(5))

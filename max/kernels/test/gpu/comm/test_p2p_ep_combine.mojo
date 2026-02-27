@@ -664,7 +664,7 @@ fn test_combine[
         host_input_tokens_list[dev_idx].free()
 
 
-def main():
+def main() raises:
     comptime test_gpu_counts = (2, 4, 8)
 
     if enable_p2p():

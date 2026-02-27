@@ -104,7 +104,7 @@ struct Tensor[
             return self
 
 
-def top_k():
+def top_k() raises:
     print("Running top-k benchmark...")
     comptime batch_size = 30_000
     comptime K = 32
@@ -129,7 +129,7 @@ def top_k():
     var metrics = [flops, elements]
 
     @parameter
-    def top_k_cpu():
+    def top_k_cpu() raises:
         TopK.execute[K=K, target="cpu"](
             out_vals.slice, out_idxs.slice, in_vals.slice, cpu_ctx
         )
@@ -144,7 +144,7 @@ def top_k():
         var in_vals_dev = Tensor[Input, val_spec](gpu_ctx).rand()
 
         @parameter
-        def top_k_gpu():
+        def top_k_gpu() raises:
             TopK.execute[K=K, target="gpu"](
                 out_vals_dev.slice,
                 out_idxs_dev.slice,
@@ -157,7 +157,7 @@ def top_k():
     print(b)
 
 
-def matmul():
+def matmul() raises:
     print("Running matmul benchmark...")
     comptime M = 1028
     comptime K = 1028
@@ -184,7 +184,7 @@ def matmul():
     var metrics = [flops, elements]
 
     @parameter
-    def matmul_cpu():
+    def matmul_cpu() raises:
         MatrixMultiplication["naive"].execute[target="cpu"](
             c.slice, a.slice, b.slice, cpu_ctx
         )
@@ -202,9 +202,9 @@ def matmul():
         var c_dev = Tensor[Output, c_spec](gpu_ctx).rand()
 
         @parameter
-        def bench_matmul_kernel[impl: StaticString]():
+        def bench_matmul_kernel[impl: StaticString]() raises:
             @parameter
-            def bench_gpu():
+            def bench_gpu() raises:
                 MatrixMultiplication[impl].execute[target="gpu"](
                     c_dev.slice, a_dev.slice, b_dev.slice, gpu_ctx
                 )
@@ -227,7 +227,7 @@ def matmul():
     print(bench)
 
 
-def tensor_core_mma():
+def tensor_core_mma() raises:
     print("Running tensor core mma benchmark...")
     comptime M = 4096
     comptime N = 4096
@@ -268,9 +268,9 @@ def tensor_core_mma():
         var c_dev = Tensor[Output, c_spec](gpu_ctx).rand()
 
         @parameter
-        def bench_matmul_kernel[impl: StaticString]():
+        def bench_matmul_kernel[impl: StaticString]() raises:
             @parameter
-            def bench_gpu():
+            def bench_gpu() raises:
                 TensorCoreMMA[impl].execute[target="gpu", M=M, N=N, K=K](
                     c_dev.slice,
                     a_dev.slice,
@@ -294,7 +294,7 @@ def tensor_core_mma():
     print(bench)
 
 
-def main():
+def main() raises:
     var args = argv()
     if len(args) == 1:
         top_k()

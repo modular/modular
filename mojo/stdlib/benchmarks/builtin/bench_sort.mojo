@@ -292,7 +292,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(max_runtime_secs=0.1))
 
     comptime dtypes = [

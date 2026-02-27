@@ -266,7 +266,7 @@ fn run_reducescatter_sweep[
         ](list_of_ctx, length)
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )

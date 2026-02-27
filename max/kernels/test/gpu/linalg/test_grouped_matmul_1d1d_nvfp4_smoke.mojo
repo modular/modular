@@ -259,7 +259,7 @@ fn test_grouped_1d1d_nvfp4[
     _ = es_buf^
 
 
-def main():
+def main() raises:
     var ctx = DeviceContext()
     print("=== Grouped 1D1D NVFP4 Smoke Tests (TileTensor) ===")
     test_grouped_1d1d_nvfp4[4, 128, 256](ctx, 4, 64)

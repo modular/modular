@@ -24,7 +24,7 @@ from layout.int_tuple import IntTuple
 from testing import assert_equal, assert_true, TestSuite
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
@@ -64,7 +64,7 @@ fn test_crd2idx() raises:
     assert_equal(layout.product(), 8)
 
 
-def test_row_major():
+def test_row_major() raises:
     var shape = Coord(Idx[3](), Idx(4))
     var layout = row_major(shape)
     assert_true(layout.shape_coord() == shape)
@@ -86,13 +86,13 @@ def test_row_major():
     )
 
 
-def test_row_major_static_constructor_empty():
+def test_row_major_static_constructor_empty() raises:
     var layout = row_major[]()
     assert_equal(len(layout.shape_coord()), 0)
     assert_equal(len(layout.stride_coord()), 0)
 
 
-def test_row_major_static_constructor_():
+def test_row_major_static_constructor_() raises:
     var layout = row_major[1, 2, 3]()
     assert_equal(len(layout.shape_coord()), 3)
     assert_equal(len(layout.stride_coord()), 3)
@@ -104,7 +104,7 @@ def test_row_major_static_constructor_():
     assert_equal(layout.stride[2]().value(), 1)
 
 
-def test_zipped_divide_layout():
+def test_zipped_divide_layout() raises:
     # row_major[8, 16]() has shape_types = (ComptimeInt[8], ComptimeInt[16])
     # and stride_types = (ComptimeInt[16], ComptimeInt[1])
     comptime a = row_major[8, 16]()
@@ -127,7 +127,7 @@ def test_zipped_divide_layout():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_tile_tensor_reshape_static():
+def test_tile_tensor_reshape_static() raises:
     """Test reshaping a TileTensor with compile-time dimensions."""
     var storage = InlineArray[Float32, 12](uninitialized=True)
     var tensor = TileTensor(storage, row_major[3, 4]()).fill(1.0)
@@ -162,7 +162,7 @@ def test_tile_tensor_reshape_static():
     assert_equal(reshaped_3d.numel(), 12)
 
 
-def test_tile_tensor_reshape_preserves_data():
+def test_tile_tensor_reshape_preserves_data() raises:
     """Test that reshape preserves the underlying data."""
     var storage = InlineArray[Float32, 6](uninitialized=True)
     var tensor = TileTensor(storage, row_major[2, 3]())
@@ -196,7 +196,7 @@ def test_tile_tensor_reshape_preserves_data():
     assert_equal(reshaped_1d[5], 5.0)
 
 
-def test_tile_tensor_reshape_with_coord():
+def test_tile_tensor_reshape_with_coord() raises:
     """Test reshaping with a Coord argument (potentially runtime dims)."""
     var storage = InlineArray[Float32, 12](uninitialized=True)
     var tensor = TileTensor(storage, row_major[3, 4]()).fill(2.0)
@@ -216,7 +216,7 @@ def test_tile_tensor_reshape_with_coord():
     assert_equal(reshaped_runtime.numel(), 12)
 
 
-def test_tile_tensor_reshape_strides():
+def test_tile_tensor_reshape_strides() raises:
     """Test that reshaped tensor has correct row-major strides."""
     var storage = InlineArray[Float32, 24](uninitialized=True)
     var tensor = TileTensor(storage, row_major[4, 6]()).fill(0.0)
@@ -230,7 +230,7 @@ def test_tile_tensor_reshape_strides():
     assert_equal(reshaped.layout.stride[2]().value(), 1)
 
 
-def test_tile_tensor_reshape_is_view():
+def test_tile_tensor_reshape_is_view() raises:
     """Test that reshape creates a view, not a copy."""
     var storage = InlineArray[Float32, 6](uninitialized=True)
     var tensor = TileTensor(storage, row_major[2, 3]()).fill(0.0)
@@ -250,7 +250,7 @@ def test_tile_tensor_reshape_is_view():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_tile_tensor_tile_with_int_coords():
+def test_tile_tensor_tile_with_int_coords() raises:
     """Test tile method with variadic Int coordinates (LayoutTensor compatible).
     """
     var storage = InlineArray[Float32, 16](uninitialized=True)
@@ -285,7 +285,7 @@ def test_tile_tensor_tile_with_int_coords():
     assert_equal(tile_01[1, 1], 7.0)
 
 
-def test_tile_tensor_tile_is_view():
+def test_tile_tensor_tile_is_view() raises:
     """Test that tile creates a view, not a copy."""
     var storage = InlineArray[Float32, 16](uninitialized=True)
     var tensor = TileTensor(storage, row_major[4, 4]()).fill(0.0)
@@ -305,7 +305,7 @@ def test_tile_tensor_tile_is_view():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_blocked_product_basic():
+def test_blocked_product_basic() raises:
     """Test blocked_product creates correct hierarchical layout.
 
     Example from legacy layout docs:
@@ -336,7 +336,7 @@ def test_blocked_product_basic():
     assert_equal(blocked.stride[1]()[1].value(), 4)
 
 
-def test_blocked_product_type_alias():
+def test_blocked_product_type_alias() raises:
     """Test BlockedProductLayout type alias directly."""
     comptime block = row_major[2, 2]()
     comptime tiler = row_major[2, 3]()
@@ -377,7 +377,7 @@ def test_blocked_product_type_alias():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_col_major_2d():
+def test_col_major_2d() raises:
     """Test column-major layout for 2D shapes.
 
     For shape (M, N):
@@ -395,7 +395,7 @@ def test_col_major_2d():
     assert_equal(layout.stride[1]().value(), 3)
 
 
-def test_col_major_3d():
+def test_col_major_3d() raises:
     """Test column-major layout for 3D shapes.
 
     For shape (M, N, K):
@@ -418,7 +418,7 @@ def test_col_major_3d():
     assert_equal(layout.stride[2]().value(), 6)
 
 
-def test_col_major_vs_row_major():
+def test_col_major_vs_row_major() raises:
     """Test that col_major and row_major produce different strides."""
     var row = row_major[3, 4]()
     var col = col_major[3, 4]()
@@ -437,7 +437,7 @@ def test_col_major_vs_row_major():
     assert_equal(col.stride[1]().value(), 3)
 
 
-def test_col_major_with_coord():
+def test_col_major_with_coord() raises:
     """Test col_major with Coord argument."""
     var shape = Coord(Idx[3](), Idx[4]())
     var layout = col_major(shape)
@@ -448,7 +448,7 @@ def test_col_major_with_coord():
     assert_equal(layout.stride[1]().value(), 3)
 
 
-def test_col_major_with_runtime_dims():
+def test_col_major_with_runtime_dims() raises:
     """Test col_major with runtime dimensions."""
     var m = 3
     var n = 4
@@ -466,7 +466,7 @@ def test_col_major_with_runtime_dims():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_coord_flatten_non_nested():
+def test_coord_flatten_non_nested() raises:
     """Test flatten on a non-nested Coord (should be identity)."""
     var coord = Coord(Idx[1](), Idx[2](), Idx[3]())
     var flat = coord.flatten()
@@ -477,7 +477,7 @@ def test_coord_flatten_non_nested():
     assert_equal(flat[2].value(), 3)
 
 
-def test_coord_flatten_single_nested():
+def test_coord_flatten_single_nested() raises:
     """Test flatten on a Coord with one nested Coord."""
     var nested = Coord(Idx[5](), Coord(Idx[3](), Idx[2]()), Idx[7]())
     var flat = nested.flatten()
@@ -490,7 +490,7 @@ def test_coord_flatten_single_nested():
     assert_equal(flat[3].value(), 7)
 
 
-def test_coord_flatten_nested_at_start():
+def test_coord_flatten_nested_at_start() raises:
     """Test flatten with nested Coord at the beginning."""
     var nested = Coord(Coord(Idx[1](), Idx[2]()), Idx[3]())
     var flat = nested.flatten()
@@ -502,7 +502,7 @@ def test_coord_flatten_nested_at_start():
     assert_equal(flat[2].value(), 3)
 
 
-def test_coord_flatten_nested_at_end():
+def test_coord_flatten_nested_at_end() raises:
     """Test flatten with nested Coord at the end."""
     var nested = Coord(Idx[1](), Coord(Idx[2](), Idx[3]()))
     var flat = nested.flatten()
@@ -514,7 +514,7 @@ def test_coord_flatten_nested_at_end():
     assert_equal(flat[2].value(), 3)
 
 
-def test_coord_flatten_blocked_product_shape():
+def test_coord_flatten_blocked_product_shape() raises:
     """Test flatten on shape from blocked_product."""
     var block = row_major[2, 2]()
     var tiler = row_major[2, 3]()
@@ -531,7 +531,7 @@ def test_coord_flatten_blocked_product_shape():
     assert_equal(flat_shape[3].value(), 3)
 
 
-def test_coord_flatten_blocked_product_stride():
+def test_coord_flatten_blocked_product_stride() raises:
     """Test flatten on stride from blocked_product."""
     var block = row_major[2, 2]()
     var tiler = row_major[2, 3]()
@@ -553,7 +553,7 @@ def test_coord_flatten_blocked_product_stride():
 # ===----------------------------------------------------------------------=== #
 
 
-def test_tile_tensor_flat_rank():
+def test_tile_tensor_flat_rank() raises:
     """Test that flat_rank is computed correctly for nested and non-nested layouts.
     """
     # Non-nested layout: flat_rank == rank
@@ -575,7 +575,7 @@ def test_tile_tensor_flat_rank():
     comptime assert tensor2.flat_rank == 4  # Four scalar dimensions
 
 
-def test_tile_tensor_flat_indexing_blocked():
+def test_tile_tensor_flat_indexing_blocked() raises:
     """Test flat indexing on a tensor with blocked_product layout."""
     # Create a blocked layout: 2x2 blocks arranged in 2x3 grid
     # Total size: 4 * 6 = 24 elements
@@ -610,7 +610,7 @@ def test_tile_tensor_flat_indexing_blocked():
     assert_equal(tensor[1, 1, 1, 2], 1112.0)
 
 
-def test_tile_tensor_flat_indexing_with_coord():
+def test_tile_tensor_flat_indexing_with_coord() raises:
     """Test flat indexing using Coord on nested layout."""
     var block = row_major[2, 2]()
     var tiler = row_major[2, 3]()

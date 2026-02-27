@@ -269,7 +269,7 @@ fn test_lt_to_tt_function() raises:
     print("  PASSED")
 
 
-def main():
+def main() raises:
     test_dims_to_coord_like_static()
     test_dims_to_coord_like_dynamic()
     test_tiletensor_type_from_dims()

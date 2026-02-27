@@ -15,7 +15,7 @@ from logger import Level, Logger
 from testing import TestSuite
 
 
-def test_log_critical():
+def test_log_critical() raises:
     var log = Logger[Level.CRITICAL]()
 
     # CHECK-NOT: DEBUG

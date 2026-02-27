@@ -50,7 +50,7 @@ fn lookup_fn2(count: Int):
         process(lookup)
 
 
-def main():
+def main() raises:
     lookup_fn(4)
     lookup_fn2(4)
 

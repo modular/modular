@@ -18,7 +18,7 @@ from testing import *
 
 
 # TODO: rewrite c-layout comments according to the new struct.
-def test_maybe_partial_load():
+def test_maybe_partial_load() raises:
     comptime simd_size = 4
     comptime size = simd_size + 1
 
@@ -37,7 +37,7 @@ def test_maybe_partial_load():
 
 def test_accumulate[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
-]():
+]() raises:
     comptime type = DType.float32
 
     # A: [[ 0.0, 0.0 ],
@@ -128,7 +128,7 @@ def test_accumulate[
 
 def test_accumulate_with_offsets[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
-]():
+]() raises:
     comptime type = DType.float32
 
     # A: [[ 0.0, 0.0 ],
@@ -241,7 +241,7 @@ def test_accumulate_with_offsets[
 
 def test_load_store[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
-]():
+]() raises:
     comptime type = DType.float32
     comptime size = simd_size + 1
     comptime residual = 1
@@ -328,7 +328,7 @@ def test_load_store[
     )
 
 
-def main():
+def main() raises:
     test_maybe_partial_load()
     test_accumulate()
     test_accumulate_with_offsets()

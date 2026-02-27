@@ -25,5 +25,5 @@ fn test_stdin() raises:
     testing.assert_equal(stdin.readline(), " World")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

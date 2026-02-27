@@ -66,7 +66,7 @@ def test_kernel_1[
     transpose_b: Bool = True,
     benchmark: Bool = False,
     prob_shape: IndexList[3] = IndexList[3](1, 1, 1),
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = prob_shape[0]
     comptime N = prob_shape[1]
     comptime K = prob_shape[2]
@@ -171,7 +171,7 @@ def test_kernel_1[
         print("TEST PASSED")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             test_kernel_1[

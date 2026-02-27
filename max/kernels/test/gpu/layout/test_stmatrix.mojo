@@ -373,7 +373,7 @@ fn check_stmatrix(
     _ = c_host_ref
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         check_stmatrix(16, 8, 8, -100, 100, ctx)
         check_stmatrix_gen[DType.bfloat16, DType.bfloat16](ctx)

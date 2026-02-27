@@ -305,7 +305,7 @@ fn wgmma_bf16_bf16_f32[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         wgmma_bf16_bf16_f32[64, 8, 16, True](ctx)
         wgmma_bf16_bf16_f32[64, 16, 16, True](ctx)

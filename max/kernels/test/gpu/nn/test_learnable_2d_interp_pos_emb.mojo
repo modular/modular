@@ -512,7 +512,7 @@ fn test_sincos_embed(ctx: DeviceContext) raises:
     tw_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_sincos_embed(ctx)
         test_no_interp_no_temporal[DType.float32](ctx)

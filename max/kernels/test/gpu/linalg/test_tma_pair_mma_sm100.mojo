@@ -360,7 +360,7 @@ def test_tma_umma_pair_cta[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -528,7 +528,7 @@ def test_tma_umma_pair_cta[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
             comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16

@@ -16,7 +16,7 @@ from testing import assert_true, TestSuite
 from utils.lock import SpinWaiter
 
 
-def test_spin_waiter():
+def test_spin_waiter() raises:
     var waiter = SpinWaiter()
     comptime RUNS = 1000
     for _ in range(RUNS):
@@ -24,5 +24,5 @@ def test_spin_waiter():
     assert_true(True)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

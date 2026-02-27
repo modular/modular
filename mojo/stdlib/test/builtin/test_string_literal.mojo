@@ -22,13 +22,13 @@ from testing import (
 )
 
 
-def test_add():
+def test_add() raises:
     assert_equal("five", StringLiteral.__add__("five", ""))
     assert_equal("six", StringLiteral.__add__("", "six"))
     assert_equal("fivesix", StringLiteral.__add__("five", "six"))
 
 
-def test_mul():
+def test_mul() raises:
     comptime `3`: Int = 3
     comptime `u3`: UInt = 3
     comptime static_concat_0 = "mojo" * 3
@@ -43,7 +43,7 @@ def test_mul():
     assert_equal(static_concat_0, dynamic_concat)
 
 
-def test_equality():
+def test_equality() raises:
     assert_false(StringLiteral.__eq__("five", "six"))
     assert_true(StringLiteral.__eq__("six", "six"))
 
@@ -60,17 +60,17 @@ def test_equality():
     assert_true(StringLiteral.__eq__("hello", hello_ref))
 
 
-def test_len():
+def test_len() raises:
     assert_equal(0, StringLiteral.__len__(""))
     assert_equal(4, StringLiteral.__len__("four"))
 
 
-def test_bool():
+def test_bool() raises:
     assert_true(StringLiteral.__bool__("not_empty"))
     assert_false(StringLiteral.__bool__(""))
 
 
-def test_find():
+def test_find() raises:
     assert_equal(0, "Hello world".find(""))
     assert_equal(0, "Hello world".find("Hello"))
     assert_equal(2, "Hello world".find("llo"))
@@ -89,7 +89,7 @@ def test_find():
     assert_equal(-1, "abc".find("abcd"))
 
 
-def test_rfind():
+def test_rfind() raises:
     # Basic usage.
     assert_equal("hello world".rfind("world"), 6)
     assert_equal("hello world".rfind("bye"), -1)
@@ -111,7 +111,7 @@ def test_rfind():
     assert_equal(-1, "abc".rfind("abcd"))
 
 
-def test_startswith():
+def test_startswith() raises:
     var str = "Hello world"
 
     assert_true(str.startswith("Hello"))
@@ -122,7 +122,7 @@ def test_startswith():
     assert_false(str.startswith("llo", 2, 3))
 
 
-def test_endswith():
+def test_endswith() raises:
     var str = "Hello world"
 
     assert_true(str.endswith(""))
@@ -135,7 +135,7 @@ def test_endswith():
     assert_false(str.endswith("llo", 2, 3))
 
 
-def test_comparison_operators():
+def test_comparison_operators() raises:
     # Test less than and greater than
     assert_true(StringLiteral.__lt__("abc", "def"))
     assert_false(StringLiteral.__lt__("def", "abc"))
@@ -193,21 +193,21 @@ def test_comparison_operators():
     assert_true(StringLiteral.__ge__("", empty_slice))
 
 
-def test_indexing():
+def test_indexing() raises:
     var s = "hello"
     assert_equal(s[byte=False], "h")
     assert_equal(s[byte = Int(1)], "e")
     assert_equal(s[byte=2], "l")
 
 
-def test_intable():
+def test_intable() raises:
     assert_equal(StringLiteral.__int__("123"), 123)
 
     with assert_raises():
         _ = StringLiteral.__int__("hi")
 
 
-def test_is_ascii_digit():
+def test_is_ascii_digit() raises:
     assert_true("123".is_ascii_digit())
     assert_false("abc".is_ascii_digit())
     assert_false("123abc".is_ascii_digit())
@@ -215,7 +215,7 @@ def test_is_ascii_digit():
     # assert_false("".isdigit())
 
 
-def test_islower():
+def test_islower() raises:
     assert_true("hello".islower())
     assert_false("Hello".islower())
     assert_false("HELLO".islower())
@@ -223,7 +223,7 @@ def test_islower():
     assert_false("".islower())
 
 
-def test_isupper():
+def test_isupper() raises:
     assert_true("HELLO".isupper())
     assert_false("Hello".isupper())
     assert_false("hello".isupper())
@@ -231,7 +231,7 @@ def test_isupper():
     assert_false("".isupper())
 
 
-def test_iter():
+def test_iter() raises:
     # Test iterating over a string
     var i = 0
     for c in "one".codepoint_slices():
@@ -254,7 +254,7 @@ def test_iter():
         i += 1
 
 
-def test_layout():
+def test_layout() raises:
     # Test empty StringLiteral contents
     var empty = "".unsafe_ptr()
     # An empty string literal is stored as just the NUL terminator.
@@ -272,7 +272,7 @@ def test_layout():
     assert_equal(ptr[5], 0)  # Verify NUL terminated
 
 
-def test_lower_upper():
+def test_lower_upper() raises:
     assert_equal("hello".lower(), "hello")
     assert_equal("HELLO".lower(), "hello")
     assert_equal("Hello".lower(), "hello")
@@ -281,7 +281,7 @@ def test_lower_upper():
     assert_equal("Hello".upper(), "HELLO")
 
 
-def test_strip():
+def test_strip() raises:
     assert_equal("".strip(), "")
     assert_equal("  ".strip(), "")
     assert_equal("  hello".strip(), "hello")
@@ -300,7 +300,7 @@ def test_strip():
     )
 
 
-def test_count():
+def test_count() raises:
     var str = "Hello world"
 
     assert_equal(12, str.count(""))
@@ -314,25 +314,25 @@ def test_count():
     assert_equal(String("aaaaaa").count("aa"), 3)
 
 
-def test_ascii_rjust():
+def test_ascii_rjust() raises:
     assert_equal("hello".ascii_rjust(4), "hello")
     assert_equal("hello".ascii_rjust(8), "   hello")
     assert_equal("hello".ascii_rjust(8, "*"), "***hello")
 
 
-def test_ascii_ljust():
+def test_ascii_ljust() raises:
     assert_equal("hello".ascii_ljust(4), "hello")
     assert_equal("hello".ascii_ljust(8), "hello   ")
     assert_equal("hello".ascii_ljust(8, "*"), "hello***")
 
 
-def test_center():
+def test_center() raises:
     assert_equal("hello".ascii_center(4), "hello")
     assert_equal("hello".ascii_center(8), " hello  ")
     assert_equal("hello".ascii_center(8, "*"), "*hello**")
 
 
-def test_float_conversion():
+def test_float_conversion() raises:
     assert_equal(("4.5").__float__(), 4.5)
     assert_equal(Float64("4.5"), 4.5)
     with assert_raises():
@@ -344,7 +344,7 @@ fn _test_format_does_not_raise():
     var _hello = "Hello, {}! I am {} years old.".format("world", 42)
 
 
-def test_string_literal_codepoint_slices_reversed():
+def test_string_literal_codepoint_slices_reversed() raises:
     # Test ASCII
     var iter = "abc".codepoint_slices_reversed()
     assert_equal(iter.__next__(), "c")
@@ -370,5 +370,5 @@ def test_string_literal_codepoint_slices_reversed():
     assert_equal(concat, "")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

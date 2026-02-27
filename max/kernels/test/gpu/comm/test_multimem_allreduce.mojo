@@ -16,7 +16,7 @@ from test_allreduce import run_allreduce_sweep
 from testing import assert_true
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )

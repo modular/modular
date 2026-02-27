@@ -30,12 +30,12 @@ fn strided_load_kernel[
     output[] = strided_load[width](ptr, stride)
 
 
-def test_strided_load():
+def test_strided_load() raises:
     assert_true(
         "@llvm.masked.gather"
         in _compile_code[strided_load_kernel[width=4], emission_kind="llvm"]()
     )
 
 
-def main():
+def main() raises:
     test_strided_load()

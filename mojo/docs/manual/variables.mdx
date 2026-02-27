@@ -29,7 +29,7 @@ The `var` statement above does three things:
 
 Mojo has two ways to declare a variable:
 
-* Explicitly-declared variables are created with the `var` keyword.
+- Explicitly-declared variables are created with the `var` keyword.
 
   ```mojo {doctest="foo"}
   var a = 5
@@ -37,7 +37,7 @@ Mojo has two ways to declare a variable:
   var c: String
   ```
 
-* Implicitly-declared variables are created the first time the variable is used,
+- Implicitly-declared variables are created the first time the variable is used,
   either with an assignment statement or with a type annotation:
 
   ```mojo
@@ -254,7 +254,6 @@ For more details on implicit conversion, see
 [Constructors and implicit
 conversion](/mojo/manual/lifecycle/life/#constructors-and-implicit-conversion).
 
-
 ## Variable scopes
 
 Variables in Mojo use *lexical scoping*. A variable's definition is
@@ -273,7 +272,7 @@ variables are accessible to read/write, but any new variables do not live
 beyond the scope of the `if` block:
 
 ```mojo
-def lexical_scopes():
+def lexical_scopes() raises:
     var num = 1
     var dig = 1
     if num == 1:
@@ -309,7 +308,7 @@ changes the value for the entire function.
 For example, here's the same code but *without* the `var` declarations:
 
 ```mojo
-def function_scopes():
+def function_scopes() raises:
     num = 1
     if num == 1:
         print(num)   # Reads the function-scope "num"

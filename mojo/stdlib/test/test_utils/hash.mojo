@@ -18,7 +18,7 @@ from reflection import call_location
 from testing import assert_true
 
 
-def dif_bits(i1: UInt64, i2: UInt64) -> Int:
+def dif_bits(i1: UInt64, i2: UInt64) raises -> Int:
     """Computes the number of differing bits between two integers.
 
     Args:
@@ -32,7 +32,7 @@ def dif_bits(i1: UInt64, i2: UInt64) -> Int:
 
 
 @always_inline
-def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
+def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int) raises:
     """Asserts that all pairs of hashes differ by more than the upper bound.
 
     Args:
@@ -92,7 +92,7 @@ def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
 @always_inline
 def assert_fill_factor[
     label: String, HasherType: Hasher
-](words: List[String], num_buckets: Int, lower_bound: Float64):
+](words: List[String], num_buckets: Int, lower_bound: Float64) raises:
     """Asserts that the hash function achieves a minimum fill factor.
 
     Parameters:

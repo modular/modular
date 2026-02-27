@@ -38,7 +38,7 @@ struct Balloon(Writable):
         print("Destroyed", String(self))
 
 
-def main():
+def main() raises:
     var a = Balloon("red")
     var b = Balloon("blue")
     print(a)
@@ -49,7 +49,6 @@ def main():
 
     print(b)
     # b.__del__() runs here
-
 ```
 
 ```output
@@ -182,7 +181,7 @@ struct HeapArray(Writable):
         self.data.free()
 
 
-def main():
+def main() raises:
     var a = HeapArray(10, 1, 3, 9)
     print(a)
 ```
@@ -467,7 +466,7 @@ struct Balloons:
     var count: Int
 
 
-def main():
+def main() raises:
     var balloons = Balloons("red", 5)
     print(balloons.color)
     # balloons.color.__del__() runs here, because this instance is
@@ -570,7 +569,7 @@ struct TwoStrings(Copyable):
         print("str2:", self.str2)
 
 
-def main():
+def main() raises:
     var two_strings = TwoStrings("foo", "bar")
 ```
 

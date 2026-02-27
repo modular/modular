@@ -18,11 +18,11 @@ from reflection import source_location
 from testing import TestSuite, assert_not_equal, assert_true
 
 
-def test_stat():
+def test_stat() raises:
     var st = stat(source_location().file_name)
     assert_not_equal(String(st), "")
     assert_true(S_ISREG(st.st_mode))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

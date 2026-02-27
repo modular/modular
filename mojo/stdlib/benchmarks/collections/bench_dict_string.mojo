@@ -556,7 +556,7 @@ fn bench_string_dict_init_with_long_keys[
 
 def validate_dicts(
     file_name: String = "UN_charter_EN.txt", small_keys: Bool = True
-):
+) raises:
     var keys = make_small_keys(file_name) if small_keys else make_long_keys(
         file_name
     )
@@ -581,7 +581,7 @@ def validate_dicts(
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     validate_dicts("UN_charter_EN.txt", small_keys=True)
     validate_dicts("UN_charter_EN.txt", small_keys=False)
     validate_dicts("UN_charter_AR.txt", small_keys=True)

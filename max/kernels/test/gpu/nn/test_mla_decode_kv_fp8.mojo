@@ -531,7 +531,7 @@ fn test_decoding[
     ](seq_len, num_keys, ctx, use_index_input=use_index_input)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
             # tests with mask tensor

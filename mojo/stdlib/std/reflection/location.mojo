@@ -45,7 +45,7 @@ fn my_assert(cond: Bool, msg: String = "assertion failed") raises:
     if not cond:
         raise Error(call_location().prefix(msg))
 
-def main():
+def main() raises:
     var x = 5
     my_assert(x > 10, "x must be > 10")  # Error points to THIS line
 ```

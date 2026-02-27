@@ -18,7 +18,7 @@ from os import getenv
 from testing import assert_equal
 
 
-def test_external_cubin_vec_add(ctx: DeviceContext):
+def test_external_cubin_vec_add(ctx: DeviceContext) raises:
     """Test loading and executing an external cubin for vector addition."""
     with open(getenv("CUBIN_PATH"), "r") as file:
         cubin_data = file.read_bytes()
@@ -61,6 +61,6 @@ def test_external_cubin_vec_add(ctx: DeviceContext):
             assert_equal(out_host[i], Float32(i + 1))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_external_cubin_vec_add(ctx)

@@ -53,7 +53,7 @@ fn handle_file_error(e: FileError):
         print("Already exists:", e)
 
 
-def main():
+def main() raises:
     try:
         print(open_file("/data"))
     except e:

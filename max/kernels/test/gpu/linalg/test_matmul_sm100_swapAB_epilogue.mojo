@@ -72,7 +72,7 @@ def test_matmul_sm100_epilogue[
     n: ValOrDim,
     k: ValOrDim,
     is_benchmark: Bool = False,
-):
+) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -308,7 +308,7 @@ def test_matmul_sm100_epilogue[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     comptime dtype = DType.bfloat16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[dtype]())
     comptime MMA_K = 16

@@ -129,7 +129,7 @@ fn test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_block_scaled_matmul_zero_rows(ctx)
     print("\n=== ALL TESTS PASSED ===\n")

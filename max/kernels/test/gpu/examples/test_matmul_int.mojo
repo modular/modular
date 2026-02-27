@@ -167,6 +167,6 @@ fn run_matmul(ctx: DeviceContext) raises:
     _ = c_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_matmul(ctx)

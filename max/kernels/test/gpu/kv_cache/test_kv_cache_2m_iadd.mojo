@@ -619,7 +619,7 @@ fn test_kv_cache_2m_iadd_cpu[
     a_host_ptr.free()
 
 
-def main():
+def main() raises:
     # CPU tests
     test_kv_cache_2m_iadd_cpu[DType.float32, 8, 128, 128, 4](
         IndexList[4](10, 20, 30, 40),

@@ -48,7 +48,7 @@ run-time values).
 ```mojo
 from random import rand
 
-def main():
+def main() raises:
     comptime LIST_SIZE = 128
 
     var list = List[Float64](length=LIST_SIZE, fill=0)

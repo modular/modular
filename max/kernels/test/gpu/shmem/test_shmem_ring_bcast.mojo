@@ -53,7 +53,7 @@ fn ring_bcast(
     psync[0] = 0
 
 
-def test_ring_bcast(ctx: SHMEMContext):
+def test_ring_bcast(ctx: SHMEMContext) raises:
     comptime data_len = 32
     var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
@@ -99,5 +99,5 @@ def test_ring_bcast(ctx: SHMEMContext):
         )
 
 
-def main():
+def main() raises:
     shmem_launch[test_ring_bcast]()

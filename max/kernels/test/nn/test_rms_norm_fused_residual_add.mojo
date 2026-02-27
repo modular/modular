@@ -218,7 +218,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     gamma2_heap.free()
 
 
-def main():
+def main() raises:
     # Test various shapes similar to test_rms_norm.mojo
     run_rms_norm_fused_residual_add_gpu[DType.float32](Index(5))
     run_rms_norm_fused_residual_add_gpu[DType.float32](Index(3, 4, 10, 20, 8))

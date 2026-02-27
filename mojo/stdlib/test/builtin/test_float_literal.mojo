@@ -19,12 +19,12 @@ comptime inf = FloatLiteral.infinity
 comptime neg_inf = FloatLiteral.negative_infinity
 
 
-def test_init():
+def test_init() raises:
     comptime n: IntLiteral[(4).value] = 4
     assert_equal(4.0, FloatLiteral(n))
 
 
-def test_division():
+def test_division() raises:
     assert_equal(FloatLiteral.__truediv__(4.4, 0.5), 8.8)
 
     assert_equal(FloatLiteral.__floordiv__(4.4, 0.5), 8.0)
@@ -33,13 +33,13 @@ def test_division():
     assert_equal(FloatLiteral.__floordiv__(-4.4, -0.5), 8.0)
 
 
-def test_mod():
+def test_mod() raises:
     assert_equal(FloatLiteral.__mod__(4.5, 2), 0.5)
     assert_equal(FloatLiteral.__mod__(-4.5, 2), 1.5)
     assert_equal(FloatLiteral.__mod__(6, 2.5), 1.0)
 
 
-def test_int_conversion():
+def test_int_conversion() raises:
     assert_equal(Int(-4.0), -4)
     assert_equal(Int(-4.5), -4)
     assert_equal(Int(-4.3), -4)
@@ -47,20 +47,20 @@ def test_int_conversion():
     assert_equal(Int(4.0), 4)
 
 
-def test_bool():
+def test_bool() raises:
     assert_false(FloatLiteral.__bool__(0.0))
 
     assert_true(FloatLiteral.__bool__(2.0))
 
 
-def test_is_special_value():
+def test_is_special_value() raises:
     assert_true(nan.is_nan())
     assert_false(neg_zero.is_nan())
     assert_true(neg_zero.is_neg_zero())
     assert_false(nan.is_neg_zero())
 
 
-def test_abs():
+def test_abs() raises:
     assert_equal(abs(-4.4), 4.4)
     assert_equal(abs(4.4), 4.4)
     assert_equal(abs(0.0), 0.0)
@@ -70,7 +70,7 @@ def test_abs():
     assert_equal(abs(neg_inf), inf)
 
 
-def test_comparison():
+def test_comparison() raises:
     assert_true(FloatLiteral.__lt__(4.4, 10.4))
     assert_true(FloatLiteral.__lt__(-10.4, -4.4))
     assert_false(FloatLiteral.__lt__(0.0, 0.0))
@@ -164,12 +164,12 @@ def test_comparison():
     assert_false(FloatLiteral.__ge__(nan, neg_zero))
 
 
-def test_float_conversion():
+def test_float_conversion() raises:
     assert_equal((4.5).__float__(), 4.5)
     assert_equal((0.0).__float__(), 0.0)
 
 
-def test_float_literal_writable():
+def test_float_literal_writable() raises:
     assert_equal(String(4.5), String(Float64(4.5)))
     assert_equal(repr(4.5), repr(Float64(4.5)))
 
@@ -180,5 +180,5 @@ def test_float_literal_writable():
     assert_equal(String(FloatLiteral.negative_infinity), "-inf")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

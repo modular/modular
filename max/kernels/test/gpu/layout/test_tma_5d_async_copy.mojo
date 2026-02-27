@@ -142,7 +142,7 @@ def test_tma_5d_load_row_major[
     cta_tile_layout: Layout,
     smem_tile_layout: Layout,
     swizzle_mode: TensorMapSwizzle,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     print("test_tma_5d_load")
 
     comptime src_dim0 = src_layout.shape[0].value()
@@ -274,7 +274,7 @@ def test_tma_5d_load_row_major[
     _ = dst^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Basic 5D test with no swizzling
         test_tma_5d_load_row_major[

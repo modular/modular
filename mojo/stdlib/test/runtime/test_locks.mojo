@@ -20,7 +20,7 @@ from testing import assert_equal, TestSuite
 from utils.lock import BlockingScopedLock, BlockingSpinLock
 
 
-def test_basic_lock():
+def test_basic_lock() raises:
     var lock = BlockingSpinLock()
     var rawCounter = 0
     var counter = Atomic[DType.int64](0)
@@ -65,5 +65,5 @@ def test_basic_lock():
     return
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

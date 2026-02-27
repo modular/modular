@@ -18,7 +18,7 @@ from reflection import source_location
 from testing import TestSuite, assert_false, assert_true
 
 
-def test_exists():
+def test_exists() raises:
     assert_true(exists(source_location().file_name))
     assert_true(lexists(source_location().file_name))
 
@@ -32,5 +32,5 @@ def test_exists():
     assert_true(lexists(Path()))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

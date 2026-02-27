@@ -21,7 +21,7 @@ from testing import (
 )
 
 
-def test_repeat_finite():
+def test_repeat_finite() raises:
     """Tests repeat with a finite number of times."""
     var it = repeat(42, times=3)
 
@@ -32,7 +32,7 @@ def test_repeat_finite():
         _ = next(it)  # raises StopIteration
 
 
-def test_repeat_string():
+def test_repeat_string() raises:
     """Tests repeat with a string value."""
     var it = repeat("hello", times=5)
 
@@ -44,14 +44,14 @@ def test_repeat_string():
     assert_equal(count, 5)
 
 
-def test_repeat_zero_times():
+def test_repeat_zero_times() raises:
     """Tests repeat with zero repetitions."""
     var it = repeat(99, times=0)
     with assert_raises():
         _ = next(it)  # raises StopIteration
 
 
-def test_repeat_one_time():
+def test_repeat_one_time() raises:
     """Tests repeat with a single repetition."""
     var it = repeat(7, times=1)
 
@@ -60,7 +60,7 @@ def test_repeat_one_time():
         _ = next(it)  # raises StopIteration
 
 
-def test_repeat_large_count():
+def test_repeat_large_count() raises:
     """Tests repeat with a large number of repetitions."""
     var it = repeat(123, times=1000)
 
@@ -72,7 +72,7 @@ def test_repeat_large_count():
     assert_equal(count, 1000)
 
 
-def test_repeat_in_for_loop():
+def test_repeat_in_for_loop() raises:
     """Tests repeat iterator in a for loop."""
     var sum = 0
     for val in repeat(10, times=5):
@@ -81,7 +81,7 @@ def test_repeat_in_for_loop():
     assert_equal(sum, 50)
 
 
-def test_repeat_param():
+def test_repeat_param() raises:
     """Tests repeat with parameter for loop."""
     var trip_count = 0
 
@@ -92,5 +92,5 @@ def test_repeat_param():
     assert_equal(trip_count, 3)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

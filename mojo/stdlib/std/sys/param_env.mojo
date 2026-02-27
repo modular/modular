@@ -146,7 +146,7 @@ fn env_get_int[name: StaticString, default: Int]() -> Int:
     ```mojo
     from std.sys.param_env import env_get_int
 
-    def main():
+    def main() raises:
         comptime number = env_get_int[
             "favorite_number",
             1 # Default value

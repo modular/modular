@@ -19,7 +19,7 @@ comptime A100_TARGET = get_gpu_target["sm_80"]()
 comptime MI300X_TARGET = get_gpu_target["mi300x"]()
 
 
-def test_abs():
+def test_abs() raises:
     fn do_abs[
         dtype: DType, *, width: Int = 1
     ](val: SIMD[dtype, width]) -> type_of(val):
@@ -87,5 +87,5 @@ def test_abs():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

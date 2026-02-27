@@ -21,14 +21,14 @@ def _splitroot_test(
     expected_drive: String,
     expected_root: String,
     expected_tail: String,
-):
+) raises:
     var drive, root, tail = splitroot(path)
     assert_equal(drive, expected_drive)
     assert_equal(root, expected_root)
     assert_equal(tail, expected_tail)
 
 
-def test_absolute_path():
+def test_absolute_path() raises:
     _splitroot_test("/usr/lib/file.txt", "", "/", "usr/lib/file.txt")
     _splitroot_test("//usr/lib/file.txt", "", "//", "usr/lib/file.txt")
     _splitroot_test("///usr/lib/file.txt", "", "/", "//usr/lib/file.txt")
@@ -37,7 +37,7 @@ def test_absolute_path():
     _splitroot_test("/a/b/", "", "/", "a/b/")
 
 
-def test_relative_path():
+def test_relative_path() raises:
     _splitroot_test("usr/lib/file.txt", "", "", "usr/lib/file.txt")
     _splitroot_test(".", "", "", ".")
     _splitroot_test("..", "", "", "..")
@@ -52,15 +52,15 @@ def test_relative_path():
     _splitroot_test("a/b/", "", "", "a/b/")
 
 
-def test_root_directory():
+def test_root_directory() raises:
     _splitroot_test("/", "", "/", "")
     _splitroot_test("//", "", "//", "")
     _splitroot_test("///", "", "/", "//")
 
 
-def test_empty_path():
+def test_empty_path() raises:
     _splitroot_test("", "", "", "")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

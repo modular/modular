@@ -225,7 +225,7 @@ fn test_grouped_tensormap_update_kernel[
 def test_grouped_tensormap_update[
     num_groups: Int,
     tile_shape: IndexList[2],
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     """Test updating 2 tensormaps in a loop simulating group iteration.
 
     Creates num_groups sets of A, B tensors with distinct data.
@@ -441,7 +441,7 @@ def test_grouped_tensormap_update[
     # Cleanup
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("=" * 60)
         print("Test: Grouped TensorMap Update Pattern")

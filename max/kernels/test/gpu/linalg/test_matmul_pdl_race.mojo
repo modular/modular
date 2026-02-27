@@ -235,7 +235,7 @@ fn run_pdl_race_test[
     result_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Use env vars for configurability
         # var M = env_get_int["M", 8]()

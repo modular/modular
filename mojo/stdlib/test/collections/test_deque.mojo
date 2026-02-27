@@ -1090,7 +1090,9 @@ fn test_reversed_iter() raises:
     assert_equal(-i, len(q))
 
 
-def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
+def _test_deque_iter_bounds[
+    I: Iterator
+](var deque_iter: I, deque_len: Int) raises:
     var iter = deque_iter^
 
     for i in range(deque_len):
@@ -1106,13 +1108,13 @@ def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
     assert_equal(0, upper.value())
 
 
-def test_deque_iter_bounds():
+def test_deque_iter_bounds() raises:
     var deque = Deque(1, 2, 3)
     _test_deque_iter_bounds(iter(deque), len(deque))
     _test_deque_iter_bounds(reversed(deque), len(deque))
 
 
-def test_deque_literal():
+def test_deque_literal() raises:
     var q: Deque[Int] = [1, 2, 3]
     assert_equal(3, len(q))
     assert_equal(1, q[0])
@@ -1128,7 +1130,7 @@ def test_deque_literal():
     assert_equal(0, len(q3))
 
 
-def test_repr_wrap():
+def test_repr_wrap() raises:
     var s = Deque[String]("a", "b", "c")
     assert_equal(
         repr(s),
@@ -1136,7 +1138,7 @@ def test_repr_wrap():
     )
 
 
-def test_write_to():
+def test_write_to() raises:
     """Test Writable trait implementation."""
     check_write_to(
         Deque[Int](10, 20, 30), expected="[10, 20, 30]", is_repr=False
@@ -1148,7 +1150,7 @@ def test_write_to():
     check_write_to(Deque[Int](42), expected="[42]", is_repr=False)
 
 
-def test_write_repr_to():
+def test_write_repr_to() raises:
     """Test write_repr_to implementation."""
     check_write_to(
         Deque[Int](1, 2, 3),
@@ -1164,5 +1166,5 @@ def test_write_repr_to():
 # ===-------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

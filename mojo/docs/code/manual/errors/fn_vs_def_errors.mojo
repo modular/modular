@@ -22,7 +22,7 @@ struct ValidationError(Copyable, Writable):
 
 
 # def: implicitly raises Error — cannot use typed errors
-def validate_def(value: Int) -> Int:
+def validate_def(value: Int) raises -> Int:
     if value < 0:
         raise "value cannot be negative"
     return value
@@ -43,7 +43,7 @@ fn validated_operation(value: Int) raises ValidationError -> Int:
         raise ValidationError(field="value", reason=String(e))
 
 
-def main():
+def main() raises:
     # def: error has no fields
     print("--- def (Error) ---")
     try:

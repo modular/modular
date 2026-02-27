@@ -112,7 +112,7 @@ fn test_scheduler_kernel[
         tile_count[0, 0] = Int32(scheduler.total_tiles())
 
 
-def test_single_group(ctx: DeviceContext):
+def test_single_group(ctx: DeviceContext) raises:
     """Test scheduler with a single group."""
     print("  Test: Single group (64x64x128)")
 
@@ -216,7 +216,7 @@ def test_single_group(ctx: DeviceContext):
     _ = tile_count^
 
 
-def test_two_groups(ctx: DeviceContext):
+def test_two_groups(ctx: DeviceContext) raises:
     """Test scheduler with two groups of different sizes."""
     print("  Test: Two groups (32x32x64, 48x48x96)")
 
@@ -356,7 +356,7 @@ def test_two_groups(ctx: DeviceContext):
     _ = tile_count^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("=" * 60)
         print("Test: GroupedTileScheduler")

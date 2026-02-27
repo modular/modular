@@ -15,7 +15,7 @@ from test_utils import CopyCounter
 from testing import TestSuite, assert_equal, assert_raises
 
 
-def test_map():
+def test_map() raises:
     var l = [1, 2, 3]
 
     fn add_one(x: Int) -> Int:
@@ -39,7 +39,7 @@ def test_map():
         _ = m2.__next__()  # raises StopIteration
 
 
-def test_map_function_can_take_owned_value():
+def test_map_function_can_take_owned_value() raises:
     fn report_copies_owned(var counter: CopyCounter[NoneType]) -> Int:
         return counter.copy_count
 
@@ -57,5 +57,5 @@ def test_map_function_can_take_owned_value():
     assert_equal(next(m1), next(m2))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

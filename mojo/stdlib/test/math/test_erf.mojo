@@ -18,7 +18,7 @@ from test_utils import compare, libm_call
 from testing import assert_almost_equal, assert_equal, TestSuite
 
 
-def test_erf_float32():
+def test_erf_float32() raises:
     assert_equal(erf(Float32(0)), 0.0)
     assert_almost_equal(erf(SIMD[DType.float32, 2](2)), 0.995322)
     assert_almost_equal(erf(Float32(0.1)), 0.112462)
@@ -27,7 +27,7 @@ def test_erf_float32():
     assert_almost_equal(erf(Float32(-2)), -0.995322)
 
 
-def test_erf_float64():
+def test_erf_float64() raises:
     assert_equal(erf(Float64(0)), 0.0)
     assert_almost_equal(erf(SIMD[DType.float64, 2](2)), 0.995322)
     assert_almost_equal(erf(Float64(0.1)), 0.112462)
@@ -36,7 +36,7 @@ def test_erf_float64():
     assert_almost_equal(erf(Float64(-2)), -0.995322)
 
 
-def test_erf_libm():
+def test_erf_libm() raises:
     seed(0)
     var N = 8192
     comptime test_dtype = DType.float32
@@ -82,5 +82,5 @@ def test_erf_libm():
     libm_out.free()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

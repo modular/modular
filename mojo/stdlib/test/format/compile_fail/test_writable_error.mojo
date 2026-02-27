@@ -25,7 +25,7 @@ struct NotWritable(ImplicitlyCopyable):
     pass
 
 
-def main():
+def main() raises:
     var string = String()
 
     comptime if env_get_int["test"]() == 1:

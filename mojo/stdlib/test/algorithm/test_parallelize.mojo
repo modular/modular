@@ -20,7 +20,7 @@ from utils import IndexList
 
 
 # CHECK-LABEL: test_sync_parallelize
-def test_sync_parallelize():
+def test_sync_parallelize() raises:
     print("== test_sync_parallelize")
 
     var num_work_items = 4
@@ -58,7 +58,7 @@ def test_sync_parallelize():
 
 
 # CHECK-LABEL: test_parallelize
-def test_parallelize():
+def test_parallelize() raises:
     print("== test_parallelize")
 
     var num_work_items = num_physical_cores()
@@ -95,28 +95,28 @@ fn printme(i: Int):
 
 
 # CHECK-LABEL: test_parallelize_no_workers
-def test_parallelize_no_workers():
+def test_parallelize_no_workers() raises:
     print("== test_parallelize_no_workers")
     # CHECK: Number of workers must be positive
     parallelize[printme](10, 0)
 
 
 # CHECK-LABEL: test_parallelize_negative_workers
-def test_parallelize_negative_workers():
+def test_parallelize_negative_workers() raises:
     print("== test_parallelize_negative_workers")
     # CHECK: Number of workers must be positive
     parallelize[printme](10, -1)
 
 
 # CHECK-LABEL: test_parallelize_negative_work
-def test_parallelize_negative_work():
+def test_parallelize_negative_work() raises:
     print("== test_parallelize_negative_work")
     # This should do nothing
     parallelize[printme](-1, 4)
 
 
 # CHECK-LABEL: test_parallelize_over_rows_zero_work
-def test_parallelize_over_rows_zero_work():
+def test_parallelize_over_rows_zero_work() raises:
     print("== test_parallelize_over_rows_zero_work")
 
     # This should do nothing
@@ -127,5 +127,5 @@ def test_parallelize_over_rows_zero_work():
     parallelize_over_rows[noop](IndexList[1](0), 0, 1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

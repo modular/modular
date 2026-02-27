@@ -69,11 +69,11 @@ fn test_string_slice_layout() raises:
     assert_equal(second_word_ptr - base_ptr, size_of[Int]())
 
 
-def test_constructors():
-    def some_func_immut(b: StringSlice[mut=False]):
+def test_constructors() raises:
+    def some_func_immut(b: StringSlice[mut=False]) raises:
         assert_false(b.mut)
 
-    def some_func_mut(b: StringSlice[mut=True]):
+    def some_func_mut(b: StringSlice[mut=True]) raises:
         assert_true(b.mut)
 
     var a = "123"
@@ -417,14 +417,14 @@ comptime REPR_MAPPINGS = [
 ]
 
 
-def test_slice_write_repr_to():
+def test_slice_write_repr_to() raises:
     for item in materialize[REPR_MAPPINGS]():
         var string = String()
         StringSlice.write_repr_to(item[0], string)
         assert_equal(string, item[1])
 
 
-def test_find():
+def test_find() raises:
     haystack = StringSlice("abcdefg")
     haystack_with_special_chars = StringSlice("abcdefg@#$")
     haystack_repeated_chars = StringSlice("aaaaaaaaaaaaaaaaaaaaaaaa")
@@ -450,7 +450,7 @@ def test_find():
     assert_equal(StringSlice(String()).find(StringSlice("abc")), -1)
 
 
-def test_find_compile_time():
+def test_find_compile_time() raises:
     comptime haystack = StringSlice("abcdefg")
     comptime haystack_with_special_chars = StringSlice("abcdefg@#$")
     comptime haystack_repeated_chars = StringSlice("aaaaaaaaaaaaaaaaaaaaaaaa")
@@ -488,7 +488,7 @@ def test_find_compile_time():
     assert_equal(c15, -1)
 
 
-def test_find_mstdl_2258():
+def test_find_mstdl_2258() raises:
     # Bug - when searching for a needle with the following conditions:
     # - needle length is longer than the SIMD width
     # - the haystack prefix is larger than UInt16.MAX
@@ -507,7 +507,7 @@ def test_find_mstdl_2258():
     assert_true(needle in haystack)
 
 
-def test_is_codepoint_boundary():
+def test_is_codepoint_boundary() raises:
     var abc = StringSlice("abc")
     assert_equal(len(abc), 3)
     assert_true(abc.is_codepoint_boundary(0))
@@ -529,7 +529,7 @@ def test_is_codepoint_boundary():
     assert_false(empty.is_codepoint_boundary(1))
 
 
-def test_comparison_operators():
+def test_comparison_operators() raises:
     var abc = StringSlice("abc")
     var de = StringSlice("de")
     var ABC = StringSlice("ABC")
@@ -575,7 +575,7 @@ def test_comparison_operators():
     assert_true(StringSlice.__ge__("", ""))
 
 
-def test_split():
+def test_split() raises:
     comptime S = StaticString
 
     # Should add all whitespace-like chars as one
@@ -656,7 +656,7 @@ def test_split():
     assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
-def test_splitlines():
+def test_splitlines() raises:
     comptime S = StaticString
 
     # Test with no line breaks
@@ -720,7 +720,7 @@ def test_splitlines():
         )
 
 
-def test_rstrip():
+def test_rstrip() raises:
     # with default rstrip chars
     var empty_string = StringSlice("")
     assert_true(empty_string.rstrip() == "")
@@ -754,7 +754,7 @@ def test_rstrip():
     assert_true(str6.rstrip("Ò") == "eeeeÑ")
 
 
-def test_lstrip():
+def test_lstrip() raises:
     # with default lstrip chars
     var empty_string = StringSlice("")
     assert_true(empty_string.lstrip() == "")
@@ -787,7 +787,7 @@ def test_lstrip():
     assert_true(str6.lstrip("Ò") == "Ñeeee")
 
 
-def test_strip():
+def test_strip() raises:
     # with default strip chars
     var empty_string = StringSlice("")
     assert_true(empty_string.strip() == "")
@@ -838,7 +838,7 @@ def test_strip():
     assert_true(str6.strip("Ò") == "ÑeeeeÑ")
 
 
-def test_startswith():
+def test_startswith() raises:
     var empty = StringSlice("")
     assert_true(empty.startswith(""))
     assert_false(empty.startswith("a"))
@@ -858,7 +858,7 @@ def test_startswith():
     assert_true(ab.startswith("ab"))
 
 
-def test_endswith():
+def test_endswith() raises:
     var empty = StringSlice("")
     assert_true(empty.endswith(""))
     assert_false(empty.endswith("a"))
@@ -878,7 +878,7 @@ def test_endswith():
     assert_true(ab.endswith("ab"))
 
 
-def test_isupper():
+def test_isupper() raises:
     assert_true(StringSlice("ASDG").isupper())
     assert_false(StringSlice("AsDG").isupper())
     assert_true(StringSlice("ABC123").isupper())
@@ -887,7 +887,7 @@ def test_isupper():
     assert_false(StringSlice("é").isupper())
 
 
-def test_islower():
+def test_islower() raises:
     assert_true(StringSlice("asdfg").islower())
     assert_false(StringSlice("asdFDg").islower())
     assert_true(StringSlice("abc123").islower())
@@ -896,7 +896,7 @@ def test_islower():
     assert_false(StringSlice("É").islower())
 
 
-def test_lower():
+def test_lower() raises:
     assert_equal(StringSlice("HELLO").lower(), "hello")
     assert_equal(StringSlice("hello").lower(), "hello")
     assert_equal(StringSlice("FoOBaR").lower(), "foobar")
@@ -907,7 +907,7 @@ def test_lower():
     assert_equal(StringSlice("é").lower(), "é")
 
 
-def test_upper():
+def test_upper() raises:
     assert_equal(StringSlice("hello").upper(), "HELLO")
     assert_equal(StringSlice("HELLO").upper(), "HELLO")
     assert_equal(StringSlice("FoOBaR").upper(), "FOOBAR")
@@ -918,38 +918,38 @@ def test_upper():
     assert_equal(StringSlice("é").upper(), "É")
 
 
-def test_is_ascii_digit():
+def test_is_ascii_digit() raises:
     assert_false(StringSlice("").is_ascii_digit())
     assert_true(StringSlice("123").is_ascii_digit())
     assert_false(StringSlice("asdg").is_ascii_digit())
     assert_false(StringSlice("123asdg").is_ascii_digit())
 
 
-def test_is_ascii_printable():
+def test_is_ascii_printable() raises:
     assert_true(StringSlice("aasdg").is_ascii_printable())
     assert_false(StringSlice("aa\nae").is_ascii_printable())
     assert_false(StringSlice("aa\tae").is_ascii_printable())
 
 
-def test_ascii_rjust():
+def test_ascii_rjust() raises:
     assert_equal(StringSlice("hello").ascii_rjust(4), "hello")
     assert_equal(StringSlice("hello").ascii_rjust(8), "   hello")
     assert_equal(StringSlice("hello").ascii_rjust(8, "*"), "***hello")
 
 
-def test_ascii_ljust():
+def test_ascii_ljust() raises:
     assert_equal(StringSlice("hello").ascii_ljust(4), "hello")
     assert_equal(StringSlice("hello").ascii_ljust(8), "hello   ")
     assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
 
 
-def test_ascii_center():
+def test_ascii_center() raises:
     assert_equal(StringSlice("hello").ascii_center(4), "hello")
     assert_equal(StringSlice("hello").ascii_center(8), " hello  ")
     assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
 
 
-def test_count():
+def test_count() raises:
     var str = StringSlice("Hello world")
 
     assert_equal(12, str.count(""))
@@ -963,7 +963,7 @@ def test_count():
     assert_equal(StringSlice("aaaaaa").count("aa"), 3)
 
 
-def test_chars_iter():
+def test_chars_iter() raises:
     # Test `for` loop iteration support
     for char in StringSlice("abc").codepoints():
         assert_true(
@@ -1037,7 +1037,7 @@ def test_chars_iter():
         _ = s3_iter.__next__()  # raises StopIteration
 
 
-def test_string_slice_from_pointer():
+def test_string_slice_from_pointer() raises:
     var a = StringSlice("AAA")
     var b = StaticString(unsafe_from_utf8_ptr=a.unsafe_ptr())
     assert_equal(3, len(a))
@@ -1055,7 +1055,7 @@ def test_string_slice_from_pointer():
     assert_equal("D", d[byte= -1])
 
 
-def test_replace():
+def test_replace() raises:
     assert_equal(StringSlice("").replace("", "hello world"), "")
     assert_equal(
         StringSlice("hello").replace("", "something"),
@@ -1089,7 +1089,7 @@ def test_replace():
     )
 
 
-def test_join():
+def test_join() raises:
     # TODO(MOCO-2908): This explicit origin should not be necessary; the
     #   compiler ought to infer some default "bottom" origin.
     assert_equal(StaticString("").join(Span[String, ImmutAnyOrigin]()), "")
@@ -1119,7 +1119,7 @@ def test_join():
     assert_equal(s5, "1")
 
 
-def test_string_slice_intern():
+def test_string_slice_intern() raises:
     assert_equal(get_static_string["hello"](), "hello")
     assert_equal(get_static_string[String("hello")](), "hello")
     assert_equal(get_static_string[String(42)](), "42")
@@ -1131,7 +1131,7 @@ def test_string_slice_intern():
 
 # This is just a compile test
 # it does not need to be run
-def test_merge():
+def test_merge() raises:
     var a = ""
     var b = "hi"
 
@@ -1143,7 +1143,7 @@ def test_merge():
     _ = cond(True, a, b)
 
 
-def test_string_slice_codepoint_slices_reversed():
+def test_string_slice_codepoint_slices_reversed() raises:
     # Test ASCII
     var s: StaticString = "xyz"
     var iter = s.codepoint_slices_reversed()
@@ -1173,5 +1173,5 @@ def test_string_slice_codepoint_slices_reversed():
     assert_equal(concat, "")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

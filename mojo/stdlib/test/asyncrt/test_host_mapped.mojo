@@ -15,7 +15,7 @@ from asyncrt_test_utils import create_test_device_context
 from testing import TestSuite, assert_equal
 
 
-def test_host_mapped():
+def test_host_mapped() raises:
     var ctx = create_test_device_context()
 
     comptime length = 20
@@ -36,5 +36,5 @@ def test_host_mapped():
     print("Done")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

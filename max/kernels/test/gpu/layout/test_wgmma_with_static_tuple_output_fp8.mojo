@@ -278,7 +278,7 @@ fn wgmma_e4m3_e4m3_f32[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for n in range(8, 32, 8):
             wgmma_e4m3_e4m3_f32[
