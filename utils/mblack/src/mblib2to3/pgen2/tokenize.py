@@ -95,16 +95,16 @@ Name = (  # this is invalid but it's fine because Name comes after Number in all
     r"[^\s#\(\)\[\]\{\}+\-*/!@$%^&=|;:'\",\.<>/?~\\]+"
 )
 
-Binnumber = r"0[bB]_?[01]+(?:_[01]+)*"
-Hexnumber = r"0[xX]_?[\da-fA-F]+(?:_[\da-fA-F]+)*[lL]?"
-Octnumber = r"0[oO]?_?[0-7]+(?:_[0-7]+)*[lL]?"
-Decnumber = group(r"[1-9]\d*(?:_\d+)*[lL]?", "0[lL]?")
+Binnumber = r"0[bB]_*[01]+(?:_+[01]+)*"
+Hexnumber = r"0[xX]_*[\da-fA-F]+(?:_+[\da-fA-F]+)*[lL]?"
+Octnumber = r"0[oO]?_*[0-7]+(?:_+[0-7]+)*[lL]?"
+Decnumber = group(r"[1-9]\d*(?:_+\d+)*[lL]?", "0[lL]?")
 Intnumber = group(Binnumber, Hexnumber, Octnumber, Decnumber)
-Exponent = r"[eE][-+]?\d+(?:_\d+)*"
+Exponent = r"[eE][-+]?\d+(?:_+\d+)*"
 Pointfloat = group(
-    r"\d+(?:_\d+)*\.(?:\d+(?:_\d+)*)?", r"\.\d+(?:_\d+)*"
+    r"\d+(?:_+\d+)*\.(?:\d+(?:_+\d+)*)?", r"\.\d+(?:_+\d+)*"
 ) + maybe(Exponent)
-Expfloat = r"\d+(?:_\d+)*" + Exponent
+Expfloat = r"\d+(?:_+\d+)*" + Exponent
 Floatnumber = group(Pointfloat, Expfloat)
 Imagnumber = group(r"\d+(?:_\d+)*[jJ]", Floatnumber + r"[jJ]")
 Number = group(Imagnumber, Floatnumber, Intnumber)
