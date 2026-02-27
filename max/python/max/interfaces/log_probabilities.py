@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines the :class:`LogProbabilities` data structure for token log probability output."""
+
 import msgspec
 
 
