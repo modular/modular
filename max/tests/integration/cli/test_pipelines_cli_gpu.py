@@ -55,6 +55,8 @@ def test_pipelines_cli__smollm_bfloat16(
                 "--devices=gpu",
                 "--huggingface-model-revision",
                 REVISION,
+                "--huggingface-weight-revision",
+                REVISION,
                 "--top-k=1",
             ]
         )
@@ -91,6 +93,8 @@ def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
                 "--allow-safetensors-weights-fp32-bf6-bidirectional-cast",
                 "--devices=gpu",
                 "--huggingface-model-revision",
+                REVISION,
+                "--huggingface-weight-revision",
                 REVISION,
                 # We are enabling structured output here, to ensure that
                 # enabling structured output server wide, without a JSON
@@ -131,6 +135,8 @@ def test_pipelines_cli__smollm_with_lora(
                 "--allow-safetensors-weights-fp32-bf6-bidirectional-cast",
                 "--devices=gpu",
                 "--huggingface-model-revision",
+                REVISION,
+                "--huggingface-weight-revision",
                 REVISION,
                 "--enable-lora",
                 "-max-num-loras=2",
@@ -183,6 +189,8 @@ def test_pipelines_cli__smollm_with_multiple_loras(
                 "--allow-safetensors-weights-fp32-bf6-bidirectional-cast",
                 "--devices=gpu",
                 "--huggingface-model-revision",
+                REVISION,
+                "--huggingface-weight-revision",
                 REVISION,
                 "--enable-lora",
                 "--max-num-loras=3",
