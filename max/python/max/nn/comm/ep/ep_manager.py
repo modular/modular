@@ -26,7 +26,12 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Accelerator, Buffer, accelerator_api
+from max.driver import (
+    Accelerator,
+    Buffer,
+    accelerator_api,
+    enable_all_peer_access,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -668,6 +673,7 @@ class EPCommInitializer:
         Args:
             session: Inference session used to compile and execute the graph.
         """
+        enable_all_peer_access()
         logger.info("Initializing EP communication infrastructure...")
         logger.info(
             f"Estimated EP memory usage per device: {to_human_readable_bytes(self.config.estimate_memory_usage())}"

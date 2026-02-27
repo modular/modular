@@ -18,6 +18,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
+from comm.sync import enable_p2p
 import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
@@ -246,6 +247,7 @@ def main() raises -> None:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Test configurations.
     comptime test_lengths: List[List[Int]] = [

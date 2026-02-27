@@ -20,7 +20,7 @@ from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS, group_start, group_end
 from comm.allreduce import allreduce
 from comm.allreduce_rmsnorm_fp8 import allreduce_rmsnorm_fp8
-from comm.sync import is_p2p_enabled
+from comm.sync import enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 from layout._layout import row_major
@@ -336,9 +336,7 @@ def main() raises:
     var num_devices = DeviceContext.number_of_devices()
     assert_true(num_devices >= 2, "need at least 2 GPUs")
 
-    if not is_p2p_enabled():
-        print("P2P not enabled, skipping test.")
-        return
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     print("FP8 output dtype:", out_fp8_dtype)
 

@@ -230,7 +230,5 @@ def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
-    if not enable_p2p():
-        print("P2P not enabled, skipping test.")
-        return
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
     run_broadcast_sweep[]()
