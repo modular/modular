@@ -21,7 +21,7 @@ prints the type of a given value. Then you can see how different Mojo values
 convert into corresponding Python types.
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def main() raises:
     py_module = """
@@ -69,7 +69,7 @@ For example, to create a Python dictionary, use the
 [`Python.dict()`](/mojo/std/python/python/Python#dict) method:
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def main() raises:
     py_dict = Python.dict()
@@ -87,7 +87,7 @@ With the [`Python.list()`](/mojo/std/python/python/Python#list) method, you
 can create a Python list and optionally initialize it:
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def main() raises:
     py_list = Python.list("cat", 2, 3.14159, 4)
@@ -107,7 +107,7 @@ The [`Python.tuple()`](/mojo/std/python/python/Python#tuple) method creates a
 Python tuple of values:
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def main() raises:
     py_tuple = Python.tuple("cat", 2, 3.1415, "cat")
@@ -127,7 +127,7 @@ equivalent, you can also use the
 example, to create a Python `set`:
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def main() raises:
     var py_set = Python.evaluate('{2, 3, 2, 7, 11, 3}')
@@ -152,8 +152,8 @@ these cases you'll need to explicitly convert a Python value into a native Mojo
 value. For example:
 
 ```mojo
-from python import Python
-from python import PythonObject
+from std.python import Python
+from std.python import PythonObject
 
 
 def main() raises:
@@ -181,7 +181,7 @@ object is of a particular type by performing an identity comparison against the
 type as shown below:
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def main() raises:
     var value1 = PythonObject(3.7)

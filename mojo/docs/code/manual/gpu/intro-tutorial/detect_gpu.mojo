@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import has_accelerator
+from std.sys import has_accelerator
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
 def main() raises:

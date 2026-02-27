@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import assert_true
+from std.testing import assert_true
 
 
 def main() raises:

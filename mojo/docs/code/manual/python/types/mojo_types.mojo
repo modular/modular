@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-mojo-to-python-conversions
-from python import Python
+from std.python import Python
 
 
 def main() raises:

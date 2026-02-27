@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import map
+from std.algorithm import map
 
 
 def main() raises:

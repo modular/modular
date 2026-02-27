@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
 from fn_vs_def_errors import validate_def, validate_fn, validated_operation
 

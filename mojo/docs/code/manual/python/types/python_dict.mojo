@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-dict-example
-from python import Python
+from std.python import Python
 
 
 def main() raises:

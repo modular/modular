@@ -201,7 +201,7 @@ The general `Int` type maps to your machine's native word size. This is
 typically 64 bits on a 64-bit system. You can always check:
 
 ```mojo
-from sys import size_of
+from std.sys import size_of
 
 fn main():
     var a: Int = 5

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from reflection import *
+from std.reflection import *
 
 
 @fieldwise_init

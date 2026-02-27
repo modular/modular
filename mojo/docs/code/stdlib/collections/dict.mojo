@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import *
+from std.testing import *
 
 
 fn test_dict() raises:
@@ -153,7 +153,7 @@ fn test_get_with_default() raises:
     # print(missing_value.__str__())  # => -1
     assert_true(missing_value == -1)
 
-    from testing import assert_true
+    from std.testing import assert_true
 
     assert_true(my_dict["a"] == my_dict.get("a", Int.MAX))
 

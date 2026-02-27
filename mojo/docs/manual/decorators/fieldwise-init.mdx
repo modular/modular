@@ -82,7 +82,7 @@ It uses `@fieldwise_init("implicit")` for integers and creates
 an `@implicit` initializer for other values:
 
 ```mojo
-from math import Floorable, floor
+from std.math import Floorable, floor
 
 # Creates an implicit initializer and limits the type to one instance field.
 @fieldwise_init("implicit")

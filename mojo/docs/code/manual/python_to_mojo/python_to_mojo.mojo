@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import *
-from math import isclose, abs
+from std.testing import *
+from std.math import isclose, abs
 
 
 fn test_mut() raises:

@@ -80,7 +80,7 @@ The reflection calls used in the following example include:
   Return the count, names, and types of a struct's fields.
 
 ```mojo
-from reflection import (
+from std.reflection import (
     struct_field_count, struct_field_names,
     get_type_name, struct_field_types
 )
@@ -192,7 +192,7 @@ limits copying to fields whose types conform to `Copyable`. It requires an
 already initialized target, avoiding matching values to `__init__` arguments.
 
 ```mojo
-from reflection import struct_field_count, struct_field_types
+from std.reflection import struct_field_count, struct_field_types
 
 trait MakeCopyable:
     fn copy_to(self, mut other: Self):
@@ -272,7 +272,7 @@ retrieves field value references from the `lhs` and `rhs` arguments. It uses
 early return for the first inequality (`False`), otherwise returning `True`:
 
 ```mojo
-from reflection import struct_field_count, struct_field_types
+from std.reflection import struct_field_count, struct_field_types
 
 fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     comptime field_count = struct_field_count[T]()

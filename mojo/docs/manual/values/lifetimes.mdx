@@ -104,7 +104,7 @@ doesn't need to specify an origin—the `origin` is inferred from the existing
 value.
 
 ```mojo
-from memory import Pointer
+from std.memory import Pointer
 
 def use_pointer() raises:
     a = 10
@@ -176,7 +176,7 @@ pointer that holds an owned value. The `as_ptr()` method returns a `Pointer` to
 the stored string, using the same origin as the original `OwnedPointer`.
 
 ```mojo
-from memory import OwnedPointer, Pointer
+from std.memory import OwnedPointer, Pointer
 
 struct BoxedString:
     var o_ptr: OwnedPointer[String]
@@ -316,8 +316,8 @@ In the following example, the `to_byte_span()` function takes a `List[Byte]` and
 returns a `Span[Byte]` with the same origin as the list:
 
 ```mojo
-from collections import List
-from memory import Span
+from std.collections import List
+from std.memory import Span
 
 def to_byte_span[
     is_mutable: Bool,

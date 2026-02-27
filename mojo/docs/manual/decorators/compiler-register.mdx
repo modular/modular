@@ -79,9 +79,9 @@ arguments:
 
 ```mojo
 import compiler
-from utils.index import IndexList
+from std.utils.index import IndexList
 from max.tensor import OutputTensor, InputTensor, foreach, ManagedTensorSlice
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
 @compiler.register("add_vectors_custom")
 struct AddVectorsCustom:

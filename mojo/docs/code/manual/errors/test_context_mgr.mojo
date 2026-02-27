@@ -13,7 +13,7 @@
 import time
 
 from context_mgr import Timer
-from testing import assert_raises, TestSuite
+from std.testing import assert_raises, TestSuite
 
 
 def test_timer_no_error() raises:

@@ -13,7 +13,7 @@
 """Provides examples for random numbers."""
 
 from std.random import seed
-from testing import *
+from std.testing import *
 
 
 fn test_seed():
@@ -54,7 +54,7 @@ fn test_random_ui64() raises:
 
 fn test_rand_count_dtype() raises:
     from std.random import randint, seed
-    from memory import alloc
+    from std.memory import alloc
 
     seed()
     var size: Int = 10
@@ -67,7 +67,7 @@ fn test_rand_count_dtype() raises:
 
 fn test_rand_count_dtype_scale() raises:
     from std.random import rand, seed
-    from memory import alloc
+    from std.memory import alloc
 
     seed()
     var size: Int = 10
@@ -90,7 +90,7 @@ fn test_randn_float64() raises:
 
 fn test_dtype_randn() raises:
     from std.random import randn, seed
-    from memory import alloc
+    from std.memory import alloc
 
     seed()
     var size: Int = 1000

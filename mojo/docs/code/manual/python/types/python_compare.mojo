@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-compare-example
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 
 
 def main() raises:

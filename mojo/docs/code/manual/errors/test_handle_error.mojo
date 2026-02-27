@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from handle_error import process_record
-from testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
 
 def test_process_record_success() raises:

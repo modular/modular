@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 
 def main() raises:

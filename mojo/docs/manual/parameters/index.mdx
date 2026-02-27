@@ -474,7 +474,7 @@ values). For example, here's how to define a parametric algorithm with `Scalar`
 that is datatype agnostic:
 
 ```mojo
-from math import sqrt
+from std.math import sqrt
 
 fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
@@ -500,7 +500,7 @@ to specify them. For example, you can call the `rsqrt()` function defined above
 without specifying the `dt` parameter:
 
 ```mojo
-from math import sqrt
+from std.math import sqrt
 
 fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)

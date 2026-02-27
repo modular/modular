@@ -21,8 +21,8 @@ struct Person(Stringable):
         return self.name + " (" + String(self.age) + ")"
 
 
-def string_summary() raises:
-    from testing import assert_equal, assert_raises
+def string_summary():
+    from std.testing import assert_equal, assert_raises
 
     var person = Person("Alice", 30)
     print(String(person))  # => Alice (30)

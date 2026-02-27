@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def string_slice_summary() raises:
-    from testing import assert_equal, assert_raises
+def string_slice_summary():
+    from std.testing import assert_equal, assert_raises
 
     # Create a string slice
     var text = StringSlice("Hello, 世界")

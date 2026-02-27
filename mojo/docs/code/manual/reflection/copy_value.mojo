@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import struct_field_count, struct_field_types
+from std.reflection import struct_field_count, struct_field_types
 
 
 trait MakeCopyable:

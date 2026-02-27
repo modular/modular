@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 
 
 fn calculate_average(temps: List[Float64]) raises -> Float64:

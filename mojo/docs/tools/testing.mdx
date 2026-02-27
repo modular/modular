@@ -37,7 +37,7 @@ For your first example of using the Mojo testing framework, create a file named
 
 ```mojo
 # Content of test_quickstart.mojo
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 def inc(n: Int) raises -> Int:
     return n + 1
@@ -133,7 +133,7 @@ assertion returns `None` if its condition is met or raises an error if it isn't.
 The boolean assertions report a basic error message when they fail.
 
 ```mojo
-from testing import *
+from std.testing import *
 assert_true(False)
 ```
 
@@ -264,7 +264,7 @@ in a source module named `my_target_module` (which is not shown here).
 # File: test_my_target_module.mojo
 
 from my_target_module import convert_input, validate_input
-from testing import assert_equal, assert_false, assert_raises, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_raises, assert_true, TestSuite
 
 def test_validate_input() raises:
     assert_true(validate_input("good"), msg="'good' should be valid input")

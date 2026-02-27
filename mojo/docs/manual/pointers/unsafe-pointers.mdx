@@ -443,7 +443,7 @@ For example, the following code creates a NumPy array and then accesses the
 data using a Mojo pointer:
 
 ```mojo
-from python import Python
+from std.python import Python
 
 def share_array() raises:
     np = Python.import_module("numpy")
@@ -479,7 +479,7 @@ be set to `(Mut/Immut)ExternalOrigin`, since the pointer points to memory
 external to the mojo program.
 
 ```mojo
-from ffi import external_call
+from std.ffi import external_call
 
 def get_foreign_pointer() raises -> UnsafePointer[Int, MutExternalOrigin]:
     var ptr = external_call[

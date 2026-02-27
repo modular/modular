@@ -52,7 +52,7 @@ These functions are useful for conditional compilation or execution depending on
 whether a supported GPU is available.
 
 ```mojo title="detect_gpu.mojo"
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 def main() raises:
     @parameter
@@ -110,11 +110,11 @@ but all of the types, functions, and methods are discussed in more detail in
 later sections of this document.
 
 ```mojo title="scalar_add.mojo"
-from math import iota
-from sys import exit, has_accelerator
+from std.math import iota
+from std.sys import exit, has_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 
 comptime num_elements = 20
 
@@ -333,10 +333,10 @@ Here is a complete example showing a kernel function that simply prints the
 thread block index, thread index, and global index for each thread executed.
 
 ```mojo title="print_threads.mojo"
-from sys import exit, has_accelerator, has_apple_gpu_accelerator
+from std.sys import exit, has_accelerator, has_apple_gpu_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
 
 fn print_threads():
     """Print thread block and thread indices."""
@@ -467,7 +467,7 @@ could perform a boundary check like this to ensure that it doesn't attempt to
 process out-of-bounds elements:
 
 ```mojo
-from gpu import global_idx
+from std.gpu import global_idx
 
 fn process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int):
     if global_idx.x < size:
