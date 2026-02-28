@@ -212,7 +212,7 @@ fn handles_errors() raises:  # Raises appears here for testing assertion
 
 
 fn test_scoped() raises:
-    from utils import Variant
+    from std.utils import Variant
 
     comptime StringOrInt = Variant[String, Int]
     var a: StringOrInt = 1
@@ -224,7 +224,7 @@ fn test_scoped() raises:
 
 
 fn test_mixed_types() raises:
-    from utils import Variant
+    from std.utils import Variant
 
     comptime MixedType = Variant[Int, Float64, String, Bool]
     var mixed_list = List[MixedType]()
