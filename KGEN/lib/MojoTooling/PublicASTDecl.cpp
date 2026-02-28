@@ -31,6 +31,13 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Extract @stable decorator information from an op into a StableInfo struct.
+static StableInfo computeStableInfo(StabilityDecoratorInterface itf) {
+  if (!itf.getHasStableDecorator())
+    return {};
+  return {/*isStable=*/true, itf.getSinceVersion().str()};
+}
+
 /// Parses compound trait types like "Representable & Copyable & Movable" into
 /// individual components. Returns a vector of individual trait names, or a
 /// single-element vector for non-compound types.
@@ -972,6 +979,8 @@ llvm::json::Object PublicAliasDecl::toJSON(MojoParserContext &ctx) const {
                          {"description", description},
                          {"kind", getKindAsString()},
                          {"name", getName().str()},
+                         {"isStable", stableInfo.isStable},
+                         {"sinceVersion", stableInfo.sinceVersion},
                          {"summary", summary},
                          {"parameters", toJSONArray(ctx, parameters)},
                          {"signature", getSignature(ctx)},
@@ -1071,6 +1080,8 @@ PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
         modulePath, getName(), shared.getDocsBasePath(),
         /*isAlias=*/true);
   }
+
+  stableInfo = computeStableInfo(aliasOp);
 
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
@@ -1255,6 +1266,8 @@ llvm::json::Object PublicFunctionDecl::toJSON(MojoParserContext &ctx) const {
       {"raises", raises()},
       {"raisesDoc", raisesDoc},
       {"signature", getSignature(ctx)},
+      {"isStable", stableInfo.isStable},
+      {"sinceVersion", stableInfo.sinceVersion},
       {"summary", summary},
   };
 
@@ -1290,6 +1303,7 @@ PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef)
   isDefFlag = funcOp.isDef();
   isInit = funcOp.getSpecialFunctionInfo().isInitializer();
   isDefaultImplFlag = funcOp.isDefaultedTraitFn();
+  stableInfo = computeStableInfo(funcOp);
 
   initFromSignature(declRef, funcOp.getFuncTypeGenerator(),
                     funcOp.getArgumentTypes(), funcOp.getUserResultType());
@@ -1677,6 +1691,8 @@ llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
       {"kind", getKindAsString()},
       {"name", getName().str()},
       {"parentTraits", std::move(parentTraitsWithMetadata)},
+      {"isStable", stableInfo.isStable},
+      {"sinceVersion", stableInfo.sinceVersion},
       {"summary", summary},
   };
 }
@@ -1686,6 +1702,9 @@ PublicTraitDecl::PublicTraitDecl(MojoASTDeclRef declRef)
                  declRef.getName().value_or(StringRef())),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef())),
       decl(declRef) {
+  auto traitOp = cast<TraitDeclOp>(declRef.getIfOperation());
+  stableInfo = computeStableInfo(traitOp);
+
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();
     description = DocString::formatDescription(docStr->getDescription());
@@ -1810,6 +1829,8 @@ llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
       {"parameters", toJSONArray(ctx, parameters)},
       {"parentTraits", std::move(parentTraitsWithMetadata)},
       {"signature", getSignature(ctx)},
+      {"isStable", stableInfo.isStable},
+      {"sinceVersion", stableInfo.sinceVersion},
       {"summary", summary},
       {"convention", toString(convention)},
   };
@@ -1823,6 +1844,7 @@ PublicStructDecl::PublicStructDecl(MojoASTDeclRef declRef)
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
   TypeSignatureType signature = structOp.getSignature();
   convention = structOp.getConvention();
+  stableInfo = computeStableInfo(structOp);
 
   auto &shared = *declRef.getShared();
   populatePublicParameterDecls(shared, signature.getInputParamTypes(),
