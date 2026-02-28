@@ -1,0 +1,49 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %parse-mojo-isolated %s 2>&1 | FileCheck %s
+
+# Test that '@parameter if' and '@parameter for' issue deprecation warnings.
+
+
+@fieldwise_init
+struct IterRange(Iterator, ImplicitlyCopyable):
+    comptime Element = Int
+
+    var value: Int
+
+    fn __iter__(self) -> Self:
+        return self
+
+    fn __next__(mut self) raises StopIteration -> Int:
+        if self.value <= 0:
+            raise StopIteration()
+        return self.value
+
+
+fn test_parameter_if[a: __mlir_type.i1]():
+    # CHECK: warning: '@parameter if' is deprecated, use 'comptime if' instead
+    @parameter
+    if a:
+        var inside: Int
+
+
+fn test_parameter_for[a: Int]():
+    # CHECK: warning: '@parameter for' is deprecated, use 'comptime for' instead
+    @parameter
+    for i in IterRange(a):
+        pass
+
+
+# Test that 'comptime if' and 'comptime for' do NOT issue deprecation warnings.
+# CHECK-NOT: '@parameter
+fn test_comptime_if[a: __mlir_type.i1]():
+    comptime if a:
+        var inside: Int
+
+fn test_comptime_for[a: Int]():
+    comptime for i in IterRange(a):
+        pass
