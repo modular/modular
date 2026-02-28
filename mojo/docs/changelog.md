@@ -249,6 +249,11 @@ what we publish.
 
 ### Library changes
 
+- `TString.write_to()` now uses a compact encoding for format strings. The
+  format string is flattened at compile time into NUL-terminated literal
+  segments, producing considerably smaller static data and faster runtime than
+  the previous struct-based precompiled entries.
+
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
 

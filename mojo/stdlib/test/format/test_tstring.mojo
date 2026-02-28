@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import assert_equal, assert_true, TestSuite
+from std.format.tstring import _encode_format_string
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
 @fieldwise_init
@@ -390,6 +391,109 @@ def test_tstring_multiline_concatenation() raises:
         String(tstring),
         "This is a multiline 10 tstring expression that will concatenate, 20!",
     )
+
+
+# =============================================================================
+# _encode_format_string tests
+# =============================================================================
+
+
+fn _encode(*strings: String) -> List[Byte]:
+    var result = List[Byte]()
+    for i in range(len(strings)):
+        for byte in strings[i].as_bytes():
+            result.append(byte)
+        result.append(0)
+    return result^
+
+
+def test_encode_plain_text() raises:
+    var got = _encode_format_string("Hello!")
+    var want = _encode("Hello!")
+    assert_equal(got, want)
+
+
+def test_encode_empty_string() raises:
+    # "" -> "\0"
+    assert_equal(_encode_format_string(""), _encode(""))
+
+
+def test_encode_single_replacement() raises:
+    # "Hello, {}!" -> "Hello, \0!\0"
+    assert_equal(_encode_format_string("Hello, {}!"), _encode("Hello, ", "!"))
+
+
+def test_encode_multiple_replacements() raises:
+    # "{} + {} = {}" -> "\0 + \0 = \0\0"
+    assert_equal(
+        _encode_format_string("{} + {} = {}"),
+        _encode("", " + ", " = ", ""),
+    )
+
+
+def test_encode_escaped_braces() raises:
+    # "{{braces}}" -> "{braces}\0"
+    assert_equal(_encode_format_string("{{braces}}"), _encode("{braces}"))
+
+
+def test_encode_blog_post_example() raises:
+    # "Hello, {}, {{I'm}} {}!" -> "Hello, \0, {I'm} \0!\0"
+    assert_equal(
+        _encode_format_string("Hello, {}, {{I'm}} {}!"),
+        _encode("Hello, ", ", {I'm} ", "!"),
+    )
+
+
+def test_encode_only_replacement_field() raises:
+    # "{}" -> "\0\0"
+    assert_equal(_encode_format_string("{}"), _encode("", ""))
+
+
+def test_encode_adjacent_replacements() raises:
+    # "{}{}{}" -> "\0\0\0\0"
+    assert_equal(_encode_format_string("{}{}{}"), _encode("", "", "", ""))
+
+
+def test_encode_only_escaped_braces() raises:
+    # "{{}}" -> "{}\0"
+    assert_equal(_encode_format_string("{{}}"), _encode("{}"))
+
+
+def test_encode_adjacent_escaped_braces() raises:
+    # "{{}}{{}}" -> "{}{}\0"
+    assert_equal(_encode_format_string("{{}}{{}}"), _encode("{}{}"))
+
+
+def test_encode_deeply_nested_escaped_braces() raises:
+    # "{{{{{}}}}}" -> "{{" + NUL (from {}) + "}}\0"
+    assert_equal(_encode_format_string("{{{{{}}}}}"), _encode("{{", "}}"))
+
+
+def test_encode_escaped_braces_adjacent_to_replacement() raises:
+    # "{{}}{}{{}}": escaped pair + replacement + escaped pair -> "{}\0{}\0"
+    assert_equal(_encode_format_string("{{}}{}{{}}"), _encode("{}", "{}"))
+
+
+def test_encode_replacement_at_start() raises:
+    # "{}tail" -> "\0tail\0"
+    assert_equal(_encode_format_string("{}tail"), _encode("", "tail"))
+
+
+def test_encode_replacement_at_end() raises:
+    # "head{}" -> "head\0\0"
+    assert_equal(_encode_format_string("head{}"), _encode("head", ""))
+
+
+def test_encode_errors() raises:
+    for invalid in ["hello }", "}}}", "}"]:
+        with assert_raises(contains="single '}'"):
+            _ = _encode_format_string(invalid)
+
+    for invalid in ["{0}", "{name}", "{abc", "{!r}", "{:.2f}", "{{{", "{}{"]:
+        with assert_raises(
+            contains="unclosed/non-empty replacement field in format string"
+        ):
+            _ = _encode_format_string(invalid)
 
 
 def main() raises:
