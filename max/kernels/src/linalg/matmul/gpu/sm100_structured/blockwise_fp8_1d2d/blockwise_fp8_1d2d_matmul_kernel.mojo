@@ -27,10 +27,9 @@ Architecture:
 """
 
 from math import ceildiv
-from memory import Pointer
 from sys import size_of
 
-from gpu import WARP_SIZE, block_idx, grid_dim, lane_id, thread_idx, warp_id
+from gpu import WARP_SIZE, thread_idx
 from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -39,31 +38,29 @@ from gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from gpu.sync import named_barrier, syncwarp
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout._layout import RowMajorLayout, TensorLayout
-from layout import ComptimeInt, RuntimeInt, TileTensor
-from layout.tma_async import SharedMemBarrier, TMATensorTile
+from layout._layout import TensorLayout
+from layout import TileTensor
 from ..structured_kernels.tile_types import (
-    GMEMTile,
     TMATile,
-    TmaOpType,
     static_row_major,
 )
 
-from utils.index import Index, IndexList
+from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.utils import elementwise_compute_lambda_type
 
 from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
 from ..structured_kernels.kernel_common import (
+    WarpRole1D1D,
     compute_tma_tile_dims,
     compute_accum_barrier_counts,
+    compute_input_consumer_count,
+    init_core_barriers,
 )
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
-    InputProducerStage,
+    ProducerTiles,
     InputConsumerStage,
     OutputTilePipeline,
     BlockwiseFP8TilePayload,
@@ -78,9 +75,6 @@ from .blockwise_fp8_1d2d_smem import BlockwiseFP8_1D2DSmem
 from ..grouped_block_scaled_1d1d.grouped_1d1d_tile_scheduler import (
     GroupedWorkIterator1D1D,
     GroupedWorkContext1D1D,
-)
-from ..grouped_block_scaled_1d1d.grouped_1d1d_matmul_kernel import (
-    WarpRole1D1D,
 )
 
 # Blockwise FP8 specific components
@@ -159,7 +153,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
-    # TMEM configuration
+    # TMEM configuration — stride matches MMA output width (1D2D variant).
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.MMA_N
 
@@ -210,15 +204,19 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        IndexList[2](Self.SmemType.BM, Self.SmemType.BK),  # A tile shape
-        IndexList[2](Self.SmemType.BN, Self.SmemType.BK),  # B tile shape
-        IndexList[2](1, Self.SmemType.BM),  # A-scales shape
-        Self.SmemType.num_pipeline_stages,
+        IndexList[2](
+            Self.SmemType.Core.BM, Self.SmemType.Core.BK
+        ),  # A tile shape
+        IndexList[2](
+            Self.SmemType.Core.BN, Self.SmemType.Core.BK
+        ),  # B tile shape
+        IndexList[2](1, Self.SmemType.Core.BM),  # A-scales shape
+        Self.SmemType.Core.num_pipeline_stages,
     ]
 
     comptime InputTilePipelineType = InputTilePipeline[
         Self.TilePayload,
-        Self.SmemType.num_group_pipeline_stages,
+        Self.SmemType.Core.num_group_pipeline_stages,
         Self.config.k_group_size,
     ]
 
@@ -246,13 +244,13 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     ]
 
     # ========== TMA Load Size Constants ==========
-    comptime a_expected_bytes = Self.SmemType.a_smem_layout.size() * size_of[
+    comptime a_expected_bytes = Self.SmemType.Core.a_smem_layout.size() * size_of[
         Self.a_type
     ]()
-    comptime b_expected_bytes = Self.SmemType.b_smem_layout.size() * size_of[
+    comptime b_expected_bytes = Self.SmemType.Core.b_smem_layout.size() * size_of[
         Self.b_type
     ]()
-    comptime a_scales_expected_bytes = Self.SmemType.a_scales_smem_layout.size() * size_of[
+    comptime a_scales_expected_bytes = Self.SmemType.Core.a_scales_smem_layout.size() * size_of[
         Self.a_scales_type
     ]()
     comptime input_expected_bytes = Self.cta_group * (
@@ -381,6 +379,51 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.c_type, Self.c_device_layout, MutAnyOrigin
     ]
 
+    # ========== Static Helper Methods ==========
+
+    @staticmethod
+    @always_inline
+    fn init_barriers(
+        elect_one_warp: Bool,
+        elect_one_thread: Bool,
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        a_scales_tma_op: Self.AScalesTmaOp,
+        input_barriers: Self.SmemType.Pipelines.InputBarriers,
+        accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
+        tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
+    ):
+        """Initialize barriers and prefetch TMA descriptors."""
+        if elect_one_warp and elect_one_thread:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+            a_scales_tma_op.prefetch_descriptor()
+
+            # Epilogue warps also consume A-scales from input pipeline.
+            init_core_barriers[
+                Self.num_group_pipeline_stages,
+                Self.num_accum_pipeline_stages,
+            ](
+                input_barriers.ptr,
+                Int32(
+                    compute_input_consumer_count[
+                        Self.CLUSTER_M,
+                        Self.CLUSTER_N,
+                        Self.cta_group,
+                        CLUSTER_SIZE = Self.CLUSTER_SIZE,
+                        epilogue_threads = WarpRole1D1D.NUM_EPILOGUE_THREADS,
+                    ]()
+                ),
+                accum_barriers.ptr,
+                Int32(Self.accum_pipeline_producer_arv_count),
+                Int32(Self.accum_pipeline_consumer_arv_count),
+                tmem_dealloc.ptr,
+                Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group),
+            )
+
+        fence_mbarrier_init()
+        cluster_sync()
+
     # ========== Kernel Entry Point ==========
 
     @staticmethod
@@ -464,39 +507,16 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         var num_k_iters = Int(ceildiv(Int(K), Self.BK))
 
         # ===== Barrier Initialization =====
-        if elect_one_warp and elect_one_thread:
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-            a_scales_tma_op.prefetch_descriptor()
-
-            # Initialize input pipeline barriers
-            # Include epilogue warps in consumer count (they also consume A-scales)
-            Self.InputTilePipelineType.init_barriers(
-                input_barriers.ptr,
-                Int32(1),
-                Int32(
-                    Self.config.cluster_shape[0] // Self.cta_group
-                    + Self.config.cluster_shape[1]
-                    - 1
-                    + Self.CLUSTER_SIZE
-                    * (WarpRole1D1D.NUM_EPILOGUE_THREADS // 32)
-                ),
-            )
-
-            # Initialize output pipeline barriers
-            Self.OutputPipeline.init_barriers(
-                accum_barriers.ptr,
-                Int32(Self.accum_pipeline_producer_arv_count),
-                Int32(Self.accum_pipeline_consumer_arv_count),
-            )
-
-            # Initialize TMEM deallocation barrier
-            smem.pipelines.tmem_dealloc().ptr[].init(
-                Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group)
-            )
-
-        fence_mbarrier_init()
-        cluster_sync()
+        Self.init_barriers(
+            elect_one_warp,
+            elect_one_thread,
+            a_tma_op,
+            b_tma_op,
+            a_scales_tma_op,
+            input_barriers,
+            accum_barriers,
+            smem.pipelines.tmem_dealloc(),
+        )
 
         var mma_op = Self.MmaOp()
 
@@ -569,10 +589,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
                                 )
 
                                 var input_tiles = (
-                                    input_pipeline.acquire_consumer_linear()
+                                    input_pipeline.acquire_consumer()
                                 )
                                 Self.mma(input_tiles, mma_op, tmem_offset)
-                                input_tiles.release()
+                                input_tiles^.release()
 
         # ===== EPILOGUE WARPS =====
         if WarpRole1D1D.is_epilogue():
@@ -661,10 +681,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
         a_scales_tma_op: Self.AScalesTmaOp,
-        tiles: InputProducerStage[
+        tiles: ProducerTiles[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -747,7 +767,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         tiles: InputConsumerStage[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         mma_op: Self.MmaOp,

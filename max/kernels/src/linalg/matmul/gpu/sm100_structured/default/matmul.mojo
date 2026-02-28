@@ -675,6 +675,8 @@ fn matmul_sm100_fallback[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
+    # Fallback kernel uses actual computed SMEM (not b200_smem hardware max)
+    # because it's a simple non-pipelined kernel without CLC/TMEM overhead.
     comptime smem_use = (
         BM * size_of[a_type]() + BN * size_of[b_type]()
     ) * BK + 24

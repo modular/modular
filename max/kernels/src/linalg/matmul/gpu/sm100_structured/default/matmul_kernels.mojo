@@ -40,10 +40,9 @@ from gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
-    elect_one_sync_with_mask,
 )
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from gpu import block_idx, lane_id, thread_idx
 from gpu import warp_id as get_warp_id
 from gpu.memory import (
     AddressSpace,
@@ -69,9 +68,7 @@ from layout._layout import (
 from builtin.variadics import Variadic
 from layout.coord import Coord, Idx, coord
 from ..structured_kernels.tile_types import (
-    GMEMTile,
     TMATile,
-    TmaOpType,
     static_row_major,
     tma_desc_layout_3d,
 )
@@ -97,18 +94,12 @@ from ..structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
     StandardTilePayload,
-    InputProducerStage,
-    InputConsumerStage,
-    InputProducer,
-    InputConsumer,
+    ProducerTiles,
+    ConsumerTiles,
     OutputTilePipeline,
 )
 from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
 from ..structured_kernels.pipeline_storage import (
-    InputPipelineStorage,
-    OutputPipelineStorage,
-    ClcPipelineStorage,
-    TmemDeallocStorage,
     StandardTileStorage,
     OutputTileStorage,
     SmemPipelineBundle,
@@ -127,9 +118,7 @@ from ..structured_kernels.tile_scheduler_splitk import (
 from linalg.structuring import (
     SMemPtr,
     SMemTile,
-    SMemTileIter,
     SMemTileArray,
-    SMemArray,
 )
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
@@ -137,7 +126,11 @@ from linalg.matmul.gpu.profiler import MatmulProfileWarp
 from ..structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
-    consumer_main_loop,
+    compute_clc_barrier_counts,
+    compute_accum_barrier_counts,
+    compute_input_consumer_count,
+    init_core_barriers,
+    init_clc_barriers,
 )
 
 # Import output pipeline from output_writer module
@@ -371,7 +364,7 @@ struct BlackwellMatmulSM100Kernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
-    # TMEM configuration
+    # TMEM configuration — divide all 512 columns evenly among accum stages.
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.NUM_TMEM_COLS // Self.num_accum_pipeline_stages
 
@@ -384,14 +377,24 @@ struct BlackwellMatmulSM100Kernel[
 
     # ========== Barrier Arrival Counts ==========
 
-    comptime clc_producer_arv_count = 1
-    comptime clc_consumer_arv_count = Self.SCHEDULER_THREADS + Self.CLUSTER_SIZE * (
-        Self.TMA_LOAD_THREADS + Self.MMA_THREADS + Self.EPILOGUE_THREADS
-    )
-    comptime clc_throttle_producer_arv_count = Self.TMA_LOAD_THREADS
-    comptime clc_throttle_consumer_arv_count = Self.SCHEDULER_THREADS
-    comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = Self.cta_group * Self.EPILOGUE_THREADS
+    comptime _clc_barrier_counts = compute_clc_barrier_counts[
+        Self.SCHEDULER_THREADS,
+        Self.TMA_LOAD_THREADS,
+        Self.MMA_THREADS,
+        Self.EPILOGUE_THREADS,
+        Self.CLUSTER_SIZE,
+        Self.cta_group,
+    ]()
+    comptime clc_producer_arv_count = Self._clc_barrier_counts[0]
+    comptime clc_consumer_arv_count = Self._clc_barrier_counts[1]
+    comptime clc_throttle_producer_arv_count = Self._clc_barrier_counts[2]
+    comptime clc_throttle_consumer_arv_count = Self._clc_barrier_counts[3]
+
+    comptime _accum_barrier_counts = compute_accum_barrier_counts[
+        Self.EPILOGUE_THREADS, Self.cta_group
+    ]()
+    comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
+    comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
     # ========== Shared Memory Layout Types ==========
 
@@ -695,36 +698,35 @@ struct BlackwellMatmulSM100Kernel[
         entry point before calling this method.
         """
         if ctx.elect_one_warp and ctx.elect_one_thread:
-            # Initialize pipeline barriers
-            Self.InputTilePipeline.init_barriers(
+            init_core_barriers[
+                Self.num_group_pipeline_stages,
+                Self.num_accum_pipeline_stages,
+            ](
                 input_barriers.ptr,
-                Int32(1),
                 Int32(
-                    Self.config.cluster_shape[0] // Self.config.cta_group
-                    + Self.config.cluster_shape[1]
-                    - 1
+                    compute_input_consumer_count[
+                        Self.CLUSTER_M, Self.CLUSTER_N, Self.cta_group
+                    ]()
                 ),
-            )
-            Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
-                Self.accum_pipeline_producer_arv_count,
+                Int32(Self.accum_pipeline_producer_arv_count),
                 Int32(Self.accum_pipeline_consumer_arv_count),
+                tmem_dealloc.ptr,
+                Int32(Self.EPILOGUE_THREADS * Self.cta_group),
             )
+
             Self.Scheduler.init_throttle_barriers(
                 clc_throttle.ptr,
                 Int32(Self.clc_throttle_producer_arv_count),
                 Int32(Self.clc_throttle_consumer_arv_count),
             )
 
-            # Initialize TMEM deallocation barrier
-            tmem_dealloc.ptr[].init(
-                Int32(Self.EPILOGUE_THREADS * Self.config.cta_group)
+            init_clc_barriers[Self.num_clc_pipeline_stages](
+                clc_full.ptr,
+                clc_empty.ptr,
+                Int32(Self.clc_producer_arv_count),
+                Int32(Self.clc_consumer_arv_count),
             )
-
-            # Initialize CLC barriers
-            comptime for i in range(Self.config.num_clc_pipeline_stages):
-                clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
         fence_mbarrier_init()
         cluster_sync()
@@ -736,7 +738,7 @@ struct BlackwellMatmulSM100Kernel[
         //,
     ](
         tmem_stage: Self.OutputPipeline.Stage.Tmem,
-        tiles: InputConsumerStage[
+        tiles: ConsumerTiles[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
@@ -757,7 +759,7 @@ struct BlackwellMatmulSM100Kernel[
 
         Args:
             tmem_stage: TMEM stage for accumulators.
-            tiles: InputConsumerStage context with encapsulated tile access.
+            tiles: ConsumerTiles context with encapsulated tile access.
             mma_op: The MMA operation instance.
             elect_one_warp: Whether this warp should execute.
             iter_idx: K iteration index.
@@ -790,7 +792,7 @@ struct BlackwellMatmulSM100Kernel[
     ](
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
-        tiles: InputProducerStage[
+        tiles: ProducerTiles[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
@@ -896,7 +898,7 @@ struct BlackwellMatmulSM100Kernel[
             Self.BDescLayout_splitk,
             cta_group = Self.cta_group,
         ],
-        tiles: InputProducerStage[
+        tiles: ProducerTiles[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
@@ -918,7 +920,7 @@ struct BlackwellMatmulSM100Kernel[
         Args:
             a_loader: TileLoader for A matrix (2D).
             b_loader: TileLoader for B matrix (2D).
-            tiles: InputProducerStage context with encapsulated tile access.
+            tiles: ProducerTiles context with encapsulated tile access.
             iter_idx: K iteration index (base index).
             work_m_coord: M coordinate of the output tile.
             work_n_coord: N coordinate of the output tile.

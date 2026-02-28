@@ -82,8 +82,8 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
     InputTilePipeline,
     StandardTilePayload,
-    InputProducerStage,
-    InputConsumerStage,
+    ProducerTiles,
+    ConsumerTiles,
     InputProducer,
     InputConsumer,
     OutputTilePipeline,
@@ -466,7 +466,7 @@ struct Conv2dFpropKernel[
         //,
     ](
         tmem_stage: Self.OutputPipeline.Stage.Tmem,
-        tiles: InputConsumerStage[
+        tiles: ConsumerTiles[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,
@@ -588,7 +588,7 @@ struct Conv2dFpropKernel[
             Self.FilterTmaOp.desc_layout,
             cta_group = Self.cta_group,
         ],
-        tiles: InputProducerStage[
+        tiles: ProducerTiles[
             tiles_origin,
             Self.TilePayload,
             Self.SmemType.num_group_pipeline_stages,

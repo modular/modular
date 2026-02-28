@@ -14,6 +14,14 @@
 
 This module provides configuration structs for SM100 (Blackwell) GPU matmul
 operations, including standard matmul and block-scaled matmul variants.
+
+Two config types share 17 common fields (tile shapes, pipeline stages,
+swizzle modes, etc.) and the same `__init__` helpers (`_compute_block_tile_shape`,
+`_compute_output_tile_shape`, `_compute_swizzle_modes`, `_maximize_pipeline_stages`).
+BlockScaledMatmulConfig extends this with 3 scaling-specific fields
+(`scaling_kind`, `vec_sf_size`, `num_sf_k_tiles`). Each has its own heuristic
+(`choose_config` / `choose_block_scaled_config`) because the valid MMA shape
+ranges and alignment requirements differ between standard and scaled kernels.
 """
 
 from bit import next_power_of_two
@@ -49,8 +57,16 @@ struct OutputPipelineConfig(Copyable, Equatable, TrivialRegisterPassable):
     Bundles the three parameters that jointly define TMEM accumulator
     stage management for MMA/epilogue synchronization:
     - num_stages: Number of accumulator pipeline stages (typically 1 or 2).
-    - stage_stride_cols: TMEM column stride between stages.
+    - stage_stride_cols: TMEM column stride between accumulator stages.
     - cta_group: CTA group size (1 or 2).
+
+    **stage_stride_cols computation**: Two strategies are used depending on
+    the kernel family:
+    - Standard kernels (default, blockwise_fp8): `NUM_TMEM_COLS // num_stages`
+      (= 512 // stages). Divides all 512 TMEM columns evenly among stages.
+    - Block-scaled kernels (block_scaled, grouped, 1d1d variants): `MMA_N`.
+      Sizes each stage to match the MMA output width, which may be smaller
+      than half of TMEM when MMA_N < 256.
 
     Constructed once per kernel struct and propagated to all pipeline
     types (OutputTilePipeline, warp contexts, TileWriter, etc.).
@@ -237,9 +253,9 @@ struct MatmulConfig[
     var block_swizzle_size: Int
     var raster_order: RasterOrder
 
-    comptime accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
+    comptime accum_type = get_accum_type[Self.a_type]()
 
-    # Has default values or derivible from mandatory parameters
+    # Has default values or derivable from mandatory parameters
     var block_tile_shape: IndexList[3]
     var num_split_k: Int
     var num_pipeline_stages: Int
@@ -539,11 +555,11 @@ struct BlockScaledMatmulConfig[
     var block_swizzle_size: Int
     var raster_order: RasterOrder
 
-    comptime accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
+    comptime accum_type = get_accum_type[Self.a_type]()
 
     comptime sf_block_atom_size = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
 
-    # Has default values or derivible from mandatory parameters
+    # Has default values or derivable from mandatory parameters
     var block_tile_shape: IndexList[3]
     var num_split_k: Int
     var num_pipeline_stages: Int

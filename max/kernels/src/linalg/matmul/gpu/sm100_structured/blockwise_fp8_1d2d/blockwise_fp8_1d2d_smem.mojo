@@ -21,23 +21,14 @@ standard BlockwiseFP8Smem:
 2. Uses SmemPipelineBundleNoClc instead of SmemPipelineBundle
 3. Otherwise identical tile storage (A, B, C, A-scales)
 
-The 1D-1D layout uses:
-- A tensor: Contiguous (total_tokens, K) with a_offsets for per-group access
-- B tensor: Batched (num_experts * N, K) weights
-- C tensor: Contiguous (total_tokens, N) output
+Tile storage is shared via BlockwiseFP8TileCore from blockwise_fp8_smem.mojo.
 """
 
 from gpu.memory import AddressSpace
-from layout import Layout
-from utils.index import IndexList
 
+from ..blockwise_fp8.blockwise_fp8_smem import BlockwiseFP8TileCore
 from ..structured_kernels.config import MatmulConfig
-from ..structured_kernels.pipeline_storage import (
-    BlockwiseFP8TileStorage,
-    SmemPipelineBundleNoClc,
-    SmemLayouts,
-)
-from ..structured_kernels.tile_pipeline import BlockwiseFP8TilePayload
+from ..structured_kernels.pipeline_storage import SmemPipelineBundleNoClc
 
 
 struct BlockwiseFP8_1D2DSmem[
@@ -49,137 +40,78 @@ struct BlockwiseFP8_1D2DSmem[
     *,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
 ]:
-    """SMEM struct for blockwise FP8 1D2D matmul: A/B tiles, A-scales, C output, barriers.
+    """SMEM struct for blockwise FP8 1D2D matmul without CLC scheduler.
 
-    Uses SmemPipelineBundleNoClc (no CLC scheduler) for 3-warp specialization.
-    Otherwise identical to BlockwiseFP8Smem in tile storage layout.
+    Thin wrapper over BlockwiseFP8TileCore + SmemPipelineBundleNoClc.
+    Uses 3-warp specialization (Load, MMA, Epilogue) without a scheduler warp.
     """
 
-    # ========== Derived Constants ==========
-    comptime BM = Self.config.block_tile_shape[0]
-    comptime BN = Self.config.block_tile_shape[1]
-    comptime BK = Self.config.block_tile_shape[2]
-    comptime OutputM = Self.config.output_tile_shape[0]
-    comptime OutputN = Self.config.output_tile_shape[1]
-    comptime MMA_M = Self.config.mma_shape[0]
-    comptime MMA_N = Self.config.mma_shape[1]
-
-    # Pipeline stage counts
-    comptime num_pipeline_stages = Self.config.num_pipeline_stages
-    comptime num_group_pipeline_stages = (
-        Self.num_pipeline_stages // Self.config.k_group_size
-    )
-    comptime num_output_stages = Self.config.num_output_stages
-    comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
-
-    # ========== Layout Definitions ==========
-    comptime Layouts = SmemLayouts[
-        Self.a_type,
-        Self.b_type,
-        Self.BM,
-        Self.BN,
-        Self.BK,
-        Self.OutputM,
-        Self.OutputN,
-        Self.config.a_swizzle,
-        Self.config.b_swizzle,
-        Self.transpose_b,
-    ]
-    comptime a_smem_layout = Self.Layouts.a_smem_layout
-    comptime b_smem_layout = Self.Layouts.b_smem_layout
-    comptime c_smem_layout = Self.Layouts.c_smem_layout
-
-    # A-scales layout: 1D row vector with BM elements (one scale per row)
-    comptime a_scales_smem_layout = Layout.row_major(1, Self.BM)
-
-    # ========== Tile Storage (Single Source of Truth) ==========
-    # Combined storage preserves SMEM layout: a, b, c, a_scales
-    comptime Tiles = BlockwiseFP8TileStorage[
+    # ========== Core (tile storage + constants) ==========
+    comptime Core = BlockwiseFP8TileCore[
         Self.a_type,
         Self.b_type,
         Self.c_type,
         Self.a_scales_type,
-        IndexList[2](Self.BM, Self.BK),  # A tile shape
-        IndexList[2](Self.BN, Self.BK),  # B tile shape
-        Self.OutputM,
-        Self.OutputN,
-        IndexList[2](1, Self.BM),  # A-scales shape
-        Self.num_pipeline_stages,
-        Self.num_output_stages,
+        Self.transpose_b,
+        config = Self.config,
     ]
 
-    # Re-export tile array types
-    comptime ATileArray = Self.Tiles.ATileArray
-    comptime BTileArray = Self.Tiles.BTileArray
-    comptime CTileArray = Self.Tiles.CTileArray
-    comptime AScalesTileArray = Self.Tiles.AScalesTileArray
+    # ========== Storage Fields ==========
+    var core: Self.Core
 
-    # ========== Tile Storage Field ==========
-    var tiles: Self.Tiles
-
-    # ========== Tile Accessors (TileTensor - Delegated) ==========
-    @always_inline
-    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
-        """Get A tile array accessor."""
-        return self.tiles.a_tiles()
-
-    @always_inline
-    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
-        """Get B tile array accessor."""
-        return self.tiles.b_tiles()
-
-    @always_inline
-    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
-        """Get C tile array accessor."""
-        return self.tiles.c_tiles()
-
-    @always_inline
-    fn a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
-        """Get A-scales tile array accessor."""
-        return self.tiles.a_scales_tiles()
-
-    # ========== Pipeline Storage (Composed Bundle, no CLC) ==========
+    # ========== Pipeline Storage (no CLC) ==========
     comptime Pipelines = SmemPipelineBundleNoClc[
-        Self.num_group_pipeline_stages,
-        Self.num_accum_pipeline_stages,
-        BlockwiseFP8TilePayload[
-            Self.a_type,
-            Self.b_type,
-            Self.a_scales_type,
-            IndexList[2](Self.BM, Self.BK),  # A tile shape
-            IndexList[2](Self.BN, Self.BK),  # B tile shape
-            IndexList[2](1, Self.BM),  # A-scales shape
-            Self.num_pipeline_stages,
-        ],
+        Self.Core.num_group_pipeline_stages,
+        Self.Core.num_accum_pipeline_stages,
+        Self.Core.Payload,
     ]
     var pipelines: Self.Pipelines
 
-    # ========== Size Utilities ==========
+    # ========== Tile Accessors (forwarding) ==========
+    @always_inline
+    fn a_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.ATileArray:
+        """Get A tile array accessor."""
+        return self.core.a_tiles()
+
+    @always_inline
+    fn b_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.BTileArray:
+        """Get B tile array accessor."""
+        return self.core.b_tiles()
+
+    @always_inline
+    fn c_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.CTileArray:
+        """Get C tile array accessor."""
+        return self.core.c_tiles()
+
+    @always_inline
+    fn a_scales_tiles(
+        ref[AddressSpace.SHARED] self,
+    ) -> Self.Core.AScalesTileArray:
+        """Get A-scales tile array accessor."""
+        return self.core.a_scales_tiles()
+
+    # ========== Size Utilities (forwarding) ==========
     @staticmethod
     @always_inline
     fn ab_pipeline_size() -> Int:
         """Total size of A+B tiles for all pipeline stages (in elements)."""
-        return Self.ATileArray.num_elements + Self.BTileArray.num_elements
+        return Self.Core.ab_pipeline_size()
 
     @staticmethod
     @always_inline
     fn a_scales_pipeline_size() -> Int:
         """Total size of A-scales tiles for all pipeline stages (in elements).
         """
-        return Self.AScalesTileArray.num_elements
+        return Self.Core.a_scales_pipeline_size()
 
     @staticmethod
     @always_inline
     fn c_output_size() -> Int:
         """Size of C tiles for all output stages (in elements)."""
-        return Self.CTileArray.num_elements
+        return Self.Core.c_output_size()
 
     @staticmethod
     @always_inline
     fn total_tile_size() -> Int:
         """Total tile storage size (A+B+A-scales+C) in elements."""
-        return (
-            Self.ab_pipeline_size()
-            + Self.a_scales_pipeline_size()
-            + Self.c_output_size()
-        )
+        return Self.Core.total_tile_size()
