@@ -1501,13 +1501,13 @@ fn elementwise[
     @parameter
     fn description_fn() -> String:
         var shape_str = trace_arg("shape", shape)
-        var vector_width_str = String("vector_width=", simd_width)
+        var vector_width_str = String(t"vector_width={simd_width}")
 
         return ";".join(Span([shape_str, vector_width_str]))
 
     # Intern the kind string as a static string so we don't allocate.
     comptime d = _trace_description
-    comptime desc = String("(", d, ")") if d else ""
+    comptime desc = String(t"({d})") if d else ""
     comptime kind = get_static_string["elementwise", desc]()
 
     with Trace[TraceLevel.OP, target=target](

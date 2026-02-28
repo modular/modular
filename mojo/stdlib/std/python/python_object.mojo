@@ -591,7 +591,7 @@ struct PythonObject(
     ) raises:
         var callable_obj: PythonObject
         try:
-            callable_obj = self.__getattr__(String("__i", method_name[2:]))
+            callable_obj = self.__getattr__(t"__i{method_name[2:]}")
         except:
             self = self.__getattr__(method_name^)(rhs)
         else:
@@ -1622,7 +1622,7 @@ struct PythonObject(
             writer.write(String(py=self))
         except e:
             # TODO: make this method raising when we can raise parametrically.
-            abort(String("failed to write PythonObject to writer: ", e))
+            abort(t"failed to write PythonObject to writer: {e}")
 
     # ===-------------------------------------------------------------------===#
     # Methods

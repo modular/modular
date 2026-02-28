@@ -802,7 +802,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             This dtype's name.
         """
-        return String("DeviceBuffer[", Self.dtype, "]")
+        return t"DeviceBuffer[{Self.dtype}]"
 
     comptime _DevicePtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     # _device_ptr must be the first word in the struct to enable passing of
@@ -1340,7 +1340,7 @@ struct DeviceBuffer[dtype: DType](
                     )
                 writer.write(")")
         except e:
-            abort(String("failed to write DeviceBuffer:", e))
+            abort(t"failed to write DeviceBuffer:{e}")
 
     fn __str__(self) -> String:
         """Returns a string representation of the `DeviceBuffer`.

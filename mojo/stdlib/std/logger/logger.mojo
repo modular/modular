@@ -207,7 +207,7 @@ struct Level(
             String: A string representation including the type name and level
                 value (e.g., "Level.DEBUG").
         """
-        return String("Level.", self)
+        return t"Level.{self}"
 
 
 # ===-----------------------------------------------------------------------===#

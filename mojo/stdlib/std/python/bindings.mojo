@@ -229,7 +229,7 @@ fn _tp_repr_wrapper[
                 " Representable"
             )
     else:
-        repr_str = String("<uninitialized ", get_type_name[T](), ">")
+        repr_str = t"<uninitialized {get_type_name[T]()}>"
 
     return cpython.PyUnicode_DecodeUTF8(repr_str)
 

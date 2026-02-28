@@ -664,9 +664,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             # Check if an error occurred during the 2nd `dlsym` call.
             var err = dlerror()
             if err:
-                abort(
-                    String("dlsym failed: ", String(unsafe_from_utf8_ptr=err))
-                )
+                abort(t"dlsym failed: {String(unsafe_from_utf8_ptr=err)}")
 
         return res
 
@@ -722,7 +720,7 @@ fn _get_dylib_function[
     func_name: StaticString,
     result_type: __TypeOfAllTypes,
 ]() raises -> result_type:
-    var func_cache_name = String(dylib_global.name, "/", func_name)
+    var func_cache_name = String(t"{dylib_global.name}/{func_name}")
     var func_ptr = _get_global_or_null(func_cache_name)
     if func_ptr:
         var result = UnsafePointer(to=func_ptr).bitcast[result_type]()[]

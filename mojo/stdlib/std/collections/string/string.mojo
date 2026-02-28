@@ -2147,7 +2147,7 @@ fn chr(c: Int) -> String:
     var char_opt = Codepoint.from_u32(UInt32(c))
     if not char_opt:
         # TODO: Raise ValueError instead.
-        abort(String("chr(", c, ") is not a valid Unicode codepoint"))
+        abort(t"chr({c}) is not a valid Unicode codepoint")
 
     # SAFETY: We just checked that `char` is present.
     return String(char_opt.unsafe_value())
@@ -2229,9 +2229,9 @@ fn ascii(value: StringSlice) -> String:
         use_dquote = use_dquote or (char == ord_squote)
 
     if use_dquote:
-        return String('"', result, '"')
+        return t'"{result}"'
     else:
-        return String("'", result, "'")
+        return t"'{result}'"
 
 
 # ===----------------------------------------------------------------------=== #

@@ -725,7 +725,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The host type's name.
         """
-        return String("IndexList[", Self.size, ",", Self.element_type, "]")
+        return t"IndexList[{Self.size},{Self.element_type}]"
 
 
 # ===-----------------------------------------------------------------------===#

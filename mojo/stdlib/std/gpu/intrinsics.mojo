@@ -564,7 +564,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
         Returns:
             A string representation of the memory scope.
         """
-        return String("Scope(", self, ")")
+        return t"Scope({self})"
 
     @always_inline("nodebug")
     fn mnemonic(self) -> StaticString:

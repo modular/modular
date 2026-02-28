@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.collections.string.format import _FormatUtils, _comptime_list_to_span
+from std.sys import is_compile_time
 from std.utils import Variant
 import std.format._utils as fmt
 
@@ -53,25 +54,17 @@ struct TString[
     fn __init__(out self, *, var pack: Self._InjectedValues):
         self._values = pack^
 
-    fn write_to(self, mut writer: Some[Writer]):
-        """Write the formatted string to a writer.
-
-        This method implements the `Writable` trait by formatting the TString's
-        template with its interpolated values and writing the result to the
-        provided writer. The format string is compiled at compile-time for
-        optimal performance.
-
-        Args:
-            writer: The writer to output the formatted string to.
-        """
-        comptime bytes = _encode_format_string_comptime[Self.format_string]()
-        var span = _comptime_list_to_span[bytes]()
-
+    @always_inline
+    fn _write_to_impl(
+        self, mut writer: Some[Writer], encoded_bytes: Span[mut=False, Byte]
+    ):
         var offset = 0
 
         @always_inline
-        fn write_string() unified {read span, read offset, mut writer} -> Int:
-            var literal_start = span.unsafe_ptr() + offset
+        fn write_string() unified {
+            read encoded_bytes, read offset, mut writer
+        } -> Int:
+            var literal_start = encoded_bytes.unsafe_ptr() + offset
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
                 ptr=literal_start, length=literal_length
@@ -88,6 +81,24 @@ struct TString[
 
         # Write the final string literal part.
         _ = write_string()
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write the formatted string to a writer.
+
+        This method implements the `Writable` trait by formatting the TString's
+        template with its interpolated values and writing the result to the
+        provided writer. The format string is compiled at compile-time for
+        optimal performance.
+
+        Args:
+            writer: The writer to output the formatted string to.
+        """
+        comptime bytes = _encode_format_string_comptime[Self.format_string]()
+        if is_compile_time():
+            self._write_to_impl(writer, materialize[bytes]())
+        else:
+            var span = _comptime_list_to_span[bytes]()
+            self._write_to_impl(writer, span)
 
     @no_inline
     fn write_repr_to(self, mut writer: Some[Writer]):

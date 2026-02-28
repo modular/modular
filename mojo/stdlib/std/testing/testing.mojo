@@ -45,7 +45,7 @@ from std.utils._ansi import Color, Text
 
 @always_inline
 fn _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
-    return Error(loc.prefix(String("AssertionError: ", msg)))
+    return Error(loc.prefix(t"AssertionError: {msg}"))
 
 
 @always_inline

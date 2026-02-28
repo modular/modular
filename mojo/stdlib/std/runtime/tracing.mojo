@@ -358,7 +358,7 @@ fn trace_arg(name: String, shape: IndexList, dtype: DType) -> String:
     Returns:
         A string representation of the argument with its shape and data type.
     """
-    return String(trace_arg(name, shape), "x", dtype)
+    return t"{trace_arg(name, shape)}x{dtype}"
 
 
 # ===-----------------------------------------------------------------------===#

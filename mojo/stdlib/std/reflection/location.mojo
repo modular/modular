@@ -110,7 +110,7 @@ struct SourceLocation(TrivialRegisterPassable, Writable):
         Returns:
             A string in the format "At file:line:col: msg".
         """
-        return String("At ", self, ": ", msg)
+        return t"At {self}: {msg}"
 
     fn write_to(self, mut writer: Some[Writer]):
         """

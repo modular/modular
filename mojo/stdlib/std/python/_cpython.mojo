@@ -1445,7 +1445,7 @@ struct CPython(Defaultable, Movable):
             if file_dir == "" and not python_path:
                 file_dir = ":"
             if python_path:
-                _ = setenv("PYTHONPATH", String(file_dir, ":", python_path))
+                _ = setenv("PYTHONPATH", t"{file_dir}:{python_path}")
             else:
                 _ = setenv("PYTHONPATH", file_dir)
 
@@ -1475,7 +1475,7 @@ struct CPython(Defaultable, Movable):
                 # If the library is not present in the current process, try to load it from the environment variable.
                 self.lib = OwnedDLHandle(python_lib)
         except e:
-            abort(String("Failed to load libpython from", python_lib, ":\n", e))
+            abort(t"Failed to load libpython from {python_lib}:\n{e}")
 
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):

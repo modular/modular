@@ -254,7 +254,7 @@ struct Format(ImplicitlyCopyable, Writable):
                 ", ",
                 Format.table,
             )
-            abort(String("Invalid format option: ", value, valid_formats))
+            abort(t"Invalid format option: {value}{valid_formats}")
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
@@ -651,7 +651,7 @@ struct Bench(Writable):
             # In case of running this binary with mpirun, all the outputs
             # will be written to -o output_file unless a distinct suffix is
             # added to each output.
-            self.append_output_suffix(suffix=String("_", pe_rank))
+            self.append_output_suffix(suffix=t"_{pe_rank}")
         return pe_rank
 
     fn append_output_suffix(mut self, suffix: String):
@@ -1171,7 +1171,7 @@ struct Bench(Writable):
 
             # TODO: remove when kbench adds the spec column
             if self.config.format == Format.csv:
-                name = String('"', run.name, '"')
+                name = String(t'"{run.name}"')
             else:
                 name = run.name
 
