@@ -338,6 +338,8 @@ PIPELINE_SPECS = [
         devices = spec["devices"],
         encoding = spec["encoding"],
         pipeline = spec["model_path"],
+        # External CI does not have our pre-warmed model cache
+        tags = ["skip-external-ci"],
         target = spec["target"],
     )
     for spec in PIPELINE_SPECS
