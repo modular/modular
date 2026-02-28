@@ -80,17 +80,9 @@ fn block_reduce[
         1, dtype, address_space = AddressSpace.SHARED
     ]()
 
-    var tid = thread_idx.x
-    for i in range(tid, max_warps_per_block, block_dim.x):
-        m2_shared[i] = 0
-
-    if tid == 0:
-        m2_broadcast[0] = 0
-
-    barrier()
-
     var warp_m2 = warp.sum(val)
 
+    var tid = thread_idx.x
     var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane_idx = lane_id()
 
@@ -101,7 +93,9 @@ fn block_reduce[
     if warp_id == 0:
         var block_m2 = Scalar[dtype](0)
 
-        if lane_idx < UInt(max_warps_per_block):
+        # Only read lanes corresponding to active warps to avoid
+        # reading uninitialized shared memory.
+        if lane_idx < block_dim.x // UInt(WARP_SIZE):
             block_m2 = m2_shared[lane_idx]
 
         # On some GPUs, the warp-level reduction implicitly requires all lanes
@@ -843,14 +837,11 @@ fn _rms_norm_warp_tiling_subkernel[
     row: Int,
     idx: Int,
     vec_data: SIMD[accum_type, simd_width],
-    gamma: TileTensor[dtype, ...],
+    gamma_val: SIMD[dtype, simd_width],
     epsilon: Scalar[accum_type],
     weight_offset: Scalar[accum_type],
     num_cols: Int,
 ) -> SIMD[dtype, simd_width]:
-    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
-    comptime align = align_of[SIMD[dtype, simd_width]]()
-
     # To utilize simd vector load.
     var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
 
@@ -867,10 +858,6 @@ fn _rms_norm_warp_tiling_subkernel[
     var norm_factor = rsqrt((row_m2 / Scalar[accum_type](num_cols)) + epsilon)
     var norm_val: SIMD[dtype, simd_width] = 0
     if idx < num_cols:
-        var gamma_val = gamma.load[width=simd_width, alignment=align](
-            Coord(Idx(idx))
-        )
-
         comptime if multiply_before_cast:
             var gamma_accum = gamma_val.cast[accum_type]() + weight_offset
             norm_val = (vec_data * norm_factor * gamma_accum).cast[dtype]()
@@ -924,10 +911,15 @@ fn rms_norm_gpu_warp_tiling_128[
     var idx = local_tid * UInt(simd_width)
 
     with PDL():
+        var gamma_val = SIMD[dtype, simd_width](0)
         if row < UInt(num_rows) and idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
                 accum_type
             ]()
+            # Prefetch gamma before reduction to overlap load with compute.
+            gamma_val = gamma.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
 
         var norm_val = _rms_norm_warp_tiling_subkernel[
             warps_per_block, multiply_before_cast, rows_per_warp=2
@@ -935,7 +927,7 @@ fn rms_norm_gpu_warp_tiling_128[
             Int(row),
             Int(idx),
             vec_data,
-            gamma,
+            gamma_val,
             eps_accum,
             weight_offset_accum,
             num_cols,
@@ -979,10 +971,15 @@ fn rms_norm_gpu_warp_tiling[
     var idx = tid * UInt(simd_width)
 
     with PDL():
+        var gamma_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
                 accum_type
             ]()
+            # Prefetch gamma before reduction to overlap load with compute.
+            gamma_val = gamma.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
 
         var norm_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
@@ -990,7 +987,7 @@ fn rms_norm_gpu_warp_tiling[
             Int(row),
             Int(idx),
             vec_data,
-            gamma,
+            gamma_val,
             eps_accum,
             weight_offset_accum,
             num_cols,
@@ -1507,7 +1504,9 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     num_cols: Int,
 ):
     comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
+    comptime assert gamma1.flat_rank == 1, "gamma1 must have flat_rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
+    comptime assert gamma2.flat_rank == 1, "gamma2 must have flat_rank 1"
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1523,8 +1522,13 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     var idx = tid * UInt(simd_width)
 
     with PDL():
+        var gamma1_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx))
+            # Prefetch gamma1 before reduction to overlap load with compute.
+            gamma1_val = gamma1.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
 
         var norm1_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
@@ -1532,15 +1536,20 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
             Int(row),
             Int(idx),
             vec_data.cast[accum_type](),
-            gamma1,
+            gamma1_val,
             eps_accum1,
             weight_offset_accum1,
             num_cols,
         )
 
+        var gamma2_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             norm1_val += residual_input_fn[simd_width](Int(row), Int(idx))
             output_residual_fn[simd_width, align](Int(row), Int(idx), norm1_val)
+            # Prefetch gamma2 before second reduction.
+            gamma2_val = gamma2.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
 
         var norm2_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
@@ -1548,7 +1557,7 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
             Int(row),
             Int(idx),
             norm1_val.cast[accum_type](),
-            gamma2,
+            gamma2_val,
             eps_accum2,
             weight_offset_accum2,
             num_cols,
