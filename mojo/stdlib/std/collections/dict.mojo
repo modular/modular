@@ -158,6 +158,36 @@ struct _Group(Copyable, Movable):
             self.ctrl.ge(SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_DELETED))
         )
 
+    @always_inline
+    fn _convert_special_to_empty_and_full_to_deleted(
+        self,
+    ) -> SIMD[DType.uint8, _GROUP_WIDTH]:
+        """Convert ctrl bytes for in-place rehash preparation.
+
+        EMPTY  (0xFF) -> EMPTY  (0xFF)  (unchanged)
+        DELETED(0x80) -> EMPTY  (0xFF)  (reclaim tombstone)
+        h2 (0x00-0x7F) -> DELETED(0x80) (mark for relocation)
+
+        Returns:
+            Transformed control byte vector.
+        """
+        if is_compile_time():
+            var result = SIMD[DType.uint8, _GROUP_WIDTH](0)
+
+            comptime for i in range(_GROUP_WIDTH):
+                if self.ctrl[i] < _CTRL_DELETED:
+                    result[i] = _CTRL_DELETED
+                else:
+                    result[i] = _CTRL_EMPTY
+            return result
+        var is_full = self.ctrl.lt(
+            SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_DELETED)
+        )
+        return is_full.select(
+            SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_DELETED),
+            SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_EMPTY),
+        )
+
     @staticmethod
     @always_inline
     fn _scalar_match(
@@ -1635,7 +1665,8 @@ struct Dict[
     fn _find_empty_slot(self, hash: UInt64) -> Int:
         """Find the first EMPTY or DELETED slot for the given hash.
 
-        Used during resize when we know the key is unique.
+        Used during resize and in-place rehash when we know the key is
+        unique.
 
         Args:
             hash: The hash to determine the starting probe position.
@@ -1659,12 +1690,12 @@ struct Dict[
             self._maybe_compact_order()
             return
 
-        # TODO: When most non-EMPTY slots are DELETED (tombstones) rather than
-        # occupied, we could rehash in-place at the same capacity instead of
-        # doubling. This avoids unnecessary memory growth for workloads with
-        # heavy insert/delete churn. The abseil Swiss Table implements this as:
-        # if _len <= capacity * 7 / 16, rehash at same size; else double.
-        # For now we always double, which is correct but uses more memory.
+        # If table is sparse (occupancy <= 7/16 ≈ 44% of capacity), tombstones
+        # dominate. Rehash in-place to reclaim them without doubling memory.
+        # This threshold matches Abseil's Swiss Table heuristic.
+        if self._len <= self._capacity * 7 // 16:
+            self._rehash_in_place()
+            return
 
         # Double capacity and rehash
         var new_capacity = self._capacity * 2
@@ -1701,6 +1732,90 @@ struct Dict[
         # Free old storage
         old_ctrl.free()
         old_slots.free()
+
+    fn _rehash_in_place(mut self):
+        """Rehash the table in place without changing capacity.
+
+        Reclaims DELETED tombstones by moving all entries to their ideal
+        probe positions at the current capacity. This is the Abseil
+        "drop deletes without resize" algorithm.
+        """
+        debug_assert(
+            self._len <= self._capacity * 7 // 16,
+            "in-place rehash called when table is too full",
+        )
+
+        # Step 0: Compact _order to remove stale entries before we lose
+        # track of which slots are occupied vs deleted.
+        var compacted = List[Int32](capacity=self._len)
+        for j in range(len(self._order)):
+            var slot = Int(self._order[j])
+            if _is_occupied(self._ctrl[slot]):
+                compacted.append(self._order[j])
+        self._order = compacted^
+
+        # Step 1: Rewrite ctrl bytes.
+        # EMPTY->EMPTY, DELETED->EMPTY, OCCUPIED(h2)->DELETED
+        for pos in range(0, self._capacity, _GROUP_WIDTH):
+            var group = _Group(self._ctrl + pos)
+            var converted = (
+                group._convert_special_to_empty_and_full_to_deleted()
+            )
+            (self._ctrl + pos).store(converted)
+
+        # Step 2: Refresh mirror bytes.
+        memcpy(
+            dest=self._ctrl + self._capacity,
+            src=self._ctrl,
+            count=_GROUP_WIDTH,
+        )
+
+        # Step 3: Relocate entries.
+        # Build old->new slot mapping for _order update.
+        var slot_map = alloc[Int32](self._capacity)
+        for i in range(self._capacity):
+            slot_map[i] = Int32(i)
+
+        for i in range(self._capacity):
+            if self._ctrl[i] != _CTRL_DELETED:
+                continue
+
+            # This slot was occupied before rewrite; relocate its entry.
+            var entry = (self._slots + i).take_pointee()
+            self._set_ctrl(i, _CTRL_EMPTY)
+
+            var source = i
+            var target = self._find_empty_slot(entry.hash)
+
+            while self._ctrl[target] == _CTRL_DELETED:
+                # Target has another entry awaiting relocation; swap.
+                self._set_ctrl(target, _h2(entry.hash))
+                var displaced = (self._slots + target).take_pointee()
+                (self._slots + target).init_pointee_move(entry^)
+                slot_map[source] = Int32(target)
+
+                entry = displaced^
+                source = target
+                target = self._find_empty_slot(entry.hash)
+
+            # Target is EMPTY: final placement.
+            self._set_ctrl(target, _h2(entry.hash))
+            (self._slots + target).init_pointee_move(entry^)
+            slot_map[source] = Int32(target)
+
+        # Step 4: Update _order with new slot indices.
+        for j in range(len(self._order)):
+            self._order[j] = slot_map[Int(self._order[j])]
+
+        debug_assert(
+            len(self._order) == self._len,
+            "order length doesn't match _len after in-place rehash",
+        )
+
+        # Step 5: Reset growth_left (all tombstones are now EMPTY).
+        self._growth_left = self._capacity * 7 // 8 - self._len
+
+        slot_map.free()
 
     fn _maybe_compact_order(mut self):
         """Compact the order array if it has too many stale entries."""

@@ -272,6 +272,10 @@ what we publish.
   `capacity` and now accepts any positive integer (it is rounded up to the
   next power of two internally, minimum 16).
 
+- `Dict` now performs in-place tombstone rehashing when the table is full of
+  tombstones but the live element count is low. This prevents unnecessary
+  capacity doubling after repeated insert/delete cycles.
+
 - Implicit conversions from `Int` to `SIMD` are now deprecated, and will be
   removed in a future version of Mojo. This includes deprecating converions from
   `Int` to specific `SIMD` scalar types like `Int8` or `Float32`.
