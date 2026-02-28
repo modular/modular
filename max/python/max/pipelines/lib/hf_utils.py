@@ -277,6 +277,7 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
             # GatedRepo errors into 'False' return values, which are
             # uninformative.
             _ = huggingface_hub.repo_info(repo_id=repo_id, revision=revision)
+            return True
         except (
             hf_hub_errors.GatedRepoError,
             hf_hub_errors.EntryNotFoundError,
