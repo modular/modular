@@ -20,8 +20,7 @@ from math import clamp, floor
 
 from gpu.host.info import is_gpu
 from gpu import block_dim, block_idx, thread_idx
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout.coord import coord
+from layout import Coord, Idx, TileTensor, coord, coord_to_index_list
 from layout._layout import TensorLayout, row_major
 from runtime.asyncrt import DeviceContextPtr
 from utils import Index
