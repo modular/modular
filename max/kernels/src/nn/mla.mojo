@@ -1176,7 +1176,7 @@ fn mla_decoding_single_batch[
 
         barrier()
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](Int(BN))](start, end)
+    tile_and_unswitch[loop_over_kvcache, [Int(BN)]](start, end)
 
     # Apply softmax denumerator.
     comptime for m_mma in range(num_m_mmas):
@@ -2699,9 +2699,7 @@ fn mla_prefill_single_batch[
                 Int(BN // BK),
             )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](Int(BN))](
-        0, num_keys
-    )
+    tile_and_unswitch[loop_over_kvcache, [Int(BN)]](0, num_keys)
 
     comptime output_gmem_layout = Layout(
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)

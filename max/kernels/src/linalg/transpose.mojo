@@ -1132,11 +1132,7 @@ fn _transpose_2d_serial_tiled[
         )
 
     comptime tile_size = simd_width if simd_width <= 16 else 1
-    tile[
-        process_tile,
-        VariadicList[Int](tile_size, 1),
-        VariadicList[Int](tile_size, 1),
-    ](0, 0, M, N)
+    tile[process_tile, [tile_size, 1], [tile_size, 1]](0, 0, M, N)
 
 
 @always_inline

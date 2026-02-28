@@ -290,7 +290,7 @@ struct TiledMatmul[
         comptime if Self.kernel_id == InnerKernelID.I8MM:
             tile[
                 row_iteration,
-                VariadicList[Int](2 * Self.config.kernel_rows, 8, 6, 4, 2, 1),
+                [2 * Self.config.kernel_rows, 8, 6, 4, 2, 1],
             ](
                 0,  # starting row offset
                 knm_bounds.M,  # row bound
@@ -298,7 +298,7 @@ struct TiledMatmul[
         else:
             tile[
                 row_iteration,
-                VariadicList[Int](Self.config.kernel_rows, 4, 3, 2, 1),
+                [Self.config.kernel_rows, 4, 3, 2, 1],
             ](0, knm_bounds.M)
 
     # Iterate on the N dimension of the gemm space.
@@ -333,11 +333,11 @@ struct TiledMatmul[
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
         comptime if not Self.b_packed:
-            comptime secondary_tiles = VariadicList[Int](
+            comptime secondary_tiles = [
                 Self.config.kernel_cols,
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
-            )
+            ]
             var primary_tiles = VariadicList[Int](
                 tile_n, 2 * Self.config.simd_size, Self.config.simd_size
             )
@@ -345,9 +345,7 @@ struct TiledMatmul[
                 0, valid_col_count, primary_tiles, Self.config.simd_size
             )
         else:
-            comptime secondary_tiles_packed_b = VariadicList[Int](
-                Self.config.kernel_cols
-            )
+            comptime secondary_tiles_packed_b = [Self.config.kernel_cols]
             var primary_tiles_packed_b = VariadicList[Int](tile_n)
             tile[secondary_tiles_packed_b, Self.config.kernel_cols, m_loop](
                 0, valid_col_count, primary_tiles_packed_b, tile_n

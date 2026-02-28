@@ -997,7 +997,7 @@ struct _Accumulator[
                 b_ptr = b_ptr + b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
     @always_inline
     fn _accumulate_neon[
@@ -1054,7 +1054,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
     @always_inline
     fn _accumulate_neon[
@@ -1113,7 +1113,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
 
 @always_inline

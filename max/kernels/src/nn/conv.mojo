@@ -699,7 +699,7 @@ struct ConvDirectNHWC[
         # by simd_size. If F is not multiple of simd_size, the residual
         # is padded with 0 to fit a simd vector in the packed filter.
         tile[
-            VariadicList[Int](micro_kernel_f_size, simd_size),
+            [micro_kernel_f_size, simd_size],
             simd_size,
             f_tile_iteration,
         ](
@@ -1178,7 +1178,7 @@ struct ConvDirectNHWC[
 
         # After the loop can't be stepped with micro_kernel_height,
         # it will step by 5, 4, 3, 2, 1.
-        tile[iteration, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)](
+        tile[iteration, [micro_kernel_height, 5, 4, 3, 2, 1]](
             self.partition.ho_or_howo_offset,
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         )
@@ -1586,7 +1586,7 @@ struct ConvDirectNHWC[
             ](n, f_tile_offset, f_tile_size, c_tile_offset, c_tile_size)
 
         tile[
-            VariadicList[Int](micro_kernel_f_size, simd_size),
+            [micro_kernel_f_size, simd_size],
             simd_size,
             f_tile_iteration,
         ](
@@ -1758,9 +1758,7 @@ struct ConvDirectNHWC[
                 comptime micro_kernel_height_middle = num_middle_points % micro_kernel_height if num_middle_points % micro_kernel_height > 0 else 1
                 tile[
                     update_middle,
-                    VariadicList[Int](
-                        micro_kernel_height, micro_kernel_height_middle
-                    ),
+                    [micro_kernel_height, micro_kernel_height_middle],
                 ](micro_kernel_height_lbound, WO - micro_kernel_height_rbound)
 
                 # Right boundary.
@@ -2801,9 +2799,7 @@ fn pack_filter[
                 packed_filter_ptr += f_tile_size
 
         # If F % simd_size != 0, the following won't touch the remainder.
-        tile[pack, VariadicList[Int](micro_kernel_f_size, simd_size)](
-            0, F_per_group
-        )
+        tile[pack, [micro_kernel_f_size, simd_size]](0, F_per_group)
 
     # Check the remainder if any
     var F_round_by_simd = align_down(F_per_group, simd_size)

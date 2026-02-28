@@ -257,10 +257,7 @@ fn scatter_nd[
 
 fn linear_fill[
     dtype: DType
-](
-    buf: NDBuffer[dtype, _, MutAnyOrigin, ...],
-    elems: VariadicList[Scalar[dtype]],
-):
+](buf: NDBuffer[dtype, _, MutAnyOrigin, ...], elems: Span[Scalar[dtype]],):
     debug_assert(
         buf.num_elements() == len(elems), "must fill all elements of tensor"
     )
@@ -275,10 +272,10 @@ fn test_case[
     indices_shape: DimList,
     updates_shape: DimList,
 ](
-    data_vals: VariadicList[Scalar[dtype]],
-    indices_vals: VariadicList[Int64],
-    updates_vals: VariadicList[Scalar[dtype]],
-    output_ref_vals: VariadicList[Scalar[dtype]],
+    data_vals: Span[Scalar[dtype]],
+    indices_vals: Span[Int64],
+    updates_vals: Span[Scalar[dtype]],
+    output_ref_vals: Span[Scalar[dtype]],
 ) raises:
     var data = NDBuffer[dtype, 3, MutAnyOrigin, input_shape].stack_allocation()
     linear_fill(data, data_vals)
@@ -318,7 +315,7 @@ fn test_case[
 fn main():
     fn test_scatternd_gpu():
         print("== test_scatternd_gpu")
-        var data = VariadicList[Float32](
+        var data: List[Float32] = [
             # fmt: off
             1, 2, 3, 4,
             5, 6, 7, 8,
@@ -337,11 +334,11 @@ fn main():
             1, 2, 3, 4,
             5, 6, 7, 8,
             # fmt: on
-        )
+        ]
 
-        var indices = VariadicList[Int64](0, 2)
+        var indices: List[Int64] = [0, 2]
 
-        var updates = VariadicList[Float32](
+        var updates: List[Float32] = [
             # fmt: off
             5, 5, 5, 5,
             6, 6, 6, 6,
@@ -352,9 +349,9 @@ fn main():
             3, 3, 3, 3,
             4, 4, 4, 4,
             # fmt: on
-        )
+        ]
 
-        var output_ref = VariadicList[Float32](
+        var output_ref: List[Float32] = [
             # fmt: off
             5, 5, 5, 5,
             6, 6, 6, 6,
@@ -373,7 +370,7 @@ fn main():
             1, 2, 3, 4,
             5, 6, 7, 8,
             # fmt: on
-        )
+        ]
 
         _ = test_case[
             DType.float32,

@@ -624,7 +624,7 @@ and a secondary static tile size.
 
 @always_inline
 fn tile[
-    workgroup_function: Static1DTileUnitFunc, tile_size_list: VariadicList[Int]
+    workgroup_function: Static1DTileUnitFunc, tile_size_list: List[Int]
 ](offset: Int, upperbound: Int):
     """A generator that launches work groups in specified list of tile sizes.
 
@@ -700,7 +700,7 @@ fn tile[
 
 @always_inline
 fn tile[
-    secondary_tile_size_list: VariadicList[Int],
+    secondary_tile_size_list: List[Int],
     secondary_cleanup_tile: Int,
     workgroup_function: BinaryTile1DTileUnitFunc,
 ](
@@ -763,8 +763,8 @@ The function takes static tile size parameters and offset arguments, i.e.
 @always_inline
 fn tile[
     workgroup_function: Static2DTileUnitFunc,
-    tile_sizes_x: VariadicList[Int],
-    tile_sizes_y: VariadicList[Int],
+    tile_sizes_x: List[Int],
+    tile_sizes_y: List[Int],
 ](offset_x: Int, offset_y: Int, upperbound_x: Int, upperbound_y: Int):
     """Launches workgroup_function using the largest tile sizes possible in each
     dimension, starting from the x and y offset, until the x and y upperbounds
@@ -969,7 +969,7 @@ comptime Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool](
 @always_inline("nodebug")
 fn tile_and_unswitch[
     workgroup_function: Static1DTileUnswitchUnitFunc,
-    tile_size_list: VariadicList[Int],
+    tile_size_list: List[Int],
 ](offset: Int, upperbound: Int):
     """Performs time and unswitch functional transformation.
 
@@ -1170,7 +1170,7 @@ fn tile_middle_unswitch_boundaries[
         # `tile` can't handle zero tile size.
         comptime tile_size_remainder = remainder if remainder > 0 else 1
 
-        tile[update_middle, VariadicList[Int](tile_size, tile_size_remainder)](
+        tile[update_middle, [tile_size, tile_size_remainder]](
             tile_size_lbound, size - tile_size_rbound
         )
 

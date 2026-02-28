@@ -196,11 +196,16 @@ fn gather_reduce[
         )
 
         # For multi-hot embeddings reduction, k is the embedding dim and j is the multi-hot dim
-        comptime k_tile_sizes = VariadicList[Int](
-            2 * simd_width, 1
-        ) if CompilationTarget.has_neon() else VariadicList[Int](
-            8 * simd_width, 4 * simd_width, 2 * simd_width, simd_width, 1
-        )
+        comptime k_tile_sizes = [
+            2 * simd_width,
+            1,
+        ] if CompilationTarget.has_neon() else [
+            8 * simd_width,
+            4 * simd_width,
+            2 * simd_width,
+            simd_width,
+            1,
+        ]
         # unroll the j loop on neon because it benefits from vectorized
         # blend instructions and avoids conditional flag dependencies
         # does not appear to help on other archs

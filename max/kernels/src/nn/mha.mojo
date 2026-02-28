@@ -2191,7 +2191,7 @@ fn mha_single_batch[
                 Int(BN // BK),
             )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList(Int(BN))](0, num_keys)
+    tile_and_unswitch[loop_over_kvcache, [Int(BN)]](0, num_keys)
 
     # Apply softmax denumerator.
     comptime for m_mma in range(num_m_mmas):
@@ -2880,7 +2880,7 @@ fn mha_single_batch_pipelined[
                 num_b_rows=num_b_rows,
             )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList(Int(BN))](0, num_keys)
+    tile_and_unswitch[loop_over_kvcache, [Int(BN)]](0, num_keys)
 
     comptime for m_mma in range(num_m_mmas):
         var rowsum_inv0 = recip(rowsum[2 * Int(m_mma)])
@@ -3898,7 +3898,7 @@ fn mha_decoding_single_batch[
                 Int(BN // BK),
             )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList(Int(BN))](start, end)
+    tile_and_unswitch[loop_over_kvcache, [Int(BN)]](start, end)
 
     comptime if decoding_warp_split_k:
         var output_reg_vecs = output_reg_tile.tile[
@@ -4425,7 +4425,7 @@ fn mha_decoding_single_batch_pipelined[
             num_b_rows=kv_tile_num_rows,
         )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList(Int(BN))](start, end)
+    tile_and_unswitch[loop_over_kvcache, [Int(BN)]](start, end)
 
     # Apply softmax denumerator.
 

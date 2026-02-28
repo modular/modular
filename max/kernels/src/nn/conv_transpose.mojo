@@ -639,7 +639,7 @@ struct ConvTransposedPacked[
         # by simd_size. If F is not multiple of simd_size, the residual
         # is padded with 0 to fit a simd vector in the packed filter.
         tile[
-            VariadicList[Int](micro_kernel_f_size, simd_size),
+            [micro_kernel_f_size, simd_size],
             simd_size,
             f_tile_iteration,
         ](
@@ -1339,9 +1339,7 @@ fn pack_filter(
                     filter_ptr += 1
 
         # If F % simd_size != 0, the following won't touch the remainder.
-        tile[pack, VariadicList[Int](micro_kernel_f_size, simd_size)](
-            0, F_per_group
-        )
+        tile[pack, [micro_kernel_f_size, simd_size]](0, F_per_group)
 
     # Check the remainder if any
     var F_round_by_simd = align_down(F_per_group, simd_size)

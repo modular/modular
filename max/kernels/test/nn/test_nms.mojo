@@ -42,7 +42,7 @@ fn fill_boxes[
     dtype: DType
 ](
     batch_size: Int,
-    box_list: VariadicList[BoxCoords[dtype]],
+    box_list: Span[BoxCoords[dtype]],
     boxes: TileTensor[mut=True, dtype, ...],
 ):
     comptime assert boxes.flat_rank == 3
@@ -74,7 +74,7 @@ fn fill_scores[
 ](
     batch_size: Int,
     num_classes: Int,
-    scores_list: VariadicList[Scalar[dtype]],
+    scores_list: Span[Scalar[dtype]],
     scores: TileTensor[mut=True, dtype, ...],
 ):
     comptime assert scores.flat_rank == 3
@@ -94,8 +94,8 @@ fn test_case[
     iou_threshold: Float32,
     score_threshold: Float32,
     max_output_boxes_per_class: Int,
-    box_list: VariadicList[BoxCoords[dtype]],
-    scores_list: VariadicList[Scalar[dtype]],
+    box_list: Span[BoxCoords[dtype]],
+    scores_list: Span[Scalar[dtype]],
 ):
     # Create boxes tensor
     var boxes_shape = IndexList[3](batch_size, num_boxes, 4)
@@ -154,15 +154,15 @@ fn test_case[
 fn main():
     fn test_no_score_threshold():
         print("== test_no_score_threshold")
-        var box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
             BoxCoords[DType.float32](0.0, 10.0, 1.0, 11.0),
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
-        )
-        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        ]
+        var scores_list: List[Float32] = [0.9, 0.75, 0.6, 0.95, 0.5, 0.3]
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
@@ -170,15 +170,15 @@ fn main():
 
     fn test_flipped_coords():
         print("== test_flipped_coords")
-        var box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = [
             BoxCoords[DType.float32](1.0, 1.0, 0.0, 0.0),
             BoxCoords[DType.float32](1.0, 1.1, 0.0, 0.1),
             BoxCoords[DType.float32](1.0, 0.9, 0.0, -0.1),
             BoxCoords[DType.float32](1.0, 11.0, 0.0, 10.0),
             BoxCoords[DType.float32](1.0, 11.1, 0.0, 10.1),
             BoxCoords[DType.float32](1.0, 101.0, 0.0, 100.0),
-        )
-        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        ]
+        var scores_list: List[Float32] = [0.9, 0.75, 0.6, 0.95, 0.5, 0.3]
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
@@ -186,15 +186,15 @@ fn main():
 
     fn test_reflect_over_yx():
         print("== test_reflect_over_yx")
-        var box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = [
             BoxCoords[DType.float32](-1.0, -1.0, 0.0, 0.0),
             BoxCoords[DType.float32](-1.0, -1.1, 0.0, -0.1),
             BoxCoords[DType.float32](-1.0, -0.9, 0.0, 0.1),
             BoxCoords[DType.float32](-1.0, -11.0, 0.0, -10.0),
             BoxCoords[DType.float32](-1.0, -11.1, 0.0, -10.1),
             BoxCoords[DType.float32](-1.0, -101.0, 0.0, -100.0),
-        )
-        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        ]
+        var scores_list: List[Float32] = [0.9, 0.75, 0.6, 0.95, 0.5, 0.3]
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 3, box_list, scores_list
@@ -202,15 +202,15 @@ fn main():
 
     fn test_score_threshold():
         print("== test_score_threshold")
-        var box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
             BoxCoords[DType.float32](0.0, 10.0, 1.0, 11.0),
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
-        )
-        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        ]
+        var scores_list: List[Float32] = [0.9, 0.75, 0.6, 0.95, 0.5, 0.3]
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.4), 3, box_list, scores_list
@@ -218,15 +218,15 @@ fn main():
 
     fn test_limit_outputs():
         print("== test_limit_outputs")
-        var box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
             BoxCoords[DType.float32](0.0, 10.0, 1.0, 11.0),
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
-        )
-        var scores_list = VariadicList[Float32](0.9, 0.75, 0.6, 0.95, 0.5, 0.3)
+        ]
+        var scores_list: List[Float32] = [0.9, 0.75, 0.6, 0.95, 0.5, 0.3]
 
         test_case[DType.float32](
             1, 1, 6, Float32(0.5), Float32(0.0), 2, box_list, scores_list
@@ -234,10 +234,10 @@ fn main():
 
     fn test_single_box():
         print("== test_single_box")
-        var box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
-        )
-        var scores_list = VariadicList[Float32](0.9)
+        ]
+        var scores_list: List[Float32] = [0.9]
 
         test_case[DType.float32](
             1, 1, 1, Float32(0.5), Float32(0.0), 2, box_list, scores_list
@@ -245,15 +245,15 @@ fn main():
 
     fn test_two_classes():
         print("== test_two_classes")
-        var box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
             BoxCoords[DType.float32](0.0, 10.0, 1.0, 11.0),
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
-        )
-        var scores_list = VariadicList[Float32](
+        ]
+        var scores_list: List[Float32] = [
             0.9,
             0.75,
             0.6,
@@ -266,7 +266,7 @@ fn main():
             0.95,
             0.5,
             0.3,
-        )
+        ]
 
         test_case[DType.float32](
             1, 2, 6, Float32(0.5), Float32(0.0), 2, box_list, scores_list
@@ -274,7 +274,7 @@ fn main():
 
     fn test_two_batches():
         print("== test_two_batches")
-        var box_list = VariadicList[BoxCoords[DType.float32]](
+        var box_list = [
             BoxCoords[DType.float32](0.0, 0.0, 1.0, 1.0),
             BoxCoords[DType.float32](0.0, 0.1, 1.0, 1.1),
             BoxCoords[DType.float32](0.0, -0.1, 1.0, 0.9),
@@ -287,8 +287,8 @@ fn main():
             BoxCoords[DType.float32](0.0, 10.0, 1.0, 11.0),
             BoxCoords[DType.float32](0.0, 10.1, 1.0, 11.1),
             BoxCoords[DType.float32](0.0, 100.0, 1.0, 101.0),
-        )
-        var scores_list = VariadicList[Float32](
+        ]
+        var scores_list: List[Float32] = [
             0.9,
             0.75,
             0.6,
@@ -301,7 +301,7 @@ fn main():
             0.95,
             0.5,
             0.3,
-        )
+        ]
 
         test_case[DType.float32](
             2, 1, 6, Float32(0.5), Float32(0.0), 2, box_list, scores_list

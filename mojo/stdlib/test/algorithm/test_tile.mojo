@@ -52,13 +52,13 @@ def test_static_tile() raises:
     print("test_static_tile")
     # CHECK: (0, 4)
     # CHECK: (4, 6)
-    tile[print_number_static, VariadicList[Int](4, 3, 2, 1)](0, 6)
+    tile[print_number_static, [4, 3, 2, 1]](0, 6)
     # CHECK: (0, 4)
     # CHECK: (4, 8)
-    tile[print_number_static, VariadicList[Int](4, 3, 2, 1)](0, 8)
+    tile[print_number_static, [4, 3, 2, 1]](0, 8)
     # CHECK: (1, 5)
     # CHECK: (5, 6)
-    tile[print_number_static, VariadicList[Int](4, 3, 2, 1)](1, 6)
+    tile[print_number_static, [4, 3, 2, 1]](1, 6)
 
 
 # CHECK-LABEL: test_static_tile2d
@@ -74,7 +74,7 @@ def test_static_tile2d() raises:
     # CHECK: (2, 2, 2, 4)
     # CHECK: (2, 2, 4, 4)
     # CHECK: ========
-    tile[print_tile2d_static, VariadicList(2), VariadicList(2)](0, 0, 6, 6)
+    tile[print_tile2d_static, [2], [2]](0, 0, 6, 6)
     print("========")
     # CHECK: (4, 4, 4, 4)
     # CHECK: (4, 4, 8, 4)
@@ -86,7 +86,7 @@ def test_static_tile2d() raises:
     # CHECK: (4, 4, 8, 12)
     # CHECK: (4, 4, 12, 12)
     # CHECK: ========
-    tile[print_tile2d_static, VariadicList(4), VariadicList(4)](4, 4, 16, 16)
+    tile[print_tile2d_static, [4], [4]](4, 4, 16, 16)
     print("========")
     # CHECK: (3, 4, 1, 1)
     # CHECK: (3, 4, 4, 1)
@@ -103,9 +103,7 @@ def test_static_tile2d() raises:
     # CHECK: (3, 1, 7, 6)
     # CHECK: (1, 1, 10, 6)
     # CHECK: (1, 1, 11, 6)
-    tile[print_tile2d_static, VariadicList(3, 1), VariadicList(4, 1)](
-        1, 1, 12, 7
-    )
+    tile[print_tile2d_static, [3, 1], [4, 1]](1, 1, 12, 7)
 
 
 # CHECK-LABEL: test_dynamic_tile
@@ -213,28 +211,20 @@ def test_tile_and_unswitch() raises:
     # CHECK: Unswitched: True
     # CHECK: (4, 2, 6)
     # CHECK: Unswitched: True
-    tile_and_unswitch[
-        print_number_static_unswitched, VariadicList[Int](4, 3, 2)
-    ](0, 6)
+    tile_and_unswitch[print_number_static_unswitched, [4, 3, 2]](0, 6)
     # CHECK: (0, 4, 8)
     # CHECK: Unswitched: True
     # CHECK: (4, 4, 8)
     # CHECK: Unswitched: True
-    tile_and_unswitch[
-        print_number_static_unswitched, VariadicList[Int](4, 3, 2)
-    ](0, 8)
+    tile_and_unswitch[print_number_static_unswitched, [4, 3, 2]](0, 8)
     # CHECK: (1, 4, 6)
     # CHECK: Unswitched: True
     # CHECK: (5, 2, 6)
     # CHECK: Unswitched: False
-    tile_and_unswitch[
-        print_number_static_unswitched, VariadicList[Int](4, 3, 2)
-    ](1, 6)
+    tile_and_unswitch[print_number_static_unswitched, [4, 3, 2]](1, 6)
     # CHECK: (4, 4, 8)
     # CHECK: Unswitched: True
-    tile_and_unswitch[print_number_static_unswitched, VariadicList[Int](4, 1)](
-        4, 8
-    )
+    tile_and_unswitch[print_number_static_unswitched, [4, 1]](4, 8)
 
 
 def test_tile_middle_unswitch_boundaries() raises:

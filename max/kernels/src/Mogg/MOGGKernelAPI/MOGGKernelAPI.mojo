@@ -1772,19 +1772,15 @@ struct BroadcastShape:
 
 fn tuple_to_dimlist[size: Int](tuple: StaticTuple[Dim, size]) -> DimList:
     comptime if size == 1:
-        return DimList(VariadicList[Dim](tuple[0]))
+        return DimList(tuple[0])
     elif size == 2:
-        return DimList(VariadicList[Dim](tuple[0], tuple[1]))
+        return DimList(tuple[0], tuple[1])
     elif size == 3:
-        return DimList(VariadicList[Dim](tuple[0], tuple[1], tuple[2]))
+        return DimList(tuple[0], tuple[1], tuple[2])
     elif size == 4:
-        return DimList(
-            VariadicList[Dim](tuple[0], tuple[1], tuple[2], tuple[3])
-        )
+        return DimList(tuple[0], tuple[1], tuple[2], tuple[3])
     elif size == 5:
-        return DimList(
-            VariadicList[Dim](tuple[0], tuple[1], tuple[2], tuple[3], tuple[4])
-        )
+        return DimList(tuple[0], tuple[1], tuple[2], tuple[3], tuple[4])
 
     return DimList.create_unknown[size]()
 
