@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the core `String` type and related utilities."""
 
+from std.builtin.globals import global_constant
 from std.collections import KeyElement
 from std.collections.string import CodepointsIter
 from std.collections.string._parsing_numbers.parsing_floats import _atof
@@ -2528,7 +2529,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     # See https://commaok.xyz/post/lookup_tables/ and
     # https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
     # for a description.
-    comptime lookup_table = VariadicList[Int](
+    comptime lookup_table: InlineArray[Int, 32] = [
         4294967296,
         8589934582,
         8589934582,
@@ -2561,12 +2562,15 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         41949672960,
         42949672960,
         42949672960,
-    )
+    ]
+
+    ref lookup_table_ref = global_constant[lookup_table]()
+
     var n = UInt32(n0)
     var log2 = Int(
         UInt32(bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
-    return (n0 + lookup_table[log2]) >> 32
+    return (n0 + lookup_table_ref[log2]) >> 32
 
 
 fn _calc_initial_buffer_size_int64(n0: UInt64) -> Int:

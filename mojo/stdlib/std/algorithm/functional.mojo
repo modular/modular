@@ -1057,7 +1057,7 @@ fn tile_and_unswitch[
 @always_inline
 fn tile_middle_unswitch_boundaries[
     work_fn: Static1DTileUnitFuncWithFlag,
-    middle_tile_sizes: VariadicList[Int],
+    middle_tile_sizes: List[Int],
     left_tile_size: Int = 1,  # No tiling by default.
     right_tile_size: Int = 1,  # No tiling by default.
 ](

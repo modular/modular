@@ -843,7 +843,7 @@ struct ConvTransposedPacked[
                 )
 
             tile_middle_unswitch_boundaries[
-                work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
+                work_fn, [micro_kernel_height, 5, 4, 3, 2, 1]
             ](
                 0,
                 left_pad_impact_end,
@@ -932,7 +932,7 @@ struct ConvTransposedPacked[
 
                 tile_middle_unswitch_boundaries[
                     work_fn,
-                    VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),
+                    [micro_kernel_height, 5, 4, 3, 2, 1],
                 ](
                     0,
                     left_pad_impact_end,

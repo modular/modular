@@ -251,7 +251,7 @@ def test_tile_middle_unswitch_boundaries() raises:
     # CHECK: 7 1 True
     tile_middle_unswitch_boundaries[
         print_wrapper,
-        VariadicList[Int](4, 3, 2, 1),
+        [4, 3, 2, 1],
     ](0, 1, 7, 8)
 
     # CHECK: 1 1 True
@@ -261,7 +261,7 @@ def test_tile_middle_unswitch_boundaries() raises:
     # CHECK: 7 1 True
     tile_middle_unswitch_boundaries[
         print_wrapper,
-        VariadicList[Int](4, 3, 1),
+        [4, 3, 1],
     ](1, 3, 6, 8)
 
     # CHECK: 0 2 True
@@ -271,7 +271,7 @@ def test_tile_middle_unswitch_boundaries() raises:
     # CHECK: 12 2 True
     tile_middle_unswitch_boundaries[
         print_wrapper,
-        VariadicList[Int](6, 4, 2, 1),
+        [6, 4, 2, 1],
         left_tile_size=2,
         right_tile_size=2,
     ](0, 2, 10, 14)

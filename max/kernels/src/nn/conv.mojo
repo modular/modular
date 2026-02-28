@@ -1369,7 +1369,7 @@ struct ConvDirectNHWC[
             output_base = output_base + height * self.conv_shape.f
 
         tile_middle_unswitch_boundaries[
-            work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
+            work_fn, [micro_kernel_height, 5, 4, 3, 2, 1]
         ](
             0,
             left_pad_impact_end,
@@ -1453,7 +1453,7 @@ struct ConvDirectNHWC[
                 output_base = output_base + height * self.conv_shape.f
 
             tile_middle_unswitch_boundaries[
-                work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
+                work_fn, [micro_kernel_height, 5, 4, 3, 2, 1]
             ](
                 0,
                 left_pad_impact_end,
@@ -1548,7 +1548,7 @@ struct ConvDirectNHWC[
 
                 tile_middle_unswitch_boundaries[
                     work_fn,
-                    VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),
+                    [micro_kernel_height, 5, 4, 3, 2, 1],
                 ](
                     0,
                     left_pad_impact_end,
