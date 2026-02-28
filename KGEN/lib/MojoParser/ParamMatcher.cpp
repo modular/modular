@@ -102,52 +102,57 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
 
 ParamMatcher::ParamMatcher(const ExprNode *expr, ParamInf &state,
                            bool allowImplicitConversions)
-    : inferredIdx(state.evaluator.getNumIndexBindings()), expr(expr),
-      state(state), shared(state.getShared()),
+    : expr(expr), state(state), shared(state.getShared()),
       allowImplicitConversions(allowImplicitConversions),
       scopedBinder(shared.getParameterEvaluator()) {}
 
-LogicalResult ParamMatcher::setInferredValue(size_t paramIdx,
-                                             TypedAttr paramVal) {
-  LogicalResult ret = state.setInferredValue(paramIdx, paramVal);
-  inferredIdx.set(paramIdx);
-  return ret;
+ParamMatcher::FailableScope::FailableScope(ParamMatcher &matcher)
+    : matcher(matcher),
+      inferredIdx(matcher.state.evaluator.getNumIndexBindings()) {
+  // Keep track of which bindings are inferred at the start of the scope.
+  for (unsigned i = 0, e = inferredIdx.size(); i != e; ++i)
+    if (matcher.state.evaluator.getIndexBindings()[i])
+      inferredIdx.set(i);
 }
 
-void ParamMatcher::resetError() {
-  failureReason.reset();
+// If we find an error and want to try another possible way to match, we need to
+// undo any falsely inferred parameters while running the experiment. Consider
+// something like:
+//
+// @fieldwise_init
+// @register_passable("trivial")
+// struct NDBuffer[
+//     mut: Bool,
+//     //,
+//     dtype: DType,
+//     rank: Int,
+//     origin: Origin[mut=mut],
+//     ...
+// ](
+//   @implicit
+//   fn __init__(
+//       out self,
+//       # note that `other` here does NOT uses `Self.origin`
+//       other: NDBuffer[Self.dtype, Self.rank, ...],
+//   ):
+//        pass
+//
+// In this case, we can should NOT infer `Self.origin` to `other.origin`.
+// This could happens without the reset since we can successfully match
+// `other` against `Self` all the way till we pass `origin`. At that point,
+// although matcher returns failure, `origin` has been inferred, and the
+// implicit convertibility is then tested against parameter inferred from a
+// failed match.
+void ParamMatcher::FailableScope::revert() {
+  assert(matcher.failureReason && "not in error state");
 
-  // Upon error being discarded, we need to undo the falsely inferred parameter.
-  // This detect error and avoid the following code being compiles:
-  //
-  // @fieldwise_init
-  // @register_passable("trivial")
-  // struct NDBuffer[
-  //     mut: Bool,
-  //     //,
-  //     dtype: DType,
-  //     rank: Int,
-  //     origin: Origin[mut=mut],
-  //     ...
-  // ](
-  //   @implicit
-  //   fn __init__(
-  //       out self,
-  //       # note that `other` here does NOT uses `Self.origin`
-  //       other: NDBuffer[Self.dtype, Self.rank, ...],
-  //   ):
-  //        pass
-  //
-  // In this case, we can should NOT infer `Self.origin` to `other.origin`.
-  // This could happens without the reset since we can successfully match
-  // `other` against `Self` all the way till we pass `origin`. At that point,
-  // although matcher returns failure, `origin` has been inferred, and the
-  // implicit convertibility is then tested against parameter inferred from a
-  // failed match.
-  for (unsigned i : inferredIdx.set_bits())
-    state.evaluator.overwriteIndexBinding(i, nullptr);
+  // Reset any inferred bindings that were not inferred when the scope was
+  // created.
+  for (unsigned i = 0, e = inferredIdx.size(); i != e; ++i)
+    if (!inferredIdx[i])
+      matcher.state.evaluator.overwriteIndexBinding(i, nullptr);
 
-  inferredIdx.reset();
+  matcher.failureReason.reset();
 }
 
 void ParamMatcher::appendLocallyDefinedParam(Type paramType) {
@@ -213,11 +218,13 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   // If the actual function is not throwing, and the expected function is,
   // then we can infer the Error type to be Never.
   if (!actualEffects.isThrows() && expectedEffects.isThrows()) {
+    FailableScope failableScope(*this);
+
     // Match the expected error type to Never, but allow this to fail: it may
     // already be some concrete type like Error and that is ok.
     if (failed(matchTypes(NeverType::get(expectedFnTp.getContext()),
                           expectedFnTp.getUserThrownType()))) {
-      resetError();
+      failableScope.revert();
     }
     expectedArgTypes = expectedArgTypes.drop_back();
     actualEffects.setThrows(true);
@@ -313,11 +320,11 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       Type actualValueAstType =
           RefType::stripRefConvention(actualAstType, actualConv);
 
+      FailableScope failableScope(*this);
       // If the argument types line up, then we can skip the rest of this.
-      if (succeeded(matchTypes(actualValueAstType, variadicElType))) {
+      if (succeeded(matchTypes(actualValueAstType, variadicElType)))
         continue;
-      }
-      resetError();
+      failableScope.revert();
 
       // We can convert a more general `actual` function (that takes in a trait
       // argument) to a more specific `expected` function that takes in a struct
@@ -601,6 +608,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
   if (isEqualCanon(actualAttr.getType(), expectedAttr.getType())) {
     // If the types of both attributes are the same, no adjustment is needed.
   } else {
+    FailableScope failableScope(*this);
     auto result = matchTypes(actualAttr.getType(), expectedAttr.getType());
     if (succeeded(result)) {
       // If they are different types but compatible then upcast actualAttr to
@@ -624,8 +632,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           return success();
       }
     } else {
-      // Ok something failed, swallow the error.
-      resetError();
+      // Ok something failed, swallow the error and try the next option.
+      failableScope.revert();
 
       // If this is a type expression, try align the type (if possible) before
       // concluding type inconvertibility. This turns things like:
@@ -772,7 +780,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           state.evaluator.getIndexBindings()[parameterIndex];
       // If this is a new parameter we've inferred, huzzah, remember it.
       if (!inferredValue) {
-        if (failed(setInferredValue(parameterIndex, actualAttr)))
+        if (failed(state.setInferredValue(parameterIndex, actualAttr)))
           return error(MatchFailure::UnprovableConstraints{parameterIndex});
         return success();
       }

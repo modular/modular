@@ -366,19 +366,24 @@ LogicalResult ParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // it like any other argument because we can support implicit conversions.
     auto anyOrigin =
         AnyOriginAttr::get(expectedRef.getContext(), /*isMut=*/false);
+    ParamMatcher::FailableScope failableScope1(matcher);
     if (failed(
             matcher.matchSingleEltStruct(anyOrigin, expectedRef.getOrigin()))) {
-      // Ignore failures because we only want to set a value if none is already
-      // known so things aren't ambiguous.
-      matcher.resetError();
+      // Ignore failures because we only want to set a value if none is
+      // already known so things aren't ambiguous.
+      // TODO: it would be cleaner to check to see if this is already inferred
+      // and only default it if not.
+      failableScope1.revert();
     }
 
     // The address space of the temp will be the default.
     auto addrSpace =
         IntegerAttr::get(IndexType::get(expectedRef.getContext()), 0);
+
+    ParamMatcher::FailableScope failableScope2(matcher);
     if (failed(matcher.matchSingleEltStruct(addrSpace,
                                             expectedRef.getAddressSpace()))) {
-      matcher.resetError();
+      failableScope2.revert();
     }
 
     // Handle the element type compatibility check below to allow implicit
@@ -556,9 +561,9 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // recomputed by scoreOperandFitness() afterward.
   ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
 
-  // We're speculatively trying different options.  If we have errors on one
-  // path we need to roll them back.
-  std::optional<MatchFailure> savedFailureReason;
+  // We're speculatively trying different options.  If there is no path to
+  // success, we roll back to the simplest thing to explain.
+  std::optional<ParamMatcher::FailableScope::SavedStateTy> savedFailureInfo;
 
   // If the expected type has unresolved bindings, try to infer them from the
   // argument first, before trying implicit conversions etc.
@@ -567,11 +572,14 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // works with trait bound that __MLIRType conforms to at the moment.
     // We need to call matchType in order to not generating "can not infer
     // parameter" error at the end.
+    ParamMatcher::FailableScope failableScope(matcher);
     if (succeeded(matcher.matchTypes(argType, expectedType)))
       return success(); // Types were equal after matching.
 
-    savedFailureReason = matcher.failureReason;
-    matcher.resetError();
+    // Save the failure code and the bindings that were inferred so we can
+    // restore them if the other attempts fail.
+    savedFailureInfo = failableScope.saveState();
+    failableScope.revert();
   } else {
     // We have a non-parametric expected type, and a wildcard type, we can
     // match any operand.
@@ -591,14 +599,14 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   if (syntax != CallSyntax::kParamBindings) {
     if (auto nonmaterializableTarget =
             argType.getNonmaterializableTarget(getShared())) {
-
+      ParamMatcher::FailableScope failableScope(matcher);
       // Infer the parameters of this overload candidate against the computed
       // result type of the initializer.
-      if (succeeded(
-              matcher.matchTypes(nonmaterializableTarget, expectedType))) {
+      if (succeeded(matcher.matchTypes(nonmaterializableTarget, expectedType)))
         return success();
-      }
-      matcher.resetError();
+
+      // Roll back any error and inferred bindings.
+      failableScope.revert();
     }
   }
 
@@ -606,9 +614,14 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // we can check to see if any of the constructors for the result type can
   // work.  If disabled, then we have a failure.
   if (!allowImplicitConversions) {
+    // If we have an earlier failure, restore its information so we have a
+    // simple diagnostic.
+    if (savedFailureInfo)
+      ParamMatcher::FailableScope::restore(*savedFailureInfo, matcher);
+
     auto &diag = emitWrongTypeDiag(expectedType);
-    if (savedFailureReason)
-      savedFailureReason->addExplanation(diag);
+    if (matcher.failureReason)
+      matcher.failureReason->addExplanation(diag);
     return failure();
   }
 
@@ -650,9 +663,15 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     if (IREmitter::canImplicitlyConvertToType({argVal, operand.expr},
                                               expectedType, getDeclScope()))
       return success();
+
+    // If we have an earlier failure, restore its information so we have a
+    // simple diagnostic.
+    if (savedFailureInfo)
+      ParamMatcher::FailableScope::restore(*savedFailureInfo, matcher);
+
     auto &diag = emitWrongTypeDiag(expectedType);
-    if (savedFailureReason)
-      savedFailureReason->addExplanation(diag);
+    if (matcher.failureReason)
+      matcher.failureReason->addExplanation(diag);
     return failure();
   }
 
@@ -708,11 +727,12 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // the computed result type of the initializer.
     if (auto callee = pValue.value()) {
       auto initSig = sugarCast<FnTypeGeneratorType>(callee.getType());
+      ParamMatcher::FailableScope failableScope(matcher);
       if (succeeded(
               matcher.matchTypes(initSig.getUserResultType(), expectedType))) {
         return success();
       }
-      matcher.resetError();
+      failableScope.revert();
     }
   }
 
@@ -720,7 +740,8 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // be any of these things, so we need to emit an error.  If out failure is
   // due to an uninferred parameter, and if that parameter had a default, then
   // we can bind it.
-  if (savedFailureReason && savedFailureReason->getIfDependentOnUnresolved()) {
+  if (savedFailureInfo &&
+      savedFailureInfo->first.getIfDependentOnUnresolved()) {
     // If we're in the parameter binding list for a call then we can re-evaluate
     // this binding after the arguments of the call are resolved.
     if (syntax == CallSyntax::kParamBindings) {
@@ -744,20 +765,28 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     //
     // Otherwise, check to see if this is due to an uninferred param with a
     // default value.  If so, bind the default and try again.
-    size_t paramIdx = savedFailureReason->getIfDependentOnUnresolved().value();
+    size_t paramIdx =
+        savedFailureInfo->first.getIfDependentOnUnresolved().value();
     if (auto value = declaredParamPogs.getDefault(paramIdx)) {
       assert(!evaluator.getIndexBindings()[paramIdx] &&
              "shouldn't have inferred this if we failed because of it");
       value = evaluator.getReboundAttribute(value);
-      if (failed(setInferredValue(paramIdx, value)))
+      if (failed(setInferredValue(paramIdx, value))) {
+        // Shouldn't this report a diag??
         return failure();
+      }
       return inferFromRVType(operand, argIdx, expectedType, argPogs, syntax);
     }
   }
 
+  // If we have an earlier failure, restore its information so we have a
+  // simple diagnostic.
+  if (savedFailureInfo)
+    ParamMatcher::FailableScope::restore(*savedFailureInfo, matcher);
+
   auto &diag = emitWrongTypeDiag(expectedType);
-  if (savedFailureReason)
-    savedFailureReason->addExplanation(diag);
+  if (matcher.failureReason)
+    matcher.failureReason->addExplanation(diag);
   return failure();
 }
 

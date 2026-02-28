@@ -119,21 +119,41 @@ public:
                                    FnTypeGeneratorType expected);
   LogicalResult matchSingleEltStruct(TypedAttr actual, TypedAttr expected);
 
-  void resetError();
+  /// When matching parameters, we sometimes try different options.  This object
+  /// gives us a scoped way to revert() a series of matches that didn't work
+  /// out - making sure to remove any bindings that were tentatively inferred.
+  struct FailableScope {
+    FailableScope(ParamMatcher &matcher);
+
+    /// This reverts the error code and any matches that were formed between the
+    /// creation of the FailableScope and its call.
+    void revert();
+
+    /// Save the current state of the matcher in an error state so we can
+    /// reapply it later.
+    using SavedStateTy = std::pair<MatchFailure, SmallVector<TypedAttr, 8>>;
+    SavedStateTy saveState() {
+      assert(matcher.failureReason && "not in error state");
+      return {*matcher.failureReason,
+              SmallVector<TypedAttr, 8>(
+                  matcher.state.evaluator.getIndexBindings())};
+    }
+    static void restore(SavedStateTy savedState, ParamMatcher &matcher) {
+      matcher.failureReason = savedState.first;
+      for (auto [idx, binding] : llvm::enumerate(savedState.second))
+        matcher.state.evaluator.overwriteIndexBinding(idx, binding);
+    }
+
+  private:
+    ParamMatcher &matcher;
+    llvm::BitVector inferredIdx;
+  };
 
 private:
   LogicalResult error(MatchFailure &&reason) {
     failureReason = std::move(reason);
     return failure();
   }
-
-  LogicalResult setInferredValue(size_t paramIdx, TypedAttr paramVal);
-
-private:
-  // The set of index binding that is inferred during this matching. It is used
-  // the undo the inference when `resetError` is called (meaning that the
-  // previous matching result should be discard).
-  llvm::BitVector inferredIdx;
 
   /// This is how many signature types deep inference is inside parameter
   /// expressions and determines which index references we match against.
