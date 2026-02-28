@@ -556,41 +556,25 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   if (argType.isEqualCanon(expectedType))
     return success();
 
+  // We have a non-parametric expected type, and a wildcard type, we can
+  // match any operand.
+  if (sugarIsa<NameLookupArgWildcardType>(argType) &&
+      !paramFinder.hasReferences(expectedType))
+    return success();
+
   // TODO: Optionally compute fitness metrics (# implicit conversions,
   // convention mismatches) during inference, so they don't need to be
   // recomputed by scoreOperandFitness() afterward.
   ParamMatcher matcher(operand.expr, *this, allowImplicitConversions);
 
-  // We're speculatively trying different options.  If there is no path to
-  // success, we roll back to the simplest thing to explain.
-  std::optional<ParamMatcher::FailableScope::SavedStateTy> savedFailureInfo;
+  ParamMatcher::FailableScope simpleEqualityFailableScope(matcher);
+  if (succeeded(matcher.matchTypes(argType, expectedType)))
+    return success(); // Types were equal after matching.
 
-  // If the expected type has unresolved bindings, try to infer them from the
-  // argument first, before trying implicit conversions etc.
-  if (paramFinder.hasReferences(expectedType)) {
-    // TODO: make sure that we can always match `NameLookupArgWildcardType`. It
-    // works with trait bound that __MLIRType conforms to at the moment.
-    // We need to call matchType in order to not generating "can not infer
-    // parameter" error at the end.
-    ParamMatcher::FailableScope failableScope(matcher);
-    if (succeeded(matcher.matchTypes(argType, expectedType)))
-      return success(); // Types were equal after matching.
-
-    // Save the failure code and the bindings that were inferred so we can
-    // restore them if the other attempts fail.
-    savedFailureInfo = failableScope.saveState();
-    failableScope.revert();
-  } else {
-    // We have a non-parametric expected type, and a wildcard type, we can
-    // match any operand.
-    if (sugarIsa<NameLookupArgWildcardType>(argType))
-      return success();
-
-    // Zero cost conversions don't count as implicit conversions. We attempt
-    // this after trying to match the types to try to infer values first.
-    if (IREmitter::canZeroCostConvert(argType, expectedType, getShared()))
-      return success();
-  }
+  // Save the failure code and the bindings that were inferred so we can
+  // restore them if the other attempts fail.
+  auto savedFailureInfo = simpleEqualityFailableScope.saveState();
+  simpleEqualityFailableScope.revert();
 
   // Handle values of nonmaterializable types.  These freely convert to their
   // nonmaterializable target type: even when implicit conversions are disabled.
@@ -614,14 +598,11 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // we can check to see if any of the constructors for the result type can
   // work.  If disabled, then we have a failure.
   if (!allowImplicitConversions) {
-    // If we have an earlier failure, restore its information so we have a
-    // simple diagnostic.
-    if (savedFailureInfo)
-      ParamMatcher::FailableScope::restore(*savedFailureInfo, matcher);
-
+    // Restore the information from the original failure so we have a simple
+    // diagnostic.
+    ParamMatcher::FailableScope::restore(savedFailureInfo, matcher);
     auto &diag = emitWrongTypeDiag(expectedType);
-    if (matcher.failureReason)
-      matcher.failureReason->addExplanation(diag);
+    matcher.failureReason->addExplanation(diag);
     return failure();
   }
 
@@ -664,14 +645,11 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
                                               expectedType, getDeclScope()))
       return success();
 
-    // If we have an earlier failure, restore its information so we have a
-    // simple diagnostic.
-    if (savedFailureInfo)
-      ParamMatcher::FailableScope::restore(*savedFailureInfo, matcher);
-
+    // Restore the information from the original failure so we have a simple
+    // diagnostic.
+    ParamMatcher::FailableScope::restore(savedFailureInfo, matcher);
     auto &diag = emitWrongTypeDiag(expectedType);
-    if (matcher.failureReason)
-      matcher.failureReason->addExplanation(diag);
+    matcher.failureReason->addExplanation(diag);
     return failure();
   }
 
@@ -740,8 +718,7 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // be any of these things, so we need to emit an error.  If out failure is
   // due to an uninferred parameter, and if that parameter had a default, then
   // we can bind it.
-  if (savedFailureInfo &&
-      savedFailureInfo->first.getIfDependentOnUnresolved()) {
+  if (savedFailureInfo.first.getIfDependentOnUnresolved()) {
     // If we're in the parameter binding list for a call then we can re-evaluate
     // this binding after the arguments of the call are resolved.
     if (syntax == CallSyntax::kParamBindings) {
@@ -766,27 +743,23 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // Otherwise, check to see if this is due to an uninferred param with a
     // default value.  If so, bind the default and try again.
     size_t paramIdx =
-        savedFailureInfo->first.getIfDependentOnUnresolved().value();
+        savedFailureInfo.first.getIfDependentOnUnresolved().value();
     if (auto value = declaredParamPogs.getDefault(paramIdx)) {
       assert(!evaluator.getIndexBindings()[paramIdx] &&
              "shouldn't have inferred this if we failed because of it");
       value = evaluator.getReboundAttribute(value);
-      if (failed(setInferredValue(paramIdx, value))) {
-        // Shouldn't this report a diag??
-        return failure();
-      }
+      auto result = setInferredValue(paramIdx, value);
+      assert(!failed(result) && "should always succeed");
+      (void)result;
       return inferFromRVType(operand, argIdx, expectedType, argPogs, syntax);
     }
   }
 
-  // If we have an earlier failure, restore its information so we have a
-  // simple diagnostic.
-  if (savedFailureInfo)
-    ParamMatcher::FailableScope::restore(*savedFailureInfo, matcher);
-
+  // Restore the information from the original failure so we have a simple
+  // diagnostic.
+  ParamMatcher::FailableScope::restore(savedFailureInfo, matcher);
   auto &diag = emitWrongTypeDiag(expectedType);
-  if (matcher.failureReason)
-    matcher.failureReason->addExplanation(diag);
+  matcher.failureReason->addExplanation(diag);
   return failure();
 }
 
