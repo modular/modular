@@ -229,6 +229,14 @@ private:
 // rely on it, hence its `Public` name.
 //===----------------------------------------------------------------------===//
 
+/// Stability information extracted from the @stable decorator on a decl.
+/// isStable=false means no @stable decorator. sinceVersion is empty when
+/// the decorator was bare (@stable with no arguments).
+struct StableInfo {
+  bool isStable = false;
+  std::string sinceVersion;
+};
+
 /// The different kinds of public decls.
 enum class PublicDeclKind {
   DK_PublicAliasDecl,
@@ -566,6 +574,7 @@ private:
 
   StringRef deprecated;
   std::string description;
+  StableInfo stableInfo;
   std::string summary;
 };
 
@@ -703,6 +712,7 @@ private:
   bool isMethodFlag = false;
   bool isStaticFlag = false;
   bool raisesFlag = false;
+  StableInfo stableInfo;
   bool isInit = false; // Is init or moveinit or copyinit.
   bool isDefaultImplFlag =
       false; // True if trait method has default implementation.
@@ -853,6 +863,7 @@ private:
 
   StringRef deprecated;
   std::string description;
+  StableInfo stableInfo;
   std::string summary;
   MojoASTDeclRef decl;
 };
@@ -930,6 +941,7 @@ private:
   StringRef deprecated;
   std::string constraints;
   std::string description;
+  StableInfo stableInfo;
   std::string summary;
   MojoASTDeclRef decl;
 };
