@@ -13,8 +13,7 @@
 from complex import ComplexFloat32
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-from layout import Coord, Idx, TileTensor
-from layout.coord import coord
+from layout import Coord, Idx, TileTensor, coord
 from layout._layout import row_major
 from math import sqrt
 from nn.irfft import irfft

@@ -14,8 +14,7 @@
 
 from gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor
-from layout.coord import coord
+from layout import Coord, Idx, TileTensor, coord
 from layout._layout import Layout, row_major
 from nn.rope import rope_ragged
 from testdata.fused_qk_rope_goldens import (

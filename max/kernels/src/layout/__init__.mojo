@@ -27,6 +27,7 @@ from .coord import (
     ComptimeInt,
     Idx,
     RuntimeInt,
+    coord,
     coord_to_index_list,
 )
 from .int_tuple import UNKNOWN_VALUE, IntTuple
