@@ -40,6 +40,7 @@ from ..structured_kernels.tile_types import (
     static_row_major,
 )
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from ..structured_kernels.config import OutputPipelineConfig
 from ..structured_kernels.tile_pipeline import OutputStage, EpilogueKStage
 from ..structured_kernels.tmem import TmemAddress, TmemFragments
 
@@ -181,9 +182,7 @@ struct BlockwiseFP8Accumulator[
     fn promote[
         # Parameters derived from argument types (use _ for inference)
         num_pipeline_stages: Int,
-        num_accum_pipeline_stages: Int,
-        stage_stride_cols: Int,
-        cta_group: Int,
+        opc: OutputPipelineConfig,
         num_input_stages: Int,
         # Type parameters
         b_scales_dtype: DType,
@@ -201,9 +200,7 @@ struct BlockwiseFP8Accumulator[
             num_pipeline_stages,
         ],
         epi_stage: EpilogueKStage[
-            num_accum_pipeline_stages,
-            stage_stride_cols,
-            cta_group,
+            opc,
             num_input_stages,
         ],
         work_tile_coord: Tuple[UInt, UInt],
@@ -285,10 +282,12 @@ struct BlockwiseFP8Accumulator[
         var staged_c_row: UInt
         var staged_c_col: UInt
 
-        comptime if Self.MMA_M == 256 or (Self.MMA_M == 128 and cta_group == 1):
+        comptime if Self.MMA_M == 256 or (
+            Self.MMA_M == 128 and opc.cta_group == 1
+        ):
             staged_c_row = warp_id * UInt(WARP_SIZE)
             staged_c_col = UInt(0)
-        elif Self.MMA_M == 64 and cta_group == 1:
+        elif Self.MMA_M == 64 and opc.cta_group == 1:
             staged_c_row = warp_id * UInt(WARP_SIZE // 2)
             staged_c_col = UInt(0)
         else:

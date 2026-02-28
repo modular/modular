@@ -71,7 +71,10 @@ from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 from linalg.utils import elementwise_compute_lambda_type
 from linalg.structuring import SMemPtr
-from ..structured_kernels.config import BlockScaledMatmulConfig
+from ..structured_kernels.config import (
+    BlockScaledMatmulConfig,
+    OutputPipelineConfig,
+)
 from ..structured_kernels.tile_types import internal_k_major_128B
 from ..structured_kernels.kernel_common import (
     WarpRole,
@@ -610,6 +613,13 @@ struct GroupedBlockScaledMatmulKernel[
     comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
     comptime stage_stride_cols = Self.MMA_N
 
+    # Output pipeline config (bundles accum stages, stride, and cta_group)
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Barrier Arrival Counts ==========
 
     comptime _accum_barrier_counts = compute_accum_barrier_counts[
@@ -763,18 +773,14 @@ struct GroupedBlockScaledMatmulKernel[
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        # A tile dimensions (BM x BK)
-        Self.SmemType.BM,
-        Self.SmemType.BK,
-        # B tile dimensions (BN x BK)
-        Self.SmemType.BN,
-        Self.SmemType.BK,
-        # SFA tile dimensions
-        Self.SmemType.SFA_DIM0,
-        Self.SmemType.SFA_DIM1,
-        # SFB tile dimensions
-        Self.SmemType.SFB_DIM0,
-        Self.SmemType.SFB_DIM1,
+        IndexList[2](Self.SmemType.BM, Self.SmemType.BK),  # A tile shape
+        IndexList[2](Self.SmemType.BN, Self.SmemType.BK),  # B tile shape
+        IndexList[2](
+            Self.SmemType.SFA_DIM0, Self.SmemType.SFA_DIM1
+        ),  # SFA shape
+        IndexList[2](
+            Self.SmemType.SFB_DIM0, Self.SmemType.SFB_DIM1
+        ),  # SFB shape
         Self.SmemType.num_pipeline_stages,
     ]
 
@@ -786,7 +792,7 @@ struct GroupedBlockScaledMatmulKernel[
 
     # ========== TMEM and Output Pipeline Types ==========
 
-    comptime Tmem = TmemAllocation[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
 
     comptime TmemRegion = BlockScaledTmem[
         Self.accum_type,
@@ -800,13 +806,9 @@ struct GroupedBlockScaledMatmulKernel[
         num_sf_k_tiles = Self.config.num_sf_k_tiles,
     ]
 
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # ========== Warp Context Types ==========
 
@@ -822,17 +824,13 @@ struct GroupedBlockScaledMatmulKernel[
     ]
 
     comptime MmaCtx = MmaWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
@@ -844,14 +842,12 @@ struct GroupedBlockScaledMatmulKernel[
         accum_type = Self.accum_type,
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
+        opc = Self.opc,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
         c_smem_dim0 = Self.SmemType.OutputM,
         c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.config.num_output_stages,
-        stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
@@ -1275,7 +1271,7 @@ struct GroupedBlockScaledMatmulKernel[
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                    accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
@@ -1344,7 +1340,7 @@ struct GroupedBlockScaledMatmulKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                    accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
@@ -1862,7 +1858,7 @@ struct GroupedBlockScaledMatmulKernel[
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                    accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
@@ -1949,7 +1945,7 @@ struct GroupedBlockScaledMatmulKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                    accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )

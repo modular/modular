@@ -35,7 +35,7 @@ Architecture
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Tile Storage (defines tile arrays and storage)                     │
 │                                                                     │
-│  StandardTileStorage[a_type, b_type, a_dim0, a_dim1, b_dim0, ...]  │
+│  StandardTileStorage[a_type, b_type, a_shape, b_shape, ...]        │
 │      ├── ATileArray = SMemTileArray2D[...]  # TileTensor-based     │
 │      ├── BTileArray = SMemTileArray2D[...]  # TileTensor-based     │
 │      ├── var a_tiles_storage                                        │
@@ -73,8 +73,8 @@ struct MyKernelSmem[config: MyConfig]:
     # Tile storage (single source of truth for tile types)
     comptime Tiles = StandardTileStorage[
         config.a_type, config.b_type,
-        config.BM, config.BK,  # A tile dimensions
-        config.BN, config.BK,  # B tile dimensions
+        IndexList[2](config.BM, config.BK),  # A tile shape
+        IndexList[2](config.BN, config.BK),  # B tile shape
         config.num_pipeline_stages,
     ]
     var tiles: Self.Tiles
@@ -117,6 +117,7 @@ from gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import CoordLike, Layout
 from layout.tma_async import SharedMemBarrier
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from utils.index import IndexList
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
 from linalg.structuring import SMemArray, SMemPtr
@@ -150,12 +151,8 @@ from .tile_pipeline import TilePayload
 struct StandardTileStorage[
     a_type: DType,
     b_type: DType,
-    # A tile dimensions
-    a_dim0: Int,
-    a_dim1: Int,
-    # B tile dimensions
-    b_dim0: Int,
-    b_dim1: Int,
+    a_shape: IndexList[2],  # (BM, BK)
+    b_shape: IndexList[2],  # (BN, BK)
     # Pipeline stages
     num_pipeline_stages: Int,
 ]:
@@ -170,19 +167,25 @@ struct StandardTileStorage[
     Parameters:
         a_type: Data type for A matrix tiles.
         b_type: Data type for B matrix tiles.
-        a_dim0: First dimension for A tiles.
-        a_dim1: Second dimension for A tiles.
-        b_dim0: First dimension for B tiles.
-        b_dim1: Second dimension for B tiles.
+        a_shape: Tile shape for A tiles as (rows, cols).
+        b_shape: Tile shape for B tiles as (rows, cols).
         num_pipeline_stages: Number of pipeline stages (determines array depth).
     """
 
     # TileTensor-based array types (native, explicit dimensions)
     comptime ATileArray = SMemTileArray2D[
-        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
+        Self.a_type,
+        Self.a_shape[0],
+        Self.a_shape[1],
+        Self.num_pipeline_stages,
+        128,
     ]
     comptime BTileArray = SMemTileArray2D[
-        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
+        Self.b_type,
+        Self.b_shape[0],
+        Self.b_shape[1],
+        Self.num_pipeline_stages,
+        128,
     ]
 
     var a_tiles_storage: Self.ATileArray.Storage
@@ -205,21 +208,13 @@ struct BlockScaledTileStorage[
     c_type: DType,
     sfa_type: DType,
     sfb_type: DType,
-    # A tile dimensions
-    a_dim0: Int,
-    a_dim1: Int,
-    # B tile dimensions
-    b_dim0: Int,
-    b_dim1: Int,
-    # C tile dimensions (explicit dimensions, layout defined internally)
+    a_shape: IndexList[2],  # (BM, BK)
+    b_shape: IndexList[2],  # (BN, BK)
+    # C tile dimensions kept separate for type-level compatibility with TileWriter
     c_dim0: Int,
     c_dim1: Int,
-    # SFA tile dimensions
-    sfa_dim0: Int,
-    sfa_dim1: Int,
-    # SFB tile dimensions
-    sfb_dim0: Int,
-    sfb_dim1: Int,
+    sfa_shape: IndexList[2],  # Scale factor A dims
+    sfb_shape: IndexList[2],  # Scale factor B dims
     # Pipeline stages
     num_pipeline_stages: Int,
     num_output_stages: Int,
@@ -239,16 +234,12 @@ struct BlockScaledTileStorage[
         c_type: Data type for C matrix tiles.
         sfa_type: Data type for A scale factor tiles.
         sfb_type: Data type for B scale factor tiles.
-        a_dim0: First dimension for A tiles.
-        a_dim1: Second dimension for A tiles.
-        b_dim0: First dimension for B tiles.
-        b_dim1: Second dimension for B tiles.
+        a_shape: Tile shape for A tiles as (rows, cols).
+        b_shape: Tile shape for B tiles as (rows, cols).
         c_dim0: First dimension for C tiles (OutputM).
         c_dim1: Second dimension for C tiles (OutputN).
-        sfa_dim0: First dimension for SFA tiles.
-        sfa_dim1: Second dimension for SFA tiles.
-        sfb_dim0: First dimension for SFB tiles.
-        sfb_dim1: Second dimension for SFB tiles.
+        sfa_shape: Tile shape for SFA tiles.
+        sfb_shape: Tile shape for SFB tiles.
         num_pipeline_stages: Number of input pipeline stages.
         num_output_stages: Number of output pipeline stages.
     """
@@ -258,10 +249,18 @@ struct BlockScaledTileStorage[
 
     # TileTensor-based array types (native, explicit dimensions)
     comptime ATileArray = SMemTileArray2D[
-        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
+        Self.a_type,
+        Self.a_shape[0],
+        Self.a_shape[1],
+        Self.num_pipeline_stages,
+        128,
     ]
     comptime BTileArray = SMemTileArray2D[
-        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
+        Self.b_type,
+        Self.b_shape[0],
+        Self.b_shape[1],
+        Self.num_pipeline_stages,
+        128,
     ]
     # TileTensor-based for C storage (row_major layout - no swizzle for C tiles)
     comptime CTileArray = SMemTileArray2DRowMajor[
@@ -269,8 +268,12 @@ struct BlockScaledTileStorage[
     ]
     # SF tiles use internal_sf_k_major layout (matches tile_sf_layout_k_major).
     # MMA extracts layout directly from TileTensor type parameters.
-    comptime sfa_layout = internal_sf_k_major[Self.sfa_dim0, Self.sfa_dim1]
-    comptime sfb_layout = internal_sf_k_major[Self.sfb_dim0, Self.sfb_dim1]
+    comptime sfa_layout = internal_sf_k_major[
+        Self.sfa_shape[0], Self.sfa_shape[1]
+    ]
+    comptime sfb_layout = internal_sf_k_major[
+        Self.sfb_shape[0], Self.sfb_shape[1]
+    ]
     comptime SFATileArray = SMemTileArrayWithLayout[
         Self.sfa_type,
         Self.sfa_layout,
@@ -322,18 +325,12 @@ struct BlockwiseFP8TileStorage[
     b_type: DType,
     c_type: DType,
     a_scales_type: DType,
-    # A tile dimensions
-    a_dim0: Int,
-    a_dim1: Int,
-    # B tile dimensions
-    b_dim0: Int,
-    b_dim1: Int,
-    # C tile dimensions (explicit dimensions, layout defined internally)
+    a_shape: IndexList[2],  # (BM, BK)
+    b_shape: IndexList[2],  # (BN, BK)
+    # C tile dimensions kept separate for type-level compatibility with TileWriter
     c_dim0: Int,
     c_dim1: Int,
-    # A-scales tile dimensions
-    a_scales_dim0: Int,
-    a_scales_dim1: Int,
+    a_scales_shape: IndexList[2],  # (1, BM)
     # Pipeline stages
     num_pipeline_stages: Int,
     num_output_stages: Int,
@@ -353,14 +350,11 @@ struct BlockwiseFP8TileStorage[
         b_type: Data type for B matrix tiles.
         c_type: Data type for C matrix tiles.
         a_scales_type: Data type for A scale tiles.
-        a_dim0: First dimension for A tiles.
-        a_dim1: Second dimension for A tiles.
-        b_dim0: First dimension for B tiles.
-        b_dim1: Second dimension for B tiles.
+        a_shape: Tile shape for A tiles as (rows, cols).
+        b_shape: Tile shape for B tiles as (rows, cols).
         c_dim0: First dimension for C tiles (OutputM).
         c_dim1: Second dimension for C tiles (OutputN).
-        a_scales_dim0: First dimension for A scale tiles.
-        a_scales_dim1: Second dimension for A scale tiles.
+        a_scales_shape: Tile shape for A scale tiles as (rows, cols).
         num_pipeline_stages: Number of input pipeline stages.
         num_output_stages: Number of output pipeline stages.
     """
@@ -370,10 +364,18 @@ struct BlockwiseFP8TileStorage[
 
     # TileTensor-based array types for A/B (native, explicit dimensions)
     comptime ATileArray = SMemTileArray2D[
-        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
+        Self.a_type,
+        Self.a_shape[0],
+        Self.a_shape[1],
+        Self.num_pipeline_stages,
+        128,
     ]
     comptime BTileArray = SMemTileArray2D[
-        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
+        Self.b_type,
+        Self.b_shape[0],
+        Self.b_shape[1],
+        Self.num_pipeline_stages,
+        128,
     ]
     # TileTensor-based for C storage (row_major layout - no swizzle for C tiles)
     comptime CTileArray = SMemTileArray2DRowMajor[
@@ -383,8 +385,8 @@ struct BlockwiseFP8TileStorage[
     # Swizzled layout would corrupt indexing for 1D vectors
     comptime AScalesTileArray = SMemTileArray2DRowMajor[
         Self.a_scales_type,
-        Self.a_scales_dim0,
-        Self.a_scales_dim1,
+        Self.a_scales_shape[0],
+        Self.a_scales_shape[1],
         Self.num_pipeline_stages,
     ]
 
@@ -662,8 +664,7 @@ struct TmemDeallocStorage:
 
 struct SourceTileStorage[
     src_type: DType,
-    src_dim0: Int,
-    src_dim1: Int,
+    src_shape: IndexList[2],  # (OutputM, OutputN)
     num_epi_load_stages: Int,
 ]:
     """Storage for source tensor C tiles (residual/skip connection input).
@@ -674,19 +675,20 @@ struct SourceTileStorage[
 
     Parameters:
         src_type: Data type for source tiles (same as output type).
-        src_dim0: First dimension for source tiles (OutputM).
-        src_dim1: Second dimension for source tiles (OutputN).
+        src_shape: Tile shape for source tiles as (OutputM, OutputN).
         num_epi_load_stages: Number of epilogue load pipeline stages.
     """
 
     # Source tile layout (row_major for TMA compatibility, matches output)
-    comptime src_tile_layout = Layout.row_major(Self.src_dim0, Self.src_dim1)
+    comptime src_tile_layout = Layout.row_major(
+        Self.src_shape[0], Self.src_shape[1]
+    )
 
     # TileTensor-based for source storage and access
     comptime SrcTileArray = SMemTileArray2DRowMajor[
         Self.src_type,
-        Self.src_dim0,
-        Self.src_dim1,
+        Self.src_shape[0],
+        Self.src_shape[1],
         Self.num_epi_load_stages,
         128,
     ]

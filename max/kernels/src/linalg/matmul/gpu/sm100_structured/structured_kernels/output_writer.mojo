@@ -52,12 +52,14 @@ from utils.index import IndexList
 from .tile_types import SMemTileArray2DRowMajor
 
 from .barriers import WarpGroupBarrier
+from .config import OutputPipelineConfig
 from .tile_pipeline import OutputStage
 from .tile_scheduler_splitk import TileScheduler, WorkInfo
 from .epilogue_components import (
     AccumBarrier,
     AccumTile,
     EpilogueApplier,
+    EpilogueConfig,
     SMemEpilogueWriter,
     TMAStoreCoords,
     TMAStoreExecutor,
@@ -79,15 +81,13 @@ struct TileWriter[
     accum_type: DType,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
-    cta_group: Int,
-    num_accum_pipeline_stages: Int,
+    opc: OutputPipelineConfig,
     c_swizzle: TensorMapSwizzle,
     transpose_c: Bool,
     # Kernel-level parameters - dimensions replace c_smem_layout
     c_smem_dim0: Int,
     c_smem_dim1: Int,
     num_output_stages: Int,
-    stage_stride_cols: Int,  # Must match OutputTilePipeline's stage_stride_cols
     num_output_warps: Int,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
@@ -102,10 +102,15 @@ struct TileWriter[
     Parameters are passed explicitly to work with both MatmulConfig
     and BlockScaledMatmulConfig.
 
-    The stage_stride_cols parameter must match the value used when
-    constructing the OutputTilePipeline that provides OutputStage
+    The opc (OutputPipelineConfig) parameter must match the config used
+    when constructing the OutputTilePipeline that provides OutputStage
     instances to the write() method.
     """
+
+    # Local aliases from OutputPipelineConfig
+    comptime cta_group = Self.opc.cta_group
+    comptime num_accum_pipeline_stages = Self.opc.num_stages
+    comptime stage_stride_cols = Self.opc.stage_stride_cols
 
     # Create internal layout from dimensions
     comptime c_smem_layout = Layout.row_major(
@@ -125,11 +130,7 @@ struct TileWriter[
         Self.num_output_stages,
         128,
     ]
-    comptime Stage = OutputStage[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime Stage = OutputStage[Self.opc]
 
     # Derived constants
     comptime BM = Self.block_tile_shape[0]
@@ -147,6 +148,17 @@ struct TileWriter[
     comptime stageN = Self.c_smem_dim0 if Self.transpose_c else Self.c_smem_dim1
     comptime stage_contiguous_size = Self.c_smem_dim1
 
+    # EpilogueConfig bundles common epilogue parameters
+    comptime epc = EpilogueConfig.create(
+        MMA_M=Self.MMA_M,
+        MMA_N=Self.MMA_N,
+        stageN=Self.stageN,
+        cta_group=Self.cta_group,
+        transpose_c=Self.transpose_c,
+        BM=Self.BM,
+        BN=Self.BN,
+    )
+
     # Fragment layout constants
     comptime data_paths = 16
     comptime bits = 256
@@ -154,18 +166,9 @@ struct TileWriter[
     comptime fragment_size = (Self.data_paths * (Self.bits // 32)) // WARP_SIZE
     comptime rep_frag_size = Self.rep * Self.fragment_size
 
-    # CTA group determines fragment requirements
-    comptime is_lower_frag_required = not (
-        Self.cta_group == 1 and Self.BM == 64
-    )
-    comptime cg2_num_stages = (
-        Self.MMA_N // Self.stageN if Self.MMA_M
-        == 256 else Self.MMA_N // Self.stageN // 2
-    )
-    comptime cg1_num_stages = Self.MMA_N // Self.stageN
-    comptime num_stages = (
-        Self.cg2_num_stages if Self.cta_group == 2 else Self.cg1_num_stages
-    )
+    # Aliases from EpilogueConfig
+    comptime is_lower_frag_required = Self.epc.is_lower_frag_required
+    comptime num_stages = Self.epc.num_stages
 
     # TMEM array type for accumulator tiles
     comptime accum_tile_layout = Layout.row_major(Self.BM, Self.stageN)
@@ -337,15 +340,9 @@ struct TileWriter[
             Self.accum_type,
             Self.c_smem_dim0,
             Self.c_smem_dim1,
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
-            Self.cta_group,
+            Self.epc,
             Self.num_output_warps,
             Self.c_swizzle,
-            Self.transpose_c,
         ]
         var smem_writer = SMEMWriter(UInt32(warp_id), UInt32(lane))
 
@@ -353,16 +350,9 @@ struct TileWriter[
             Self.c_type,
             Self.c_smem_dim0,
             Self.c_smem_dim1,
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
+            Self.epc,
             Self.stage_contiguous_size,
-            Self.cta_group,
             Self.c_swizzle,
-            Self.transpose_c,
-            Self.is_lower_frag_required,
             batched = Self.batched,
         ]
 
@@ -446,7 +436,7 @@ struct TileWriter[
                 Self.register_based_epilogue
                 or not Self.elementwise_compute_lambda_fn
             ):
-                comptime expected_size = SMEMWriter.Config.fragment_size * Self.rep
+                comptime expected_size = Self.epc.fragment_size * Self.rep
                 comptime assert (
                     Self.rep_frag_size == expected_size
                 ), "Fragment sizes must match"
@@ -465,16 +455,9 @@ struct TileWriter[
                     Self.c_smem_dim0,
                     Self.c_smem_dim1,
                     Self.epilogue_dtype,
-                    Self.BM,
-                    Self.BN,
-                    Self.MMA_M,
-                    Self.MMA_N,
-                    Self.cta_group,
+                    Self.epc,
                     Self.num_output_warps,
                     Self.c_swizzle,
-                    Self.transpose_c,
-                    Self.is_lower_frag_required,
-                    Self.num_stages,
                     simd_size,
                     stage,
                     Self.rep_frag_size,
@@ -486,12 +469,7 @@ struct TileWriter[
 
             # TMA store: construct coordinates (2D or 3D based on batched flag)
             comptime StoreCoords = TMAStoreCoords[
-                Self.BM,
-                Self.BN,
-                Self.MMA_M,
-                Self.MMA_N,
-                Self.stageN,
-                Self.cta_group,
+                Self.epc,
                 Self.c_smem_dim0,
                 stage,
                 batched = Self.batched,
@@ -566,15 +544,9 @@ struct TileWriter[
             Self.accum_type,
             Self.c_smem_dim0,
             Self.c_smem_dim1,
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
-            Self.cta_group,
+            Self.epc,
             Self.num_output_warps,
             Self.c_swizzle,
-            Self.transpose_c,
         ]
         var smem_writer = SMEMWriter(UInt32(warp_id), UInt32(lane))
 
@@ -582,16 +554,9 @@ struct TileWriter[
             Self.c_type,
             Self.c_smem_dim0,
             Self.c_smem_dim1,
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
+            Self.epc,
             Self.stage_contiguous_size,
-            Self.cta_group,
             Self.c_swizzle,
-            Self.transpose_c,
-            Self.is_lower_frag_required,
             batched=False,  # Always 2D for absolute coords
         ]
 
@@ -636,7 +601,7 @@ struct TileWriter[
             # Phase 3: SMEM Write
             var c_smem_tile = c_tiles[loop_stage % 2]
 
-            comptime expected_size = SMEMWriter.Config.fragment_size * Self.rep
+            comptime expected_size = Self.epc.fragment_size * Self.rep
             smem_writer.write_fragments[Self.rep](
                 rebind[SIMD[Self.c_type, expected_size]](
                     upper_frag_casted.cast[Self.c_type]()
@@ -650,14 +615,11 @@ struct TileWriter[
             WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
             # Phase 4: TMA Store with bounds checking
-            comptime TMA_BM = StoreExecutorLocal.TMA_BM
+            comptime CG2_TMA_BM = Self.c_smem_dim0 if Self.MMA_M == 256 else Self.BM
+            comptime CG1_TMA_BM = Self.c_smem_dim0
+            comptime TMA_BM = CG2_TMA_BM if Self.cta_group == 2 else CG1_TMA_BM
             comptime StoreCoordsLocal = TMAStoreCoords[
-                Self.BM,
-                Self.BN,
-                Self.MMA_M,
-                Self.MMA_N,
-                Self.stageN,
-                Self.cta_group,
+                Self.epc,
                 Self.c_smem_dim0,
                 loop_stage,
                 batched=False,
@@ -1017,15 +979,9 @@ struct TileWriter[
             Self.accum_type,
             Self.c_smem_dim0,
             Self.c_smem_dim1,
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
-            Self.cta_group,
+            Self.epc,
             Self.num_output_warps,
             Self.c_swizzle,
-            Self.transpose_c,
         ]
         var smem_writer = SMEMWriter(UInt32(warp_id), UInt32(lane))
 
@@ -1033,16 +989,9 @@ struct TileWriter[
             Self.c_type,
             Self.c_smem_dim0,
             Self.c_smem_dim1,
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
+            Self.epc,
             Self.stage_contiguous_size,
-            Self.cta_group,
             Self.c_swizzle,
-            Self.transpose_c,
-            Self.is_lower_frag_required,
             batched = Self.batched,
         ]
 
@@ -1128,7 +1077,7 @@ struct TileWriter[
                 Self.register_based_epilogue
                 or not Self.elementwise_compute_lambda_fn
             ):
-                comptime expected_size = SMEMWriter.Config.fragment_size * Self.rep
+                comptime expected_size = Self.epc.fragment_size * Self.rep
                 comptime assert (
                     Self.rep_frag_size == expected_size
                 ), "Fragment sizes must match"
@@ -1147,16 +1096,9 @@ struct TileWriter[
                     Self.c_smem_dim0,
                     Self.c_smem_dim1,
                     Self.epilogue_dtype,
-                    Self.BM,
-                    Self.BN,
-                    Self.MMA_M,
-                    Self.MMA_N,
-                    Self.cta_group,
+                    Self.epc,
                     Self.num_output_warps,
                     Self.c_swizzle,
-                    Self.transpose_c,
-                    Self.is_lower_frag_required,
-                    Self.num_stages,
                     simd_size,
                     stage,
                     Self.rep_frag_size,
@@ -1168,12 +1110,7 @@ struct TileWriter[
 
             # 5. TMA store to GMEM
             comptime StoreCoords = TMAStoreCoords[
-                Self.BM,
-                Self.BN,
-                Self.MMA_M,
-                Self.MMA_N,
-                Self.stageN,
-                Self.cta_group,
+                Self.epc,
                 Self.c_smem_dim0,
                 stage,
                 batched = Self.batched,

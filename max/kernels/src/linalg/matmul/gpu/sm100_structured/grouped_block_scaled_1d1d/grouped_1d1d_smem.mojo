@@ -29,6 +29,7 @@ The 1D-1D layout uses:
 from gpu.memory import AddressSpace
 from layout import Layout
 from layout.tensor_core_async import tile_sf_layout_k_major
+from utils.index import IndexList
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from ..structured_kernels.pipeline_storage import (
     BlockScaledTileStorage,
@@ -142,21 +143,12 @@ struct Grouped1D1DSmem[
         Self.c_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        # A tile dimensions (BM x BK)
-        Self.BM,
-        Self.BK,
-        # B tile dimensions (BN x BK)
-        Self.BN,
-        Self.BK,
-        # C tile dimensions (OutputM x OutputN)
+        IndexList[2](Self.BM, Self.BK),  # A tile shape
+        IndexList[2](Self.BN, Self.BK),  # B tile shape
         Self.OutputM,
         Self.OutputN,
-        # SFA tile dimensions
-        Self.SFA_DIM0,
-        Self.SFA_DIM1,
-        # SFB tile dimensions
-        Self.SFB_DIM0,
-        Self.SFB_DIM1,
+        IndexList[2](Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
+        IndexList[2](Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
@@ -180,18 +172,10 @@ struct Grouped1D1DSmem[
             Self.b_type,
             Self.sfa_dtype,
             Self.sfb_dtype,
-            # A tile dimensions (BM x BK)
-            Self.BM,
-            Self.BK,
-            # B tile dimensions (BN x BK)
-            Self.BN,
-            Self.BK,
-            # SFA tile dimensions
-            Self.SFA_DIM0,
-            Self.SFA_DIM1,
-            # SFB tile dimensions
-            Self.SFB_DIM0,
-            Self.SFB_DIM1,
+            IndexList[2](Self.BM, Self.BK),  # A tile shape
+            IndexList[2](Self.BN, Self.BK),  # B tile shape
+            IndexList[2](Self.SFA_DIM0, Self.SFA_DIM1),  # SFA shape
+            IndexList[2](Self.SFB_DIM0, Self.SFB_DIM1),  # SFB shape
             Self.num_pipeline_stages,
         ],
     ]

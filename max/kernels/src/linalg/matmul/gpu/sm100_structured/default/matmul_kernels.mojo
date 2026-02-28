@@ -92,7 +92,7 @@ from linalg.utils import (
     elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
-from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
@@ -124,7 +124,6 @@ from ..structured_kernels.tile_scheduler import TileScheduler
 from ..structured_kernels.tile_scheduler_splitk import (
     TileScheduler as TileSchedulerSplitK,
 )
-from ..structured_kernels.epilogue_components import EpilogueConfig
 from linalg.structuring import (
     SMemPtr,
     SMemTile,
@@ -213,12 +212,8 @@ struct B200MatmulSmem[
     comptime InputTiles = StandardTileStorage[
         Self.a_type,
         Self.b_type,
-        # A tile dimensions (BM x BK)
-        Self.BM,
-        Self.BK,
-        # B tile dimensions (BN x BK)
-        Self.BN,
-        Self.BK,
+        IndexList[2](Self.BM, Self.BK),  # A tile shape
+        IndexList[2](Self.BN, Self.BK),  # B tile shape
         Self.num_pipeline_stages,
     ]
     # Output tiles: C matrix (different stage count)
@@ -260,12 +255,8 @@ struct B200MatmulSmem[
         StandardTilePayload[
             Self.a_type,
             Self.b_type,
-            # A tile dimensions (BM x BK)
-            Self.BM,
-            Self.BK,
-            # B tile dimensions (BN x BK)
-            Self.BN,
-            Self.BK,
+            IndexList[2](Self.BM, Self.BK),  # A tile shape
+            IndexList[2](Self.BN, Self.BK),  # B tile shape
             Self.num_pipeline_stages,
         ],
     ]
@@ -384,6 +375,13 @@ struct BlackwellMatmulSM100Kernel[
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.NUM_TMEM_COLS // Self.num_accum_pipeline_stages
 
+    # Output pipeline config (bundles accum stages, stride, and cta_group)
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Barrier Arrival Counts ==========
 
     comptime clc_producer_arv_count = 1
@@ -449,12 +447,8 @@ struct BlackwellMatmulSM100Kernel[
     comptime TilePayload = StandardTilePayload[
         Self.a_type,
         Self.b_type,
-        # A tile dimensions (BM x BK)
-        Self.BM,
-        Self.BK,
-        # B tile dimensions (BN x BK)
-        Self.BN,
-        Self.BK,
+        IndexList[2](Self.BM, Self.BK),  # A tile shape
+        IndexList[2](Self.BN, Self.BK),  # B tile shape
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
@@ -573,21 +567,10 @@ struct BlackwellMatmulSM100Kernel[
     comptime a_tma_rows = Self.a_tile_dim0
     comptime b_tma_rows = Self.b_tile_dim0
 
-    # ========== Epilogue Configuration ==========
-    # Note: stageN is typically c_smem_layout.shape[1] for non-transposed output
-
-    comptime EpilogueConf = EpilogueConfig[
-        Self.MMA_M,
-        Self.MMA_N,
-        Self.SmemType.c_smem_layout.shape[1].value(),  # stageN
-        Self.cta_group,
-        False,  # transpose_c (default)
-    ]
-
     # ========== Tensor Memory Type ==========
     # TMEM allocation and typed accumulator tensor
 
-    comptime Tmem = TmemAllocation[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
 
     # Layout-parameterized TMEM tensor for type-safe accumulator access
     comptime accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
@@ -598,11 +581,7 @@ struct BlackwellMatmulSM100Kernel[
     # ========== Output Tile Pipeline Type ==========
     # Manages MMA→Epilogue pipeline for TMEM accumulator stages
 
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
     # MMA-Epilogue handoff barrier (barrier_id=1)
     comptime MmaEpilogueSync = WarpGroupBarrier[
@@ -610,22 +589,18 @@ struct BlackwellMatmulSM100Kernel[
     ]
 
     # TMEM deallocation barrier for cluster synchronization
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # MMA warp context (TMEM + dealloc + OutputPipeline)
     comptime MmaCtx = MmaWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     # Epilogue warp context (works in run_splitk, issues in run with k_group>1)
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
@@ -639,14 +614,12 @@ struct BlackwellMatmulSM100Kernel[
         accum_type = Self.accum_type,
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
+        opc = Self.opc,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
         c_smem_dim0 = Self.SmemType.OutputM,
         c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.SmemType.num_output_stages,
-        stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
@@ -659,14 +632,12 @@ struct BlackwellMatmulSM100Kernel[
         accum_type = Self.accum_type,
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
+        opc = Self.opc,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
         c_smem_dim0 = Self.SmemType.OutputM,
         c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.SmemType.num_output_stages,
-        stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
@@ -1147,7 +1118,7 @@ struct BlackwellMatmulSM100Kernel[
                 var mma_ctx = Self.MmaCtx(
                     tmem,
                     Self.OutputPipeline(
-                        smem.pipelines.accum_barriers(),
+                        smem.pipelines.accum_barriers().ptr,
                         tmem,
                         UInt16(ctx.mma_complete_mask),
                     ),
@@ -1185,7 +1156,7 @@ struct BlackwellMatmulSM100Kernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.pipelines.accum_barriers(),
+                    smem.pipelines.accum_barriers().ptr,
                     tmem,
                     UInt16(ctx.mma_complete_mask),
                 ),
@@ -1391,7 +1362,7 @@ struct BlackwellMatmulSM100Kernel[
                 var mma_ctx = Self.MmaCtx(
                     tmem,
                     Self.OutputPipeline(
-                        smem.pipelines.accum_barriers(),
+                        smem.pipelines.accum_barriers().ptr,
                         tmem,
                         UInt16(ctx.mma_complete_mask),
                     ),
@@ -1428,7 +1399,7 @@ struct BlackwellMatmulSM100Kernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.pipelines.accum_barriers(),
+                    smem.pipelines.accum_barriers().ptr,
                     tmem,
                     UInt16(ctx.mma_complete_mask),
                 ),

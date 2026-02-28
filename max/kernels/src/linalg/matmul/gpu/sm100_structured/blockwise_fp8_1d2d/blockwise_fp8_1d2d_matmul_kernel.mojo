@@ -56,7 +56,7 @@ from utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import elementwise_compute_lambda_type
 
-from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
 from ..structured_kernels.kernel_common import (
     compute_tma_tile_dims,
     compute_accum_barrier_counts,
@@ -163,6 +163,13 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.MMA_N
 
+    # Output pipeline config (bundles accum stages, stride, and cta_group)
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Barrier Arrival Counts ==========
 
     comptime _accum_barrier_counts = compute_accum_barrier_counts[
@@ -203,15 +210,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        # A tile dimensions (BM x BK)
-        Self.SmemType.BM,
-        Self.SmemType.BK,
-        # B tile dimensions (BN x BK)
-        Self.SmemType.BN,
-        Self.SmemType.BK,
-        # A-scales dimensions (1 x BM)
-        1,
-        Self.SmemType.BM,
+        IndexList[2](Self.SmemType.BM, Self.SmemType.BK),  # A tile shape
+        IndexList[2](Self.SmemType.BN, Self.SmemType.BK),  # B tile shape
+        IndexList[2](1, Self.SmemType.BM),  # A-scales shape
         Self.SmemType.num_pipeline_stages,
     ]
 
@@ -222,14 +223,10 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     ]
 
     # ========== TMEM and Output Pipeline Types ==========
-    comptime Tmem = TmemAllocation[Self.cta_group]
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
     # ========== Warp Context Types ==========
     comptime MmaEpilogueSync = WarpGroupBarrier[
@@ -237,17 +234,13 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     ]
 
     comptime MmaCtx = MmaWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         WarpRole1D1D.NUM_MMA_THREADS,
         WarpRole1D1D.NUM_EPILOGUE_THREADS,
     ]
 
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         WarpRole1D1D.NUM_MMA_THREADS,
         WarpRole1D1D.NUM_EPILOGUE_THREADS,
     ]
@@ -553,7 +546,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
-                Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
+                Self.OutputPipeline(
+                    accum_barriers.ptr, tmem, mma_complete_mask
+                ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
@@ -586,7 +581,9 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
-                Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
+                Self.OutputPipeline(
+                    accum_barriers.ptr, tmem, mma_complete_mask
+                ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 

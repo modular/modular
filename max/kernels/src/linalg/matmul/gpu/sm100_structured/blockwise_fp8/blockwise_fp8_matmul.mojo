@@ -108,62 +108,11 @@ fn blockwise_fp8_matmul[
     ), "Only support cta_group == 1 or 2"
     comptime assert not config.AB_swapped, "Swapped AB is not supported"
 
-    # ==== Compute correct max_pipeline_stages for blockwise FP8 ====
-    # MatmulConfig._maximize_pipeline_stages_by_default() doesn't account for
-    # a_scales_smem, so we must recalculate and potentially reduce num_pipeline_stages.
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-    comptime MBAR_BYTES_EARLY = size_of[Int64]()
-    comptime CLC_RESPONSE_BYTES_EARLY = size_of[Int128]()
-    comptime TMEM_ADDR_BYTES_EARLY = size_of[Int32]()
-
-    comptime a_smem_bytes_per_stage_early = BM * BK * size_of[a_type]()
-    comptime b_smem_bytes_per_stage_early = BN * BK * size_of[b_type]()
-    comptime a_scales_smem_bytes_per_stage_early = BM * size_of[a_scales_type]()
-    comptime AB_smem_per_stage_early = a_smem_bytes_per_stage_early + b_smem_bytes_per_stage_early
-
-    comptime c_smem_bytes_early = config.output_tile_shape[
-        0
-    ] * config.output_tile_shape[1] * config.num_output_stages * size_of[
-        c_type
-    ]()
-
-    comptime accum_full_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_accum_pipeline_stages
-    comptime accum_empty_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_accum_pipeline_stages
-    comptime clc_response_bytes_early = CLC_RESPONSE_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime clc_full_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime clc_empty_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime clc_throttle_full_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime clc_throttle_empty_mbar_bytes_early = MBAR_BYTES_EARLY * config.num_clc_pipeline_stages
-    comptime tmem_writeout_smem_early = c_smem_bytes_early + TMEM_ADDR_BYTES_EARLY + MBAR_BYTES_EARLY
-    comptime accum_smem_early = accum_full_mbar_bytes_early + accum_empty_mbar_bytes_early
-    comptime clc_smem_early = (
-        clc_response_bytes_early
-        + clc_full_mbar_bytes_early
-        + clc_empty_mbar_bytes_early
-        + clc_throttle_full_mbar_bytes_early
-        + clc_throttle_empty_mbar_bytes_early
-    )
-    comptime smem_leftover_early = b200_smem - (
-        clc_smem_early + accum_smem_early + tmem_writeout_smem_early
-    )
-
-    comptime tma_mbar_bytes_per_stage_early = MBAR_BYTES_EARLY
-    comptime mma_mbar_bytes_per_stage_early = MBAR_BYTES_EARLY
-    comptime producer_consumer_smem_per_stage_early = (
-        AB_smem_per_stage_early
-        + a_scales_smem_bytes_per_stage_early
-        + tma_mbar_bytes_per_stage_early
-        + mma_mbar_bytes_per_stage_early
-    )
-
-    comptime max_pipeline_stages_early = smem_leftover_early // producer_consumer_smem_per_stage_early
-
-    # Use the minimum of config value and computed max to avoid SMEM overflow
-    comptime corrected_pipeline_stages = min(
-        config.num_pipeline_stages, max_pipeline_stages_early
-    )
-
-    # Create corrected config with proper pipeline stages for blockwise FP8
+    # Re-create config with extra_smem_per_stage to account for A-scales SMEM.
+    # The caller's config was computed without a_scales overhead, so pipeline
+    # stages may be too high. _maximize_pipeline_stages handles the correction
+    # when given extra_smem_per_stage = BM * size_of[a_scales_type].
+    comptime a_scales_smem_per_stage = BM * size_of[a_scales_type]()
     comptime corrected_config = MatmulConfig[
         a_type, b_type, c_type, transpose_b
     ](
@@ -171,19 +120,19 @@ fn blockwise_fp8_matmul[
         mma_shape=config.mma_shape,
         cluster_shape=config.cluster_shape,
         AB_swapped=config.AB_swapped,
-        num_pipeline_stages=corrected_pipeline_stages,
         num_accum_pipeline_stages=config.num_accum_pipeline_stages,
         num_clc_pipeline_stages=config.num_clc_pipeline_stages,
         block_swizzle_size=config.block_swizzle_size,
         raster_order=config.raster_order,
         k_group_size=config.k_group_size,
+        extra_smem_per_stage=a_scales_smem_per_stage,
     )
 
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]())
 
-    # Compute SMEM size - use corrected_config which accounts for a_scales
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime SmemType = BlockwiseFP8Smem[
         a_type,
         b_type,
@@ -192,16 +141,7 @@ fn blockwise_fp8_matmul[
         transpose_b,
         config=corrected_config,
     ]
-
-    # Use the values computed earlier (with _early suffix) - they're the same
-    comptime producer_consumer_smem = producer_consumer_smem_per_stage_early * corrected_pipeline_stages
-
-    comptime smem_size = (
-        clc_smem_early
-        + accum_smem_early
-        + producer_consumer_smem
-        + tmem_writeout_smem_early
-    )
+    comptime smem_size = size_of[SmemType]()
 
     # Instantiate kernel type - use corrected_config which has proper num_pipeline_stages
     comptime Kernel = BlackwellBlockwiseFP8MatmulKernel[
@@ -285,6 +225,6 @@ fn blockwise_fp8_matmul[
         block_dim=(32 * 7),
         shared_mem_bytes=smem_size,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(smem_size)
+            UInt32(b200_smem)
         ),
     )

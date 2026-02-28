@@ -73,7 +73,7 @@ from utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import elementwise_compute_lambda_type
-from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
 
 # Structured kernel imports
@@ -194,6 +194,13 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # TMEM configuration
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.NUM_TMEM_COLS // Self.config.num_accum_pipeline_stages
+
+    # Output pipeline config (bundles accum stages, stride, and cta_group)
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
 
     # ========== Barrier Arrival Counts ==========
 
@@ -359,15 +366,9 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        # A tile dimensions (BM x BK)
-        Self.SmemType.BM,
-        Self.SmemType.BK,
-        # B tile dimensions (BN x BK)
-        Self.SmemType.BN,
-        Self.SmemType.BK,
-        # A-scales dimensions (1 x BM)
-        1,
-        Self.SmemType.BM,
+        IndexList[2](Self.SmemType.BM, Self.SmemType.BK),  # A tile shape
+        IndexList[2](Self.SmemType.BN, Self.SmemType.BK),  # B tile shape
+        IndexList[2](1, Self.SmemType.BM),  # A-scales shape
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
@@ -387,8 +388,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime AScalesTmaOp = Self.AScalesTmaTile.InnerType
 
     # ========== TMEM Types ==========
-    comptime Tmem = TmemAllocation[Self.cta_group]
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # Layout-parameterized TMEM tensor for typed accumulator access
     comptime tmem_accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
@@ -397,42 +398,30 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ]
 
     # ========== Output Pipeline Type ==========
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
     # ========== Warp Context Types ==========
     comptime MmaCtx = MmaWarpContext[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     # Linear type handles (flat code structure, compiler-enforced cleanup)
     comptime MmaHandle = MmaWarp[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     comptime EpilogueHandle = EpilogueWarp[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
@@ -818,7 +807,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             # Create linear handle - allocates TMEM, signals sync barrier
             var mma_handle = Self.MmaHandle.create(
                 smem.pipelines.tmem_addr(),
-                accum_barriers,
+                accum_barriers.ptr,
                 smem.pipelines.tmem_dealloc(),
                 UInt16(ctx.mma_complete_mask),
             )
@@ -854,7 +843,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             # Create linear handle - reads TMEM address from shared memory
             var epi_handle = Self.EpilogueHandle.create(
                 smem.pipelines.tmem_addr(),
-                accum_barriers,
+                accum_barriers.ptr,
                 smem.pipelines.tmem_dealloc(),
                 UInt16(ctx.mma_complete_mask),
             )

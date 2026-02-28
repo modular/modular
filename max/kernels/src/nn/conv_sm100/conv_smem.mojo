@@ -30,6 +30,7 @@ from sys import align_of, size_of
 
 from gpu.memory import AddressSpace
 from layout import Layout
+from utils.index import IndexList
 from layout.tensor_core_async import tile_layout_k_major
 
 # Import pipeline storage from matmul structured kernels
@@ -122,11 +123,9 @@ struct Conv2dSmem[
         Self.act_type,
         Self.filter_type,
         # Activation tile dimensions (BM x BK)
-        Self.BM,
-        Self.BK,
+        IndexList[2](Self.BM, Self.BK),
         # Filter tile dimensions (BN x BK)
-        Self.BN,
-        Self.BK,
+        IndexList[2](Self.BN, Self.BK),
         Self.num_pipeline_stages,
     ]
 
@@ -142,8 +141,7 @@ struct Conv2dSmem[
     comptime num_epi_load_stages: Int = 2
     comptime SourceTiles = SourceTileStorage[
         Self.out_type,  # Source C has same type as output D
-        Self.OutputM,
-        Self.OutputN,
+        IndexList[2](Self.OutputM, Self.OutputN),
         Self.num_epi_load_stages,
     ]
 
@@ -187,10 +185,8 @@ struct Conv2dSmem[
         StandardTilePayload[
             Self.act_type,
             Self.filter_type,
-            Self.BM,
-            Self.BK,
-            Self.BN,
-            Self.BK,
+            IndexList[2](Self.BM, Self.BK),
+            IndexList[2](Self.BN, Self.BK),
             Self.num_pipeline_stages,
         ],
     ]

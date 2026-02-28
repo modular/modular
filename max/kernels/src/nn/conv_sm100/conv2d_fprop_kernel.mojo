@@ -92,6 +92,9 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
     TmemDeallocBarrier,
     WarpGroupBarrier,
 )
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    OutputPipelineConfig,
+)
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAllocation,
     TmemTensor,
@@ -273,10 +276,8 @@ struct Conv2dFpropKernel[
     comptime TilePayload = StandardTilePayload[
         Self.act_type,
         Self.filter_type,
-        Self.BM,
-        Self.BK,
-        Self.BN,
-        Self.BK,
+        IndexList[2](Self.BM, Self.BK),
+        IndexList[2](Self.BN, Self.BK),
         Self.SmemType.num_pipeline_stages,
     ]
     comptime InputTilePipelineType = InputTilePipeline[
@@ -373,19 +374,22 @@ struct Conv2dFpropKernel[
     comptime act_tma_rows = Self.act_tile_dim0
     comptime filter_tma_rows = Self.filter_tile_dim0
 
+    # ========== Output Pipeline Configuration ==========
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Tensor Memory Type ==========
-    comptime Tmem = TmemAllocation[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
     comptime accum_layout = LegacyLayout.row_major(Self.MMA_M, Self.MMA_N)
     comptime AccumTensor = TmemTensor[
         Self.accum_type, Self.accum_layout, cta_group = Self.cta_group
     ]
 
     # ========== Output Pipeline Type ==========
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
     # ========== Epilogue Load Pipeline Type ==========
     # For source C loading (residual add: D = Conv + beta*C)
@@ -402,20 +406,16 @@ struct Conv2dFpropKernel[
     comptime MmaEpilogueSync = WarpGroupBarrier[
         Self.MMA_THREADS + Self.EPILOGUE_THREADS, 1
     ]
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # Warp contexts
     comptime MmaCtx = MmaWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
@@ -426,14 +426,12 @@ struct Conv2dFpropKernel[
         accum_type = Self.accum_type,
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
+        opc = Self.opc,
         c_swizzle = Self.config.c_swizzle,
         transpose_c=False,
         c_smem_dim0 = Self.SmemType.OutputM,
         c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.SmemType.num_output_stages,
-        stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
         # Epilogue lambda for fusion (bias, activation, residual add)
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
@@ -945,7 +943,7 @@ struct Conv2dFpropKernel[
             var mma_ctx = Self.MmaCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.pipelines.accum_barriers(),
+                    smem.pipelines.accum_barriers().ptr,
                     tmem,
                     UInt16(ctx.mma_complete_mask),
                 ),
@@ -980,7 +978,7 @@ struct Conv2dFpropKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    smem.pipelines.accum_barriers(),
+                    smem.pipelines.accum_barriers().ptr,
                     tmem,
                     UInt16(ctx.mma_complete_mask),
                 ),

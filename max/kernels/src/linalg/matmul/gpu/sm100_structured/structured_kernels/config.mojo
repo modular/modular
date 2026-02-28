@@ -38,6 +38,30 @@ from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 # ============================================================================
+# Output Pipeline Configuration
+# ============================================================================
+
+
+@fieldwise_init
+struct OutputPipelineConfig(Copyable, Equatable, TrivialRegisterPassable):
+    """Configuration for the MMA-to-Epilogue output pipeline.
+
+    Bundles the three parameters that jointly define TMEM accumulator
+    stage management for MMA/epilogue synchronization:
+    - num_stages: Number of accumulator pipeline stages (typically 1 or 2).
+    - stage_stride_cols: TMEM column stride between stages.
+    - cta_group: CTA group size (1 or 2).
+
+    Constructed once per kernel struct and propagated to all pipeline
+    types (OutputTilePipeline, warp contexts, TileWriter, etc.).
+    """
+
+    var num_stages: Int
+    var stage_stride_cols: Int
+    var cta_group: Int
+
+
+# ============================================================================
 # Shared Configuration Helpers
 # ============================================================================
 

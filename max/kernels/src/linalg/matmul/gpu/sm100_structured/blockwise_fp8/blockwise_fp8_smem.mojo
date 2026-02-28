@@ -24,6 +24,7 @@ across K iterations, with scales applied per-iteration.
 
 from gpu.memory import AddressSpace
 from layout import Layout
+from utils.index import IndexList
 
 from ..structured_kernels.config import MatmulConfig
 from ..structured_kernels.pipeline_storage import (
@@ -97,18 +98,11 @@ struct BlockwiseFP8Smem[
         Self.b_type,
         Self.c_type,
         Self.a_scales_type,
-        # A tile dimensions (BM x BK)
-        Self.BM,
-        Self.BK,
-        # B tile dimensions (BN x BK)
-        Self.BN,
-        Self.BK,
-        # C tile dimensions (OutputM x OutputN)
+        IndexList[2](Self.BM, Self.BK),  # A tile shape
+        IndexList[2](Self.BN, Self.BK),  # B tile shape
         Self.OutputM,
         Self.OutputN,
-        # A-scales dimensions (1 x BM)
-        1,
-        Self.BM,
+        IndexList[2](1, Self.BM),  # A-scales shape
         Self.num_pipeline_stages,
         Self.num_output_stages,
     ]
@@ -152,15 +146,9 @@ struct BlockwiseFP8Smem[
             Self.a_type,
             Self.b_type,
             Self.a_scales_type,
-            # A tile dimensions (BM x BK)
-            Self.BM,
-            Self.BK,
-            # B tile dimensions (BN x BK)
-            Self.BN,
-            Self.BK,
-            # A-scales dimensions (1 x BM)
-            1,
-            Self.BM,
+            IndexList[2](Self.BM, Self.BK),  # A tile shape
+            IndexList[2](Self.BN, Self.BK),  # B tile shape
+            IndexList[2](1, Self.BM),  # A-scales shape
             Self.num_pipeline_stages,
         ],
     ]
