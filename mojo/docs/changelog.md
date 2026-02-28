@@ -593,6 +593,13 @@ what we publish.
 
 ### 🛠️ Fixed
 
+- Fixed a bug where Mojo incorrectly passed or returned structs in `extern` C
+  function calls. The compiler now applies platform ABI coercion (System V
+  AMD64 on x86-64, AAPCS on ARM64) when lowering external calls, decomposing
+  structs into the register types the C ABI requires — matching the behavior of
+  Clang and Rust. This resolves silent wrong-answer bugs when calling C
+  functions that take or return struct types.
+
 - [Issue #5845](https://github.com/modular/modular/issues/5845): Functions
   raising custom type with conversion fails when returning StringSlice
 
