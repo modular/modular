@@ -70,6 +70,67 @@ from .reshape import reshape
 
 
 @always_inline
+fn block_reduce_sum_and_max[
+    dtype: DType, max_warps_per_block: Int
+](sum_val: Scalar[dtype], max_val: Scalar[dtype]) -> Tuple[
+    Scalar[dtype], Scalar[dtype]
+]:
+    """Combined block reduction for sum and max in a single barrier pass.
+
+    Performs both sum and max reductions across the block using only 2
+    barriers (vs 4 for separate block.sum + block.max with broadcast).
+    """
+    var sum_shared = stack_allocation[
+        max_warps_per_block, dtype, address_space = AddressSpace.SHARED
+    ]()
+    var max_shared = stack_allocation[
+        max_warps_per_block, dtype, address_space = AddressSpace.SHARED
+    ]()
+    var sum_broadcast = stack_allocation[
+        1, dtype, address_space = AddressSpace.SHARED
+    ]()
+    var max_broadcast = stack_allocation[
+        1, dtype, address_space = AddressSpace.SHARED
+    ]()
+
+    # Warp-level reductions (no barrier needed)
+    var warp_sum = warp.sum(sum_val)
+    var warp_max = warp.max(max_val)
+
+    var tid = thread_idx.x
+    var wid = warp.broadcast(tid // UInt(WARP_SIZE))
+    var lid = lane_id()
+
+    # Warp leaders write both results to shared memory
+    if lid == 0:
+        sum_shared[wid] = warp_sum
+        max_shared[wid] = warp_max
+    barrier()  # Single barrier for both
+
+    # First warp reduces all warp results
+    if wid == 0:
+        var block_sum = Scalar[dtype](0)
+        var block_max = Scalar[dtype](0)
+
+        if lid < block_dim.x // UInt(WARP_SIZE):
+            block_sum = sum_shared[lid]
+            block_max = max_shared[lid]
+
+        block_sum = warp.lane_group_sum[num_lanes=max_warps_per_block](
+            block_sum
+        )
+        block_max = warp.lane_group_max[num_lanes=max_warps_per_block](
+            block_max
+        )
+
+        if lid == 0:
+            sum_broadcast[0] = block_sum
+            max_broadcast[0] = block_max
+    barrier()  # Single barrier for broadcast of both
+    return (sum_broadcast[0], max_broadcast[0])
+
+
+@always_inline
 fn block_reduce[
     dtype: DType, max_warps_per_block: Int
 ](val: Scalar[dtype]) -> Scalar[dtype]:
@@ -80,17 +141,9 @@ fn block_reduce[
         1, dtype, address_space = AddressSpace.SHARED
     ]()
 
-    var tid = thread_idx.x
-    for i in range(tid, max_warps_per_block, block_dim.x):
-        m2_shared[i] = 0
-
-    if tid == 0:
-        m2_broadcast[0] = 0
-
-    barrier()
-
     var warp_m2 = warp.sum(val)
 
+    var tid = thread_idx.x
     var warp_id = warp.broadcast(tid // UInt(WARP_SIZE))
     var lane_idx = lane_id()
 
@@ -101,7 +154,9 @@ fn block_reduce[
     if warp_id == 0:
         var block_m2 = Scalar[dtype](0)
 
-        if lane_idx < UInt(max_warps_per_block):
+        # Only read lanes corresponding to active warps to avoid
+        # reading uninitialized shared memory.
+        if lane_idx < block_dim.x // UInt(WARP_SIZE):
             block_m2 = m2_shared[lane_idx]
 
         # On some GPUs, the warp-level reduction implicitly requires all lanes
@@ -843,14 +898,11 @@ fn _rms_norm_warp_tiling_subkernel[
     row: Int,
     idx: Int,
     vec_data: SIMD[accum_type, simd_width],
-    gamma: TileTensor[dtype, ...],
+    gamma_val: SIMD[dtype, simd_width],
     epsilon: Scalar[accum_type],
     weight_offset: Scalar[accum_type],
     num_cols: Int,
 ) -> SIMD[dtype, simd_width]:
-    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
-    comptime align = align_of[SIMD[dtype, simd_width]]()
-
     # To utilize simd vector load.
     var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
 
@@ -867,10 +919,6 @@ fn _rms_norm_warp_tiling_subkernel[
     var norm_factor = rsqrt((row_m2 / Scalar[accum_type](num_cols)) + epsilon)
     var norm_val: SIMD[dtype, simd_width] = 0
     if idx < num_cols:
-        var gamma_val = gamma.load[width=simd_width, alignment=align](
-            Coord(Idx(idx))
-        )
-
         comptime if multiply_before_cast:
             var gamma_accum = gamma_val.cast[accum_type]() + weight_offset
             norm_val = (vec_data * norm_factor * gamma_accum).cast[dtype]()
@@ -924,10 +972,15 @@ fn rms_norm_gpu_warp_tiling_128[
     var idx = local_tid * UInt(simd_width)
 
     with PDL():
+        var gamma_val = SIMD[dtype, simd_width](0)
         if row < UInt(num_rows) and idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
                 accum_type
             ]()
+            # Prefetch gamma before reduction to overlap load with compute.
+            gamma_val = gamma.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
 
         var norm_val = _rms_norm_warp_tiling_subkernel[
             warps_per_block, multiply_before_cast, rows_per_warp=2
@@ -935,7 +988,7 @@ fn rms_norm_gpu_warp_tiling_128[
             Int(row),
             Int(idx),
             vec_data,
-            gamma,
+            gamma_val,
             eps_accum,
             weight_offset_accum,
             num_cols,
@@ -979,10 +1032,15 @@ fn rms_norm_gpu_warp_tiling[
     var idx = tid * UInt(simd_width)
 
     with PDL():
+        var gamma_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
                 accum_type
             ]()
+            # Prefetch gamma before reduction to overlap load with compute.
+            gamma_val = gamma.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
 
         var norm_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
@@ -990,7 +1048,7 @@ fn rms_norm_gpu_warp_tiling[
             Int(row),
             Int(idx),
             vec_data,
-            gamma,
+            gamma_val,
             eps_accum,
             weight_offset_accum,
             num_cols,
@@ -1507,7 +1565,9 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     num_cols: Int,
 ):
     comptime assert gamma1.rank == 1, "gamma1 must have rank 1"
+    comptime assert gamma1.flat_rank == 1, "gamma1 must have flat_rank 1"
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
+    comptime assert gamma2.flat_rank == 1, "gamma2 must have flat_rank 1"
 
     comptime align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
@@ -1523,8 +1583,13 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     var idx = tid * UInt(simd_width)
 
     with PDL():
+        var gamma1_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx))
+            # Prefetch gamma1 before reduction to overlap load with compute.
+            gamma1_val = gamma1.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
 
         var norm1_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
@@ -1532,15 +1597,20 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
             Int(row),
             Int(idx),
             vec_data.cast[accum_type](),
-            gamma1,
+            gamma1_val,
             eps_accum1,
             weight_offset_accum1,
             num_cols,
         )
 
+        var gamma2_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             norm1_val += residual_input_fn[simd_width](Int(row), Int(idx))
             output_residual_fn[simd_width, align](Int(row), Int(idx), norm1_val)
+            # Prefetch gamma2 before second reduction.
+            gamma2_val = gamma2.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
 
         var norm2_val = _rms_norm_warp_tiling_subkernel[
             max_warps_per_block, multiply_before_cast
@@ -1548,7 +1618,7 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
             Int(row),
             Int(idx),
             norm1_val.cast[accum_type](),
-            gamma2,
+            gamma2_val,
             eps_accum2,
             weight_offset_accum2,
             num_cols,
@@ -2380,41 +2450,47 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
     var is_valid = idx < cols
 
     with PDL():
-        # Phase 1: Load input ONCE and compute mean square
-        # Cache the input data to avoid re-reading in phase 2
+        # Phase 1: Load input ONCE, compute mean square AND max(|gamma*x|).
+        # Key insight: max(|gamma*x*norm_factor|) = max(|gamma*x|) * norm_factor
+        # since norm_factor is a positive scalar. Computing both sum(x^2) and
+        # max(|gamma*x|) in the load phase allows both reductions to be issued
+        # back-to-back, eliminating the compute gap between the two barriers.
+        var thread_m2 = Scalar[accum_type](0)
+        var thread_abs_max_gamma_x = Scalar[accum_type](0)
+
         if is_valid:
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            thread_m2 = (vec_data**2).reduce_add()
+            # Compute |gamma * x| for max finding (temporary, not stored)
+            thread_abs_max_gamma_x = abs(
+                apply_gamma[simd_width](vec_data, idx)
+            ).reduce_max()
 
-        var thread_m2 = (vec_data**2).reduce_add()
+        # Combined reduction: sum for m2 and max for scaling in a single
+        # 2-barrier pass (vs 4 barriers for separate block.sum + block.max).
+        comptime max_warps = threads_per_block // WARP_SIZE
+        var row_m2, row_abs_max_gamma_x = block_reduce_sum_and_max[
+            max_warps_per_block=max_warps
+        ](thread_m2, thread_abs_max_gamma_x)
 
-        # Reduce across threads to get row mean square
-        var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
-            thread_m2
-        )
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
         )
 
-        # Phase 2: Compute normalized values and find max using cached data
-        var normalized = SIMD[accum_type, simd_width](0)
-        var thread_max = Scalar[accum_type](0)
+        # Derive max of normalized values: max(|gamma*x|) * norm_factor
+        var row_max = row_abs_max_gamma_x * norm_factor
 
-        if is_valid:
-            normalized = apply_gamma[simd_width](vec_data * norm_factor, idx)
-            thread_max = abs(normalized).reduce_max()
-
-        # Find maximum and compute scale
-        var row_max = block.max[block_size=threads_per_block, broadcast=True](
-            thread_max
-        )
         var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
             out_dtype
         ](row_max, scale_ub)
         if tid == 0:
             scale_buffer[row] = scale_factor
 
-        # Phase 3: Quantize and write (normalized values already in registers)
+        # Phase 2: Normalize (preserving original FP order), quantize, write
         if is_valid:
+            var normalized = apply_gamma[simd_width](
+                vec_data * norm_factor, idx
+            )
             var output_fp8 = fp8_quantize[out_dtype](
                 normalized, scale_factor_recip
             )
@@ -2576,40 +2652,39 @@ fn _rms_norm_fused_fp8_kernel_block[
         return val * gamma_accum
 
     with PDL():
-        # Phase 1: Compute mean square for RMSNorm
+        # Phase 1: Compute mean square AND max(|gamma*x|) in a single pass.
+        # Key insight: max(|gamma*x*norm_factor|) = max(|gamma*x|) * norm_factor
+        # since norm_factor is a positive scalar. This lets us derive both
+        # norm_factor and the FP8 scale from a single pass over the input data.
         var thread_m2 = Scalar[accum_type](0)
+        var thread_abs_max_gamma_x = Scalar[accum_type](0)
 
         for col_offset in range(0, cols, threads_per_block * simd_width):
             var col = col_offset + tid * simd_width
             if col < cols:
                 var vec_data = input_fn[simd_width](row, col).cast[accum_type]()
                 thread_m2 += (vec_data**2).reduce_add()
+                # Compute |gamma * x| to find max for FP8 scaling
+                var gamma_x = apply_gamma[simd_width](vec_data, col)
+                thread_abs_max_gamma_x = max(
+                    thread_abs_max_gamma_x, abs(gamma_x).reduce_max()
+                )
 
-        # Reduce across threads to get row mean square
-        var row_m2 = block.sum[block_size=threads_per_block, broadcast=True](
-            thread_m2
-        )
+        # Combined reduction: sum for m2 and max for scaling in a single
+        # 2-barrier pass (vs 4 barriers for separate block.sum + block.max).
+        comptime max_warps = threads_per_block // WARP_SIZE
+        var row_m2, row_abs_max_gamma_x = block_reduce_sum_and_max[
+            max_warps_per_block=max_warps
+        ](thread_m2, thread_abs_max_gamma_x)
+
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](cols)) + epsilon.cast[accum_type]()
         )
 
-        # Phase 2: Find max for dynamic scaling (single pass)
-        var thread_max = Scalar[accum_type](0)
+        # Derive max of normalized values: max(|gamma*x|) * norm_factor
+        var row_max = row_abs_max_gamma_x * norm_factor
 
-        for col_offset in range(0, cols, threads_per_block * simd_width):
-            var col = col_offset + tid * simd_width
-            if col < cols:
-                var vec_data = input_fn[simd_width](row, col).cast[accum_type]()
-                var normalized = apply_gamma[simd_width](
-                    vec_data * norm_factor, col
-                )
-                thread_max = max(thread_max, abs(normalized).reduce_max())
-
-        # Phase 3: Compute scale factor
-        var row_max = block.max[block_size=threads_per_block, broadcast=True](
-            thread_max
-        )
-
+        # Compute scale factor
         var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
             out_dtype
         ](row_max, scale_ub)
@@ -2618,7 +2693,7 @@ fn _rms_norm_fused_fp8_kernel_block[
         if tid == 0:
             scale_buffer[row] = scale_factor
 
-        # Phase 4: Normalize, quantize and write output
+        # Phase 2: Normalize, quantize and write output
         for col_offset in range(0, cols, threads_per_block * simd_width):
             var col = col_offset + tid * simd_width
             if col < cols:
