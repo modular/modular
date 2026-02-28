@@ -917,5 +917,232 @@ def test_minimum_capacity() raises:
     assert_true(d2._capacity >= _GROUP_WIDTH)
 
 
+def test_inplace_rehash() raises:
+    """In-place rehash reclaims tombstones without growing capacity."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+    var initial_cap = d._reserved()
+
+    # Fill to max_load so _growth_left = 0 after this
+    for i in range(max_load):
+        d[i] = i
+
+    # Delete most entries -> _len well below capacity*7/16
+    var keep = 4
+    for i in range(max_load - keep):
+        _ = d.pop(i)
+
+    assert_equal(len(d), keep)
+
+    # Next insert triggers _maybe_resize. Since _len <= capacity*7/16,
+    # should rehash in-place, NOT double capacity.
+    d[100] = 100
+    assert_equal(d._reserved(), initial_cap)
+    assert_equal(len(d), keep + 1)
+
+    # Verify all entries are findable
+    for i in range(max_load - keep, max_load):
+        assert_equal(d[i], i)
+    assert_equal(d[100], 100)
+
+
+def test_inplace_rehash_preserves_order() raises:
+    """In-place rehash preserves iteration (insertion) order."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+    for i in range(max_load):
+        d[i] = i
+    # Delete even keys
+    for i in range(0, max_load, 2):
+        _ = d.pop(i)
+    # _len = 7, capacity*7/16 = 7, so this is on the boundary.
+    # Insert one more to trigger rehash.
+    d[99] = 99
+    # Verify iteration order: odd keys 1,3,5,7,9,11,13 then 99
+    var keys = List(d.keys())
+    assert_equal(keys[0], 1)
+    assert_equal(keys[1], 3)
+    assert_equal(keys[2], 5)
+    assert_equal(keys[3], 7)
+    assert_equal(keys[4], 9)
+    assert_equal(keys[5], 11)
+    assert_equal(keys[6], 13)
+    assert_equal(keys[7], 99)
+
+
+def test_tombstone_heavy_no_capacity_growth() raises:
+    """Repeated insert/delete cycles should not grow capacity unboundedly."""
+    var capacity = 16
+    var d = Dict[Int, Int](capacity=capacity)
+    var initial_cap = d._reserved()
+
+    # Repeated insert+delete of same key range - generates tombstones
+    # but _len stays low, so in-place rehash should keep capacity stable.
+    for cycle in range(20):
+        for i in range(10):
+            d[1000 + i] = cycle
+        for i in range(10):
+            _ = d.pop(1000 + i)
+
+    # Capacity should stay at initial_cap thanks to in-place rehash
+    assert_equal(d._reserved(), initial_cap)
+
+
+def test_high_load_still_doubles() raises:
+    """When most slots are genuinely occupied, resize should still double."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+    var initial_cap = d._reserved()
+
+    # Fill to capacity without deleting
+    for i in range(max_load):
+        d[i] = i
+
+    # _len(14) > capacity*7/16(7), so next insert should double
+    d[max_load] = max_load
+    assert_equal(d._reserved(), initial_cap * 2)
+
+
+def test_inplace_rehash_string_keys() raises:
+    """In-place rehash works with non-trivial key types."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[String, String](capacity=capacity)
+
+    # Fill to capacity
+    for i in range(max_load):
+        d[String("key", i)] = String("val", i)
+
+    # Delete most entries
+    for i in range(max_load - 4):
+        _ = d.pop(String("key", i))
+
+    assert_equal(len(d), 4)
+    var cap_before = d._reserved()
+
+    # Trigger in-place rehash
+    d["new_key"] = "new_val"
+
+    assert_equal(d._reserved(), cap_before)
+    assert_equal(len(d), 5)
+
+    # Verify all remaining entries
+    for i in range(max_load - 4, max_load):
+        assert_equal(d[String("key", i)], String("val", i))
+    assert_equal(d["new_key"], "new_val")
+
+
+def test_inplace_rehash_via_setdefault() raises:
+    """`setdefault` triggers in-place rehash correctly."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+
+    # Fill to capacity, then delete most
+    for i in range(max_load):
+        d[i] = i
+    for i in range(max_load - 4):
+        _ = d.pop(i)
+
+    assert_equal(len(d), 4)
+    var cap_before = d._reserved()
+
+    # setdefault calls _maybe_resize, should trigger in-place rehash
+    var val = d.setdefault(200, 200)
+    assert_equal(val, 200)
+    assert_equal(d._reserved(), cap_before)
+    assert_equal(len(d), 5)
+
+    # Verify existing entries survived
+    for i in range(max_load - 4, max_load):
+        assert_equal(d[i], i)
+    assert_equal(d[200], 200)
+
+
+def test_inplace_rehash_all_deleted() raises:
+    """In-place rehash when _len == 0 (all entries deleted)."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+    var initial_cap = d._reserved()
+
+    # Fill to capacity then delete everything
+    for i in range(max_load):
+        d[i] = i
+    for i in range(max_load):
+        _ = d.pop(i)
+
+    assert_equal(len(d), 0)
+
+    # _growth_left is 0 from the 14 inserts, _len(0) <= 7 -> in-place rehash
+    d[999] = 999
+    assert_equal(d._reserved(), initial_cap)
+    assert_equal(len(d), 1)
+    assert_equal(d[999], 999)
+
+
+def test_compile_time_dict_with_rehash() raises:
+    """Compile-time dict that triggers in-place rehash."""
+
+    fn _build_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+        var capacity = 16
+        var max_load = capacity * 7 // 8  # 14
+        var keep = 4
+        var d = Dict[String, Int32, default_comp_time_hasher](capacity=capacity)
+        # Fill to max_load
+        for i in range(max_load):
+            d[String(i)] = Int32(i)
+        # Delete most entries to create tombstones
+        for i in range(max_load - keep):
+            _ = d.pop(String(i), -1)
+        # This insert triggers _maybe_resize -> in-place rehash at compile time
+        d["ct"] = 42
+        return d^
+
+    comptime ct_dict = _build_dict()
+
+    # Verify values survive compile-time in-place rehash
+    comptime for i in range(10, 14):
+        comptime val = ct_dict.get(String(i)).value()
+        assert_equal(val, Int32(i))
+
+    comptime ct_val = ct_dict.get("ct").value()
+    assert_equal(ct_val, 42)
+
+
+def test_inplace_rehash_via_update() raises:
+    """`update()` on a tombstone-heavy dict triggers in-place rehash."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+
+    # Fill to capacity, then delete most
+    for i in range(max_load):
+        d[i] = i
+    for i in range(max_load - 4):
+        _ = d.pop(i)
+
+    assert_equal(len(d), 4)
+    var cap_before = d._reserved()
+
+    # update() inserts multiple entries; the first triggers in-place rehash
+    var other = Dict[Int, Int]()
+    for i in range(5):
+        other[200 + i] = 200 + i
+    d.update(other)
+
+    assert_equal(d._reserved(), cap_before)
+    assert_equal(len(d), 9)
+
+    # Verify all entries
+    for i in range(max_load - 4, max_load):
+        assert_equal(d[i], i)
+    for i in range(5):
+        assert_equal(d[200 + i], 200 + i)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
