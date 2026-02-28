@@ -21,6 +21,36 @@ from pathlib import Path
 import jinja2
 
 
+def addStableDecorator(mojo_json) -> None:  # noqa: ANN001
+    """Build the stableDecorator display string from the isStable/sinceVersion
+    fields emitted by the C++ doc generator. Sets stableDecorator to
+    '@stable' or '@stable(since="version")' on each decorated decl so that
+    templates can render it uniformly."""
+
+    def _apply(decl) -> None:  # noqa: ANN001
+        if decl.get("isStable"):
+            since = decl.get("sinceVersion", "")
+            decl["stableDecorator"] = (
+                f'@stable(since="{since}")' if since else "@stable"
+            )
+
+    # Top-level aliases and functions
+    for alias in mojo_json.get("aliases", []):
+        _apply(alias)
+    for overload_set in mojo_json.get("functions", []):
+        for fn in overload_set.get("overloads", []):
+            _apply(fn)
+
+    # Structs and traits: the type itself, its aliases, and its methods
+    for type_decl in mojo_json.get("structs", []) + mojo_json.get("traits", []):
+        _apply(type_decl)
+        for alias in type_decl.get("aliases", []):
+            _apply(alias)
+        for overload_set in type_decl.get("functions", []):
+            for fn in overload_set.get("overloads", []):
+                _apply(fn)
+
+
 def addImplicitConversionDecorator(mojo_json) -> None:  # noqa: ANN001
     """Show @implicit on implicit constructors. We reuse the "convention"
     field which is also used for marking structs with the register-passable
@@ -262,6 +292,7 @@ def generateMarkdown(
     # If its a module, we apply separate templates for struct/trait or function
     if mojo_json["kind"] == "module":
         for transformation in [
+            addStableDecorator,
             addImplicitConversionDecorator,
             copyFieldTypesToValue,
             processStructConvention,
