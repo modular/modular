@@ -178,8 +178,7 @@ fn _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ](uninitialized=True)
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         var target = (my_rank + i) % ngpus
         ptrs[i] = src_ptrs[target]
 
@@ -193,8 +192,7 @@ fn _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         if is_valid:
             var elem_idx = row * cols + idx
 
-            @parameter
-            for gpu_idx in range(ngpus):
+            comptime for gpu_idx in range(ngpus):
                 vec_data += (
                     ptrs[gpu_idx]
                     .address_space_cast[_target_address_space]()
@@ -390,8 +388,7 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
         UnsafePointer[Scalar[in_dtype], MutAnyOrigin], ngpus
     ](uninitialized=True)
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         # +1 advances by sizeof(Signal) bytes (see local scratch note above).
         var base_i = (
             rank_sigs[i].address_space_cast[AddressSpace.GENERIC]() + 1
@@ -408,8 +405,7 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ](uninitialized=True)
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         var target = (my_rank + i) % ngpus
         ptrs[i] = src_ptrs[target]
 
@@ -440,8 +436,7 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
             if is_valid:
                 var global_elem = row * cols + col_idx
 
-                @parameter
-                for gpu_idx in range(ngpus):
+                comptime for gpu_idx in range(ngpus):
                     accum += (
                         ptrs[gpu_idx]
                         .address_space_cast[_target_address_space]()
@@ -514,8 +509,7 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
     # === Stage 2: All-Gather (lightweight P2P copy, no compute) ===
     # Batch reads by GPU: consecutive reads from the same peer improve
     # NVLink pipelining. No runtime owner_rank division per row.
-    @parameter
-    for gpu in range(ngpus):
+    comptime for gpu in range(ngpus):
         var gpu_row_start = gpu * rows_per_rank
         var gpu_row_end = min(gpu_row_start + rows_per_rank, rows)
         var gpu_rows = gpu_row_end - gpu_row_start
@@ -829,8 +823,7 @@ fn _launch_split_allreduce_rmsnorm_fp8[
         NDBuffer[in_dtype, 2, ImmutAnyOrigin], ngpus
     ](uninitialized=True)
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         input_buffers[i] = NDBuffer[in_dtype, 2, ImmutAnyOrigin](
             src_ptrs[i], DimList(rows, cols)
         )
@@ -1238,8 +1231,7 @@ fn allreduce_rmsnorm_fp8[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ](uninitialized=True)
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         src_ptrs[i] = input_buffers[i].data
 
     # Create internal 2D/1D views and dispatch.
@@ -1370,8 +1362,7 @@ fn allreduce_residual_rmsnorm_fp8[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ](uninitialized=True)
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         src_ptrs[i] = input_buffers[i].data
 
     # Create internal 2D/1D views and dispatch.

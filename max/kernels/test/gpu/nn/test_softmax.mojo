@@ -429,8 +429,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
         per_row: If True, use per-row temperature array; otherwise scalar.
     """
 
-    @parameter
-    if per_row:
+    comptime if per_row:
         print("== test_gpu_softmax_temperature (per_row)")
     else:
         print("== test_gpu_softmax_temperature (scalar)")
@@ -461,8 +460,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     var temp_host_ptr = UnsafePointer[Scalar[type]].alloc(batch_size)
     var temp_device = ctx.enqueue_create_buffer[type](batch_size)
 
-    @parameter
-    if per_row:
+    comptime if per_row:
         rand[type](temp_host_ptr, batch_size)
         for i in range(batch_size):
             temp_host_ptr[i] = temp_host_ptr[i] * 1.5 + 0.5

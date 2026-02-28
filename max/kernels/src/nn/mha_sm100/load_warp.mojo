@@ -174,8 +174,7 @@ fn fa4_load[
             StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
         )
 
-    @parameter
-    for qk_stage in range(1, config.num_qk_stages):
+    comptime for qk_stage in range(1, config.num_qk_stages):
         comptime d_idx = qk_stage * config.BK0
         mbark = pipeline_k.get_k[qk_stage=qk_stage]()  # no wait
         if e != 0:
@@ -198,8 +197,7 @@ fn fa4_load[
     q_gmem_row += UInt32(HalfBM)
     var q1_mbar = mbars.q1_wait_mbar()
 
-    @parameter
-    for qk_stage in range(config.num_qk_stages):
+    comptime for qk_stage in range(config.num_qk_stages):
         comptime q_smem_offset = q_elements * (config.num_qk_stages + qk_stage)
         comptime d_idx = qk_stage * config.BK0
         if e != 0:
@@ -227,8 +225,7 @@ fn fa4_load[
         iter_count -= 1
         kv_row += UInt32(config.BN)
 
-        @parameter
-        if check_mask:
+        comptime if check_mask:
             if (
                 mask.status(
                     Index[dtype = DType.int32](Int(score_row), Int(kv_row)),
@@ -240,8 +237,7 @@ fn fa4_load[
         kv_gmem_row = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
 
         # produce k
-        @parameter
-        for k_stage in range(config.num_qk_stages):
+        comptime for k_stage in range(config.num_qk_stages):
             pipeline_k.acquire_k[qk_stage=k_stage]()
             mbarkn = pipeline_k.get_k[qk_stage=k_stage](e)
             comptime d_idx = k_stage * config.BK0

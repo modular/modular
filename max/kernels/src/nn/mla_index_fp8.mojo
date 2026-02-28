@@ -140,8 +140,7 @@ fn fill_invalid_topk_kernel[
     # Compute num_keys based on mask type
     var num_keys: Int
 
-    @parameter
-    if use_causal_mask:
+    comptime if use_causal_mask:
         # Causal: only keys up to current position are valid
         num_keys = cache_len + local_seq_idx + 1
     else:
@@ -318,8 +317,7 @@ fn mla_indexer_ragged_float8_paged[
     )
 
     # Apply mask for prefill (seq_len > 1)
-    @parameter
-    if mask_str != MaskName.NULL.name:
+    comptime if mask_str != MaskName.NULL.name:
         if max_new_tokens > 1:
 
             @always_inline

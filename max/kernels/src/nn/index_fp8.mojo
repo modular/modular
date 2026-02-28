@@ -93,8 +93,7 @@ fn fp8_index_kernel[
 
     var num_keys = k_operand.cache_length(Int(batch_idx))
 
-    @parameter
-    if not _is_cache_length_accurate:
+    comptime if not _is_cache_length_accurate:
         num_keys += Int(seq_len)
 
     if seq_offset >= UInt(seq_len) or key_offset >= UInt(num_keys):

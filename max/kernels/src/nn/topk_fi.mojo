@@ -1213,8 +1213,7 @@ fn topk_topp_sampling_from_prob[
 
     @parameter
     fn dispatch_vec_size[deterministic: Bool]() raises:
-        @parameter
-        for param_vec_size in [16, 8, 4, 2, 1]:
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
             if vec_size == param_vec_size:
                 return launch_kernel[param_vec_size, deterministic]()
 

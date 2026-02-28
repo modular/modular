@@ -147,8 +147,7 @@ fn fa4_mma[
     k0 = pipeline_k.get_k()
     e = elect()
 
-    @parameter
-    for qk_stage in range(num_qk_stages):
+    comptime for qk_stage in range(num_qk_stages):
         pipeline_k.wait_k[qk_stage=qk_stage]()  # [kv0]
         UMMA0Type.mma[stage_idx=qk_stage](q0, k0, s0_tmem, elect=e, c_scale=0)
     pipeline_s0.commit_mma(e)
@@ -156,8 +155,7 @@ fn fa4_mma[
     # Q_1 @ K_0' (staged over num_qk_stages)
     var q1_mbar = mbars.q1_wait_mbar()
 
-    @parameter
-    for qk_stage in range(num_qk_stages):
+    comptime for qk_stage in range(num_qk_stages):
         q1_mbar[qk_stage].wait()  # wait on Q1
         UMMA0Type.mma[stage_idx=qk_stage](q1, k0, s1_tmem, elect=e, c_scale=0)
         pipeline_k.release_k[qk_stage=qk_stage](e)  # [kv0]->kv1
@@ -168,8 +166,7 @@ fn fa4_mma[
 
     # For the first V tile in the current KV stage buffer:
     # Use the SAME base pointer you used for K (no manual offset).
-    @parameter
-    for pv_stage in range(num_pv_stages):
+    comptime for pv_stage in range(num_pv_stages):
         _ = consumer_s0[pv_stage].wait(0)
 
         UMMA1Type.mma[stage_idx=pv_stage](
@@ -190,8 +187,7 @@ fn fa4_mma[
         # Q_0 @ K_n' (staged over num_qk_stages)
         kn = pipeline_k.get_k()  # kv_{2n-1}->[kv_{2n}]
 
-        @parameter
-        for qk_stage in range(num_qk_stages):
+        comptime for qk_stage in range(num_qk_stages):
             pipeline_k.wait_k[qk_stage=qk_stage]()  # kv_{2n-1}->[kv_{2n}]
             UMMA0Type.mma[stage_idx=qk_stage](
                 q0, kn, s0_tmem, elect=e, c_scale=0
@@ -199,8 +195,7 @@ fn fa4_mma[
         pipeline_s0.commit_mma(e)
 
         # O_1 + P_1 @ V_{n-1}
-        @parameter
-        for pv_stage in range(num_pv_stages):
+        comptime for pv_stage in range(num_pv_stages):
             _ = consumer_s1[pv_stage].wait(phase)
             UMMA1Type.mma[stage_idx=pv_stage](
                 s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
@@ -210,8 +205,7 @@ fn fa4_mma[
         pipeline_v.release_v(e)  # [kv_{2n-1}]
 
         # Q_1 @ K_n' (staged over num_qk_stages)
-        @parameter
-        for qk_stage in range(num_qk_stages):
+        comptime for qk_stage in range(num_qk_stages):
             UMMA0Type.mma[stage_idx=qk_stage](
                 q1, kn, s1_tmem, elect=e, c_scale=0
             )
@@ -223,16 +217,14 @@ fn fa4_mma[
         vlatest = pipeline_v.get_v()  # [kv_{2n+1}]
         pipeline_v.wait_v()  # [kv_{2n+1}]
 
-        @parameter
-        for pv_stage in range(num_pv_stages):
+        comptime for pv_stage in range(num_pv_stages):
             _ = consumer_s0[pv_stage].wait(phase)
             UMMA1Type.mma[stage_idx=pv_stage](
                 s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1
             )
         pipeline_o0.commit_mma(e)
 
-    @parameter
-    for pv_stage in range(num_pv_stages):
+    comptime for pv_stage in range(num_pv_stages):
         _ = consumer_s1[pv_stage].wait(phase)
         UMMA1Type.mma[stage_idx=pv_stage](
             s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale

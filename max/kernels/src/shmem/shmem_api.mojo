@@ -266,8 +266,7 @@ fn shmem_create_uniqueid(
         A `SHMEMUniqueID` to be passed to `shmem_init_thread_tcp`.
     """
 
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         return rocshmem_create_uniqueid(server_ip, server_port)
     else:
         return CompilationTarget.unsupported_target_error[

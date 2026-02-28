@@ -72,8 +72,7 @@ fn _repoint_input_bufs[
     iteration: Int,
     num_rows: Int,
 ):
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         in_bufs[i] = NDBuffer[in_dtype, 2](
             cb_inputs[i].offset_ptr(iteration), DimList(num_rows, num_cols)
         )
@@ -125,8 +124,7 @@ fn _verify_results[
     # Run allreduce.
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         allreduce[ngpus=ngpus](
             in_bufs, ar_out_bufs[i], rank_sigs, list_of_ctx[i]
         )
@@ -188,8 +186,7 @@ fn _verify_results[
 
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         allreduce_rmsnorm_fp8(
             in_bufs,
             v_ff_ndbuf,
@@ -348,8 +345,7 @@ fn _verify_add_results[
 
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         var ar_ptr_i = ar_out_dev[i].unsafe_ptr()
 
         @__copy_capture(ar_ptr_i, residual_ptr)
@@ -438,8 +434,7 @@ fn _verify_add_results[
 
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         allreduce_residual_rmsnorm_fp8(
             in_bufs,
             v_res_ndbuf,

@@ -124,8 +124,7 @@ fn _test_pull[
         signal_bufs.append(sig_buf)
 
     # Launch scatter.
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         scatter[ngpus=ngpus, dp_size=dp_size](
             input_bufs, output_bufs[i], rank_sigs, ctxs[i]
         )

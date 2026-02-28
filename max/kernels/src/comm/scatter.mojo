@@ -84,12 +84,10 @@ fn scatter_pull_kernel[
     var global_tid = Int(global_idx.x)
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)

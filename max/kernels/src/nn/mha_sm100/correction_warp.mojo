@@ -106,13 +106,11 @@ fn fa4_correction[
     while iter_count != 0:
         iter_count -= 1
 
-        @parameter
-        for i in range(2):
+        comptime for i in range(2):
             # correct
             var c_scalar: Scalar[accum_type]
 
-            @parameter
-            if i == 0:
+            comptime if i == 0:
                 pipeline_c0.wait()
                 c_scalar = correction_smem_0[0]
             else:
@@ -127,8 +125,7 @@ fn fa4_correction[
 
                 var o_tmem: TmemAddress
 
-                @parameter
-                if i == 0:
+                comptime if i == 0:
                     o_tmem = o0_tmem
                 else:
                     o_tmem = o1_tmem
@@ -144,8 +141,7 @@ fn fa4_correction[
                     width=batch_size,
                 ](o_tmem.addr)
 
-                @parameter
-                for b in range(load_iters):
+                comptime for b in range(load_iters):
                     # BN=64 or BN=80, load_iters=2
                     # b=0
                     # b0_offset0=0
@@ -173,8 +169,7 @@ fn fa4_correction[
                         pack=False,
                     ]((o_tmem + b0_offset0).addr, o_b0 * c_scalar)
 
-                    @parameter
-                    if b0_offset1 + batch_size <= config.depth:
+                    comptime if b0_offset1 + batch_size <= config.depth:
                         o_b0 = tcgen05_ld[  # 0b0 start
                             datapaths=32,
                             bits=32,
@@ -190,8 +185,7 @@ fn fa4_correction[
                         pack=False,
                     ]((o_tmem + b1_offset).addr, o_b1 * c_scalar)
 
-                @parameter
-                if load_remainder > 0:
+                comptime if load_remainder > 0:
                     comptime offset = 2 * batch_size * load_iters
                     tcgen05_st[  # 0b0*c_scalar store
                         datapaths=32,
@@ -204,8 +198,7 @@ fn fa4_correction[
 
             pipeline_o.release()
 
-            @parameter
-            if i == 0:
+            comptime if i == 0:
                 pipeline_c0.release()
             else:
                 pipeline_c1.release()

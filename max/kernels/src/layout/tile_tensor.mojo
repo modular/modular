@@ -1286,8 +1286,7 @@ struct TileTensor[
 
         var offset = 0
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             offset += slices[i][0] * self.layout.stride[i]().value()
 
         comptime NewShapeTypes = _CoordToDynamic[
@@ -1296,8 +1295,7 @@ struct TileTensor[
         # comptime NewShapeTypes = Self.DynamicShapeTypes
         var new_shape = Coord[*NewShapeTypes]()
 
-        @parameter
-        for i in range(Self.rank):
+        comptime for i in range(Self.rank):
             new_shape[i] = rebind[NewShapeTypes[i]](
                 RuntimeInt[Self.linear_idx_type](
                     Scalar[Self.linear_idx_type](slices[i][1] - slices[i][0])

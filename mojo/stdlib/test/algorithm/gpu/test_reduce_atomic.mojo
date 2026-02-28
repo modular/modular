@@ -108,8 +108,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var res_min = Float32(0)
     var res_max = Float32(0)
 
-    @parameter
-    if not has_apple_gpu_accelerator():
+    comptime if not has_apple_gpu_accelerator():
         var res_min_device = ctx.enqueue_create_buffer[F32](1)
         res_min_device.enqueue_fill(0)
 

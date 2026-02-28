@@ -292,8 +292,7 @@ fn test_mla_index_fp8_paged_variable_lengths[
         var cache_len = cache_lens[batch_idx]
         var seq_len = seq_lens[batch_idx]
 
-        @parameter
-        if use_causal_mask:
+        comptime if use_causal_mask:
             for local_seq_idx in range(seq_len):
                 var num_keys = cache_len + local_seq_idx + 1
                 token_to_num_keys.append(num_keys)

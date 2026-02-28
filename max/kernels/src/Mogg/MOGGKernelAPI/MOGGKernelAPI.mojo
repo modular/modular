@@ -8394,8 +8394,7 @@ struct Struct_kv_cache_store_k_scales_paged:
 
         var cuda_ctx: Optional[DeviceContext] = None
 
-        @parameter
-        if is_gpu[target]():
+        comptime if is_gpu[target]():
             cuda_ctx = context.get_device_context()
 
         var input_row_offsets_lt = input_row_offsets.to_layout_tensor()
@@ -8430,8 +8429,7 @@ struct Struct_kv_cache_store_k_scales_paged:
                 loaded_val,
             )
 
-        @parameter
-        if is_gpu[target]():
+        comptime if is_gpu[target]():
             if cuda_ctx is None:
                 raise Error("ctx is None")
             comptime compile_target = get_gpu_target()
