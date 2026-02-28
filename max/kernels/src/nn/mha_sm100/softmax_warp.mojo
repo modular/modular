@@ -394,8 +394,7 @@ fn fa4_softmax[
     var warp_idx: UInt32 = warp.broadcast(tid // 32)
     var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
 
-    @parameter
-    if config.split_m:
+    comptime if config.split_m:
         # split-M: second S is (+16 rows) in st-matrix space
         s_tmem += TMEM_LOWER_ROW_OFFSET * warp_group_idx
     else:
@@ -411,8 +410,7 @@ fn fa4_softmax[
     pipeline_c = mbars.producer_c(warp_group_idx)
     var order_phase: UInt32 = 1 - warp_group_idx
 
-    @parameter
-    if EnableForcedOrdering:
+    comptime if EnableForcedOrdering:
         order_s_wait = mbars.pipeline_order_wait(warp_group_idx)
         order_s_arrive = mbars.pipeline_order_arrive(warp_group_idx)
     else:
@@ -425,8 +423,7 @@ fn fa4_softmax[
         (mbars.mbar_base - mbar_offset).bitcast[Float32]() + correction_offset
     ) + tid
 
-    @parameter
-    if not MaskType.apply_log2e_after_mask:
+    comptime if not MaskType.apply_log2e_after_mask:
         scale_log2e *= log2e
 
     # Fuse scale*log2e multiplication and row_max subtraction into a
@@ -480,8 +477,7 @@ fn fa4_softmax[
     fn load_mask_max_impl[
         *, mask_strategy: MaskStrategy
     ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
-        @parameter
-        if EnableForcedOrdering:
+        comptime if EnableForcedOrdering:
             order_s_wait[].wait(order_phase)
         pipeline_s.wait()
         tcgen05_fence_after()
@@ -503,14 +499,12 @@ fn fa4_softmax[
         s.ptr.store(s0.ptr.load[width=first_cols]())
         comptime cols = config.BN - first_cols + batch_size
 
-        @parameter
-        for i in range(cols // (2 * batch_size)):
+        comptime for i in range(cols // (2 * batch_size)):
             comptime offset0 = first_cols + batch_size * (2 * i)
             comptime offset1 = first_cols + batch_size * (2 * i + 1)
             comptime offset2 = first_cols + batch_size * (2 * i + 2)
 
-            @parameter
-            if offset1 >= config.BN:
+            comptime if offset1 >= config.BN:
                 mask_row[mask_strategy=mask_strategy](
                     s1, kv_row + UInt32(offset0)
                 )
@@ -526,8 +520,7 @@ fn fa4_softmax[
                 vrow_max = maximum(s1, vrow_max)
                 s.ptr.store(offset0, s1.ptr.load[width=batch_size]())
 
-                @parameter
-                if offset2 < config.BN:
+                comptime if offset2 < config.BN:
                     s1 = TMemTile[accum_type, BM, batch_size](
                         s_tmem + UInt32(offset2)
                     ).load_async()
@@ -581,8 +574,7 @@ fn fa4_softmax[
         var vscale: f32x2
         var vneg_max_scaled: f32x2
 
-        @parameter
-        if use_fma:
+        comptime if use_fma:
             vscale = f32x2(scale_log2e)
             vneg_max_scaled = f32x2(-row_max * scale_log2e)
             vrow_max = f32x2(0)  # unused
@@ -594,8 +586,7 @@ fn fa4_softmax[
         @parameter
         @always_inline
         fn score_to_logit(score: f32x2) -> f32x2:
-            @parameter
-            if use_fma:
+            comptime if use_fma:
                 return fma_ftz(score, vscale, vneg_max_scaled)
             else:
                 return sub_ftz(score, vrow_max)
@@ -605,37 +596,30 @@ fn fa4_softmax[
         vsi = exp2(score_to_logit(rebind[f32x2](vs[1])))
         vs[1] = rebind[vs.ElementType](vsi)
 
-        @parameter
-        if EnableEarlyAdd:
+        comptime if EnableEarlyAdd:
             acc = add_ftz(acc, vsi)
         comptime exp2_emulation_freq = 3
 
-        @parameter
-        for i in range(2, 8):
+        comptime for i in range(2, 8):
             vs[i] = rebind[vs.ElementType](score_to_logit(rebind[f32x2](vs[i])))
 
-        @parameter
-        for i in range(2, 8):
+        comptime for i in range(2, 8):
             vsi = exp2(rebind[f32x2](vs[i]))
             vs[i] = rebind[vs.ElementType](vsi)
 
-            @parameter
-            if EnableEarlyAdd:
+            comptime if EnableEarlyAdd:
                 acc = add_ftz(acc, vsi)
 
-        @parameter
-        for i in range(8, batch_size // 2):
+        comptime for i in range(8, batch_size // 2):
             diff = score_to_logit(rebind[f32x2](vs[i]))
             vsi = exp2(diff)
             vs[i] = rebind[vs.ElementType](vsi)
 
-            @parameter
-            if EnableEarlyAdd:
+            comptime if EnableEarlyAdd:
                 acc = add_ftz(acc, vsi)
 
         # at this point, we need 32 fewer fp32 registers but 16 more u32
-        @parameter
-        for i in range(batch_size // 2, batch_size):
+        comptime for i in range(batch_size // 2, batch_size):
             diff = score_to_logit(rebind[f32x2](vs[i]))
             vs[i] = rebind[vs.ElementType](exp2(diff))
 
@@ -645,15 +629,11 @@ fn fa4_softmax[
             )
         )
 
-        @parameter
-        for b in range(1, num_batch_iters):
+        comptime for b in range(1, num_batch_iters):
             comptime offset = batch_size * b
 
-            @parameter
-            if use_3_then_1_split:
-
-                @parameter
-                if 4 * b == 3 * num_batch_iters:
+            comptime if use_3_then_1_split:
+                comptime if 4 * b == 3 * num_batch_iters:
                     tcgen05_store_wait()
                     tcgen05_fence_before()
                     pipeline_s.release_no_step[0]()
@@ -665,12 +645,10 @@ fn fa4_softmax[
                 comptime assert config.num_pv_stages == num_batch_iters
                 pipeline_s.release_no_step[b - 1]()
 
-            @parameter
-            for i in range(offset, offset + batch_size):
+            comptime for i in range(offset, offset + batch_size):
                 diff = score_to_logit(rebind[f32x2](vs[i]))
 
-                @parameter
-                if i % exp2_emulation_freq == 0:
+                comptime if i % exp2_emulation_freq == 0:
                     vs[i] = rebind[vs.ElementType](exp2_emulation(diff))
                 else:
                     vs[i] = rebind[vs.ElementType](exp2(diff))
@@ -685,16 +663,13 @@ fn fa4_softmax[
                 )
             )
 
-        @parameter
-        if remainder > 0:
+        comptime if remainder > 0:
             comptime offset = batch_size * num_batch_iters
 
-            @parameter
-            for i in range(offset, offset + remainder):
+            comptime for i in range(offset, offset + remainder):
                 diff = score_to_logit(rebind[f32x2](vs[i]))
 
-                @parameter
-                if i % exp2_emulation_freq == 0:
+                comptime if i % exp2_emulation_freq == 0:
                     vs[i] = rebind[vs.ElementType](exp2_emulation(diff))
                 else:
                     vs[i] = rebind[vs.ElementType](exp2(diff))
@@ -713,8 +688,7 @@ fn fa4_softmax[
         tcgen05_fence_before()
         pipeline_s.release[config.num_pv_stages - 1]()
 
-        @parameter
-        if EnableForcedOrdering:
+        comptime if EnableForcedOrdering:
             _ = order_s_arrive[].arrive()
             order_phase ^= 1
         pipeline_c.acquire()
@@ -725,8 +699,7 @@ fn fa4_softmax[
         var acc2: f32x2
         var acc3: f32x2
 
-        @parameter
-        if EnableEarlyAdd:
+        comptime if EnableEarlyAdd:
             acc0 = acc
             acc1 = rebind[f32x2](vs[batch_size // 2])
             acc2 = rebind[f32x2](vs[batch_size // 2 + 1])
@@ -740,8 +713,7 @@ fn fa4_softmax[
             acc2 = rebind[f32x2](vs[2])
             acc3 = rebind[f32x2](vs[3])
 
-        @parameter
-        for i in range(add_offset + 4, vs_len, 4):
+        comptime for i in range(add_offset + 4, vs_len, 4):
             acc0 = add_ftz(acc0, rebind[f32x2](vs[i]))
             acc1 = add_ftz(acc1, rebind[f32x2](vs[i + 1]))
             acc2 = add_ftz(acc2, rebind[f32x2](vs[i + 2]))
@@ -756,22 +728,19 @@ fn fa4_softmax[
     var row_max: Float32
     var mask_iters: StaticTuple[UInt32, num_sets] = {}
 
-    @parameter
-    if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
+    comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
         mask_ends = mask.masked_set_ends[BM=BM, BN=BN, page_size=page_size](
             score_row, num_keys
         )
         mask_iters[0] = mask_ends[0]
 
-        @parameter
-        for i in range(1, num_sets):
+        comptime for i in range(1, num_sets):
             mask_iters[i] = mask_ends[i] - mask_ends[i - 1]
 
     comptime assert num_sets >= 1 and num_sets <= 3
     comptime assert num_sets == 1 or mask_sets[0] != TileMaskStatus.UNKNOWN_MASK
 
-    @parameter
-    if num_sets == 1:
+    comptime if num_sets == 1:
         row_max = load_mask_max[mask_strategy = mask_strategies[0]](kv_row)
         mask_iters[0] -= 1
     else:
@@ -780,9 +749,7 @@ fn fa4_softmax[
             row_max = load_mask_max[mask_strategy = mask_strategies[0]](kv_row)
             mask_iters[0] -= 1
         else:
-
-            @parameter
-            if num_sets == 2:
+            comptime if num_sets == 2:
                 row_max = load_mask_max[mask_strategy = mask_strategies[1]](
                     kv_row
                 )
@@ -801,15 +768,13 @@ fn fa4_softmax[
     var sink_weights_ptr = UnsafePointer[Scalar[qkv_type], ImmutAnyOrigin]()
     var sink_weight: Scalar[accum_type]
 
-    @parameter
-    if not SinkType.is_null:
+    comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[
             UnsafePointer[Scalar[qkv_type], ImmutAnyOrigin]
         ](sink_weights.value())
         var head_idx: UInt32 = seq_info.head_idx
 
-        @parameter
-        if use_fma:
+        comptime if use_fma:
             sink_weight = sink_weights_ptr[head_idx].cast[accum_type]()
         else:
             sink_weight = sink_weights_ptr[head_idx].cast[accum_type]() * log2e
@@ -822,11 +787,8 @@ fn fa4_softmax[
 
     var o_phase: UInt32 = 0  # initial wait is phase 0
 
-    @parameter
-    if not SinkType.is_null:
-
-        @parameter
-        if use_fma:
+    comptime if not SinkType.is_null:
+        comptime if use_fma:
             row_sum[0] += exp2((sink_weight - row_max) * scale_log2e)
         else:
             row_sum[0] += exp2(sink_weight - row_max)
@@ -835,11 +797,8 @@ fn fa4_softmax[
         qkv_type
     ]() >= 2 else Float32(0)
 
-    @parameter
-    if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
-
-        @parameter
-        for i in range(num_sets):
+    comptime if mask_sets[0] != TileMaskStatus.UNKNOWN_MASK:
+        comptime for i in range(num_sets):
             comptime mask_status = mask_sets[i]
             comptime mask_strategy = mask_strategies[i]
             var iters: UInt32
@@ -856,13 +815,11 @@ fn fa4_softmax[
 
                 diff = sub_ftz(old_max, new_row_max)
 
-                @parameter
-                if use_fma:
+                comptime if use_fma:
                     diff = mul_ftz(diff, scale_log2e)
                 var correction: Float32
 
-                @parameter
-                if rescale_threshold < 0:
+                comptime if rescale_threshold < 0:
                     # old_max - new_row_max < -8
                     # 8 < new_row_max - old_max
                     if _vote_nvidia_helper(diff < rescale_threshold) != 0:
@@ -905,13 +862,11 @@ fn fa4_softmax[
 
             diff = sub_ftz(old_max, new_row_max)
 
-            @parameter
-            if use_fma:
+            comptime if use_fma:
                 diff = mul_ftz(diff, scale_log2e)
             var correction: Float32
 
-            @parameter
-            if rescale_threshold < 0:
+            comptime if rescale_threshold < 0:
                 # old_max - new_row_max < -8
                 # 8 < new_row_max - old_max
                 if _vote_nvidia_helper(diff < rescale_threshold) != 0:

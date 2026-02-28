@@ -313,8 +313,7 @@ fn test_fused_allreduce_rmsnorm_fp8[
 
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         allreduce_rmsnorm_fp8(
             in_bufs,
             fused_fp8_ndbuf,
@@ -531,8 +530,7 @@ fn test_fused_allreduce_residual_rmsnorm_fp8[
 
     group_start()
 
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         allreduce_residual_rmsnorm_fp8(
             in_bufs,
             residual_ndbuf,
@@ -645,8 +643,7 @@ def main() raises:
 
     print("FP8 output dtype:", out_fp8_dtype)
 
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if num_devices < num_gpus:
             continue

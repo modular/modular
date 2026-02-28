@@ -215,8 +215,7 @@ struct Struct_ep_init:
 
         comptime if n_nodes > 1:
             # Initialize the SHMEM library for this GPU
-            @parameter
-            if has_amd_gpu_accelerator():
+            comptime if has_amd_gpu_accelerator():
                 shmem_init_thread_tcp(gpu_ctx, gpus_per_node=n_gpus_per_node)
             else:
                 shmem_init_thread_mpi(gpu_ctx, gpus_per_node=n_gpus_per_node)

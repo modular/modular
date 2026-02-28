@@ -592,8 +592,7 @@ fn main() raises:
             num_blocks_per_input=num_blocks_per_input,
         )
 
-        @parameter
-        if use_fi:
+        comptime if use_fi:
             bench_topk_fi[dtype, out_idx_type](ctx, m, test_case, fill_fn_name)
         else:
             bench_topk_batched[dtype, out_idx_type, rank](

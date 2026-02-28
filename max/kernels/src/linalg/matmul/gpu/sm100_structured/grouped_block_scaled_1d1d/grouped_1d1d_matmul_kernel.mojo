@@ -624,15 +624,13 @@ struct Grouped1D1DMatmulKernel[
         # Per-CTA multicast masks (following KernelContext)
         var a_multicast_mask = UInt16(0)
 
-        @parameter
-        for i in range(Self.CLUSTER_N):
+        comptime for i in range(Self.CLUSTER_N):
             a_multicast_mask |= UInt16(1 << (i * Self.CLUSTER_M))
         a_multicast_mask <<= UInt16(rank_m)
 
         var b_multicast_mask = UInt16(0)
 
-        @parameter
-        for i in range(Self.CLUSTER_M // Self.cta_group):
+        comptime for i in range(Self.CLUSTER_M // Self.cta_group):
             b_multicast_mask |= UInt16(1 << (i * Self.cta_group))
         b_multicast_mask <<= UInt16(rank_m % UInt(Self.cta_group))
         b_multicast_mask <<= UInt16(rank_n * UInt(Self.CLUSTER_M))

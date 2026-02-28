@@ -673,8 +673,7 @@ struct MLA_SM100_Decode_KV_FP8[
         # into scale SMEM stage matching the KV pipeline stage).
         # Each thread's mbar.arrive() has release semantics, making its
         # prior SMEM writes visible to the converter's mbar.wait() (acquire).
-        @parameter
-        if Self.config.scale_block_size > 0:
+        comptime if Self.config.scale_block_size > 0:
             var stage_idx = kv_load_prod.pipe.state.index()
             Self._load_scales_for_tile(
                 scale_smem_base,
@@ -721,8 +720,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 )
 
             # Load blockwise scales for this tile (all warp 8 threads).
-            @parameter
-            if Self.config.scale_block_size > 0:
+            comptime if Self.config.scale_block_size > 0:
                 var stage_idx = kv_load_prod.pipe.state.index()
                 Self._load_scales_for_tile(
                     scale_smem_base,
@@ -915,8 +913,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 # scale_idx = (b * BN + col0) // scale_block_size
                 # All 32 columns this thread handles within a block share
                 # the same scale when scale_block_size >= 32.
-                @parameter
-                if Self.config.scale_block_size > 0:
+                comptime if Self.config.scale_block_size > 0:
                     var scale_idx = (
                         b * BN + col0
                     ) // Self.config.scale_block_size

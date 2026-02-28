@@ -894,8 +894,7 @@ def main() raises:
                 )
 
             # 2SM tests (new structured kernel only, swapAB=True required)
-            @parameter
-            if structured:
+            comptime if structured:
                 comptime umma_shape_2sm = Index(2 * bm, 2 * bn, MMA_K)
 
                 # 2SM: Aligned token counts

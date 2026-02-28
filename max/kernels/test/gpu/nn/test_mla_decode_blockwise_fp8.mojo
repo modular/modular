@@ -1016,9 +1016,7 @@ def main() raises:
     seed(42)
 
     with DeviceContext() as ctx:
-
-        @parameter
-        if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() and ctx.default_device_info == B200:
             if is_benchmark():
                 # -----------------------------------------------------------
                 # Benchmark mode: time kernel execution, no verification
