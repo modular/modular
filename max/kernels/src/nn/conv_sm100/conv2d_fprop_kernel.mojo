@@ -80,7 +80,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
-    TilePipeline,
     InputTilePipeline,
     StandardTilePayload,
     InputProducerStage,

@@ -33,6 +33,7 @@ from layout.coord import ComptimeInt, Coord, Idx
 from layout.tile_tensor import TileTensor
 
 from utils.index import IndexList
+from utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.structuring import SMemPtr, SMemArray, SMemTileIter
@@ -204,13 +205,84 @@ struct KernelContext[
 
 
 # =============================================================================
+# TMA tile dimension and barrier count helpers
+# =============================================================================
+
+
+@always_inline
+fn compute_tma_tile_dims[
+    BM: Int,
+    BN: Int,
+    MMA_M: Int,
+    OutputM: Int,
+    CLUSTER_M: Int,
+    CLUSTER_N: Int,
+    cta_group: Int,
+    AB_swapped: Bool = False,
+]() -> StaticTuple[Int, 3]:
+    """Compute TMA tile dimensions (a_tile_dim0, b_tile_dim0, c_tile_dim0).
+
+    Returns:
+        StaticTuple of (a_tile_dim0, b_tile_dim0, c_tile_dim0).
+    """
+    comptime a_tile_dim0 = BM // CLUSTER_N
+    comptime b_tile_dim0 = BN // (CLUSTER_M // cta_group)
+    comptime c_tile_dim0 = OutputM if (
+        MMA_M == 256 or cta_group == 1 or AB_swapped
+    ) else 64
+    return StaticTuple[Int, 3](a_tile_dim0, b_tile_dim0, c_tile_dim0)
+
+
+@always_inline
+fn compute_clc_barrier_counts[
+    SCHEDULER_THREADS: Int,
+    TMA_LOAD_THREADS: Int,
+    MMA_THREADS: Int,
+    EPILOGUE_THREADS: Int,
+    CLUSTER_SIZE: Int,
+    cta_group: Int,
+]() -> StaticTuple[Int, 4]:
+    """Compute CLC barrier arrival counts.
+
+    Returns:
+        StaticTuple of (producer, consumer, throttle_producer, throttle_consumer).
+    """
+    return StaticTuple[Int, 4](
+        1,  # clc_producer_arv_count
+        SCHEDULER_THREADS
+        + CLUSTER_SIZE
+        * (
+            TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS
+        ),  # clc_consumer_arv_count
+        TMA_LOAD_THREADS,  # clc_throttle_producer_arv_count
+        SCHEDULER_THREADS,  # clc_throttle_consumer_arv_count
+    )
+
+
+@always_inline
+fn compute_accum_barrier_counts[
+    EPILOGUE_THREADS: Int,
+    cta_group: Int,
+]() -> StaticTuple[Int, 2]:
+    """Compute accumulator pipeline barrier arrival counts.
+
+    Returns:
+        StaticTuple of (producer_arv_count, consumer_arv_count).
+    """
+    return StaticTuple[Int, 2](
+        1,  # accum_pipeline_producer_arv_count (MMA warp via mma_arrive)
+        cta_group * EPILOGUE_THREADS,  # accum_pipeline_consumer_arv_count
+    )
+
+
+# =============================================================================
 # consumer_main_loop - MMA consumer loop (external API)
 # =============================================================================
 
 
-# DEPRECATED: Use TilePipeline with StandardConsumerStage and BlackwellMatmulSM100Kernel.mma()
-# instead. This legacy function uses raw SMemTileIter rather than encapsulated
-# StandardConsumerStage access. Kept for backward compatibility with external callers.
+# DEPRECATED: Use InputTilePipeline with InputConsumerStage instead.
+# This legacy function uses raw SMemTileIter rather than encapsulated
+# stage access. Kept for backward compatibility with external callers.
 @always_inline
 fn consumer_main_loop[
     accum_type: DType,
@@ -254,8 +326,8 @@ fn consumer_main_loop[
 ):
     """DEPRECATED: Legacy MMA consumer loop for external callers.
 
-    Use TilePipeline with StandardConsumerStage and BlackwellMatmulSM100Kernel.mma()
-    for new code. This function is kept for backward compatibility.
+    Use InputTilePipeline with InputConsumerStage for new code.
+    This function is kept for backward compatibility.
     """
     var stage = load_mma_pipeline.consumer_stage()
 
