@@ -816,12 +816,13 @@ fn _topk_stage1_old[
     ]()
 
     with PDL():
-        # Pack the topk_vals and topk_idxs into shared memory
+        # Find local max per thread using registers, then store once in shmem
         var block_offset = block_lane * block_size
         var stride = block_size * UInt(num_blocks_per_input)
-        topk_sram[tid] = TopK_2[T, largest]()
+        var local_max = TopK_2[T, largest]()
         for i in range(tid + block_offset, num_elements, stride):
-            topk_sram[tid].insert(_in_buffer[i], i)
+            local_max.insert(_in_buffer[i], i)
+        topk_sram[tid] = local_max
         barrier()
         var k_batch = max_k
         if K:
@@ -872,7 +873,6 @@ fn _topk_stage1[
     max_k: Int,
     num_elements: Int,
     num_blocks_per_input: Int,
-    in_buffer: UnsafePointer[Scalar[T], ImmutAnyOrigin],
     in_buffer_tmp: UnsafePointer[Scalar[T], MutAnyOrigin],
     local_topk_vals: UnsafePointer[
         Scalar[T], MutAnyOrigin
@@ -888,6 +888,9 @@ fn _topk_stage1[
     Each thread block processes a portion of the input data and finds its local top-K elements.
     The local top-K results are stored in global memory for further processing in stage 2.
 
+    The input data must be pre-copied into in_buffer_tmp before launching this kernel
+    (via device-to-device DMA copy), allowing the copy engine to operate in parallel.
+
     Parameters:
         T: Data type of the elements.
         out_idx_type: DType - The data dtype of the output indices.
@@ -898,8 +901,7 @@ fn _topk_stage1[
         max_k: Largest number of top elements to keep for each batch element.
         num_elements: Size of last dimension of input buffer (vocab size).
         num_blocks_per_input: Number of blocks used to process the input data.
-        in_buffer: Input buffer containing the elements to process.
-        in_buffer_tmp: Temporary input buffer to store the elements to process.
+        in_buffer_tmp: Pre-copied input buffer to read and modify during top-K.
         local_topk_vals: Output buffer to store the local top-K values.
         local_topk_idxs: Output buffer to store the indices of local top-K elements.
 
@@ -917,12 +919,7 @@ fn _topk_stage1[
     var block_offset = block_lane * block_size
     var stride = block_size * UInt(num_blocks_per_input)
 
-    _in_buffer = in_buffer + batch_id * UInt(num_elements)
     _in_buffer_tmp = in_buffer_tmp + batch_id * UInt(num_elements)
-
-    # Copy input values to temp buffer
-    for i in range(tid + block_offset, num_elements, stride):
-        _in_buffer_tmp[i] = _in_buffer[i]
 
     var k_batch = max_k
     if K:
@@ -933,30 +930,17 @@ fn _topk_stage1[
     if k_batch > num_elements:
         k_batch = num_elements
 
-    # Allocate shared memory for the values and indices
-    var topk_sram = external_memory[
-        TopK_2[T, largest],
-        address_space = AddressSpace.SHARED,
-        alignment = align_of[TopK_2[T, largest]](),
-    ]()
-
     with PDL():
         # Prepare for K iterations to find the local top-K elements
         for k in range(k_batch):
-            topk_sram[tid] = TopK_2[T, largest]()
-
-            # Pack the topk_vals and topk_idxs into shared memory
+            # Find local max per thread using registers (no shared memory needed)
+            var local_max = TopK_2[T, largest]()
             for i in range(tid + block_offset, num_elements, stride):
                 var val = _in_buffer_tmp[i]
-                topk_sram[tid].insert(val, i)
-
-            barrier()
-
-            # Initialize each thread with its own TopK_2 value and index
-            var partial = topk_sram[tid]
+                local_max.insert(val, i)
 
             # Perform block-level reduction to find the maximum TopK_2
-            var total = _block_reduce_topk[T, largest](partial)
+            var total = _block_reduce_topk[T, largest](local_max)
 
             if tid == 0:
                 # Store the local top-K values and indices in global memory
@@ -985,7 +969,8 @@ fn _topk_stage1[
 
 @always_inline("nodebug")
 fn _get_shmem_size_stg_1[dtype: DType](block_size: Int) -> Int:
-    # Get dynamic shared memory size for stage 1
+    # Get dynamic shared memory size for stage 1 (old implementation only).
+    # The new _topk_stage1 uses register-based local max and needs 0 dynamic shmem.
     return block_size * size_of[TopK_2[dtype]]()
 
 
@@ -1304,10 +1289,17 @@ fn _topk_gpu[
     if batch_size == 0:
         return
 
-    # Define the number of blocks per grid
-    var num_blocks_per_input_: Int = ceildiv(
-        N, block_size
-    ) if not num_blocks_per_input else num_blocks_per_input.value()
+    # Define the number of blocks per grid.
+    # Target enough total blocks to saturate the GPU's SMs.
+    var num_blocks_per_input_: Int
+    if num_blocks_per_input:
+        num_blocks_per_input_ = num_blocks_per_input.value()
+    else:
+        comptime target_total_blocks = 128
+        num_blocks_per_input_ = min(
+            ceildiv(N, block_size),
+            max(ceildiv(target_total_blocks, batch_size), 1),
+        )
     # Calculate largest num bytes of shmem for each stage
     if block_size % WARP_SIZE != 0:
         # TODO: Need to pad in this case
@@ -1349,19 +1341,20 @@ fn _topk_gpu[
         )
     else:
         var input_buf_tmp = ctx.enqueue_create_buffer[dtype](batch_size * N)
+        # Use DMA copy engine instead of kernel-based copy
+        ctx.enqueue_copy(input_buf_tmp, input_buf.to_device_buffer(ctx))
         comptime kernel_1 = _topk_stage1[dtype, out_idx_type, largest]
         ctx.enqueue_function_experimental[kernel_1](
             k_device,
             max_k,
             N,
             num_blocks_per_input_,
-            input_buf.to_device_buffer(ctx),
             input_buf_tmp,
             device_local_topk_vals.to_device_buffer(ctx),
             device_local_topk_idxs.to_device_buffer(ctx),
             grid_dim=grid_dim_stage1,
             block_dim=block_dim_stage1,
-            shared_mem_bytes=shared_mem_bytes_1,
+            shared_mem_bytes=0,
             attributes=pdl_launch_attributes(),
         )
         _ = input_buf_tmp^
@@ -1618,10 +1611,18 @@ fn topk_gpu[
         internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
         internal_out_vals = reshape(out_vals, internal_out_vals_shape)
 
-    # Calculate the number of blocks per input
-    var num_blocks_per_input_ = min(
-        ceildiv(N, block_size_), 8
-    ) if not num_blocks_per_input else num_blocks_per_input.value()
+    # Calculate the number of blocks per input.
+    # Target enough total blocks (batch_size * num_blocks_per_input) to
+    # saturate the GPU's SMs. 128 is a good target for modern GPUs.
+    var num_blocks_per_input_: Int
+    if num_blocks_per_input:
+        num_blocks_per_input_ = num_blocks_per_input.value()
+    else:
+        comptime target_total_blocks = 128
+        num_blocks_per_input_ = min(
+            ceildiv(N, block_size_),
+            max(ceildiv(target_total_blocks, internal_bs), 1),
+        )
 
     # Define shape for the kernel's internal cache buffers
     var internal_cache_shape = IndexList[2](
