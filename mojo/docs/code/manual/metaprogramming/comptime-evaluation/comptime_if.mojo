@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 
 fn run_on_gpu():

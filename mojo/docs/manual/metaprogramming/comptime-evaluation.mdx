@@ -87,7 +87,7 @@ This ensures that only the live branch of the `if` statement is compiled into
 the program, which can reduce your final binary size. For example:
 
 ```mojo
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 def main():
     comptime if has_accelerator():
