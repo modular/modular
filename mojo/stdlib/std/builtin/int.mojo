@@ -540,8 +540,14 @@ struct Int(
             The value of `self` raised to the power of `exp`.
         """
         if exp < 0:
-            # Not defined for Integers, this should raise an
-            # exception.
+            if self == 1:
+                return 1
+            if self == -1:
+                # (-1) ** n is 1 for even n, -1 for odd n.
+                return 1 if (-exp) & 1 == 0 else -1
+            # For |base| > 1, this is the integer truncation of
+            # 1 / base^|exp|. Note: 0 ** negative is mathematically
+            # undefined, but we return 0 here for now.
             return 0
         var res: Int = 1
         var x = self

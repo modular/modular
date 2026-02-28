@@ -57,6 +57,19 @@ def test_pow() raises:
     assert_equal(27, Int.__pow__(Int(3), Int(3)))
     assert_equal(81, Int.__pow__(Int(3), Int(4)))
 
+    # Negative exponents: 1 ** n == 1 for all n.
+    assert_equal(1, Int.__pow__(Int(1), Int(-1)))
+    assert_equal(1, Int.__pow__(Int(1), Int(-5)))
+
+    # Negative exponents: (-1) ** n depends on parity.
+    assert_equal(-1, Int.__pow__(Int(-1), Int(-1)))
+    assert_equal(1, Int.__pow__(Int(-1), Int(-2)))
+    assert_equal(-1, Int.__pow__(Int(-1), Int(-3)))
+
+    # Negative exponents: |base| > 1 truncates to 0.
+    assert_equal(0, Int.__pow__(Int(2), Int(-1)))
+    assert_equal(0, Int.__pow__(Int(3), Int(-2)))
+
 
 def test_ceil() raises:
     assert_equal(Int.__ceil__(Int(5)), 5)
