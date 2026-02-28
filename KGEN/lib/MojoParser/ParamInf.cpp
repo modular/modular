@@ -606,37 +606,6 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     return failure();
   }
 
-  // FIXME: I do NOT think that we should do a reevaluation here. In fact, we
-  // should probably the any inferred value when doing `matcher.resetError()`.
-  // However, not doing reevaluation here results in a significant amount of
-  // compilation errors, which we should fix. A common case (that I consider
-  // wrong but currently compiles) is:
-  //
-  // @fieldwise_init
-  // struct NDBuffer[
-  //     mut: Bool,
-  //     //,
-  //     dtype: DType,
-  //     rank: Int,
-  //     origin: Origin[mut=mut],
-  //     ...
-  // ](TrivialRegisterPassable):
-  //   @implicit
-  //   fn __init__(
-  //       out self,
-  //       # note that `other` here does NOT uses `Self.origin`
-  //       other: NDBuffer[Self.dtype, Self.rank, ...],
-  //   ):
-  //        pass
-  //
-  // In this case, we can successfully infer `Self.origin` to `other.origin`.
-  // This happens because we can successfully match `other` against `Self` all
-  // the way till we pass `origin`. At that point, although matcher returns
-  // failure, `origin` has been inferred, and the implicit convertibility is
-  // then tested against parameter inferred from a failed match...
-  //
-  expectedType = evaluator.getReboundType(expectedType);
-
   // If the expected type has been fully resolved, check it for implicit
   // conversions using the normal type machinery.  This will handle things like
   // function pointer conversions that the code below doesn't.
