@@ -29,6 +29,7 @@ print(p)  # a/b/c.txt
 """
 
 import std.os
+import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
 from std.os import PathLike, listdir, stat_result
 from std.ffi import c_char, external_call
@@ -203,6 +204,17 @@ struct Path(
 
         writer.write(self.path)
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Path` to a writer.
+
+        Writes the path in the format `Path('...')`.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Path").fields(fmt.Repr(self.path))
+
     @always_inline
     fn __fspath__(self) -> String:
         """Returns a string representation of the path.
@@ -219,7 +231,9 @@ struct Path(
         Returns:
           A printable representation of the path.
         """
-        return String(self)
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     fn __eq__(self, other: Self) -> Bool:
         """Returns True if the two paths are equal.

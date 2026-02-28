@@ -13,6 +13,7 @@
 
 from std.testing import TestSuite, assert_equal
 
+from test_utils import check_write_to
 from std.utils import Index, IndexList
 
 
@@ -67,6 +68,34 @@ def test_list_literal() raises:
     assert_equal(list[0], 1)
     assert_equal(list[1], 2)
     assert_equal(list[2], 3)
+
+
+def test_write_to() raises:
+    check_write_to(IndexList[3](1, 2, 3), expected="(1, 2, 3)", is_repr=False)
+    check_write_to(IndexList[1](42), expected="(42,)", is_repr=False)
+    check_write_to(
+        IndexList[2, element_type = DType.int32](1, 2),
+        expected="(1, 2)",
+        is_repr=False,
+    )
+
+
+def test_write_repr_to() raises:
+    check_write_to(
+        IndexList[3](1, 2, 3),
+        expected="IndexList[3, int64]((1, 2, 3))",
+        is_repr=True,
+    )
+    check_write_to(
+        IndexList[1](42),
+        expected="IndexList[1, int64]((42,))",
+        is_repr=True,
+    )
+    check_write_to(
+        IndexList[2, element_type = DType.int32](1, 2),
+        expected="IndexList[2, int32]((1, 2))",
+        is_repr=True,
+    )
 
 
 def main() raises:

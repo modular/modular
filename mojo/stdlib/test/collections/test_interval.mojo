@@ -13,6 +13,7 @@
 
 from std.collections.interval import Interval, IntervalElement, IntervalTree
 
+from test_utils import check_write_to
 from std.testing import (
     assert_equal,
     assert_false,
@@ -188,6 +189,36 @@ def test_interval_tree() raises:
     assert_equal(Float64(elems[0]), 34.0)
     assert_equal(Float64(elems[1]), 37.0)
     assert_equal(Float64(elems[2]), 36.0)
+
+
+def test_interval_write_to() raises:
+    check_write_to(Interval(1, 10), expected="(1, 10)", is_repr=False)
+    check_write_to(Interval(0, 0), expected="(0, 0)", is_repr=False)
+
+
+def test_interval_write_repr_to() raises:
+    check_write_to(
+        Interval(1, 10),
+        expected="Interval[Int](start=Int(1), end=Int(10))",
+        is_repr=True,
+    )
+
+
+def test_interval_tree_write_to() raises:
+    var tree = IntervalTree[Int, MyType]()
+    tree.insert((1, 5), MyType(1.0))
+    # write_to produces the ASCII tree drawing
+    check_write_to(tree, contains="(1, 5)", is_repr=False)
+
+
+def test_interval_tree_write_repr_to() raises:
+    var tree = IntervalTree[Int, MyType]()
+    tree.insert((1, 5), MyType(1.0))
+    check_write_to(tree, contains="IntervalTree[Int, MyType](", is_repr=True)
+
+    var output = String()
+    tree.write_repr_to(output)
+    assert_true(output.endswith(")"))
 
 
 def main() raises:

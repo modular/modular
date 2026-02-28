@@ -51,6 +51,8 @@ query interval data, particularly for finding overlaps.
 
 from std.builtin.string_literal import StaticString
 
+import std.format._utils as fmt
+
 from .deque import Deque
 
 
@@ -776,6 +778,22 @@ struct IntervalTree[
             writer: The writer to write the interval tree to.
         """
         self._draw(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `IntervalTree` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._draw(w)
+
+        fmt.FormatStruct(writer, "IntervalTree").params(
+            fmt.TypeNames[Self.T, Self.U](),
+        ).fields[FieldsFn=write_fields]()
 
     @no_inline
     fn _draw[w: Writer](self, mut writer: w):

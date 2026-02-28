@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from test_utils import check_write_to
 from std.testing import (
     assert_equal,
     assert_false,
@@ -84,11 +85,19 @@ def test_char_formatting() raises:
     assert_equal(String(Codepoint.from_u32(0x1F642).value()), "🙂")
 
 
-def test_char_writable() raises:
-    var c1 = Codepoint(97)  # 'a'
-    var buffer = String()
-    buffer.write(c1)
-    assert_equal(buffer, String("a"))
+def test_write_to() raises:
+    check_write_to(Codepoint(97), expected="a", is_repr=False)
+    check_write_to(Codepoint(32), expected=" ", is_repr=False)
+
+
+def test_write_repr_to() raises:
+    check_write_to(Codepoint(97), expected="Codepoint(97)", is_repr=True)
+    check_write_to(Codepoint(0), expected="Codepoint(0)", is_repr=True)
+    check_write_to(
+        Codepoint.from_u32(0x1F642).value(),
+        expected="Codepoint(128578)",
+        is_repr=True,
+    )
 
 
 def test_char_properties() raises:

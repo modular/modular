@@ -17,6 +17,7 @@ from std.sys import CompilationTarget
 from std.tempfile import NamedTemporaryFile
 
 from std.reflection import source_location
+from test_utils import check_write_to
 from std.testing import (
     assert_equal,
     assert_false,
@@ -215,6 +216,24 @@ def test_parts() raises:
 
     var root_path = Path("/")
     assert_equal(root_path.parts(), root_path.path.split("/"))
+
+
+def test_write_to() raises:
+    check_write_to(Path("foo/bar"), expected="foo/bar", is_repr=False)
+    check_write_to(Path(""), expected="", is_repr=False)
+    check_write_to(
+        Path("/absolute/path"), expected="/absolute/path", is_repr=False
+    )
+
+
+def test_write_repr_to() raises:
+    check_write_to(Path("foo/bar"), expected="Path('foo/bar')", is_repr=True)
+    check_write_to(Path(""), expected="Path('')", is_repr=True)
+    check_write_to(
+        Path("/absolute/path"),
+        expected="Path('/absolute/path')",
+        is_repr=True,
+    )
 
 
 def main() raises:

@@ -13,6 +13,7 @@
 
 from std.collections.counter import Counter
 
+from test_utils import check_write_to
 from std.testing import assert_equal, assert_false, assert_raises, assert_true
 from std.testing import TestSuite
 
@@ -484,6 +485,40 @@ def test_popitem() raises:
 
     with assert_raises():
         _ = counter.popitem()
+
+
+def test_write_to() raises:
+    var c = Counter[String]()
+    c["a"] = 3
+    c["b"] = 2
+    check_write_to(c, expected="{a: 3, b: 2}", is_repr=False)
+
+    var empty = Counter[String]()
+    check_write_to(empty, expected="{}", is_repr=False)
+
+    var single = Counter[String]()
+    single["x"] = 1
+    check_write_to(single, expected="{x: 1}", is_repr=False)
+
+
+def test_write_repr_to() raises:
+    var c = Counter[String]()
+    c["a"] = 3
+    c["b"] = 2
+    check_write_to(
+        c,
+        expected="Counter[String]({'a': Int(3), 'b': Int(2)})",
+        is_repr=True,
+    )
+
+    var empty = Counter[String]()
+    check_write_to(empty, expected="Counter[String]({})", is_repr=True)
+
+    var single = Counter[String]()
+    single["x"] = 1
+    check_write_to(
+        single, expected="Counter[String]({'x': Int(1)})", is_repr=True
+    )
 
 
 def main() raises:

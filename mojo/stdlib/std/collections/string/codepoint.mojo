@@ -22,6 +22,7 @@ from std.sys.intrinsics import likely
 
 from std.bit import count_leading_zeros
 from std.bit._mask import splat
+import std.format._utils as fmt
 from std.os import abort
 
 
@@ -315,6 +316,18 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         var result = String(unsafe_uninit_length=char_len)
         _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
         w.write_string(result)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Codepoint` to a writer.
+
+        Writes the codepoint in the format `Codepoint(N)` where N is the
+        Unicode scalar value.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Codepoint").fields(self._scalar_value)
 
     # ===-------------------------------------------------------------------===#
     # Methods

@@ -32,6 +32,7 @@ from std.collections.dict import (
     _DictKeyIter,
     _DictValueIter,
 )
+import std.format._utils as fmt
 from std.hashlib import Hasher, default_hasher
 
 from std.utils import Variant
@@ -242,7 +243,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A string representation of the Counter.
         """
-        return String.write(self)
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
@@ -261,16 +264,44 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
         var counter_as_string = String(c)
         print(counter_as_string)
-        # prints "Counter({'a': 3, 'c': 3, 'b': 2, 'd': 1})"
+        # prints "{a: 3, c: 3, b: 2, d: 1}"
         ```
         """
         var output = String()
         self.write_to(output)
         return output^
 
+    fn _write_counter_body[
+        f_key: fn(Self.V, mut Some[Writer]),
+        f_val: fn(Int, mut Some[Writer]),
+    ](self, mut writer: Some[Writer]):
+        """Write the counter's key-value pairs to a writer.
+
+        Parameters:
+            f_key: The function to format keys.
+            f_val: The function to format values.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
+
+        writer.write_string("{")
+
+        var items = self.most_common(UInt(len(self)))
+        for i in range(len(items)):
+            if i > 0:
+                writer.write_string(", ")
+            ref item = items[i]
+            f_key(item._value, writer)
+            writer.write_string(": ")
+            f_val(item._count, writer)
+
+        writer.write_string("}")
+
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        """Write `my_counter.__str__()` to a `Writer`.
+        """Write this `Counter` to a writer.
 
         Constraints:
             `V` must conform to `Writable`.
@@ -278,27 +309,32 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.V, Writable),
-            Parent=Self,
-            Element = Self.V,
-            ParentConformsTo="Writable",
-            ElementConformsTo="Writable",
-        ]()
+        self._write_counter_body[
+            f_key = fmt.write_to[Self.V],
+            f_val = fmt.write_to[Int],
+        ](writer)
 
-        writer.write("Counter({")
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Counter` to a writer.
 
-        var items = self.most_common(UInt(len(self)))
-        for i in range(len(items)):
-            ref item = items[i]
-            # Access the value and count from CountTuple
-            ref value = item._value
-            ref key = trait_downcast[Writable](value)
-            var count = item._count
-            writer.write(repr(key), ": ", repr(count))
-            if i < len(items) - 1:
-                writer.write(", ")
-        writer.write("})")
+        Constraints:
+            `V` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_counter_body[
+                f_key = fmt.write_repr_to[Self.V],
+                f_val = fmt.write_repr_to[Int],
+            ](w)
+
+        fmt.FormatStruct(writer, "Counter").params(
+            fmt.TypeNames[Self.V](),
+        ).fields[FieldsFn=write_fields]()
 
     # ===------------------------------------------------------------------=== #
     # Comparison operators
