@@ -314,58 +314,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         self.value = VariadicList[Dim](index(value))
 
     @always_inline("nodebug")
-    fn __init__[I: Indexer & Copyable](out self, values: Tuple[I]):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = VariadicList[Dim](index(values[0]))
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer & Copyable,
-        I1: Indexer & Copyable,
-    ](out self, values: Tuple[I0, I1]):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I0: A type that can be used as an Index.
-            I1: A type that can be used as an Index.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = VariadicList[Dim](index(values[0]), index(values[1]))
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer & Copyable,
-        I1: Indexer & Copyable,
-        I2: Indexer & Copyable,
-    ](out self, values: Tuple[I0, I1, I2]):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I0: A type that can be used as an Index.
-            I1: A type that can be used as an Index.
-            I2: A type that can be used as an Index.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = VariadicList[Dim](
-            index(values[0]), index(values[1]), index(values[2])
-        )
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer & Copyable,
-        I1: Indexer & Copyable,
-    ](out self, val0: I0, val1: I1):
+    fn __init__[I0: Indexer, I1: Indexer](out self, val0: I0, val1: I1):
         """Creates a dimension list from the given list of values.
 
         Parameters:
