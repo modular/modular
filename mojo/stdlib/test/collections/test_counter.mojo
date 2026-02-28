@@ -413,6 +413,18 @@ def test_counter_setitem() raises:
     assert_equal(c[2], 2)
     assert_equal(c[3], 0)
 
+def test_repr():
+    var c = Counter[String]()
+    c["a"] = 1
+    c["b"] = 2
+    var s = String()
+    c.write_repr_to(s)
+    assert_equal(s, "Counter(Dict[String, Int]({'a': Int(1), 'b': Int(2)}))")
+
+    var empty = Counter[String]()
+    var s2 = String()
+    empty.write_repr_to(s2)
+    assert_equal(s2, "Counter(Dict[String, Int]({}))")
 
 def test_neg() raises:
     var c = Counter[String]()
