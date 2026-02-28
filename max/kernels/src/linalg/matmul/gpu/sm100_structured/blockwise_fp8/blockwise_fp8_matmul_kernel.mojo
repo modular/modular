@@ -77,7 +77,13 @@ from ..structured_kernels.config import MatmulConfig
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
 
 # Structured kernel imports
-from ..structured_kernels.kernel_common import WarpRole, KernelContext
+from ..structured_kernels.kernel_common import (
+    WarpRole,
+    KernelContext,
+    compute_tma_tile_dims,
+    compute_clc_barrier_counts,
+    compute_accum_barrier_counts,
+)
 from .blockwise_fp8_smem import BlockwiseFP8Smem
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
@@ -85,12 +91,12 @@ from ..structured_kernels.tile_pipeline import (
     InputConsumerStage,
 )
 from ..structured_kernels.tile_types import (
-    BlockwiseFP8TilePayload,
     GMEMTile,
     TMATile,
     TmaOpType,
     static_row_major,
 )
+from ..structured_kernels.tile_pipeline import BlockwiseFP8TilePayload
 from ..structured_kernels.tile_scheduler import (
     TileScheduler as StructuredTileScheduler,
 )
@@ -191,14 +197,24 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     # ========== Barrier Arrival Counts ==========
 
-    comptime clc_producer_arv_count = 1
-    comptime clc_consumer_arv_count = Self.SCHEDULER_THREADS + Self.CLUSTER_SIZE * (
-        Self.TMA_LOAD_THREADS + Self.MMA_THREADS + Self.EPILOGUE_THREADS
-    )
-    comptime clc_throttle_producer_arv_count = Self.TMA_LOAD_THREADS
-    comptime clc_throttle_consumer_arv_count = Self.SCHEDULER_THREADS
-    comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = Self.cta_group * Self.EPILOGUE_THREADS
+    comptime _clc_barrier_counts = compute_clc_barrier_counts[
+        Self.SCHEDULER_THREADS,
+        Self.TMA_LOAD_THREADS,
+        Self.MMA_THREADS,
+        Self.EPILOGUE_THREADS,
+        Self.CLUSTER_SIZE,
+        Self.cta_group,
+    ]()
+    comptime clc_producer_arv_count = Self._clc_barrier_counts[0]
+    comptime clc_consumer_arv_count = Self._clc_barrier_counts[1]
+    comptime clc_throttle_producer_arv_count = Self._clc_barrier_counts[2]
+    comptime clc_throttle_consumer_arv_count = Self._clc_barrier_counts[3]
+
+    comptime _accum_barrier_counts = compute_accum_barrier_counts[
+        Self.EPILOGUE_THREADS, Self.cta_group
+    ]()
+    comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
+    comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
     # ========== Shared Memory Layout Types ==========
 
@@ -235,8 +251,17 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     # ========== TMA Layouts (computed from config, new Layout types) ==========
 
-    comptime a_tile_dim0 = Self.BM // Self.CLUSTER_N
-    comptime b_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime _tma_tile_dims = compute_tma_tile_dims[
+        Self.BM,
+        Self.BN,
+        Self.MMA_M,
+        Self.OutputM,
+        Self.CLUSTER_M,
+        Self.CLUSTER_N,
+        Self.cta_group,
+    ]()
+    comptime a_tile_dim0 = Self._tma_tile_dims[0]
+    comptime b_tile_dim0 = Self._tma_tile_dims[1]
     comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
         Self.a_type
     ]()
@@ -248,9 +273,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ]()
 
     # C tile shape depends on MMA shape and cta_group
-    comptime c_tile_dim0 = Self.OutputM if (
-        Self.MMA_M == 256 or Self.cta_group == 1
-    ) else 64
+    comptime c_tile_dim0 = Self._tma_tile_dims[2]
 
     comptime ATileLayout = static_row_major[Self.a_tile_dim0, Self.BK]
     comptime ADescLayout = static_row_major[
@@ -697,7 +720,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             ProducerConsumerPipeline[Self.config.num_accum_pipeline_stages](
                 accum_barriers.ptr
             ).init_mbars(
-                Self.accum_pipeline_producer_arv_count,
+                Int32(Self.accum_pipeline_producer_arv_count),
                 Int32(Self.accum_pipeline_consumer_arv_count),
             )
 
@@ -712,7 +735,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             )
 
             comptime for i in range(Self.num_clc_pipeline_stages):
-                clc_full.ptr[i].init(Self.clc_producer_arv_count)
+                clc_full.ptr[i].init(Int32(Self.clc_producer_arv_count))
                 clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
 
         fence_mbarrier_init()

@@ -95,15 +95,12 @@ from linalg.utils import (
 from ..structured_kernels.config import MatmulConfig
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
 from ..structured_kernels.tile_pipeline import (
-    TilePipeline,
     InputTilePipeline,
     StandardTilePayload,
     InputProducerStage,
     InputConsumerStage,
     InputProducer,
     InputConsumer,
-    StandardProducerStage,
-    StandardConsumerStage,
     OutputTilePipeline,
 )
 from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
@@ -448,7 +445,6 @@ struct BlackwellMatmulSM100Kernel[
     ]
 
     # ========== Tile Pipeline Type ==========
-    # Uses generic TilePipeline with StandardTilePayload for composition
 
     comptime TilePayload = StandardTilePayload[
         Self.a_type,

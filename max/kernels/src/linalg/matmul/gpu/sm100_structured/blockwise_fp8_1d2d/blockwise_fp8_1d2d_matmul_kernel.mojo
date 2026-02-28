@@ -57,13 +57,17 @@ from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import elementwise_compute_lambda_type
 
 from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.kernel_common import (
+    compute_tma_tile_dims,
+    compute_accum_barrier_counts,
+)
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
     InputProducerStage,
     InputConsumerStage,
     OutputTilePipeline,
+    BlockwiseFP8TilePayload,
 )
-from ..structured_kernels.tile_types import BlockwiseFP8TilePayload
 from ..structured_kernels.tmem import TmemAllocation
 from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
 from ..structured_kernels.warp_context import (
@@ -161,10 +165,11 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     # ========== Barrier Arrival Counts ==========
 
-    comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = (
-        Self.cta_group * WarpRole1D1D.NUM_EPILOGUE_THREADS
-    )
+    comptime _accum_barrier_counts = compute_accum_barrier_counts[
+        WarpRole1D1D.NUM_EPILOGUE_THREADS, Self.cta_group
+    ]()
+    comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
+    comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
     # ========== Shared Memory Type ==========
 
@@ -265,8 +270,17 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     # ========== TMA Layouts (computed from config, new Layout types) ==========
 
-    comptime a_tile_dim0 = Self.BM // Self.CLUSTER_N
-    comptime b_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime _tma_tile_dims = compute_tma_tile_dims[
+        Self.BM,
+        Self.BN,
+        Self.MMA_M,
+        Self.OutputM,
+        Self.CLUSTER_M,
+        Self.CLUSTER_N,
+        Self.cta_group,
+    ]()
+    comptime a_tile_dim0 = Self._tma_tile_dims[0]
+    comptime b_tile_dim0 = Self._tma_tile_dims[1]
     comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
         Self.a_type
     ]()
@@ -479,7 +493,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
             # Initialize output pipeline barriers
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
-                Self.accum_pipeline_producer_arv_count,
+                Int32(Self.accum_pipeline_producer_arv_count),
                 Int32(Self.accum_pipeline_consumer_arv_count),
             )
 

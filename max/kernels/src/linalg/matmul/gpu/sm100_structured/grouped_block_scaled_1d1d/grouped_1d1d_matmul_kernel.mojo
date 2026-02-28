@@ -89,7 +89,11 @@ from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 from linalg.utils import elementwise_compute_lambda_type
 
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from ..structured_kernels.kernel_common import KernelContext
+from ..structured_kernels.kernel_common import (
+    KernelContext,
+    compute_tma_tile_dims,
+    compute_accum_barrier_counts,
+)
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
     InputProducerStage,
@@ -241,10 +245,11 @@ struct Grouped1D1DMatmulKernel[
 
     # ========== Barrier Arrival Counts ==========
 
-    comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = (
-        Self.cta_group * WarpRole1D1D.NUM_EPILOGUE_THREADS
-    )
+    comptime _accum_barrier_counts = compute_accum_barrier_counts[
+        WarpRole1D1D.NUM_EPILOGUE_THREADS, Self.cta_group
+    ]()
+    comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
+    comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
     # ========== Shared Memory Type ==========
 
@@ -404,8 +409,18 @@ struct Grouped1D1DMatmulKernel[
 
     # ========== TMA Layouts (computed from config, new Layout types) ==========
 
-    comptime a_tile_dim0 = Self.BM // Self.CLUSTER_N
-    comptime b_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime _tma_tile_dims = compute_tma_tile_dims[
+        Self.BM,
+        Self.BN,
+        Self.MMA_M,
+        Self.OutputM,
+        Self.CLUSTER_M,
+        Self.CLUSTER_N,
+        Self.cta_group,
+        AB_swapped = Self.config.AB_swapped,
+    ]()
+    comptime a_tile_dim0 = Self._tma_tile_dims[0]
+    comptime b_tile_dim0 = Self._tma_tile_dims[1]
     comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
         Self.a_type
     ]()
@@ -417,9 +432,7 @@ struct Grouped1D1DMatmulKernel[
     ]()
 
     # C tile shape -- same logic as default/block_scaled kernels
-    comptime c_tile_dim0 = Self.OutputM if (
-        Self.MMA_M == 256 or Self.cta_group == 1 or Self.config.AB_swapped
-    ) else 64
+    comptime c_tile_dim0 = Self._tma_tile_dims[2]
     comptime c_tile_dim1 = Self.c_swizzle_elems if (
         Self.config.AB_swapped
     ) else Self.OutputN
@@ -651,7 +664,7 @@ struct Grouped1D1DMatmulKernel[
             # Initialize output pipeline barriers
             Self.OutputPipeline.init_barriers(
                 accum_barriers.ptr,
-                Self.accum_pipeline_producer_arv_count,
+                Int32(Self.accum_pipeline_producer_arv_count),
                 Int32(Self.accum_pipeline_consumer_arv_count),
             )
 
