@@ -422,6 +422,11 @@ bool isNVPTX_HopperAndAbove(TargetInfoAttr target);
 /// Return true if fpType is an fp8 type.
 bool isFP8(Type fpType);
 
+/// Recursively squash pairs of unrealized_conversion_cast ops that cancel out.
+/// For example, cast<A→B>(cast<B→A>(v)) reduces to v.
+/// Used to clean up residual casts before generating calls.
+mlir::Value squashPointlessCasts(mlir::Value v);
+
 } // namespace M::KGEN
 
 #endif // KGEN_LLVM_LOWERING_UTILS_H

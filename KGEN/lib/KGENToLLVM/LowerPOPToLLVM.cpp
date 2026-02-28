@@ -6,11 +6,13 @@
 
 #include "KGEN/ToolCommon/KGENPasses.h"
 
+#include "CABILowering.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "LLVMLoweringUtils.h"
+#include "LowerPOPToLLVMExternalCalls.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
@@ -2180,26 +2182,6 @@ struct ConvertPOPCastFromBuiltin : ConvertPOPToLLVMPattern<CastFromBuiltinOp> {
 // ConvertPOPInlineAsm
 //===----------------------------------------------------------------------===//
 
-// Given %20 with something like:
-//     %19 = builtin.unrealized_conversion_cast %18 : !llvm.struct<(i8, i1)> to
-//     !kgen.struct<(scalar<ui8>, i1)> %20 = builtin.unrealized_conversion_cast
-//     %19 : !kgen.struct<(scalar<ui8>, i1)> to !llvm.struct<(i8, i1)>
-// Return the input %18.
-static Value squashPointlessCasts(Value v) {
-  auto cast1Op = v.getDefiningOp<mlir::UnrealizedConversionCastOp>();
-  if (!cast1Op || cast1Op.getNumOperands() != 1 || cast1Op.getNumResults() != 1)
-    return v;
-
-  auto cast2Op =
-      cast1Op.getOperand(0).getDefiningOp<mlir::UnrealizedConversionCastOp>();
-  if (!cast2Op || cast1Op.getNumOperands() != 1 ||
-      cast1Op.getNumResults() != 1 ||
-      cast2Op.getOperand(0).getType() != v.getType())
-    return v;
-
-  return squashPointlessCasts(cast2Op.getOperand(0));
-}
-
 /// Expand one level of structs so kgen.pack elements are passed as individual
 /// values instead of as a kgen.struct.
 ///
@@ -3577,90 +3559,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
 namespace {
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPExternalCall
-//===----------------------------------------------------------------------===//
-
-/// Lower an external call. Add the callee to the symbol table.
-struct ConvertPOPExternalCall : public ConvertSymbolOpToLLVM<ExternalCallOp> {
-  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
-
-  LogicalResult
-  matchAndRewrite(ExternalCallOp op, ExternalCallOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Build the function type from the operands directly. By this point,
-    // operands are either primitive POP types or kgen.struct — operand types
-    // map 1:1 to parameters.
-    std::optional<FunctionType> funcType = op.getVariadicType();
-    if (!funcType) {
-      funcType =
-          rewriter.getFunctionType(op.getOperandTypes(), op.getResultTypes());
-    }
-    TypeConverter::SignatureConversion conversion(funcType->getNumInputs());
-    Type signature = getTypeConverter()->convertFunctionSignature(
-        *funcType, op.getVariadicType().has_value(),
-        getTypeConverter()->getOptions().useBarePtrCallConv, conversion);
-
-    // Get the passthrough attributes. Set the target passthrough attributes
-    // early because all functions will have them.
-    mlir::ArrayAttr passthrough = attachTargetPassthroughAttrs(
-        rewriter, getTypeConverter()->getTarget(), op.getFuncAttrsAttr());
-    mlir::ArrayAttr argAttrs = op.getArgAttrsAttr();
-    mlir::DictionaryAttr resAttrs = op.getResAttrsAttr();
-    mlir::ArrayAttr resArrayAttrs;
-    if (resAttrs)
-      resArrayAttrs = rewriter.getArrayAttr(resAttrs);
-    auto memory = dyn_cast_or_null<LLVM::MemoryEffectsAttr>(op.getMemoryAttr());
-
-    // Lookup an existing function.
-    auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());
-    if (func && func.getFunctionType() != signature) {
-      return mlir::emitError(op.getLoc(),
-                             "existing function with conflicting signature")
-                 .attachNote(func.getLoc())
-             << "see function declaration here";
-    }
-    if (func &&
-        std::make_tuple(func.getPassthroughAttr(), func.getArgAttrsAttr(),
-                        func.getResAttrsAttr(), func.getMemoryEffectsAttr()) !=
-            std::make_tuple(passthrough, argAttrs, resArrayAttrs, memory)) {
-      return mlir::emitError(op.getLoc(),
-                             "existing function with conflicting attributes")
-                 .attachNote(func.getLoc())
-             << "see function declaration here";
-    }
-
-    // Create the function declaration if necessary.
-    if (!func) {
-      OpBuilder::InsertionGuard guard(rewriter);
-      rewriter.clearInsertionPoint();
-      func = LLVM::LLVMFuncOp::create(rewriter,
-                                      mlir::UnknownLoc::get(getContext()),
-                                      op.getCallee(), signature);
-      func.setPassthroughAttr(passthrough);
-      if (argAttrs)
-        func.setArgAttrsAttr(argAttrs);
-      if (resAttrs)
-        func.setResAttrsAttr(resArrayAttrs);
-      if (memory)
-        func.setMemoryEffectsAttr(memory);
-      symtab.insert(func);
-    }
-
-    // C ABI is handled in the LLVM back-end. That is, decisions such as
-    // "this struct is small and so should be passed in two registers"
-    // are done there.
-    // Here the code just translates arguments verbatim.
-    SmallVector<Value> callArgs;
-    for (Value val : adaptor.getOperands())
-      callArgs.push_back(squashPointlessCasts(val));
-
-    LLVM::CallOp call = createLLVMCall(rewriter, op.getLoc(), func, callArgs);
-    replaceCallWithLLVMCall(rewriter, op, call);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPAlignedAlloc
 //===----------------------------------------------------------------------===//
 
@@ -4085,12 +3983,12 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 
   // Convert external calls.
   target.addIllegalOp<GlobalAllocOp, ExternalCallOp, ExternPointerSymbolOp>();
-  patterns.insert<ConvertPOPGlobalAlloc, ConvertPOPExternalCall,
-                  ConvertExternPointerSymbol, ConvertPOPAlignedAlloc,
-                  ConvertPOPAlignedFree, ConvertPOPNoAliasPointerCast,
-                  ConvertPOPCallToAIRIntrinsic, ConvertPOPMinToAIR,
-                  ConvertPOPMaxToAIR, ConvertPOPCastToAIR,
+  patterns.insert<ConvertPOPGlobalAlloc, ConvertExternPointerSymbol,
+                  ConvertPOPAlignedAlloc, ConvertPOPAlignedFree,
+                  ConvertPOPNoAliasPointerCast, ConvertPOPCallToAIRIntrinsic,
+                  ConvertPOPMinToAIR, ConvertPOPMaxToAIR, ConvertPOPCastToAIR,
                   ConvertPOPAtomicRMWToAIR>(typeConverter, symtab);
+  populateLowerPOPExternalCallPatterns(patterns, typeConverter, symtab);
 
   // Convert global constants.
   DenseMap<std::pair<TypedAttr, TypedAttr>, LLVM::GlobalOp> constants;
