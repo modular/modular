@@ -1,0 +1,53 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# C reference: c_abi_variadic_floats.c
+# RUN: mkdir -p %t.dir
+# RUN: mojo build -Xlinker $(dirname %s)/libc_abi_reference.lo %s -o %t.dir/test_variadic_mixed_structs
+# RUN: %t.dir/test_variadic_mixed_structs | FileCheck %s
+
+# Note: Variadic C functions require the variadicType attribute on
+# pop.external_call to generate correct LLVM IR with isVarArg=true.
+
+
+# Test 1: 8-byte mixed int/float struct
+@fieldwise_init
+struct MixedIntFloat8(TrivialRegisterPassable):
+    var i: Int32
+    var f: Float32
+
+
+# CHECK: variadic_mixed_if_8byte: 11 11.5
+fn test_variadic_mixed_if_8byte():
+    var s = MixedIntFloat8(10, 10.5)
+    var result = __mlir_op.`pop.external_call`[
+        func = "c_func_variadic_mixed_if_8byte".value,
+        variadicType = __mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        _type=MixedIntFloat8,
+    ](Int(999), s)
+    print("variadic_mixed_if_8byte:", result.i, result.f)
+
+
+# Test 2: 16-byte mixed double/int struct
+@fieldwise_init
+struct MixedDoubleInt16(TrivialRegisterPassable):
+    var d: Float64
+    var i: Int64
+
+
+# CHECK: variadic_mixed_di_16byte: 101.5 11
+fn test_variadic_mixed_di_16byte():
+    var s = MixedDoubleInt16(100.5, 10)
+    var result = __mlir_op.`pop.external_call`[
+        func = "c_func_variadic_mixed_di_16byte".value,
+        variadicType = __mlir_attr[`(!pop.scalar<si64>) -> !pop.scalar<si64>`,],
+        _type=MixedDoubleInt16,
+    ](Int(999), s)
+    print("variadic_mixed_di_16byte:", result.d, result.i)
+
+
+fn main():
+    test_variadic_mixed_if_8byte()
+    test_variadic_mixed_di_16byte()

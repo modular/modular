@@ -1030,6 +1030,7 @@ modular_cc_library(
         ":KGENDialect",
         ":ToolCommon",
         "//Support:DebugInfoTransforms",
+        "@llvm-project//llvm:Support",  # For llvm/ADT/Triple.h
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:IndexDialect",
     ],

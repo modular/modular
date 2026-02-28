@@ -1302,3 +1302,22 @@ bool KGEN::isAMDGPU(TargetInfoAttr target, ArrayRef<StringRef> allowedGPUs) {
 bool KGEN::isNVPTX_HopperAndAbove(TargetInfoAttr target) {
   return isNVPTX(target, {"sm_90", "sm_100", "sm_101", "sm_120"});
 }
+
+//===----------------------------------------------------------------------===//
+// squashPointlessCasts
+//===----------------------------------------------------------------------===//
+
+mlir::Value KGEN::squashPointlessCasts(mlir::Value v) {
+  auto cast1Op = v.getDefiningOp<mlir::UnrealizedConversionCastOp>();
+  if (!cast1Op || cast1Op.getNumOperands() != 1 || cast1Op.getNumResults() != 1)
+    return v;
+
+  auto cast2Op =
+      cast1Op.getOperand(0).getDefiningOp<mlir::UnrealizedConversionCastOp>();
+  if (!cast2Op || cast1Op.getNumOperands() != 1 ||
+      cast1Op.getNumResults() != 1 ||
+      cast2Op.getOperand(0).getType() != v.getType())
+    return v;
+
+  return squashPointlessCasts(cast2Op.getOperand(0));
+}
