@@ -1156,7 +1156,7 @@ struct Pointer[
         origin = origin_of(Self.origin, other_type.origin),
         address_space = Self.address_space,
     ]:
-        return self._value  # allow lit.ref to convert.
+        return {self._value}  # allow lit.ref to convert.
 
 
 struct Tuple[*element_types: AnyType](ImplicitlyCopyable):
