@@ -1483,6 +1483,14 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
                                           /*emitErrors=*/true,
                                           /*restoreCursor=*/false, "for");
 
+  if (isParamFor) {
+    SMLoc atLoc = startCursor.getToken().getLoc();
+    SMLoc forTokLoc = getToken().getLoc();
+    emitWarning(atLoc,
+                "'@parameter for' is deprecated, use 'comptime for' instead")
+        << FixIt(SourceRange::getByteLevel(atLoc, forTokLoc), "comptime ");
+  }
+
   SMLoc forLoc;
   ExprNode *targetExpr = nullptr;
   ExprNode *seqExpr = nullptr;
@@ -2845,6 +2853,14 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
   bool isParamIf = hasParameterDecorator(startCursor, curIndent,
                                          /*emitErrors=*/true,
                                          /*restoreCursor=*/false, "if");
+
+  if (isParamIf) {
+    SMLoc atLoc = startCursor.getToken().getLoc();
+    SMLoc ifTokLoc = getToken().getLoc();
+    emitWarning(atLoc,
+                "'@parameter if' is deprecated, use 'comptime if' instead")
+        << FixIt(SourceRange::getByteLevel(atLoc, ifTokLoc), "comptime ");
+  }
 
   Location ifLoc = translateLocation(getToken().getLoc());
   if (parseToken(Token::kw_if, "expected 'if' token after decorators"))
