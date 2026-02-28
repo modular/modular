@@ -1469,7 +1469,7 @@ struct VariadicTensors[
     size: Int,
     io_spec: IOSpec[mut, input],
     *,
-    static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
+    static_specs: InlineArray[StaticTensorSpec[dtype, rank], size],
 ](Sized, TrivialRegisterPassable):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""

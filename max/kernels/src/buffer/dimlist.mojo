@@ -285,14 +285,20 @@ struct Dim(
 # ===-----------------------------------------------------------------------===#
 
 
-struct DimList(
-    Representable, Sized, Stringable, TrivialRegisterPassable, Writable
-):
+struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
     var value: VariadicList[Dim]
     """The underlying storage for the list of dimensions."""
+
+    fn __init__(out self, *, copy: Self):
+        """Creates a dimension list from the given list of values.
+
+        Args:
+            copy: The list to copy.
+        """
+        self.value = copy.value.copy()
 
     @always_inline("nodebug")
     @implicit
