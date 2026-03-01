@@ -7,7 +7,7 @@
 # RUN: mojo package %S/inputs/closure -o %t.closure-dir/closure.mojopkg
 # RUN: mojo -debug-level=line-tables -I %t.closure-dir %s 4 | FileCheck %s
 
-from sys import argv
+from std.sys import argv
 from closure import emitLoad
 
 

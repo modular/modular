@@ -7,7 +7,7 @@
 # RUN: mojo -I %S/inputs %s 4 | FileCheck %s
 
 from closure import printIt, defineIt
-from sys import argv
+from std.sys import argv
 
 
 fn aThing(y: Int):

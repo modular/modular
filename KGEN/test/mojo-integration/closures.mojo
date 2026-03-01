@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %mojo -debug-level full %s 2 3 | FileCheck %s
-from sys import argv
+from std.sys import argv
 
 
-from runtime.asyncrt import _run
+from std.runtime.asyncrt import _run
 
 
 @no_inline

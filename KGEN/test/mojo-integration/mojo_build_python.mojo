@@ -9,8 +9,8 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %t | FileCheck %s
 
-from python import Python
-from sys import argv
+from std.python import Python
+from std.sys import argv
 
 
 def main() raises:

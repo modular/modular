@@ -8,8 +8,8 @@
 # RUN: not kgen -elaborate  -D TEST_RECURSION2=1 %s 2>&1 | FileCheck %s --check-prefix=CHECK-RECURSION2
 # RUN: not kgen -elaborate  -D TEST_RECURSION3=1 %s 2>&1 | FileCheck %s --check-prefix=CHECK-RECURSION3
 
-from collections.string.string_slice import StaticString, _get_kgen_string
-from sys import env_get_bool
+from std.collections.string.string_slice import StaticString, _get_kgen_string
+from std.sys import env_get_bool
 
 
 # expected-error @+2{{function instantiation failed}}

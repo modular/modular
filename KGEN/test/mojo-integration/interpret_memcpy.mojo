@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from sys import llvm_intrinsic, size_of
+from std.sys import llvm_intrinsic, size_of
 
 
 fn memcpy(

@@ -8,7 +8,7 @@
 # CHECK: 'get_linkage_name' expected a valid generator reference, but got
 # CHECK-SAME: param_fn{{.*}}
 
-from compile import compile_info
+from std.compile import compile_info
 
 
 fn param_fn[x: Int, y: Int]() -> Int:

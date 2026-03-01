@@ -6,8 +6,8 @@
 
 # RUN: %mojo -debug-level full %s 2 3 | FileCheck %s
 
-from utils.type_functions import ConditionalType
-from sys.intrinsics import _type_is_eq
+from std.utils.type_functions import ConditionalType
+from std.sys.intrinsics import _type_is_eq
 
 
 struct ConditionalArraySize[T: AnyType]:

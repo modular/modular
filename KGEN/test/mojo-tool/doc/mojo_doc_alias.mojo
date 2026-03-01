@@ -6,7 +6,7 @@
 
 # RUN: mojo doc %s | FileCheck %s
 
-from utils import Index
+from std.utils import Index
 
 # CHECK-LABEL: "name": "x1"
 # CHECK: "value": "Index(16, 16, 16)"

@@ -6,7 +6,7 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from collections import Set
+from std.collections import Set
 
 comptime keys: List[Int] = [1, 2, 3, 7, 5]
 comptime num_set = Set(keys)

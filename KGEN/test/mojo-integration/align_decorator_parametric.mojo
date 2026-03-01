@@ -9,9 +9,9 @@
 # Integration tests for parametric @align decorator - verifies runtime behavior
 # when alignment is specified via a struct parameter.
 
-from sys import align_of
-from memory import UnsafePointer, alloc
-from testing import assert_equal, assert_true, TestSuite
+from std.sys import align_of
+from std.memory import UnsafePointer, alloc
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 @align(alignment)

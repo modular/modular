@@ -6,7 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-from reflection import (
+from std.reflection import (
     struct_field_names,
     struct_field_types,
 )

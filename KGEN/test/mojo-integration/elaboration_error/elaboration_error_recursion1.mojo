@@ -7,8 +7,8 @@
 # RUN: kgen -elaborate -elaboration-max-depth=128 --elaboration-error-verbose=no-params %s --verify-diagnostics
 # RUN: not mojo build -elaboration-max-depth=128 --elaboration-error-verbose=no-params %s 2>&1 | FileCheck %s
 
-from collections.string.string_slice import _get_kgen_string
-from sys import env_get_bool
+from std.collections.string.string_slice import _get_kgen_string
+from std.sys import env_get_bool
 
 
 # expected-note @below {{function instantiation failed}}

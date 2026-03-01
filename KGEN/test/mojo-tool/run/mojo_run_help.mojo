@@ -19,7 +19,7 @@
 # RUN: mojo run %s --help | FileCheck %s --check-prefix CHECK-ARGV
 # RUN: %mojo %s --help | FileCheck %s --check-prefix CHECK-ARGV
 
-from sys import argv
+from std.sys import argv
 
 
 fn main() -> None:

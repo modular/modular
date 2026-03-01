@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full -O0 %s 2 3 | FileCheck %s
 
-from sys import argv
+from std.sys import argv
 
 
 @fieldwise_init("implicit")

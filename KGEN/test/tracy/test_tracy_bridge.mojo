@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true
-from ffi import external_call
+from std.testing import assert_equal, assert_true
+from std.ffi import external_call
 
 
 def test_tracy_bridge_symbols_exist_and_disabled_by_default() raises:

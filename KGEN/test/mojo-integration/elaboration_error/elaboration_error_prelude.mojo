@@ -8,7 +8,7 @@
 # RUN: not kgen -elaborate %s --elaboration-error-include-prelude 2>&1 | FileCheck %s --check-prefix=CHECK-PRELUDE
 # RUN: not mojo --elaboration-error-include-prelude  %s 2>&1 | FileCheck %s --check-prefix=CHECK-PRELUDE
 
-from collections.string.string_slice import _get_kgen_string
+from std.collections.string.string_slice import _get_kgen_string
 
 # CHECK-PRELUDE: {{.*}}std/builtin/_startup.mojo
 # CHECK-PRELUDE-SAME: error: function instantiation failed

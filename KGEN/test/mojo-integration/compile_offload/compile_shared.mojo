@@ -7,8 +7,8 @@
 # RUN: %mojo %s -o %t
 # RUN: llvm-objdump -t %t | FileCheck %s
 
-from compile import compile_info
-from sys import argv, size_of
+from std.compile import compile_info
+from std.sys import argv, size_of
 
 
 fn get_type(dtype: DType) -> DType:

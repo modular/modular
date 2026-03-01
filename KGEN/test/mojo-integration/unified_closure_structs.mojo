@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s 3 1 4 | FileCheck %s
 
-from sys import argv
+from std.sys import argv
 
 
 trait ATrait(Movable):

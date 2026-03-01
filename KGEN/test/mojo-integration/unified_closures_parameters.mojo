@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s 8 string | FileCheck %s
 
-from sys import argv
+from std.sys import argv
 
 
 fn takeItParams[

@@ -6,7 +6,7 @@
 
 # RUN: %mojo -debug-level full %s
 
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 struct OverloadedKwArgs:

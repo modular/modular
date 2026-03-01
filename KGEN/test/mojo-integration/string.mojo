@@ -6,7 +6,7 @@
 # RUN: kgen -elaborate %s -S -o - | FileCheck %s --check-prefix=ELABORATE
 # RUN: mojo %s | FileCheck %s
 
-from collections.string.string_slice import StaticString, get_static_string
+from std.collections.string.string_slice import StaticString, get_static_string
 
 
 @fieldwise_init

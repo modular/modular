@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s 3 4 | FileCheck %s
 
-from sys import argv
+from std.sys import argv
 
 
 fn top_level(x: Int) -> Int:

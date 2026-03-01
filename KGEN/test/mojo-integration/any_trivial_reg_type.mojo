@@ -6,8 +6,8 @@
 
 # RUN: %mojo -debug-level full %s 4 5 | FileCheck %s
 
-from collections import OptionalReg
-from sys import argv
+from std.collections import OptionalReg
+from std.sys import argv
 
 
 trait Position(TrivialRegisterPassable):

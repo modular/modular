@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s 1 2 3 4 | FileCheck %s
 
-from sys import argv
+from std.sys import argv
 
 
 trait Coord(ImplicitlyCopyable):

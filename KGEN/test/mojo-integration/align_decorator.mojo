@@ -8,10 +8,10 @@
 
 # Integration tests for @align decorator - verifies runtime behavior.
 
-from sys import align_of, size_of
-from memory import UnsafePointer, alloc
-from testing import assert_equal, assert_true, TestSuite
-from collections import Optional
+from std.sys import align_of, size_of
+from std.memory import UnsafePointer, alloc
+from std.testing import assert_equal, assert_true, TestSuite
+from std.collections import Optional
 
 
 # Basic aligned struct

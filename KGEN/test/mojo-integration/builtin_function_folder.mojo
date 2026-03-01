@@ -11,7 +11,7 @@
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
 
-from utils._select import _select_register_value as select
+from std.utils._select import _select_register_value as select
 
 
 struct IntT[x: Int](ImplicitlyCopyable):

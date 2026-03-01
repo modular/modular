@@ -8,7 +8,7 @@
 # Test that the default Equatable implementation works for single-field
 # structs of TrivialRegisterPassable.
 
-from testing import assert_true, assert_false
+from std.testing import assert_true, assert_false
 
 
 @fieldwise_init

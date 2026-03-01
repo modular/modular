@@ -24,7 +24,7 @@
 
 # HELP: OVERVIEW: {{(lld|LLVM Linker)}}
 
-from ffi import external_call
+from std.ffi import external_call
 
 
 # CHECK: hello from foo: 0

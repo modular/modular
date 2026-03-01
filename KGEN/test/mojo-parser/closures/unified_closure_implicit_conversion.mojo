@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-from builtin.stubs import *
+from std.builtin.stubs import *
 
 
 fn id_simd[

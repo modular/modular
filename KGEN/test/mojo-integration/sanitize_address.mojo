@@ -9,7 +9,7 @@
 # RUN: export ASAN_OPTIONS=abort_on_error=1
 # RUN: not not %t 2>&1 | FileCheck %s
 
-from compile import compile_info
+from std.compile import compile_info
 
 
 def main() raises:

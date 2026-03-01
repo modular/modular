@@ -8,7 +8,7 @@
 # CHECK: 'get_linkage_name' function is not fully bound
 # CHECK-SAME: param_fn{{.*}} missing 1 parameter binding(s)
 
-from compile import compile_info
+from std.compile import compile_info
 
 
 fn param_fn[x: Int, y: Int]() -> Int:

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from runtime.tracing import Trace, TraceLevel
+from std.runtime.tracing import Trace, TraceLevel
 
 
 def test_trace_context_with_dynamic_name() raises:
