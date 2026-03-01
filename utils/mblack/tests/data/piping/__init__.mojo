@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from enum import Enum
 from json.decoder import JSONDecodeError
-from pathlib import Path
+from std.pathlib import Path
 from typing import (
     Any,
     Dict,
