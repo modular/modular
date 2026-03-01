@@ -1645,7 +1645,7 @@ Uses direct field access rather than methods for compile-time evaluation.
 
 
 comptime _CoordToDimList[*dims: CoordLike] = DimList(
-    VariadicList(
+    VariadicParamList(
         _ReduceVariadicAndIdxToValue[
             BaseVal = Variadic.empty_of_type[Dim],
             VariadicType=dims,

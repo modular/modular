@@ -289,7 +289,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
-    var value: VariadicList[Dim]
+    var value: VariadicParamList[Dim]
     """The underlying storage for the list of dimensions."""
 
     fn __init__(out self, *, copy: Self):
@@ -366,7 +366,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         self = Self(Dim(val0), Dim(val1), Dim(val2), Dim(val3), _dim_version=())
 
     @always_inline("nodebug")
-    fn __init__(out self, values: VariadicList[Dim]):
+    fn __init__(out self, values: VariadicParamList[Dim]):
         """Creates a dimension list from the given list of values.
 
         Args:
@@ -382,7 +382,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             values: The initial dim values.
             _dim_version: Used to help overload resolution.
         """
-        self.value = VariadicList[Dim](values, comptime_only=())
+        self.value = VariadicParamList[Dim](values, comptime_only=())
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -582,7 +582,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         comptime assert length > 0, "length must be positive"
 
         return Self(
-            VariadicList[Dim](
+            VariadicParamList[Dim](
                 __mlir_op.`pop.variadic.splat`[
                     numElements = length._mlir_value,
                     _type = Variadic.ValuesOfType[Dim],

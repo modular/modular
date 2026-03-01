@@ -87,7 +87,7 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
 @always_inline
 fn _compute_ndbuffer_offset(
     buf: NDBuffer,
-    index: VariadicList[Int],
+    index: VariadicParamList[Int],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 

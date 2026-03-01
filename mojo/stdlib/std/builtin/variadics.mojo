@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the VariadicList and VariadicPack types.
+"""Implements the VariadicListMem, VariadicParamList and VariadicPack types.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -380,15 +380,15 @@ struct Variadic:
 
 
 # ===-----------------------------------------------------------------------===#
-# VariadicList / VariadicListMem
+# VariadicParamList
 # ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
-struct _VariadicListIter[type: TrivialRegisterPassable](
+struct _VariadicParamListIter[type: TrivialRegisterPassable](
     ImplicitlyCopyable, Iterable, Iterator
 ):
-    """Const Iterator for VariadicList.
+    """Const Iterator for VariadicParamList.
 
     Parameters:
         type: The type of the elements in the list.
@@ -400,7 +400,7 @@ struct _VariadicListIter[type: TrivialRegisterPassable](
     ]: Iterator = Self
 
     var index: Int
-    var src: VariadicList[Self.type]
+    var src: VariadicParamList[Self.type]
 
     @always_inline
     fn __next__(mut self) raises StopIteration -> Self.type:
@@ -419,41 +419,35 @@ struct _VariadicListIter[type: TrivialRegisterPassable](
         return (len, {len})
 
 
-struct VariadicList[type: TrivialRegisterPassable](
+struct VariadicParamList[type: TrivialRegisterPassable](
     Iterable, Sized, TrivialRegisterPassable
 ):
-    """A utility class to access homogeneous variadic function arguments.
+    """A utility class to access homogeneous variadic parameters.
 
-    `VariadicList` is used when you need to accept variadic arguments where all
-    arguments have the same type. Unlike `VariadicPack` (which is heterogeneous),
-    `VariadicList` requires all elements to have the same concrete type.
+    `VariadicParamList` is used by homogenous variadic parameter lists. Unlike
+    `VariadicPack` (which is heterogeneous), `VariadicParamList` requires all
+    elements to have the same type.
 
-    At runtime, `VariadicList` is treated as a homogeneous array. Because all
-    the elements have the same type, each element has the same size and memory
-    layout, so the compiler can generate code that works to access any index
-    at runtime.
-
-    Therefore, indexing into `VariadicList` can use runtime indices with regular
-    `for` loops, whereas indexing into `VariadicPack` requires compile-time
-    indices using `@parameter for` loops.
+    `VariadicParamList` is only used for parameter lists, `VariadicListMem` is
+    used for function arguments.
 
     For example, in the following function signature, `*args: Int` creates a
-    `VariadicList` because it uses a single type `Int` instead of a variadic type
+    `VariadicParamList` because it uses a single type `Int` instead of a variadic type
     parameter. The `*` before `args` indicates that `args` is a variadic argument,
     which means that the function can accept any number of arguments, but all
     arguments must have the same type `Int`.
 
     ```mojo
-    fn sum_values(*args: Int) -> Int:
+    fn sum_values[*args: Int]() -> Int:
         var total = 0
 
-        # Can use regular for loop because args is a VariadicList
+        # Can use regular for loop because args is a VariadicParamList
         for i in range(len(args)):
             total += args[i]  # All elements are Int, so uniform access
 
         return total
 
-    def main() raises:
+    fn main():
         print(sum_values(1, 2, 3, 4, 5))
     ```
 
@@ -468,7 +462,7 @@ struct VariadicList[type: TrivialRegisterPassable](
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = _VariadicListIter[Self.type]
+    ]: Iterator = _VariadicParamListIter[Self.type]
     """The iterator type for this variadic list.
 
     Parameters:
@@ -478,7 +472,7 @@ struct VariadicList[type: TrivialRegisterPassable](
 
     @always_inline
     fn __init__(out self, *values: Self.type, comptime_only: ()):
-        """Constructs a VariadicList from a variadic list of values at comptime.
+        """Constructs a VariadicParamList from a variadic list of values at comptime.
         NOTE: this initializer only works at comptime.
 
         Args:
@@ -494,7 +488,7 @@ struct VariadicList[type: TrivialRegisterPassable](
         values: VariadicListMem[Self.type, is_owned=False],
         comptime_only: (),
     ):
-        """Constructs a VariadicList from a variadic list of values at comptime.
+        """Constructs a VariadicParamList from a variadic list of values at comptime.
         NOTE: this initializer only works at comptime.
 
         Args:
@@ -510,7 +504,7 @@ struct VariadicList[type: TrivialRegisterPassable](
     @always_inline
     @implicit
     fn __init__(out self, value: Self._mlir_type):
-        """Constructs a VariadicList from a variadic argument type.
+        """Constructs a VariadicParamList from a variadic argument type.
 
         Args:
             value: The variadic argument to construct the list with.
@@ -547,6 +541,11 @@ struct VariadicList[type: TrivialRegisterPassable](
             An iterator to the start of the list.
         """
         return {0, self}
+
+
+# ===-----------------------------------------------------------------------===#
+# VariadicListMem
+# ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
@@ -611,9 +610,9 @@ struct VariadicListMem[
     element_type: AnyType,
     is_owned: Bool,
 ](Movable, Sized):
-    """A utility class to access variadic function arguments of memory-only
-    types that may have ownership. It exposes references to the elements in a
-    way that can be enumerated.  Each element may be accessed with `elt[]`.
+    """A utility class to access homogenous variadic function arguments.
+    It exposes references to the elements in a way that can be enumerated.  Each
+    element may be accessed with `elt[]`.
 
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
@@ -642,7 +641,7 @@ struct VariadicListMem[
     @always_inline
     @implicit
     fn __init__(out self, value: Self._mlir_type):
-        """Constructs a VariadicList from a variadic argument type.
+        """Constructs a VariadicListMem from a variadic argument type.
 
         Args:
             value: The variadic argument to construct the list with.
@@ -768,7 +767,7 @@ struct VariadicPack[
 
     `VariadicPack` is used when you need to accept variadic arguments where each
     argument can have a different type, but all types conform to a common trait.
-    Unlike `VariadicList` (which is homogeneous), `VariadicPack` allows each
+    Unlike `VariadicParamList` (which is homogeneous), `VariadicPack` allows each
     element to have a different concrete type.
 
     `VariadicPack` is essentially a heterogeneous tuple that gets lowered to a
@@ -778,7 +777,7 @@ struct VariadicPack[
     time to generate the correct memory layout and access code.
 
     Therefore, indexing into `VariadicPack` requires compile-time indices using
-    `@parameter for` loops, whereas indexing into `VariadicList` uses runtime
+    `@parameter for` loops, whereas indexing into `VariadicParamList` uses runtime
     indices.
 
     For example, in the following function signature, `*args: *ArgTypes` creates a

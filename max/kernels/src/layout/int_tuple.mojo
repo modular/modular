@@ -493,7 +493,7 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline
-    fn __init__(out self, elements: VariadicList[Int]):
+    fn __init__(out self, elements: VariadicParamList[Int]):
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
