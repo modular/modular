@@ -338,17 +338,18 @@ struct TiledMatmul[
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
             ]
-            var primary_tiles = VariadicList[Int](
-                tile_n, 2 * Self.config.simd_size, Self.config.simd_size
-            )
             tile[secondary_tiles, Self.config.simd_size, m_loop](
-                0, valid_col_count, primary_tiles, Self.config.simd_size
+                0,
+                valid_col_count,
+                tile_n,
+                2 * Self.config.simd_size,
+                Self.config.simd_size,
+                primary_cleanup_tile=Self.config.simd_size,
             )
         else:
             comptime secondary_tiles_packed_b = [Self.config.kernel_cols]
-            var primary_tiles_packed_b = VariadicList[Int](tile_n)
             tile[secondary_tiles_packed_b, Self.config.kernel_cols, m_loop](
-                0, valid_col_count, primary_tiles_packed_b, tile_n
+                0, valid_col_count, tile_n, primary_cleanup_tile=tile_n
             )
 
     # Iterate over the K dimension of the gemm space.

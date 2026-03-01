@@ -666,7 +666,7 @@ fn tile[
 @always_inline
 fn tile[
     workgroup_function: Dynamic1DTileUnitFunc,
-](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
+](offset: Int, upperbound: Int, *tile_size_list: Int):
     """A generator that launches work groups in specified list of tile sizes.
 
     This is the version of tile generator for the case where work_group function
@@ -706,7 +706,7 @@ fn tile[
 ](
     offset: Int,
     upperbound: Int,
-    primary_tile_size_list: VariadicList[Int],
+    *primary_tile_size_list: Int,
     primary_cleanup_tile: Int,
 ):
     """A generator that launches work groups in specified list of tile sizes
@@ -1017,7 +1017,7 @@ comptime Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool](Int, Int, Int) capturing[
 @always_inline
 fn tile_and_unswitch[
     workgroup_function: Dynamic1DTileUnswitchUnitFunc,
-](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
+](offset: Int, upperbound: Int, *tile_size_list: Int):
     """Performs time and unswitch functional transformation.
 
     A variant of dynamic tile given a workgroup function that can be

@@ -705,8 +705,9 @@ struct ConvDirectNHWC[
         ](
             group_f_offset,
             group_f_end_align_simd,
-            VariadicList[Int](micro_kernel_f_size, simd_size),
+            micro_kernel_f_size,
             simd_size,
+            primary_cleanup_tile=simd_size,
         )
 
         # If this is the last partition in F and it's not a multiple of simd_size.
@@ -1592,8 +1593,9 @@ struct ConvDirectNHWC[
         ](
             self.partition.f_offset,
             f_round_by_simd,
-            VariadicList[Int](micro_kernel_f_size, simd_size),
+            micro_kernel_f_size,
             simd_size,
+            primary_cleanup_tile=simd_size,
         )
 
         var residual = F - f_round_by_simd

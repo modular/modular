@@ -169,9 +169,7 @@ fn matmul_kernel[
 
         barrier()
 
-    tile_and_unswitch[update_tile](
-        0, k, VariadicList[Int](tile_size, K_remainder)
-    )
+    tile_and_unswitch[update_tile](0, k, tile_size, K_remainder)
 
     if row < UInt(m) and col < UInt(n):
         comptime if elementwise_lambda_fn:

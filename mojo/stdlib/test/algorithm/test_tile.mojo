@@ -111,16 +111,16 @@ def test_dynamic_tile() raises:
     print("test_dynamic_tile")
     # CHECK: (1, 4)
     # CHECK: (4, 5)
-    tile[print_number_dynamic](1, 5, VariadicList[Int](3, 2))
+    tile[print_number_dynamic](1, 5, 3, 2)
     # CHECK: (0, 4)
     # CHECK: (4, 5)
     # CHECK: (5, 6)
-    tile[print_number_dynamic](0, 6, VariadicList[Int](4, 1))
+    tile[print_number_dynamic](0, 6, 4, 1)
     # CHECK: (2, 7)
     # CHECK: (7, 12)
     # CHECK: (12, 15)
     # CHECK: (15, 16)
-    tile[print_number_dynamic](2, 16, VariadicList[Int](5, 3))
+    tile[print_number_dynamic](2, 16, 5, 3)
 
 
 # CHECK-LABEL: test_unswitched_tile
