@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import thread_idx, warp_id
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.sync import barrier
-from gpu.compute.arch.tcgen05 import *
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import thread_idx, warp_id
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.sync import barrier
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
-from memory import stack_allocation
-from testing import assert_almost_equal
+from std.memory import stack_allocation
+from std.testing import assert_almost_equal
 
 
 fn tcgen05_st_ld_roundtrip_kernel[

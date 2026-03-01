@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from kv_cache.types import KVCacheT, swizzle_granularity, padded_depth
 from layout import Layout, LayoutTensor
 from layout.layout import UNKNOWN_VALUE, DimList
@@ -21,11 +21,11 @@ from layout.tma_async import (
     create_split_tma,
     RaggedTMA3DTile,
 )
-from math import ceildiv
+from std.math import ceildiv
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 
 trait MHAOperand(DevicePassable, TrivialRegisterPassable):

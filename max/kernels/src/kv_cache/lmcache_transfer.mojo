@@ -29,10 +29,10 @@ slot_mapping[token_idx] gives the physical slot in the paged cache:
     offset_in_block = slot % page_size
 """
 
-from gpu import block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from runtime.tracing import Trace, TraceLevel
+from std.runtime.tracing import Trace, TraceLevel
 
 
 # ===----------------------------------------------------------------------=== #

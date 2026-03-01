@@ -11,35 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import rand
-from sys import argv
-from sys.info import simd_width_of, size_of
+from std.math import ceildiv
+from std.random import rand
+from std.sys import argv
+from std.sys.info import simd_width_of, size_of
 
 import gpu.primitives.warp as warp
 from buffer import NDBuffer
-from gpu import WARP_SIZE, lane_id
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
-from gpu import block_dim, block_idx, thread_idx
-from gpu.memory import (
+from std.gpu import WARP_SIZE, lane_id
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
     external_memory,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     barrier,
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
 @always_inline

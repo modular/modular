@@ -24,24 +24,30 @@ Usage:
         max/kernels/benchmarks/autotune/bench_grouped_block_scaled_gemm.yaml
 """
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
-from sys import env_get_int, size_of
-from time import perf_counter_ns
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
+from std.sys import env_get_int, size_of
+from std.time import perf_counter_ns
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from random import rand, seed
+from std.gpu.host import DeviceContext
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.random import rand, seed
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor
 from layout._layout import TensorLayout, Layout, row_major
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn spatial_merge_kernel[

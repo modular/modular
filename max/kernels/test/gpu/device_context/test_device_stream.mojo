@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from gpu import global_idx
-from gpu.host import DeviceBuffer, DeviceContext, DeviceStream
-from memory import LegacyUnsafePointer
+from std.math import ceildiv
+from std.gpu import global_idx
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceStream
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.io import _printf
-from math import erf
-from sys.info import is_nvidia_gpu, simd_width_of
+from std.io.io import _printf
+from std.math import erf
+from std.sys.info import is_nvidia_gpu, simd_width_of
 
 import gpu.primitives.warp as warp
-from algorithm.functional import elementwise
-from bit import log2_floor
-from gpu import (
+from std.algorithm.functional import elementwise
+from std.bit import log2_floor
+from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
@@ -28,14 +28,14 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.compile import _compile_code
-from memory import LegacyUnsafePointer, memset_zero, stack_allocation
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.memory import LegacyUnsafePointer, memset_zero, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import *
+from std.testing import *
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Check parameterization

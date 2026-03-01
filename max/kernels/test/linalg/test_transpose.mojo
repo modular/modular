@@ -20,7 +20,7 @@ from linalg.transpose import (
     transpose_inplace,
 )
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_transpose_4x4_ndbuffer

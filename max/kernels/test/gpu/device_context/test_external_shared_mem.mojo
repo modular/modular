@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of
+from std.sys import align_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu import block_dim, global_idx, thread_idx
-from gpu.memory import external_memory
-from gpu.sync import barrier
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu import block_dim, global_idx, thread_idx
+from std.gpu.memory import external_memory
+from std.gpu.sync import barrier
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
 
 fn test_external_shared_mem(ctx: DeviceContext) raises:

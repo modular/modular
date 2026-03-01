@@ -20,9 +20,9 @@ Block configuration (shared by both paths):
 BLOCK_M=64, BLOCK_N=64, BLOCK_K=16.
 """
 
-from sys.info import _is_amd_rdna2_or_earlier
+from std.sys.info import _is_amd_rdna2_or_earlier
 
-from gpu import (
+from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx,
@@ -31,11 +31,11 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.compute.mma import mma as _mma_intrinsic
+from std.gpu.compute.mma import mma as _mma_intrinsic
 from layout import Layout, LayoutTensor
-from memory import stack_allocation
-from utils import Index, IndexList
-from utils.numerics import get_accum_type
+from std.memory import stack_allocation
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 from ....utils import elementwise_epilogue_type
 

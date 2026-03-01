@@ -18,9 +18,9 @@ from max.tensor import RuntimeTensorSpec
 ```
 """
 
-from sys import size_of
+from std.sys import size_of
 
-from utils import IndexList, product
+from std.utils import IndexList, product
 
 
 @fieldwise_init

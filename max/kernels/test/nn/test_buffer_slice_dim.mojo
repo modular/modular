@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from algorithm import elementwise
+from std.algorithm import elementwise
 from layout import Coord, TileTensor, coord_to_index_list
 from layout._layout import row_major
 from nn.slice import slice_dim_as_view
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:

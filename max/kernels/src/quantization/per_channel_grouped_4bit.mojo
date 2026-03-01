@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceil, ceildiv
-from sys.info import size_of
+from std.math import ceil, ceildiv
+from std.sys.info import size_of
 
 from layout import Layout, LayoutTensor
-from memory import UnsafePointer, bitcast, memcpy
-from utils import IndexList, StaticTuple, product
+from std.memory import UnsafePointer, bitcast, memcpy
+from std.utils import IndexList, StaticTuple, product
 
 
 @always_inline

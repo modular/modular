@@ -16,9 +16,9 @@ Provides common functions for FP8 scale computation and quantization
 used across fused normalization kernels and standalone quantization kernels.
 """
 
-from math import clamp
-from utils.numerics import max_finite, min_finite
-from sys import is_amd_gpu
+from std.math import clamp
+from std.utils.numerics import max_finite, min_finite
+from std.sys import is_amd_gpu
 
 
 @always_inline

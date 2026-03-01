@@ -77,10 +77,10 @@ Direct API (for special cases):
     pipeline.producer_mbar(stage) / consumer_mbar(stage)
 """
 
-from sys import size_of
+from std.sys import size_of
 
 from layout.tma_async import SharedMemBarrier
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

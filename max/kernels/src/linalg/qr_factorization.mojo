@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import copysign, sqrt
-from os import abort
+from std.math import copysign, sqrt
+from std.os import abort
 
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor

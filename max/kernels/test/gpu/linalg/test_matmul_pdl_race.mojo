@@ -31,9 +31,9 @@ and only for bfloat16.
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import block_idx, thread_idx, block_dim, grid_dim
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.primitives.grid_controls import (
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
@@ -41,11 +41,11 @@ from gpu.primitives.grid_controls import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu import _matmul_gpu
-from math import ceildiv
-from memory import LegacyUnsafePointer
-from sys import env_get_int, size_of
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
+from std.sys import env_get_int, size_of
 
-from utils import IndexList
+from std.utils import IndexList
 
 # Use LegacyUnsafePointer for alloc support
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import num_physical_cores
+from std.sys.info import num_physical_cores
 
-from algorithm import parallelize, sync_parallelize
-from benchmark import Bench, Bencher, BenchId, keep
-from testing import assert_true
+from std.algorithm import parallelize, sync_parallelize
+from std.benchmark import Bench, Bencher, BenchId, keep
+from std.testing import assert_true
 
 
 @parameter

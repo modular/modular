@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
+from std.math import sqrt
 
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._fillers import arange, random
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensorIter
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import IndexList
+from std.utils import IndexList
 
 
 #  CHECK-LABEL: test_fill_and_print

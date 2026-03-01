@@ -13,9 +13,9 @@
 
 """Tests for the fully-fused allreduce + RMSNorm + FP8 quantization kernel."""
 
-from sys import is_amd_gpu, size_of
+from std.sys import is_amd_gpu, size_of
 
-from memory import bitcast
+from std.memory import bitcast
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -25,16 +25,16 @@ from nn.allreduce_residual_rmsnorm_fp8 import (
     allreduce_rmsnorm_fp8,
 )
 from comm.sync import enable_p2p
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 from layout._layout import row_major
 from layout._utils import ManagedLayoutTensor
 from nn.normalization import rms_norm_fused_fp8
-from runtime.asyncrt import DeviceContextPtr
-from testing import assert_true
-from utils import IndexList
-from utils.index import Index
-from utils.numerics import max_finite
+from std.runtime.asyncrt import DeviceContextPtr
+from std.testing import assert_true
+from std.utils import IndexList
+from std.utils.index import Index
+from std.utils.numerics import max_finite
 
 from internal_utils._testing import test_value_for_gpu_element
 

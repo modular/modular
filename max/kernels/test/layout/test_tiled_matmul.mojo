@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm import sync_parallelize, vectorize
+from std.algorithm import sync_parallelize, vectorize
 from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor

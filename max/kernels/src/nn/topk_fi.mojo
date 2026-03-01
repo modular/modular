@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from bit import log2_floor
-from gpu import (
+from std.bit import log2_floor
+from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
@@ -22,11 +22,11 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.primitives import block, warp
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.dim import Dim
-from gpu.memory import AddressSpace, external_memory
+from std.gpu.primitives import block, warp
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host.dim import Dim
+from std.gpu.memory import AddressSpace, external_memory
 from layout.coord import (
     Coord,
     CoordLike,
@@ -37,11 +37,11 @@ from layout.coord import (
 )
 from layout._layout import row_major, TensorLayout, Layout
 from layout import TileTensor
-from math import ceildiv, gcd, exp
-from memory import stack_allocation
-from os import Atomic
-from random import Random
-from sys import align_of, bit_width_of, simd_width_of, size_of
+from std.math import ceildiv, gcd, exp
+from std.memory import stack_allocation
+from std.os import Atomic
+from std.random import Random
+from std.sys import align_of, bit_width_of, simd_width_of, size_of
 
 
 @always_inline

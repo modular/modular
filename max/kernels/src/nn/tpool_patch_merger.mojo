@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, divmod
-from sys.info import simd_width_of
+from std.math import ceildiv, divmod
+from std.sys.info import simd_width_of
 
-from gpu import block_idx, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from layout.coord import Coord, Idx, coord
 from layout._layout import TensorLayout, row_major
 from layout.tile_tensor import TileTensor
-from memory import UnsafePointer
-from runtime.asyncrt import DeviceContextPtr
+from std.memory import UnsafePointer
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, StaticTensorSpec
 
 

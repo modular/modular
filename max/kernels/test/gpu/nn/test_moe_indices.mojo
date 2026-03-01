@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext, HostBuffer
+from std.gpu.host import DeviceContext, HostBuffer
 from layout import Coord, Idx, TileTensor
 from layout._fillers import random
 from layout._layout import row_major
 from nn.moe import moe_create_indices
-from random import rand
-from testing import assert_equal
+from std.random import rand
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn get_expert_dictionary(

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_fail

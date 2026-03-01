@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import ConstantMemoryMapping, DeviceContext
-from gpu.host.compile import _compile_code
-from gpu import thread_idx
-from memory import LegacyUnsafePointer, stack_allocation
+from std.gpu.host import ConstantMemoryMapping, DeviceContext
+from std.gpu.host.compile import _compile_code
+from std.gpu import thread_idx
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext) raises:

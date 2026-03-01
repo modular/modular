@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import barrier, warp_id, lane_id
-from gpu.host import DeviceContext
-from gpu import thread_idx, warp_id, lane_id
-from gpu.compute.mma import (
+from std.gpu import barrier, warp_id, lane_id
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx, warp_id, lane_id
+from std.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
@@ -30,7 +30,7 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from memory import bitcast
+from std.memory import bitcast
 
 
 # We have a hard code 2D path in `arange` and it's row-major.

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu import block_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx
 from linalg.matmul.gpu.tile_scheduler import TileScheduler
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn test_kernel():

@@ -26,9 +26,9 @@ BlockwiseFP8TileCore and shared with BlockwiseFP8_1D2DSmem. Each SMEM struct
 is a thin wrapper that adds the appropriate pipeline bundle.
 """
 
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 from layout import Layout
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from ..structured_kernels.config import MatmulConfig
 from ..structured_kernels.pipeline_storage import (

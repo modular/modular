@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import gcd
-from sys.info import _current_target, simd_width_of
+from std.collections import OptionalReg
+from std.math import gcd
+from std.sys.info import _current_target, simd_width_of
 
-from algorithm.functional import elementwise
-from complex import ComplexSIMD
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
+from std.algorithm.functional import elementwise
+from std.complex import ComplexSIMD
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
 from layout import (
     ComptimeInt,
     Coord,
@@ -31,7 +31,7 @@ from layout import (
 from layout._layout import Layout, _RowMajor
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline

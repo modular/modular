@@ -13,19 +13,19 @@
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
 
-from os import getenv, listdir, setenv
-from os.path import dirname
-from pathlib import Path, cwd
-from subprocess import run
-from ffi import c_int
-from sys.param_env import env_get_string
+from std.os import getenv, listdir, setenv
+from std.os.path import dirname
+from std.pathlib import Path, cwd
+from std.subprocess import run
+from std.ffi import c_int
+from std.sys.param_env import env_get_string
 
-from gpu.host.device_attribute import DeviceAttribute
-from gpu.host.dim import Dim
-from gpu.host import DeviceBuffer
-from python import Python
+from std.gpu.host.device_attribute import DeviceAttribute
+from std.gpu.host.dim import Dim
+from std.gpu.host import DeviceBuffer
+from std.python import Python
 from shmem import *
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn ring_bcast(

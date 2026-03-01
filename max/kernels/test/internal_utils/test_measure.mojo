@@ -13,8 +13,8 @@
 
 from internal_utils import correlation, kl_div
 from internal_utils._testing import assert_with_measure
-from itertools import product
-from testing import assert_almost_equal
+from std.itertools import product
+from std.testing import assert_almost_equal
 
 
 fn test_assert_with_custom_measure() raises:

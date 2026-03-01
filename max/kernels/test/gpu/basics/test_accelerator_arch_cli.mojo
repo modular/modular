@@ -15,7 +15,7 @@
 # RUN: %mojo-no-debug --target-accelerator=some_amd:300 %s | FileCheck --check-prefix=CHECK-A300 %s
 # RUN: %mojo-no-debug --target-accelerator=quantum:3000 %s | FileCheck --check-prefix=CHECK-Q3000 %s
 
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
 
 def main() raises:

@@ -17,8 +17,8 @@ from layout import Layout, LayoutTensor, RuntimeLayout
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     lt_to_tt,
 )
-from testing import assert_equal
-from utils.index import Index
+from std.testing import assert_equal
+from std.utils.index import Index
 
 
 fn test_static_layout() raises:

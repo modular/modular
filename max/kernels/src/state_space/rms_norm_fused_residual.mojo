@@ -12,22 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """RMSNorm with fused residual connection for state space models."""
 
-from math import align_down, ceildiv, rsqrt
-from sys.info import align_of, simd_width_of, size_of
+from std.math import align_down, ceildiv, rsqrt
+from std.sys.info import align_of, simd_width_of, size_of
 
-from algorithm import vectorize
-from algorithm.functional import _get_start_indices_of_nth_subvolume
-from gpu import (
+from std.algorithm import vectorize
+from std.algorithm.functional import _get_start_indices_of_nth_subvolume
+from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
     block_idx,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host.info import is_gpu
-from gpu.memory import external_memory
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host.info import is_gpu
+from std.gpu.memory import external_memory
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from layout import (
     Coord,
     CoordLike,
@@ -40,13 +40,13 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout._layout import Layout as TileLayout, row_major
-from random import Random
+from std.random import Random
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 from nn.normalization import _rms_norm_gpu_block_subkernel, _sum_to_mean
 

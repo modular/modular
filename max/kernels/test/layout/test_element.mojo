@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of
+from std.sys import align_of
 
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._fillers import arange
@@ -19,10 +19,10 @@ from layout._utils import ManagedLayoutTensor
 from layout.element import Element
 from layout.int_tuple import UNKNOWN_VALUE
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import IndexList
+from std.utils import IndexList
 
 
 # CHECK-LABEL: test_element_load

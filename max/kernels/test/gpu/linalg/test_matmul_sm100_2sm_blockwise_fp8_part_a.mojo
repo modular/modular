@@ -12,23 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 """Blockwise FP8 2SM tests - Part A (mma_m_scale=1, 128xN MMA shapes)."""
 
-from math import ceildiv
-from sys import argv, size_of
+from std.math import ceildiv
+from std.sys import argv, size_of
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
 )
-from random import rand
+from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -40,8 +40,8 @@ from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul impor
     blockwise_fp8_matmul,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 
 fn simple_init() -> Bool:

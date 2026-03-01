@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import NamedBarrierSemaphore
-from gpu.host import DeviceContext
-from gpu import block_idx, grid_dim, thread_idx
+from std.gpu import NamedBarrierSemaphore
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from testing import assert_equal
-from utils import IndexList
+from std.testing import assert_equal
+from std.utils import IndexList
 
 comptime NUM_BLOCKS = 32
 comptime NUM_THREADS = 64

@@ -112,12 +112,12 @@ When the framework doesn't fit:
 3. Add custom storage fields to SMEM struct
 """
 
-from gpu.memory import AddressSpace
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import CoordLike, Layout
 from layout.tma_async import SharedMemBarrier
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
 from linalg.structuring import SMemArray, SMemPtr
@@ -135,7 +135,7 @@ from .tile_types import (
 )
 
 # Import variadic types for SMemTileArray parameters
-from builtin.variadics import Variadic
+from std.builtin.variadics import Variadic
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
 

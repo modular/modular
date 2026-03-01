@@ -13,7 +13,7 @@
 
 
 from layout import TileTensor
-from memory import memcpy
+from std.memory import memcpy
 
 
 # ===-----------------------------------------------------------------------===#

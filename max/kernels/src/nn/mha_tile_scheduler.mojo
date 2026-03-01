@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from os.atomic import Atomic
+from std.os.atomic import Atomic
 
 import gpu.primitives.warp as warp
-from builtin.device_passable import DevicePassable
-from gpu.host.info import H100
-from gpu import block_idx, thread_idx
-from gpu.sync import barrier, named_barrier
+from std.builtin.device_passable import DevicePassable
+from std.gpu.host.info import H100
+from std.gpu import block_idx, thread_idx
+from std.gpu.sync import barrier, named_barrier
 from nn.mha_fa3_utils import NullPointer, OptionalPointer
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 
 @fieldwise_init

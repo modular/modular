@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compile import compile_info
-from gpu.host import get_gpu_target
+from std.compile import compile_info
+from std.gpu.host import get_gpu_target
 from layout import Layout, LayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 

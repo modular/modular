@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout._layout import row_major
 from layout import Coord, TileTensor
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def execute_gather_nd_test[

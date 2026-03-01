@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -25,7 +25,7 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout._layout import row_major
-from memory import memcpy
+from std.memory import memcpy
 
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
@@ -36,7 +36,7 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:

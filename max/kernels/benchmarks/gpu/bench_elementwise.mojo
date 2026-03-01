@@ -11,24 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
-from math import erf, exp, rsqrt, log, sin, sqrt, tanh
-from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
-from sys.intrinsics import strided_load
+from std.collections.string import StaticString
+from std.math import erf, exp, rsqrt, log, sin, sqrt, tanh
+from std.sys import (
+    align_of,
+    env_get_int,
+    env_get_string,
+    simd_width_of,
+    size_of,
+)
+from std.sys.intrinsics import strided_load
 
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import B200
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import B200
 from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import IndexList
-from utils.index import product
+from std.utils import IndexList
+from std.utils.index import product
 
 
 fn add_const_fn(x: SIMD) -> type_of(x):

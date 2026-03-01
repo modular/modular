@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from sys import (
+from std.math import ceildiv
+from std.sys import (
     align_of,
     env_get_bool,
     env_get_int,
@@ -20,20 +20,20 @@ from sys import (
     has_nvidia_gpu_accelerator,
 )
 
-from algorithm import elementwise
+from std.algorithm import elementwise
 from buffer.buffer import NDBuffer
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     lt_to_tt,
 )
-from logger import Logger
+from std.logger import Logger
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .....utils import (
     GemmShape,

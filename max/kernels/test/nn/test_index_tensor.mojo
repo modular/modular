@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_ui64
+from std.random import random_ui64
 
 from layout import Coord, TileTensor
 from layout._layout import row_major
@@ -24,10 +24,10 @@ from nn.index_tensor import (
     advanced_indexing_setitem_inplace,
     index_tensor_shape,
 )
-from runtime.asyncrt import DeviceContextPtr
-from testing import assert_equal
+from std.runtime.asyncrt import DeviceContextPtr
+from std.testing import assert_equal
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 # TODO: It is like example 5 ONNX.

@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import Semaphore, block_dim, block_idx, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu import Semaphore, block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 fn swizzle_tile(

@@ -17,7 +17,7 @@
 # REQUIRES: avx2
 # RUN: %mojo-no-debug %s
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from linalg.arch.cpu.vnni_intrinsics import (
@@ -26,8 +26,8 @@ from linalg.arch.cpu.vnni_intrinsics import (
     dot_i16_to_i32_AVX2,
     dot_i16_to_i32_x86,
 )
-from memory import bitcast
-from testing import assert_equal
+from std.memory import bitcast
+from std.testing import assert_equal
 
 
 def test_i8_to_i32() raises:

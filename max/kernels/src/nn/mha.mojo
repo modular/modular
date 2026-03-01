@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, recip
-from math.constants import log2e
-from collections import OptionalReg
-from sys import (
+from std.math import ceildiv, recip
+from std.math.constants import log2e
+from std.collections import OptionalReg
+from std.sys import (
     CompilationTarget,
     align_of,
     env_get_bool,
@@ -25,13 +25,13 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _cdna_4_or_newer, _is_amd_rdna
+from std.sys.info import _cdna_4_or_newer, _is_amd_rdna
 import gpu.primitives.warp as warp
-from algorithm import elementwise
-from algorithm.functional import tile_and_unswitch, unswitch, vectorize
-from bit import next_power_of_two
+from std.algorithm import elementwise
+from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
+from std.bit import next_power_of_two
 from buffer import DimList, NDBuffer
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -41,11 +41,11 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host import Dim as LaunchDim
-from gpu.host import FuncAttribute
-from gpu.host.info import A100, B200, H100, GPUInfo
-from gpu.memory import (
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host import Dim as LaunchDim
+from std.gpu.host import FuncAttribute
+from std.gpu.host.info import A100, B200, H100, GPUInfo
+from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_all,
@@ -69,7 +69,7 @@ from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
-from memory import stack_allocation
+from std.memory import stack_allocation
 
 from .attention.gpu.amd.mha_gfx942 import MHAAttentionConfig
 from .attention.gpu.amd.mha_gfx950 import Attention
@@ -96,12 +96,12 @@ from nn.mha_utils import (
     _kernel_mask,
     get_start_and_end_for_partitions,
 )
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils.static_tuple import StaticTuple
 
 from .softmax import (
     _exp2_concrete,

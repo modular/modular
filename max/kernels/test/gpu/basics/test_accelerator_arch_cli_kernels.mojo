@@ -14,11 +14,11 @@
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm_90a %s | FileCheck --check-prefix=CHECK-NV90 %s
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm_120a %s | FileCheck --check-prefix=CHECK-NV120 %s
 
-from sys.info import _accelerator_arch, _is_sm_9x, _is_sm_9x_or_newer
+from std.sys.info import _accelerator_arch, _is_sm_9x, _is_sm_9x_or_newer
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import *
 
 
 fn check_sm9x() -> Bool:

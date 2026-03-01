@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
-from gpu.host import DeviceContext, Dim
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.gpu.host import DeviceContext, Dim
 from layout import *
 
 comptime NUM_KERNELS_PER_ITERATION = 128

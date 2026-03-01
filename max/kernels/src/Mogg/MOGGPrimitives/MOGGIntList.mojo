@@ -14,9 +14,9 @@
 
 
 from buffer.dimlist import DimList, _make_tuple
-from memory import memset_zero
+from std.memory import memset_zero
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 struct IntList[static_values: DimList = DimList()](

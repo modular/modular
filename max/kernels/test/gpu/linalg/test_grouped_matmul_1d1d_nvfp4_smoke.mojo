@@ -17,19 +17,19 @@ arguments to verify enqueue_function type identity. This test catches the
 type mismatch that caused the DeepSeek-R1-NVFP4 pipeline failure.
 """
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.host import DeviceContext
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from internal_utils._utils import InitializationType, init_vector_launch
 from layout import Coord, Idx, RuntimeInt, TileTensor
 from layout._layout import row_major
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_1d1d_nvfp4,

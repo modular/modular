@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 # Tests for the ManagedLayoutTensor
 # Verifies that device_tensor() and tensor() methods work correctly for various ranks

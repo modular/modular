@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv
-from random import random_ui64
+from std.collections import Set
+from std.math import ceildiv
+from std.random import random_ui64
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.kv_cache_ragged import kv_cache_2m_iadd_dispatch
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn _create_kv_collection_from_host[

@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import Optional
-from math import exp2
+from std.collections import Optional
+from std.math import exp2
 
 import testing
-from reflection import call_location, SourceLocation
-from testing.testing import _assert_cmp_error
+from std.reflection import call_location, SourceLocation
+from std.testing.testing import _assert_cmp_error
 
-from utils.numerics import FPUtils
+from std.utils.numerics import FPUtils
 
 
 # ===----------------------------------------------------------------------=== #

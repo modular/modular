@@ -13,7 +13,7 @@
 
 from layout.int_tuple import *
 from layout.int_tuple import abs  # override builtin abs and min
-from testing import assert_equal, assert_false, assert_true, assert_raises
+from std.testing import assert_equal, assert_false, assert_true, assert_raises
 
 
 def test_tuple_basic() raises:

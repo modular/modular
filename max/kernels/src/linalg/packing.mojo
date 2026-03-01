@@ -10,15 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up
-from sys import align_of, simd_width_of
-from sys.info import CompilationTarget
-from sys.intrinsics import PrefetchOptions
+from std.math import align_down, align_up
+from std.sys import align_of, simd_width_of
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import PrefetchOptions
 
-from algorithm import unswitch
+from std.algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
-from memory import (
+from std.memory import (
     LegacyUnsafePointer,
     memcpy,
     stack_allocation,
@@ -27,7 +27,7 @@ from memory import (
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from register import register_internal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .matmul.cpu.apple_accelerate import use_apple_accelerate_lib
 from .transpose import transpose, transpose_inplace

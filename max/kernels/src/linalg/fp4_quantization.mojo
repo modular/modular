@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from gpu import (
+from std.math import align_up, ceildiv
+from std.gpu import (
     block_idx,
     thread_idx,
     grid_dim,
@@ -21,11 +21,11 @@ from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     lane_id,
 )
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout, LayoutTensor
-from logger import Logger
-from gpu.primitives.warp import shuffle_xor
-from math import recip
+from std.logger import Logger
+from std.gpu.primitives.warp import shuffle_xor
+from std.math import recip
 from .fp4_utils import (
     cast_fp32_to_fp4e2m1,
     E2M1_TO_FLOAT32,
@@ -40,44 +40,44 @@ from .fp4_utils import (
     set_scale_factor,
     get_scale_factor,
 )
-from gpu.host.info import B200
-from utils import StaticTuple
-from collections import Optional
+from std.gpu.host.info import B200
+from std.utils import StaticTuple
+from std.collections import Optional
 from linalg.utils import (
     elementwise_epilogue_type,
     elementwise_compute_lambda_type,
 )
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from buffer import Dim, NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from memory import bitcast
-from gpu.sync import named_barrier
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import bitcast
+from std.gpu.sync import named_barrier
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from layout.layout_tensor import LayoutTensorIter
-from gpu.memory import external_memory, fence_async_view_proxy
-from gpu import barrier
-from sys import size_of, align_of, simd_width_of
+from std.gpu.memory import external_memory, fence_async_view_proxy
+from std.gpu import barrier
+from std.sys import size_of, align_of, simd_width_of
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 from layout.swizzle import make_swizzle
-from algorithm import elementwise
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from sys import env_get_bool
+from std.algorithm import elementwise
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.sys import env_get_bool
 from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
     heuristic_and_outliers_dispatch,
 )
-from gpu.primitives.grid_controls import PDLLevel
+from std.gpu.primitives.grid_controls import PDLLevel
 from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     DISPATCH_HIT,
     DISPATCH_MISS,
 )
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from runtime.tracing import Trace, TraceLevel, trace_arg
-from collections.string.string_slice import get_static_string
-from collections import OptionalReg
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from std.collections.string.string_slice import get_static_string
+from std.collections import OptionalReg
 
 ########################################################
 # Dynamic scaled NVFP4 quantization

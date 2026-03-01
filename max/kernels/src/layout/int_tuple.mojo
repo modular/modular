@@ -56,16 +56,16 @@ var total_size = size(shape)  # Results in 120
 ```
 """
 
-from os import abort
+from std.os import abort
 
 from buffer import DimList
-from builtin.range import _StridedRange
-from memory import memcpy
-from sys.compile import is_compile_time
-from sys.intrinsics import _type_is_eq_parse_time
+from std.builtin.range import _StridedRange
+from std.memory import memcpy
+from std.sys.compile import is_compile_time
+from std.sys.intrinsics import _type_is_eq_parse_time
 
-from utils.numerics import max_finite
-from utils import IndexList
+from std.utils.numerics import max_finite
+from std.utils import IndexList
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:

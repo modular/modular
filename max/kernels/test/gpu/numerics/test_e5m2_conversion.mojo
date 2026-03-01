@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import inf, nan
+from std.math import inf, nan
 
-from gpu.host import DeviceContext
-from memory import bitcast
+from std.gpu.host import DeviceContext
+from std.memory import bitcast
 
 
 # CHECK-LABEL: test_e5m2_initialization

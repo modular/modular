@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import size_of
+from std.math import align_up
+from std.sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import (
+from std.gpu import (
     WARP_SIZE,
     barrier,
     warp_id as get_warp_id,
@@ -25,16 +25,16 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.primitives.cluster import (
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace, external_memory
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
@@ -50,23 +50,23 @@ from layout.tma_async import (
     create_tma_tile,
 )
 from internal_utils._utils import ValOrDim, dynamic, static
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, max_finite, min_finite
-from utils.static_tuple import StaticTuple
-from memory import LegacyUnsafePointer
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type, max_finite, min_finite
+from std.utils.static_tuple import StaticTuple
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
-from random import rand
-from math import ceildiv
-from builtin.simd import _convert_f32_to_float8_ue8m0
-from gpu.sync import syncwarp
-from sys import argv
+from std.random import rand
+from std.math import ceildiv
+from std.builtin.simd import _convert_f32_to_float8_ue8m0
+from std.gpu.sync import syncwarp
+from std.sys import argv
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from logger import Logger
+from std.logger import Logger
 from layout.int_tuple import IntTuple
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from random import random_ui64
+from std.random import random_ui64
 from linalg.fp4_utils import (
     convert_ref_scales_to_mxfp8_format,
     MXFP8_SF_VECTOR_SIZE,

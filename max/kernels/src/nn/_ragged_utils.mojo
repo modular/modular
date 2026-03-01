@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _current_target, simd_width_of
+from std.sys.info import _current_target, simd_width_of
 
-from algorithm.functional import elementwise
-from gpu.host import get_gpu_target
-from gpu.host.info import is_cpu
+from std.algorithm.functional import elementwise
+from std.gpu.host import get_gpu_target
+from std.gpu.host.info import is_cpu
 from layout import LayoutTensor, TileTensor
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline

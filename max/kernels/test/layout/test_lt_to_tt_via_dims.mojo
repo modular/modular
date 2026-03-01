@@ -179,8 +179,8 @@ fn test_tiletensor_type_from_public_layout() raises:
 fn test_lt_to_tt_function() raises:
     print("--- test_lt_to_tt_function ---")
     from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout
-    from memory import UnsafePointer
-    from utils.index import Index
+    from std.memory import UnsafePointer
+    from std.utils.index import Index
 
     @parameter
     fn _int_to_dim(value: Int) -> Dim:

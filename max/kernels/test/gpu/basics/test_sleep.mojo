@@ -18,10 +18,10 @@ This test verifies that time.sleep() works correctly on NVIDIA GPUs, including:
 3. Edge cases like zero/negative durations
 """
 
-from time import global_perf_counter_ns, sleep
+from std.time import global_perf_counter_ns, sleep
 
-from gpu.host import DeviceContext
-from testing import assert_true
+from std.gpu.host import DeviceContext
+from std.testing import assert_true
 
 
 fn sleep_kernel_100ms(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier
-from gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from gpu.host import DeviceContext, Dim
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import cluster_dim, cluster_idx, thread_idx
-from gpu.memory import fence_mbarrier_init
+from std.gpu import barrier
+from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from std.gpu.host import DeviceContext, Dim
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import cluster_dim, cluster_idx, thread_idx
+from std.gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
@@ -29,10 +29,10 @@ from layout.tma_async import (
     create_tensor_tile,
     create_tma_tile,
 )
-from memory import stack_allocation
-from testing import assert_equal
+from std.memory import stack_allocation
+from std.testing import assert_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # Test loading a single 2d tile.

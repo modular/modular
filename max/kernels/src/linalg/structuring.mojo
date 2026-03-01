@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import align_of, simd_width_of, size_of
+from std.collections import Optional
+from std.sys import align_of, simd_width_of, size_of
 
-from gpu.intrinsics import AMDBufferResource
-from gpu.memory import external_memory
+from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 from layout.layout import coalesce
 from layout._utils import _get_bounds, make_amd_buffer_resource
@@ -32,7 +32,7 @@ from layout.int_tuple import (
 )
 from layout.tma_async import SharedMemBarrier
 from layout.layout import blocked_product, logical_product
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

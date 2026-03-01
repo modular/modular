@@ -91,32 +91,32 @@ For the naive allreduce (no P2P) per-device flow and staging details, see the
 `_allreduce_naive_single` docstring in this file.
 """
 
-from collections import InlineArray
-from math import ceildiv
-from sys import align_of, simd_width_of, size_of
+from std.collections import InlineArray
+from std.math import ceildiv
+from std.sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
 from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     block_dim,
     global_idx,
     grid_dim,
 )
-from gpu.primitives.grid_controls import (
+from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
-from utils import IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.utils import IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
-from collections.optional import Optional
+from std.collections.optional import Optional
 
 from .reducescatter import (
     ReduceScatterConfig,

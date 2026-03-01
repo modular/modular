@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from random import rand
+from std.os import abort
+from std.random import rand
 
-from benchmark import *
-from benchmark import keep
+from std.benchmark import *
+from std.benchmark import keep
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):

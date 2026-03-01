@@ -19,11 +19,11 @@ You can import these APIs from the `buffer` package. For example:
 from buffer import Dim
 ```
 """
-from math import CeilDivable, ceildiv
+from std.math import CeilDivable, ceildiv
 
-from builtin.variadics import Variadic
+from std.builtin.variadics import Variadic
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Dim

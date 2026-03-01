@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from gpu.compute.arch.tcgen05 import (
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_cp,
     tcgen05_dealloc,
@@ -25,10 +25,10 @@ from gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 from layout import IntTuple, Layout, LayoutTensor
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn alloc_test_fn[cta_group: Int32]():

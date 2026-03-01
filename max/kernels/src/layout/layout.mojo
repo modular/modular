@@ -56,12 +56,12 @@ var tiled = blocked_product(layout^, Layout([2, 2]))
 """
 
 import sys
-from collections.string.string import _calc_initial_buffer_size_int32
-from os import abort
+from std.collections.string.string import _calc_initial_buffer_size_int32
+from std.os import abort
 
 from buffer.dimlist import DimList
 
-from utils import IndexList
+from std.utils import IndexList
 
 from .int_tuple import (
     UNKNOWN_VALUE,
@@ -546,7 +546,7 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from utils import IndexList
+            from std.utils import IndexList
 
             # Create a row-major layout with compile-time rank
             var idx_list = IndexList[2](3, 4)
@@ -669,7 +669,7 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from utils import IndexList
+            from std.utils import IndexList
 
             # Create a row-major layout with compile-time rank
             var idx_list = IndexList[2](3, 4)

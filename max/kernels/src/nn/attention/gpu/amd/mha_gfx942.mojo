@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _cdna_4_or_newer
-from sys import env_get_bool
+from std.sys.info import _cdna_4_or_newer
+from std.sys import env_get_bool
 
-from gpu import barrier, block_idx, lane_id
+from std.gpu import barrier, block_idx, lane_id
 from layout import LayoutTensor
 from layout.swizzle import Swizzle
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
-from utils import IndexList
-from utils.numerics import get_accum_type
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
 
 from .attention import Attention, AttentionConfig
 from .buffers import (

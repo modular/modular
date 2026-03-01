@@ -15,7 +15,7 @@ abstract over both NVSHMEM and ROCSHMEM, exposing a similar API to DeviceContext
 with a symmetric heap that is accessible by inter-node and intra-node GPUs.
 
 ```mojo
-from testing import assert_equal
+from std.testing import assert_equal
 from shmem import shmem_my_pe, shmem_n_pes, shmem_p, SHMEMContext
 
 

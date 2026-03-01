@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import align_up, ceildiv
-from memory import LegacyUnsafePointer
+from std.collections import OptionalReg
+from std.math import align_up, ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import align_of, env_get_bool, simd_width_of, size_of
+from std.sys import align_of, env_get_bool, simd_width_of, size_of
 
-from bit import next_power_of_two, prev_power_of_two
+from std.bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -30,32 +30,38 @@ from gpu.primitives.cluster import (
     cluster_wait,
     cluster_arrive_relaxed,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, block_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import (
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu import (
+    block_id_in_cluster,
+    block_idx,
+    lane_id,
+    thread_idx,
+    block_idx,
+)
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.primitives.grid_controls import (
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
     PDLLevel,
     wait_on_dependent_grids,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -83,10 +89,10 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_BlockScaled_SS
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type

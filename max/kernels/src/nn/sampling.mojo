@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
-from sys.info import simd_width_of
+from std.math import ceildiv, iota
+from std.sys.info import simd_width_of
 
 import gpu.primitives.block as block
-from algorithm.functional import elementwise
-from gpu import block_idx, thread_idx
-from gpu.host.info import is_gpu
+from std.algorithm.functional import elementwise
+from std.gpu import block_idx, thread_idx
+from std.gpu.host.info import is_gpu
 from layout._layout import TensorLayout
 from layout import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn apply_penalties_to_logits[

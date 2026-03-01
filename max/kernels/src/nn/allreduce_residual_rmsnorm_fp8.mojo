@@ -50,20 +50,20 @@ row counts beyond the hardware-tuned block limit. Gamma weights are
 preloaded once and reused across all rows in the loop.
 """
 
-from collections import InlineArray, Optional
-from math import ceildiv, rsqrt
-from sys import (
+from std.collections import InlineArray, Optional
+from std.math import ceildiv, rsqrt
+from std.sys import (
     align_of,
     env_get_int,
     has_amd_gpu_accelerator,
     simd_width_of,
     size_of,
 )
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -71,19 +71,19 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.primitives import block
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.primitives import block
 from layout import Coord, Idx, TileTensor
 from layout._layout import TensorLayout, row_major
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout as LegacyLayout
 from layout.layout_tensor import LayoutTensor as LegacyLayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from utils import IndexList, StaticTuple
-from utils.index import Index
-from utils.numerics import get_accum_type, max_finite
+from std.utils import IndexList, StaticTuple
+from std.utils.index import Index
+from std.utils.numerics import get_accum_type, max_finite
 
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from linalg.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 from .normalization import rms_norm_fused_fp8

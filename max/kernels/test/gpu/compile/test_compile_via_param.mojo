@@ -18,9 +18,9 @@
 # RUN: cat %t/test_compile_via_param/test_compile_via_param.ptx | FileCheck %s
 # RUN: rm -fr %t/test_compile_via_param/
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

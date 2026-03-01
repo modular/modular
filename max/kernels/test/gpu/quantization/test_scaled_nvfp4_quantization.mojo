@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp4_quantization import quantize_dynamic_scaled_fp4fp8
-from testing import assert_equal, assert_almost_equal
-from math import ceildiv, recip
-from utils.numerics import max_finite, min_finite
+from std.testing import assert_equal, assert_almost_equal
+from std.math import ceildiv, recip
+from std.utils.numerics import max_finite, min_finite
 from linalg.fp4_utils import (
     cast_fp_to_fp4e2m1,
     cast_uint_to_fp4e2m1,
@@ -28,8 +28,8 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     get_scale_factor,
 )
-from utils import IndexList
-from memory import bitcast
+from std.utils import IndexList
+from std.memory import bitcast
 
 
 fn test_dynamic_fp4_quant[

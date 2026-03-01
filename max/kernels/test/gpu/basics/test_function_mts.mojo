@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from tensor import InputTensor, OutputTensor, StaticTensorSpec
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime WIDTH = 5
 comptime HEIGHT = 10

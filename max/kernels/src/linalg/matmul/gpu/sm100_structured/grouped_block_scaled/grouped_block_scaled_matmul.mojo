@@ -38,14 +38,14 @@ Usage:
     )
 """
 
-from collections import Optional
-from math import align_up, ceildiv
-from memory import UnsafePointer
-from sys import size_of
+from std.collections import Optional
+from std.math import align_up, ceildiv
+from std.memory import UnsafePointer
+from std.sys import size_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import B200
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.info import B200
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout as LegacyLayout,
     LayoutTensor,
@@ -55,8 +55,8 @@ from layout.tma_async import TMATensorTileArray
 
 from ..structured_kernels.tile_types import create_tma_tile
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import (
     elementwise_compute_lambda_type,
@@ -631,7 +631,7 @@ fn grouped_block_scaled_matmul[
 
     # ===== Create TileTensor wrappers for kernel args =====
     from layout._layout import row_major as new_row_major
-    from memory import UnsafePointer as NewPtr
+    from std.memory import UnsafePointer as NewPtr
 
     var a_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(
         ptr=NewPtr[Scalar[DType.uint64], MutAnyOrigin](

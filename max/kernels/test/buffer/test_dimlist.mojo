@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer.dimlist import Dim, DimList
 from internal_utils._utils import ValOrDim, dynamic, static
-from testing import TestSuite, assert_equal, assert_false, assert_true
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 # CHECK-LABEL: test_dim_list

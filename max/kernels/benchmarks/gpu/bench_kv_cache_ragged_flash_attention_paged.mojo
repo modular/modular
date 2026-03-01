@@ -11,17 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv, rsqrt
-from random import random_ui64, seed
-from sys import env_get_dtype, env_get_int
+from std.collections import Set
+from std.math import ceildiv, rsqrt
+from std.random import random_ui64, seed
+from std.sys import env_get_dtype, env_get_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -31,7 +37,7 @@ from nn.mha_mask import CausalMask
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def flops(

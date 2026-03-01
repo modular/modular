@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import isclose
-from random import rand, random_float64, seed
-from sys import has_amd_gpu_accelerator
+from std.math import isclose
+from std.random import rand, random_float64, seed
+from std.sys import has_amd_gpu_accelerator
 
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, RuntimeLayout
@@ -32,10 +32,10 @@ from nn.softmax import (
     _softmax_gpu,
     softmax_with_temperature,
 )
-from testing import assert_almost_equal, assert_true
-from utils.numerics import get_accum_type
+from std.testing import assert_almost_equal, assert_true
+from std.utils.numerics import get_accum_type
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn test_gpu_softmax(ctx: DeviceContext) raises:

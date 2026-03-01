@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from linalg.packing import pack_b
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_prepack

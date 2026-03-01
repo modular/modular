@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
-from utils.index import Index, IndexList
+from std.testing import assert_almost_equal
+from std.utils.index import Index, IndexList
 
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()

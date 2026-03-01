@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for swapAB matmul optimization comparing normal vs swapAB execution."""
 
-from collections import Optional
-from sys import align_of
+from std.collections import Optional
+from std.sys import align_of
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils._utils import dynamic, static
 from linalg.matmul.gpu.sm90.config import MatmulConfig as MatmulConfigSM90
 from linalg.matmul.gpu.sm90.testbed_swapAB import (
@@ -24,7 +24,7 @@ from linalg.matmul.gpu.sm90.testbed_swapAB import (
 )
 from linalg.utils import elementwise_compute_lambda_type
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime bf16 = DType.bfloat16
 

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
 from layout.layout import IntTuple, Layout
 from layout.layout_tensor import LayoutTensor
-from python import Python, PythonObject
-from testing import assert_true
+from std.python import Python, PythonObject
+from std.testing import assert_true
 
-from utils.fast_div import FastDiv
+from std.utils.fast_div import FastDiv
 
 
 def contains_fastdiv_div_sequence(asm: String) raises -> Bool:

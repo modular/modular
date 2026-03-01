@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.info import *
-from testing import *
+from std.gpu.host.info import *
+from std.testing import *
 
 
 def main() raises:

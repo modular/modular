@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from gpu.host.func_attribute import Attribute
-from memory import LegacyUnsafePointer
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.host.func_attribute import Attribute
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 def test_function_attributes() raises:

@@ -21,20 +21,20 @@ Both kernels compute: C[M,N] = A[M,K] @ B[N,K]^T
 The swapAB version just does it via: (B @ A^T)^T stored transposed = A @ B^T
 """
 
-from math import ceildiv
-from sys import align_of
+from std.math import ceildiv
+from std.sys import align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from internal_utils._utils import ValOrDim
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .config import MatmulConfig as MatmulConfigSM90
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig

@@ -19,18 +19,18 @@ GEMM kernel output. Verifies that:
 3. Both register-based and SMEM-based epilogues work correctly
 """
 
-from collections import Optional
-from math import align_up, ceildiv
-from random import rand, random_float64, seed
-from sys import align_of, size_of
+from std.collections import Optional
+from std.math import align_up, ceildiv
+from std.random import rand, random_float64, seed
+from std.sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -40,8 +40,8 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,

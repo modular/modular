@@ -32,10 +32,16 @@ Usage:
         env_get_int[num_experts]=256
 """
 
-from sys import env_get_int, size_of
+from std.sys import env_get_int, size_of
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
@@ -60,10 +66,10 @@ from linalg.matmul.gpu.sm100_structured.blockwise_fp8_1d2d import (
     grouped_matmul_dynamic_scaled_fp8_1d2d,
 )
 from buffer import Dim, DimList, NDBuffer
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn bench_blockwise_fp8_1d2d[
@@ -259,7 +265,7 @@ fn bench_blockwise_fp8_1d2d[
     )
 
     # TileTensor versions for the structured kernel
-    from memory import UnsafePointer as NewPtr
+    from std.memory import UnsafePointer as NewPtr
 
     var a_tt = TileTensor(
         a_dev_buf.unsafe_ptr().bitcast[Scalar[a_type]](),

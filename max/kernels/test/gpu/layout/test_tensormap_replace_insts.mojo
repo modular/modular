@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
-from gpu import block_idx, thread_idx
-from gpu.sync import syncwarp
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
+from std.gpu import block_idx, thread_idx
+from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -30,10 +30,10 @@ from layout.tma_async import (
     TMATensorTileArray,
     create_tma_tile,
 )
-from memory import stack_allocation
-from testing import assert_equal
+from std.memory import stack_allocation
+from std.testing import assert_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 @__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)

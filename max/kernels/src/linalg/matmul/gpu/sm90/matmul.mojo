@@ -10,24 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from sys import size_of
+from std.math import ceildiv
+from std.sys import size_of
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.globals import WARPGROUP_SIZE
-from gpu.primitives.grid_controls import pdl_launch_attributes
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import H100
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import H100
 from layout import Layout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tma_async import create_tensor_tile, create_tma_tile_template
-from logger import Logger
+from std.logger import Logger
 from std.bit import log2_floor
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import MatmulConfig, get_hilbert_lut_with_cache
@@ -35,7 +35,7 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
 from .matmul_kernels import HopperMatmulSM90Kernel, find_K_alignment_upto_16B
 from .matmul_kernel_persistent import HopperMatmulSM90Kernel
-from collections import OptionalReg
+from std.collections import OptionalReg
 
 comptime logger = Logger()
 

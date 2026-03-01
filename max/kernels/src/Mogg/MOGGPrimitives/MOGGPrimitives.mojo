@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import fma
-from ffi import external_call
-from sys import size_of, align_of
+from std.math import fma
+from std.ffi import external_call
+from std.sys import size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
-from collections import InlineArray
-from gpu.host import DeviceBuffer
-from gpu.host.info import is_cpu, is_gpu
+from std.collections import InlineArray
+from std.gpu.host import DeviceBuffer
+from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,
@@ -31,11 +31,11 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout._layout import row_major
-from memory import memcpy
+from std.memory import memcpy
 
 from nn.concat import concat
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
     DynamicTensor,
     InputTensor,
@@ -46,7 +46,7 @@ from tensor.io_spec import IO
 from tensor.managed_tensor_slice import get_kernel_simd_width
 from weights_registry import WeightsRegistry
 
-from utils import Index, IndexList, StaticTuple
+from std.utils import Index, IndexList, StaticTuple
 
 from .MOGGIntList import IntList
 

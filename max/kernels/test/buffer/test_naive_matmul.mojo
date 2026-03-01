@@ -65,9 +65,9 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from testing import TestSuite
+from std.testing import TestSuite
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn _test_my_naive_matmul[

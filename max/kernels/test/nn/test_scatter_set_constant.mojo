@@ -14,7 +14,7 @@
 from layout._layout import row_major
 from layout import TileTensor
 from nn.gather_scatter import scatter_set_constant
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
 
 fn test_scatter_set_constant() raises:

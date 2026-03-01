@@ -10,17 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys import size_of
-from math import align_up
+from std.sys import size_of
+from std.math import align_up
 
-from gpu.primitives.cluster import cluster_mask_base
-from gpu.host._tensormap import SwizzleMode
-from gpu.memory import AddressSpace
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_id_in_cluster
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.arch.tcgen05 import *
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from std.gpu.primitives.cluster import cluster_mask_base
+from std.gpu.host._tensormap import SwizzleMode
+from std.gpu.memory import AddressSpace
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_id_in_cluster
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.coord import coord_to_int_tuple
 from layout.layout import coalesce
@@ -30,10 +30,10 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList, product
+from std.utils.index import Index, IndexList, product
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 
 

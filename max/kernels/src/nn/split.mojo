@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
-from sys import simd_width_of
-from sys.info import _current_target
+from std.collections.string import StaticString
+from std.sys import simd_width_of
+from std.sys.info import _current_target
 
-from algorithm import elementwise
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
+from std.algorithm import elementwise
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
 from layout import Coord, CoordLike, TileTensor, coord_to_index_list
 from layout._layout import row_major, TensorLayout
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # split

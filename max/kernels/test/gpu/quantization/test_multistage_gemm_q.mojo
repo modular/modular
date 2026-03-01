@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from pathlib import Path
-from random import rand, randint, random_float64
-from sys import align_of, argv, size_of
+from std.math import ceildiv
+from std.pathlib import Path
+from std.random import rand, randint, random_float64
+from std.sys import align_of, argv, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -27,12 +27,12 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.intrinsics import lop
-from gpu.memory import external_memory
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.intrinsics import lop
+from std.gpu.memory import external_memory
 
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -41,15 +41,15 @@ from layout.layout import *
 from layout.layout_tensor import LayoutTensor, Layout, copy_dram_to_sram
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulKernels
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
 
-from utils import StaticTuple
-from utils.index import Index, IndexList
+from std.utils import StaticTuple
+from std.utils.index import Index, IndexList
 
 
 fn is_benchmark() -> Bool:

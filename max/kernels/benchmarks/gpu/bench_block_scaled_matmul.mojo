@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from sys import (
+from std.math import align_up, ceildiv
+from std.sys import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
@@ -23,10 +23,16 @@ from sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu import global_idx, grid_dim, block_dim
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu import global_idx, grid_dim, block_dim
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
@@ -35,11 +41,11 @@ from internal_utils import (
     pytorch_like_tolerances_for,
 )
 from internal_utils._measure import relative_difference
-from memory import LegacyUnsafePointer, bitcast
+from std.memory import LegacyUnsafePointer, bitcast
 from linalg.fp4_quantization import block_scaled_matmul
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import rand, Random
+from std.random import rand, Random
 from internal_utils._utils import (
     InitializationType,
     ValOrDim,
@@ -59,8 +65,8 @@ from linalg.fp4_utils import (
 )
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
-from utils import IndexList
-from gpu.host.info import B200
+from std.utils import IndexList
+from std.gpu.host.info import B200
 
 
 # GPU kernel to initialize MXFP8 scale buffers with random exponents.

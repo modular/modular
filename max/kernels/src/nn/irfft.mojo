@@ -13,7 +13,7 @@
 """Inverse real FFT kernel using cuFFT."""
 
 
-from ffi import external_call
+from std.ffi import external_call
 
 from _cufft.cufft import (
     cufftCreate,
@@ -28,9 +28,9 @@ from _cufft.cufft import (
 )
 from _cufft.types import Type
 from _cufft.utils import check_error
-from complex import ComplexFloat32
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUDA
+from std.complex import ComplexFloat32
+from std.gpu.host import DeviceContext
+from std.gpu.host._nvidia_cuda import CUDA
 from layout import TileTensor, coord_to_index_list
 
 

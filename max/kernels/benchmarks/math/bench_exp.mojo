@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
-from math.math import _exp_taylor, _ldexp_impl
-from math.polynomial import polynomial_evaluate
-from ffi import external_call
-from sys import llvm_intrinsic, simd_width_of, size_of
-from sys.arg import argv
+from std.math import *
+from std.math.math import _exp_taylor, _ldexp_impl
+from std.math.polynomial import polynomial_evaluate
+from std.ffi import external_call
+from std.sys import llvm_intrinsic, simd_width_of, size_of
+from std.sys.arg import argv
 from std.utils import IndexList
 
-from algorithm.functional import vectorize
-from benchmark import (
+from std.algorithm.functional import vectorize
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -29,9 +29,9 @@ from benchmark import (
     keep,
 )
 from buffer import NDBuffer
-from builtin.range import _StridedRange
-from compile import compile_info
-from memory import LegacyUnsafePointer, bitcast
+from std.builtin.range import _StridedRange
+from std.compile import compile_info
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

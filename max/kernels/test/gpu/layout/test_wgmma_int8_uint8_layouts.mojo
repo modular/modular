@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import barrier, warp_id, lane_id
-from gpu.host import DeviceContext
-from gpu import thread_idx
-from gpu.intrinsics import threadfence
-from gpu.compute.mma import (
+from std.gpu import barrier, warp_id, lane_id
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.intrinsics import threadfence
+from std.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
@@ -26,7 +26,7 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout import print_layout
-from memory import bitcast
+from std.memory import bitcast
 
 
 fn wgmma_kernel[

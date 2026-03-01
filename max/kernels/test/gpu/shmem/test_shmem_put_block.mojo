@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-from os import abort
-from gpu import block_dim, block_idx, global_idx
-from memory import UnsafePointer, alloc
+from std.os import abort
+from std.gpu import block_dim, block_idx, global_idx
+from std.memory import UnsafePointer, alloc
 from shmem import *
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn set_and_shift_kernel(

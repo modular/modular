@@ -14,12 +14,12 @@
 
 import sys
 
-from gpu.host.compile import _compile_code, get_gpu_target
+from std.gpu.host.compile import _compile_code, get_gpu_target
 from layout import ComptimeInt, Idx, Coord, RuntimeInt
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn kernel(v: Int, ptr: UnsafePointer[Int32]):

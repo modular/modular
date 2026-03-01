@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Provides device query utilities for communication primitives. """
 
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 from internal_utils import TuningConfig, Table
-from gpu.host.info import GPUInfo
+from std.gpu.host.info import GPUInfo
 
 
 @fieldwise_init

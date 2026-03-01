@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import simd_width_of
-from sys.info import _current_target
+from std.math import ceildiv
+from std.sys import simd_width_of
+from std.sys.info import _current_target
 
-from algorithm import elementwise, sync_parallelize
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
+from std.algorithm import elementwise, sync_parallelize
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import rsqrt
-from random import random_ui64, seed
+from std.collections import Set
+from std.math import rsqrt
+from std.random import random_ui64, seed
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -25,10 +25,10 @@ from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, MaterializedMask
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import Index, IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils import Index, IndexList
+from std.utils.numerics import min_or_neg_inf
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime replit_num_q_heads = 24

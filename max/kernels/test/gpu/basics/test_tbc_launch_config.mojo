@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from gpu.primitives.cluster import block_rank_in_cluster
-from gpu.host import DeviceContext, Dim
-from gpu import block_idx, cluster_idx
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.host import DeviceContext, Dim
+from std.gpu import block_idx, cluster_idx
 
 
 fn test_thread_block_cluster():

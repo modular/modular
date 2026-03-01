@@ -13,24 +13,24 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from random import random_si64
+from std.random import random_si64
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from gpu.host.info import MI355X
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import MI355X
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
     _matmul_gpu,
 )
 from linalg.utils_gpu import MatmulConfig
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 

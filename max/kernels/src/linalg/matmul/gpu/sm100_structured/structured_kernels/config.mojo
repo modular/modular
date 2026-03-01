@@ -24,15 +24,15 @@ BlockScaledMatmulConfig extends this with 3 scaling-specific fields
 ranges and alignment requirements differ between standard and scaled kernels.
 """
 
-from bit import next_power_of_two
-from collections.set import Set
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from itertools.itertools import product
+from std.bit import next_power_of_two
+from std.collections.set import Set
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.itertools.itertools import product
 from layout.tensor_core import get_mma_shape
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from math import align_down
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.math import align_down
 from ...tile_scheduler import RasterOrder
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -42,7 +42,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     MXFP8_SF_VECTOR_SIZE,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 # ============================================================================

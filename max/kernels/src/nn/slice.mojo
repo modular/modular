@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import clamp
+from std.math import clamp
 
-from algorithm import elementwise
-from gpu.host import DeviceContext, get_gpu_target
+from std.algorithm import elementwise
+from std.gpu.host import DeviceContext, get_gpu_target
 from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
 from layout._layout import Layout, row_major
 from layout import TileTensor
-from runtime.asyncrt import DeviceContextPtr
-from sys.info import simd_width_of, _current_target
+from std.runtime.asyncrt import DeviceContextPtr
+from std.sys.info import simd_width_of, _current_target
 
-from utils._select import _select_register_value as select
-from utils.index import IndexList
+from std.utils._select import _select_register_value as select
+from std.utils.index import IndexList
 
 
 @always_inline("nodebug")

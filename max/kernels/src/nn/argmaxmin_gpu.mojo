@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
 from nn.topk import topk_gpu

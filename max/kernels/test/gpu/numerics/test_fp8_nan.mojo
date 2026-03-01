@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.simd import *
-from gpu.host import DeviceContext
-from memory import bitcast
+from std.builtin.simd import *
+from std.gpu.host import DeviceContext
+from std.memory import bitcast
 
 
 fn print_bits[dtype: DType](val: Scalar[dtype]):

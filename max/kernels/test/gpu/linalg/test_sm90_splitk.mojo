@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from std.collections import OptionalReg
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -24,14 +24,14 @@ from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
 )
-from random import rand
+from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu.sm90.matmul import warp_specialize_gemm_with_multicasting
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from linalg.utils_gpu import MatmulConfig
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn test_warp_specialize_gemm_with_multicasting[

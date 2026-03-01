@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """TMA load warp logic for FA4 (SM100 Flash Attention)."""
 
-from sys import size_of
-from gpu.memory import CacheEviction
+from std.sys import size_of
+from std.gpu.memory import CacheEviction
 from layout.layout import Layout
 from layout.tma_async import SharedMemBarrier
 from nn.fa4_config import FA4Config, EnableForcedOrdering
@@ -37,8 +37,8 @@ from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_tile_scheduler import SeqInfo
 from nn.mha_utils import OptionallyStaticInt, _is_decoding
-from utils.index import Index
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index
+from std.utils.static_tuple import StaticTuple
 
 
 @always_inline

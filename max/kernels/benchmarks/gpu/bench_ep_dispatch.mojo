@@ -21,16 +21,22 @@
 # NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # br --run_under="mpirun -n $NUM_GPUS --allow-run-as-root --bind-to none" //max/kernels/benchmarks:gpu/bench_ep_dispatch
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from random import randint, randn, seed
-from sys import align_of, env_get_int, env_get_dtype, simd_width_of, size_of
+from std.random import randint, randn, seed
+from std.sys import align_of, env_get_int, env_get_dtype, simd_width_of, size_of
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from memory import UnsafePointer
+from std.memory import UnsafePointer
 from shmem import *
 from shmem.ep_comm import (
     BF16TokenFormat,
@@ -43,7 +49,7 @@ from shmem.ep_comm import (
 )
 from shmem._mpi import MPI_Finalize
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn legalize_topk_ids[

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from linalg.fp4_quantization import (
     block_scales_interleave_fp4,
 )
-from testing import assert_equal
+from std.testing import assert_equal
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp4_utils import (
@@ -26,8 +26,8 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     get_scale_factor,
 )
-from math import ceildiv, align_up
-from utils import IndexList
+from std.math import ceildiv, align_up
+from std.utils import IndexList
 
 
 fn test_block_scales_interleave_fp4[

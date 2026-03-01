@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from memory import LegacyUnsafePointer
+from std.math import align_up, ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os.atomic import Atomic
-from sys import size_of
+from std.os.atomic import Atomic
+from std.sys import size_of
 
-from gpu import NamedBarrierSemaphore
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host.info import H100
-from gpu import block_idx, grid_dim, thread_idx
+from std.gpu import NamedBarrierSemaphore
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host.info import H100
+from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from std.bit import log2_floor
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .tile_scheduler import RasterOrder, WorkInfo
 

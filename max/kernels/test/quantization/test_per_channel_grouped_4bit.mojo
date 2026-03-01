@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys.info import align_of, size_of
+from std.math import ceildiv
+from std.sys.info import align_of, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from quantization import Q4sym
-from testing import assert_true
+from std.testing import assert_true
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:

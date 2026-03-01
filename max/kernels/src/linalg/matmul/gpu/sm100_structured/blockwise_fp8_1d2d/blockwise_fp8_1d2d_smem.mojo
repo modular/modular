@@ -24,7 +24,7 @@ standard BlockwiseFP8Smem:
 Tile storage is shared via BlockwiseFP8TileCore from blockwise_fp8_smem.mojo.
 """
 
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 
 from ..blockwise_fp8.blockwise_fp8_smem import BlockwiseFP8TileCore
 from ..structured_kernels.config import MatmulConfig

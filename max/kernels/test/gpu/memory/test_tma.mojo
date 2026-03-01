@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.io import _printf
+from std.io.io import _printf
 
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
-from gpu import block_idx
-from gpu.memory import (
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TMADescriptor, create_tma_descriptor
+from std.gpu import block_idx
+from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from memory import stack_allocation
+from std.memory import stack_allocation
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)

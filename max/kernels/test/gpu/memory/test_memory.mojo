@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
+from std.math import iota
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_memset_async

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from utils import IndexList
+from std.utils import IndexList
 
 
 trait BaseT(TrivialRegisterPassable):

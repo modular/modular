@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Transpose functions."""
 
-from math import ceildiv
-from sys.info import simd_width_of
-from sys.intrinsics import strided_load, strided_store
+from std.math import ceildiv
+from std.sys.info import simd_width_of
+from std.sys.intrinsics import strided_load, strided_store
 
-from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
+from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout import (
@@ -29,12 +29,12 @@ from layout import (
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from memory import LegacyUnsafePointer, memcpy
+from std.memory import LegacyUnsafePointer, memcpy
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from runtime.asyncrt import parallelism_level
+from std.runtime.asyncrt import parallelism_level
 
-from utils.index import IndexList, StaticTuple
+from std.utils.index import IndexList, StaticTuple
 
 
 fn _transpose_inplace_4x4[

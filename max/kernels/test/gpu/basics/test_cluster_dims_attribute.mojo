@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu import block_idx, cluster_dim, cluster_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, cluster_dim, cluster_idx
 
-from utils.static_tuple import StaticTuple
+from std.utils.static_tuple import StaticTuple
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_dims)

@@ -11,25 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import get_static_string
-from math import align_down, ceildiv
-from sys import simd_width_of, size_of
-from sys.info import CompilationTarget, _current_target
-from sys.intrinsics import PrefetchOptions
+from std.collections.string.string_slice import get_static_string
+from std.math import align_down, ceildiv
+from std.sys import simd_width_of, size_of
+from std.sys.info import CompilationTarget, _current_target
+from std.sys.intrinsics import PrefetchOptions
 
-from algorithm import elementwise, parallel_memcpy, sync_parallelize
-from algorithm.functional import tile
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu, is_gpu
+from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
+from std.algorithm.functional import tile
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu, is_gpu
 from layout import Coord, Idx, TileTensor, UNKNOWN_VALUE, coord_to_index_list
 from layout._layout import row_major
-from memory import memcpy
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.memory import memcpy
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from tensor import ManagedTensorSlice
 
-from utils import Index, IndexList, StaticTuple
-from collections import OptionalReg
+from std.utils import Index, IndexList, StaticTuple
+from std.collections import OptionalReg
 
 
 @always_inline

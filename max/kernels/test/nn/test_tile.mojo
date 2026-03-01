@@ -14,9 +14,9 @@
 from layout import Coord, TileTensor
 from layout._layout import row_major
 from nn.tile import tile
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 # CHECK-LABEL: test_tile_eg1

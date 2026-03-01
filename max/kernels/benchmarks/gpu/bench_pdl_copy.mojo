@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_int
+from std.sys import env_get_int
 
-from benchmark import Bench, Bencher, BenchId
-from builtin._closure import __ownership_keepalive
-from gpu import *
-from gpu.primitives.grid_controls import pdl_launch_attributes
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.benchmark import Bench, Bencher, BenchId
+from std.builtin._closure import __ownership_keepalive
+from std.gpu import *
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

@@ -20,9 +20,9 @@ Uses DeepSeek V3-style MoE shapes:
 - top_k=8, typical decode batch 64-512 tokens → 512-4096 total tokens
 """
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
@@ -44,12 +44,12 @@ from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8_1d2d import (
     grouped_matmul_dynamic_scaled_fp8_1d2d,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def test_blockwise_fp8_1d2d_structured[
@@ -319,7 +319,7 @@ def test_blockwise_fp8_1d2d_structured[
         b_scales_device_buffer.unsafe_ptr().bitcast[Scalar[DType.float32]](),
         row_major[num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K](),
     )
-    from memory import UnsafePointer as NewPtr
+    from std.memory import UnsafePointer as NewPtr
 
     var a_offsets_tt = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin](
         ptr=NewPtr[Scalar[DType.uint32], MutAnyOrigin](

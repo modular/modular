@@ -16,7 +16,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+from std.collections import Optional
 
 import benchmark
 from buffer import NDBuffer
@@ -32,12 +32,12 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import elementwise_epilogue_type
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime alignment = 64
 comptime some_constant = 20

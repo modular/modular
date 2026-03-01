@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import rand, randint
+from std.random import rand, randint
 
-from benchmark import *
+from std.benchmark import *
 from buffer.dimlist import Dim
 from nn.gather_scatter import scatter_elements
 from tensor import DynamicTensor
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn bench_scatter(mut m: Bench, spec: ScatterSpec) raises:

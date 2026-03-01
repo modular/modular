@@ -12,17 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 
 import random
-from sys import env_get_bool, env_get_dtype, env_get_int, size_of
+from std.sys import env_get_bool, env_get_dtype, env_get_int, size_of
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import DimList, NDBuffer
 from comm import MAX_GPUS, Signal
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 fn _get_run_name[

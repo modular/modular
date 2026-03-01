@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp
-from sys.info import simd_width_of
+from std.math import exp
+from std.sys.info import simd_width_of
 
-from algorithm.functional import _get_start_indices_of_nth_subvolume
+from std.algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -24,14 +24,14 @@ from layout import (
 )
 from layout._fillers import random
 from layout.int_tuple import fill_like
-from memory import alloc
+from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_update_cpu,
     causal_conv1d_update_cpu_no_bias,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def main() raises:

@@ -22,17 +22,17 @@ Test matrix covering NVIDIA CuTe DSL constraints:
 - Cluster shapes: 1x1, 2x2 (for initial tests)
 """
 
-from math import ceildiv
-from memory import UnsafePointer
-from sys import size_of
+from std.math import ceildiv
+from std.memory import UnsafePointer
+from std.sys import size_of
 
-from gpu.host import DeviceContext
-from gpu.host.info import B200
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import B200
 from layout import Layout, LayoutTensor, RuntimeLayout
-from testing import testing
+from std.testing import testing
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_scheduler import (
     GroupedTileScheduler,

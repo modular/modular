@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from nn.mha_mask import MASK_VALUE, ChunkedMask, TileMaskStatus
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 def test_chunked_mask_status() raises:

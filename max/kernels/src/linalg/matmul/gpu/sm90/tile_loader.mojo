@@ -27,20 +27,20 @@ interface for the matmul kernel's producer threads.
 """
 from layout.tma_async import TMATensorTile
 from layout.layout_tensor import LayoutTensor
-from gpu.memory import (
+from std.gpu.memory import (
     AddressSpace,
     async_copy,
 )
 from ....structuring import SharedMemBarrier, SMemBarrier, SMemTile
 from layout.swizzle import make_swizzle
-from gpu import thread_idx
-from gpu.globals import WARPGROUP_SIZE
-from gpu.sync import async_copy_arrive
+from std.gpu import thread_idx
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.sync import async_copy_arrive
 from ..sm100_structured.structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
-from sys import simd_width_of
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.sys import simd_width_of
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 

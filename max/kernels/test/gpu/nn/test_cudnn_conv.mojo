@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.conv import conv_cudnn, conv_gpu
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # input: NHWC

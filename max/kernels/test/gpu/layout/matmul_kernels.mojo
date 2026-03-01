@@ -10,26 +10,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from sys.info import simd_width_of
+from std.math import ceildiv
+from std.sys.info import simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import async_copy_wait_all
+from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.memory import async_copy_wait_all
 from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
-from utils import IndexList
+from std.utils import IndexList
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index
+from std.utils.index import Index
 
 comptime NWARMUP = 1
 comptime NRUN = 1

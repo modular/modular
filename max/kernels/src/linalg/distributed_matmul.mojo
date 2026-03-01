@@ -15,14 +15,14 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal, group_start, group_end
-from gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
-from gpu.host import DeviceContext
+from std.gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
+from std.gpu.host import DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 
-from utils import IndexList
+from std.utils import IndexList
 from .matmul.gpu import _matmul_gpu
 
-from memory import UnsafePointer
+from std.memory import UnsafePointer
 
 comptime elementwise_epilogue_type = fn[
     input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int

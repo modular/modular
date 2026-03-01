@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from sys import size_of, has_amd_gpu_accelerator, simd_width_of
-from itertools import product
+from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
+from std.itertools import product
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -26,16 +26,16 @@ from comm.allreduce import (
 )
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
-from gpu.host import (
+from std.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
     get_gpu_target,
 )
-from testing import assert_almost_equal, assert_true
-from collections import Optional
+from std.testing import assert_almost_equal, assert_true
+from std.collections import Optional
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # Shared test configurations
 comptime test_lengths = (

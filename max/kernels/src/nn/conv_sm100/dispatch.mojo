@@ -19,16 +19,16 @@ is only compiled when `dispatch_sm100_conv2d` is called with a supported
 dtype inside a @parameter if guard.
 """
 
-from math import ceildiv
+from std.math import ceildiv
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime MutPointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # =========================================================================

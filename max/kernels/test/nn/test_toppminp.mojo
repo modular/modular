@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import iota
-from random import random_float64
+from std.math import iota
+from std.random import random_float64
 
-from algorithm.functional import parallelize_over_rows
-from benchmark import Bench, Bencher, BenchId
+from std.algorithm.functional import parallelize_over_rows
+from std.benchmark import Bench, Bencher, BenchId
 from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
 from nn.toppminp import min_p_sampling, top_p_sampling
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import Dim
-from testing import assert_equal
+from std.gpu.host import Dim
+from std.testing import assert_equal
 
 
 fn test_dim() raises:

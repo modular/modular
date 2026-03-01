@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import WARP_SIZE, lane_id
-from gpu.host import DeviceContext
-from gpu.host.info import MI300X
+from std.gpu import WARP_SIZE, lane_id
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import MI300X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import TensorCore
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime fp8_dtype = (
     DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute

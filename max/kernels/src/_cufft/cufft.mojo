@@ -14,12 +14,12 @@
 
 import ffi
 
-from complex import ComplexFloat32, ComplexFloat64
-from gpu.host._nvidia_cuda import CUstream
+from std.complex import ComplexFloat32, ComplexFloat64
+from std.gpu.host._nvidia_cuda import CUstream
 
 from .types import LibraryProperty, Property, Status, Type
 from .utils import _get_dylib_function
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[

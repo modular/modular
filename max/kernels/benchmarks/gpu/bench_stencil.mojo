@@ -11,20 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_dtype, env_get_int, env_get_string
+from std.sys import env_get_dtype, env_get_int, env_get_string
 
-from algorithm.functional import stencil, stencil_gpu
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import stencil, stencil_gpu
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils import IndexList
+from std.utils.numerics import min_or_neg_inf
 
 
 fn assert_allclose[

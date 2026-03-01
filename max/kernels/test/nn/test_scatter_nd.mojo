@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from layout._layout import row_major
 from layout import TileTensor
 from nn.gather_scatter import scatter_nd_generator, ScatterOobIndexStrategy
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 @always_inline

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _current_target, simd_width_of
-from sys.intrinsics import _type_is_eq
+from std.sys.info import _current_target, simd_width_of
+from std.sys.intrinsics import _type_is_eq
 
-from algorithm.functional import elementwise, unswitch
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu, is_gpu
-from collections import OptionalReg
+from std.algorithm.functional import elementwise, unswitch
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu, is_gpu
+from std.collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -65,10 +65,10 @@ from nn.mla import (
 from quantization.qmatmul import matmul_qint4
 from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (ragged)

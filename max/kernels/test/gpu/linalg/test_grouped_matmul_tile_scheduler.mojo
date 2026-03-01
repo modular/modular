@@ -13,15 +13,15 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_idx
-from gpu.host import DeviceContext
+from std.gpu import block_idx
+from std.gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn test_kernel[

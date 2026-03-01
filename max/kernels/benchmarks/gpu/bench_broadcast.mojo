@@ -11,11 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from math import ceildiv
-from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
+from std.collections import InlineArray
+from std.math import ceildiv
+from std.sys import (
+    env_get_bool,
+    env_get_dtype,
+    env_get_int,
+    size_of,
+    simd_width_of,
+)
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -28,15 +34,16 @@ from comm.sync import enable_p2p
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from gpu.host import (
+from std.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
     get_gpu_target,
 )
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
-from utils.index import IndexList
-from testing import assert_true
+
+from std.utils.index import IndexList
+from std.testing import assert_true
 
 
 @always_inline

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu.compute.mma import mma
+from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import mma
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import TensorCore
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn arange(tensor: LayoutTensor[mut=True, ...]):

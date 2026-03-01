@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
+from std.math import align_up, ceildiv
 
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout, LayoutTensor
-from logger import Logger
-from gpu.primitives.warp import shuffle_xor
-from math import recip
+from std.logger import Logger
+from std.gpu.primitives.warp import shuffle_xor
+from std.math import recip
 from linalg.fp4_utils import (
     cast_fp32_to_fp4e2m1,
     E2M1_TO_FLOAT32,
@@ -32,24 +32,24 @@ from linalg.fp4_utils import (
     set_scale_factor,
     get_scale_factor,
 )
-from gpu.host.info import B200
-from utils import StaticTuple
-from collections import Optional
+from std.gpu.host.info import B200
+from std.utils import StaticTuple
+from std.collections import Optional
 from linalg.utils import (
     elementwise_epilogue_type,
     elementwise_compute_lambda_type,
 )
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from buffer import Dim, NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from memory import bitcast
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import barrier
-from sys import size_of, align_of, simd_width_of
+from std.memory import bitcast
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import barrier
+from std.sys import size_of, align_of, simd_width_of
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from algorithm import elementwise
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.algorithm import elementwise
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )

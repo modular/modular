@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from random import rand, seed
+from std.os import abort
+from std.random import rand, seed
 
 import internal_utils
 from layout.layout_tensor import UNKNOWN_VALUE, Layout, LayoutTensor
 from linalg.qr_factorization import form_q, qr_factorization
-from memory import LegacyUnsafePointer, memcpy
+from std.memory import LegacyUnsafePointer, memcpy
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
 # A is a general matrix, B is a non-unit upper triangular matrix

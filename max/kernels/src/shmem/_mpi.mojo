@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
-from os import getenv, abort
-from ffi import (
+from std.pathlib import Path
+from std.os import getenv, abort
+from std.ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
@@ -21,7 +21,7 @@ from ffi import (
     c_int,
     RTLD,
 )
-from sys.info import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
+from std.sys.info import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
 
 # ===-----------------------------------------------------------------------===#
 # Library Load

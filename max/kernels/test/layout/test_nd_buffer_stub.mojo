@@ -35,10 +35,10 @@ from layout._ndbuffer_stub import (
     vectorize,
 )
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import Index, IndexList, StaticTuple
+from std.utils import Index, IndexList, StaticTuple
 
 
 fn linspace_fill[

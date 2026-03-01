@@ -21,15 +21,15 @@ This module contains generic SM100 (Blackwell) GPU primitives including:
 - Masking utilities (apply_mask, apply_oob_mask)
 """
 
-from math import ceildiv, exp2, align_up, iota
-from math.constants import log2e
-from sys import size_of
-from sys._assembly import inlined_assembly
-from bit import prev_power_of_two, pop_count
-from gpu.globals import WARP_SIZE
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace
-from gpu.compute.arch.mma_nvidia_sm100 import (
+from std.math import ceildiv, exp2, align_up, iota
+from std.math.constants import log2e
+from std.sys import size_of
+from std.sys._assembly import inlined_assembly
+from std.bit import prev_power_of_two, pop_count
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace
+from std.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,
     MMASmemDescriptorPair,
@@ -37,7 +37,7 @@ from gpu.compute.arch.mma_nvidia_sm100 import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
     WarpGroupBarrier,
 )
-from gpu.compute.arch.tcgen05 import (
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_ld,
     tcgen05_st,
     tcgen05_store_wait,
@@ -53,11 +53,11 @@ from layout._layout import Layout as InternalLayout, row_major
 from layout import TileTensor
 from layout import stack_allocation as tt_stack_allocation
 from layout.tma_async import PipelineState, SharedMemBarrier
-from memory import bitcast
+from std.memory import bitcast
 from nn.fa4_config import FA4Config
 from nn.mha_mask import MHAMask, MASK_VALUE, MaskStrategy
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
 

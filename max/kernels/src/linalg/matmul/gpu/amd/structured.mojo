@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of
-from gpu import WARP_SIZE
-from gpu.compute.mma import mma
-from itertools import product
+from std.sys import align_of
+from std.gpu import WARP_SIZE
+from std.gpu.compute.mma import mma
+from std.itertools import product
 from layout import Layout, LayoutTensor
 from layout.int_tuple import product as prod
 from layout.layout import blocked_product
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg, TensorCore
 from linalg.structuring import SMemTile, RegTile
-from sys._assembly import inlined_assembly
-from utils import IndexList, StaticTuple
-from gpu.intrinsics import load_acquire, store_release
+from std.sys._assembly import inlined_assembly
+from std.utils import IndexList, StaticTuple
+from std.gpu.intrinsics import load_acquire, store_release
 
 
 trait Enum(TrivialRegisterPassable):

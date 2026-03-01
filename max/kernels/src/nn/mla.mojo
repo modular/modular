@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import align_up, ceildiv, recip
+from std.collections import OptionalReg
+from std.math import align_up, ceildiv, recip
 from nn.mha_utils import DynamicInt
-from math.constants import log2e
-from sys import (
+from std.math.constants import log2e
+from std.sys import (
     align_of,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
@@ -29,13 +29,13 @@ from sys import (
 
 from nn.mha import q_num_matrix_view_rows
 import gpu.primitives.warp as warp
-from algorithm.functional import (
+from std.algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,
     unswitch,
     vectorize,
 )
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -45,15 +45,15 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import (
+from std.gpu.host import (
     DeviceContext,
     FuncAttribute,
     get_gpu_target,
     DeviceBuffer,
     Dim as LaunchDim,
 )
-from gpu.host.info import A100, H100, B200
-from gpu.memory import (
+from std.gpu.host.info import A100, H100, B200
+from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_all,
@@ -76,7 +76,7 @@ from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
-from memory import stack_allocation
+from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import (
@@ -94,17 +94,17 @@ from nn.mha_utils import (
 )
 from nn.softmax import _exp2_concrete
 from nn.mha_fa3_utils import NonNullPointer, NullPointer
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
-from gpu.host.info import B200, GPUInfo
+from std.gpu.host.info import B200, GPUInfo
 from nn.mla_decode_sm100_dispatch import mla_decode_sm100_dispatch
 
 

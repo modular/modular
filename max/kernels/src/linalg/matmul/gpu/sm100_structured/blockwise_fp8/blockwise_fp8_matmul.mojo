@@ -17,17 +17,17 @@ Creates TMA descriptors for A, B, C and A-scales, then launches the
 warp-specialized blockwise FP8 kernel with register-based accumulation.
 """
 
-from math import align_up, ceildiv
-from sys import env_get_bool, size_of
+from std.math import align_up, ceildiv
+from std.sys import env_get_bool, size_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
 from layout import Layout as LegacyLayout, TileTensor
 from ..structured_kernels.tile_types import create_tma_tile, lt_to_tt
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
 from .blockwise_fp8_smem import BlockwiseFP8Smem

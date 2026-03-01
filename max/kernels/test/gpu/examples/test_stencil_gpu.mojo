@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import stencil, stencil_gpu
+from std.algorithm.functional import stencil, stencil_gpu
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout
 from layout._utils import ManagedLayoutTensor
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils import IndexList
+from std.utils.numerics import min_or_neg_inf
 
 comptime _map_fn_type = fn[rank: Int](IndexList[rank]) capturing -> Tuple[
     IndexList[rank],

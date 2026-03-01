@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.compute.mma import mma
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.compute.mma import mma
+from std.testing import *
 
 
 fn SM80_16x8x8_F16F16F16F16_TN(

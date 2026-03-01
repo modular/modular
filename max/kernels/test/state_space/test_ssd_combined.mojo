@@ -18,14 +18,14 @@ from layout import (
     RuntimeLayout,
 )
 from layout._fillers import random
-from math import exp, exp2, log
-from memory import alloc
+from std.math import exp, exp2, log
+from std.memory import alloc
 from state_space.selective_scan import (
     ssd_combined_cpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634

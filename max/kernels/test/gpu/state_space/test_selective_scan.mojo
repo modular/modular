@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
     UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
 )
-from random import rand
+from std.random import rand
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_fwd_gpu,
@@ -33,9 +33,9 @@ from state_space.selective_scan import (
     Strides3D,
     Strides4D,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def main() raises:
@@ -384,7 +384,7 @@ fn run_selective_scan_gpu[
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
-    from math import ceildiv
+    from std.math import ceildiv
 
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 

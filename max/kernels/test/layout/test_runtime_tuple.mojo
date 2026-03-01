@@ -25,7 +25,7 @@ from layout.runtime_tuple import (
     shape_div,
     coalesce_nested_tuple,
 )
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 def test_construct() raises:

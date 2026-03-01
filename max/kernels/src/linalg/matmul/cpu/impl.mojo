@@ -10,20 +10,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from collections.string.string_slice import get_static_string
-from math import align_up, ceildiv
-from sys.info import align_of, simd_width_of
+from std.collections import Optional
+from std.collections.string.string_slice import get_static_string
+from std.math import align_up, ceildiv
+from std.sys.info import align_of, simd_width_of
 
-from algorithm import sync_parallelize, tile, vectorize
+from std.algorithm import sync_parallelize, tile, vectorize
 from buffer.buffer import NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from buffer.dimlist import DimList
 from layout import Layout, LayoutTensor
-from memory import alloc, memset_zero
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.memory import alloc, memset_zero
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from ...gemv import gemv
 from ...packing import BTileGenerator

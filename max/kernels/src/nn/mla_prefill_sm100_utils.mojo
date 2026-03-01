@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of, size_of
-from math.constants import log2e
-from math import exp2, recip
+from std.sys import simd_width_of, size_of
+from std.math.constants import log2e
+from std.math import exp2, recip
 
 from nn.mha_operand import MHAOperand
 from nn.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
@@ -55,23 +55,23 @@ from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 
 from linalg.arch.sm100.mma import smem_descriptor
 
-from gpu.host.info import B200
-from gpu.globals import WARPGROUP_SIZE, WARP_SIZE
-from gpu.memory import fence_async_view_proxy
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import thread_idx
-from gpu.compute.arch.tcgen05 import *
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from gpu.primitives.warp import _vote_nvidia_helper
+from std.gpu.host.info import B200
+from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
+from std.gpu.memory import fence_async_view_proxy
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import thread_idx
+from std.gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from std.gpu.primitives.warp import _vote_nvidia_helper
 import gpu.primitives.warp as warp
-from gpu.sync import (
+from std.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
 
-from utils.static_tuple import StaticTuple
-from utils.index import Index
+from std.utils.static_tuple import StaticTuple
+from std.utils.index import Index
 
 
 struct MLAConfig(TrivialRegisterPassable):

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 
 trait CopyPolicy(DevicePassable, ImplicitlyCopyable):

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.fp8_quantization import (
@@ -20,14 +20,14 @@ from linalg.fp8_quantization import (
     quantize_static_scaled_fp8,
     batched_quantize_dynamic_scaled_fp8,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import has_nvidia_gpu_accelerator
-from testing import assert_equal
+from std.sys import has_nvidia_gpu_accelerator
+from std.testing import assert_equal
 
-from utils import Index, IndexList
-from utils.numerics import get_accum_type, max_finite, min_finite
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type, max_finite, min_finite
 
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()

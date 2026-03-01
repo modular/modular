@@ -23,16 +23,16 @@ test_grouped_matmul_sm100_blockwise_fp8.mojo.
 """
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[

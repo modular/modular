@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from sys import size_of, has_amd_gpu_accelerator
+from std.sys import size_of, has_amd_gpu_accelerator
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -20,11 +20,11 @@ from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
 from comm.sync import enable_p2p
 import comm.vendor.ccl as vendor_ccl
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from testing import assert_equal, assert_true
-from utils.index import IndexList
+from std.testing import assert_equal, assert_true
+from std.utils.index import IndexList
 
 
 def all_gather_test[

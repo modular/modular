@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
+from std.math import iota
 
-from builtin.device_passable import DevicePassable
-from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import (
+from std.builtin.device_passable import DevicePassable
+from std.gpu import *
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.memory import (
     UnsafePointer as UnsafePointerV2,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 # A Simple Kernel performing the sum of two arrays

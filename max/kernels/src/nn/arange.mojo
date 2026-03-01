@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceil, iota
+from std.math import ceil, iota
 
 from register import *
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Arange op

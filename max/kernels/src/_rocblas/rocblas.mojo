@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 #
 
-from complex import ComplexFloat32, ComplexFloat64
-from memory import LegacyUnsafePointer
+from std.complex import ComplexFloat32, ComplexFloat64
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
-from gpu.host._amdgpu_hip import hipStream_t
+from std.gpu.host._amdgpu_hip import hipStream_t
 
 from .types import (
     Algorithm,

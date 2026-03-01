@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """This test showcases how one can launch a precompiled device binary from Mojo."""
 
-from gpu import *
-from gpu.host import DeviceContext
-from gpu.host.device_context import DeviceExternalFunction
-from memory import LegacyUnsafePointer
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.gpu.host.device_context import DeviceExternalFunction
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from gpu.host.compile import _compile_code
-from testing import assert_equal
+from std.gpu.host.compile import _compile_code
+from std.testing import assert_equal
 
 
 fn vec_func(

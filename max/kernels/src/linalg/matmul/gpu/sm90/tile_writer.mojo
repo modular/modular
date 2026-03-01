@@ -32,8 +32,8 @@ Two main traits abstract these writing mechanisms:
 
 from layout.tma_async import TMATensorTile
 from layout.layout_tensor import LayoutTensor, copy_sram_to_dram
-from gpu.memory import fence_async_view_proxy
-from collections import OptionalReg
+from std.gpu.memory import fence_async_view_proxy
+from std.collections import OptionalReg
 from ....structuring import (
     SharedMemBarrier,
     SMemBarrier,
@@ -41,24 +41,24 @@ from ....structuring import (
     RegTile,
 )
 from layout.swizzle import Swizzle
-from gpu import thread_idx, lane_id
-from sys import simd_width_of
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import thread_idx, lane_id
+from std.sys import simd_width_of
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 from layout import Layout
-from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
-from gpu.compute.mma import st_matrix
-from memory import bitcast
+from std.gpu.compute.mma import st_matrix
+from std.memory import bitcast
 from layout import RuntimeLayout, RuntimeTuple, IntTuple
 from layout.tensor_core_async import st_matrix_n_layout, st_matrix_m_layout
 from layout.runtime_layout import UNKNOWN_VALUE
 from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
-from utils.index import IndexList
-from sys import align_of, size_of
+from std.utils.index import IndexList
+from std.sys import align_of, size_of
 from layout.layout_tensor import copy_local_to_dram
 import itertools
-from memory.pointer import _GPUAddressSpace
+from std.memory.pointer import _GPUAddressSpace
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle
 from std.bit import log2_floor
 

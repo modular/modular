@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import env_get_int
+from std.math import ceildiv
+from std.sys import env_get_int
 
 from comm.sync import enable_p2p
-from gpu import block_dim, global_idx, grid_dim
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu import block_dim, global_idx, grid_dim
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
 
 fn p2p_copy_kernel(

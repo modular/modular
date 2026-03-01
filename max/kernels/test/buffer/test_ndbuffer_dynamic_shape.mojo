@@ -13,8 +13,8 @@
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from utils.index import IndexList
-from testing import TestSuite
+from std.utils.index import IndexList
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: test_ndbuffer_dynamic_shape

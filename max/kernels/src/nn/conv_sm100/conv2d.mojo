@@ -39,15 +39,15 @@ Note: This implementation currently supports:
 - BF16/FP16 data types
 """
 
-from collections import Optional
-from math import align_up, ceildiv
+from std.collections import Optional
+from std.math import align_up, ceildiv
 
-from sys import size_of
+from std.sys import size_of
 
 from buffer.buffer import NDBuffer
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import B200
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.info import B200
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import create_tensor_tile_im2col
 
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
@@ -55,8 +55,8 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
 )
 from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
 from linalg.utils import elementwise_compute_lambda_type
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from .conv_config import Conv2dConfig, Conv2dProblemShape
 from .conv_smem import Conv2dSmem

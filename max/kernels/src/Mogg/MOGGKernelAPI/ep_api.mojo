@@ -18,16 +18,21 @@ Expert Parallelism (EP) Communication Kernel.
 
 import compiler_internal as compiler
 from comm.sync import is_p2p_enabled
-from gpu.primitives.grid_controls import pdl_launch_attributes
-from gpu.host import DeviceBuffer, get_gpu_target
-from gpu.host.info import is_gpu
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.host import DeviceBuffer, get_gpu_target
+from std.gpu.host.info import is_gpu
 from layout import Layout, LayoutTensor, RuntimeLayout
-from utils.index import IndexList
-from collections import OptionalReg
+from std.utils.index import IndexList
+from std.collections import OptionalReg
 
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from sys.info import align_of, simd_width_of, size_of, has_amd_gpu_accelerator
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.sys.info import (
+    align_of,
+    simd_width_of,
+    size_of,
+    has_amd_gpu_accelerator,
+)
 from tensor import InputTensor, OutputTensor
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,

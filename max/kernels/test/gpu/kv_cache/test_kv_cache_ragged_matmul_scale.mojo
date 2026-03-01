@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_ui64, seed
+from std.math import ceildiv
+from std.random import random_ui64, seed
 
 from buffer import NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
@@ -24,15 +24,15 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from memory import memcpy, legacy_unsafe_pointer
+from std.memory import memcpy, legacy_unsafe_pointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.kv_cache_ragged import (
     _matmul_k_cache_ragged_scale_impl,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 

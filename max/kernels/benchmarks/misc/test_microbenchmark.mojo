@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_si64
+from std.random import random_si64
 
 import microbenchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from microbenchmark import Benchmarkable
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime alignment = 64
 

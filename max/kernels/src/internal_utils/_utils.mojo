@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from collections import Optional
-from math import ceildiv, floor
-from sys import argv, env_get_string
-from builtin.device_passable import DevicePassable
+from std.collections import Optional
+from std.math import ceildiv, floor
+from std.sys import argv, env_get_string
+from std.builtin.device_passable import DevicePassable
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -27,13 +27,13 @@ from benchmark import (
 )
 from buffer import Dim, DimList
 from buffer.dimlist import _make_tuple
-from compile import compile_info
-from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext
-from random import Random
+from std.compile import compile_info
+from std.gpu import *
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from tensor import DynamicTensor
-from utils import IndexList
+from std.utils import IndexList
 
 
 # ===----------------------------------------------------------------------=== #

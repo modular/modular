@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from collections import OptionalReg
-from sys import (
+from std.math import align_up, ceildiv
+from std.collections import OptionalReg
+from std.sys import (
     CompilationTarget,
     align_of,
     env_get_int,
@@ -25,12 +25,12 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
-from bit import prev_power_of_two
-from gpu import WARP_SIZE, lane_id
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace
+from std.bit import prev_power_of_two
+from std.gpu import WARP_SIZE, lane_id
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
@@ -47,8 +47,8 @@ from nn.mha_mask import (
     SlidingWindowCausalMask,
 )
 
-from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils.index import Index, IndexList
+from std.utils.numerics import min_or_neg_inf
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention

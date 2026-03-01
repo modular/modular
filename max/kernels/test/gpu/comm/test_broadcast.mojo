@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import size_of
-from itertools import product
+from std.math import ceildiv
+from std.sys import size_of
+from std.itertools import product
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from testing import assert_true
-from utils import IndexList
+from std.testing import assert_true
+from std.utils import IndexList
 
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast

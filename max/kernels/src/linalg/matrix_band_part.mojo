@@ -13,11 +13,11 @@
 """The module implements matrix band part functions."""
 
 
-from algorithm.functional import elementwise, unswitch
+from std.algorithm.functional import elementwise, unswitch
 from layout import Layout, LayoutTensor
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @always_inline

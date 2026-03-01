@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import randint, seed
+from std.random import randint, seed
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -21,7 +21,7 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

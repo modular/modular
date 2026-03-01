@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceil
+from std.math import ceil
 
 from layout import TileTensor
 
-from utils.numerics import min_or_neg_inf
+from std.utils.numerics import min_or_neg_inf
 
 
 struct Weighted2DPoint[dtype: DType](TrivialRegisterPassable):

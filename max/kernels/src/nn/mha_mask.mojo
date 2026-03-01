@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from utils import StaticTuple
-from math import iota, ceildiv
-from sys import is_nvidia_gpu
+from std.utils import StaticTuple
+from std.math import iota, ceildiv
+from std.sys import is_nvidia_gpu
 
 from layout import LayoutTensor, Layout, UNKNOWN_VALUE
-from memory import LegacyUnsafePointer
-from collections import OptionalReg
+from std.memory import LegacyUnsafePointer
+from std.collections import OptionalReg
 
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 
-from utils.index import IndexList, Index
-from builtin.device_passable import DevicePassable
+from std.utils.index import IndexList, Index
+from std.builtin.device_passable import DevicePassable
 
 # ===-----------------------------------------------------------------------===#
 # MaskName

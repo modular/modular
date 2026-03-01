@@ -18,11 +18,11 @@ Documents known limitations:
 """
 
 from layout import Layout, LayoutTensor
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from testing import assert_equal
+from std.testing import assert_equal
 from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn test_shape[

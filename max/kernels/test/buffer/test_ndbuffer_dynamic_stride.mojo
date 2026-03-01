@@ -13,8 +13,8 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from testing import TestSuite
-from utils.index import Index, IndexList
+from std.testing import TestSuite
+from std.utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_sub_matrix

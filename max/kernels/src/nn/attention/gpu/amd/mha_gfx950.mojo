@@ -11,25 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import product
-from math import ceildiv
-from sys import simd_width_of, llvm_intrinsic
-from sys.intrinsics import readfirstlane, _type_is_eq
-from sys.info import _cdna_4_or_newer
-from gpu import (
+from std.itertools import product
+from std.math import ceildiv
+from std.sys import simd_width_of, llvm_intrinsic
+from std.sys.intrinsics import readfirstlane, _type_is_eq
+from std.sys.info import _cdna_4_or_newer
+from std.gpu import (
     WARP_SIZE,
     block_idx,
     lane_id,
     thread_idx,
 )
-from gpu import warp_id as get_warp_id
-from gpu.sync import (
+from std.gpu import warp_id as get_warp_id
+from std.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,
     s_waitcnt,
 )
-from memory.pointer import AddressSpace as BaseAddressSpace
+from std.memory.pointer import AddressSpace as BaseAddressSpace
 from layout import IntTuple, Layout, LayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import blocked_product
@@ -44,7 +44,7 @@ from layout.tensor_core import (
     num_matrix_reg,
     TiledTensorCore,
 )
-from memory import bitcast, stack_allocation
+from std.memory import bitcast, stack_allocation
 from nn.mha_mask import MHAMask, TileMaskStatus, CausalMask
 from nn.mha_operand import MHAOperand
 from nn.mha_utils import (
@@ -53,8 +53,8 @@ from nn.mha_utils import (
     get_start_and_end_for_partitions,
 )
 
-from utils import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 from .mha_gfx942 import Attention
 from .utils import load_b, load_b_tr, copy_dram_to_sram_lds
 

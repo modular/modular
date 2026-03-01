@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from math import exp2
-from os import abort
-from random import rand, randn
-from sys import align_of, argv, simd_width_of
+from std.collections import Optional
+from std.math import exp2
+from std.os import abort
+from std.random import rand, randn
+from std.sys import align_of, argv, simd_width_of
 
 import benchmark
-from algorithm.functional import elementwise
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
@@ -29,11 +29,11 @@ from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, _bk_base
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import StaticTuple
-from utils.index import Index, IndexList
-from utils.numerics import FPUtils
+from std.utils import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import FPUtils
 
 
 fn binary_sub[

@@ -19,17 +19,17 @@ This test implements the same logic in Mojo (CPU reference) and compares
 GPU kernel output to it.
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout.coord import Coord, Idx
 from layout._layout import row_major
 from layout.tile_tensor import TileTensor
 from nn.tpool_patch_merger import (
     tpool_patch_merger,
 )
-from random import rand, seed
-from testing import assert_almost_equal
+from std.random import rand, seed
+from std.testing import assert_almost_equal
 
 
 fn cpu_reference_one_video[

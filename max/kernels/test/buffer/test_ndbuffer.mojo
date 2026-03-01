@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from sys.intrinsics import PrefetchOptions
-from tempfile import NamedTemporaryFile
+from std.math import iota
+from std.sys.intrinsics import PrefetchOptions
+from std.tempfile import NamedTemporaryFile
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from buffer.dimlist import DimList
-from memory import memcmp, memset_zero
-from testing import TestSuite, assert_equal
+from std.memory import memcmp, memset_zero
+from std.testing import TestSuite, assert_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_ndbuffer

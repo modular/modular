@@ -12,19 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Softmax warp group logic for FA4 (SM100 Flash Attention)."""
 
-from math import exp2, recip, align_up
-from math.constants import log2e
-from sys import size_of
+from std.math import exp2, recip, align_up
+from std.math.constants import log2e
+from std.sys import size_of
 import gpu.primitives.warp as warp
-from gpu import thread_idx
-from gpu.globals import WARPGROUP_SIZE, WARP_SIZE
-from gpu.memory import AddressSpace, CacheEviction, fence_async_view_proxy
-from gpu.sync import (
+from std.gpu import thread_idx
+from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
+from std.gpu.memory import AddressSpace, CacheEviction, fence_async_view_proxy
+from std.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
-from gpu.compute.arch.tcgen05 import (
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
     tcgen05_fence_before,
     tcgen05_ld,
@@ -37,7 +37,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TMEM_LOWER_ROW_OFFSET,
     TmemAllocation,
 )
-from gpu.primitives.warp import _vote_nvidia_helper
+from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout._layout import row_major
 from layout import stack_allocation as tt_stack_allocation
 from layout.swizzle import make_swizzle
@@ -75,8 +75,8 @@ from nn.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.mha_operand import MHAOperand
 from nn.mha_tile_scheduler import SeqInfo
 from nn.mha_utils import OptionallyStaticInt, _is_decoding
-from utils.index import Index
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index
+from std.utils.static_tuple import StaticTuple
 
 
 @always_inline

@@ -28,19 +28,19 @@ Usage:
     bazel test //max/kernels/test/gpu/linalg:test_conv2d_sm100 --config=b200
 """
 
-from collections import Optional
-from sys import align_of
+from std.collections import Optional
+from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
-from random import rand
-from utils.index import IndexList
+from std.random import rand
+from std.utils.index import IndexList
 from nn.conv_sm100.conv2d import (
     conv2d_fprop,
     conv2d_fprop_with_residual,

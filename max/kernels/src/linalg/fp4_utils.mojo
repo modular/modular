@@ -10,15 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys._assembly import inlined_assembly
-from sys import is_nvidia_gpu, bit_width_of
-from sys.info import _is_sm_100x_or_newer, align_of
-from utils.index import IndexList
-from utils.numerics import FPUtils
-from memory import bitcast
+from std.sys._assembly import inlined_assembly
+from std.sys import is_nvidia_gpu, bit_width_of
+from std.sys.info import _is_sm_100x_or_newer, align_of
+from std.utils.index import IndexList
+from std.utils.numerics import FPUtils
+from std.memory import bitcast
 from layout import Layout, LayoutTensor
 from internal_utils._utils import ValOrDim, dynamic, static
-from builtin.simd import _convert_f32_to_float8_ue8m0
+from std.builtin.simd import _convert_f32_to_float8_ue8m0
 
 
 comptime SF_ATOM_M = (32, 4)

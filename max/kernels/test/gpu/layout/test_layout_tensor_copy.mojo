@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import simd_width_of
+from std.math import ceildiv
+from std.sys import simd_width_of
 
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
-from gpu.memory import (
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
+from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_all,
@@ -38,7 +38,7 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline

@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import prefetch
-from sys.info import align_of
-from sys.intrinsics import PrefetchOptions
+from std.math import align_up
+from std.sys import prefetch
+from std.sys.info import align_of
+from std.sys.intrinsics import PrefetchOptions
 
 from buffer.buffer import partial_simd_load, partial_simd_store
 from layout import Layout, LayoutTensor, RuntimeTuple
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from ...accumulate import _Accumulator
 from ...arch.cpu.neon_intrinsics import _neon_matmul

@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg, Set
-from math import rsqrt
-from memory import memcpy
-from random import random_ui64, seed
+from std.collections import OptionalReg, Set
+from std.math import rsqrt
+from std.memory import memcpy
+from std.random import random_ui64, seed
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -26,11 +26,11 @@ from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
-from sys import has_amd_gpu_accelerator
+from std.sys import has_amd_gpu_accelerator
 
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32

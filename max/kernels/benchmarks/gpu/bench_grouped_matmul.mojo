@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from math import ceildiv, align_up
-from sys import (
+from std.os import abort
+from std.math import ceildiv, align_up
+from std.sys import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
@@ -24,10 +24,16 @@ from sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
@@ -43,8 +49,8 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from memory import LegacyUnsafePointer
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
@@ -58,8 +64,8 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
 )
 from linalg.utils import elementwise_epilogue_type
 
-from utils import Index, IndexList
-from collections import Optional
+from std.utils import Index, IndexList
+from std.collections import Optional
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,

@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
+from std.math import iota
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn test(m: NDBuffer[mut=True, DType.int32, 2, _, DimList(4, 4)]):

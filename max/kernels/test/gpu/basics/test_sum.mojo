@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import global_idx
-from gpu.primitives import block, warp
-from gpu.globals import WARP_SIZE
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu import global_idx
+from std.gpu.primitives import block, warp
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 comptime dtype = DType.uint64
 

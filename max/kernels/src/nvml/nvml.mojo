@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements wrappers around the NVIDIA Management Library (nvml)."""
 
-from collections.string.string_slice import _to_string_list
-from os import abort
-from pathlib import Path
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
+from std.collections.string.string_slice import _to_string_list
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
 
-from memory import stack_allocation, LegacyUnsafePointer
+from std.memory import stack_allocation, LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[

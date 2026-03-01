@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
-from algorithm.functional import unswitch
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.info import is_cpu, is_gpu
-from collections import OptionalReg
+from std.algorithm.functional import unswitch
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host.info import is_cpu, is_gpu
+from std.collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -47,10 +47,10 @@ from nn.mha_utils import (
     dispatch_materialized_mask,
 )
 from nn.normalization import _rms_norm_impl
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 from tensor import InputTensor
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,

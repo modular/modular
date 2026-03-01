@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _is_sm_9x
+from std.sys.info import _is_sm_9x
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import *
 
 
 fn check_sm() -> Bool:

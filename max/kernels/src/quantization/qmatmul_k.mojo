@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from math import ceildiv
-from sys import CompilationTarget, align_of, simd_width_of, size_of
-from sys.intrinsics import llvm_intrinsic
+from std.collections import Optional
+from std.math import ceildiv
+from std.sys import CompilationTarget, align_of, simd_width_of, size_of
+from std.sys.intrinsics import llvm_intrinsic
 
-from algorithm import sync_parallelize, tile
+from std.algorithm import sync_parallelize, tile
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
@@ -25,15 +25,15 @@ from linalg.arch.cpu.vnni_intrinsics import (
 )
 from linalg.matmul import elementwise_epilogue_type
 from linalg.utils import partition_work
-from memory import (
+from std.memory import (
     alloc,
     bitcast,
     stack_allocation,
 )
 
-from runtime.asyncrt import parallelism_level
+from std.runtime.asyncrt import parallelism_level
 
-from utils.index import Index
+from std.utils.index import Index
 
 from ._utils import roundeven_to_int32
 

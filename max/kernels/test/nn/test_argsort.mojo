@@ -15,7 +15,7 @@
 from layout import Idx, TileTensor
 from layout._layout import row_major
 from nn.argsort import argsort
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn test_argsort[

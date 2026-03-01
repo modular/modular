@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import align_of
-from sys.info import CompilationTarget
+from std.math import align_up
+from std.sys import align_of
+from std.sys.info import CompilationTarget
 
 from buffer.dimlist import DimList
 from layout import Layout, LayoutTensor, RuntimeLayout
@@ -31,13 +31,13 @@ from linalg.utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 comptime M: Int = 64
 comptime N: Int = 64

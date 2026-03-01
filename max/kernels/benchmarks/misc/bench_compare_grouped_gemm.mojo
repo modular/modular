@@ -22,21 +22,27 @@ which is what you'd do without a grouped/persistent kernel. The structured
 kernel processes all groups in a single persistent launch.
 """
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
-from time import perf_counter_ns
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
+from std.time import perf_counter_ns
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from random import rand, seed
+from std.gpu.host import DeviceContext
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.random import rand, seed
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout import Layout, LayoutTensor, RuntimeLayout
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 import linalg.matmul.vendor.blas as vendor_blas
 from linalg.fp4_utils import (

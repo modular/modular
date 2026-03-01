@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 comptime overlap_with_dpl = True
 

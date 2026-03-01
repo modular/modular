@@ -30,9 +30,9 @@ The benchmark reports:
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.conv_sm100.conv2d import (
@@ -44,9 +44,9 @@ from nn.conv_sm100.conv_config import (
     Conv2dProblemShape,
 )
 from nn.conv import conv_cudnn
-from random import rand
+from std.random import rand
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn compute_conv_flops(

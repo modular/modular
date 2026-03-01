@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional, Dict
-from math import align_down, ceildiv
-from memory import LegacyUnsafePointer
+from std.collections import Optional, Dict
+from std.math import align_down, ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 
-from os import abort
-from ffi import _get_global_or_null, external_call
-from sys.info import align_of, simd_width_of
+from std.os import abort
+from std.ffi import _get_global_or_null, external_call
+from std.sys.info import align_of, simd_width_of
 
 from _cudnn.cnn_infer import (
     cudnnConvolutionForward,
@@ -54,7 +54,7 @@ from _cudnn.infer import (
     cudnnTensorFormat_t,
     cudnnTensorStruct,
 )
-from algorithm import (
+from std.algorithm import (
     elementwise,
     sync_parallelize,
     tile,
@@ -69,20 +69,20 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.dimlist import Dim, DimList
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUDA
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.host._nvidia_cuda import CUDA
+from std.gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
-from runtime.asyncrt import parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.asyncrt import parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from sys import has_nvidia_gpu_accelerator
-from sys.info import _accelerator_arch
-from gpu.host.info import B200
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.sys import has_nvidia_gpu_accelerator
+from std.sys.info import _accelerator_arch
+from std.gpu.host.info import B200
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
 from .conv_utils import (
@@ -3200,7 +3200,7 @@ fn _get_cudnn_meta(ctx: DeviceContext) raises -> UnsafePointer[CuDNNConvMeta]:
     IMPORTANT: this function _must_ be called with `ctx`'s CUcontext active via:
 
     ```mojo
-    from gpu.host import DeviceContext
+    from std.gpu.host import DeviceContext
     var ctx = DeviceContext()
     with ctx.push_context():
         ptr_meta = _get_cudnn_meta(ctx)

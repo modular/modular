@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from time.time import global_perf_counter_ns
-from gpu import block_idx, thread_idx, WARP_SIZE
-from gpu.host import DeviceContext
-from gpu import sm_id
+from std.time.time import global_perf_counter_ns
+from std.gpu import block_idx, thread_idx, WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.gpu import sm_id
 
 
 comptime MatmulWarpSpecializationWorkSpaceManager[

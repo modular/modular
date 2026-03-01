@@ -13,7 +13,7 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: test_ndbuffer_indexing

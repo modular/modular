@@ -11,20 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from os import abort
-from sys import size_of
+from std.math import iota
+from std.os import abort
+from std.sys import size_of
 
-from algorithm.functional import parallelize_over_rows
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext, HostBuffer
+from std.algorithm.functional import parallelize_over_rows
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse, human_readable_size
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @fieldwise_init

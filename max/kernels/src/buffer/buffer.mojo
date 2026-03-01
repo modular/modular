@@ -19,23 +19,28 @@ from buffer import NDBuffer
 ```
 """
 
-from math import align_down, fma, iota
-from pathlib import Path
-from sys.info import align_of, is_gpu, is_nvidia_gpu, simd_width_of, size_of
-from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
+from std.math import align_down, fma, iota
+from std.pathlib import Path
+from std.sys.info import align_of, is_gpu, is_nvidia_gpu, simd_width_of, size_of
+from std.sys.intrinsics import (
+    PrefetchOptions,
+    masked_load,
+    masked_store,
+    prefetch,
+)
 
 from buffer.dimlist import Dim, DimList, _make_tuple
-from builtin.device_passable import DevicePassable
-from memory import (
+from std.builtin.device_passable import DevicePassable
+from std.memory import (
     # Keep LegacyOpaquePointer for DevicePassable trait compatibility
     LegacyOpaquePointer,
     memset_zero,
     stack_allocation,
 )
 
-from utils._serialize import _serialize
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils._serialize import _serialize
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 comptime _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.

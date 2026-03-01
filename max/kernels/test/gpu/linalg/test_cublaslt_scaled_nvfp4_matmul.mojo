@@ -11,26 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
-from collections import OptionalReg
-from builtin.simd import _convert_f32_to_float8_ue8m0
+from std.collections import OptionalReg
+from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
-from sys import argv
-from utils import Index, IndexList
+from std.sys import argv
+from std.utils import Index, IndexList
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -39,7 +39,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
 )
 from linalg.fp4_quantization import naive_block_scaled_matmul
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 fn test_block_scaled_nvfp4_cublaslt[

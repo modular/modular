@@ -11,22 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
-from random import random_float64, seed
+from std.math import ceildiv, iota
+from std.random import random_float64, seed
 
-from algorithm.reduction import max as reduce_max
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.reduction import max as reduce_max
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
 
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False

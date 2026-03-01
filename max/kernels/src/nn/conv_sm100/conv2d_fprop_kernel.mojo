@@ -34,22 +34,22 @@ Supported configurations (Flux VAE optimized):
 - BF16/FP16 data types
 """
 
-from collections import Optional
-from math import ceildiv
+from std.collections import Optional
+from std.math import ceildiv
 
-from sys import align_of, size_of
+from std.sys import align_of, size_of
 
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
 )
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.sync import syncwarp
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.sync import syncwarp
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout as LegacyLayout
 from layout.tma_async import (
     SharedMemBarrier,
@@ -63,8 +63,8 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     static_row_major,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (

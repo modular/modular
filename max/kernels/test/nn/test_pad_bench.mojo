@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
+from std.os import abort
 
 import benchmark
-from benchmark import Unit, keep
+from std.benchmark import Unit, keep
 from layout import Coord, TileTensor
 from layout._layout import row_major
 from nn.pad import pad_constant, pad_reflect
-from python import Python
-from testing import assert_true
+from std.python import Python
+from std.testing import assert_true
 
-from utils import IndexList, product
+from std.utils import IndexList, product
 
 
 fn pretty_print(

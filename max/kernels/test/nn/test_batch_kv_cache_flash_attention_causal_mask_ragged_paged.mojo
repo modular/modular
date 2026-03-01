@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv, rsqrt
-from random import random_ui64, seed
+from std.collections import Set
+from std.math import ceildiv, rsqrt
+from std.random import random_ui64, seed
 
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -22,13 +22,13 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import alloc, memcpy
+from std.memory import alloc, memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask
-from testing import assert_almost_equal
-from sys import size_of
+from std.testing import assert_almost_equal
+from std.sys import size_of
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime replit_num_q_heads = 24

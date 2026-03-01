@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from collections import Optional
-from math import exp, isclose
-from random import rand, seed
+from std.collections import Optional
+from std.math import exp, isclose
+from std.random import rand, seed
 
-from collections import Optional
+from std.collections import Optional
 from layout import (
     Layout,
     LayoutTensor,
@@ -29,10 +29,10 @@ from layout import (
 )
 from nn.flash_attention import flash_attention, flash_attention_split_kv
 from nn.mha_mask import NullMask
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 def reference_attention_bshd[

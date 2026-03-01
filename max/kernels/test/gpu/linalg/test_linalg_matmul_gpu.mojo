@@ -13,15 +13,15 @@
 
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
 from linalg.matmul.gpu import _matmul_gpu
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn _size[rank: Int](dims: IndexList[rank, ...]) -> Int:

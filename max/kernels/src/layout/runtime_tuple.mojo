@@ -29,15 +29,15 @@ coordinate transformations (`idx2crd`, `crd2idx`), and specialized tensor operat
 like shape division and prefix products.
 """
 
-from os import abort
+from std.os import abort
 
-from builtin.dtype import _int_type_of_width, _uint_type_of_width
+from std.builtin.dtype import _int_type_of_width, _uint_type_of_width
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple, flatten
 from layout.int_tuple import idx2crd as idx2crd_int_tuple
 from layout.int_tuple import prefix_product as prefix_product_int_tuple
 from layout.int_tuple import shape_div as shape_div_int_tuple
 from layout.int_tuple import product as product_int_tuple
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn concat(var lhs: IntTuple, rhs: IntTuple) -> IntTuple:

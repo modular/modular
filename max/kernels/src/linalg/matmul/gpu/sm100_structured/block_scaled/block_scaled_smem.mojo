@@ -22,10 +22,10 @@ BlockScaledTileCore and shared with GroupedBlockScaledSmem and Grouped1D1DSmem.
 Each SMEM struct is a thin wrapper that adds the appropriate pipeline bundle.
 """
 
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 from layout import Layout
 from layout.tensor_core_async import tile_sf_layout_k_major
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,

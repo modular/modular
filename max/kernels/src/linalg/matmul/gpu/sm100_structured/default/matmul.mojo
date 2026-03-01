@@ -19,16 +19,16 @@ This module contains the CPU-side code for SM100 matrix multiplication:
 All GPU code (kernel structs, runtime functions) is in matmul_kernels.mojo.
 """
 
-from math import align_up, ceildiv
-from memory import LegacyUnsafePointer
+from std.math import align_up, ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import size_of
+from std.sys import size_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     ComptimeInt,
     Coord,
@@ -44,8 +44,8 @@ from layout._layout import RowMajorLayout, TensorLayout, row_major
 from ..structured_kernels.tile_types import create_tma_tile
 from ..structured_kernels.kernel_common import _to_batched_3d
 
-from utils.index import Index
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index
+from std.utils.static_tuple import StaticTuple
 
 from linalg.utils import (
     elementwise_compute_lambda_type,

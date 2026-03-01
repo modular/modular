@@ -23,7 +23,7 @@ from layout.runtime_layout import (
     coalesce,
     make_layout,
 )
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 def test_runtime_layout_const() raises:

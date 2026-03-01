@@ -20,15 +20,15 @@ Usage:
     writer.write(smem.c_tiles(), stage, coord, shape, elect)
 """
 
-from collections import Optional
-from memory import Pointer, UnsafePointer
-from sys import simd_width_of, size_of, align_of
+from std.collections import Optional
+from std.memory import Pointer, UnsafePointer
+from std.sys import simd_width_of, size_of, align_of
 
-from gpu import WARP_SIZE, thread_idx
-from gpu import lane_id
-from gpu import warp_id as get_warp_id
-from gpu.memory import AddressSpace, fence_async_view_proxy
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import WARP_SIZE, thread_idx
+from std.gpu import lane_id
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import AddressSpace, fence_async_view_proxy
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout,
     LayoutTensor,
@@ -46,7 +46,7 @@ from layout.tma_async import TMATensorTile
 from linalg.structuring import SMemTile
 from linalg.utils import elementwise_compute_lambda_type
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 # TileTensor-based types for C tiles
 from .tile_types import SMemTileArray2DRowMajor

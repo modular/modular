@@ -31,17 +31,17 @@ vLLM Interface:
     - pad_slot_id: int - for identifying padded entries
 """
 
-from collections import Optional
-from math import ceildiv, exp
+from std.collections import Optional
+from std.math import ceildiv, exp
 
-from algorithm import vectorize
+from std.algorithm import vectorize
 from buffer.buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 
-from memory import UnsafePointer, memcpy
+from std.memory import UnsafePointer, memcpy
 
 from layout import Layout, LayoutTensor
 from state_space.causal_conv1d import silu

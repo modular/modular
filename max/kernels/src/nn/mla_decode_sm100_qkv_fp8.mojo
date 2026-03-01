@@ -30,23 +30,23 @@ SMEM Layout (native FP8):
   barriers:   (6N+11) fixed + output barriers
 """
 
-from math import ceildiv, exp2, recip, log2
-from math.constants import log2e
-from sys import size_of
+from std.math import ceildiv, exp2, recip, log2
+from std.math.constants import log2e
+from std.sys import size_of
 import gpu.primitives.warp as warp
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     block_idx,
     thread_idx,
     warp_id,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.primitives.grid_controls import launch_dependent_grids
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from gpu.compute.arch.tcgen05 import (
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.primitives.grid_controls import launch_dependent_grids
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -56,8 +56,8 @@ from gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
     tcgen05_st,
 )
-from gpu.sync import named_barrier
-from gpu.primitives.warp import _vote_nvidia_helper
+from std.gpu.sync import named_barrier
+from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
@@ -65,15 +65,15 @@ from layout._layout import row_major
 from layout.layout import Layout
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.swizzle import make_ldmatrix_swizzle
-from memory import bitcast
+from std.memory import bitcast
 from nn.mha_fa3_utils import (
     OptionalPointer,
     KVTMATile,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from utils.numerics import get_accum_type, min_or_neg_inf
-from utils.static_tuple import StaticTuple
+from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils.static_tuple import StaticTuple
 
 from nn.sm100_attention_utils import (
     elect,

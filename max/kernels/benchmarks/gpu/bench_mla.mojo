@@ -11,22 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_dtype, env_get_int, env_get_bool
+from std.sys import env_get_dtype, env_get_int, env_get_bool
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu import *
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu import *
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention
 from nn.mla import flare_mla_decoding, flare_mla_prefill
 from nn.mha_mask import CausalMask, MaterializedMask
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn bench_decode[

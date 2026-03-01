@@ -13,16 +13,22 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from random import random_si64
+from std.random import random_si64
 
 import linalg.matmul.vendor.blas as vendor_blas
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from linalg.matmul.gpu import _matmul_gpu
-from utils import IndexList
+from std.utils import IndexList
 
 comptime epilogue_func_type = fn[
     type: DType, width: Int, *, alignment: Int = 1

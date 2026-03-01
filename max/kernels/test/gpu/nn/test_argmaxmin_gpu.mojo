@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_float64
+from std.random import random_float64
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Coord, TileTensor
 from layout._layout import row_major
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
-from testing import assert_equal
-from utils.index import IndexList
+from std.testing import assert_equal
+from std.utils.index import IndexList
 
 
 fn test_argmaxmin_gpu[

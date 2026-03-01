@@ -21,7 +21,7 @@ Measures five variants:
 5. fully fused allreduce+add+RMSNorm+FP8 (single kernel launch)
 """
 
-from sys import (
+from std.sys import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
@@ -30,7 +30,7 @@ from sys import (
     simd_width_of,
 )
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -46,19 +46,19 @@ from nn.allreduce_residual_rmsnorm_fp8 import (
     allreduce_residual_rmsnorm_fp8,
     allreduce_rmsnorm_fp8,
 )
-from collections import Optional
+from std.collections import Optional
 from comm.sync import is_p2p_enabled
-from gpu import block_idx, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu import block_idx, thread_idx
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor
 from layout._layout import row_major
 from nn.normalization import rms_norm_fused_fp8
-from runtime.asyncrt import DeviceContextPtr
-from utils import IndexList
-from utils.index import Index
-from utils.numerics import max_finite
+from std.runtime.asyncrt import DeviceContextPtr
+from std.utils import IndexList
+from std.utils.index import Index
+from std.utils.numerics import max_finite
 
 
 @always_inline

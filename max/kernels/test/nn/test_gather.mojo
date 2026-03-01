@@ -16,7 +16,7 @@
 # compilation. The test can also be used to check the assembly to see
 # if compiler generates proper SIMD instructions and unrolling.
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
 from layout._layout import row_major
 from layout import TileTensor
