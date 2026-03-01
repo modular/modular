@@ -1026,7 +1026,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
   float6: async fn(Int) capturing -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> pos_vararg, ?, {{.*}}) throws -> i1
+  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg, ?, {{.*}}) throws -> i1
   float7: def(*Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, {{.*}}StringLiteral <:string "foo">
@@ -1055,9 +1055,8 @@ struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
 
 # CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> pos_vararg>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK-NEXT: %b_0 = lit.var.decl "b"
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)
-    # CHECK-NEXT: lit.ref.store [[TMP]], %b_0
+    # CHECK: %b_0 = lit.var.decl "b"
+    # CHECK: lit.call {{.*}}VariadicListMem{{.*}}__init__{{.*}}(%b, %b_0)
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
     comptime v0 = a[2]
 
@@ -1065,8 +1064,8 @@ fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK: [[TMP:%.*]] = kgen.param.constant: !Int = <variadic_get(:variadic<!Int> a, 3)>
     # CHECK: lit.ref.store [[TMP]], %v1
     var v1 = a[3]
-    # CHECK: %[[LIST:.*]] = lit.ref.load %b_0
-    # CHECK: lit.call {{.*}}__getitem__{{.*}}(%[[LIST]],
+    # CHECK: lit.ref.immut %b_0
+    # CHECK: {{.*}}__getitem__{{.*}}(%{{.*}}, %{{.*}})
     var v2 = b[idx]
 
 

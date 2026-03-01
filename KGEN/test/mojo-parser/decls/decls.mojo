@@ -432,9 +432,9 @@ struct Outer[X: Int]:
         pass
 
 
-# CHECK-LABEL: lit.fn @"variadics({{.*}}Int*)"(%a: !kgen.variadic<!Int> pos_vararg)
+# CHECK-LABEL: lit.fn @"variadics({{.*}}Int*)"{{.*}}(%a: !kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg)
 fn variadics(*a: Int):
-    # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__
+    # CHECK: lit.call {{.*}}VariadicListMem{{.*}}__init__
     pass
 
 
@@ -455,28 +455,27 @@ struct VarArgsParameterizedStruct[*Is: Int]:
 
 # CHECK-LABEL: lit.fn @"callVariadic{{.*}}"<p: !Int>
 fn callVariadic[p: Int](x: Int):
-    # CHECK: %variadic = kgen.param.constant: variadic<!Int> = <[]>
-    # CHECK: call {{.*}}@"variadics({{.*}}Int*)"(%variadic)
+    # CHECK: %variadic = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
+    # CHECK: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}(%variadic)
     variadics()
     # CHECK: %[[C7:.*]] = kgen.param.constant{{.*}}7
     # CHECK: %[[C11:.*]] = kgen.param.constant{{.*}}11
-    # CHECK: %[[VARIADIC:.*]] = pop.variadic.create [%[[C7]], %[[C11]]]
-    # CHECK: call {{.*}}@"variadics({{.*}}Int*)"(%[[VARIADIC]])
+    # CHECK: %[[VARIADIC:.*]] = pop.variadic.create [{{.*}}]
+    # CHECK: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}(%[[VARIADIC]])
     variadics(7, 11)
-    # CHECK: %[[VAR:.*]] = pop.variadic.splat 1, %x
-    # CHECK: call {{.*}}@"variadics({{.*}}Int*)"(%[[VAR]])
+    # CHECK: %[[VAR:.*]] = pop.variadic.splat 1, %{{.*}}
+    # CHECK: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}(%[[VAR]])
     variadics(x)
-    # CHECK: %[[CST:.*]] = kgen.param.constant: !Int
-    # CHECK: %[[VAR:.*]] = pop.variadic.create [%x, %[[CST]]]
-    # CHECK: call {{.*}}@"variadics({{.*}}Int*)"(%[[VAR]])
+    # CHECK: %[[VAR:.*]] = pop.variadic.create [{{.*}}]
+    # CHECK-NEXT: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}(%[[VAR]])
     variadics(x, 1)
 
-    # CHECK: @"variadics({{.*}}Int*)", []
+    # CHECK: {{.*}}@"variadics({{.*}}Int*)"), []
     comptime EmptyVariadic = variadics()
-    # CHECK: @"variadics({{.*}}Int*)", [p, {1}]
+    # CHECK: {{.*}}@"variadics({{.*}}Int*)"){{.*}}[store_to_mem(p), store_to_mem({1})]
     comptime NonEmptyVariadic = variadics(p, 1)
 
-    # CHECK: @"parameterizedVariadic{{.*}}"<:type !Int>
+    # CHECK: lit.call {{.*}}parameterizedVariadic{{.*}}<:type !Int>
     parameterizedVariadic(1, 2)
     # CHECK: lit.call {{.*}}@ParameterizedStruct::@"__init__({{.*}}<:type !Int>
     _ = ParameterizedStruct(3)

@@ -3042,6 +3042,53 @@ VariadicSizeOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// VariadicLoadValuesOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess VariadicLoadValuesOp::interpret(ArrayRef<Attribute> operands,
+                                                   InterpreterState &state) {
+
+  auto variadic = dyn_cast_if_present<KGEN::VariadicAttr>(operands[0]);
+  if (!variadic)
+    return ErrorTree(getLoc(), "non-const input");
+
+  auto elementType = cast<VariadicType>(getType()).getElementType();
+
+  SmallVector<TypedAttr> values;
+  for (auto ptr : variadic.getValues()) {
+    ErrorOr<Attribute> result =
+        state.readAttributeFromPointer(ptr, elementType);
+    if (result.isError())
+      return ErrorTree(getLoc(), result.takeError());
+    values.push_back(cast<TypedAttr>(result.takeValue()));
+  }
+  state.mapResults(VariadicAttr::get(values, getType()));
+  return success();
+}
+
+ErrorTreeOrSuccess
+VariadicLoadValuesOp::parametric_interpret(ArrayRef<Attribute> operands,
+                                           ParametricInterpreterState &state) {
+  auto variadic = dyn_cast_if_present<KGEN::VariadicAttr>(operands[0]);
+  if (!variadic)
+    return ErrorTree(getLoc(), "non-const input");
+
+  auto elementType =
+      cast<VariadicType>(state.getReboundType(getType())).getElementType();
+
+  SmallVector<TypedAttr> values;
+  for (auto ptr : variadic.getValues()) {
+    ErrorOr<Attribute> result =
+        state.readAttributeFromPointer(ptr, elementType);
+    if (result.isError())
+      return ErrorTree(getLoc(), result.takeError());
+    values.push_back(cast<TypedAttr>(result.takeValue()));
+  }
+  state.mapResults(VariadicAttr::get(values, getType()));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // StringAddressOp
 //===----------------------------------------------------------------------===//
 

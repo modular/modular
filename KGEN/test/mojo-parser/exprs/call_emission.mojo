@@ -182,18 +182,18 @@ fn takes_variadic_and_kw_only_args(
 
 # CHECK-LABEL: lit.fn @"test_variadic_and_kw_only_args
 fn test_variadic_and_kw_only_args(x: Int):
-    # CHECK-DAG: %[[VAR:.*]] = kgen.param.constant: variadic<!Int> = <[]>
+    # CHECK-DAG: %[[VAR:.*]] = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
     # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
-    # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %[[ZERO]])
+    # CHECK-DAG: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"{{.*}}(%x, %x, %[[VAR]], %x, %[[ZERO]])
     takes_variadic_and_kw_only_args(x, x, c=x)
 
-    # CHECK: %[[VAR:.*]] = kgen.param.constant: variadic<!Int> = <[]>
-    # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %x)
+    # CHECK-DAG: %[[VAR:.*]] = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
+    # CHECK-DAG: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"{{.*}}(%x, %x, %[[VAR]], %x, %x)
     takes_variadic_and_kw_only_args(x, x, d=x, c=x)
 
-    # CHECK-DAG: %[[VAR:.*]] = pop.variadic.splat  2, %x : !kgen.variadic<!Int>
+    # CHECK-DAG: %[[VAR:.*]] = pop.variadic.create [{{.*}}]
     # CHECK-DAG: %[[ZERO:.*]] = kgen.param.constant: !Int = <{0}>
-    # CHECK-NEXT: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"(%x, %x, %[[VAR]], %x, %[[ZERO]])
+    # CHECK-DAG: lit.call {{.*}}@"takes_variadic_and_kw_only_args{{.*}}"{{.*}}(%x, %x, %[[VAR]], %x, %[[ZERO]])
     takes_variadic_and_kw_only_args(x, x, x, x, c=x)
 
 
