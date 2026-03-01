@@ -9,7 +9,7 @@
 # RUN: mojo build -Xlinker $(dirname %s)/libc_abi_reference.lo %s -o %t.dir/test_mixed
 # RUN: %t.dir/test_mixed | FileCheck %s
 
-from ffi import external_call
+from std.ffi import external_call
 
 
 # ============================================================================

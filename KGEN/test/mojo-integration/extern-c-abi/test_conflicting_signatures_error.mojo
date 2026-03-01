@@ -14,7 +14,7 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 # (not --verify-diagnostics: the error is emitted inside stdlib/ffi/__init__.mojo, not this file)
 
-from ffi import external_call
+from std.ffi import external_call
 
 
 fn call_with_int32():

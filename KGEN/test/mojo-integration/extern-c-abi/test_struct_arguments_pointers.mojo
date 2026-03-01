@@ -8,8 +8,8 @@
 # RUN: mojo build -Xlinker $(dirname %s)/libc_abi_reference.lo %s -o %t.dir/test_pointers
 # RUN: %t.dir/test_pointers | FileCheck %s
 
-from ffi import external_call
-from memory import UnsafePointer, alloc
+from std.ffi import external_call
+from std.memory import UnsafePointer, alloc
 
 
 # ============================================================================
