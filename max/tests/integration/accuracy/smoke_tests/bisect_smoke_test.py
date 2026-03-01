@@ -50,13 +50,13 @@ def find_repo_root() -> Path:
 
 def clear_caches() -> None:
     """Clear build caches to ensure clean state after switching commits."""
-    repo_root = find_repo_root()
-    cache_dir = repo_root / ".derived/cache"
-    if cache_dir.exists():
-        print(f"Clearing cache: {cache_dir}")
-        shutil.rmtree(cache_dir)
-    else:
-        print(f"Cache directory does not exist: {cache_dir}")
+    derived = find_repo_root() / ".derived"
+    if not derived.exists():
+        return
+    for d in sorted(derived.iterdir()):
+        if d.is_dir() and "cache" in d.name:
+            print(f"Clearing cache: {d}")
+            shutil.rmtree(d)
 
 
 def run_smoke_test(model: str, output_path: Path) -> bool | None:
