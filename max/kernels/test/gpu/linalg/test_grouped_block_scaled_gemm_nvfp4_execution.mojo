@@ -118,8 +118,16 @@ fn test_grouped_kernel_nvfp4_single_group[
     # Host allocations
     var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c_host_ptr = c_host_managed.tensor[update=False]().ptr
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c_host_ref_ptr = c_host_ref_managed.tensor[update=False]().ptr
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -428,8 +436,6 @@ fn test_grouped_kernel_nvfp4_single_group[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
     problem_sizes_host.free()
@@ -438,18 +444,6 @@ fn test_grouped_kernel_nvfp4_single_group[
     c_ptrs_host.free()
     sfa_ptrs_host.free()
     sfb_ptrs_host.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
-    _ = a_scales_device^
-    _ = b_scales_device^
-    _ = problem_sizes_device^
-    _ = a_ptrs_device^
-    _ = b_ptrs_device^
-    _ = c_ptrs_device^
-    _ = sfa_ptrs_device^
-    _ = sfb_ptrs_device^
 
 
 fn test_grouped_kernel_nvfp4_multi_group[
@@ -549,8 +543,18 @@ fn test_grouped_kernel_nvfp4_multi_group[
     # ========== Group 0 allocations ==========
     var a0_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
     var b0_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c0_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c0_ref_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c0_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c0_host = c0_host_managed.tensor[update=False]().ptr
+    var c0_ref_host_managed = ManagedLayoutTensor[
+        c_type, Layout(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c0_ref_host = c0_ref_host_managed.tensor[update=False]().ptr
     var sfa0_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
     var sfb0_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
 
@@ -564,8 +568,18 @@ fn test_grouped_kernel_nvfp4_multi_group[
     # ========== Group 1 allocations ==========
     var a1_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
     var b1_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c1_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c1_ref_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c1_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c1_host = c1_host_managed.tensor[update=False]().ptr
+    var c1_ref_host_managed = ManagedLayoutTensor[
+        c_type, Layout(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c1_ref_host = c1_ref_host_managed.tensor[update=False]().ptr
     var sfa1_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
     var sfb1_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
 
@@ -865,14 +879,10 @@ fn test_grouped_kernel_nvfp4_multi_group[
     # Cleanup
     a0_host.free()
     b0_host.free()
-    c0_host.free()
-    c0_ref_host.free()
     sfa0_host.free()
     sfb0_host.free()
     a1_host.free()
     b1_host.free()
-    c1_host.free()
-    c1_ref_host.free()
     sfa1_host.free()
     sfb1_host.free()
     problem_sizes_host.free()
@@ -881,24 +891,6 @@ fn test_grouped_kernel_nvfp4_multi_group[
     c_ptrs_host.free()
     sfa_ptrs_host.free()
     sfb_ptrs_host.free()
-    _ = a0_device^
-    _ = b0_device^
-    _ = c0_device^
-    _ = c0_ref_device^
-    _ = sfa0_device^
-    _ = sfb0_device^
-    _ = a1_device^
-    _ = b1_device^
-    _ = c1_device^
-    _ = c1_ref_device^
-    _ = sfa1_device^
-    _ = sfb1_device^
-    _ = problem_sizes_device^
-    _ = a_ptrs_device^
-    _ = b_ptrs_device^
-    _ = c_ptrs_device^
-    _ = sfa_ptrs_device^
-    _ = sfb_ptrs_device^
 
 
 def main() raises:

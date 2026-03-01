@@ -37,6 +37,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._utils import ManagedLayoutTensor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 
 from utils.index import Index, IndexList
@@ -126,13 +127,19 @@ fn test_grouped_gemm_epilogue[
     var b_host = NDBuffer[b_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
+    var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
+    )
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
     var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
+        c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
     var c_host_original_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
     var c_host_original = NDBuffer[c_type, 2, _, static_c_shape](
@@ -250,7 +257,7 @@ fn test_grouped_gemm_epilogue[
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device, c_host.data)
     ctx.enqueue_copy(sfa_device, sfa_host_ptr)
     ctx.enqueue_copy(sfb_device, sfb_host_ptr)
 
@@ -379,8 +386,8 @@ fn test_grouped_gemm_epilogue[
     ctx.synchronize()
 
     # Copy results back
-    ctx.enqueue_copy(c_host_ptr, c_device)
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.enqueue_copy(c_host.data, c_device)
+    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
     ctx.synchronize()
 
     # Apply epilogue lambda on CPU to reference
@@ -421,8 +428,6 @@ fn test_grouped_gemm_epilogue[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     c_host_original_ptr.free()
     sfa_host_ptr.free()
     sfb_host_ptr.free()
@@ -432,18 +437,6 @@ fn test_grouped_gemm_epilogue[
     c_ptrs_host.free()
     sfa_ptrs_host.free()
     sfb_ptrs_host.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
-    _ = sfa_device^
-    _ = sfb_device^
-    _ = problem_sizes_device^
-    _ = a_ptrs_device^
-    _ = b_ptrs_device^
-    _ = c_ptrs_device^
-    _ = sfa_ptrs_device^
-    _ = sfb_ptrs_device^
 
 
 def main() raises:

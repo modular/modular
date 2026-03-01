@@ -271,10 +271,6 @@ def test_cpasync_wgmma[
             )
 
     # print(c.tensor())
-    _ = a^
-    _ = b^
-    _ = c^
-    _ = c_ref^
 
 
 def main() raises:

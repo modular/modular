@@ -24,8 +24,9 @@ from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
 from collections import OptionalReg
-from layout import Layout, LayoutTensor, IntTuple
+from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._utils import ManagedLayoutTensor
 from sys import argv
 from utils import Index, IndexList
 from linalg.fp4_utils import (
@@ -170,13 +171,23 @@ fn test_scaled_mxfp8_cublaslt[
     var b_host = NDBuffer[input_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[output_type]].alloc(c_size)
-    var c_host = NDBuffer[output_type, 2, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
+    var c_host_managed = ManagedLayoutTensor[
+        output_type, Layout(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[output_type]].alloc(c_size)
+    var c_host = NDBuffer[output_type, 2, _, static_c_shape](
+        c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
+    )
+    var c_host_ref_managed = ManagedLayoutTensor[
+        output_type, Layout(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
     var c_host_ref = NDBuffer[output_type, 2, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
+        c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[input_type](a_size)
@@ -268,7 +279,7 @@ fn test_scaled_mxfp8_cublaslt[
         c_row_major=True,
     )
 
-    ctx.enqueue_copy(c_host_ptr, c_device)
+    ctx.enqueue_copy(c_host.data, c_device)
 
     var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
     naive_block_scaled_matmul[
@@ -284,7 +295,7 @@ fn test_scaled_mxfp8_cublaslt[
         ctx,
     )
 
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
 
     ctx.synchronize()
 
@@ -299,16 +310,8 @@ fn test_scaled_mxfp8_cublaslt[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
-    _ = a_scales_device^
-    _ = b_scales_device^
 
     _ = a_scales
     _ = b_scales

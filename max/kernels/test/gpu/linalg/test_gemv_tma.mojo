@@ -34,8 +34,9 @@ from gpu.memory import (
 from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import PipelineState, SharedMemBarrier
@@ -346,11 +347,19 @@ def test_gemv_tma[
     var b_host = NDBuffer[dtype, 1, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
+    var c_host_managed = ManagedLayoutTensor[dtype, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c_host_ptr = c_host_managed.tensor[update=False]().ptr
     var c_host = NDBuffer[dtype, 2, _, static_c_shape](
         c_host_ptr, dynamic_c_shape
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(c_size)
+    var c_host_ref_managed = ManagedLayoutTensor[dtype, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
+    var c_host_ref_ptr = c_host_ref_managed.tensor[update=False]().ptr
     var c_host_ref = NDBuffer[dtype, 2, _, static_c_shape](
         c_host_ref_ptr, dynamic_c_shape
     )
@@ -469,12 +478,6 @@ def test_gemv_tma[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 def main() raises:

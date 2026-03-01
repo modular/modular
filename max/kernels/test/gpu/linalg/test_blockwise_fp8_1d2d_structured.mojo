@@ -35,6 +35,7 @@ from layout import (
 )
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._utils import ManagedLayoutTensor
 from layout._layout import row_major
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     GMEMLayout1D,
@@ -134,8 +135,14 @@ def test_blockwise_fp8_1d2d_structured[
     # Host allocations
     var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host_managed = ManagedLayoutTensor[c_type, c_layout](
+        RuntimeLayout[c_layout].row_major(IndexList[2](total_num_tokens, N)),
+        ctx,
+    )
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, c_layout](
+        RuntimeLayout[c_layout].row_major(IndexList[2](total_num_tokens, N)),
+        ctx,
+    )
     var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
         num_active_experts + 1
     )
@@ -167,11 +174,11 @@ def test_blockwise_fp8_1d2d_structured[
         RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, N, K)),
     )
     var c_host = LayoutTensor[c_type, c_layout](
-        c_host_ptr,
+        c_host_managed.tensor[update=False]().ptr,
         RuntimeLayout[c_layout].row_major(dynamic_c_shape),
     )
     var c_host_ref = LayoutTensor[c_type, c_layout](
-        c_host_ref_ptr,
+        c_host_ref_managed.tensor[update=False]().ptr,
         RuntimeLayout[c_layout].row_major(dynamic_c_shape),
     )
     var a_scales_host = LayoutTensor[DType.float32, a_scales_layout](
@@ -229,8 +236,8 @@ def test_blockwise_fp8_1d2d_structured[
     # Copy to device
     ctx.enqueue_copy(a_device_buffer, a_host_ptr)
     ctx.enqueue_copy(b_device_buffer, b_host_ptr)
-    ctx.enqueue_copy(c_device_buffer, c_host_ptr)
-    ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
+    ctx.enqueue_copy(c_device_buffer, c_host.ptr)
+    ctx.enqueue_copy(c_device_ref_buffer, c_host_ref.ptr)
     ctx.enqueue_copy(a_offsets_device_buffer, a_offsets_host_ptr)
     ctx.enqueue_copy(expert_ids_device_buffer, expert_ids_host_ptr)
     ctx.enqueue_copy(a_scales_device_buffer, a_scales_host_ptr)
@@ -384,8 +391,8 @@ def test_blockwise_fp8_1d2d_structured[
     ctx.synchronize()
 
     # ===== Compare results =====
-    ctx.enqueue_copy(c_host_ptr, c_device_buffer)
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref_buffer)
+    ctx.enqueue_copy(c_host.ptr, c_device_buffer)
+    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref_buffer)
     ctx.synchronize()
 
     var rtol = 1e-2
@@ -405,22 +412,11 @@ def test_blockwise_fp8_1d2d_structured[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     a_offsets_host_ptr.free()
     expert_ids_host_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
     expert_scales_host_ptr.free()
-    _ = a_device_buffer^
-    _ = b_device_buffer^
-    _ = c_device_buffer^
-    _ = c_device_ref_buffer^
-    _ = a_offsets_device_buffer^
-    _ = expert_ids_device_buffer^
-    _ = a_scales_device_buffer^
-    _ = b_scales_device_buffer^
-    _ = expert_scales_device_buffer^
 
 
 def main() raises:
