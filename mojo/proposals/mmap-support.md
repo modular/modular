@@ -42,8 +42,16 @@ bytes) is fundamentally different from `FileHandle`'s read/write/seek API.
 
 ## Proposal
 
-A new `std/mmap` package with an RAII `MmapRegion` struct and a `mmap_file()`
-convenience function.
+Two layers, following the existing stdlib pattern (e.g. thin wrappers in
+`sys/_libc.mojo` used internally by `FileHandle`, `Process`, etc.):
+
+1. **Low-level thin wrappers** in `sys/_libc.mojo` — `@always_inline`
+   functions around `mmap`, `munmap`, `msync`, `mprotect`, and `madvise`.
+   Private to the stdlib, matching the existing `close()`, `write()`,
+   `pipe()`, etc. in the same file.
+
+2. **Public RAII API** in a new `std/mmap` package — `MmapRegion` struct
+   and `mmap_file()` convenience function.
 
 ### `MmapRegion`
 
@@ -86,23 +94,14 @@ region.
 
 ### Constants
 
-Standard POSIX constants, with `platform_map` where values differ:
+Standard POSIX constants (`PROT_*`, `MAP_SHARED`, `MAP_PRIVATE`, `MAP_FIXED`,
+`MS_*`), plus Linux-specific flags (`MAP_HUGETLB`, `MAP_LOCKED`,
+`MAP_POPULATE`, etc.) and `MADV_*` constants for `madvise`.
 
-```mojo
-comptime PROT_NONE  = 0x0
-comptime PROT_READ  = 0x1
-comptime PROT_WRITE = 0x2
-comptime PROT_EXEC  = 0x4
-
-comptime MAP_SHARED    = 0x01
-comptime MAP_PRIVATE   = 0x02
-comptime MAP_FIXED     = 0x10
-comptime MAP_ANONYMOUS = platform_map[T=Int, "MAP_ANONYMOUS", linux=0x20, macos=0x1000]()
-
-comptime MS_ASYNC      = 0x01
-comptime MS_INVALIDATE = 0x02
-comptime MS_SYNC       = platform_map[T=Int, "MS_SYNC", linux=0x04, macos=0x10]()
-```
+Platform-differing values use `platform_map`. Linux-only flags use
+`platform_map` with only `linux=` specified (compile error on macOS),
+following the pattern in `sys/_libc_errno.mojo` (e.g. `ECHRNG`,
+`EL2NSYNC`).
 
 ## Examples
 
@@ -136,7 +135,10 @@ buf[0] = 42
 
 - **Python-style `mmap.mmap` with `read()`/`write()`/`seek()`**: Higher-level
   than needed for a stdlib primitive. Can be built on top of `MmapRegion`.
-- **Folding into `FileHandle`**: Discussed above — mmap's lifetime and access
-  model are too different from fd-based I/O.
+- **Folding into `FileHandle`**: mmap's lifetime and access model are too
+  different from fd-based I/O.
 - **Requiring `FileHandle` instead of raw fd**: Would prevent anonymous
   mappings and limit flexibility when the caller already has an fd.
+- **Exposing raw syscall wrappers as public API**: The stdlib keeps thin libc
+  wrappers private (`sys/_libc.mojo`), matching Rust's `memmap2`, Go's
+  `syscall.Mmap`, and Python's `mmap` — all use all-or-nothing RAII.
