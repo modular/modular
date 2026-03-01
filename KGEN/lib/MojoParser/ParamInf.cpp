@@ -638,12 +638,6 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
   // Determine if we can construct the requested type given the existing value
   // we have.  If so, get the type inferred signature of the init method that
   // would make it work.
-  IREmitter emitter(getDeclScope(), ExprContext::EC_CallArgValue);
-
-  // If this is a struct type, try to infer by implicit conversion. Non-struct
-  // type should have been handled above by `canZeroCostConvert` if possible.
-  // `canConstructType` call below looks up `__init__`, which does not make
-  // sense on non-struct type either.
   if (sugarIsa<StructType>(expectedType)) {
     // The expected type may be parameterized, and that type may both have
     // parameters that we are trying to infer as well as parameters that are
@@ -657,13 +651,13 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
     // contain unbound parameters, replacing them with UnboundAttr so inference
     // can find them.
     auto nonParamType =
-        expectedType.getWithUnknownParametersReplaced(emitter.shared);
+        expectedType.getWithUnknownParametersReplaced(getShared());
     FailureOr<PValue> pValue = OverloadSet::canConstructType(
         nonParamType,
         CallOperands(CallSyntax::kImplicitConvert, operand.expr,
                      {{argVal, operand.expr}}),
-        emitter.getDeclScope());
-    if (llvm::failed(pValue)) {
+        getDeclScope());
+    if (failed(pValue)) {
       auto &diag = getDiag(operand.expr->getLoc());
       diag << "cannot convert to type with a previously diagnosed error";
       return failure();
