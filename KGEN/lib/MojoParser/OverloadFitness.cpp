@@ -329,19 +329,6 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
   ASTType expectedRVType =
       RefType::stripRefConvention(expectedType, expectedConvention);
 
-  /// This creates and returns an instance of a diagnostic.
-  auto getDiag = [&]() -> MojoInflightDiag {
-    llvm_unreachable("Operand convertibility should have been guaranteed by "
-                     "parameter inference");
-  };
-
-  auto emitWrongTypeDiag = [&](ASTType expectedType) -> MojoInflightDiag {
-    auto diag = getDiag();
-    ::emitWrongTypeDiag(diag, operand, expectedType, argIdx, argListAttr,
-                        callable.syntax, callable.getShared());
-    return diag;
-  };
-
   // Allow overloading on "owned" vs "by-ref" arguments.
   // If the argument convention is owned but the operand is not an RValue then
   // we'll need to copy the value (or this is entirely invalid).  If the
@@ -379,37 +366,16 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
   case ArgConvention::ByRefError: {
     // The actual value must be an lvalue if callee takes things by-ref.
     auto argVal = operand.ir.getIfLValue();
-    if (!argVal) {
-      auto diag = getDiag();
-      if ((callable.syntax == CallSyntax::kMethodCall ||
-           callable.syntax == CallSyntax::kMethodCallSynthetic) &&
-          argIdx == 0) {
-        diag << "invalid use of mutating method on rvalue of type ";
-        if (ASTType type = operand.ir.getRValueTypeIfResolvable())
-          diag << type;
-        else
-          printUValueTypeInfo(operand.ir, diag);
-      } else {
-        diag << "value passed to mutable argument "
-             << argListAttr.getPogs()[argIdx].getName() << " must be mutable";
-      }
-      diag << operand.expr->getRange();
-      return std::move(diag);
-    }
+    assert(argVal && "Checked by param inference already");
 
     // If this is a wildcard type, we can match any operand.
     if (sugarIsa<NameLookupArgWildcardType>(argVal.getRValueType()))
       return {}; // Success.
 
     // ByRef argument types must exactly match, no conversions are allowed.
-    if (!argVal.getRValueType().isEqualCanon(expectedRVType)) {
-      auto diag = getDiag();
-      diag << "l-value of type " << operand.ir.getIfLValue().getRValueType()
-           << " cannot be converted to reference of type "
-           << expectedType.getReferenceElementType()
-           << operand.expr->getRange();
-      return std::move(diag);
-    }
+    assert(argVal.getRValueType().isEqualCanon(expectedRVType) &&
+           "Checked by param inference already");
+
     // Notice if a register-passable type is being passed in-memory. This allows
     // 'mut' arguments overloads to be more expensive than borrowed.
     payload.numMismatchedConventions +=
@@ -420,13 +386,8 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
   case ArgConvention::MutRef: {
     // If we are binding to something that is already a reference, check for
     // compatibility of the references and we're done.
-    if (operand.ir.isMValue()) {
-      RefType valueRefType = operand.ir.getMValueType();
-      if (IREmitter::canZeroCostConvert(valueRefType, expectedType, shared))
-        return {}; // Success.
-      // Otherwise this is the wrong type for the argument.
-      return emitWrongTypeDiag(expectedType);
-    }
+    if (operand.ir.isMValue())
+      return {}; // Checked by param inference already.
 
     // Otherwise, we are binding something like a PValue or SRValue to a
     // reference argument, which doesn't have a origin.  This is a problem
@@ -439,13 +400,8 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
     // One detail is how we do this: we bind these arguments to immutable
     // temporaries, because we specifically do NOT want 'ref' arguments with
     // parametric mutability to treat these things as mutable.
-    if (sugarCast<RefType>(expectedType).isMutableKnown(true)) {
-      auto diag = getDiag();
-      diag << "mutable reference argument "
-           << argListAttr.getPogs()[argIdx].getName()
-           << "cannot bind to temporary value";
-      return diag;
-    }
+    assert(!sugarCast<RefType>(expectedType).isMutableKnown(true) &&
+           "Checked by param inference already");
 
     // Remember that this argument needs to be emitted.
     argsNeedingOrigins.resize(argIdx + 1);
@@ -473,20 +429,8 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
   // type.
   if (!argVal) {
     if (auto initValue = operand.ir.getIfInitializer()) {
-      IREmitter emitter(declScope, ExprContext::EC_CallArgValue);
-      CallOperands operands =
-          initValue->getOperandsForInferredType(expectedRVType, emitter);
-
-      // Initializer lists are good if we can construct the expected type.
-      FailureOr<PValue> initFn = OverloadSet::canConstructType(
-          expectedRVType, std::move(operands), declScope);
-      // If there were declaration errors, assume construction is possible
-      // to avoid spurious errors.
-      bool valid = (bool)failed(initFn) || initFn.value();
-      // If so, all is good, if not, we fail.
-      if (valid)
-        return {}; // Success.
-      return emitWrongTypeDiag(expectedRVType);
+      // Checked by param inference already.
+      return {};
     }
 
     auto orValue = operand.ir.getIfOverloadSet();
@@ -494,15 +438,8 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
 
     // Try to refine the OverloadSetUValue into a PValue.
     argVal = orValue->getDirectSymbol(expectedRVType, declScope);
-    if (!argVal)
-      return emitWrongTypeDiag(expectedRVType);
-
-    // If we have a reference to an overloaded method like foo(a.method),
-    // then we can't resolve it.
-    // TODO(partial application => closures): Given we just resolved argVal,
-    // we could form the "a.method" expression with a closure.
-    if (orValue->baseValue) // Cannot merge base value.
-      return emitWrongTypeDiag(expectedRVType);
+    assert(argVal && !orValue->baseValue &&
+           "Checked by param inference already");
   }
 
   ASTType argType = argVal.getRValueType();
@@ -543,8 +480,7 @@ std::optional<MojoInflightDiag> OverloadFitness::checkOneOperand(
     return {}; // Success.
   }
 
-  // Otherwise this is the wrong type for the argument.
-  return emitWrongTypeDiag(expectedRVType);
+  llvm_unreachable("Checked by param inference already");
 }
 
 bool OverloadFitness::isBetter(const OverloadFitness &other) const {
