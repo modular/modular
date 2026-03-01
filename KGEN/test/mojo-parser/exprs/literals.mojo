@@ -90,17 +90,17 @@ fn test_list_literal():
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]], %a)
     var a = [1, 2, 3]
 
-    # CHECK: [[TMP1:%.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK-NEXT: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
-    # CHECK-NEXT: [[TMP3:%.*]] = kgen.param.constant: !Int = <{3}>
-    # CHECK-NEXT: [[VARIADIC:%.*]] = pop.variadic.create [[[TMP1]], [[TMP2]], [[TMP3]]]
+    # CHECK-DAG: [[TMP1:%.*]] = kgen.param.constant: !Int = <{1}>
+    # CHECK-DAG: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
+    # CHECK-DAG: [[TMP3:%.*]] = kgen.param.constant: !Int = <{3}>
+    # CHECK-DAG: [[VARIADIC:%.*]] = pop.variadic.create [{{.*}}]
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
     # CHECK-NEXT: lit.call {{.*}}@IntList::@"__init__{{.*}}([[VARIADIC]], [[TUP_TMP]])
     var b: IntList = [1, 2, 3]
 
-    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!Int> = <[]>
+    # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: variadic<!lit.ref<!Int, {{.*}}>> = <[]>
     # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:variadic<!AnyType> []>)
     # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
     # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]

@@ -1667,7 +1667,9 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     // We can pass trivial register borrowed arguments in a register.  We cannot
     // pass non-trivial ones because we cannot diagnose ownership and have other
     // lifetime issues.
-    if (conv == TypeConvention::RegisterPassableTrivial)
+    if (conv == TypeConvention::RegisterPassableTrivial &&
+        // Positional variadics are always passed in memory.
+        arg.variadicKind != VariadicKind::PosVarArg)
       arg.kgenConvention = ArgConvention::ReadReg;
     break;
   }

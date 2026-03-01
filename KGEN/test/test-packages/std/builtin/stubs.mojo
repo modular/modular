@@ -896,10 +896,6 @@ struct VariadicList[type: TrivialRegisterPassable](TrivialRegisterPassable):
     var value: Self._mlir_type
 
     @implicit
-    fn __init__(out self, *value: Self.type):
-        self = value
-
-    @implicit
     fn __init__(out self, value: Self._mlir_type):
         self.value = value
 

@@ -12,9 +12,8 @@
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # CHECK-LABEL: lit.fn @"variadic_kwargs
-# CHECK-SAME: "[mut [[LT:.*]]](
-# CHECK-SAME: %a: !Int, %b: !Int, %args: !kgen.variadic<!Int> pos_vararg, *, %c: !Int, %d: !Int,
-# CHECK-SAME: %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!ImplicitlyCopyable !Int>>, mut [[LT]]> owned_in_mem|kw_vararg)
+# CHECK-SAME: %a: !Int, %b: !Int, %args: !kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg, *, %c: !Int, %d: !Int,
+# CHECK-SAME: %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!ImplicitlyCopyable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg)
 fn variadic_kwargs(
     a: Int, b: Int, *args: Int, c: Int, d: Int, **kwargs: Int
 ):
@@ -26,7 +25,7 @@ def variadic_kwargs_def_with_type(**kwargs: Int) raises:
     pass
 
 
-# CHECK-SAME: "[mut [[LT:.*]], {{.*}}](*, %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!ImplicitlyCopyable !Int>>, mut [[LT]]> owned_in_mem|kw_vararg,
+# CHECK-SAME: (*, %kwargs: !lit.ref<!lit.struct<#OwnedKwargsDict <:!ImplicitlyCopyable !Int>>, mut {{.*}}> owned_in_mem|kw_vararg,
 fn takes_int_variadic_kwargs(**kwargs: Int):
     pass
 
