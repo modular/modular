@@ -42,7 +42,7 @@ def register_all_models() -> None:
     from .exaone import exaone_arch
     from .exaone_modulev3 import exaone_modulev3_arch
     from .flux1 import flux1_arch
-    from .flux2 import flux2_arch
+    from .flux2 import flux2_arch, flux2_klein_arch
     from .gemma3 import gemma3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gpt_oss import gpt_oss_arch
@@ -80,6 +80,7 @@ def register_all_models() -> None:
         eagle_llama_arch,
         flux1_arch,
         flux2_arch,
+        flux2_klein_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
         granite_arch,
