@@ -996,15 +996,7 @@ struct UnsafePointer[
         Returns:
             This name of the type.
         """
-        return String(
-            "UnsafePointer[",
-            get_type_name[Self.type](),
-            ", mut=",
-            Self.mut,
-            ", address_space=",
-            Self.address_space,
-            "]",
-        )
+        return t"UnsafePointer[{get_type_name[Self.type]()}, mut={Self.mut}, address_space={Self.address_space}]"
 
     @always_inline("nodebug")
     def swap_pointees[
