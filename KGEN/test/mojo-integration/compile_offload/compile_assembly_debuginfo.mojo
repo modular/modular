@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from compile import compile_info
-from sys import size_of
+from std.compile import compile_info
+from std.sys import size_of
 
 
 fn get_type(dtype: DType) -> DType:

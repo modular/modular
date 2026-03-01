@@ -6,8 +6,8 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-from collections import Deque
-from collections.deque import _DequeIter
+from std.collections import Deque
+from std.collections.deque import _DequeIter
 
 
 fn not_a_list[

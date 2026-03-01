@@ -19,7 +19,7 @@ spills over to the next line."""
 # spills over to the next line."""
 
 from layout.int_tuple import *
-from sys.info import is_nvidia_gpu
+from std.sys.info import is_nvidia_gpu
 from buffer.dimlist import Dim
 from buffer import NDBuffer
 
@@ -701,7 +701,7 @@ fn dep_type[
 
 
 # Check that we dump optional default values correctly.
-from collections.optional import Optional
+from std.collections.optional import Optional
 
 
 # CHECK-LABEL: "name": "optional_default_arg_none"

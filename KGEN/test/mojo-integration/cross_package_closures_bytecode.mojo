@@ -12,7 +12,7 @@
 # CHECK-PACK: definesClosure
 
 from closure import printIt, defineIt
-from sys import argv
+from std.sys import argv
 
 
 fn aThing(y: Int):

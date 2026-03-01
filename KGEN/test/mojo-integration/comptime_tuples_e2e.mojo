@@ -6,8 +6,8 @@
 
 # RUN: mojo -O0 %s | FileCheck %s
 
-from utils.variant import Variant
-from collections import List
+from std.utils.variant import Variant
+from std.collections import List
 
 
 struct MTuple[T: ImplicitlyCopyable](ImplicitlyCopyable, Stringable, Writable):

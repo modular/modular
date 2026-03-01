@@ -6,7 +6,7 @@
 # RUN: kgen -elaborate %s -S -o - | FileCheck %s --check-prefix=ELABORATE
 # RUN: %mojo -debug-level full %s 3 | FileCheck %s
 
-from sys import argv
+from std.sys import argv
 
 
 trait RGTrivialTrait(TrivialRegisterPassable):

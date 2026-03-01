@@ -7,7 +7,7 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %t --arg1 | FileCheck %s
 
-from sys import argv
+from std.sys import argv
 
 
 fn main():

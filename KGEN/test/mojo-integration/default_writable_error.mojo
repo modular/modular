@@ -10,7 +10,7 @@
 # Test that the default Writable implementation produces a clear error message
 # when a field does not implement Writable.
 
-from sys import env_get_int
+from std.sys import env_get_int
 
 
 @fieldwise_init

@@ -6,7 +6,7 @@
 
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from collections.string import StringSlice
+from std.collections.string import StringSlice
 
 
 struct S:

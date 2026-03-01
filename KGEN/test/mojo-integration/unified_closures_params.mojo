@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s 1 4 | FileCheck %s
 
-from sys import argv
-from memory.pointer import AddressSpace, _GPUAddressSpace
+from std.sys import argv
+from std.memory.pointer import AddressSpace, _GPUAddressSpace
 
 
 fn hasOrigin[F: fn[T: MutOrigin](TypeWithOrigin[T]) unified -> None, //](f: F):

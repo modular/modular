@@ -7,7 +7,7 @@
 # RUN: mojo doc %s | FileCheck %s
 
 
-from gpu.host.info import GPUInfo, Vendor, AMDRDNAFamily
+from std.gpu.host.info import GPUInfo, Vendor, AMDRDNAFamily
 
 # CHECK: "name": "Radeon7600",
 # CHECK: "value": "GPUInfo.from_family(AMDRDNAFamily, \"Radeon 7600\", Vendor.AMD_GPU, \"hip\", \"gfx1102\", 11, \"RDNA3\", 32)"

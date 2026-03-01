@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 from debug_test_utils import keep_alive
 
 

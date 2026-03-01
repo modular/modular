@@ -12,9 +12,9 @@
 # RUN: not kgen %s -elaborate -D TEST_OFFSET_OUT_OF_BOUNDS=1 2>&1 | FileCheck %s --check-prefix=CHECK-OFFSET-INDEX
 # RUN: not kgen %s -elaborate -D TEST_OFFSET_NEGATIVE_INDEX=1 2>&1 | FileCheck %s --check-prefix=CHECK-OFFSET-NEGATIVE
 
-from sys import env_get_bool
+from std.sys import env_get_bool
 
-from reflection import (
+from std.reflection import (
     struct_field_index_by_name,
     struct_field_type_by_name,
     offset_of,

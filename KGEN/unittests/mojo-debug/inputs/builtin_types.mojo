@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
+from std.collections.string import StaticString
 
 
 fn getFloat() -> Float32:

@@ -8,7 +8,7 @@
 
 # COM: Check that the argument is augmented at the definition site.
 
-from sys import argv
+from std.sys import argv
 
 
 struct Mem(ImplicitlyCopyable):
