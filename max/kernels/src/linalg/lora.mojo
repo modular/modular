@@ -100,9 +100,7 @@ fn shrink_qkv_permute_3mn_sm100[
     ]()  # data=null, shape/stride zeroed
 
     # Populate the dynamic shape (row-major strides will be set later if needed).
-    c.dynamic_shape = _make_tuple[2, element_type = DType.uint64](
-        DimList(M, N_Total)
-    )
+    c.dynamic_shape = [M, N_Total]
 
     @always_inline
     @__copy_capture(c_tensor_lora, M)

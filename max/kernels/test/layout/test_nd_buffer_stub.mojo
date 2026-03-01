@@ -96,16 +96,15 @@ fn print_element[
 
 fn print_vectorized_buff[
     dtype: DType,
-    rank: Int,
     shape: DimList,
-    element_shape: IndexList[rank],
+    element_shape: IndexList[2],
 ](
-    buff: NDBuffer[dtype, rank, _, shape],
-    element_layout: ElementLayout[rank, element_shape],
+    buff: NDBuffer[dtype, 2, _, shape],
+    element_layout: ElementLayout[2, element_shape],
 ):
     for m in range(buff.dim(0)):
         for n in range(buff.dim(1)):
-            print_element(buff._offset(VariadicList[Int](m, n)), element_layout)
+            print_element(buff._offset(IndexList[2](m, n)), element_layout)
         print("")
 
 

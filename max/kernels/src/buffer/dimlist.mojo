@@ -311,7 +311,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         Args:
             value: The initial dim values list.
         """
-        self.value = VariadicList[Dim](index(value))
+        self = Self(Dim(value), _dim_version=())
 
     @always_inline("nodebug")
     fn __init__[I0: Indexer, I1: Indexer](out self, val0: I0, val1: I1):
@@ -325,7 +325,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             val0: The initial dim value.
             val1: The initial dim value.
         """
-        self.value = VariadicList[Dim](index(val0), index(val1))
+        self = Self(Dim(val0), Dim(val1), _dim_version=())
 
     @always_inline("nodebug")
     fn __init__[
@@ -343,7 +343,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             val1: The initial dim value.
             val2: The initial dim value.
         """
-        self.value = VariadicList[Dim](index(val0), index(val1), index(val2))
+        self = Self(Dim(val0), Dim(val1), Dim(val2), _dim_version=())
 
     @always_inline("nodebug")
     fn __init__[
@@ -363,11 +363,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             val2: The initial dim value.
             val3: The initial dim value.
         """
-        self = Self(
-            VariadicList[Dim](
-                index(val0), index(val1), index(val2), index(val3)
-            )
-        )
+        self = Self(Dim(val0), Dim(val1), Dim(val2), Dim(val3), _dim_version=())
 
     @always_inline("nodebug")
     fn __init__(out self, values: VariadicList[Dim]):
@@ -379,13 +375,14 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         self.value = values
 
     @always_inline("nodebug")
-    fn __init__(out self, *values: Dim):
+    fn __init__(out self, *values: Dim, _dim_version: () = ()):
         """Creates a dimension list from the given Dim values.
 
         Args:
             values: The initial dim values.
+            _dim_version: Used to help overload resolution.
         """
-        self.value = values
+        self.value = VariadicList[Dim](values, comptime_only=())
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:

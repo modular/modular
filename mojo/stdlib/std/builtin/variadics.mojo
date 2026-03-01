@@ -477,15 +477,34 @@ struct VariadicList[type: TrivialRegisterPassable](
     """
 
     @always_inline
-    @implicit
-    fn __init__(out self, *value: Self.type):
-        """Constructs a VariadicList from a variadic list of arguments.
+    fn __init__(out self, *values: Self.type, comptime_only: ()):
+        """Constructs a VariadicList from a variadic list of values at comptime.
+        NOTE: this initializer only works at comptime.
 
         Args:
-            value: The variadic argument list to construct the variadic list
+            values: The variadic argument list to construct the variadic list
               with.
+            comptime_only: Tell callers that this only works at comptime.
         """
-        self = value
+        self = Self(values=values, comptime_only=())
+
+    @always_inline
+    fn __init__(
+        out self,
+        values: VariadicListMem[Self.type, is_owned=False],
+        comptime_only: (),
+    ):
+        """Constructs a VariadicList from a variadic list of values at comptime.
+        NOTE: this initializer only works at comptime.
+
+        Args:
+            values: The variadic argument list to construct the variadic list
+              with.
+            comptime_only: Tell callers that this only works at comptime.
+        """
+        self.value = __mlir_op.`pop.variadic.load.values`[
+            _type = type_of(self.value)
+        ](values.value)
 
     @doc_private
     @always_inline

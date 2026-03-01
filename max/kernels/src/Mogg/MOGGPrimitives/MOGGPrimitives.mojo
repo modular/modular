@@ -572,7 +572,10 @@ fn mgp_buffer_constant_external(
 @no_inline
 fn fill_buffer[
     dtype: DType
-](buf: NDBuffer[DType.int8, 1, MutAnyOrigin], vals: VariadicList[Int]):
+](
+    buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    vals: VariadicListMem[Int, is_owned=False],
+):
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:

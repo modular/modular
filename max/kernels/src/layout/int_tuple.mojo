@@ -463,6 +463,36 @@ struct IntTuple(
         self = Self(elements)
 
     @always_inline
+    fn __init__(out self, elements: VariadicListMem[Int, is_owned=False]):
+        """Initialize an `IntTuple` with a list of integers.
+
+        Creates an `IntTuple` containing the provided integer values.
+
+        Args:
+            elements: List of integer values to store in the tuple.
+
+        Notes:
+
+            - Pre-allocates exact memory needed for efficiency.
+            - Validates that all values are above `MinimumValue`. If any value is
+              less than `MinimumValue`, assertion fails with an error message.
+            - Structure validation performed when assertions are enabled.
+        """
+        var size = len(elements)
+        self._store = IntArray(size + 1)
+        self._store[0] = size
+        for i in range(size):
+            var value = elements[i]
+            debug_assert(
+                value >= Self.MinimumValue,
+                "IntTuple value must be >= MinimumValue: ",
+                value,
+            )
+            self._store[i + 1] = value
+
+        self.validate_structure()
+
+    @always_inline
     fn __init__(out self, elements: VariadicList[Int]):
         """Initialize an `IntTuple` with a list of integers.
 
