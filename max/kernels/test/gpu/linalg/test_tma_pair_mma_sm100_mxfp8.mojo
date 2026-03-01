@@ -753,12 +753,14 @@ def test_blockscaled_pair_cta_mxfp8[
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+    *,
+    k: Int,
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value
-    var K = k.value
+    var K = k
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -773,23 +775,23 @@ def test_blockscaled_pair_cta_mxfp8[
     # Initialize reference scales
     comptime REF_BLOCK_SCALE = 128
     comptime static_ref_a_scales_shape = DimList(
-        ceildiv(Int(k.dim), REF_BLOCK_SCALE), m.dim
+        ceildiv(k, REF_BLOCK_SCALE), m.dim
     )
     comptime static_ref_b_scales_shape = DimList(
         ceildiv(Int(n.dim), REF_BLOCK_SCALE),
-        ceildiv(Int(k.dim), REF_BLOCK_SCALE),
+        ceildiv(k, REF_BLOCK_SCALE),
     )
 
-    var dynamic_ref_a_scales_shape = DimList(
-        ceildiv(k.value, REF_BLOCK_SCALE), m.value
+    var dynamic_ref_a_scales_shape = IndexList[2](
+        ceildiv(k, REF_BLOCK_SCALE), m.value
     )
-    var dynamic_ref_b_scales_shape = DimList(
-        ceildiv(n.value, REF_BLOCK_SCALE), ceildiv(k.value, REF_BLOCK_SCALE)
+    var dynamic_ref_b_scales_shape = IndexList[2](
+        ceildiv(n.value, REF_BLOCK_SCALE), ceildiv(k, REF_BLOCK_SCALE)
     )
 
-    var ref_a_scales_size = ceildiv(k.value, REF_BLOCK_SCALE) * m.value
+    var ref_a_scales_size = ceildiv(k, REF_BLOCK_SCALE) * m.value
     var ref_b_scales_size = ceildiv(n.value, REF_BLOCK_SCALE) * ceildiv(
-        k.value, REF_BLOCK_SCALE
+        k, REF_BLOCK_SCALE
     )
 
     var a_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
@@ -859,45 +861,45 @@ def test_blockscaled_pair_cta_mxfp8[
         + String(cta_group)
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim)
+    comptime static_a_shape = DimList(m.dim, k)
+    comptime static_b_shape = DimList(n.dim, k)
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value)
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k)
+    var dynamic_b_shape = IndexList[2](n.value, k)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     comptime SF_VECTOR_SIZE = 32
     comptime atom_m = (32, 4)
     comptime SF_ATOM_K = 4
-    comptime sf_k = ceildiv(k.dim, SF_VECTOR_SIZE)
+    comptime sf_k = ceildiv(k, SF_VECTOR_SIZE)
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_ATOM_M[0] * SF_ATOM_M[1]),
         ceildiv(sf_k, SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_ATOM_M[0] * SF_ATOM_M[1]),
         ceildiv(sf_k, SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_ATOM_M[0] * SF_ATOM_M[1]),
         ceildiv(sf_k, SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_ATOM_M[0] * SF_ATOM_M[1]),
         ceildiv(sf_k, SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_scales_total = (
@@ -937,8 +939,8 @@ def test_blockscaled_pair_cta_mxfp8[
         b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
     )
 
-    var a_size = m.value * k.value
-    var b_size = n.value * k.value
+    var a_size = m.value * k
+    var b_size = n.value * k
     var c_size = m.value * n.value
 
     var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
@@ -1080,7 +1082,8 @@ def main() raises:
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
-        ](ctx, dynamic(256), static[128](), static[3 * BK]())
+            k = 3 * BK,
+        ](ctx, dynamic(256), static[128]())
 
         test_blockscaled_pair_cta_mxfp8[
             dtype,
@@ -1092,7 +1095,8 @@ def main() raises:
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
-        ](ctx, dynamic(256), static[256](), static[2 * BK]())
+            k = 2 * BK,
+        ](ctx, dynamic(256), static[256]())
 
         test_blockscaled_pair_cta_mxfp8[
             dtype,
@@ -1104,4 +1108,5 @@ def main() raises:
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
-        ](ctx, dynamic(512), static[512](), static[2 * BK]())
+            k = 2 * BK,
+        ](ctx, dynamic(512), static[512]())

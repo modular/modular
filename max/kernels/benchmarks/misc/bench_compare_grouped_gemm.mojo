@@ -109,16 +109,16 @@ fn bench_cublas_per_group[
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
@@ -147,17 +147,17 @@ fn bench_cublas_per_group[
     ctx.enqueue_copy(sfb_device, sfb_host)
     ctx.synchronize()
 
-    var dynamic_a_shape = DimList(m.value, k_array_val)
-    var dynamic_b_shape = DimList(n.value, k_array_val)
-    var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k_array_val)
+    var dynamic_b_shape = IndexList[2](n.value, k_array_val)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -291,16 +291,16 @@ fn bench_structured_kernel[
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
@@ -329,17 +329,17 @@ fn bench_structured_kernel[
     ctx.enqueue_copy(sfb_device, sfb_host)
     ctx.synchronize()
 
-    var dynamic_a_shape = DimList(m.value, k_array_val)
-    var dynamic_b_shape = DimList(n.value, k_array_val)
-    var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k_array_val)
+    var dynamic_b_shape = IndexList[2](n.value, k_array_val)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],

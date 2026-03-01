@@ -103,15 +103,15 @@ def test_matmul_sm100_blockwise_scaled_fp8[
         ceildiv(n.dim, BLOCK_SCALE_K), ceildiv(k.dim, BLOCK_SCALE_K)
     )
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_a_scales_shape = IndexList[2](
         ceildiv(k.value, BLOCK_SCALE_K), m.value
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[2](
         ceildiv(n.value, BLOCK_SCALE_K), ceildiv(k.value, BLOCK_SCALE_K)
     )
 

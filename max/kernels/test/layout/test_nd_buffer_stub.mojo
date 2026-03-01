@@ -1369,13 +1369,13 @@ fn test_from_ndbuffer_to_layout_tensor():
     comptime type = DType.float32
     comptime ptr = UnsafePointer[Scalar[type]].alloc(64)
     comptime rank = 4
-    comptime shape = DimList(2, 3, 2, 2)
-    var buffer1 = NDBuffer[type, rank, shape=shape](ptr, shape)
+    comptime shape = IndexList[4](2, 3, 2, 2)
+    var buffer1 = NDBuffer[type, rank, shape = DimList(2, 3, 2, 2)](ptr, shape)
     linspace_fill(buffer1)
     var tensor1 = from_ndbuffer_row_major(buffer1)
 
     comptime static_shape = DimList(Dim(), 3, Dim(), 2)
-    comptime dynamic_shape = DimList(2, 3, 2, 2)
+    comptime dynamic_shape = IndexList[4](2, 3, 2, 2)
 
     var buffer2 = NDBuffer[type, rank, shape=static_shape](ptr, dynamic_shape)
     var tensor2 = from_ndbuffer_row_major(buffer2)

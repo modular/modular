@@ -17,6 +17,7 @@ from math.polynomial import polynomial_evaluate
 from ffi import external_call
 from sys import llvm_intrinsic, simd_width_of, size_of
 from sys.arg import argv
+from std.utils import IndexList
 
 from algorithm.functional import vectorize
 from benchmark import (
@@ -81,8 +82,8 @@ def bench_unary[
         @parameter
         fn iter_fn():
             apply[func](
-                NDBuffer[dtype, 1](input_ptr, size),
-                NDBuffer[dtype, 1](output_ptr, size),
+                NDBuffer[dtype, 1](input_ptr, IndexList[1](size)),
+                NDBuffer[dtype, 1](output_ptr, IndexList[1](size)),
             )
             keep(output_ptr)
 

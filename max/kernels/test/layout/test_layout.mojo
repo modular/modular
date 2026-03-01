@@ -103,7 +103,7 @@ fn test_layout_basic() raises:
     )
 
     # testing col major
-    var dl = DimList(3, 64, 128)
+    comptime dl = DimList(3, 64, 128)
 
     assert_equal(
         Layout.col_major[3](dl),

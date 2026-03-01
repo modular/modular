@@ -121,13 +121,13 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         batch_size.dim, n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
     )
 
-    var dynamic_a_shape = DimList(bs, M, K)
-    var dynamic_b_shape = DimList(bs, N, K) if transpose_b else DimList(
-        bs, K, N
-    )
-    var dynamic_c_shape = DimList(bs, M, N)
-    var dynamic_a_scales_shape = DimList(bs, K // BLOCK_SCALE_K, M)
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[3](bs, M, K)
+    var dynamic_b_shape = IndexList[3](bs, N, K) if transpose_b else IndexList[
+        3
+    ](bs, K, N)
+    var dynamic_c_shape = IndexList[3](bs, M, N)
+    var dynamic_a_scales_shape = IndexList[3](bs, K // BLOCK_SCALE_K, M)
+    var dynamic_b_scales_shape = IndexList[3](
         bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
@@ -142,13 +142,15 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
     )
 
-    var dynamic_a_shape_2D = DimList(m.value, k.value)
-    var dynamic_b_shape_2D = DimList(
+    var dynamic_a_shape_2D = IndexList[2](m.value, k.value)
+    var dynamic_b_shape_2D = IndexList[2](
         n.value, k.value
-    ) if transpose_b else DimList(k.value, n.value)
-    var dynamic_c_shape_2D = DimList(m.value, n.value)
-    var dynamic_a_scales_shape_2D = DimList(k.value // BLOCK_SCALE_K, m.value)
-    var dynamic_b_scales_shape_2D = DimList(
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape_2D = IndexList[2](m.value, n.value)
+    var dynamic_a_scales_shape_2D = IndexList[2](
+        k.value // BLOCK_SCALE_K, m.value
+    )
+    var dynamic_b_scales_shape_2D = IndexList[2](
         n.value // BLOCK_SCALE_K, k.value // BLOCK_SCALE_K
     )
 
@@ -382,15 +384,15 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
         B, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
-    var dynamic_a_shape = DimList(bs, M, K)
-    var dynamic_b_shape = DimList(bs, N, K) if transpose_b else DimList(
-        bs, K, N
-    )
-    var dynamic_c_shape = DimList(bs, M, N)
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[3](bs, M, K)
+    var dynamic_b_shape = IndexList[3](bs, N, K) if transpose_b else IndexList[
+        3
+    ](bs, K, N)
+    var dynamic_c_shape = IndexList[3](bs, M, N)
+    var dynamic_a_scales_shape = IndexList[3](
         bs, K // BLOCK_SCALE_K, M_aligned_for_scales
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[3](
         bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 

@@ -1186,7 +1186,7 @@ fn grouped_matmul_vendor[
 
         var token_start = a_offsets[i]
         var token_end = a_offsets[i + 1]
-        var num_tokens = token_end - token_start
+        var num_tokens = Int(token_end - token_start)
 
         # Skip if no tokens for this expert
         if num_tokens <= 0:
@@ -1197,7 +1197,7 @@ fn grouped_matmul_vendor[
             # Create output slice and zero it out
             var c_slice = NDBuffer[c_type, 2, MutAnyOrigin](
                 c.data + token_start * UInt32(c.dim[1]()),
-                DimList(num_tokens, c.dim[1]()),
+                IndexList[2](num_tokens, Int(c.dim[1]())),
             )
             var buff = DeviceBuffer(
                 ctx, c_slice.data, c_slice.num_elements(), owning=False
@@ -1208,15 +1208,15 @@ fn grouped_matmul_vendor[
         # Create views into the tensors for this expert
         var a_slice = NDBuffer[a_type, 2, ImmutAnyOrigin](
             a.data + token_start * UInt32(a.dim[1]()),
-            DimList(num_tokens, a.dim[1]()),
+            IndexList[2](num_tokens, Int(a.dim[1]())),
         )
         var b_slice = NDBuffer[b_type, 2, ImmutAnyOrigin](
             b.data + expert_id * Int32(b.dim[1]()) * Int32(b.dim[2]()),
-            DimList(b.dim[1](), b.dim[2]()),
+            IndexList[2](Int(b.dim[1]()), Int(b.dim[2]())),
         )
         var c_slice = NDBuffer[c_type, 2, MutAnyOrigin](
             c.data + token_start * UInt32(c.dim[1]()),
-            DimList(num_tokens, c.dim[1]()),
+            IndexList[2](num_tokens, Int(c.dim[1]())),
         )
 
         vendor_matmul[use_tf32](

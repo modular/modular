@@ -81,7 +81,7 @@ def test_nvfp4_quantization[
     var N = n.value
 
     comptime input_static_shape = DimList(m.dim, n.dim)
-    var input_dynamic_shape = DimList(m.value, n.value)
+    var input_dynamic_shape = IndexList[2](m.value, n.value)
 
     var host_ptr = UnsafePointer[Scalar[dtype]].alloc(M * N)
     var host_buffer = NDBuffer[dtype, 2, _, input_static_shape](
@@ -89,7 +89,7 @@ def test_nvfp4_quantization[
     )
 
     comptime output_static_shape = DimList(m.dim, ceildiv(n.dim, 2))
-    var output_dynamic_shape = DimList(m.value, ceildiv(n.value, 2))
+    var output_dynamic_shape = IndexList[2](m.value, ceildiv(n.value, 2))
 
     var host_ptr_output = UnsafePointer[Scalar[out_dtype]].alloc(
         M * ceildiv(N, 2)
@@ -132,17 +132,17 @@ def test_nvfp4_quantization[
     comptime static_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(n.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_scales_shape = DimList(
+    var dynamic_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(n.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var scales_total = (

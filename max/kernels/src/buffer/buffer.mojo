@@ -410,52 +410,6 @@ struct NDBuffer[
             Self.origin,
             address_space = Self.address_space,
         ],
-        dynamic_shape: DimList,
-    ):
-        """Constructs an NDBuffer with statically known rank, but dynamic
-        shapes and type.
-
-        Constraints:
-            The rank is known.
-
-        Args:
-            ptr: Pointer to the data.
-            dynamic_shape: A static tuple of size 'rank' representing shapes.
-        """
-        self = Self(ptr, _make_tuple[Self.rank](dynamic_shape))
-
-    @always_inline
-    fn __init__(
-        out self: Self.OriginCastType[MutAnyOrigin],
-        ptr: UnsafePointer[Scalar[Self.dtype], ...],
-        dynamic_shape: DimList,
-    ):
-        """Constructs an NDBuffer with MutAnyOrigin from any pointer.
-
-        This overload allows origin erasure when constructing an NDBuffer with
-        MutAnyOrigin, accepting pointers with any origin.
-
-        Args:
-            ptr: Pointer to the data.
-            dynamic_shape: A DimList of size 'rank' representing shapes.
-        """
-        var shape_tuple = _make_tuple[Self.rank](dynamic_shape)
-        self.data = rebind[type_of(self.data)](ptr)
-        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
-            shape_tuple.cast[type_of(self.dynamic_shape).element_type]()
-        )
-        self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
-            self.dynamic_shape
-        )
-
-    @always_inline
-    fn __init__(
-        out self,
-        ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            Self.origin,
-            address_space = Self.address_space,
-        ],
         dynamic_shape: IndexList[Self.rank, ...],
         dynamic_stride: IndexList[Self.rank, ...],
     ):
@@ -511,51 +465,16 @@ struct NDBuffer[
             Self.origin,
             address_space = Self.address_space,
         ],
-        dynamic_shape: DimList,
-        dynamic_stride: IndexList[Self.rank, ...],
+        one_d_size: Int,
     ):
-        """Constructs a strided NDBuffer with statically known rank, but
-        dynamic shapes and type.
-
-        Constraints:
-            The rank is known.
+        """Constructs an NDBuffer with statically known rank, but dynamic
+        shapes and type.
 
         Args:
             ptr: Pointer to the data.
-            dynamic_shape: A DimList of size 'rank' representing shapes.
-            dynamic_stride: A static tuple of size 'rank' representing strides.
+            one_d_size: The size of the buffer broadcasted across the shape.
         """
-        self = Self(
-            ptr=ptr,
-            dynamic_shape=_make_tuple[Self.rank](dynamic_shape),
-            dynamic_stride=dynamic_stride,
-        )
-
-    @always_inline
-    fn __init__(
-        out self: Self.OriginCastType[MutAnyOrigin],
-        ptr: UnsafePointer[Scalar[Self.dtype], ...],
-        dynamic_shape: DimList,
-        dynamic_stride: IndexList[Self.rank, ...],
-    ):
-        """Constructs a strided NDBuffer with MutAnyOrigin from any pointer.
-
-        This overload allows origin erasure when constructing an NDBuffer with
-        MutAnyOrigin, accepting pointers with any origin.
-
-        Args:
-            ptr: Pointer to the data.
-            dynamic_shape: A DimList of size 'rank' representing shapes.
-            dynamic_stride: A static tuple of size 'rank' representing strides.
-        """
-        var shape_tuple = _make_tuple[Self.rank](dynamic_shape)
-        self.data = rebind[type_of(self.data)](ptr)
-        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
-            shape_tuple.cast[type_of(self.dynamic_shape).element_type]()
-        )
-        self.dynamic_stride = rebind[type_of(self.dynamic_stride)](
-            dynamic_stride.cast[type_of(self.dynamic_shape).element_type]()
-        )
+        self = Self(ptr, IndexList[Self.rank](one_d_size))
 
     comptime OriginCastType[target_origin: Origin] = NDBuffer[
         Self.dtype,
@@ -1209,7 +1128,7 @@ struct NDBuffer[
         debug_assert(
             self.is_contiguous(), "Function requires contiguous buffer."
         )
-        return {self.data, self.size()}
+        return {self.data, IndexList[1](self.size())}
 
     @always_inline
     fn make_dims_unknown(

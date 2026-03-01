@@ -2277,12 +2277,12 @@ fn _rms_norm_fused_fp8_gpu[
 
     # Create 2D output buffer view
     var output_2d = NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin](
-        output.data, DimList(rows, cols)
+        output.data, IndexList[2](rows, cols)
     )
 
     # Create 1D view of scale_output for internal kernel use
     var scale_output_1d = NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin](
-        scale_output.data, DimList(rows)
+        scale_output.data, IndexList[1](rows)
     )
 
     # Dispatch based on column count (following rms_norm_gpu pattern)

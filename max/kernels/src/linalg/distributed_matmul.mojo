@@ -147,19 +147,19 @@ fn _matmul_allreduce_split_m[
                 a_dtype, 2, ImmutAnyOrigin, a_part_static_shape
             ](
                 a_buffers[i].data + stage * m_part * k,
-                DimList(curr_m, k),
+                IndexList[2](curr_m, k),
             )
             C_parts[i] = NDBuffer[
                 out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 c_temp_buffers[i].data + stage * length,
-                DimList(curr_m, n),
+                IndexList[2](curr_m, n),
             )
             Out_parts[i] = NDBuffer[
                 out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 output_buffers[i].data + stage * length,
-                DimList(curr_m, n),
+                IndexList[2](curr_m, n),
             )
             if stage == 0:
                 _matmul_gpu[
@@ -293,19 +293,19 @@ fn _matmul_allreduce_split_n[
                 b_dtype, 2, ImmutAnyOrigin, b_part_static_shape
             ](
                 b_buffers[i].data + stage * n_part * k,
-                DimList(n_part, k),
+                IndexList[2](n_part, k),
             )
             C_parts[i] = NDBuffer[
                 out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 c_temp_buffers[i].data + stage * length,
-                DimList(m, n_part),
+                IndexList[2](m, n_part),
             )
             Out_parts[i] = NDBuffer[
                 out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 output_buffers[i].data + stage * length,
-                DimList(m, n_part),
+                IndexList[2](m, n_part),
             )
             _matmul_gpu[
                 use_tensor_core=True,

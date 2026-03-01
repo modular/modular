@@ -128,11 +128,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         batch.dim, n.dim, k.dim
     ) if transpose_b else DimList(batch.dim, k.dim, n.dim)
     comptime static_c_shape = DimList(batch.dim, m.dim, n.dim)
-    var dynamic_a_shape = DimList(batch.value, m.value, k.value)
-    var dynamic_b_shape = DimList(
+    var dynamic_a_shape = IndexList[3](batch.value, m.value, k.value)
+    var dynamic_b_shape = IndexList[3](
         batch.value, n.value, k.value
-    ) if transpose_b else DimList(batch.value, k.value, n.value)
-    var dynamic_c_shape = DimList(batch.value, m.value, n.value)
+    ) if transpose_b else IndexList[3](batch.value, k.value, n.value)
+    var dynamic_c_shape = IndexList[3](batch.value, m.value, n.value)
 
     var a_size = batch.value * m.value * k.value
     var b_size = batch.value * n.value * k.value
@@ -176,34 +176,34 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         batch.dim,
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         batch.dim,
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[6](
         batch.value,
         ceildiv(m.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[6](
         batch.value,
         ceildiv(n.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_scales_total = (

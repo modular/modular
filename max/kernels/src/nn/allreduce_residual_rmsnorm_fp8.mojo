@@ -825,7 +825,7 @@ fn _launch_split_allreduce_rmsnorm_fp8[
 
     comptime for i in range(ngpus):
         input_buffers[i] = NDBuffer[in_dtype, 2, ImmutAnyOrigin](
-            src_ptrs[i], DimList(rows, cols)
+            src_ptrs[i], IndexList[2](rows, cols)
         )
 
     var res_ptr = residual.data
@@ -844,7 +844,7 @@ fn _launch_split_allreduce_rmsnorm_fp8[
 
     var shape = IndexList[2](rows, cols)
     var scale_output_2d = NDBuffer[mut=True, scales_dtype, 2, MutAnyOrigin](
-        scale_output_1d.data, DimList(rows, 1)
+        scale_output_1d.data, IndexList[2](rows, 1)
     )
 
     # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.
@@ -1236,10 +1236,10 @@ fn allreduce_rmsnorm_fp8[
 
     # Create internal 2D/1D views and dispatch.
     var output_2d = NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin](
-        output.data, DimList(rows, cols)
+        output.data, IndexList[2](rows, cols)
     )
     var scale_output_1d = NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin](
-        scale_output.data, DimList(rows)
+        scale_output.data, IndexList[1](rows)
     )
 
     _dispatch_fused_kernel[in_dtype, out_dtype, scales_dtype, ngpus](
@@ -1367,16 +1367,16 @@ fn allreduce_residual_rmsnorm_fp8[
 
     # Create internal 2D/1D views and dispatch.
     var output_2d = NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin](
-        output.data, DimList(rows, cols)
+        output.data, IndexList[2](rows, cols)
     )
     var residual_2d = NDBuffer[in_dtype, 2, ImmutAnyOrigin](
-        residual.data, DimList(rows, cols)
+        residual.data, IndexList[2](rows, cols)
     )
     var residual_output_2d = NDBuffer[mut=True, in_dtype, 2, MutAnyOrigin](
-        residual_output.data, DimList(rows, cols)
+        residual_output.data, IndexList[2](rows, cols)
     )
     var scale_output_1d = NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin](
-        scale_output.data, DimList(rows)
+        scale_output.data, IndexList[1](rows)
     )
 
     _dispatch_fused_kernel[

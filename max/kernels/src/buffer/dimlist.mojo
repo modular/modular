@@ -555,8 +555,8 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         ```mojo
         from buffer import DimList
 
-        var dim_list = DimList(2, 4)
-        var index_list = dim_list.into_index_list[rank=2]()
+        comptime dim_list = DimList(2, 4)
+        var index_list = comptime(dim_list.into_index_list[rank=2]())
         ```
         """
         var num_elements = len(self)

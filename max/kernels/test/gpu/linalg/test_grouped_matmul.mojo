@@ -119,6 +119,9 @@ fn test[
     comptime static_b_shape = DimList(
         num_experts, 3 * N if qkv_perm_dim else N, K
     )
+    var dynamic_b_shape = IndexList[3](
+        num_experts, 3 * N if qkv_perm_dim else N, K
+    )
     var b_size = num_experts * (3 * N if qkv_perm_dim else N) * K
     comptime b_layout = Layout.row_major(
         num_experts, 3 * N if qkv_perm_dim else N, K
@@ -161,27 +164,27 @@ fn test[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, actual_N),
+        IndexList[2](total_num_tokens, actual_N),
     )
     var c_ref_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_ref_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, actual_N),
+        IndexList[2](total_num_tokens, actual_N),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_experts + 1,
+        IndexList[1](num_experts + 1),
     )
     var expert_ids_dev = NDBuffer[DType.int32, 1](
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_experts,
+        IndexList[1](num_experts),
     )
 
     # Move inputs to device
@@ -388,6 +391,7 @@ fn test_negative_lora_id[
 
     # Create host B buffers
     comptime static_b_shape = DimList(num_experts, N, K)
+    comptime dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
     comptime b_layout = Layout.row_major(num_experts, N, K)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
@@ -425,23 +429,23 @@ fn test_negative_lora_id[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_active_experts + 1,
+        IndexList[1](num_active_experts + 1),
     )
     var expert_ids_dev = NDBuffer[DType.int32, 1](
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_active_experts,
+        IndexList[1](num_active_experts),
     )
 
     # Move inputs to device

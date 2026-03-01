@@ -666,13 +666,15 @@ def test_block_scaled_mxfp8[
     c_type: DType,
     block_tile_shape: IndexList[3],
     umma_shape: IndexList[3],
-    transpose_b: Bool = True,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+    transpose_b: Bool,
+    *,
+    k: Int,
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
     var M = m.value
     var N = n.value
-    var K = k.value
+    var K = k
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -691,23 +693,23 @@ def test_block_scaled_mxfp8[
     # Initialize reference scales
     comptime REF_BLOCK_SCALE = 128
     comptime static_ref_a_scales_shape = DimList(
-        ceildiv(Int(k.dim), REF_BLOCK_SCALE), m.dim
+        ceildiv(k, REF_BLOCK_SCALE), m.dim
     )
     comptime static_ref_b_scales_shape = DimList(
         ceildiv(Int(n.dim), REF_BLOCK_SCALE),
-        ceildiv(Int(k.dim), REF_BLOCK_SCALE),
+        ceildiv(k, REF_BLOCK_SCALE),
     )
 
-    var dynamic_ref_a_scales_shape = DimList(
-        ceildiv(k.value, REF_BLOCK_SCALE), m.value
+    var dynamic_ref_a_scales_shape = IndexList[2](
+        ceildiv(k, REF_BLOCK_SCALE), m.value
     )
-    var dynamic_ref_b_scales_shape = DimList(
-        ceildiv(n.value, REF_BLOCK_SCALE), ceildiv(k.value, REF_BLOCK_SCALE)
+    var dynamic_ref_b_scales_shape = IndexList[2](
+        ceildiv(n.value, REF_BLOCK_SCALE), ceildiv(k, REF_BLOCK_SCALE)
     )
 
-    var ref_a_scales_size = ceildiv(k.value, REF_BLOCK_SCALE) * m.value
+    var ref_a_scales_size = ceildiv(k, REF_BLOCK_SCALE) * m.value
     var ref_b_scales_size = ceildiv(n.value, REF_BLOCK_SCALE) * ceildiv(
-        k.value, REF_BLOCK_SCALE
+        k, REF_BLOCK_SCALE
     )
 
     var a_scales_host_ref_ptr = UnsafePointer[Scalar[ref_scales_type]].alloc(
@@ -769,17 +771,17 @@ def test_block_scaled_mxfp8[
         + String(umma_shape)
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim)
+    comptime static_a_shape = DimList(m.dim, k)
+    comptime static_b_shape = DimList(n.dim, k)
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value)
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k)
+    var dynamic_b_shape = IndexList[2](n.value, k)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     comptime SF_VECTOR_SIZE = 32
     comptime atom_m = (32, 4)
     comptime atom_k = 4
-    comptime sf_k = ceildiv(k.dim, SF_VECTOR_SIZE)
+    comptime sf_k = ceildiv(k, SF_VECTOR_SIZE)
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
@@ -795,31 +797,31 @@ def test_block_scaled_mxfp8[
         Dim(atom_k),
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
-        Dim(atom_m[0]),
-        Dim(atom_m[1]),
-        Dim(atom_k),
+        atom_m[0],
+        atom_m[1],
+        atom_k,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, atom_m[0] * atom_m[1]),
         ceildiv(sf_k, atom_k),
-        Dim(atom_m[0]),
-        Dim(atom_m[1]),
-        Dim(atom_k),
+        atom_m[0],
+        atom_m[1],
+        atom_k,
     )
 
     var a_scales_total = (
         ceildiv(m.value, atom_m[0] * atom_m[1])
-        * Int(ceildiv(sf_k, atom_k))
+        * ceildiv(sf_k, atom_k)
         * atom_m[0]
         * atom_m[1]
         * atom_k
     )
     var b_scales_total = (
         ceildiv(n.value, atom_m[0] * atom_m[1])
-        * Int(ceildiv(sf_k, atom_k))
+        * ceildiv(sf_k, atom_k)
         * atom_m[0]
         * atom_m[1]
         * atom_k
@@ -847,8 +849,8 @@ def test_block_scaled_mxfp8[
         b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
     )
 
-    var a_size = m.value * k.value
-    var b_size = n.value * k.value
+    var a_size = m.value * k
+    var b_size = n.value * k
     var c_size = m.value * n.value
 
     var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
@@ -987,7 +989,8 @@ def main() raises:
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(256), static[256](), static[BK * 3]())
+            k = BK * 3,
+        ](ctx, dynamic(256), static[256]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -995,7 +998,8 @@ def main() raises:
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(256), static[256 * 2](), static[BK * 3]())
+            k = BK * 3,
+        ](ctx, dynamic(256), static[256 * 2]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -1003,7 +1007,8 @@ def main() raises:
             Index(MMA_M, 256, BK),
             Index(MMA_M, 256, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(1000), static[256 * 4](), static[BK * 3]())
+            k = BK * 3,
+        ](ctx, dynamic(1000), static[256 * 4]())
 
         test_block_scaled_mxfp8[
             dtype,
@@ -1012,7 +1017,8 @@ def main() raises:
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(256), static[2 * 128](), static[BK * 3]())
+            k = BK * 3,
+        ](ctx, dynamic(256), static[2 * 128]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -1020,7 +1026,8 @@ def main() raises:
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(256), static[3 * 128](), static[BK * 2]())
+            k = BK * 2,
+        ](ctx, dynamic(256), static[3 * 128]())
         test_block_scaled_mxfp8[
             dtype,
             dtype,
@@ -1028,4 +1035,5 @@ def main() raises:
             Index(MMA_M, 128, BK),
             Index(MMA_M, 128, MMA_K),
             transpose_b=True,
-        ](ctx, dynamic(1000), static[3 * 128](), static[BK * 3]())
+            k = BK * 3,
+        ](ctx, dynamic(1000), static[3 * 128]())

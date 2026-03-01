@@ -175,7 +175,7 @@ fn bench_reduce[
         # All GPUs use the same multicast pointer
         in_bufs[0] = NDBuffer[dtype, rank](
             multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
-            DimList(length),
+            IndexList[rank](length),
         )
         multi_ptr = multicast_buf.multicast_buffer_for(
             list_of_ctx[0]
@@ -183,12 +183,12 @@ fn bench_reduce[
     else:
         comptime for i in range(ngpus):
             in_bufs[i] = NDBuffer[dtype, rank](
-                cb_inputs[i].unsafe_ptr(), DimList(length)
+                cb_inputs[i].unsafe_ptr(), IndexList[rank](length)
             )
 
     for i in range(ngpus):
         out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(length)
+            out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
         # Ensure setup has propagated.
         list_of_ctx[i].synchronize()
@@ -205,7 +205,7 @@ fn bench_reduce[
 
     comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(length)
+            out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
 
     # Pre-initialize vendor CCL communicators from the main thread.
@@ -226,12 +226,12 @@ fn bench_reduce[
                 comptime for i in range(ngpus):
                     in_bufs[i] = NDBuffer[dtype, rank](
                         cb_inputs[i].offset_ptr(cache_iter),
-                        DimList(length),
+                        IndexList[rank](length),
                     )
             else:
                 in_bufs[0] = NDBuffer[dtype, rank](
                     multi_ptr + cb_template.offset(cache_iter),
-                    DimList(length),
+                    IndexList[rank](length),
                 )
             # Run allreduce
             comptime allreduce_kernel = vendor_ccl.allreduce if use_vendor_ccl else allreduce

@@ -81,19 +81,19 @@ fn test[
 
     var a_device = NDBuffer[a_type, 2, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
-        DimList(m, k),
+        IndexList[2](m, k),
     )
     var b_device = NDBuffer[b_type, 2, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
-        DimList(n, k) if transpose_b else DimList(k, n),
+        IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
     var c_device = NDBuffer[c_type, 2, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
     var c_device_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_device_ref_buffer.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
 
     comptime rand_min = -100

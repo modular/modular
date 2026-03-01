@@ -214,7 +214,7 @@ fn test_fused_allreduce_rmsnorm_fp8[
     )
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[in_dtype, 2](
-            in_dev[i].unsafe_ptr(), DimList(rows, cols)
+            in_dev[i].unsafe_ptr(), IndexList[2](rows, cols)
         )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -305,10 +305,10 @@ fn test_fused_allreduce_rmsnorm_fp8[
     var fused_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
 
     var fused_fp8_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-        fused_fp8_dev.unsafe_ptr(), DimList(rows, cols)
+        fused_fp8_dev.unsafe_ptr(), IndexList[2](rows, cols)
     )
     var fused_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-        fused_scales_dev.unsafe_ptr(), DimList(rows, 1)
+        fused_scales_dev.unsafe_ptr(), IndexList[2](rows, 1)
     )
 
     group_start()
@@ -418,7 +418,7 @@ fn test_fused_allreduce_residual_rmsnorm_fp8[
     )
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[in_dtype, 2](
-            in_dev[i].unsafe_ptr(), DimList(rows, cols)
+            in_dev[i].unsafe_ptr(), IndexList[2](rows, cols)
         )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -516,16 +516,16 @@ fn test_fused_allreduce_residual_rmsnorm_fp8[
     var fused_residual_output_dev = ctx.enqueue_create_buffer[in_dtype](length)
 
     var fused_fp8_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-        fused_fp8_dev.unsafe_ptr(), DimList(rows, cols)
+        fused_fp8_dev.unsafe_ptr(), IndexList[2](rows, cols)
     )
     var fused_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-        fused_scales_dev.unsafe_ptr(), DimList(rows, 1)
+        fused_scales_dev.unsafe_ptr(), IndexList[2](rows, 1)
     )
     var residual_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
-        residual_dev.unsafe_ptr(), DimList(rows, cols)
+        residual_dev.unsafe_ptr(), IndexList[2](rows, cols)
     )
     var fused_residual_output_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
-        fused_residual_output_dev.unsafe_ptr(), DimList(rows, cols)
+        fused_residual_output_dev.unsafe_ptr(), IndexList[2](rows, cols)
     )
 
     group_start()

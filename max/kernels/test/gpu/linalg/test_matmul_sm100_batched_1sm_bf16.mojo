@@ -111,11 +111,11 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         batch.dim, n.dim, k.dim
     ) if transpose_b else DimList(batch.dim, k.dim, n.dim)
     comptime static_c_shape = DimList(batch.dim, m.dim, n.dim)
-    var dynamic_a_shape = DimList(batch.value, m.value, k.value)
-    var dynamic_b_shape = DimList(
+    var dynamic_a_shape = IndexList[3](batch.value, m.value, k.value)
+    var dynamic_b_shape = IndexList[3](
         batch.value, n.value, k.value
-    ) if transpose_b else DimList(batch.value, k.value, n.value)
-    var dynamic_c_shape = DimList(batch.value, m.value, n.value)
+    ) if transpose_b else IndexList[3](batch.value, k.value, n.value)
+    var dynamic_c_shape = IndexList[3](batch.value, m.value, n.value)
 
     var a_size = batch.value * m.value * k.value
     var b_size = batch.value * n.value * k.value

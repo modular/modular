@@ -88,9 +88,9 @@ fn test_matmul_sm90_swapAB_comparison[
     comptime static_b_shape = DimList(n.dim, k.dim)
     comptime static_c_shape = DimList(m.dim, n.dim)  # [M, N] for both
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value)
-    var dynamic_c_shape = DimList(m.value, n.value)  # [M, N] for both
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](n.value, k.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)  # [M, N] for both
 
     # Calculate sizes
     var a_size = M * K
@@ -517,9 +517,9 @@ fn test_matmul_sm90_swapAB_comparison_v2[
     comptime static_b_shape = DimList(n.dim, k.dim)
     comptime static_c_shape = DimList(m.dim, n.dim)  # [M, N] for both
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value)
-    var dynamic_c_shape = DimList(m.value, n.value)  # [M, N] for both
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](n.value, k.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)  # [M, N] for both
 
     # Calculate sizes
     var a_size = M * K

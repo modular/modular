@@ -70,11 +70,11 @@ fn test_static_scaled_fp8_quant[
 
     var in_ndbuffer = NDBuffer[in_dtype, 2, _, static_shape](
         in_device.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
     var out_ndbuffer = NDBuffer[out_dtype, 2, _, static_shape](
         out_device.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
 
     quantize_static_scaled_fp8[out_dtype, in_dtype](
@@ -165,15 +165,15 @@ fn test_dynamic_fp8_quant[
 
     var in_ndbuffer = NDBuffer[in_dtype, 2, _, static_shape](
         in_device.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
     var out_ndbuffer = NDBuffer[out_dtype, 2, _, static_shape](
         out_device.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
     var scales_ndbuffer = NDBuffer[scales_dtype, 2, _, static_scales_shape](
         scales_device.unsafe_ptr(),
-        DimList(n // group_size, m),
+        IndexList[2](n // group_size, m),
     )
 
     @__copy_capture(in_ndbuffer)
@@ -313,15 +313,15 @@ fn test_batched_dynamic_fp8_quant[
 
     var in_ndbuffer = NDBuffer[in_dtype, 3, _, static_shape](
         in_device.unsafe_ptr(),
-        DimList(bs, m, k),
+        IndexList[3](bs, m, k),
     )
     var out_ndbuffer = NDBuffer[out_dtype, 3, _, static_shape](
         out_device.unsafe_ptr(),
-        DimList(bs, m, k),
+        IndexList[3](bs, m, k),
     )
     var scales_ndbuffer = NDBuffer[scales_dtype, 3, _, static_scales_shape](
         scales_device.unsafe_ptr(),
-        DimList(bs, k // group_size, m),
+        IndexList[3](bs, k // group_size, m),
     )
 
     @parameter

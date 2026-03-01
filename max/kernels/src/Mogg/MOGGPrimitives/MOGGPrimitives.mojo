@@ -504,7 +504,7 @@ fn mgp_tensor_extract_buffer[
 ]:
     # Unwrap the tensor into a size-less buffer pointer.
     return NDBuffer[DType.int8, 1](
-        buffer.data.bitcast[Int8](), buffer.bytecount()
+        buffer.data.bitcast[Int8](), IndexList[1](buffer.bytecount())
     )
 
 
@@ -536,7 +536,7 @@ fn mgp_buffer_constant(
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
     return NDBuffer[DType.int8, 1](
-        resource_ptr.bitcast[Int8](), resource_bytecount
+        resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
     )
 
 
@@ -564,7 +564,9 @@ fn mgp_buffer_constant_external(
             align,
         )
 
-    return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(size))
+    return NDBuffer[DType.int8, 1](
+        weight_ptr.bitcast[Int8](), IndexList[1](Int(size))
+    )
 
 
 @no_inline

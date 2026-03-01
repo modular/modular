@@ -256,16 +256,18 @@ fn test_case_sampling[
         batch_size * vocab_size
     )
     var in_logits = NDBuffer[dtype, rank](
-        in_logits_ptr, DimList(batch_size, vocab_size)
+        in_logits_ptr, IndexList[2](batch_size, vocab_size)
     )
     var token_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
         batch_size * 1
     )
     var token_ids = NDBuffer[out_idx_type, rank](
-        token_ids_ptr, DimList(batch_size, 1)
+        token_ids_ptr, IndexList[2](batch_size, 1)
     )
     var p_thresholds_ptr = UnsafePointer[Scalar[dtype]].alloc(batch_size)
-    var p_thresholds = NDBuffer[dtype, 1](p_thresholds_ptr, DimList(batch_size))
+    var p_thresholds = NDBuffer[dtype, 1](
+        p_thresholds_ptr, IndexList[1](batch_size)
+    )
 
     # Fill tensors
     fill_fn(in_logits)
@@ -290,13 +292,13 @@ fn test_case_sampling[
         batch_size * vocab_size
     )
     var in_logits_cpu_test = NDBuffer[dtype, rank](
-        in_logits_cpu_test_ptr, DimList(batch_size, vocab_size)
+        in_logits_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )
     var probs_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
     var probs_cpu_test = NDBuffer[dtype, rank](
-        probs_cpu_test_ptr, DimList(batch_size, vocab_size)
+        probs_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test.data[i] = in_logits.data[i] / temperature

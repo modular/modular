@@ -411,7 +411,7 @@ struct TiledMatmul[
             address_space = b_packed_ptr.address_space,
         ](
             b_packed_ptr,
-            DimList(tile_n // n_inner_size, tile_k, n_inner_size),
+            IndexList[3](tile_n // n_inner_size, tile_k, n_inner_size),
         )
 
 
@@ -538,9 +538,13 @@ fn _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = NDBuffer[c.type, 1, c.origin](c.data, c.dim[0]())
+        var out = NDBuffer[c.type, 1, c.origin](
+            c.data, IndexList[1](c.dim[0]())
+        )
         var lhs = a
-        var rhs = NDBuffer[b.type, 1, b.origin](b.data, b.dim[0]())
+        var rhs = NDBuffer[b.type, 1, b.origin](
+            b.data, IndexList[1](b.dim[0]())
+        )
         gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
             out, lhs, rhs
         )
@@ -590,7 +594,7 @@ fn _matmul_cpu_impl[
         if use_i8mm:
             a_packed_ptr = alloc[Scalar[a.type]](mh * kh, alignment=alignment)
         var a_packed = NDBuffer[a.type, 2, _, a.shape](
-            a_packed_ptr, DimList(mh, kh)
+            a_packed_ptr, IndexList[2](mh, kh)
         )
 
         @always_inline

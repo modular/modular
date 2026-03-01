@@ -41,7 +41,7 @@ from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import PipelineState, SharedMemBarrier
 
 from utils import StaticTuple
-from utils.index import Index
+from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
 
 
@@ -331,9 +331,9 @@ def test_gemv_tma[
     comptime static_a_shape = DimList(m.dim, k.dim)
     comptime static_b_shape = DimList(k.dim)
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(k.value)
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[1](k.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
     var a_size = m.value * k.value
     var b_size = k.value
     var c_size = m.value * n.value

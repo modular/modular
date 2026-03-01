@@ -642,7 +642,9 @@ fn _batched_matmul_cpu[
                 a_packed_ptr = UnsafePointer[Scalar[a_type]].alloc(
                     mh * kh, alignment=alignment
                 )
-            var a_packed = NDBuffer[a_type, 2](a_packed_ptr, DimList(mh, kh))
+            var a_packed = NDBuffer[a_type, 2](
+                a_packed_ptr, IndexList[2](mh, kh)
+            )
 
             if use_i8mm:
                 packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)

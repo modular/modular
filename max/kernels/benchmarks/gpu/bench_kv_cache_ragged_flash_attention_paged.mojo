@@ -186,7 +186,7 @@ def execute_kv_cache_ragged_flash_attention[
     var q_host_ptr = UnsafePointer[Scalar[dtype]].alloc(q_size)
     var q_host = NDBuffer[dtype, 3, _, static_q_shape](
         q_host_ptr,
-        DimList(Int(total_seq_len), num_q_heads, head_dim),
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
     )
     random(
         LayoutTensor[
@@ -204,7 +204,7 @@ def execute_kv_cache_ragged_flash_attention[
     ctx.enqueue_copy(q_dev_buffer, q_host_ptr)
     var q_device = NDBuffer[dtype, 3, _, static_q_shape](
         q_dev_buffer.unsafe_ptr(),
-        DimList(Int(total_seq_len), num_q_heads, head_dim),
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
     )
 
     # Output tensor allocation
@@ -213,7 +213,7 @@ def execute_kv_cache_ragged_flash_attention[
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
     var output_device = NDBuffer[dtype, 3, _, static_q_shape](
         output_dev_buffer.unsafe_ptr(),
-        DimList(Int(total_seq_len), num_q_heads, head_dim),
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
     )
     comptime output_layout = Layout.row_major(
         UNKNOWN_VALUE, num_q_heads, head_dim

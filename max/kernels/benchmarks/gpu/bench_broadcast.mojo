@@ -35,7 +35,7 @@ from gpu.host import (
     get_gpu_target,
 )
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
-
+from utils.index import IndexList
 from testing import assert_true
 
 
@@ -183,13 +183,13 @@ fn bench_broadcast[
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
             out_bufs[i] = NDBuffer[dtype, rank](
-                out_multicast_ptr, DimList(length)
+                out_multicast_ptr, IndexList[rank](length)
             )
             list_of_ctx[i].synchronize()
     else:
         for i in range(ngpus):
             out_bufs[i] = NDBuffer[dtype, rank](
-                out_bufs_list[i].unsafe_ptr(), DimList(length)
+                out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
             )
             # Ensure setup has propagated.
             list_of_ctx[i].synchronize()
@@ -217,7 +217,7 @@ fn bench_broadcast[
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             var in_buf_offset = NDBuffer[dtype, rank, MutAnyOrigin](
                 cb_in.offset_ptr(cache_iter),
-                DimList(length),
+                IndexList[rank](length),
             )
 
             # Run broadcast - root's input goes to all outputs
@@ -272,7 +272,7 @@ fn bench_broadcast[
     # Create input buffer for verification (no cache offset)
     var in_buf_verify = NDBuffer[dtype, rank, MutAnyOrigin](
         cb_in.unsafe_ptr(),
-        DimList(length),
+        IndexList[rank](length),
     )
 
     # Run one broadcast for verification

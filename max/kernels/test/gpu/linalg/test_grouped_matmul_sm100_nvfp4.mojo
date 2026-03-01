@@ -155,11 +155,11 @@ def _test_kernel_impl[
         num_experts, expert_shape[0], expert_shape[1] // 2
     )
     comptime static_c_shape = DimList(Dim(), expert_shape[0])
-    var dynamic_a_shape = DimList(total_num_tokens, K // 2)
-    var dynamic_b_shape = DimList(
+    var dynamic_a_shape = IndexList[2](total_num_tokens, K // 2)
+    var dynamic_b_shape = IndexList[3](
         num_experts, expert_shape[0], expert_shape[1] // 2
     )
-    var dynamic_c_shape = DimList(total_num_tokens, expert_shape[0])
+    var dynamic_c_shape = IndexList[2](total_num_tokens, expert_shape[0])
 
     var a_size = total_num_tokens * K // 2
     var b_size = num_experts * expert_shape[0] * expert_shape[1] // 2
@@ -255,33 +255,33 @@ def _test_kernel_impl[
         # ceildiv(total_num_tokens, SF_MN_GROUP_SIZE),
         Dim(),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         num_experts,
         ceildiv(expert_shape[0], SF_MN_GROUP_SIZE),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         a_scale_dim0,
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[6](
         num_experts,
         ceildiv(expert_shape[0], SF_MN_GROUP_SIZE),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_scales_total = (

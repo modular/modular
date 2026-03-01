@@ -21,7 +21,7 @@ from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from utils.index import Index
+from utils.index import Index, IndexList
 
 
 fn test_kernel[
@@ -61,7 +61,7 @@ def test(ctx: DeviceContext) raises:
     )
     var dev_group_offsets = NDBuffer[DType.uint32, 1, _, offset_shape](
         dev_group_offsets_buffer.unsafe_ptr(),
-        offset_shape,
+        IndexList[1](group_len + 1),
     )
 
     ctx.enqueue_copy(dev_group_offsets_buffer, host_group_offsets_ptr)

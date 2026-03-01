@@ -157,24 +157,26 @@ fn test_grouped_1d1d_nvfp4[
     # This catches enqueue_function type identity mismatches that wouldn't
     # appear if we hand-constructed TileTensors with GMEMLayout1D.
     var a_nd = NDBuffer[a_type, 2, _, DimList(Dim(), packed_K)](
-        a_buf.unsafe_ptr(), DimList(total_tokens, packed_K)
+        a_buf.unsafe_ptr(), IndexList[2](total_tokens, packed_K)
     )
     var b_nd = NDBuffer[b_type, 3, _, DimList(num_experts, N, packed_K)](
-        b_buf.unsafe_ptr(), DimList(num_experts, N, packed_K)
+        b_buf.unsafe_ptr(), IndexList[3](num_experts, N, packed_K)
     )
     var c_nd = NDBuffer[c_type, 2, _, DimList(Dim(), N)](
-        c_buf.unsafe_ptr(), DimList(total_tokens, N)
+        c_buf.unsafe_ptr(), IndexList[2](total_tokens, N)
     )
     var a_off_nd = NDBuffer[DType.uint32, 1](
-        a_off_buf.unsafe_ptr(), num_active_experts + 1
+        a_off_buf.unsafe_ptr(), IndexList[1](num_active_experts + 1)
     )
     var a_soff_nd = NDBuffer[DType.uint32, 1](
-        a_soff_buf.unsafe_ptr(), num_active_experts
+        a_soff_buf.unsafe_ptr(), IndexList[1](num_active_experts)
     )
     var eid_nd = NDBuffer[DType.int32, 1](
-        eid_buf.unsafe_ptr(), num_active_experts
+        eid_buf.unsafe_ptr(), IndexList[1](num_active_experts)
     )
-    var es_nd = NDBuffer[DType.float32, 1](es_buf.unsafe_ptr(), num_experts)
+    var es_nd = NDBuffer[DType.float32, 1](
+        es_buf.unsafe_ptr(), IndexList[1](num_experts)
+    )
 
     var a_tt = TileTensor(a_nd)
     var b_tt = TileTensor(b_nd)

@@ -171,31 +171,31 @@ fn bench_grouped_block_scaled_gemm[
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_shape = DimList(M, k_array_val)
-    var dynamic_b_shape = DimList(
+    var dynamic_a_shape = IndexList[2](M, k_array_val)
+    var dynamic_b_shape = IndexList[2](
         n.value, k_array_val
-    ) if transpose_b else DimList(k_array_val, n.value)
-    var dynamic_c_shape = DimList(M, n.value)
-    var dynamic_a_scales_shape = DimList(
+    ) if transpose_b else IndexList[2](k_array_val, n.value)
+    var dynamic_c_shape = IndexList[2](M, n.value)
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(M, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],

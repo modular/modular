@@ -38,6 +38,7 @@ from sys import size_of
 from gpu.host import DeviceBuffer, DeviceContext
 from testing import assert_true
 
+from utils import IndexList
 from comm import Signal, MAX_GPUS
 from comm.scatter import scatter
 from comm.sync import enable_p2p
@@ -90,7 +91,7 @@ fn _test_pull[
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
         input_bufs[dp] = NDBuffer[dtype, rank, ImmutAnyOrigin](
-            dev_buf.unsafe_ptr(), DimList(n)
+            dev_buf.unsafe_ptr(), IndexList[1](n)
         )
         input_devbufs.append(dev_buf)
     host_buf.free()
@@ -107,7 +108,7 @@ fn _test_pull[
         ctxs[i].enqueue_memset(out_buf, 0)
         ctxs[i].synchronize()
         output_bufs[i] = NDBuffer[dtype, rank, MutAnyOrigin](
-            out_buf.unsafe_ptr(), DimList(n)
+            out_buf.unsafe_ptr(), IndexList[1](n)
         )
         output_devbufs.append(out_buf)
 

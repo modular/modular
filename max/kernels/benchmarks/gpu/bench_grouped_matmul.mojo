@@ -173,6 +173,7 @@ fn bench_grouped_matmul[
     comptime static_c_shape = DimList(Dim(), N)
     var c_size = total_num_tokens * N
     comptime static_b_shape = DimList(num_experts, N, packed_K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, packed_K)
     var b_size = num_experts * N * packed_K
 
     # Host allocations
@@ -224,15 +225,15 @@ fn bench_grouped_matmul[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, packed_K),
+        IndexList[2](total_num_tokens, packed_K),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
@@ -475,6 +476,9 @@ fn bench_grouped_matmul[
         comptime static_b_scales_shape = DimList(
             num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
         )
+        var dynamic_b_scales_shape = IndexList[3](
+            num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+        )
         var b_scales_size = (
             num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
         )
@@ -489,11 +493,11 @@ fn bench_grouped_matmul[
 
         var a_scales_dev = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
             a_scales_dev_buffer.unsafe_ptr(),
-            DimList(K // BLOCK_SCALE_K, total_num_tokens),
+            IndexList[2](K // BLOCK_SCALE_K, total_num_tokens),
         )
         var b_scales_dev = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
             b_scales_dev_buffer.unsafe_ptr(),
-            static_b_scales_shape,
+            dynamic_b_scales_shape,
         )
 
         init_vector_launch[DType.float32](

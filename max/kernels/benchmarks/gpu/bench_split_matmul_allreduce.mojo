@@ -160,16 +160,16 @@ fn bench_matmul_all_reduce[
     # Setup the kernel NDBuffers
     comptime for i in range(ngpus):
         As[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape](
-            A_list[i].unsafe_ptr(), DimList(m.value, k.value)
+            A_list[i].unsafe_ptr(), IndexList[2](m.value, k.value)
         )
         Bs[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape](
-            B_list[i].unsafe_ptr(), DimList(n.value, k.value)
+            B_list[i].unsafe_ptr(), IndexList[2](n.value, k.value)
         )
         Cs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
         out_bufs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Copy-capture in registers since the lambda will be used on GPU.
@@ -179,7 +179,7 @@ fn bench_matmul_all_reduce[
 
     comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, 2](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Prepare the output lambda

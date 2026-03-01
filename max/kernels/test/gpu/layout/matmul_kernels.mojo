@@ -24,6 +24,7 @@ from gpu.memory import async_copy_wait_all
 from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
+from utils import IndexList
 
 from memory import LegacyUnsafePointer
 
@@ -65,12 +66,9 @@ fn run_cublas[
     b: UnsafePointer[Scalar[dtype]],
     c: UnsafePointer[Scalar[dtype]],
 ) raises:
-    var a_device = NDBuffer[dtype, 2](a, DimList(M, K))
-    var b_device = NDBuffer[dtype, 2](b, DimList(K, N))
-    var c_device_ref = NDBuffer[dtype, 2](
-        c,
-        DimList(M, N),
-    )
+    var a_device = NDBuffer[dtype, 2](a, IndexList[2](M, K))
+    var b_device = NDBuffer[dtype, 2](b, IndexList[2](K, N))
+    var c_device_ref = NDBuffer[dtype, 2](c, IndexList[2](M, N))
 
     with vendor_blas.Handle() as handle:
 

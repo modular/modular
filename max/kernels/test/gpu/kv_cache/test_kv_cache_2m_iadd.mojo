@@ -224,7 +224,7 @@ fn test_kv_cache_2m_iadd_gpu[
         ctx,
     )
     var cache_lengths_host = NDBuffer[DType.uint32, 1](
-        cache_lengths.tensor[update=False]().ptr, batch_size
+        cache_lengths.tensor[update=False]().ptr, IndexList[1](batch_size)
     )
 
     var input_row_offsets_slice = ManagedLayoutTensor[
@@ -264,11 +264,15 @@ fn test_kv_cache_2m_iadd_gpu[
     )
 
     var lora_end_idx_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(1)
-    var lora_end_idx_host = NDBuffer[DType.int64, 1](lora_end_idx_host_ptr, 1)
+    var lora_end_idx_host = NDBuffer[DType.int64, 1](
+        lora_end_idx_host_ptr, IndexList[1](1)
+    )
     lora_end_idx_host[0] = Int64(total_slice_length)
 
     var batch_seq_len_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(1)
-    var batch_seq_len_host = NDBuffer[DType.int64, 1](batch_seq_len_host_ptr, 1)
+    var batch_seq_len_host = NDBuffer[DType.int64, 1](
+        batch_seq_len_host_ptr, IndexList[1](1)
+    )
     batch_seq_len_host[0] = Int64(total_length)
 
     var kv_block_paged_shape = IndexList[6](
@@ -419,20 +423,20 @@ fn test_kv_cache_2m_iadd_cpu[
         batch_size + 1
     )
     var input_row_offsets_host = NDBuffer[DType.uint32, 1](
-        input_row_offsets_host_ptr, batch_size + 1
+        input_row_offsets_host_ptr, IndexList[1](batch_size + 1)
     )
     var cache_lengths_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
         batch_size
     )
     var cache_lengths_host = NDBuffer[DType.uint32, 1](
-        cache_lengths_host_ptr, batch_size
+        cache_lengths_host_ptr, IndexList[1](batch_size)
     )
 
     var input_row_offsets_slice_host_ptr = UnsafePointer[
         Scalar[DType.uint32]
     ].alloc(num_active_loras + 1)
     var input_row_offsets_slice_host = NDBuffer[DType.uint32, 1](
-        input_row_offsets_slice_host_ptr, num_active_loras + 1
+        input_row_offsets_slice_host_ptr, IndexList[1](num_active_loras + 1)
     )
     var total_length = 0
     var total_slice_length = 0
@@ -460,11 +464,15 @@ fn test_kv_cache_2m_iadd_cpu[
     )
 
     var lora_end_idx_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(1)
-    var lora_end_idx_host = NDBuffer[DType.int64, 1](lora_end_idx_host_ptr, 1)
+    var lora_end_idx_host = NDBuffer[DType.int64, 1](
+        lora_end_idx_host_ptr, IndexList[1](1)
+    )
     lora_end_idx_host[0] = Int64(total_slice_length)
 
     var batch_seq_len_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(1)
-    var batch_seq_len_host = NDBuffer[DType.int64, 1](batch_seq_len_host_ptr, 1)
+    var batch_seq_len_host = NDBuffer[DType.int64, 1](
+        batch_seq_len_host_ptr, IndexList[1](1)
+    )
     batch_seq_len_host[0] = Int64(total_length)
 
     var kv_block_paged_shape = IndexList[6](

@@ -127,13 +127,13 @@ fn run_pdl_race_test[
     comptime c_static_shape = DimList(Dim(), Dim(N))
 
     var a_buf = NDBuffer[dtype, 2, MutAnyOrigin, a_static_shape](
-        a_device.unsafe_ptr(), DimList(M, K)
+        a_device.unsafe_ptr(), IndexList[2](M, K)
     )
     var b_buf = NDBuffer[dtype, 2, MutAnyOrigin, b_static_shape](
-        b_device.unsafe_ptr(), DimList(N, K)
+        b_device.unsafe_ptr(), IndexList[2](N, K)
     )
     var c_buf = NDBuffer[dtype, 2, MutAnyOrigin, c_static_shape](
-        c_device.unsafe_ptr(), DimList(M, N)
+        c_device.unsafe_ptr(), IndexList[2](M, N)
     )
 
     # Run multiple iterations to increase chance of catching race

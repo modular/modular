@@ -49,7 +49,7 @@ from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
 
 from utils import StaticTuple
-from utils.index import Index
+from utils.index import Index, IndexList
 
 
 fn is_benchmark() -> Bool:
@@ -446,13 +446,13 @@ fn test_repack_Q4_0_for_sm8x(
     )
     comptime static_dequan_shape = DimList(k.dim, n.dim)
 
-    var dynamic_gguf_b_shape = DimList(
+    var dynamic_gguf_b_shape = IndexList[2](
         n.value, (k.value // group_size) * group_bytes
     )
-    var dynamic_repacked_b_shape = DimList(
+    var dynamic_repacked_b_shape = IndexList[2](
         n.value, (k.value // group_size) * group_bytes
     )
-    var dynamic_dequan_shape = DimList(k.value, n.value)
+    var dynamic_dequan_shape = IndexList[2](k.value, n.value)
 
     var gguf_b_size = n.value * ((k.value // group_size) * group_bytes)
     var repacked_b_size = n.value * ((k.value // group_size) * group_bytes)
@@ -657,12 +657,12 @@ fn test_quantized[
     comptime static_b_ref_shape = DimList(n.dim, k.dim)
     comptime static_c_shape = DimList(m.dim, n.dim)
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
         n.value, (k.value // group_size) * group_bytes
     )
-    var dynamic_b_ref_shape = DimList(n.value, k.value)
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_b_ref_shape = IndexList[2](n.value, k.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     var a_size = m.value * k.value
     var b_size = n.value * ((k.value // group_size) * group_bytes)
