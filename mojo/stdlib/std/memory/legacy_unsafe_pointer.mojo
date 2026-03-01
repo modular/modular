@@ -581,15 +581,7 @@ struct LegacyUnsafePointer[
         Returns:
             This name of the type.
         """
-        return String(
-            "LegacyUnsafePointer[",
-            get_type_name[Self.type](),
-            ", address_space=",
-            Self.address_space,
-            ", mut=",
-            Self.mut,
-            "]",
-        )
+        return t"LegacyUnsafePointer[{get_type_name[Self.type]()}, address_space={Self.address_space}, mut={Self.mut}]"
 
     @always_inline("builtin")
     fn as_unsafe_pointer(
