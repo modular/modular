@@ -16,14 +16,14 @@
 Contains broadcast, transpose, memcpy, and slice operations.
 """
 
-from os import abort
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from sys.info import has_accelerator, simd_width_of
+from std.os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.sys.info import has_accelerator, simd_width_of
 
-from algorithm.functional import elementwise, IndexList
-from memory import OpaquePointer
-from runtime.asyncrt import DeviceContextPtr
+from std.algorithm.functional import elementwise, IndexList
+from std.memory import OpaquePointer
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import ManagedTensorSlice
 from tensor.io_spec import Input, Output
 from compiler_internal import StaticTensorSpec
