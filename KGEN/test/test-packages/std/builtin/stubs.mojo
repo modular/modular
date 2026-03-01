@@ -908,25 +908,6 @@ struct VariadicList[type: TrivialRegisterPassable](TrivialRegisterPassable):
         pass
 
 
-# Helper to compute the union of two origins:
-# TODO: parametric aliases would be nice.
-struct _lit_origin_union[
-    mut: Bool,
-    //,
-    a: Origin[mut=mut].type,
-    b: Origin[mut=mut].type,
-]:
-    comptime result = __mlir_attr[
-        `#lit.origin.union<`,
-        a,
-        `,`,
-        b,
-        `> : !lit.origin<`,
-        mut._mlir_value,
-        `>`,
-    ]
-
-
 @fieldwise_init
 struct _VariadicListMemIter[
     elt_is_mutable: Bool,
