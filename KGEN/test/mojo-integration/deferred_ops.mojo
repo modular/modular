@@ -36,7 +36,7 @@ fn to_string[
 
 @always_inline("nodebug")
 fn to_string[
-    string: StaticString, extra: VariadicList[StaticString]
+    string: StaticString, extra: VariadicParamList[StaticString]
 ]() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
         `#kgen.param.expr<data_to_str,`,

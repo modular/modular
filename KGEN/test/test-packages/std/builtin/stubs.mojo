@@ -633,7 +633,7 @@ comptime StaticString = StringSlice[StaticConstantOrigin]
 
 @always_inline("builtin")
 fn _get_kgen_string[
-    string: StaticString, extra: VariadicList[StaticString]
+    string: StaticString, extra: VariadicParamList[StaticString]
 ]() -> __mlir_type.`!kgen.string`:
     return __mlir_attr[
         `#kgen.param.expr<data_to_str,`,
@@ -890,7 +890,9 @@ trait ImplicitlyDestructible:
 # ===----------------------------------------------------------------------=== #
 
 
-struct VariadicList[type: TrivialRegisterPassable](TrivialRegisterPassable):
+struct VariadicParamList[type: TrivialRegisterPassable](
+    TrivialRegisterPassable
+):
     comptime _mlir_type = __mlir_type[`!kgen.variadic<`, Self.type, `>`]
 
     var value: Self._mlir_type
