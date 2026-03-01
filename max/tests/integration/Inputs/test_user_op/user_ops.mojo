@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import iota
+from std.math import iota
 from register import *
 import compiler_internal as compiler
 from tensor import OutputTensor
@@ -20,7 +20,7 @@ from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @compiler.register("reduce_buffers")

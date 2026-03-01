@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_int
+from std.sys import env_get_int
 
 import compiler
-from logger import Logger
+from std.logger import Logger
 from tensor import foreach, OutputTensor, InputTensor
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 comptime logger = Logger()
 
