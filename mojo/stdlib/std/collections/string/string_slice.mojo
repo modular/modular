@@ -2657,7 +2657,11 @@ fn _unsafe_strlen(
 
     Args:
         ptr: The null-terminated pointer to the string.
-        max: The maximum size of the string.
+        max: The maximum number of bytes to scan. Defaults to `UInt.MAX`,
+             which means the scan is unbounded and relies on the string
+             being null-terminated. Pass an explicit value to cap the scan
+             (e.g. when reading from a fixed-size buffer such as a dirent
+             name field).
 
     Returns:
         The length of the null terminated string without the null terminator.
@@ -2679,11 +2683,16 @@ fn _unsafe_strlen_impl(
     """SIMD-accelerated helper for `_unsafe_strlen`.
 
     Scans for a null byte using SIMD-width blocks, then a scalar tail for any
-    remaining bytes within `max`.
+    remaining bytes within `max`. When `max == UInt.MAX` the scan is
+    unbounded; all other values cap the scan to at most `max` bytes.
+
+    The SIMD width matches `_memchr_impl` (`simd_width_of[DType.bool]()`),
+    keeping SIMD behaviour consistent across stdlib string search helpers.
     """
     comptime bool_mask_width = simd_width_of[DType.bool]()
     var zero = SIMD[DType.uint8, bool_mask_width](0)
 
+    # UInt.MAX is the sentinel for "no bound" (see _unsafe_strlen docstring).
     if max == UInt.MAX:
         # Unbounded scan: the string is guaranteed to be null-terminated, so
         # a null byte will always be found. Load SIMD-width blocks until one
