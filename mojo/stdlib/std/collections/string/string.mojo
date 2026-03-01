@@ -2359,13 +2359,7 @@ def _handle_base_prefix(
 
 
 def _str_to_base_error(base: Int, str_slice: StringSlice) -> String:
-    return String(
-        "String is not convertible to integer with base ",
-        base,
-        ": '",
-        str_slice,
-        "'",
-    )
+    return t"String is not convertible to integer with base {base}: '{str_slice}'"
 
 
 def _identify_base(str_slice: StringSlice, start: Int) -> Tuple[Int, Int]:

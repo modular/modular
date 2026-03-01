@@ -520,12 +520,7 @@ def _create_colored_diff(lhs: String, rhs: String) -> String:
     Returns:
         A string containing the colored diff output.
     """
-    return String(
-        "\n   left: ",
-        _colorize_diff_string[Color.RED](lhs, rhs),
-        "\n  right: ",
-        _colorize_diff_string[Color.GREEN](rhs, lhs),
-    )
+    return t"\n   left: {_colorize_diff_string[Color.RED](lhs, rhs)}\n  right: {_colorize_diff_string[Color.GREEN](rhs, lhs)}"
 
 
 def _assert_cmp_error[
