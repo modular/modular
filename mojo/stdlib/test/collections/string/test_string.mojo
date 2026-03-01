@@ -1817,5 +1817,34 @@ def test_append_codepoint() raises:
     assert_equal(s.byte_length(), 8)
 
 
+def test_iadd_writable() raises:
+    # t-strings
+    var s = String("hello")
+    s += t" {42}"
+    assert_equal(s, "hello 42")
+
+    # integers
+    var s2 = String("count=")
+    s2 += 7
+    assert_equal(s2, "count=7")
+
+    # existing StringSlice overload still works
+    var s3 = String("abc")
+    s3 += StringSlice("def")
+    assert_equal(s3, "abcdef")
+
+    # String += String still works
+    var s4 = String("foo")
+    s4 += String("bar")
+    assert_equal(s4, "foobar")
+
+    # chained appends via t-strings
+    var s5 = String("x=")
+    var x = 10
+    s5 += t"{x}"
+    s5 += t", y={x * 2}"
+    assert_equal(s5, "x=10, y=20")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

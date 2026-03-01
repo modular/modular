@@ -982,6 +982,20 @@ struct String(
         """
         self._iadd(other.as_bytes())
 
+    fn __iadd__[T: Writable](mut self, other: T):
+        """Appends any writable value to this string.
+
+        This overload allows appending any type that implements `Writable`,
+        such as t-strings, integers, or other formattable types.
+
+        Parameters:
+            T: The type of the value to append, which must implement `Writable`.
+
+        Args:
+            other: The writable value to append.
+        """
+        self.write(other)
+
     @deprecated("Use `str.codepoints()` or `str.codepoint_slices()` instead.")
     fn __iter__(self) -> CodepointSliceIter[origin_of(self)]:
         """Iterate over the string, returning immutable references.
