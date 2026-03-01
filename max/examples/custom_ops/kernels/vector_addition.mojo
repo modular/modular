@@ -13,13 +13,13 @@
 
 # DOC: max/develop/build-custom-ops.mdx
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_dim, block_idx, thread_idx
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu import block_dim, block_idx, thread_idx
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn _vector_addition_cpu(

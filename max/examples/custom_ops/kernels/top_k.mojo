@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from sys import align_of, size_of
+from std.math import iota
+from std.sys import align_of, size_of
 
-from algorithm import parallelize_over_rows
-from bit import log2_floor
+from std.algorithm import parallelize_over_rows
+from std.bit import log2_floor
 from compiler import register
-from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
-from gpu.primitives import warp
-from gpu.memory import AddressSpace, external_memory
-from memory import Span
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
+from std.gpu.primitives import warp
+from std.gpu.memory import AddressSpace, external_memory
+from std.memory import Span
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
-from utils.numerics import min_or_neg_inf
+from std.utils.numerics import min_or_neg_inf
 
 
 @fieldwise_init
