@@ -49,6 +49,9 @@ what we publish.
   `MODULAR_MAX_DEBUG=True` to enable source note collection; when source notes
   are not available, error messages include a hint about how to enable them.
 
+- Fixed Mojo and MAX compatibility with NVIDIA unified memory systems, like
+  the Jetson series or the DGX Spark.
+
 #### Inference server {#26-2-max-serve}
 
 - Enabled overlap scheduling for select model architectures like
