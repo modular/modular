@@ -509,14 +509,11 @@ struct VariadicList[type: TrivialRegisterPassable](
         return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
 
     @always_inline
-    fn __getitem__[I: Indexer](self, idx: I) -> Self.type:
+    fn __getitem__(self, idx: Int) -> Self.type:
         """Gets a single element on the variadic list.
 
         Args:
             idx: The index of the element to access on the list.
-
-        Parameters:
-            I: A type that can be used as an index.
 
         Returns:
             The element on the list corresponding to the given index.
