@@ -26,7 +26,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
-    PagedCacheValues,
+    unflatten_ragged_mha_decode_inputs,
 )
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -75,12 +75,9 @@ def test_mla_prefill_plan() -> None:
             input_row_offsets = g.inputs[0].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                kv_blocks=g.inputs[1].buffer,
-                cache_lengths=g.inputs[2].tensor,
-                lookup_table=g.inputs[3].tensor,
-                max_lengths=g.inputs[4].tensor,
-            )
+            kv_collection = unflatten_ragged_mha_decode_inputs(
+                g.inputs[1:], n_devices=1
+            )[0]
 
             results = flare_mla_prefill_plan(
                 kv_params,
@@ -191,12 +188,9 @@ def test_mla_decompress_k_cache() -> None:
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                kv_blocks=g.inputs[2].buffer,
-                cache_lengths=g.inputs[3].tensor,
-                lookup_table=g.inputs[4].tensor,
-                max_lengths=g.inputs[5].tensor,
-            )
+            kv_collection = unflatten_ragged_mha_decode_inputs(
+                g.inputs[2:], n_devices=1
+            )[0]
 
             # Allocate a page-aligned buffer to hold decompressed KV cache.
             buffer_tok_size = 256
@@ -248,11 +242,12 @@ def test_mla_decompress_k_cache() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
+    assert kv_runtime_inputs.mha_decode_dispatch_metadata is not None
 
-    new_blocks = torch.randn(size=blocks.shape, dtype=torch.float32)
+    new_blocks = torch.randn(
+        size=kv_runtime_inputs.blocks.shape, dtype=torch.float32
+    )
 
     weight = (
         torch.randn(size=weight_type.shape.static_dims, dtype=torch.float32)
@@ -263,9 +258,7 @@ def test_mla_decompress_k_cache() -> None:
         input_row_offsets.to(device0),
         Buffer.from_numpy(weight.numpy()).to(device0),
         Buffer.from_numpy(new_blocks.numpy()).to(device0),
-        cache_lengths,
-        lookup_table_tensor,
-        is_cache_empty_buf,
+        *kv_runtime_inputs[1:],
     )
 
     # With page-aligned spans and 256-token chunks, chunk 0 covers request 0 and 1.
@@ -329,12 +322,9 @@ def test_mla_decompress_k_cache_only_k() -> None:
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = PagedCacheValues(
-                kv_blocks=g.inputs[2].buffer,
-                cache_lengths=g.inputs[3].tensor,
-                lookup_table=g.inputs[4].tensor,
-                max_lengths=g.inputs[5].tensor,
-            )
+            kv_collection = unflatten_ragged_mha_decode_inputs(
+                g.inputs[2:], n_devices=1
+            )[0]
 
             # Allocate a buffer to hold KV cache for 60 decompressed tokens
             buffer_tok_size = 60

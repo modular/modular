@@ -27,7 +27,7 @@ from max.nn.attention.multi_latent_attention import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
-    PagedCacheValues,
+    unflatten_ragged_mha_decode_inputs,
 )
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -125,12 +125,9 @@ def generate_latent_attention_max_outputs_dp(
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = PagedCacheValues(
-                kv_blocks=graph.inputs[2].buffer,
-                cache_lengths=graph.inputs[3].tensor,
-                lookup_table=graph.inputs[4].tensor,
-                max_lengths=graph.inputs[5].tensor,
-            )
+            kv_collection = unflatten_ragged_mha_decode_inputs(
+                graph.inputs[2:], n_devices=1
+            )[0]
             out_list = dp_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 xs=[hidden_states],

@@ -236,6 +236,36 @@ fn get_mha_decoding_num_partitions[
     return 1
 
 
+@fieldwise_init
+struct MHADecodeDispatchMetadata(TrivialRegisterPassable):
+    var batch_size: Int
+    var q_max_seq_len: Int
+    var num_partitions: Int
+    var max_cache_valid_length: Int
+
+    @staticmethod
+    @always_inline
+    fn from_runtime_values[
+        num_heads: Int,
+        group: Int,
+    ](
+        batch_size: Int,
+        q_max_seq_len: Int,
+        max_cache_valid_length: Int,
+        ctx: DeviceContext,
+    ) -> Self:
+        return Self(
+            batch_size,
+            q_max_seq_len,
+            get_mha_decoding_num_partitions[num_heads, group](
+                batch_size,
+                max_cache_valid_length,
+                ctx,
+            ),
+            max_cache_valid_length,
+        )
+
+
 fn flash_attention_hw_supported[qkv_type: DType]() -> Bool:
     return has_nvidia_gpu_accelerator() or (
         has_amd_gpu_accelerator() and qkv_type == DType.bfloat16
@@ -305,6 +335,7 @@ fn flash_attention[
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
+    decode_dispatch_metadata: OptionalReg[MHADecodeDispatchMetadata] = None,
 ) raises:
     """Flash attention 2 algorithm.
     Compute:
@@ -421,6 +452,7 @@ fn flash_attention[
             kv_input_row_offsets,
             num_partitions,
             sink_weights,
+            decode_dispatch_metadata=decode_dispatch_metadata,
         )
 
 
@@ -491,6 +523,7 @@ fn flash_attention_dispatch[
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
+    decode_dispatch_metadata: OptionalReg[MHADecodeDispatchMetadata] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -699,11 +732,35 @@ fn flash_attention_dispatch[
             )
             comptime num_blocks_y = num_heads // group
 
-            var num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
-                Int(num_heads), Int(group)
-            ](
-                batch_size, max_cache_valid_length, ctx
+            var dispatch_metadata: MHADecodeDispatchMetadata
+            if decode_dispatch_metadata:
+                dispatch_metadata = decode_dispatch_metadata.value()
+            else:
+                dispatch_metadata = (
+                    MHADecodeDispatchMetadata.from_runtime_values[
+                        Int(num_heads),
+                        Int(group),
+                    ](
+                        batch_size,
+                        max_prompt_len,
+                        max_cache_valid_length,
+                        ctx,
+                    )
+                )
+            var max_cache_valid_length_value = (
+                dispatch_metadata.max_cache_valid_length
             )
+
+            var num_partitions_value: Int
+            if num_partitions:
+                num_partitions_value = num_partitions.value()
+            elif dispatch_metadata.num_partitions > 0:
+                num_partitions_value = dispatch_metadata.num_partitions
+            else:
+                num_partitions_value = get_mha_decoding_num_partitions[
+                    Int(num_heads),
+                    Int(group),
+                ](batch_size, max_cache_valid_length_value, ctx)
 
             comptime use_fa3_kernel = (
                 (is_sm90 or is_sm100)
@@ -731,7 +788,7 @@ fn flash_attention_dispatch[
                     scale,
                     batch_size,
                     max_prompt_len,
-                    max_cache_valid_length,
+                    max_cache_valid_length_value,
                     Int(num_heads),
                     Int(depth),
                     Int(group),
@@ -784,7 +841,7 @@ fn flash_attention_dispatch[
                                 mask_functor,
                                 valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
-                                max_cache_valid_length,
+                                max_cache_valid_length_value,
                                 scale,
                                 kv_input_row_offsets,
                                 batch_size,
@@ -808,7 +865,7 @@ fn flash_attention_dispatch[
                                 mask_functor,
                                 valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
-                                max_cache_valid_length,
+                                max_cache_valid_length_value,
                                 scale,
                                 kv_input_row_offsets,
                                 batch_size,
@@ -834,7 +891,7 @@ fn flash_attention_dispatch[
                             scale,
                             batch_size,
                             num_partitions_value,
-                            max_cache_valid_length,
+                            max_cache_valid_length_value,
                             valid_length.value(),
                             sink_weights,
                             mask_functor,
@@ -948,7 +1005,7 @@ fn flash_attention_dispatch[
                                 mask_functor,
                                 valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
-                                max_cache_valid_length,
+                                max_cache_valid_length_value,
                                 scale,
                                 kv_input_row_offsets,
                                 batch_size,
@@ -975,7 +1032,7 @@ fn flash_attention_dispatch[
                                 mask_functor,
                                 valid_length.value().to_device_buffer(ctx),
                                 StaticInt[1](),
-                                max_cache_valid_length,
+                                max_cache_valid_length_value,
                                 scale,
                                 kv_input_row_offsets,
                                 batch_size,
@@ -1023,7 +1080,7 @@ fn flash_attention_dispatch[
                             scale,
                             batch_size,
                             num_partitions_value,
-                            max_cache_valid_length,
+                            max_cache_valid_length_value,
                             valid_length.value(),
                             sink_weights,
                             mask_functor,

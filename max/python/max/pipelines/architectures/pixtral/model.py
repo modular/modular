@@ -32,7 +32,6 @@ from max.graph.weights import (
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
@@ -378,17 +377,12 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
                     return_n_logits,
                     *kv_cache_inputs,
                 ) = graph.inputs
-                kv_collection = PagedCacheValues(
-                    kv_blocks=kv_cache_inputs[0].buffer,
-                    cache_lengths=kv_cache_inputs[1].tensor,
-                    lookup_table=kv_cache_inputs[2].tensor,
-                    max_lengths=kv_cache_inputs[3].tensor,
-                )
+                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
                 outputs = nn_model(
                     input_ids=input_ids.tensor,
                     pixel_values=pixel_values.tensor,
                     attention_mask=attention_mask.tensor,
-                    kv_collection=kv_collection,
+                    kv_collection=kv_collections[0],
                     return_n_logits=return_n_logits.tensor,
                     input_row_offsets=input_row_offsets.tensor,
                 )

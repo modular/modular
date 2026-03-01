@@ -197,8 +197,8 @@ class InternVLDecoderLayer(Module):
             norm_xs,
             signal_buffers,
             kv_collections,
-            freqs_cis=freqs_cis,
-            input_row_offsets=input_row_offsets,
+            freqs_cis,
+            input_row_offsets,
         )
 
         # Add residual.
@@ -412,7 +412,7 @@ class InternVisionEmbeddings(Module, Shardable):
             in_dim=3 * self.patch_size * self.patch_size,
             out_dim=self.embed_dim,
             dtype=self.dtype,
-            device=device if device else DeviceRef.CPU(),
+            device=device or DeviceRef.CPU(),
             has_bias=True,
         )
 
@@ -423,14 +423,14 @@ class InternVisionEmbeddings(Module, Shardable):
             "class_embedding",
             dtype=self.dtype,
             shape=(1, 1, self.embed_dim),
-            device=device if device else DeviceRef.CPU(),
+            device=device or DeviceRef.CPU(),
         )
 
         self.position_embedding = Weight(
             "position_embedding",
             dtype=self.dtype,
             shape=(1, self.num_positions, self.embed_dim),
-            device=device if device else DeviceRef.CPU(),
+            device=device or DeviceRef.CPU(),
         )
 
     @property

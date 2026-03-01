@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
-
 import numpy as np
 import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType
 from max.kv_cache import PagedKVCacheManager
 from max.nn import RotaryEmbedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParams,
+    unflatten_ragged_mha_decode_inputs,
+)
 from max.pipelines.architectures.llama4.layers.attention import (
     _Llama4TextAttention,
 )
@@ -113,25 +113,6 @@ def generate_torch_outputs(
     return outputs
 
 
-def unflatten_kv_inputs(
-    kv_params: KVCacheParams,
-    kv_inputs_flat: Sequence[Value[Any]],
-) -> list[PagedCacheValues]:
-    n_devices = kv_params.n_devices
-    kv_caches_per_dev: list[PagedCacheValues] = []
-    for i in range(n_devices):
-        start_idx = i * n_devices
-        kv_caches_per_dev.append(
-            PagedCacheValues(
-                kv_blocks=kv_inputs_flat[start_idx].buffer,
-                cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-            )
-        )
-    return kv_caches_per_dev
-
-
 def generate_max_outputs(
     config: Llama4Config,
     input_tensor: torch.Tensor,
@@ -212,10 +193,7 @@ def generate_max_outputs(
             ["total_seq_len"],
             device=device_ref,
         )
-        kv_cache_args = kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_cache_args for kv_type in sublist
-        ]
+        flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
 
         # Build graph.
         with Graph(
@@ -228,7 +206,9 @@ def generate_max_outputs(
             ),
         ) as graph:
             inputs, input_row_offsets, cache_positions, *kv_cache = graph.inputs
-            kv_collections = unflatten_kv_inputs(kv_params, kv_cache)
+            kv_collections = unflatten_ragged_mha_decode_inputs(
+                kv_cache, n_devices=kv_params.n_devices
+            )
             graph.output(
                 attention(
                     [inputs.tensor],
@@ -244,9 +224,8 @@ def generate_max_outputs(
         batch = [create_text_context(np.empty(input_seq_len))]
         kv_manager.claim(batch[0].request_id, replica_idx=0)
         kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-        blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-            kv_manager.runtime_inputs([batch])[0]
-        )
+        kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
+        assert kv_runtime_inputs.mha_decode_dispatch_metadata is not None
         cache_positions_input = np.arange(input_seq_len, dtype=np.uint32)
         outputs.append(
             compiled.execute(
@@ -255,10 +234,11 @@ def generate_max_outputs(
                     np.array([0, input_seq_len], dtype=np.uint32)
                 ).to(device),
                 Buffer.from_numpy(cache_positions_input).to(device),
-                blocks.to(device),
-                cache_lengths.to(device),
-                lookup_table_tensor.to(device),
-                is_cache_empty_buf,
+                kv_runtime_inputs.blocks.to(device),
+                kv_runtime_inputs.cache_lengths.to(device),
+                kv_runtime_inputs.lookup_table.to(device),
+                kv_runtime_inputs.max_lengths,
+                kv_runtime_inputs.mha_decode_dispatch_metadata,
             )[0]
         )
     return outputs

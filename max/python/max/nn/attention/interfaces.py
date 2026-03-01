@@ -33,5 +33,5 @@ class DistributedAttentionImpl(Module, ABC):
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
-        input_row_offsets: TensorValue,
+        input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]: ...

@@ -30,9 +30,11 @@ from sys.info import _accelerator_arch
 from bit import prev_power_of_two
 from gpu import WARP_SIZE, lane_id
 from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu.memory import AddressSpace
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
+from layout.runtime_layout import RuntimeLayout
 from layout.swizzle import make_ldmatrix_swizzle
 from nn.mha_mask import (
     CausalMask,
@@ -56,6 +58,22 @@ from utils.numerics import min_or_neg_inf
 comptime is_sm90 = "sm_90" in _accelerator_arch()
 comptime is_sm100 = "sm_100" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
+
+
+@always_inline
+fn as_dynamic_row_major_1d[
+    dtype: DType
+](
+    tensor: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
+    return LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin](
+        tensor.ptr,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            tensor.get_shape()
+        ),
+    )
 
 
 struct FlashAttentionAlgorithm(

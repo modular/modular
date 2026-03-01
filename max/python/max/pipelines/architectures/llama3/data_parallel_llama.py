@@ -28,7 +28,10 @@ from max.graph import (
     ops,
 )
 from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    unflatten_ragged_mha_decode_inputs,
+)
 from max.nn.layer import Module
 from max.pipelines.lib.lora import LoRAManager
 
@@ -108,7 +111,7 @@ class DataParallelLlama(Module):
             return_n_logits_type,
             *single_model_kv_cache_inputs,
         ) = single_model_inputs
-        self.num_kv_cache_inputs = len(single_model_kv_cache_inputs)
+        del single_model_kv_cache_inputs
 
         flat_kv_cache_inputs = kv_params.get_symbolic_inputs().flatten()
 
@@ -128,12 +131,6 @@ class DataParallelLlama(Module):
         return tuple(inputs)
 
     def _call_flat(self, *args: Value[Any]) -> tuple[TensorValue, ...]:
-        # TODO: Add better support for calling a module with
-        # inputs that have been flattened.
-        # Currently this function requires `input_types` to be called first,
-        # in order to unflatten the inputs.
-        assert hasattr(self, "num_kv_cache_inputs")
-
         (
             tokens,
             input_row_offsets,
@@ -151,19 +148,15 @@ class DataParallelLlama(Module):
 
         all_model_args = []
 
-        for i in range(len(self.config.devices)):
-            start_idx = i * self.num_kv_cache_inputs
-            kv_cache_args = PagedCacheValues(
-                kv_blocks=all_kv_cache_inputs[start_idx].buffer,
-                cache_lengths=all_kv_cache_inputs[start_idx + 1].tensor,
-                lookup_table=all_kv_cache_inputs[start_idx + 2].tensor,
-                max_lengths=all_kv_cache_inputs[start_idx + 3].tensor,
-            )
+        kv_collections = unflatten_ragged_mha_decode_inputs(
+            all_kv_cache_inputs, n_devices=len(self.config.devices)
+        )
 
+        for i in range(len(self.config.devices)):
             all_model_args.append(
                 (
                     split_tokens[i].tensor,
-                    kv_cache_args,
+                    kv_collections[i],
                     return_n_logits.tensor,
                     split_offsets[i].tensor,
                 )

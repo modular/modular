@@ -162,9 +162,11 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         session=session,
         max_batch_size=128,
     )
-    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    is_cache_empty_type = kv_symbolic_inputs.max_lengths
 
     def construct() -> Graph:
         with Graph(
@@ -227,9 +229,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
 
     @modular_graph_test(
         session,
@@ -240,10 +240,10 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         },
         provided_inputs={
             1: input_row_offsets,
-            3: blocks,
-            4: cache_lengths,
-            5: lookup_table_tensor,
-            6: is_cache_empty_buf,
+            3: kv_runtime_inputs.blocks,
+            4: kv_runtime_inputs.cache_lengths,
+            5: kv_runtime_inputs.lookup_table,
+            6: kv_runtime_inputs.max_lengths,
         },
     )
     def test_runs_without_nan(

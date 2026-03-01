@@ -25,9 +25,13 @@ from .cache_params import (
 from .input_types import (
     KVCacheInputs,
     KVCacheInputsSequence,
+    MHADecodeDispatchMetadata,
     NestedIterableDataclass,
     PagedCacheValues,
     RaggedKVCacheInputs,
+    mha_decode_dispatch_metadata,
+    mha_decode_dispatch_metadata_list,
+    unflatten_ragged_mha_decode_inputs,
 )
 from .metrics import KVCacheMetrics
 from .utils import build_max_lengths_tensor
@@ -40,6 +44,7 @@ __all__ = [
     "KVCacheParamInterface",
     "KVCacheParams",
     "KVCacheQuantizationConfig",
+    "MHADecodeDispatchMetadata",
     "MultiKVCacheParams",
     "NestedIterableDataclass",
     "PagedCacheValues",
@@ -49,4 +54,7 @@ __all__ = [
     "compute_num_device_blocks",
     "compute_num_host_blocks",
     "estimated_memory_size",
+    "mha_decode_dispatch_metadata",
+    "mha_decode_dispatch_metadata_list",
+    "unflatten_ragged_mha_decode_inputs",
 ]

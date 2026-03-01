@@ -21,10 +21,7 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, unflatten_ragged_mha_decode_inputs
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
@@ -291,10 +288,7 @@ def generate_qwen3_max_outputs(
         DType.uint32, shape=[len(seq_lens) + 1], device=device_ref
     )
 
-    kv_cache_args = kv_params.get_symbolic_inputs()
-    flattened_kv_types = [
-        kv_type for sublist in kv_cache_args for kv_type in sublist
-    ]
+    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
 
     input_row_offsets = _build_input_row_offsets(seq_lens).to(torch_device)
 
@@ -308,12 +302,9 @@ def generate_qwen3_max_outputs(
     ) as graph:
         x, input_row_offsets_input, *kv_cache = graph.inputs
 
-        kv_collection = PagedCacheValues(
-            kv_blocks=kv_cache[0].buffer,
-            cache_lengths=kv_cache[1].tensor,
-            lookup_table=kv_cache[2].tensor,
-            max_lengths=kv_cache[3].tensor,
-        )
+        kv_collection = unflatten_ragged_mha_decode_inputs(
+            kv_cache, n_devices=1
+        )[0]
 
         output = attention(
             layer_idx=ops.constant(0, DType.uint32, DeviceRef.CPU()),
@@ -335,18 +326,12 @@ def generate_qwen3_max_outputs(
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
     kv_cache_runtime = kv_manager.runtime_inputs([batch])[0]
-    blocks_tensor = kv_cache_runtime[0]
-    cache_lengths_tensor = kv_cache_runtime[1]
-    lookup_table_tensor = kv_cache_runtime[2]
-    max_lengths_tensor = kv_cache_runtime[3]
+    assert kv_cache_runtime.mha_decode_dispatch_metadata is not None
 
     result = compiled.execute(
         Buffer.from_dlpack(flat_input.to(torch_device)).to(device),
         Buffer.from_dlpack(input_row_offsets.to(torch_device)).to(device),
-        blocks_tensor,
-        cache_lengths_tensor,
-        lookup_table_tensor,
-        max_lengths_tensor,
+        *kv_cache_runtime,
     )
     max_tensor = result[0]
     return from_dlpack(max_tensor)

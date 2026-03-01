@@ -204,9 +204,13 @@ from nn.kv_cache_ragged import (
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
-from nn.mha import flash_attention, flash_attention_ragged
+from nn.mha import (
+    MHADecodeDispatchMetadata,
+    flash_attention,
+    flash_attention_ragged,
+)
 from nn.mha_mask import MHAMask
-from nn.mha_utils import dispatch_mask
+from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
 from nn.mla_graph import (
     mla_prefill_branch_fp8,
     mla_prefill_branch_bf16,
@@ -7030,8 +7034,90 @@ struct Struct_mha_padded_paged:
         )
 
 
+@always_inline
+fn _unmarshal_mha_decode_dispatch_metadata(
+    mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1],
+) -> MHADecodeDispatchMetadata:
+    return MHADecodeDispatchMetadata(
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[0]),
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[1]),
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[2]),
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[3]),
+    )
+
+
+@always_inline
+fn _execute_mha_ragged_paged_scalar_args[
+    dtype: DType,
+    //,
+    target: StaticString,
+    mask_str: StaticString,
+    sink: Bool = False,
+    local_window_size: Int = -1,
+](
+    output: OutputTensor[dtype=dtype, rank=3],
+    q: InputTensor[dtype=dtype, rank=3],
+    input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+    kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+    cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+    kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+    max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+    layer_idx: UInt32,
+    scale: Float32,
+    mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1],
+    context: DeviceContextPtr,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+) raises:
+    var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
+        mha_decode_dispatch_metadata
+    )
+    var kv_collection = generic_get_paged_cache(
+        kv_blocks,
+        cache_lengths,
+        kv_lookup_table,
+        max_lengths,
+    )
+    var input_row_offsets_lt = as_dynamic_row_major_1d(
+        input_row_offsets.to_layout_tensor().get_immutable()
+    )
+
+    comptime if sink:
+        generic_flash_attention_kv_cache_ragged_sink[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets_lt,
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            context,
+            sink_weights.value(),
+            decode_dispatch_metadata,
+        )
+    else:
+        generic_flash_attention_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets_lt,
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            context,
+            decode_dispatch_metadata,
+        )
+
+
 @compiler.register("mo.mha.ragged.paged")
-struct Struct_mha_ragged_paged:
+struct Struct_mha_ragged_paged_scalar_args:
     @always_inline
     @staticmethod
     fn execute[
@@ -7050,37 +7136,30 @@ struct Struct_mha_ragged_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
+        mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            cache_lengths,
-            kv_lookup_table,
-            max_lengths,
-        )
-        generic_flash_attention_kv_cache_ragged[
+        _execute_mha_ragged_paged_scalar_args[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
         ](
-            q.to_layout_tensor(),
-            rebind[
-                LayoutTensor[
-                    DType.uint32,
-                    Layout.row_major(UNKNOWN_VALUE),
-                    ImmutAnyOrigin,
-                ]
-            ](input_row_offsets.to_layout_tensor()),
-            kv_collection,
+            output,
+            q,
+            input_row_offsets,
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            mha_decode_dispatch_metadata,
             context,
         )
 
 
 @compiler.register("mo.mha.ragged.paged.sink_weights")
-struct Struct_mha_ragged_paged_sink_weights:
+struct Struct_mha_ragged_paged_sink_weights_scalar_args:
     @always_inline
     @staticmethod
     fn execute[
@@ -7100,34 +7179,33 @@ struct Struct_mha_ragged_paged_sink_weights:
         layer_idx: UInt32,
         scale: Float32,
         sink_weights: InputTensor[dtype=dtype, rank=1],
+        mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        var sink_buf = sink_weights.to_layout_tensor()
-        var kv_collection = generic_get_paged_cache(
+        var sink_weights_lt = sink_weights.to_layout_tensor()
+        var sink_weights_rebound = as_dynamic_row_major_1d(sink_weights_lt)
+        _execute_mha_ragged_paged_scalar_args[
+            target=target,
+            mask_str=mask_str,
+            sink=True,
+            local_window_size=local_window_size,
+        ](
+            output,
+            q,
+            input_row_offsets,
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
             max_lengths,
-        )
-        generic_flash_attention_kv_cache_ragged_sink[
-            target=target,
-            mask_str=mask_str,
-            local_window_size=local_window_size,
-        ](
-            q.to_layout_tensor(),
-            rebind[
-                LayoutTensor[
-                    DType.uint32,
-                    Layout.row_major(UNKNOWN_VALUE),
-                    ImmutAnyOrigin,
-                ]
-            ](input_row_offsets.to_layout_tensor()),
-            kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            mha_decode_dispatch_metadata,
             context,
-            sink_buf,
+            OptionalReg[
+                LayoutTensor[
+                    dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+                ]
+            ](sink_weights_rebound),
         )
 
 

@@ -39,6 +39,7 @@ from max.nn.attention.attention_with_rope import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
+    MHADecodeDispatchMetadata,
     NestedIterableDataclass,
     PagedCacheValues,
 )
@@ -50,6 +51,7 @@ AttentionFn = Callable[
         TensorValue,
         TensorValue,
         BufferValue,
+        TensorValue,
         TensorValue,
         TensorValue,
         TensorValue,
@@ -89,14 +91,13 @@ def build_and_execute_graph(
             *kv_input_symbols,
         ],
     ) as g:
-        (
-            hidden_state,
-            input_row_offsets_symbol,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            max_lengths,
-        ) = g.inputs
+        hidden_state = g.inputs[0]
+        input_row_offsets_symbol = g.inputs[1]
+        blocks = g.inputs[2]
+        cache_lengths = g.inputs[3]
+        lookup_table = g.inputs[4]
+        max_lengths = g.inputs[5]
+        mha_decode_dispatch_metadata = g.inputs[-1]
         layer_idx = ops.constant(0, dtype=DType.uint32, device=device_ref)
 
         output = attention_fn(
@@ -106,6 +107,7 @@ def build_and_execute_graph(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
+            mha_decode_dispatch_metadata.tensor,
             layer_idx.tensor,
         )
 
@@ -200,6 +202,7 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         cache_lengths: TensorValue,
         lookup_table: TensorValue,
         max_lengths: TensorValue,
+        mha_decode_dispatch_metadata: TensorValue,
         layer_idx: TensorValue,
     ) -> TensorValue:
         kv_collection = PagedCacheValues(
@@ -207,6 +210,9 @@ def test_compare_attention_with_rope_no_opaque() -> None:
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
+            dispatch_metadata=MHADecodeDispatchMetadata(
+                mha_decode_dispatch_metadata.tensor
+            ),
         )
 
         return reference_attention(
@@ -224,8 +230,10 @@ def test_compare_attention_with_rope_no_opaque() -> None:
         cache_lengths: TensorValue,
         lookup_table: TensorValue,
         max_lengths: TensorValue,
+        mha_decode_dispatch_metadata: TensorValue,
         layer_idx: TensorValue,
     ) -> TensorValue:
+        _ = mha_decode_dispatch_metadata
         kv_cache_tensors = PagedKVCacheTensorsNoOpaque(
             blocks=blocks,
             cache_lengths=cache_lengths,

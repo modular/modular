@@ -31,6 +31,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
+    unflatten_ragged_mha_decode_inputs,
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -264,21 +265,9 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
-        n_devices = kv_params.n_devices
-        fetch_types = kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
+        return unflatten_ragged_mha_decode_inputs(
+            kv_inputs_flat, n_devices=kv_params.n_devices
+        )
 
     def _build_graph(self) -> Graph:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
@@ -362,15 +351,10 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
                 tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                     graph.inputs
                 )
-                kv_collection = PagedCacheValues(
-                    kv_blocks=kv_cache_inputs[0].buffer,
-                    cache_lengths=kv_cache_inputs[1].tensor,
-                    lookup_table=kv_cache_inputs[2].tensor,
-                    max_lengths=kv_cache_inputs[3].tensor,
-                )
+                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
                 outputs = nn_model(
                     tokens.tensor,
-                    kv_collection,
+                    kv_collections[0],
                     return_n_logits.tensor,
                     input_row_offsets.tensor,
                 )

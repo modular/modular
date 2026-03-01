@@ -71,9 +71,11 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         max_batch_size=128,
     )
 
-    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    is_cache_empty_type = kv_symbolic_inputs.max_lengths
 
     def construct() -> Graph:
         with Graph(
@@ -144,9 +146,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     input_row_offsets[batch_size] = running_sum
     input_row_offsets = input_row_offsets.to(cuda)
 
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
     model = session.load(g)
 
     input_tensor = Buffer.zeros(
@@ -164,10 +164,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         input_row_offsets.to(cuda),
         k_buffer_tensor.to(cuda),
         v_buffer_tensor.to(cuda),
-        blocks.to(cuda),
-        cache_lengths.to(cuda),
-        lookup_table_tensor.to(cuda),
-        is_cache_empty_buf,
+        *kv_runtime_inputs[:4],
     )[0]
     assert isinstance(result, Buffer)
 

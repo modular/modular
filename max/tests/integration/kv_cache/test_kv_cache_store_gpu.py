@@ -86,9 +86,11 @@ def test_kv_cache_store_ragged_executes() -> None:
         [batch_size + 1],
         device=DeviceRef.GPU(),
     )
-    blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    max_lengths_type = kv_symbolic_inputs.max_lengths
 
     with Graph(
         "kv_cache_store_ragged",
@@ -169,9 +171,11 @@ def test_kv_cache_store_padded_executes() -> None:
         [batch_size],
         device=DeviceRef.GPU(),
     )
-    blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    max_lengths_type = kv_symbolic_inputs.max_lengths
 
     with Graph(
         "kv_cache_store_padded",
@@ -287,13 +291,12 @@ def test_store_k_scale_cache_executes() -> None:
         device=DeviceRef.GPU(),
     )
 
-    (
-        blocks_type,
-        cache_lengths_type,
-        lookup_table_type,
-        max_lengths_type,
-        kv_scales_type,
-    ) = kv_params.get_symbolic_inputs()[0]
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    max_lengths_type = kv_symbolic_inputs.max_lengths
+    kv_scales_type = kv_symbolic_inputs.kv_scales
 
     input_types = [
         x_k_scale_type,

@@ -16,13 +16,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
@@ -33,7 +32,6 @@ from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnLogits
@@ -276,24 +274,6 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
                 *kv_inputs,
             )
 
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        fetch_types = self.kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(self.kv_params.n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
-
     @traced
     def _build_graph(
         self, weights: Weights, adapter: WeightsAdapter | None = None
@@ -362,15 +342,10 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
                 tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                     graph.inputs
                 )
-                kv_collection = PagedCacheValues(
-                    kv_blocks=kv_cache_inputs[0].buffer,
-                    cache_lengths=kv_cache_inputs[1].tensor,
-                    lookup_table=kv_cache_inputs[2].tensor,
-                    max_lengths=kv_cache_inputs[3].tensor,
-                )
+                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
                 outputs = nn_model(
                     tokens.tensor,
-                    kv_collection,
+                    kv_collections[0],
                     return_n_logits.tensor,
                     input_row_offsets.tensor,
                 )

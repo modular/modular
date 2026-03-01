@@ -50,9 +50,12 @@ from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import fused_qk_rope_ragged
-from nn.mha import flash_attention as gpu_flash_attention
+from nn.mha import (
+    MHADecodeDispatchMetadata,
+    flash_attention as gpu_flash_attention,
+)
 from nn.mha_mask import MHAMask
-from nn.mha_utils import dispatch_mask
+from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
 from nn.mla import (
     _k_cache_to_buffer,
     flare_mla_decoding,
@@ -2693,6 +2696,7 @@ fn generic_flash_attention_kv_cache_ragged[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
     @always_inline
     @parameter
@@ -2734,6 +2738,7 @@ fn generic_flash_attention_kv_cache_ragged[
             scale,
             output,
             context,
+            decode_dispatch_metadata,
         )
 
 
@@ -2759,6 +2764,7 @@ fn _flash_attention_dispatch[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    decode_dispatch_metadata: MHADecodeDispatchMetadata,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
@@ -2799,6 +2805,9 @@ fn _flash_attention_dispatch[
                     scale,
                     context.get_device_context(),
                     sink_weights=sink_weights,
+                    decode_dispatch_metadata=OptionalReg[
+                        MHADecodeDispatchMetadata
+                    ](decode_dispatch_metadata),
                 )
 
         unswitch[call_flash_attention](Bool(sink_weights))
@@ -2834,6 +2843,7 @@ fn generic_flash_attention_kv_cache_ragged_sink[
     sink_weights: LayoutTensor[
         mut=False, dtype, address_space = AddressSpace.GENERIC, ...
     ],
+    decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
     @always_inline
     @parameter
@@ -2875,14 +2885,8 @@ fn generic_flash_attention_kv_cache_ragged_sink[
             scale,
             output,
             context,
-            LayoutTensor[
-                dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                sink_weights.ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    sink_weights.runtime_layout.shape.value.canonicalize(),
-                ),
-            ),
+            decode_dispatch_metadata,
+            as_dynamic_row_major_1d(sink_weights),
         )
 
 

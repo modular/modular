@@ -409,6 +409,7 @@ class _TPPagedKVCacheManager:
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0
         max_cached_len = 0
+        max_cache_valid_length = 0
         for batch_idx, ctx in enumerate(batch):
             # Get the blocks for this request.
             blocks = self.block_manager.get_req_blocks(ctx.request_id)
@@ -433,6 +434,7 @@ class _TPPagedKVCacheManager:
             prompt_tokens = ctx.tokens.active_length
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
+            max_cache_valid_length = max(max_cache_valid_length, cache_length)
 
         # Initiate any pending async saves to external cache tiers.
         self.connector.flush()
@@ -443,6 +445,15 @@ class _TPPagedKVCacheManager:
         # copied to the GPU.
         max_lengths_host = build_max_lengths_tensor(
             num_steps, max_prompt_len, max_cached_len
+        )
+        # TODO(SERVOPT-967): don't assume `q_max_seq_len == 1 `.
+        # Scalar args for MHA decode dispatch:
+        # [0] batch_size
+        # [1] q_max_seq_len (always 1 for decode)
+        # [2] num_partitions (filled by Mojo when needed)
+        # [3] max_cache_valid_length
+        mha_decode_dispatch_metadata_host = Buffer.from_numpy(
+            np.array([batch_size, 1, 0, max_cache_valid_length], dtype=np.int64)
         )
 
         ret_list: list[RaggedKVCacheInputs] = []
@@ -461,6 +472,7 @@ class _TPPagedKVCacheManager:
                     kv_scales=self.device_buffer.scales[tp_shard]
                     if self.device_buffer.scales is not None
                     else None,
+                    mha_decode_dispatch_metadata=mha_decode_dispatch_metadata_host,
                 )
             )
 

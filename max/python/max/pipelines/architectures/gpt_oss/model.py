@@ -23,14 +23,13 @@ import numpy.typing as npt
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
@@ -216,25 +215,6 @@ class GptOssModel(
         timer.done()
 
         return model
-
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        n_devices = self.kv_params.n_devices
-        fetch_types = self.kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     # For text-only models, we should be using all the weights.
     _strict_state_dict_loading = True

@@ -16,13 +16,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn.comm import Signals
@@ -30,7 +29,6 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheInputsSequence,
     KVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
@@ -233,27 +231,6 @@ class Gemma3Model(
             DeviceRef.from_device(self.logprobs_device), levels=3
         )
         return session.load(graph)
-
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        kv_params = self.kv_params
-        kv_symbolic = kv_params.get_symbolic_inputs()
-        len_of_kv_tuple_per_dev = (
-            len(kv_symbolic.flatten()) // kv_params.n_devices
-        )
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(len(self.devices)):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     # For text-only models, we should be using all the weights.  This is
     # overridden for Gemma3 multi-modal.

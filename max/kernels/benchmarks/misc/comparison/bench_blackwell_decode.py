@@ -44,6 +44,7 @@ from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import (
     KVCacheParams,
+    MHADecodeDispatchMetadata,
     PagedCacheValues,
 )
 
@@ -296,6 +297,9 @@ def bench_max(
     max_lengths_max = Buffer.from_dlpack(
         max_lengths_torch
     )  # Tensor for max_lengths
+    mha_decode_dispatch_metadata_max = Buffer.from_dlpack(
+        torch.tensor([batch_size, 1, 0, cache_len], dtype=torch.int64)
+    )
 
     # Define input types.
     # Avoid using KVCacheManager for its complecity.
@@ -334,6 +338,9 @@ def bench_max(
         shape=[1, 2],
         device=DeviceRef.CPU(),
     )
+    mha_decode_dispatch_metadata_type = TensorType(
+        DType.int64, shape=[4], device=DeviceRef.CPU()
+    )
 
     # Build graph with paged KV cache inputs
     with Graph(
@@ -345,6 +352,7 @@ def bench_max(
             cache_lengths_type,
             lookup_table_type,
             max_lengths_type,
+            mha_decode_dispatch_metadata_type,
         ],
     ) as graph:
         (
@@ -354,6 +362,7 @@ def bench_max(
             cache_lengths,
             lookup_table,
             max_lengths,
+            mha_decode_dispatch_metadata,
         ) = graph.inputs
 
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -363,14 +372,17 @@ def bench_max(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
+            dispatch_metadata=MHADecodeDispatchMetadata(
+                mha_decode_dispatch_metadata.tensor
+            ),
         )
 
         result = flash_attention_ragged(
             kv_params,
-            q.tensor,
-            input_row_offsets.tensor,
-            kv_collection,
-            layer_idx,
+            input=q.tensor,
+            input_row_offsets=input_row_offsets.tensor,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
             mask_variant=MHAMaskVariant.NULL_MASK,
             scale=1.0 / math.sqrt(head_dim),
         )
@@ -399,6 +411,7 @@ def bench_max(
             cache_lengths_max,
             lut_max,
             max_lengths_max,
+            mha_decode_dispatch_metadata_max,
         )[0]
         return output
 
@@ -574,7 +587,7 @@ def main() -> None:
         engine=args.engine,
     )
 
-    met_sec, bytes = result if result else [0, 0]
+    met_sec, bytes = result or [0, 0]
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 
     name = (

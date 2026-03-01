@@ -29,8 +29,8 @@ from max.nn.attention.multi_latent_attention import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
-    PagedCacheValues,
     RaggedKVCacheInputs,
+    unflatten_ragged_mha_decode_inputs,
 )
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -127,12 +127,10 @@ def _single_gpu_baseline(
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = PagedCacheValues(
-                kv_blocks=graph.inputs[2].buffer,
-                cache_lengths=graph.inputs[3].tensor,
-                lookup_table=graph.inputs[4].tensor,
-                max_lengths=graph.inputs[5].tensor,
-            )
+            kv_collection = unflatten_ragged_mha_decode_inputs(
+                graph.inputs[2:],
+                n_devices=1,
+            )[0]
             out_list = attn(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 xs=[hidden_states],
@@ -300,18 +298,9 @@ def _build_graph_and_compile(
                 input_row_offsets_list.append(graph.inputs[idx + 1].tensor)
                 idx += 2
 
-            kv_collections = []
-            # Each device contributes 4 KV inputs: blocks, lengths, lookup, max_lengths
-            for i in range(n):
-                base = 2 * n + 4 * i
-                kv_collections.append(
-                    PagedCacheValues(
-                        kv_blocks=graph.inputs[base + 0].buffer,
-                        cache_lengths=graph.inputs[base + 1].tensor,
-                        lookup_table=graph.inputs[base + 2].tensor,
-                        max_lengths=graph.inputs[base + 3].tensor,
-                    )
-                )
+            kv_collections = unflatten_ragged_mha_decode_inputs(
+                graph.inputs[2 * n :], n_devices=n
+            )
 
             outs = attn(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
@@ -333,7 +322,7 @@ def _build_graph_and_compile(
 def _flatten_kv_kv_inputs(fetch_list: Sequence[RaggedKVCacheInputs]) -> list:
     flat: list = []
     for f in fetch_list:
-        flat.extend([f.blocks, f.cache_lengths, f.lookup_table, f.max_lengths])
+        flat.extend(f)
     return flat
 
 

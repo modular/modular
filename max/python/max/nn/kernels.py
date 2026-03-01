@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import MutableSequence
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from max.driver import accelerator_architecture_name
@@ -43,7 +43,11 @@ from max.nn.float8_config import (
 )
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
-from .kv_cache import KVCacheParams, PagedCacheValues
+from .kv_cache import (
+    KVCacheParams,
+    PagedCacheValues,
+    mha_decode_dispatch_metadata,
+)
 from .no_opaque_kernels import PagedKVCacheTensorsNoOpaque
 
 _MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
@@ -152,7 +156,13 @@ def fused_qkv_padded_matmul(
     return ops.inplace_custom(
         "mo.fused_qkv_matmul.padded.paged",
         device=input.device,
-        values=[input, wqkv, *kv_collection, layer_idx, valid_lengths],
+        values=[
+            input,
+            wqkv,
+            *kv_collection,
+            layer_idx,
+            valid_lengths,
+        ],
         out_types=[
             TensorType(
                 dtype=input.dtype,
@@ -1819,6 +1829,8 @@ def flash_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
+    dispatch_metadata = mha_decode_dispatch_metadata(kv_collection)
+
     if sink_weights is not None:
         if sink_weights.rank != 1:
             raise ValueError(
@@ -1835,21 +1847,25 @@ def flash_attention_ragged(
         mask_variant, local_window_size=local_window_size
     )
 
-    # Select kernel based on whether sink_weights is provided
+    # Select kernel based on whether sink_weights is provided.
     op_name = "mo.mha.ragged.paged"
 
     if sink_weights is not None:
-        op_name += ".sink_weights"
+        op_name = "mo.mha.ragged.paged.sink_weights"
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        *kv_collection,
+        kv_collection.kv_blocks,
+        kv_collection.cache_lengths,
+        kv_collection.lookup_table,
+        kv_collection.max_lengths,
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     if sink_weights is not None:
         values.append(sink_weights)
+    values.append(cast(TensorValue, dispatch_metadata.tensor))
 
     return ops.inplace_custom(
         op_name,
@@ -3944,6 +3960,14 @@ def dynamic_block_scaled_matmul_fp4(
             f" got a_scales.shape={a_scales.shape} and b_scales.shape={b_scales.shape}"
         )
 
+    tensor_sf_value: TensorValue
+    if isinstance(tensor_sf, float):
+        tensor_sf_value = ops.constant(
+            tensor_sf, DType.float32, device=DeviceRef.CPU()
+        )
+    else:
+        tensor_sf_value = TensorValue(tensor_sf)
+
     result = ops.custom(
         "mo.matmul.dynamic.block.scaled",
         device=a.device,
@@ -3952,9 +3976,7 @@ def dynamic_block_scaled_matmul_fp4(
             b,
             a_scales,
             b_scales,
-            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU())
-            if isinstance(tensor_sf, float)
-            else tensor_sf,
+            tensor_sf_value,
         ],
         out_types=[
             TensorType(
@@ -4020,15 +4042,18 @@ def quantize_dynamic_block_scaled_fp4(
     scales_dim_3 = SF_ATOM_M[1]
     scales_dim_4 = SF_ATOM_K
 
+    tensor_sf_value: TensorValue
+    if isinstance(tensor_sf, float):
+        tensor_sf_value = ops.constant(
+            tensor_sf, DType.float32, device=DeviceRef.CPU()
+        )
+    else:
+        tensor_sf_value = TensorValue(tensor_sf)
+
     result = ops.custom(
         "mo.quantize.dynamic.block.scaled",
         device=input.device,
-        values=[
-            input,
-            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU())
-            if isinstance(tensor_sf, float)
-            else tensor_sf,
-        ],
+        values=[input, tensor_sf_value],
         out_types=[
             TensorType(
                 dtype=out_type,
