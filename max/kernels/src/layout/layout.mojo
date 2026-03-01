@@ -478,7 +478,7 @@ struct Layout(
         return Layout(shape, prefix_product(shape))
 
     @staticmethod
-    fn col_major[rank: Int](dims: DimList) -> Layout:
+    fn col_major[*, dims: DimList]() -> Layout:
         """Creates a col-major layout from a DimList with compile-time rank.
 
         This method creates a col-major layout where the first dimension varies fastest in memory.
@@ -487,9 +487,6 @@ struct Layout(
         also be marked as unknown.
 
         Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
-        Args:
             dims: A DimList containing the dimensions of the layout.
 
         Returns:
@@ -503,13 +500,14 @@ struct Layout(
 
             # Create a col-major layout with compile-time rank
             comptime dims = DimList(3, 4)
-            comptime layout = Layout.col_major[2](dims)
+            comptime layout = Layout.col_major[dims]()
             # Result: Layout with shape (3,4) and stride (1,3)
             ```
         """
         var c_stride = 1
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
+        comptime rank = len(dims)
 
         comptime for i in range(rank):
             var dim = dims.get[i]()
@@ -603,7 +601,7 @@ struct Layout(
         return Self.row_major(shape)
 
     @staticmethod
-    fn row_major[rank: Int](dims: DimList) -> Layout:
+    fn row_major[*, dims: DimList]() -> Layout:
         """Creates a row-major layout from a DimList with compile-time rank.
 
         This method creates a row-major layout where the last dimension varies fastest in memory.
@@ -612,9 +610,6 @@ struct Layout(
         also be marked as unknown.
 
         Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
-        Args:
             dims: A DimList containing the dimensions of the layout.
 
         Returns:
@@ -635,6 +630,7 @@ struct Layout(
         var c_stride = 1
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
+        comptime rank = len(dims)
 
         comptime for i in range(rank):
             var dim = dims.get[i]()

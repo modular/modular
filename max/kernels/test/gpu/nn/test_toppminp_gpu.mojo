@@ -306,22 +306,20 @@ fn test_case_sampling[
     softmax[simd_width=1, rank=rank](
         LayoutTensor[
             in_logits_cpu_test.type,
-            Layout.row_major[in_logits_cpu_test.rank](in_logits_cpu_test.shape),
+            Layout.row_major[dims = in_logits_cpu_test.shape](),
         ](
             in_logits_cpu_test.data,
             RuntimeLayout[
-                Layout.row_major[in_logits_cpu_test.rank](
-                    in_logits_cpu_test.shape
-                )
+                Layout.row_major[dims = in_logits_cpu_test.shape](),
             ].row_major(in_logits_cpu_test.get_shape().canonicalize()),
         ),
         LayoutTensor[
             probs_cpu_test.type,
-            Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape),
+            Layout.row_major[dims = probs_cpu_test.shape](),
         ](
             probs_cpu_test.data,
             RuntimeLayout[
-                Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape)
+                Layout.row_major[dims = probs_cpu_test.shape](),
             ].row_major(probs_cpu_test.get_shape().canonicalize()),
         ),
         axis=1,

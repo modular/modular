@@ -30,7 +30,7 @@ def test_runtime_and_compile_time_dim_and_stride(
 ) raises:
     comptime static_shape = DimList(k.dim, m.dim)
     var dynamic_shape = IndexList[2](k.value, m.value)
-    comptime layout = Layout.row_major[2](static_shape)
+    comptime layout = Layout.row_major[dims=static_shape]()
 
     var tensor = LayoutTensor[
         DType.float32,

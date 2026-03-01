@@ -115,16 +115,6 @@ fn _tile_mask[
     return {shape, tile_offset}
 
 
-@always_inline("nodebug")
-fn _to_static_tuple[rank: Int](sizes: VariadicList[Int]) -> IndexList[rank]:
-    var res = IndexList[rank]()
-
-    comptime for i in range(rank):
-        res[i] = sizes[i]
-
-    return res
-
-
 # Computes the mask resulting vectorizing buffer with the `sizes`.
 #
 @always_inline("nodebug")
@@ -1229,7 +1219,7 @@ fn from_ndbuffer_row_major(
     buffer: NDBuffer,
     out result: LayoutTensor[
         buffer.type,
-        Layout.row_major[buffer.rank](buffer.shape),
+        Layout.row_major[dims = buffer.shape](),
         buffer.origin,
         address_space = buffer.address_space,
     ],

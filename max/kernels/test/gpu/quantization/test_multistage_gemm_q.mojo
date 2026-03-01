@@ -517,15 +517,13 @@ fn test_repack_Q4_0_for_sm8x(
     ctx.enqueue_copy(gguf_b_device, gguf_b_host_ptr)
     ctx.enqueue_copy(repacked_b_device, repacked_b_host_ptr)
 
-    comptime gguf_b_layout = Layout.row_major[gguf_b_device_nd.rank](
-        gguf_b_device_nd.shape
-    )
-    comptime repacked_b_layout = Layout.row_major[repacked_b_device_nd.rank](
-        repacked_b_device_nd.shape
-    )
+    comptime gguf_b_layout = Layout.row_major[dims = gguf_b_device_nd.shape]()
+    comptime repacked_b_layout = Layout.row_major[
+        dims = repacked_b_device_nd.shape
+    ]()
     comptime repack_dequan_layout = Layout.row_major[
-        repacked_dequan_device_nd.rank
-    ](repacked_dequan_device_nd.shape)
+        dims = repacked_dequan_device_nd.shape
+    ]()
     comptime repacked_b_old_layout = Layout.row_major(
         Int(n.dim) // 64,
         Int(k.dim) * 64 // pack_factor,
@@ -724,10 +722,8 @@ fn test_quantized[
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    comptime b_layout = Layout.row_major[c_device_nd.rank](b_device_nd.shape)
-    comptime b_ref_layout = Layout.row_major[b_device_ref_nd.rank](
-        b_device_ref_nd.shape
-    )
+    comptime b_layout = Layout.row_major[dims = b_device_nd.shape]()
+    comptime b_ref_layout = Layout.row_major[dims = b_device_ref_nd.shape]()
     comptime b_tensor_type = LayoutTensor[dtype, b_layout]
     comptime b_ref_tensor_type = LayoutTensor[a_type, b_ref_layout]
 
