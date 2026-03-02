@@ -402,7 +402,7 @@ def test_blockwise_fp8_1d2d_structured[
             assert_almost_equal(
                 c_host[mi, ni][0],
                 c_host_ref[mi, ni][0],
-                msg=String("m: ", mi, " n: ", ni),
+                msg=t"m: {mi} n: {ni}",
                 rtol=rtol,
                 atol=atol,
             )

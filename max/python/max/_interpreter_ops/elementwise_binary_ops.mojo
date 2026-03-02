@@ -117,11 +117,7 @@ fn PyInit_elementwise_binary_ops() -> PythonObject:
 
         return b.finalize()
     except e:
-        abort(
-            String(
-                "failed to create elementwise binary op bindings module: ", e
-            )
-        )
+        abort(t"failed to create elementwise binary op bindings module: {e}")
 
 
 # =============================================================================

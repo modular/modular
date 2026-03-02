@@ -1040,7 +1040,7 @@ def test_blackwell_kernel_7[
         # Round TFLOPS to two decimal places for cleaner output
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 2)
-        print(String(M, "x", N, "x", K), tflops_rounded)
+        print(t"{M}x{N}x{K}", tflops_rounded)
     else:
         vendor_blas.matmul(
             ctx,

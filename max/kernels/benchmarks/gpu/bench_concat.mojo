@@ -170,7 +170,7 @@ fn bench_concat[
             if output_host.load[width=1](out_coord) != input.load[width=1](
                 in_coord
             ):
-                abort(String("mismatch at coords ", out_coords))
+                abort(t"mismatch at coords {out_coords}")
 
         elementwise[check, 1](input_shape)
         offset += input_shape[axis]

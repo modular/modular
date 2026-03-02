@@ -280,17 +280,9 @@ fn test[
             assert_almost_equal(
                 actual,
                 expect,
-                msg=String(
-                    "qkv_idx: ",
-                    qkv_idx,
-                    " m: ",
-                    m,
-                    " n: ",
-                    n,
-                    " ref: ",
-                    expect,
-                    " actual: ",
-                    actual,
+                msg=(
+                    t"qkv_idx: {qkv_idx} m: {m} n: {n} ref: {expect} actual:"
+                    t" {actual}"
                 ),
                 rtol=rtol,
             )
@@ -304,9 +296,7 @@ fn test[
                 expect = c_ref_host[m, n][0]
 
             var actual = c_host[m, n][0]
-            assert_almost_equal(
-                actual, expect, msg=String("m: ", m, " n: ", n), rtol=rtol
-            )
+            assert_almost_equal(actual, expect, msg=t"m: {m} n: {n}", rtol=rtol)
 
     # Cleanup
     a_host_ptr.free()

@@ -82,9 +82,7 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
         assert_equal(
             out_host[i],
             expected,
-            msg=String(
-                "out_host[", i, "] = ", out_host[i], " expected = ", expected
-            ),
+            msg=t"out_host[{i}] = {out_host[i]} expected = {expected}",
         )
 
     # Cleanup
@@ -156,9 +154,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
         assert_equal(
             out_host[i],
             expected,
-            msg=String(
-                "out_host[", i, "] = ", out_host[i], " expected = ", expected
-            ),
+            msg=t"out_host[{i}] = {out_host[i]} expected = {expected}",
         )
 
     # Cleanup

@@ -64,32 +64,9 @@ def test_matmul_sm100_epilogue[
     var K = k.value
 
     print(
-        String(
-            "in/out dtypes=(",
-            a_type,
-            ", ",
-            b_type,
-            ", ",
-            c_type,
-            ") ",
-            " problem shape=(",
-            M,
-            ", ",
-            N,
-            ", ",
-            K,
-            ") ",
-            "mma_shape=",
-            mma_shape,
-            " block_tile_shape=",
-            block_tile_shape,
-            " register_based_epilogue=",
-            register_based_epilogue,
-            " swapAB=",
-            swapAB,
-            " k_group_size=",
-            k_group_size,
-        )
+        t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
+        t" {N}, {K})"
+        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} register_based_epilogue={register_based_epilogue} swapAB={swapAB} k_group_size={k_group_size}"
     )
 
     comptime static_a_shape = DimList(m.dim, k.dim)

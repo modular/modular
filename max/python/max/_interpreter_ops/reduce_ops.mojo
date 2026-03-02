@@ -57,7 +57,7 @@ fn PyInit_reduce_ops() -> PythonObject:
 
         return b.finalize()
     except e:
-        abort(String("failed to create reduce op bindings module: ", e))
+        abort(t"failed to create reduce op bindings module: {e}")
 
 
 # =============================================================================

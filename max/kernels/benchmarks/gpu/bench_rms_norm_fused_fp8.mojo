@@ -164,7 +164,7 @@ fn bench_rms_norm_fused_fp8[
     b.bench_function[bench_rms_norm](
         BenchId(
             "rms_norm_only",
-            input_id=String(fn_name, "/", in_dtype, "/", out_dtype, "/", shape),
+            input_id=t"{fn_name}/{in_dtype}/{out_dtype}/{shape}",
         ),
     )
 
@@ -218,7 +218,7 @@ fn bench_rms_norm_fused_fp8[
     b.bench_function[bench_fp8_quant](
         BenchId(
             "fp8_quant_only",
-            input_id=String(fn_name, "/", in_dtype, "/", out_dtype, "/", shape),
+            input_id=t"{fn_name}/{in_dtype}/{out_dtype}/{shape}",
         ),
     )
 
@@ -298,7 +298,7 @@ fn bench_rms_norm_fused_fp8[
     b.bench_function[bench_fused](
         BenchId(
             "rms_norm_fused_fp8",
-            input_id=String(fn_name, "/", in_dtype, "/", out_dtype, "/", shape),
+            input_id=t"{fn_name}/{in_dtype}/{out_dtype}/{shape}",
         ),
     )
 

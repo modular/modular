@@ -49,7 +49,7 @@ fn PyInit_softmax_ops() -> PythonObject:
 
         return b.finalize()
     except e:
-        abort(String("failed to create softmax op bindings module: ", e))
+        abort(t"failed to create softmax op bindings module: {e}")
 
 
 # =============================================================================

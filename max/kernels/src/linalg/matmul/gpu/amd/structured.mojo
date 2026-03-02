@@ -75,7 +75,7 @@ struct ThreadRole(Enum, Writable):
         elif self is Self.PRODUCER_CONSUMER:
             return "PRODUCER_CONSUMER"
         else:
-            return String("UNKNOWN_ROLE: ", self._value)
+            return t"UNKNOWN_ROLE: {self._value}"
 
     @always_inline
     fn write_to[W: Writer](self, mut writer: W) -> None:

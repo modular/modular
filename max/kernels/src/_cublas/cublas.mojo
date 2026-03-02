@@ -98,13 +98,13 @@ fn _get_dylib_function[
 @always_inline
 fn check_cublas_error(stat: Result) raises:
     if stat != Result.SUCCESS:
-        raise Error(String("failed to operate on CUBLAS due to error: ", stat))
+        raise Error(t"failed to operate on CUBLAS due to error: {stat}")
 
 
 @always_inline
 fn check_cublas_error(stat: Result, msg: StringSlice) raises:
     if stat != Result.SUCCESS:
-        raise Error(String(msg, ". Got a CUBLAS error: ", stat))
+        raise Error(t"{msg}. Got a CUBLAS error: {stat}")
 
 
 @always_inline

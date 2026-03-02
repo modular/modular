@@ -144,11 +144,9 @@ def test_and_mask() raises:
     assert_true(
         mask2.status(Index(64, 384), Index(64, 128))
         == TileMaskStatus.FULL_MASK,
-        msg=String(
-            "lhs = ",
-            mask2.status(Index(0, 0), Index(0, 0)),
-            " rhs = ",
-            TileMaskStatus.FULL_MASK,
+        msg=(
+            t"lhs = {mask2.status(Index(0, 0), Index(0, 0))} rhs ="
+            t" {TileMaskStatus.FULL_MASK}"
         ),
     )
 
@@ -168,17 +166,7 @@ def test_sliding_window_causal_mask() raises:
         assert_equal(
             status,
             expected,
-            msg=String(
-                "  ",
-                offset,
-                ", ",
-                size,
-                " > ",
-                status,
-                " (expected: ",
-                expected,
-                ")",
-            ),
+            msg=t"  {offset}, {size} > {status} (expected: {expected})",
         )
 
         # K > 0 1 2 3 4 5 6 7 8

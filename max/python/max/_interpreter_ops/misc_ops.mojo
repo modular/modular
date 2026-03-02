@@ -69,7 +69,7 @@ fn PyInit_misc_ops() -> PythonObject:
         )
         return b.finalize()
     except e:
-        abort(String("failed to create misc op bindings module: ", e))
+        abort(t"failed to create misc op bindings module: {e}")
 
 
 # ===----------------------------------------------------------------------=== #

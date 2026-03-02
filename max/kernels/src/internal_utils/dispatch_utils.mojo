@@ -33,7 +33,7 @@ struct Table[type: TuningConfig](Writable):
         self.num_configs = UInt(len(configs))
 
         if not self.check():
-            abort(String("Failed to Compile Table: [", self.name, "]"))
+            abort(t"Failed to Compile Table: [{self.name}]")
 
     # Method to check there are no redundancies in table (based on __str__).
     fn check(self) -> Bool:

@@ -85,7 +85,7 @@ fn _get_run_name[
     has_epilogue: Bool = False,
 ](num_active_experts: Int, total_num_tokens: Int, N: Int, K: Int) -> String:
     var vendor_str = "vendor_gmm" if use_vendor_blas else "gmm"
-    var type_str = String("(", in_type, " -> ", out_type, ") : ")
+    var type_str = String(t"({in_type} -> {out_type}) : ")
     # num_active_experts
     var num_active_experts_str = String(num_active_experts)
     # total_num_tokens

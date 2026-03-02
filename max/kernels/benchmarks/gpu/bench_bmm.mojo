@@ -58,7 +58,7 @@ fn _get_run_name[
     K: Optional[Int] = None,
 ](b: Int, m: Int, n: Int, k: Int) -> String:
     var vendor_str = "vendor_bmm" if use_vendor_blas else "bmm"
-    var type_str = String("(", dtype, ") : ")
+    var type_str = String(t"({dtype}) : ")
     # B
     var b_str = String(b, "" if B else "_dynamic")
     # M
@@ -68,19 +68,11 @@ fn _get_run_name[
     # K
     var k_str = String(k, "" if K else "_dynamic")
 
-    var transpose_b_str = String("/transpose_b=", transpose_b)
+    var transpose_b_str = String(t"/transpose_b={transpose_b}")
 
-    return String(
-        vendor_str,
-        type_str,
-        b_str,
-        " x ",
-        m_str,
-        " x ",
-        n_str,
-        " x ",
-        k_str,
-        transpose_b_str,
+    return (
+        t"{vendor_str}{type_str}{b_str} x {m_str} x {n_str} x"
+        t" {k_str}{transpose_b_str}"
     )
 
 

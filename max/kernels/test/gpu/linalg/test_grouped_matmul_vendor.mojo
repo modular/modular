@@ -214,9 +214,7 @@ fn test_vendor[
         for n in range(N):
             var expect = c_ref_host[m, n][0]
             var actual = c_host[m, n][0]
-            assert_almost_equal(
-                actual, expect, msg=String("m: ", m, " n: ", n), rtol=rtol
-            )
+            assert_almost_equal(actual, expect, msg=t"m: {m} n: {n}", rtol=rtol)
 
     print("✓ Vendor grouped matmul test passed")
 

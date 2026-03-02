@@ -92,7 +92,7 @@ fn bench_add[
                 + input1_ptr_host.load[width=nelts](i)
             )
         ).reduce_and():
-            raise Error(String("mismatch at flattened idx ", i))
+            raise Error(t"mismatch at flattened idx {i}")
 
     _ = input0_ptr
     _ = input1_ptr

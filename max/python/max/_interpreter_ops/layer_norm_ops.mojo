@@ -47,7 +47,7 @@ fn PyInit_layer_norm_ops() -> PythonObject:
 
         return b.finalize()
     except e:
-        abort(String("failed to create layer_norm op bindings module: ", e))
+        abort(t"failed to create layer_norm op bindings module: {e}")
 
 
 # =============================================================================

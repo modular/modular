@@ -1048,7 +1048,7 @@ struct EPLocalSyncCounters[n_experts: Int](
 
     @staticmethod
     fn get_type_name() -> String:
-        return String("EPLocalSyncCounters[n_experts=", Self.n_experts, "]")
+        return t"EPLocalSyncCounters[n_experts={Self.n_experts}]"
 
     @always_inline
     @staticmethod
