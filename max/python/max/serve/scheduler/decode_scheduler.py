@@ -434,6 +434,7 @@ def load_decode_scheduler(
     if kv_managers:
         kv_cache = kv_managers[0]
     else:
+        assert pipeline.kv_manager is not None
         kv_cache = pipeline.kv_manager
 
     return DecodeScheduler(

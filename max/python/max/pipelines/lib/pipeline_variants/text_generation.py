@@ -186,10 +186,6 @@ class TextGenerationPipeline(
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = get_weight_paths(model_config)
 
-        if not issubclass(pipeline_model, PipelineModelWithKVCache):
-            raise ValueError(
-                f"TextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
-            )
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -680,16 +676,9 @@ class TextGenerationPipeline(
             self._pipeline_model.release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager:
+    def kv_manager(self) -> PagedKVCacheManager | None:
         """Returns the KV cache manager for this pipeline.
 
-        Raises:
-            ValueError: If this pipeline does not have a KV cache manager
-                (e.g. Mamba SSM models).
+        Returns None for non-KV-cache models (e.g. Mamba SSM).
         """
-        if self._kv_manager is None:
-            raise ValueError(
-                "This pipeline does not have a KV cache manager. "
-                "Non-KV-cache models (e.g. Mamba SSM) do not support this property."
-            )
         return self._kv_manager
