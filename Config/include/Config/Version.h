@@ -13,7 +13,7 @@
 
 namespace M {
 
-struct ModularVersion final {
+struct ProjectVersion final {
   int major;
   int minor;
   int patch;
@@ -22,6 +22,13 @@ struct ModularVersion final {
   const char *buildType;
 };
 
+ProjectVersion getMAXVersion();
+ProjectVersion getMojoVersion();
+const char *getMAXVersionString();
+const char *getMojoVersionString();
+
+// TODO: Remove
+using ModularVersion = ProjectVersion;
 ModularVersion getModularVersion();
 const char *getModularVersionString();
 
