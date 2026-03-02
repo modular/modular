@@ -547,6 +547,53 @@ class PipelineConfig(ConfigFileModel):
                 # We should be able to override this value for all config objects.
                 continue
 
+    @staticmethod
+    def _is_deepseek_arch(architecture: SupportedArchitecture) -> bool:
+        return architecture.name in {
+            "DeepseekV3ForCausalLM",
+            "DeepseekV32ForCausalLM",
+            "DeepseekV3ForCausalLMNextN",
+        }
+
+    def _apply_deepseek_multi_gpu_parallelism_defaults(
+        self,
+        architecture: SupportedArchitecture,
+        model_config: MAXModelConfig,
+        num_devices: int,
+    ) -> None:
+        """Auto-resolve DeepSeek EP/DP defaults for multi-GPU.
+
+        DeepSeek V3/V3.2/NextN require multi-GPU launches to run with
+        expert parallelism and data-parallel attention on all local devices.
+        """
+        assert self._is_deepseek_arch(architecture)
+        if num_devices <= 1:
+            return
+
+        old_ep = self.ep_size
+        old_dp = model_config.data_parallel_degree
+
+        if self.ep_size == 1 and model_config.data_parallel_degree in (
+            1,
+            num_devices,
+        ):
+            self.ep_size = num_devices
+
+        # If user provide an invalid ep_size > 1, we will not fix it here
+        # but let downstream codes to handle it
+        if self.ep_size > 1 and model_config.data_parallel_degree == 1:
+            model_config.data_parallel_degree = num_devices
+
+        if self.ep_size != old_ep or model_config.data_parallel_degree != old_dp:
+            logger.info(
+                "Auto-configured DeepSeek multi-GPU parallelism: "
+                "ep_size %s -> %s, data_parallel_degree %s -> %s",
+                old_ep,
+                self.ep_size,
+                old_dp,
+                model_config.data_parallel_degree,
+            )
+
     def resolve(self) -> None:
         """Validates and resolves the config.
 
@@ -916,6 +963,12 @@ class PipelineConfig(ConfigFileModel):
             )
 
         devices = load_devices(model_config.device_specs)
+        # This resolver runs for both primary and draft models. Apply DeepSeek
+        # EP/DP auto-defaulting only to the primary model pass.
+        if model_config is self.model and self._is_deepseek_arch(arch):
+            self._apply_deepseek_multi_gpu_parallelism_defaults(
+                arch, model_config, len(devices)
+            )
 
         # Validate LoRA support - currently only Llama3 models support LoRA
         if self.lora and self.lora.enable_lora:
