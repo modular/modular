@@ -16,7 +16,7 @@ from layout._layout import row_major
 from layout import TileTensor
 from nn.repeat_interleave import _collapse_dims_around_axis, repeat_interleave
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn test_collapse_dims_around_axis() raises:

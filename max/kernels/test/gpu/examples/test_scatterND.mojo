@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_dim, global_idx
-from gpu.host import DeviceContext
-from memory import memcpy
-from testing import assert_false
+from std.gpu import block_dim, global_idx
+from std.gpu.host import DeviceContext
+from std.memory import memcpy
+from std.testing import assert_false
 
-from utils.index import Index
+from std.utils.index import Index
 
 # This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global
 # with value of 256).

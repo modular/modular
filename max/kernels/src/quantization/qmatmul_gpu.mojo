@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
+from std.sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 
-from bit import log2_floor
-from collections import OptionalReg
-from gpu import (
+from std.bit import log2_floor
+from std.collections import OptionalReg
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -26,9 +26,9 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from gpu.host.info import is_gpu
-from gpu.memory import (
+from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host.info import is_gpu
+from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
@@ -52,11 +52,11 @@ from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import warp_split_k_reduction
 from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, block_swizzle
-from memory.unsafe import bitcast
-from runtime.asyncrt import DeviceContextPtr
+from std.memory.unsafe import bitcast
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import Index
-from utils.numerics import get_accum_type
+from std.utils.index import Index
+from std.utils.numerics import get_accum_type
 
 
 @always_inline

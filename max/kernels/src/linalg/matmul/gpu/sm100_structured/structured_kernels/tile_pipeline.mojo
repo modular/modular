@@ -141,7 +141,7 @@ Example: Epilogue Warp (context manager)
 
 from layout import Layout
 from layout.tma_async import SharedMemBarrier
-from utils.index import IndexList
+from std.utils.index import IndexList
 from .config import OutputPipelineConfig
 from .pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation, TmemStage
@@ -1281,8 +1281,8 @@ struct OutputTilePipeline[
     @always_inline
     fn release_from_mma(mut self, stage: Self.Stage):
         """Signal MMA completion using mma_arrive (1-SM) or multicast (2-SM)."""
-        from gpu.primitives.cluster import elect_one_sync
-        from gpu.compute.arch.mma_nvidia_sm100 import (
+        from std.gpu.primitives.cluster import elect_one_sync
+        from std.gpu.compute.arch.mma_nvidia_sm100 import (
             mma_arrive,
             mma_arrive_multicast,
         )
@@ -1782,7 +1782,7 @@ struct PerKConsumerStage[
         # Signal the consumer barrier to tell MMA we're done with this stage.
         # This is critical for per-K synchronization - MMA waits on this
         # barrier before each K iteration.
-        from gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
+        from std.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
 
         comptime if Self.cta_group == 1:
             _ = mbarrier_arrive(
@@ -1916,7 +1916,7 @@ struct EpilogueKContext[
         self.input_pipeline_ptr[].consumer_step()
 
         # Signal output pipeline consumer barrier (for MMA synchronization)
-        from gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
+        from std.gpu.sync import mbarrier_arrive, umma_arrive_leader_cta
 
         comptime if Self.cta_group == 1:
             _ = mbarrier_arrive(

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from sys import size_of, has_amd_gpu_accelerator
+from std.sys import size_of, has_amd_gpu_accelerator
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -20,11 +20,11 @@ from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
 from comm.sync import enable_p2p
 import comm.vendor.ccl as vendor_ccl
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from testing import assert_equal, assert_true
-from utils.index import IndexList
+from std.testing import assert_equal, assert_true
+from std.utils.index import IndexList
 
 
 def all_gather_test[
@@ -67,7 +67,9 @@ def all_gather_test[
         host_buffers.append(host_buffer)
 
         # Initialize with unique values per device.
-        var host_nd_buf = NDBuffer[dtype, rank](host_buffer, DimList(length))
+        var host_nd_buf = NDBuffer[dtype, rank](
+            host_buffer, IndexList[rank](length)
+        )
         for j in range(length):
             host_nd_buf[j] = Scalar[dtype](
                 i * 1000 + j
@@ -102,7 +104,7 @@ def all_gather_test[
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[dtype, rank](
-            in_bufs_list[i].unsafe_ptr(), DimList(lengths[i])
+            in_bufs_list[i].unsafe_ptr(), IndexList[rank](lengths[i])
         )
 
     # Create flat output buffer array (ngpus * ngpus).
@@ -115,7 +117,7 @@ def all_gather_test[
             var output_idx = device_idx * ngpus + input_idx
             out_bufs[output_idx] = NDBuffer[dtype, rank](
                 out_bufs_list[device_idx][input_idx].unsafe_ptr(),
-                DimList(lengths[input_idx]),
+                IndexList[rank](lengths[input_idx]),
             )
 
     # Optional: vendor CCL (only if all lengths are equal; NCCL/RCCL requires uniform count).
@@ -141,7 +143,7 @@ def all_gather_test[
                 var idx = device_idx * ngpus + input_idx
                 flat_out[idx] = NDBuffer[dtype, rank](
                     out_bufs_list[device_idx][input_idx].unsafe_ptr(),
-                    DimList(lengths[input_idx]),
+                    IndexList[rank](lengths[input_idx]),
                 )
 
         try:

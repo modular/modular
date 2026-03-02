@@ -19,11 +19,11 @@ These tests verify:
 4. K-tile count is correct for each group
 """
 
-from gpu import barrier, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import barrier, block_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
-from memory import stack_allocation
+from std.memory import stack_allocation
 
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     lt_to_tt,
@@ -36,7 +36,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_schedu
     GroupedWorkInfo,
     GroupedWorkIterator,
 )
-from utils.index import Index
+from std.utils.index import Index
 
 
 # =============================================================================
@@ -75,7 +75,7 @@ fn test_scheduler_kernel[
 ):
     """Kernel that iterates over all tiles and records their coordinates."""
     # Convert LayoutTensor to TileTensor for the scheduler
-    from memory import UnsafePointer as NewPtr
+    from std.memory import UnsafePointer as NewPtr
     from layout._layout import row_major as new_row_major
 
     var problem_sizes_tt = _ProblemSizesTile[max_groups](

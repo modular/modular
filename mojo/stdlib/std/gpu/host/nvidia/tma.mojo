@@ -130,7 +130,6 @@ struct TensorMapSwizzle(
     Hashable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -194,6 +193,7 @@ struct TensorMapSwizzle(
         """
         return Int((2**self._value) * 16)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Converts the swizzle mode to a string representation.

@@ -202,10 +202,8 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         self = Self(elements=elements^)
 
-    fn __init__(
-        out self, *, var elements: VariadicListMem[Self.ElementType, _]
-    ):
-        """Construct a list from a `VariadicListMem`.
+    fn __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
+        """Construct a list from a `VariadicList`.
 
         Args:
             elements: The elements to add to the list.

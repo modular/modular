@@ -14,8 +14,8 @@
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
 
-from utils.index import IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import IndexList
+from std.utils.numerics import get_accum_type
 
 
 @always_inline

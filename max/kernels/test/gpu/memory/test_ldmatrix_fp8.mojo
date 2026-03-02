@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import WARP_SIZE, barrier, lane_id
-from gpu.host import DeviceContext
-from gpu.compute.mma import ld_matrix, mma
-from gpu.compute.mma_util import store_matrix_d
+from std.gpu import WARP_SIZE, barrier, lane_id
+from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import ld_matrix, mma
+from std.gpu.compute.mma_util import store_matrix_d
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.numerics import get_accum_type
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
 
 
 fn test_ldmatrix_fp8[

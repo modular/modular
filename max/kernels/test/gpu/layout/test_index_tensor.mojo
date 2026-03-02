@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_ui64
+from std.random import random_ui64
 
-from gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host import DeviceContext, DeviceBuffer
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
 from nn.index_tensor import _index_tensor_impl
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def execute_index_tensor_test[

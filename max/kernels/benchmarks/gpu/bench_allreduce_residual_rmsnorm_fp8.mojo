@@ -21,7 +21,7 @@ Measures five variants:
 5. fully fused allreduce+add+RMSNorm+FP8 (single kernel launch)
 """
 
-from sys import (
+from std.sys import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
@@ -30,7 +30,7 @@ from sys import (
     simd_width_of,
 )
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -46,19 +46,19 @@ from nn.allreduce_residual_rmsnorm_fp8 import (
     allreduce_residual_rmsnorm_fp8,
     allreduce_rmsnorm_fp8,
 )
-from collections import Optional
+from std.collections import Optional
 from comm.sync import is_p2p_enabled
-from gpu import block_idx, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu import block_idx, thread_idx
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
 from layout import Coord, TileTensor
 from layout._layout import row_major
 from nn.normalization import rms_norm_fused_fp8
-from runtime.asyncrt import DeviceContextPtr
-from utils import IndexList
-from utils.index import Index
-from utils.numerics import max_finite
+from std.runtime.asyncrt import DeviceContextPtr
+from std.utils import IndexList
+from std.utils.index import Index
+from std.utils.numerics import max_finite
 
 
 @always_inline
@@ -74,7 +74,7 @@ fn _repoint_input_bufs[
 ):
     comptime for i in range(ngpus):
         in_bufs[i] = NDBuffer[in_dtype, 2](
-            cb_inputs[i].offset_ptr(iteration), DimList(num_rows, num_cols)
+            cb_inputs[i].offset_ptr(iteration), IndexList[2](num_rows, num_cols)
         )
 
 
@@ -178,10 +178,10 @@ fn _verify_results[
         list_of_ctx[i].synchronize()
 
     var v_ff_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-        v_ff_fp8_dev.unsafe_ptr(), DimList(num_rows, num_cols)
+        v_ff_fp8_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
     )
     var v_ff_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-        v_ff_scales_dev.unsafe_ptr(), DimList(num_rows, 1)
+        v_ff_scales_dev.unsafe_ptr(), IndexList[2](num_rows, 1)
     )
 
     group_start()
@@ -420,16 +420,16 @@ fn _verify_add_results[
         list_of_ctx[i].synchronize()
 
     var v_ff_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-        v_ff_fp8_dev.unsafe_ptr(), DimList(num_rows, num_cols)
+        v_ff_fp8_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
     )
     var v_ff_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-        v_ff_scales_dev.unsafe_ptr(), DimList(num_rows, 1)
+        v_ff_scales_dev.unsafe_ptr(), IndexList[2](num_rows, 1)
     )
     var v_res_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
-        residual_dev.unsafe_ptr(), DimList(num_rows, num_cols)
+        residual_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
     )
     var v_res_out_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
-        v_res_out_dev.unsafe_ptr(), DimList(num_rows, num_cols)
+        v_res_out_dev.unsafe_ptr(), IndexList[2](num_rows, num_cols)
     )
 
     group_start()
@@ -602,10 +602,10 @@ fn bench_allreduce_rmsnorm_fp8[
     )
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[in_dtype, 2](
-            cb_inputs[i].unsafe_ptr(), DimList(num_rows, num_cols)
+            cb_inputs[i].unsafe_ptr(), IndexList[2](num_rows, num_cols)
         )
         ar_out_bufs[i] = NDBuffer[in_dtype, 2](
-            ar_out_dev[i].unsafe_ptr(), DimList(num_rows, num_cols)
+            ar_out_dev[i].unsafe_ptr(), IndexList[2](num_rows, num_cols)
         )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -779,7 +779,7 @@ fn bench_allreduce_rmsnorm_fp8[
 
             var shape = IndexList[2](num_rows, num_cols)
             var fused_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-                fused_fp8_out_ptrs[ctx_idx], DimList(num_rows, num_cols)
+                fused_fp8_out_ptrs[ctx_idx], IndexList[2](num_rows, num_cols)
             )
             var fused_scale_shape = IndexList[2](num_rows, 1)
             var fused_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
@@ -829,10 +829,11 @@ fn bench_allreduce_rmsnorm_fp8[
             )
 
             var ff_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-                fully_fused_fp8_out_ptrs[ctx_idx], DimList(num_rows, num_cols)
+                fully_fused_fp8_out_ptrs[ctx_idx],
+                IndexList[2](num_rows, num_cols),
             )
             var ff_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-                fully_fused_scales_ptrs[ctx_idx], DimList(num_rows, 1)
+                fully_fused_scales_ptrs[ctx_idx], IndexList[2](num_rows, 1)
             )
 
             allreduce_rmsnorm_fp8(
@@ -918,7 +919,8 @@ fn bench_allreduce_rmsnorm_fp8[
 
             var shape = IndexList[2](num_rows, num_cols)
             var ea_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-                fused_add_fp8_out_ptrs[ctx_idx], DimList(num_rows, num_cols)
+                fused_add_fp8_out_ptrs[ctx_idx],
+                IndexList[2](num_rows, num_cols),
             )
             var ea_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
                 fused_add_scales_ptrs[ctx_idx], IndexList[2](num_rows, 1)
@@ -967,16 +969,17 @@ fn bench_allreduce_rmsnorm_fp8[
             )
 
             var fa_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-                fused_add_fp8_out_ptrs[ctx_idx], DimList(num_rows, num_cols)
+                fused_add_fp8_out_ptrs[ctx_idx],
+                IndexList[2](num_rows, num_cols),
             )
             var fa_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-                fused_add_scales_ptrs[ctx_idx], DimList(num_rows, 1)
+                fused_add_scales_ptrs[ctx_idx], IndexList[2](num_rows, 1)
             )
             var res_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
-                residual_ptr_base, DimList(num_rows, num_cols)
+                residual_ptr_base, IndexList[2](num_rows, num_cols)
             )
             var res_out_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
-                residual_output_ptrs[ctx_idx], DimList(num_rows, num_cols)
+                residual_output_ptrs[ctx_idx], IndexList[2](num_rows, num_cols)
             )
 
             allreduce_residual_rmsnorm_fp8(

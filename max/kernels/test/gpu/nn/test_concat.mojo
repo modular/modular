@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import size_of
+from std.collections import Optional
+from std.sys import size_of
 
-from gpu.host import DeviceContext, HostBuffer
+from std.gpu.host import DeviceContext, HostBuffer
 from layout import Coord, CoordLike, Idx, TileTensor
 from layout._layout import row_major
 from nn.concat import (
@@ -22,10 +22,10 @@ from nn.concat import (
     _concat_inner_most_single_dim,
     elementwise_epilogue_type,
 )
-from testing import assert_true
+from std.testing import assert_true
 
-from utils import IndexList, StaticTuple
-from utils.index import product
+from std.utils import IndexList, StaticTuple
+from std.utils.index import product
 
 
 fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:

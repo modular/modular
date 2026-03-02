@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.host import DeviceContext
-from gpu.memory import async_copy
-from gpu.sync import async_copy_arrive
+from std.gpu import barrier, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.host import DeviceContext
+from std.gpu.memory import async_copy
+from std.gpu.sync import async_copy_arrive
 from layout.tma_async import PipelineState, SharedMemBarrier
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import stack_allocation
-from testing import assert_equal
-from utils import IndexList
+from std.memory import stack_allocation
+from std.testing import assert_equal
+from std.utils import IndexList
 
 
 fn producer_consumer_kernel[NUM_THREADS: Int]():

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from internal_utils import env_get_shape, parse_shape
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn print_static_shape[x: List[Int]]():

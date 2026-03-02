@@ -17,14 +17,14 @@ This module registers operations for variable-length selective scan:
 - varlen_selective_state_update: State update for decode/autoregressive inference
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
 import compiler_internal as compiler
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import is_cpu, is_gpu
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,

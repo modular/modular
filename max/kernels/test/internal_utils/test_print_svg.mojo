@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
+from std.pathlib import Path
 
 from layout import IntTuple, Layout, LayoutTensor
 from layout._print_svg import print_svg

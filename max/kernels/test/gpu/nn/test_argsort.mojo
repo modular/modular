@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Idx, TileTensor
 from layout._layout import row_major
 
 from nn.argsort import argsort
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn linear_filler(i: Int, n: Int) -> Float32:

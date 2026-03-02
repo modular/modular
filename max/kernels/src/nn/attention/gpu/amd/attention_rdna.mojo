@@ -22,15 +22,15 @@ Key differences from CDNA Attention:
 - k_group_size = 1 (single MMA per K iteration)
 """
 
-from collections import OptionalReg
-from math import ceildiv, recip
-from math.constants import log2e
+from std.collections import OptionalReg
+from std.math import ceildiv, recip
+from std.math.constants import log2e
 
-from sys import size_of, simd_width_of
+from std.sys import size_of, simd_width_of
 
-from algorithm.functional import unswitch
-from gpu import barrier, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
+from std.algorithm.functional import unswitch
+from std.gpu import barrier, block_idx, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
 from layout import Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.int_tuple import UNKNOWN_VALUE
@@ -42,8 +42,8 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import stack_allocation
-from memory.pointer import AddressSpace as BaseAddressSpace
+from std.memory import stack_allocation
+from std.memory.pointer import AddressSpace as BaseAddressSpace
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_utils import (
@@ -53,8 +53,8 @@ from nn.mha_utils import (
 )
 from nn.softmax import _online_softmax_iter_for_mma_output
 
-from utils import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .attention import AttentionConfig
 from .buffers import KVBuffer

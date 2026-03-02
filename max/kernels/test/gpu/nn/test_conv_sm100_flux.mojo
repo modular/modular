@@ -24,17 +24,17 @@ FLUX VAE decoder uses block_out_channels=[128, 256, 512, 512] with:
 - BF16 data type
 """
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import rand
-from testing import assert_false
+from std.random import rand
+from std.testing import assert_false
 
 from layout import LayoutTensor, Layout, RuntimeLayout
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from nn.conv import conv_gpu, conv_cudnn
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn test_flux_conv_layer[

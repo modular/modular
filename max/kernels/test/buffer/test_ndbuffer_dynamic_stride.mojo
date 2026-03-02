@@ -13,9 +13,8 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from testing import TestSuite
-
-from utils.index import Index
+from std.testing import TestSuite
+from std.utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_sub_matrix
@@ -38,7 +37,7 @@ def test_sub_matrix() raises:
     # Extract a sub-matrix 2x2 at (1,1).
     var sub_matrix0 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
         matrix.data + 5,
-        DimList(2, 2),
+        IndexList[2](2, 2),
         Index(4, 1),
     )
 
@@ -57,7 +56,7 @@ def test_sub_matrix() raises:
     # It includes (1,1) (1,3) (3,1) (3,3) of the original matrix.
     var sub_matrix1 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
         matrix.data + 1,
-        DimList(2, 2),
+        IndexList[2](2, 2),
         Index(8, 2),
     )
 
@@ -70,7 +69,7 @@ def test_sub_matrix() raises:
     # It includes (1,1) (1,2) (1,3) (2,1) of the original matrix.
     var sub_matrix2 = NDBuffer[DType.float32, 2, _, DimList(2, 2)](
         matrix.data + 5,
-        DimList(2, 2),
+        IndexList[2](2, 2),
         Index(2, 1),
     )
 
@@ -87,7 +86,7 @@ def test_broadcast() raises:
     # Create a buffer holding a single value with zero stride.
     var arr = InlineArray[Float32, 1](uninitialized=True)
     var stride_buf = NDBuffer[DType.float32, 1, _, DimList(100)](
-        arr.unsafe_ptr(), DimList(100), Index(0)
+        arr.unsafe_ptr(), IndexList[1](100), Index(0)
     )
 
     # CHECK: 2.0

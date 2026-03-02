@@ -13,34 +13,34 @@
 """Multi-GPU reducescatter implementation for distributed tensor reduction across GPUs.
 """
 
-from collections import InlineArray
-from collections.optional import Optional
-from builtin.variadics import Variadic
+from std.collections import InlineArray
+from std.collections.optional import Optional
+from std.builtin.variadics import Variadic
 
 from layout import Coord, TileTensor, Idx
 from layout._layout import TensorLayout, Layout, row_major
 from layout.coord import _CoordToDynamic
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,
     grid_dim,
 )
-from gpu.primitives.grid_controls import (
+from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
-from utils import IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.memory import Consistency, ReduceOp, multimem_ld_reduce
+from std.utils import IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
-from gpu.intrinsics import (
+from std.gpu.intrinsics import (
     Scope,
 )
-from math import ceildiv
-from sys import simd_width_of, align_of, is_amd_gpu
+from std.math import ceildiv
+from std.sys import simd_width_of, align_of, is_amd_gpu
 
 from .sync import (
     MAX_GPUS,

@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_float64
-from sys import env_get_dtype
+from std.random import random_float64
+from std.sys import env_get_dtype
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
-from gpu.host import DeviceContext
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn bench_layer_norm_gpu[

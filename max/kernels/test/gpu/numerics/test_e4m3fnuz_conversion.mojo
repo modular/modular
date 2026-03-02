@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import nan
+from std.math import nan
 
-from gpu.host import DeviceContext
-from memory import bitcast
+from std.gpu.host import DeviceContext
+from std.memory import bitcast
 
 
 # CHECK-LABEL: test_e4m3fnuz_initialization

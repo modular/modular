@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_float64
+from std.math import ceildiv
+from std.random import random_float64
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
-from gpu import block_dim
-from gpu.host import DeviceContext
+from std.gpu import block_dim
+from std.gpu.host import DeviceContext
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
 def test_vendor_blas[

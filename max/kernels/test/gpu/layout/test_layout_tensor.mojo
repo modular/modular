@@ -13,16 +13,16 @@
 
 from buffer.dimlist import DimList
 from internal_utils._utils import ValOrDim, dynamic, static
-from itertools import product
+from std.itertools import product
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.layout import blocked_product
 from layout._fillers import arange
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 def test_runtime_and_compile_time_dim_and_stride(
@@ -30,7 +30,7 @@ def test_runtime_and_compile_time_dim_and_stride(
 ) raises:
     comptime static_shape = DimList(k.dim, m.dim)
     var dynamic_shape = IndexList[2](k.value, m.value)
-    comptime layout = Layout.row_major[2](static_shape)
+    comptime layout = Layout.row_major[dims=static_shape]()
 
     var tensor = LayoutTensor[
         DType.float32,

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv
-from random import random_ui64
+from std.collections import Set
+from std.math import ceildiv
+from std.random import random_ui64
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
@@ -27,13 +27,13 @@ from layout import (
 )
 from layout._fillers import random
 from layout._layout import row_major
-from memory import memcpy
+from std.memory import memcpy
 
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import freqs_cis_table_input
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 def execute_fused_qk_rope_ragged(

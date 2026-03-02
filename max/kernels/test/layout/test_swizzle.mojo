@@ -22,9 +22,9 @@ from layout.layout import (
 )
 from layout.layout_tensor import _compute_distribute_layout
 from layout.swizzle import Swizzle, make_swizzle
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
 fn print_swizzle(thread_layout: Layout, swizzle: Swizzle):

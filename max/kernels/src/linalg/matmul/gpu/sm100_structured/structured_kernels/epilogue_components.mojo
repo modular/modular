@@ -24,11 +24,11 @@ The SM100 epilogue pipeline flows as:
     TMEM (accumulators) → Registers → SMEM → GMEM (via TMA)
 """
 
-from sys import align_of, simd_width_of
+from std.sys import align_of, simd_width_of
 
-from gpu import WARP_SIZE, lane_id, warp_id
-from gpu.memory import fence_async_view_proxy
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import WARP_SIZE, lane_id, warp_id
+from std.gpu.memory import fence_async_view_proxy
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from .barriers import WarpGroupBarrier
 from layout import (
     Layout,
@@ -45,8 +45,8 @@ from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.utils import elementwise_compute_lambda_type
-from utils.fast_div import FastDiv
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.static_tuple import StaticTuple
 
 # TileTensor-based types - use TileSMemTile to avoid name collision with old SMemTile
 from .tile_types import (
@@ -119,11 +119,11 @@ struct AccumBarrier[cta_group: Int](TrivialRegisterPassable):
         """Signal accumulator arrival on pipeline barrier."""
 
         comptime if Self.cta_group == 1:
-            from gpu.sync import mbarrier_arrive
+            from std.gpu.sync import mbarrier_arrive
 
             _ = mbarrier_arrive(pipeline.consumer_mbar(stage))
         else:
-            from gpu.sync import umma_arrive_leader_cta
+            from std.gpu.sync import umma_arrive_leader_cta
 
             umma_arrive_leader_cta(pipeline.consumer_mbar(stage))
 
@@ -145,8 +145,8 @@ fn store_fragment_to_smem[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](vec: SIMD, dst: SMemTile, warp_offset: UInt32 = 0):
     """Store fragment to SMEM via st.matrix instruction."""
-    from gpu.compute.mma import st_matrix
-    from memory import bitcast
+    from std.gpu.compute.mma import st_matrix
+    from std.memory import bitcast
 
     comptime c_type = dst.dtype
     comptime stsmx_row_size = 32 // size_of[
@@ -222,8 +222,8 @@ fn store_fragment_to_smem[
     warp_offset: UInt32 = 0,
 ):
     """Store fragment to SMEM via st.matrix."""
-    from gpu.compute.mma import st_matrix
-    from memory import bitcast
+    from std.gpu.compute.mma import st_matrix
+    from std.memory import bitcast
     from layout import Coord, Idx
 
     comptime c_type = dst.dtype
@@ -666,7 +666,7 @@ struct TMAStoreExecutor[
                 )
             else:
                 # Non-transpose: wrap as SMemTile for _store_non_transpose
-                from memory import LegacyUnsafePointer
+                from std.memory import LegacyUnsafePointer
 
                 comptime SMemPtrType = LegacyUnsafePointer[
                     Scalar[Self.c_type],
@@ -700,7 +700,7 @@ struct TMAStoreExecutor[
         from layout import Coord, Idx
 
         # Convert to LayoutTensor at TMA async_store boundary
-        from memory import LegacyUnsafePointer
+        from std.memory import LegacyUnsafePointer
 
         comptime if Self.cta_group == 2 and Self.MMA_M == 128:
             # Path A: reshape to (2*stageN, sc_size//2), tile by warp
@@ -1001,7 +1001,7 @@ struct EpilogueApplier[
             src_ptr: Pointer to source C SMEM tile (same TMA swizzle as output).
             beta: Residual scale factor.
         """
-        from gpu.memory import AddressSpace
+        from std.gpu.memory import AddressSpace
 
         var top = self.coords.top_upper if is_upper else self.coords.top_lower
         var bot = (
@@ -1487,8 +1487,8 @@ struct TMEMToSMemWriter[
 # =============================================================================
 # Imports for IndexList
 # =============================================================================
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 from layout.layout import coalesce, flatten
 
 

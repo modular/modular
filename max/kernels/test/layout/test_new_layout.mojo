@@ -21,7 +21,7 @@ from layout._layout import (
 )
 from layout import ComptimeInt, Coord, Idx, RuntimeInt, TileTensor
 from layout.int_tuple import IntTuple
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 def main() raises:

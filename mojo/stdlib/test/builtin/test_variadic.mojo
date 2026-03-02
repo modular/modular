@@ -20,12 +20,8 @@ from test_utils import ExplicitDelOnly
 fn test_variadic_iterator() raises:
     fn helper(*args: Int) raises:
         var n = 5
-        var count = 0
-
-        for i, e in enumerate(args):
+        for e in args:
             assert_equal(e, n)
-            assert_equal(i, count)
-            count += 1
             n -= 1
 
     helper(5, 4, 3, 2, 1)

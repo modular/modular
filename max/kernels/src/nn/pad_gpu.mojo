@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
+from std.gpu import block_dim, block_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
 from layout import Coord, Idx, TileTensor
 from layout._layout import TensorLayout, Layout
-from math import ceildiv
-from sys.info import align_of
-from utils.index import IndexList
+from std.math import ceildiv
+from std.sys.info import align_of
+from std.utils.index import IndexList
 
 
 fn _fill_strides_indexlist[

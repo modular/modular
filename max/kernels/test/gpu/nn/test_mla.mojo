@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import randn
-from sys import argv, has_nvidia_gpu_accelerator
+from std.math import ceildiv, isclose
+from std.random import randn
+from std.sys import argv, has_nvidia_gpu_accelerator
 
-from gpu import *
-from gpu.host import DeviceContext
+from std.gpu import *
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
@@ -27,12 +27,12 @@ from nn.mha_operand import LayoutTensorMHAOperand
 from nn.mla import flare_mla_decoding, flare_mla_prefill
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
-from testing import assert_almost_equal
-from gpu.host.info import B200, GPUInfo
+from std.testing import assert_almost_equal
+from std.gpu.host.info import B200, GPUInfo
 
 
-from utils.index import Index
-from utils.numerics import get_accum_type
+from std.utils.index import Index
+from std.utils.numerics import get_accum_type
 
 
 fn is_benchmark() -> Bool:

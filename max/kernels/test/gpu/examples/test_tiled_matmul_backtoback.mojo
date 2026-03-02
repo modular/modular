@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from io.io import _printf
-from math import ceildiv
-from os import abort
-from sys import size_of
-from sys.info import align_of, simd_width_of
+from std.collections import Optional
+from std.io.io import _printf
+from std.math import ceildiv
+from std.os import abort
+from std.sys import size_of
+from std.sys.info import align_of, simd_width_of
 
 from buffer.dimlist import Dim
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -28,8 +28,8 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import external_memory
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.memory import external_memory
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE
@@ -45,11 +45,11 @@ from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import block_swizzle
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import StaticTuple
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
 struct BackToBackMatmulConfig[

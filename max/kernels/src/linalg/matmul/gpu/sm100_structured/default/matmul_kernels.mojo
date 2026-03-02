@@ -29,34 +29,34 @@ The kernel implements a warp-specialized architecture:
 - Epilogue warps: Output from TMEM to GMEM via TileWriter
 """
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import align_of, size_of
+from std.sys import align_of, size_of
 
-from gpu import WARP_SIZE, barrier, warp_id
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier, warp_id
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
 )
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import (
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_mbarrier_init,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.primitives.grid_controls import (
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,
 )
-from gpu.sync import syncwarp
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.sync import syncwarp
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout as LegacyLayout, LayoutTensor, TileTensor
 from layout._layout import (
     Layout as _NewLayout,
@@ -65,7 +65,7 @@ from layout._layout import (
     ComptimeInt,
     CoordLike,
 )
-from builtin.variadics import Variadic
+from std.builtin.variadics import Variadic
 from layout.coord import Coord, Idx, coord
 from ..structured_kernels.tile_types import (
     TMATile,
@@ -80,9 +80,9 @@ from layout.tensor_core_async import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import (

@@ -35,10 +35,10 @@ from layout._ndbuffer_stub import (
     vectorize,
 )
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import Index, IndexList, StaticTuple
+from std.utils import Index, IndexList, StaticTuple
 
 
 fn linspace_fill[
@@ -96,16 +96,15 @@ fn print_element[
 
 fn print_vectorized_buff[
     dtype: DType,
-    rank: Int,
     shape: DimList,
-    element_shape: IndexList[rank],
+    element_shape: IndexList[2],
 ](
-    buff: NDBuffer[dtype, rank, _, shape],
-    element_layout: ElementLayout[rank, element_shape],
+    buff: NDBuffer[dtype, 2, _, shape],
+    element_layout: ElementLayout[2, element_shape],
 ):
     for m in range(buff.dim(0)):
         for n in range(buff.dim(1)):
-            print_element(buff._offset(VariadicList[Int](m, n)), element_layout)
+            print_element(buff._offset(IndexList[2](m, n)), element_layout)
         print("")
 
 
@@ -1369,13 +1368,13 @@ fn test_from_ndbuffer_to_layout_tensor():
     comptime type = DType.float32
     comptime ptr = UnsafePointer[Scalar[type]].alloc(64)
     comptime rank = 4
-    comptime shape = DimList(2, 3, 2, 2)
-    var buffer1 = NDBuffer[type, rank, shape=shape](ptr, shape)
+    comptime shape = IndexList[4](2, 3, 2, 2)
+    var buffer1 = NDBuffer[type, rank, shape = DimList(2, 3, 2, 2)](ptr, shape)
     linspace_fill(buffer1)
     var tensor1 = from_ndbuffer_row_major(buffer1)
 
     comptime static_shape = DimList(Dim(), 3, Dim(), 2)
-    comptime dynamic_shape = DimList(2, 3, 2, 2)
+    comptime dynamic_shape = IndexList[4](2, 3, 2, 2)
 
     var buffer2 = NDBuffer[type, rank, shape=static_shape](ptr, dynamic_shape)
     var tensor2 = from_ndbuffer_row_major(buffer2)

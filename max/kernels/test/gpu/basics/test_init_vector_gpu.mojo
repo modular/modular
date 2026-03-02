@@ -12,16 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from random import seed
+from std.random import seed
 
 from buffer import DimList, NDBuffer
-from gpu import *
-from gpu.host import DeviceContext
+from std.gpu import *
+from std.gpu.host import DeviceContext
 from internal_utils import InitializationType, Timer, init_vector_launch
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
+from std.utils.index import IndexList
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 @no_inline
@@ -47,7 +48,9 @@ fn test_vec_init[
         InitializationType.arange,
     ]:
         var verification_ptr = UnsafePointer[Scalar[dtype]].alloc(length)
-        var verification_data = NDBuffer[dtype, 1](verification_ptr, length)
+        var verification_data = NDBuffer[dtype, 1](
+            verification_ptr, IndexList[1](length)
+        )
         seed(0)
         if init_type == InitializationType.zero:
             verification_data.zero()

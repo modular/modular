@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_dtype, env_get_int, size_of, env_get_bool
-from math import ceildiv
-from benchmark import (
+from std.sys import env_get_dtype, env_get_int, size_of, env_get_bool
+from std.math import ceildiv
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -21,7 +21,7 @@ from benchmark import (
     ThroughputMeasure,
     BenchMetric,
 )
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple
 from layout import (
     UNKNOWN_VALUE,
@@ -30,12 +30,12 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 from layout._fillers import random
-from gpu.host.info import B200
+from std.gpu.host.info import B200
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import IndexList
+from std.utils.index import IndexList
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,

@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
-from random import rand
-from sys import simd_width_of, size_of
+from std.math import isclose
+from std.random import rand
+from std.sys import simd_width_of, size_of
 
 import benchmark
 from buffer import NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_false
+from std.testing import assert_false
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime alignment = 64
 

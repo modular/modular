@@ -30,10 +30,10 @@ Tensor layout (all row-major):
   - ``output``:      (L, dim)           x + interpolated position embedding
 """
 
-from math import clamp, floor
+from std.math import clamp, floor
 
-from gpu import block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from layout._layout import TensorLayout
 from layout.tile_tensor import TileTensor
 

@@ -10,21 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys import has_amd_gpu_accelerator
+from std.sys import has_amd_gpu_accelerator
 import gpu.primitives.warp as warp
-from gpu import barrier, thread_idx
-from gpu.globals import WARP_SIZE
-from gpu.host import DeviceContext
-from gpu.primitives.warp import (
+from std.gpu import barrier, thread_idx
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.gpu.primitives.warp import (
     shuffle_down,
     shuffle_idx,
     shuffle_up,
     shuffle_xor,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn kernel_wrapper[

@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, clamp, gcd
-from sys import size_of
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import AddressSpace
-from gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
+from std.math import ceildiv, clamp, gcd
+from std.sys import size_of
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.memory import AddressSpace
+from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout.layout import (
     Layout,
 )
-from logger import Logger
+from std.logger import Logger
 
 from layout.layout_tensor import (
     LayoutTensor,
@@ -36,8 +36,8 @@ from nn.mha_utils import (
 )
 from nn.mha_fa3_utils import KVTMATile
 from layout.runtime_layout import RuntimeLayout
-from utils.numerics import get_accum_type
-from utils.index import Index
+from std.utils.numerics import get_accum_type
+from std.utils.index import Index
 
 comptime logger = Logger()
 from nn.mla_decode_sm100_utils import (

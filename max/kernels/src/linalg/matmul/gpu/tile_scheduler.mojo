@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, grid_dim
-from hashlib.hasher import Hasher
+from std.gpu import block_idx, grid_dim
+from std.hashlib.hasher import Hasher
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
 
 from ...utils_gpu import block_swizzle
 

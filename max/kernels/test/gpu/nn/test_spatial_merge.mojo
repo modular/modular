@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Idx, TileTensor
 from layout._layout import row_major
 from nn.spatial_merge import spatial_merge
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 def test_spatial_merge(ctx: DeviceContext) raises:

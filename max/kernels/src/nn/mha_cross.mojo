@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import align_of, simd_width_of
+from std.math import ceildiv
+from std.sys import align_of, simd_width_of
 
-from algorithm.functional import vectorize
-from gpu import block_idx, global_idx
-from gpu.host import DeviceContext, DeviceBuffer
+from std.algorithm.functional import vectorize
+from std.gpu import block_idx, global_idx
+from std.gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
 from layout import Coord, Idx, TileTensor
 from layout._layout import Layout, TensorLayout, row_major
@@ -24,8 +24,8 @@ from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
 @always_inline

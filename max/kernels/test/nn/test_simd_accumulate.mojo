@@ -14,7 +14,7 @@
 
 from buffer import NDBuffer
 from linalg.accumulate import _Accumulator, _simd_load_maybe_partial
-from testing import *
+from std.testing import *
 
 
 # TODO: rewrite c-layout comments according to the new struct.

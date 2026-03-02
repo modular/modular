@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """MLA FP8 index kernel for computing attention scores with paged KV cache."""
 
-from sys import size_of
-from math import ceildiv
+from std.sys import size_of
+from std.math import ceildiv
 
 from layout import Idx, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensor
 from layout._layout import row_major
 
-from gpu import block_idx, thread_idx
-from gpu.host import DeviceContext, FuncAttribute
+from std.gpu import block_idx, thread_idx
+from std.gpu.host import DeviceContext, FuncAttribute
 
 from kv_cache.types import KVCacheT, KVCollectionT
 
@@ -30,7 +30,7 @@ from nn.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
 from nn.mha_utils import dispatch_mask
 from nn.topk import topk_gpu
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 # ===----------------------------------------------------------------------=== #

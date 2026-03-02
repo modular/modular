@@ -16,7 +16,7 @@ from layout import Coord, CoordLike, Idx, TileTensor
 from layout._layout import TensorLayout, row_major
 from nn.concat import _concat_parallel, _concat_serial, concat
 
-from utils import Index, IndexList, StaticTuple
+from std.utils import Index, IndexList, StaticTuple
 
 
 fn _tuple_to_list[

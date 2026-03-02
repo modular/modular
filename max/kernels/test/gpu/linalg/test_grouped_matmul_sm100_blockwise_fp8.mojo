@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import align_of, size_of
+from std.collections import Optional
+from std.sys import align_of, size_of
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils._measure import relative_difference
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
@@ -31,12 +31,12 @@ from linalg.matmul.gpu.sm100.blockwise_fp8 import (
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.utils import elementwise_epilogue_type
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def test_grouped_matmul_sm100_blockwise_scaled_fp8[
@@ -109,6 +109,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var a_size = total_num_tokens * K
 
     comptime static_b_shape = DimList(num_experts, N, K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
     comptime static_c_shape = DimList(Dim(), N)
@@ -122,6 +123,9 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
 
     comptime static_b_scales_shape = DimList(
+        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    )
+    var dynamic_b_scales_shape = IndexList[3](
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
     var b_scales_size = (
@@ -211,19 +215,19 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
 
     var a_device = NDBuffer[a_type, 2, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var b_device = NDBuffer[b_type, 3, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var c_device = NDBuffer[c_type, 2, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var c_device_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_device_ref_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var a_offsets_device = NDBuffer[DType.uint32, 1](
         a_offsets_device_buffer.unsafe_ptr(),
@@ -235,11 +239,11 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
     var a_scales_device = NDBuffer[scales_type, 2, _, static_a_scales_shape](
         a_scales_device_buffer.unsafe_ptr(),
-        DimList(K // BLOCK_SCALE_K, total_num_tokens),
+        IndexList[2](K // BLOCK_SCALE_K, total_num_tokens),
     )
     var b_scales_device = NDBuffer[scales_type, 3, _, static_b_scales_shape](
         b_scales_device_buffer.unsafe_ptr(),
-        static_b_scales_shape,
+        dynamic_b_scales_shape,
     )
 
     var c_tensor = c_device

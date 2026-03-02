@@ -23,15 +23,15 @@ mpirun.
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer, alloc
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.memory import LegacyUnsafePointer, alloc
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os.path import dirname
-from pathlib import Path
+from std.os.path import dirname
+from std.pathlib import Path
 from shmem import *
-from sys.param_env import env_get_string
-from testing import assert_equal
+from std.sys.param_env import env_get_string
+from std.testing import assert_equal
 
 
 fn simple_shift_kernel(destination: UnsafePointer[Int32]):

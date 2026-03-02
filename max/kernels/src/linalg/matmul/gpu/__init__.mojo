@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_down, ceildiv
-from sys import (
+from std.math import align_down, ceildiv
+from std.sys import (
     align_of,
     env_get_bool,
     env_get_int,
@@ -23,23 +23,23 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
-from algorithm.functional import elementwise, tile_and_unswitch
+from std.algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
+from std.gpu import barrier, block_dim, global_idx, thread_idx
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
-from logger import Logger
-from memory import bitcast, stack_allocation
-from utils import Index, IndexList
-from utils.numerics import get_accum_type
+from std.logger import Logger
+from std.memory import bitcast, stack_allocation
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 from ...gemv import gemv_gpu
 from ...utils import (

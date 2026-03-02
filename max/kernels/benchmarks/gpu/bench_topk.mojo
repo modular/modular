@@ -11,24 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
-from random import random_float64
+from std.math import ceildiv, iota
+from std.random import random_float64
 
-from algorithm.reduction import max as reduce_max
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
+from std.algorithm.reduction import max as reduce_max
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
 
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils import IndexList
-from sys import env_get_int, env_get_bool, env_get_dtype, env_get_string
-from sys.info import size_of
+from std.utils import IndexList
+from std.sys import env_get_int, env_get_bool, env_get_dtype, env_get_string
+from std.sys.info import size_of
 
 
 fn bench_topk_batched[

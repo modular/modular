@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu import thread_idx, warp_id, lane_id
-from gpu.intrinsics import threadfence
-from gpu.compute.mma import (
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx, warp_id, lane_id
+from std.gpu.intrinsics import threadfence
+from std.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,

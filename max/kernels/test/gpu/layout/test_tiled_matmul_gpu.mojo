@@ -13,21 +13,21 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
-from gpu.compute.mma import mma
-from gpu.sync import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.compute.mma import mma
+from std.gpu.sync import barrier
 from layout import *
 from layout._fillers import arange
 from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from layout._utils import ManagedLayoutTensor
 from layout.math import outer_product_acc
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn naive_matmul[

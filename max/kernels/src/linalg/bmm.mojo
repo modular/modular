@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv, gcd
-from sys import align_of, size_of
-from sys.info import (
+from std.math import align_up, ceildiv, gcd
+from std.sys import align_of, size_of
+from std.sys.info import (
     _is_amd_rdna,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
@@ -22,16 +22,16 @@ from sys.info import (
     simd_width_of,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from algorithm import elementwise, sync_parallelize, vectorize
-from algorithm.functional import _get_start_indices_of_nth_subvolume_uint
-from algorithm.reduction import _reduce_generator
+from std.algorithm import elementwise, sync_parallelize, vectorize
+from std.algorithm.functional import _get_start_indices_of_nth_subvolume_uint
+from std.algorithm.reduction import _reduce_generator
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_idx, global_idx
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import AddressSpace
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import A100, is_cpu, is_valid_target
+from std.gpu import block_idx, global_idx
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.memory import AddressSpace
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import A100, is_cpu, is_valid_target
 from layout import (
     IntTuple,
     Layout,
@@ -50,16 +50,16 @@ from layout.coord import (
     Idx,
     coord_to_index_list,
 )
-from logger import Logger
-from memory import LegacyUnsafePointer, memset_zero
+from std.logger import Logger
+from std.memory import LegacyUnsafePointer, memset_zero
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from gpu.host.info import B200, H100
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.gpu.host.info import B200, H100
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
@@ -642,7 +642,9 @@ fn _batched_matmul_cpu[
                 a_packed_ptr = UnsafePointer[Scalar[a_type]].alloc(
                     mh * kh, alignment=alignment
                 )
-            var a_packed = NDBuffer[a_type, 2](a_packed_ptr, DimList(mh, kh))
+            var a_packed = NDBuffer[a_type, 2](
+                a_packed_ptr, IndexList[2](mh, kh)
+            )
 
             if use_i8mm:
                 packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)

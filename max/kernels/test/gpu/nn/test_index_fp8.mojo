@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from nn.index_fp8 import fp8_index, fp8_index_naive
-from random import rand
+from std.random import rand
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensor
-from utils.index import Index
-from testing import assert_almost_equal
+from std.utils.index import Index
+from std.testing import assert_almost_equal
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from tensor_core_kernels import (
     test_load_and_mma_and_multiply_operands,
     test_load_operands_ldmatrix,
     test_write_res_operand,
 )
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 # CHECK-LABEL: test_load_and_mma_f32_f32_16x8x8

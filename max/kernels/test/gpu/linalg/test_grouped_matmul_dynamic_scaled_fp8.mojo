@@ -23,16 +23,16 @@ test_grouped_matmul_sm100_blockwise_fp8.mojo.
 """
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
@@ -83,6 +83,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     var a_size = total_tokens * K
 
     comptime static_b_shape = DimList(num_experts, N, K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
     comptime static_c_shape = DimList(Dim(), N)
@@ -128,6 +129,9 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     var a_scales_size = (K // BLOCK_SCALE_K) * total_tokens
 
     comptime static_b_scales_shape = DimList(
+        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+    )
+    var dynamic_b_scales_shape = IndexList[3](
         num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
     var b_scales_size = (
@@ -184,31 +188,31 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     var a_device = NDBuffer[in_type, 2, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
-        DimList(total_tokens, K),
+        IndexList[2](total_tokens, K),
     )
     var b_device = NDBuffer[in_type, 3, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var c_device = NDBuffer[out_type, 2, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
-        DimList(total_tokens, N),
+        IndexList[2](total_tokens, N),
     )
     var a_offsets_device = NDBuffer[DType.uint32, 1](
         a_offsets_device_buffer.unsafe_ptr(),
-        num_offsets,
+        IndexList[1](num_offsets),
     )
     var expert_ids_device = NDBuffer[DType.int32, 1](
         expert_ids_device_buffer.unsafe_ptr(),
-        num_expert_ids,
+        IndexList[1](num_expert_ids),
     )
     var a_scales_device = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
         a_scales_device_buffer.unsafe_ptr(),
-        DimList(K // BLOCK_SCALE_K, total_tokens),
+        IndexList[2](K // BLOCK_SCALE_K, total_tokens),
     )
     var b_scales_device = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
         b_scales_device_buffer.unsafe_ptr(),
-        static_b_scales_shape,
+        dynamic_b_scales_shape,
     )
 
     # Copy to device

@@ -10,29 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from math import ceildiv, gcd
-from sys import align_of, size_of
+from std.collections import Optional
+from std.math import ceildiv, gcd
+from std.sys import align_of, size_of
 
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import block_rank_in_cluster
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import external_memory
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.arch.tcgen05 import *
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import external_memory
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout.int_tuple import IntTuple
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
-from logger import Logger
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.logger import Logger
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_epilogue_type

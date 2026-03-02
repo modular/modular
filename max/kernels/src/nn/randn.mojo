@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import randn
+from std.random import randn
 
 from layout import TileTensor
 

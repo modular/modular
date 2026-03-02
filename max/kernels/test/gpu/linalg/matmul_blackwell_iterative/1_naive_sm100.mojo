@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import argv
+from std.math import ceildiv
+from std.sys import argv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import block_dim
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
+from std.gpu import block_dim
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn is_benchmark() -> Bool:

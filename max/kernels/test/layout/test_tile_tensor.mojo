@@ -16,8 +16,8 @@ from layout._layout import Layout, row_major
 from layout import ComptimeInt, Coord, Idx, RuntimeInt, TileTensor
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle
-from math import ceildiv
-from testing import (
+from std.math import ceildiv
+from std.testing import (
     TestSuite,
     assert_equal,
     assert_false,

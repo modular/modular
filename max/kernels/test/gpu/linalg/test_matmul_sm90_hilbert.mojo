@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu.host import DeviceContext
-from gpu.host.info import H100
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import H100
 from internal_utils._utils import dynamic, static
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 
-from utils.index import Index
+from std.utils.index import Index
 
 # NOTE: This test originally tested hilbert_swizzle=True functionality,
 # but the testbed doesn't currently support the hilbert_swizzle parameter.

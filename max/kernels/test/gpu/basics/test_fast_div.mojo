@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from algorithm.functional import elementwise
+from std.algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
-from gpu import *
-from gpu.host import DeviceContext
-from testing import *
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.testing import *
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
 
 
 def test_fast_div() raises:

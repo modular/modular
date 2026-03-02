@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """MMA warp logic for FA4 (SM100 Flash Attention)."""
 
-from math import align_up
-from sys import size_of
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from std.math import align_up
+from std.sys import size_of
+from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout.tma_async import SharedMemBarrier
 from nn.fa4_config import FA4Config, EnableForcedOrdering
 from nn.sm100_attention_utils import (

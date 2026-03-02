@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
 from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu.host import DeviceContext
-from random import rand
+from buffer.dimlist import Dim, DimList
+from std.gpu.host import DeviceContext
+from std.random import rand
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
-from testing import assert_almost_equal
-from gpu.host.info import B200
+from std.testing import assert_almost_equal
+from std.gpu.host.info import B200
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 import itertools
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -100,9 +100,7 @@ fn shrink_qkv_permute_3mn_sm100[
     ]()  # data=null, shape/stride zeroed
 
     # Populate the dynamic shape (row-major strides will be set later if needed).
-    c.dynamic_shape = _make_tuple[2, element_type = DType.uint64](
-        DimList(M, N_Total)
-    )
+    c.dynamic_shape = [M, N_Total]
 
     @always_inline
     @__copy_capture(c_tensor_lora, M)

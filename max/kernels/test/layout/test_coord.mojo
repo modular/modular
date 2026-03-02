@@ -13,10 +13,10 @@
 """Tests for the unified LayoutLike system."""
 
 from buffer import Dim, DimList
-from sys import size_of
-from sys.intrinsics import _type_is_eq
+from std.sys import size_of
+from std.sys.intrinsics import _type_is_eq
 
-from builtin.variadics import Variadic
+from std.builtin.variadics import Variadic
 
 from layout.coord import (
     ComptimeInt,
@@ -30,7 +30,7 @@ from layout.coord import (
     _DimsToCoordLike,
     _Idx2CrdResultTypes,
 )
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 fn test_nested_layouts() raises:

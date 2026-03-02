@@ -19,7 +19,7 @@ from nn.resize import (
     resize_linear,
     resize_nearest_neighbor,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
 def main() raises:

@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import size_of
+from std.math import ceildiv
+from std.sys import size_of
 
-from gpu import barrier, block_idx, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import barrier, block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from layout.tma_async import SharedMemBarrier
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
-from testing import assert_equal
+from std.memory import stack_allocation
+from std.memory.pointer import _GPUAddressSpace
+from std.testing import assert_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 from layout.int_tuple import IntTuple, product, depth, to_index_list
 from layout.layout import zipped_divide, blocked_product, print_layout
 
-from random import random_si64
+from std.random import random_si64
 from linalg.arch.sm100._tma import (
     create_tma_descriptor,
     TMALoad,
@@ -36,10 +36,10 @@ from linalg.arch.sm100._tma import (
     UInt32Indices,
     to_swizzle,
 )
-from gpu.memory import AddressSpace
-from gpu.host._tensormap import SwizzleMode
-from gpu import WARP_SIZE
-from testing import assert_equal
+from std.gpu.memory import AddressSpace
+from std.gpu.host._tensormap import SwizzleMode
+from std.gpu import WARP_SIZE
+from std.testing import assert_equal
 from linalg.arch.sm100.mma import max_contiguous_tile_shape, Major
 
 

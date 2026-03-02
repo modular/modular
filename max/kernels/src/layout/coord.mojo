@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Unified layout system for mixed compile-time and runtime indices."""
 
-from os import abort
-from sys.intrinsics import _type_is_eq
+from std.os import abort
+from std.sys.intrinsics import _type_is_eq
 
-from builtin.variadics import (
+from std.builtin.variadics import (
     Variadic,
     VariadicPack,
     _ReduceVariadicAndIdxToVariadic,
@@ -24,7 +24,7 @@ from builtin.variadics import (
     _MapVariadicAndIdxToType,
 )
 from buffer.dimlist import Dim, DimList
-from sys.intrinsics import _type_is_eq_parse_time
+from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 trait CoordLike(
@@ -1645,7 +1645,7 @@ Uses direct field access rather than methods for compile-time evaluation.
 
 
 comptime _CoordToDimList[*dims: CoordLike] = DimList(
-    VariadicList(
+    VariadicParamList(
         _ReduceVariadicAndIdxToValue[
             BaseVal = Variadic.empty_of_type[Dim],
             VariadicType=dims,

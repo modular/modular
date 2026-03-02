@@ -33,17 +33,17 @@ Key differences from block_scaled_matmul_kernel.mojo:
 5. K-loop uses per-group k_tile_count instead of global K dimension
 """
 
-from collections import Optional
-from math import ceildiv
-from memory import UnsafePointer, Pointer
-from sys import size_of
+from std.collections import Optional
+from std.math import ceildiv
+from std.memory import UnsafePointer, Pointer
+from std.sys import size_of
 
-from gpu import WARP_SIZE, block_idx, lane_id
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.primitives.cluster import cluster_sync, elect_one_sync
-from gpu.sync import syncwarp
-from gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
-from sys import inlined_assembly
+from std.gpu import WARP_SIZE, block_idx, lane_id
+from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
+from std.gpu.sync import syncwarp
+from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
+from std.sys import inlined_assembly
 from layout import ComptimeInt, TileTensor
 from layout._layout import TensorLayout
 from layout._layout import RowMajorLayout, _IntToComptimeInt
@@ -62,8 +62,8 @@ from layout.tensor_core_async import (
     tile_sf_layout_k_major,
 )
 
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K

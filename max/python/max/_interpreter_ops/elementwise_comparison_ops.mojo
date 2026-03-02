@@ -17,15 +17,15 @@ This module contains binary comparison ops (Equal, Greater, GreaterEqual,
 NotEqual) and the Select (ternary) operation.
 """
 
-from os import abort
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from sys.info import has_accelerator, simd_width_of
+from std.os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.sys.info import has_accelerator, simd_width_of
 
-from algorithm.functional import elementwise, IndexList
-from memory import OpaquePointer
-from reflection import get_base_type_name
-from runtime.asyncrt import DeviceContextPtr
+from std.algorithm.functional import elementwise, IndexList
+from std.memory import OpaquePointer
+from std.reflection import get_base_type_name
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import ElementwiseBinaryComparisonOp
 from MOGGKernelAPI.MOGGKernelAPI import (
     Equal,

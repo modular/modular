@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv
+from std.collections import OptionalReg
+from std.math import ceildiv
 
-from gpu import barrier
+from std.gpu import barrier
 from layout.tensor_core import TiledTensorCore
 
 from .buffers import KVBuffer, RegisterBuffer, RegisterMMABuffer

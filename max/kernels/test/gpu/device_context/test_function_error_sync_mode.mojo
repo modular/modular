@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceBuffer, DeviceContext
-from memory import LegacyUnsafePointer, OwnedPointer
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.memory import LegacyUnsafePointer, OwnedPointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import *
+from std.testing import *
 
 
 fn kernel(res: UnsafePointer[UInt32]):

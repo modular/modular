@@ -280,20 +280,9 @@ def greet(*names: String) raises:
 ```
 
 Inside the function body, the variadic argument is available as an iterable list
-for ease of use. Currently there are some differences in handling the list
-depending on whether the arguments are register-passable types (such as `Int`)
-or memory-only types (such as `String`).
-
-:::note TODO
-
-We hope to remove these differences in the future.
-
-:::
-
-Register-passable types, such as `Int`, are available as a
-[`VariadicList`](/mojo/std/builtin/variadics/VariadicList) type. As
-shown in the previous example, you can iterate over the values using a `for..in`
-loop.
+for ease of use.  Concretely, that type is named
+[`VariadicList`](/mojo/std/builtin/variadics/VariadicList).  Here is A
+simple example:
 
 ```mojo
 fn sum(*values: Int) -> Int:
@@ -303,8 +292,6 @@ fn sum(*values: Int) -> Int:
   return sum
 ```
 
-Memory-only types, such as `String`, are available as a
-[`VariadicListMem`](/mojo/std/builtin/variadics/VariadicListMem).
 Iterating over this list directly with a `for..in` loop currently produces a
 reference to the element, which can be mutable with a `mut` variadic list. Use
 the `ref` binding pattern to capture a mutable reference if you

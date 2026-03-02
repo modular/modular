@@ -15,9 +15,9 @@
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import grid_dim
-from gpu.host import DeviceContext, FuncAttribute
-from memory import LegacyUnsafePointer
+from std.gpu import grid_dim
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

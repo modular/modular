@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import rand
+from std.random import rand
 
-from benchmark import *
+from std.benchmark import *
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.flash_attention import flash_attention
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 @fieldwise_init
@@ -121,11 +121,12 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
                 scale=scale,
             )
 
-        comptime depth_static_dims = VariadicList[Int](40, 64, 80, 128, 160)
+        comptime depth_static_dims = [40, 64, 80, 128, 160]
 
         comptime for idx in range(len(depth_static_dims)):
-            if depth_static_dims[idx] == spec.depth_dim:
-                b.iter[iter_fn[depth_static_dims[idx]]]()
+            comptime dim = depth_static_dims[idx]
+            if dim == spec.depth_dim:
+                b.iter[iter_fn[dim]]()
                 return
 
         # Fallback to dispatch with a dynamic shape.

@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv
+from std.math import align_down, ceildiv
 
-from sys import align_of, simd_width_of
+from std.sys import align_of, simd_width_of
 
 from _cudnn.cnn_infer import (
     cudnnConvolutionBackwardData,
@@ -27,14 +27,14 @@ from _cudnn.infer import (
     cudnnSetTensor4dDescriptor,
     cudnnTensorFormat_t,
 )
-from algorithm import (
+from std.algorithm import (
     elementwise,
     sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
     vectorize,
 )
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     CoordLike,
@@ -47,10 +47,10 @@ from layout._layout import TensorLayout, row_major
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv import _get_cudnn_meta, check_cudnn_error
-from runtime.asyncrt import parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.asyncrt import parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .conv_utils import (
     ConvInfoStatic,

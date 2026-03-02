@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp
+from std.math import exp
 
 from layout import Layout, LayoutTensor, stack_allocation_like
 from layout._fillers import arange

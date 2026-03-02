@@ -18,10 +18,10 @@ from nn.mha_utils import (
     DynamicInt,
 )
 from nn.mha_mask import MHAMask
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout.layout_tensor import LayoutTensor
 from layout.layout import Layout
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 from .mla_prefill_sm100_bf16 import mla_sm100_prefill_bf16
 from .mla_prefill_sm100_fp8 import mla_sm100_prefill_fp8
 

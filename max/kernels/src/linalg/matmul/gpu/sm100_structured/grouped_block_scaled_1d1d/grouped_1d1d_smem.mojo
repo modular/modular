@@ -23,7 +23,7 @@ the standard GroupedBlockScaledSmem:
 Tile storage is shared via BlockScaledTileCore from block_scaled_smem.mojo.
 """
 
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 
 from ..block_scaled.block_scaled_smem import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig

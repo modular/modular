@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from sys import argv
+from std.math import ceildiv, isclose
+from std.sys import argv
 
 from std.builtin.variadics import Variadic
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx, warp_id, global_idx, lane_id
-from gpu.memory import async_copy_wait_all
-from gpu.sync import barrier
-from memory import alloc
-from testing import assert_almost_equal
-from utils import Index
-from utils.numerics import get_accum_type
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx, warp_id, global_idx, lane_id
+from std.gpu.memory import async_copy_wait_all
+from std.gpu.sync import barrier
+from std.memory import alloc
+from std.testing import assert_almost_equal
+from std.utils import Index
+from std.utils.numerics import get_accum_type
 
 from layout.layout_tensor import (
     Layout,

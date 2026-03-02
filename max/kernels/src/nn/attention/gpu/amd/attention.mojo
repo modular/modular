@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv, recip
-from math.constants import log2e
+from std.collections import OptionalReg
+from std.math import ceildiv, recip
+from std.math.constants import log2e
 
-from sys import size_of, simd_width_of
-from sys.info import _cdna_4_or_newer
-from sys.intrinsics import _type_is_eq
-from sys._assembly import inlined_assembly
-from algorithm.functional import unswitch
-from gpu import barrier, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
+from std.sys import size_of, simd_width_of
+from std.sys.info import _cdna_4_or_newer
+from std.sys.intrinsics import _type_is_eq
+from std.sys._assembly import inlined_assembly
+from std.algorithm.functional import unswitch
+from std.gpu import barrier, block_idx, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
 from layout import Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.int_tuple import UNKNOWN_VALUE
@@ -31,12 +31,12 @@ from layout.layout_tensor import (
     copy_dram_to_local,
     copy_local_to_dram,
 )
-from memory import bitcast
-from sys.intrinsics import readfirstlane
+from std.memory import bitcast
+from std.sys.intrinsics import readfirstlane
 from nn.mha_mask import CausalMask, MASK_VALUE, MaterializedMask
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore, num_matrix_reg
-from memory.pointer import AddressSpace as BaseAddressSpace
+from std.memory.pointer import AddressSpace as BaseAddressSpace
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
 from nn.mha_utils import (
@@ -45,9 +45,9 @@ from nn.mha_utils import (
     get_start_and_end_for_partitions,
 )
 from .softmax import Softmax
-from sys import _RegisterPackType
-from utils import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
+from std.sys import _RegisterPackType
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .buffers import (
     KBuffer,

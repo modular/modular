@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from layout import Coord, Idx, TileTensor, coord
 from layout._layout import Layout, row_major
@@ -23,7 +23,7 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:

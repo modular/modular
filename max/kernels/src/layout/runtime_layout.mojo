@@ -23,7 +23,7 @@ from layout.runtime_layout import RuntimeLayout, make_layout
 """
 
 
-from utils import IndexList
+from std.utils import IndexList
 
 from . import IntTuple, Layout
 from .int_tuple import UNKNOWN_VALUE, flatten

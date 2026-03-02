@@ -11,27 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.hashlib.hasher import Hasher
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 
-from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
-from ffi import external_call
+from std.sys import (
+    env_get_int,
+    env_get_bool,
+    has_nvidia_gpu_accelerator,
+    size_of,
+)
+from std.ffi import external_call
 
-from gpu import WARP_SIZE
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext
-from gpu.host.device_context import DeviceBuffer
-from gpu.host.info import A100
+from std.gpu import WARP_SIZE
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext
+from std.gpu.host.device_context import DeviceBuffer
+from std.gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling

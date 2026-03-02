@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import llvm_intrinsic
+from std.sys import llvm_intrinsic
 
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 
 # ===-----------------------------------------------------------------------===#
 # dot product

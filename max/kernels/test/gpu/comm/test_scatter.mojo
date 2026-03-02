@@ -32,12 +32,13 @@ Uses the example from KERN-2435: DP=4, TP=2, 8 GPUs distributing row_offsets.
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import InlineArray
-from math import ceildiv
-from sys import size_of
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import assert_true
+from std.collections import InlineArray
+from std.math import ceildiv
+from std.sys import size_of
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import assert_true
 
+from std.utils import IndexList
 from comm import Signal, MAX_GPUS
 from comm.scatter import scatter
 from comm.sync import enable_p2p
@@ -90,7 +91,7 @@ fn _test_pull[
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
         input_bufs[dp] = NDBuffer[dtype, rank, ImmutAnyOrigin](
-            dev_buf.unsafe_ptr(), DimList(n)
+            dev_buf.unsafe_ptr(), IndexList[1](n)
         )
         input_devbufs.append(dev_buf)
     host_buf.free()
@@ -107,7 +108,7 @@ fn _test_pull[
         ctxs[i].enqueue_memset(out_buf, 0)
         ctxs[i].synchronize()
         output_bufs[i] = NDBuffer[dtype, rank, MutAnyOrigin](
-            out_buf.unsafe_ptr(), DimList(n)
+            out_buf.unsafe_ptr(), IndexList[1](n)
         )
         output_devbufs.append(out_buf)
 

@@ -29,11 +29,11 @@ Usage:
     tma_op.async_copy(tile, barrier, coords)
 """
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu.host import DeviceContext
-from gpu.memory import AddressSpace
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext
+from std.gpu.memory import AddressSpace
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout as LegacyLayout,
     LayoutTensor,
@@ -47,7 +47,7 @@ from layout.tma_async import (
     TMATensorTileIm2col,
     create_tensor_tile,
 )
-from builtin.variadics import Variadic
+from std.builtin.variadics import Variadic
 from buffer import Dim, DimList
 from layout.coord import (
     ComptimeInt,
@@ -59,8 +59,8 @@ from layout.coord import (
 )
 from layout._layout import Layout, TensorLayout, row_major
 from linalg.structuring import SMemTileArray as LTSMemTileArray
-from memory import LegacyUnsafePointer, stack_allocation
-from utils.static_tuple import StaticTuple
+from std.memory import LegacyUnsafePointer, stack_allocation
+from std.utils.static_tuple import StaticTuple
 
 # Alias for mutable UnsafePointer (same pattern as structuring.mojo)
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -653,7 +653,7 @@ fn lt_to_tt[
             )
 
     comptime ResultLayout = Layout[ShapeTypes, StrideTypes]
-    from memory import UnsafePointer as Ptr
+    from std.memory import UnsafePointer as Ptr
 
     var ptr = Ptr[Scalar[dtype], lt.origin](unsafe_from_address=Int(lt.ptr))
     return TileTensor[dtype, ResultLayout, lt.origin](
@@ -677,7 +677,7 @@ fn lt_to_tt_1d[
     )
     var stride = Coord(Idx[1]())
 
-    from memory import UnsafePointer as Ptr
+    from std.memory import UnsafePointer as Ptr
 
     var ptr = Ptr[Scalar[dtype], lt.origin](unsafe_from_address=Int(lt.ptr))
     return TileTensor[dtype, GMEMLayout1D, lt.origin](

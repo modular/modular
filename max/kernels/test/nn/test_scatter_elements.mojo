@@ -13,9 +13,9 @@
 
 from nn.gather_scatter import scatter_elements
 from tensor import DynamicTensor
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def main() raises:

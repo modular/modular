@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import iota, isclose
+from std.math import iota, isclose
 
 from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
 from nn.cumsum import cumsum
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_cumsum_1d

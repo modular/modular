@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
 from buffer import DimList, NDBuffer
-from gpu import barrier, block_dim, block_idx, thread_idx
-from gpu.primitives.cluster import (
+from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_acquire,
     cluster_sync_release,
@@ -25,15 +25,15 @@ from gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host import DeviceContext
-from gpu import block_id_in_cluster, lane_id
-from gpu.intrinsics import Scope
-from gpu.memory import fence_mbarrier_init
+from std.gpu.host import DeviceContext
+from std.gpu import block_id_in_cluster, lane_id
+from std.gpu.intrinsics import Scope
+from std.gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
-from memory import stack_allocation
-from testing import assert_almost_equal
+from std.memory import stack_allocation
+from std.testing import assert_almost_equal
 
-from utils.static_tuple import StaticTuple
+from std.utils.static_tuple import StaticTuple
 
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication

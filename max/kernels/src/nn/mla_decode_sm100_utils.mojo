@@ -11,38 +11,38 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp2, recip, align_up, log2, ceildiv
-from math.constants import log2e
-from sys import size_of, _RegisterPackType
+from std.math import exp2, recip, align_up, log2, ceildiv
+from std.math.constants import log2e
+from std.sys import size_of, _RegisterPackType
 import gpu.primitives.warp as warp
-from gpu import (
+from std.gpu import (
     barrier,
     thread_idx,
     block_idx,
     warp_id,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu.memory import AddressSpace, fence_async_view_proxy
-from gpu.primitives.grid_controls import launch_dependent_grids
-from gpu.compute.arch.mma_nvidia_sm100 import (
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu.memory import AddressSpace, fence_async_view_proxy
+from std.gpu.primitives.grid_controls import launch_dependent_grids
+from std.gpu.compute.arch.mma_nvidia_sm100 import (
     UMMAInsDescriptor,
     UMMAKind,
 )
 
-from gpu.sync import (
+from std.gpu.sync import (
     named_barrier,
 )
-from gpu.compute.arch.tcgen05 import (
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_after,
     tcgen05_ld,
     tcgen05_load_wait,
     tcgen05_st,
 )
-from gpu.primitives.warp import _vote_nvidia_helper
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from std.gpu.primitives.warp import _vote_nvidia_helper
+from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import (
     Layout,
@@ -63,15 +63,15 @@ from layout.tma_async import (
     TMATensorTile,
 )
 from layout.runtime_layout import RuntimeLayout
-from memory import bitcast
+from std.memory import bitcast
 from nn.mha_fa3_utils import (
     OptionalPointer,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 
 from nn.sm100_attention_utils import (
@@ -86,8 +86,8 @@ from nn.sm100_attention_utils import (
 from layout._layout import row_major
 from layout import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
-from builtin.device_passable import DevicePassable
-from sys._assembly import inlined_assembly
+from std.builtin.device_passable import DevicePassable
+from std.sys._assembly import inlined_assembly
 
 
 # ------------------------------------------------------------------------------

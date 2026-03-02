@@ -15,10 +15,10 @@ from layout import Layout, LayoutTensor
 from layout.int_tuple import to_index_list
 from buffer.dimlist import DimList
 from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
-from runtime.asyncrt import DeviceContextPtr
-from testing import assert_equal
+from std.runtime.asyncrt import DeviceContextPtr
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def matrix_band_part[

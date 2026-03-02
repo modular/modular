@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import iota
-from random import random_float64
+from std.math import iota
+from std.random import random_float64
 
-from algorithm.functional import parallelize_over_rows
-from benchmark import Bench, Bencher, BenchId
+from std.algorithm.functional import parallelize_over_rows
+from std.benchmark import Bench, Bencher, BenchId
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Idx, Layout, LayoutTensor, RuntimeLayout, TileTensor
 from layout._layout import row_major
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -256,16 +256,18 @@ fn test_case_sampling[
         batch_size * vocab_size
     )
     var in_logits = NDBuffer[dtype, rank](
-        in_logits_ptr, DimList(batch_size, vocab_size)
+        in_logits_ptr, IndexList[2](batch_size, vocab_size)
     )
     var token_ids_ptr = UnsafePointer[Scalar[out_idx_type]].alloc(
         batch_size * 1
     )
     var token_ids = NDBuffer[out_idx_type, rank](
-        token_ids_ptr, DimList(batch_size, 1)
+        token_ids_ptr, IndexList[2](batch_size, 1)
     )
     var p_thresholds_ptr = UnsafePointer[Scalar[dtype]].alloc(batch_size)
-    var p_thresholds = NDBuffer[dtype, 1](p_thresholds_ptr, DimList(batch_size))
+    var p_thresholds = NDBuffer[dtype, 1](
+        p_thresholds_ptr, IndexList[1](batch_size)
+    )
 
     # Fill tensors
     fill_fn(in_logits)
@@ -290,13 +292,13 @@ fn test_case_sampling[
         batch_size * vocab_size
     )
     var in_logits_cpu_test = NDBuffer[dtype, rank](
-        in_logits_cpu_test_ptr, DimList(batch_size, vocab_size)
+        in_logits_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )
     var probs_cpu_test_ptr = UnsafePointer[Scalar[dtype]].alloc(
         batch_size * vocab_size
     )
     var probs_cpu_test = NDBuffer[dtype, rank](
-        probs_cpu_test_ptr, DimList(batch_size, vocab_size)
+        probs_cpu_test_ptr, IndexList[2](batch_size, vocab_size)
     )
     for i in range(in_logits.num_elements()):
         in_logits_cpu_test.data[i] = in_logits.data[i] / temperature
@@ -304,22 +306,20 @@ fn test_case_sampling[
     softmax[simd_width=1, rank=rank](
         LayoutTensor[
             in_logits_cpu_test.type,
-            Layout.row_major[in_logits_cpu_test.rank](in_logits_cpu_test.shape),
+            Layout.row_major[dims = in_logits_cpu_test.shape](),
         ](
             in_logits_cpu_test.data,
             RuntimeLayout[
-                Layout.row_major[in_logits_cpu_test.rank](
-                    in_logits_cpu_test.shape
-                )
+                Layout.row_major[dims = in_logits_cpu_test.shape](),
             ].row_major(in_logits_cpu_test.get_shape().canonicalize()),
         ),
         LayoutTensor[
             probs_cpu_test.type,
-            Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape),
+            Layout.row_major[dims = probs_cpu_test.shape](),
         ](
             probs_cpu_test.data,
             RuntimeLayout[
-                Layout.row_major[probs_cpu_test.rank](probs_cpu_test.shape)
+                Layout.row_major[dims = probs_cpu_test.shape](),
             ].row_major(probs_cpu_test.get_shape().canonicalize()),
         ),
         axis=1,

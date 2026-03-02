@@ -36,7 +36,7 @@ Ring Buffer Configuration:
 - Can be changed to SplitCounterSync in the RingBuffer type aliases for reduced contention
 - The trait-based design allows easy experimentation with different sync strategies
 """
-from gpu import (
+from std.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -44,7 +44,7 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.intrinsics import inlined_assembly
+from std.gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor
 from layout.layout import blocked_product
 from layout.layout_tensor import (
@@ -55,7 +55,7 @@ from layout.layout_tensor import (
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
 from linalg.structuring import ScatterGatherAmd, SMemArray
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # Unified implementation with configurable sync strategies
 from .ring_buffer import RingBuffer

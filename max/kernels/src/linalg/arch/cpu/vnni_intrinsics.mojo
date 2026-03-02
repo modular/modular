@@ -16,9 +16,9 @@
 #
 # ===-----------------------------------------------------------------------===#
 
-from sys import CompilationTarget, llvm_intrinsic
+from std.sys import CompilationTarget, llvm_intrinsic
 
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 
 # ===-----------------------------------------------------------------------===#
 # vpdpwssd

@@ -17,15 +17,15 @@ Supports both BF16 and FP8 via compile-time flag:
   mojo -D FP8=true test_ping_pong.mojo   # FP8
 """
 
-from sys import env_get_bool
+from std.sys import env_get_bool
 
-from gpu import WARP_SIZE
+from std.gpu import WARP_SIZE
 from layout import Layout, LayoutTensor
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout._fillers import random
 import linalg.matmul.vendor.blas as vendor_blas
-from testing import assert_equal
-from random import random_si64
+from std.testing import assert_equal
+from std.random import random_si64
 from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
 
 # Compile-time dtype selection: -D FP8=true for FP8, otherwise BF16

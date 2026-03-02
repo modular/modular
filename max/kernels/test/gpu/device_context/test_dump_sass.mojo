@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
-from sys._assembly import inlined_assembly
+from std.pathlib import Path
+from std.sys._assembly import inlined_assembly
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 comptime ptxas_path = Path("/usr/local/cuda/bin/ptxas")
 comptime nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")

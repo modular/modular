@@ -263,7 +263,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self.data = StaticTuple[_, Self.size](fill=Self._int_type(fill))
 
     @always_inline
-    fn __init__(out self, values: VariadicList[Int]):
+    fn __init__(out self, values: VariadicList[Int, is_owned=False]):
         """Creates a tuple constant using the specified values.
 
         Args:

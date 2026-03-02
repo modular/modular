@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from algorithm import elementwise
+from std.algorithm import elementwise
 from buffer import NDBuffer
 from nn.arange import arange, arange_shape
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 def print_elements[

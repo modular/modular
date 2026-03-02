@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import ceildiv
-from sys import align_of, bit_width_of
+from std.math import ceildiv
+from std.sys import align_of, bit_width_of
 
-from builtin.dtype import _uint_type_of_width
-from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.dim import Dim
-from gpu.memory import external_memory
-from random import Random
+from std.builtin.dtype import _uint_type_of_width
+from std.gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host.dim import Dim
+from std.gpu.memory import external_memory
+from std.random import Random
 from layout import Coord, CoordLike, Idx, TileTensor
 from layout._layout import row_major
-from memory import bitcast, stack_allocation
+from std.memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (
     TopK_2,
@@ -32,7 +32,7 @@ from nn.topk import (
     _topk_dead_val,
 )
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime DEBUG_FILE = False
 comptime SEED = 42

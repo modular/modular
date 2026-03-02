@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.primitives.cluster import (
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
 )
-from gpu.host import DeviceContext
-from gpu import block_id_in_cluster, block_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import fence_mbarrier_init
-from gpu.sync import syncwarp
+from std.gpu.host import DeviceContext
+from std.gpu import block_id_in_cluster, block_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import fence_mbarrier_init
+from std.gpu.sync import syncwarp
 from layout.tma_async import PipelineState, SharedMemBarrier
 from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler, WorkInfo
-from memory import stack_allocation
+from std.memory import stack_allocation
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)

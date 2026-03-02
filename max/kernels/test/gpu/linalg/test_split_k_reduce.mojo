@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
-from random import rand
+from std.math import isclose
+from std.random import rand
 
 from buffer import DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout.layout import UNKNOWN_VALUE
 from linalg.matmul.gpu import split_k_reduce
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn _size[rank: Int](dims: IndexList[rank]) -> Int:

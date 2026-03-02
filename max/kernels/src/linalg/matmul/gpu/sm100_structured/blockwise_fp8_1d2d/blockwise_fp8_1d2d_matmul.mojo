@@ -30,13 +30,13 @@ Usage:
     )
 """
 
-from collections import Optional
-from math import ceildiv
-from sys import size_of
+from std.collections import Optional
+from std.math import ceildiv
+from std.sys import size_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import B200
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.info import B200
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout as LegacyLayout,
     LayoutTensor,
@@ -45,8 +45,8 @@ from layout import (
 )
 from ..structured_kernels.tile_types import create_tma_tile
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
 from ..structured_kernels.tile_types import lt_to_tt

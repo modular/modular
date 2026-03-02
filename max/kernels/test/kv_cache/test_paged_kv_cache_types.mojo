@@ -17,11 +17,11 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import alloc
-from testing import assert_true
+from std.memory import alloc
+from std.testing import assert_true
 
-from utils.index import Index, IndexList
-from collections import OptionalReg
+from std.utils.index import Index, IndexList
+from std.collections import OptionalReg
 
 comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 

@@ -26,23 +26,23 @@ Uses a pull-based approach: each GPU reads its chunk from root via P2P.
 """
 
 from buffer import NDBuffer
-from collections import InlineArray
-from gpu.host import DeviceContext, get_gpu_target
-from gpu import (
+from std.collections import InlineArray
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,
     grid_dim,
 )
-from gpu.primitives.grid_controls import (
+from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
 
-from math import ceildiv
-from sys import simd_width_of, size_of
-from utils import StaticTuple
+from std.math import ceildiv
+from std.sys import simd_width_of, size_of
+from std.utils import StaticTuple
 
 from .sync import (
     MAX_GPUS,

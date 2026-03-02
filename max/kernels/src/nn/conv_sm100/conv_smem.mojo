@@ -26,11 +26,11 @@ SMEM Organization:
 - TMEM storage: For accumulator address sharing
 """
 
-from sys import align_of, size_of
+from std.sys import align_of, size_of
 
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 from layout import Layout
-from utils.index import IndexList
+from std.utils.index import IndexList
 from layout.tensor_core_async import tile_layout_k_major
 
 # Import pipeline storage from matmul structured kernels

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Dim, DimList
-from collections import InlineArray
+from std.collections import InlineArray
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensorIter
 from layout import *
@@ -38,10 +38,10 @@ from layout.layout import (
     upcast,
     zipped_divide,
 )
-from math import ceildiv
-from testing import assert_equal, assert_raises
+from std.math import ceildiv
+from std.testing import assert_equal, assert_raises
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 # CHECK-LABEL: test_layout_basic
@@ -103,15 +103,15 @@ fn test_layout_basic() raises:
     )
 
     # testing col major
-    var dl = DimList(3, 64, 128)
+    comptime dl = DimList(3, 64, 128)
 
     assert_equal(
-        Layout.col_major[3](dl),
+        Layout.col_major[dims=dl](),
         Layout(IntTuple(3, 64, 128), IntTuple(1, 3, 192)),
     )
 
     assert_equal(
-        Layout.col_major[3](DimList(Dim(), 64, 128)),
+        Layout.col_major[dims = DimList(Dim(), 64, 128)](),
         Layout(
             IntTuple(UNKNOWN_VALUE, 64, 128),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),

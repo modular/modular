@@ -28,28 +28,28 @@ Key differences from standard/block-scaled kernels:
 - BlockwiseFP8TileWriter for final register → SMEM → GMEM flow
 """
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import size_of
+from std.sys import size_of
 
-from gpu import WARP_SIZE, thread_idx
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, thread_idx
+from std.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,
 )
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import (
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_mbarrier_init,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.sync import (
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.sync import (
     named_barrier,
     syncwarp,
 )
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout._layout import TensorLayout
 from layout import TileTensor
 from layout.tensor_core_async import (
@@ -57,8 +57,8 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import elementwise_compute_lambda_type

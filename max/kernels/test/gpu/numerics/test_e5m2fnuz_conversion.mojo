@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import nan
+from std.math import nan
 
-from gpu.host import DeviceContext
-from memory import bitcast
+from std.gpu.host import DeviceContext
+from std.memory import bitcast
 
 
 # CHECK: 0.0, 7.62939453125e-06, 1.52587890625e-05, 2.288818359375e-05, 3.0517578125e-05, 3.814697265625e-05, 4.57763671875e-05, 5.340576171875e-05,

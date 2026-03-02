@@ -11,18 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import randn
-from sys import simd_width_of, size_of
+from std.random import randn
+from std.sys import simd_width_of, size_of
 
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn bench_add[

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of
+from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, thread_idx
-from gpu.memory import (
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, thread_idx
+from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
@@ -34,10 +34,10 @@ from layout.tensor_core_async import (
     warpgroup_fence,
     wgmma_c_layout,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
 fn cpasync_wgmma_kernel[
@@ -271,10 +271,6 @@ def test_cpasync_wgmma[
             )
 
     # print(c.tensor())
-    _ = a^
-    _ = b^
-    _ = c^
-    _ = c_ref^
 
 
 def main() raises:

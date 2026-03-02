@@ -14,7 +14,7 @@
 """Tests for fused RMSNorm + FP8 quantization kernel."""
 
 from buffer import NDBuffer
-from gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host import DeviceContext, DeviceBuffer
 from layout import (
     Coord,
     Idx,
@@ -27,11 +27,11 @@ from layout import (
 )
 from layout._layout import row_major
 from layout.int_tuple import fill_like
-from memory import LegacyUnsafePointer, bitcast
-from runtime.asyncrt import DeviceContextPtr
-from utils.index import Index, IndexList
-from math import rsqrt
-from utils.numerics import max_finite, min_finite
+from std.memory import LegacyUnsafePointer, bitcast
+from std.runtime.asyncrt import DeviceContextPtr
+from std.utils.index import Index, IndexList
+from std.math import rsqrt
+from std.utils.numerics import max_finite, min_finite
 
 from nn.normalization import rms_norm_fused_fp8
 

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import seed
+from std.random import seed
 
 from layout._layout import row_major
 from layout import TileTensor

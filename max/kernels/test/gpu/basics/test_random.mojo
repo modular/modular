@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
+from std.algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
-from gpu import *
-from gpu.host import DeviceContext, get_gpu_target
-from random import NormalRandom, Random
-from testing import *
-from sys import has_apple_gpu_accelerator
+from std.gpu import *
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.random import NormalRandom, Random
+from std.testing import *
+from std.sys import has_apple_gpu_accelerator
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def run_elementwise[

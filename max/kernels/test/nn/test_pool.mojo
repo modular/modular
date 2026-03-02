@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
 from layout._fillers import arange
 from layout._layout import row_major
 from layout import TileTensor
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn pool[

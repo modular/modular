@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Multi-GPU broadcast kernel implementation."""
 
-from collections import InlineArray
-from math import align_down, ceildiv
-from gpu.host import DeviceContext, get_gpu_target
-from gpu import (
+from std.collections import InlineArray
+from std.math import align_down, ceildiv
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     block_dim,
@@ -24,17 +24,17 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu.primitives.grid_controls import (
+from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
 
-from sys import align_of, is_amd_gpu, simd_width_of, size_of
+from std.sys import align_of, is_amd_gpu, simd_width_of, size_of
 from buffer import NDBuffer
-from gpu.memory import Consistency, multimem_st
-from gpu.intrinsics import Scope
+from std.gpu.memory import Consistency, multimem_st
+from std.gpu.intrinsics import Scope
 from .sync import (
     MAX_GPUS,
     MAX_NUM_BLOCKS_UPPER_BOUND,
@@ -44,7 +44,7 @@ from .sync import (
 )
 from .device_query import _dispatch_max_num_blocks, get_sm_version
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # On AMD Systems, loads from GLOBAL addressspace give better performance.
 comptime _target_address_space = AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
