@@ -160,6 +160,8 @@ CompiledModelKey = tuple[Hashable, ...]
 
 
 class CustomOp:
+    """A Mojo-implemented custom op registered for use in MAX graphs."""
+
     library: CustomOpLibrary
     name: str
     parameters: ParametersDict | None
@@ -303,6 +305,8 @@ class CustomOp:
 
 
 class MaxOp:
+    """A MAX graph operation registered as a callable for use in PyTorch."""
+
     fn: Callable[..., Iterable[Value[Any]] | Value[Any] | None] | CustomOp
     name: str
     library: CustomOpLibrary
