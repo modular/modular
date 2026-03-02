@@ -17,10 +17,16 @@
 # The direct import path works:
 from test_reexport_name_collision.foo import foo as foo_direct
 from test_reexport_name_collision.bar import bar as bar_direct
+from test_reexport_name_collision.baz import baz as baz_direct
 
 # The re-export path should also work:
 from test_reexport_name_collision import foo
 from test_reexport_name_collision import bar
+from test_reexport_name_collision import baz
+
+# Negative test: "qux" is a submodule but __init__ does NOT re-export
+# anything named "qux", so this should import the module.
+from test_reexport_name_collision import qux
 
 # CHECK-LABEL: lit.fn @"main
 fn main():
@@ -39,3 +45,15 @@ fn main():
     # Non-parametric function: re-exported import should also resolve.
     # CHECK: lit.call {{.*}}@test_reexport_name_collision::@bar::@"bar
     var d = bar()
+
+    # Struct: direct import works fine.
+    # CHECK: lit.call {{.*}}@test_reexport_name_collision::@baz::@baz::@"__init__
+    var e = baz_direct()
+
+    # Struct: re-exported import should also resolve.
+    # CHECK: lit.call {{.*}}@test_reexport_name_collision::@baz::@baz::@"__init__
+    var f = baz()
+
+    # Negative test: "qux" imported as module, access its member function.
+    # CHECK: lit.call {{.*}}@test_reexport_name_collision::@qux::@"qux_func
+    var g = qux.qux_func()
