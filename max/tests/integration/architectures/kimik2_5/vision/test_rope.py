@@ -22,10 +22,10 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.kimik2_5.layers.data_processing import (
+from max.pipelines.architectures.kimik2_5.layers.vision.data_processing import (
     compute_position_ids,
 )
-from max.pipelines.architectures.kimik2_5.layers.rotary_embedding import (
+from max.pipelines.architectures.kimik2_5.layers.vision.rotary_embedding import (
     Rope2DPosEmbRepeated,
 )
 

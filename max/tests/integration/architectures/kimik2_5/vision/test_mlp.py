@@ -29,7 +29,7 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.pipelines.architectures.kimik2_5.layers.mlp import MLP2
+from max.pipelines.architectures.kimik2_5.layers.vision.mlp import MLP2
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16
