@@ -25,11 +25,11 @@ import os
 from pathlib import Path
 
 import numpy as np
-from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import Dim, TensorType
-from max.tensor import Tensor
 
 logger = logging.getLogger("max.pipelines.mamba")
 

@@ -25,8 +25,8 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn.legacy import ReturnLogits
-from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -210,14 +210,14 @@ class MambaModel(PipelineModel[TextContext]):
         """
         import functools
 
-        from max import functional as F
-        from max._realization_context import (
+        from max.driver import CPU
+        from max.experimental import functional as F
+        from max.experimental.realization_context import (
             GraphRealizationContext,
             _session,
         )
-        from max.driver import CPU
+        from max.experimental.tensor import Tensor, realization_context
         from max.graph import Graph, TensorType
-        from max.tensor import Tensor, realization_context
 
         graph = Graph(
             type(module).__qualname__,
@@ -264,8 +264,8 @@ class MambaModel(PipelineModel[TextContext]):
 
     @traced
     def _load_models(self) -> tuple[Any, Any]:
-        from max import functional as F
         from max.dtype import DType
+        from max.experimental import functional as F
         from max.graph import TensorType
         from max.pipelines.lib import CompilationTimer
 
@@ -325,7 +325,7 @@ class MambaModel(PipelineModel[TextContext]):
             DType.uint32, shape=["row_offsets_len"], device=device_ref
         )
 
-        from max.tensor import default_dtype
+        from max.experimental.tensor import default_dtype
 
         with F.lazy(), default_dtype(self.dtype):
             prefill_module = MambaPrefill(model_config)

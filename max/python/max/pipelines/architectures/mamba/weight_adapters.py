@@ -102,8 +102,14 @@ def convert_safetensor_state_dict(
             "Invalid configuration: _applied_dtype_cast_to is not set but _applied_dtype_cast_from is set. "
             "This should not happen."
         )
+        from max.pipelines.lib.config.config_enums import (
+            supported_encoding_dtype,
+        )
+
         for key, weight_data in new_state_dict.items():
-            if weight_data.dtype == cast_from.dtype:
-                new_state_dict[key] = weight_data.astype(cast_to.dtype)
+            if weight_data.dtype == supported_encoding_dtype(cast_from):
+                new_state_dict[key] = weight_data.astype(
+                    supported_encoding_dtype(cast_to)
+                )
 
     return new_state_dict

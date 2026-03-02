@@ -23,11 +23,8 @@ logger = logging.getLogger("max.pipelines")
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy import (
-    ReturnHiddenStates,
-    ReturnLogits,
-)
-from max.nn.legacy.float8_config import Float8Config
+from max.nn.float8_config import Float8Config
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -35,7 +32,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     upper_bounded_default,
 )
-from max.pipelines.lib.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from transformers import AutoConfig
 
 
@@ -164,7 +161,7 @@ class MambaConfig(MAXModelConfig, MambaConfigBase):
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Mamba, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({getattr(huggingface_config, 'max_position_embeddings', 2048)})."
             ) from e
