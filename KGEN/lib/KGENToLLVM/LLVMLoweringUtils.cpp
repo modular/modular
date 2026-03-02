@@ -381,9 +381,15 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
         return {};
       maxSize = std::max(maxSize, getTypeAllocSize(type));
 
-      // Record the max aligned member field.
+      // Record the max aligned member field. Skip members whose converted type
+      // is null (e.g. empty structs): getTypeABIAlignAndType returns
+      // {1, nullptr} for an empty LLVM struct, and allowing that to win via
+      // '>=' would overwrite a valid type entry with a null, causing a null
+      // dereference in getTypeSizeInBits when the null type is later used as
+      // the first field of the lowered union struct.
       auto curAlignAndMember = getTypeABIAlignAndType(type);
-      if (curAlignAndMember.first >= maxAlignAndType.first)
+      if (curAlignAndMember.second &&
+          curAlignAndMember.first >= maxAlignAndType.first)
         maxAlignAndType = curAlignAndMember;
     }
     if (maxSize == 0)
