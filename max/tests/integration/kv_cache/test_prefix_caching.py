@@ -24,10 +24,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import ImageMetadata, RequestID, TokenBuffer
 from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
-from max.nn.kv_cache import (
-    KVCacheParams,
-    RaggedKVCacheInputs,
-)
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import hash_image
 from test_common.context_utils import create_text_context
@@ -479,7 +476,7 @@ class FakeModel:
     """Create a fake model that can be used to test prefix caching."""
 
     def __init__(self, kv_manager: PagedKVCacheManager) -> None:
-        self.page_size = kv_manager.page_size
+        self.page_size = kv_manager.params.page_size
         self.total_num_pages = kv_manager.get_num_pages(replica_idx=0)
         # block_projections maps from bid -> offset -> prefix tokens
         self.block_projections: dict[int, dict[int, np.ndarray]] = defaultdict(

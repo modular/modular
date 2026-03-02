@@ -31,10 +31,7 @@ from max.nn.kernels import (
     matmul_k_cache_ragged,
     matmul_kv_cache_ragged,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.pipelines import TextContext
 from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
@@ -85,7 +82,9 @@ def _dump_k_or_v_cache_to_torch_tensor(
     """
     req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
 
-    torch_dtype = cache.params.dtype.to_torch()
+    params = cache.params
+    torch_dtype = params.dtype.to_torch()
+    page_size = params.page_size
 
     # [total_num_pages, kv_dim, num_layers, page_size, n_heads, head_dim]
     device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
@@ -99,24 +98,24 @@ def _dump_k_or_v_cache_to_torch_tensor(
     res = torch.empty(
         (
             seq_len,
-            cache.params.num_layers,
-            cache.params.n_kv_heads_per_device,
-            cache.params.head_dim,
+            params.num_layers,
+            params.n_kv_heads_per_device,
+            params.head_dim,
         ),
         dtype=torch_dtype,
     )
 
-    for start_idx in range(0, seq_len, cache.page_size):
-        end_idx = min(start_idx + cache.page_size, seq_len)
+    for start_idx in range(0, seq_len, page_size):
+        end_idx = min(start_idx + page_size, seq_len)
 
-        block_id = req_blocks[start_idx // cache.page_size]
+        block_id = req_blocks[start_idx // page_size]
 
         # [num_layers, page_size, n_heads, head_dim]
         block_torch = device_buffer_torch[block_id, :]
 
         for token_idx in range(start_idx, end_idx):
             res[token_idx, :, :, :] = block_torch[
-                :, token_idx % cache.page_size, :, :
+                :, token_idx % page_size, :, :
             ]
 
     return res

@@ -91,42 +91,34 @@ class PagedKVCacheManager:
             raise ValueError("max_batch_size must be positive")
 
         self.params = params
-        self.devices = [d.to_device() for d in params.devices]
+        devices = [d.to_device() for d in params.devices]
 
-        self.num_replicas = params.data_parallel_degree
-        assert len(self.devices) % self.num_replicas == 0, (
+        num_replicas = params.data_parallel_degree
+        assert len(devices) % num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
-        self.devices_per_replica = split_into_groups(
-            self.devices, self.num_replicas
-        )
+        devices_per_replica = split_into_groups(devices, num_replicas)
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
-        for replica_idx, devices in enumerate(self.devices_per_replica):
+        for replica_idx, replica_devices in enumerate(devices_per_replica):
             replica_params = params.copy_as_dp_1(replica_idx=replica_idx)
             self._replica_managers.append(
                 _TPPagedKVCacheManager(
                     params=replica_params,
                     total_num_pages=total_num_pages,
                     total_num_host_pages=total_num_host_pages,
-                    devices=devices,
+                    devices=replica_devices,
                     session=session,
                     max_batch_size=max_batch_size,
                     enable_runtime_checks=enable_runtime_checks,
                 )
             )
 
-        self.page_size = params.page_size
-        self.enable_prefix_caching = params.enable_prefix_caching
-        self.enable_kvcache_swapping_to_host = (
-            params.enable_kvcache_swapping_to_host
-        )
-
         # Initialize the ragged increment cache lengths model
         self.increment_cache_lengths_processor = IncrementCacheLengthsProcessor(
             session=session,
             params=self.params,
-            devices=self.devices,
+            devices=devices,
         )
 
     def get_pct_used_blocks_after_allocation(

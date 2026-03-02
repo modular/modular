@@ -32,10 +32,7 @@ from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
 
 from ..config import TokenGenerationSchedulerConfig
-from ..dp_padding import (
-    DPBatchPadder,
-    DPPaddingInfo,
-)
+from ..dp_padding import DPBatchPadder, DPPaddingInfo
 from ..lora_scheduler_utils import (
     can_allocate_lora_request,
     is_active_lora,
@@ -452,7 +449,7 @@ class TextBatchConstructor:
                         RequestType.CE,
                         RequestType.MIXED,
                     ],
-                    cost_alignment=self.kv_cache.page_size,
+                    cost_alignment=self.kv_cache.params.page_size,
                 )
             )
 

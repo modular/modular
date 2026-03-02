@@ -89,7 +89,7 @@ class PrefillScheduler(Scheduler):
             # TODO: Also support scales tensors
             tensors=[
                 kv_cache.get_device_buffer(replica_idx).values
-                for replica_idx in range(kv_cache.num_replicas)
+                for replica_idx in range(scheduler_config.data_parallel_degree)
             ],
             # Assume all replicas have the same number of pages.
             total_num_pages=kv_cache.get_num_pages(replica_idx=0),
