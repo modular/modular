@@ -136,15 +136,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             float8_config = None
 
         # Check if EP should be configured
-        if self.pipeline_config.ep_size == 1:
+        if self.pipeline_config.runtime.ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.ep_size % len(self.devices) != 0:
+            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.ep_size // len(self.devices)
+            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
@@ -283,7 +283,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # The shared experts are duplicated on each device.
         total_size += shared_experts_size * n_gpus_per_node
 
-        ep_size = max(pipeline_config.ep_size, 1)
+        ep_size = max(pipeline_config.runtime.ep_size, 1)
         if ep_size == 1:
             total_size += routing_experts_size
         else:
@@ -342,7 +342,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
 
         # Estimate activation memory during Expert Parallel MoE.
-        if pipeline_config.ep_size > 1:
+        if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
             max_input_len_per_rank = (
                 pipeline_config.runtime.max_batch_input_tokens
@@ -382,7 +382,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # model init, not freed between layers), so add on top of the
         # per-layer activation peak.
         ep_buffer_memory = 0
-        if pipeline_config.ep_size > 1:
+        if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
 
             per_device_ep_memory = estimate_ep_memory_usage(
@@ -451,7 +451,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         config = self._create_model_config(state_dict)
 
         n_devices = len(self.devices)
-        if n_devices > 1 and self.pipeline_config.ep_size != n_devices:
+        if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
             raise ValueError("Only the EP strategy is supported.")
 
         self.ep_comm_initializer: EPCommInitializer | None = None

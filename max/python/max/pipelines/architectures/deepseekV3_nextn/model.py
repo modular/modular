@@ -236,7 +236,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         total_size += router_size
 
         # Handle expert parallelism
-        ep_size = max(pipeline_config.ep_size, 1)
+        ep_size = max(pipeline_config.runtime.ep_size, 1)
         if ep_size == 1:
             total_size += routing_experts_size
         else:

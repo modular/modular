@@ -86,14 +86,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    ep_size: int = Field(
-        default=1,
-        description=(
-            "The expert parallelism size. Needs to be 1 (no expert parallelism) "
-            "or the total number of GPUs across nodes."
-        ),
-    )
-
     debug_verify_replay: bool = Field(
         default=False,
         description=(

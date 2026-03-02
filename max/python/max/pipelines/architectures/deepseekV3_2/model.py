@@ -114,15 +114,15 @@ class DeepseekV3_2Model(DeepseekV3Model):
         else:
             float8_config = None
 
-        if self.pipeline_config.ep_size == 1:
+        if self.pipeline_config.runtime.ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.ep_size % len(self.devices) != 0:
+            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.ep_size // len(self.devices)
+            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
