@@ -293,4 +293,68 @@ kgen.func @union_constant_2() -> !pop.union<i1, i2, i3, i4, i5, i6> {
   kgen.return %0 : !pop.union<i1, i2, i3, i4, i5, i6>
 }
 
+// CHECK-LABEL: @union_wrap_nonempty_with_empty_sibling
+// Union contains a non-empty struct variant followed by an empty struct variant.
+// The non-empty variant comes first so its {align=1, type=i8} was previously
+// overwritten by the empty struct's {align=1, type=null} via the '>=' path,
+// causing a null dereference in getTypeSizeInBits (MOCO-3275).
+// The union lowers to !llvm.struct<(i8)>: maxSize=1, maxAlignTp=i8, remLen=0.
+kgen.func @union_wrap_nonempty_with_empty_sibling(%arg0: !kgen.struct<(i8)>) -> !pop.union<struct<(i8)>, struct<()>> {
+  // CHECK:           %[[VAL_0:.*]] = llvm.mlir.constant(1 : i64) : i64
+  // CHECK:           %[[VAL_1:.*]] = llvm.alloca %[[VAL_0]] x !llvm.struct<(i8)> {alignment = 1 : i64} : (i64) -> !llvm.ptr
+  // CHECK:           llvm.intr.lifetime.start %[[VAL_1]] : !llvm.ptr
+  // CHECK:           llvm.store %arg0, %[[VAL_1]] : !llvm.struct<(i8)>, !llvm.ptr
+  // CHECK:           %[[VAL_2:.*]] = llvm.load %[[VAL_1]] : !llvm.ptr -> !llvm.struct<(i8)>
+  // CHECK:           llvm.intr.lifetime.end %[[VAL_1]] : !llvm.ptr
+  // CHECK:           llvm.return %[[VAL_2]] : !llvm.struct<(i8)>
+  %0 = pop.union.wrap %arg0 : !kgen.struct<(i8)> as <struct<(i8)>, struct<()>>
+  kgen.return %0 : !pop.union<struct<(i8)>, struct<()>>
+}
+
+// CHECK-LABEL: @union_wrap_empty_with_nonempty_sibling
+// CHECK-SAME:  () -> !llvm.struct<(i8)>
+// Wrap the empty struct variant into the same union type. lower-kgen-to-llvm
+// eliminates the zero-size struct argument and replaces its use with undef.
+kgen.func @union_wrap_empty_with_nonempty_sibling(%arg0: !kgen.struct<()>) -> !pop.union<struct<(i8)>, struct<()>> {
+  // CHECK:           %[[VAL_0:.*]] = llvm.mlir.constant(1 : i64) : i64
+  // CHECK:           %[[VAL_1:.*]] = llvm.mlir.undef : !llvm.struct<()>
+  // CHECK:           %[[VAL_2:.*]] = llvm.alloca %[[VAL_0]] x !llvm.struct<(i8)> {alignment = 1 : i64} : (i64) -> !llvm.ptr
+  // CHECK:           llvm.intr.lifetime.start %[[VAL_2]] : !llvm.ptr
+  // CHECK:           llvm.store %[[VAL_1]], %[[VAL_2]] : !llvm.struct<()>, !llvm.ptr
+  // CHECK:           %[[VAL_3:.*]] = llvm.load %[[VAL_2]] : !llvm.ptr -> !llvm.struct<(i8)>
+  // CHECK:           llvm.intr.lifetime.end %[[VAL_2]] : !llvm.ptr
+  // CHECK:           llvm.return %[[VAL_3]] : !llvm.struct<(i8)>
+  %0 = pop.union.wrap %arg0 : !kgen.struct<()> as <struct<(i8)>, struct<()>>
+  kgen.return %0 : !pop.union<struct<(i8)>, struct<()>>
+}
+
+// CHECK-LABEL: @union_wrap_nonempty_empty_first
+// Same union but with empty struct declared first; this order did not crash
+// before the fix, but is included as a regression guard.
+kgen.func @union_wrap_nonempty_empty_first(%arg0: !kgen.struct<(i8)>) -> !pop.union<struct<()>, struct<(i8)>> {
+  // CHECK:           %[[VAL_0:.*]] = llvm.mlir.constant(1 : i64) : i64
+  // CHECK:           %[[VAL_1:.*]] = llvm.alloca %[[VAL_0]] x !llvm.struct<(i8)> {alignment = 1 : i64} : (i64) -> !llvm.ptr
+  // CHECK:           llvm.intr.lifetime.start %[[VAL_1]] : !llvm.ptr
+  // CHECK:           llvm.store %arg0, %[[VAL_1]] : !llvm.struct<(i8)>, !llvm.ptr
+  // CHECK:           %[[VAL_2:.*]] = llvm.load %[[VAL_1]] : !llvm.ptr -> !llvm.struct<(i8)>
+  // CHECK:           llvm.intr.lifetime.end %[[VAL_1]] : !llvm.ptr
+  // CHECK:           llvm.return %[[VAL_2]] : !llvm.struct<(i8)>
+  %0 = pop.union.wrap %arg0 : !kgen.struct<(i8)> as <struct<()>, struct<(i8)>>
+  kgen.return %0 : !pop.union<struct<()>, struct<(i8)>>
+}
+
+// CHECK-LABEL: @union_unwrap_nonempty_with_empty_sibling
+// Unwrap the non-empty variant from a union that also has an empty struct.
+kgen.func @union_unwrap_nonempty_with_empty_sibling(%arg0: !pop.union<struct<(i8)>, struct<()>>) -> !kgen.struct<(i8)> {
+  // CHECK:           %[[VAL_0:.*]] = llvm.mlir.constant(1 : i64) : i64
+  // CHECK:           %[[VAL_1:.*]] = llvm.alloca %[[VAL_0]] x !llvm.struct<(i8)> {alignment = 1 : i64} : (i64) -> !llvm.ptr
+  // CHECK:           llvm.intr.lifetime.start %[[VAL_1]] : !llvm.ptr
+  // CHECK:           llvm.store %arg0, %[[VAL_1]] : !llvm.struct<(i8)>, !llvm.ptr
+  // CHECK:           %[[VAL_2:.*]] = llvm.load %[[VAL_1]] : !llvm.ptr -> !llvm.struct<(i8)>
+  // CHECK:           llvm.intr.lifetime.end %[[VAL_1]] : !llvm.ptr
+  // CHECK:           llvm.return %[[VAL_2]] : !llvm.struct<(i8)>
+  %0 = pop.union.unwrap %arg0 : <struct<(i8)>, struct<()>> as !kgen.struct<(i8)>
+  kgen.return %0 : !kgen.struct<(i8)>
+}
+
 }
