@@ -1217,13 +1217,13 @@ def test_unsafe_strlen():
     long_buf.append(Byte(ord("d")))
     long_buf.append(Byte(ord("e")))
     long_buf.append(0)
-    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), UInt(3)), UInt(3))
+    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), Optional(UInt(3))), UInt(3))
 
     # Bounded scan: max exactly equal to the string length.
-    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), UInt(5)), UInt(5))
+    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), Optional(UInt(5))), UInt(5))
 
     # Bounded scan: max larger than the string length — returns actual length.
-    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), UInt(100)), UInt(5))
+    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), Optional(UInt(100))), UInt(5))
 
     # Unicode bytes: UTF-8 is treated as raw bytes, all non-zero.
     # "é" encodes as two bytes: 0xC3, 0xA9.

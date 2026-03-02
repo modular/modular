@@ -145,7 +145,7 @@ struct _DirHandle:
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
                 length=Int(
-                    _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
+                    _unsafe_strlen(name_ptr, Optional(UInt(_dirent_linux.MAX_NAME_SIZE)))
                 ),
             )
             if name_str == "." or name_str == "..":
@@ -173,7 +173,7 @@ struct _DirHandle:
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
                 length=Int(
-                    _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
+                    _unsafe_strlen(name_ptr, Optional(UInt(_dirent_macos.MAX_NAME_SIZE)))
                 ),
             )
             if name_str == "." or name_str == "..":

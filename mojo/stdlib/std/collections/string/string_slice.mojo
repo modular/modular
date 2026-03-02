@@ -2651,15 +2651,15 @@ fn _to_string_list[
 
 @always_inline
 fn _unsafe_strlen(
-    ptr: UnsafePointer[mut=False, Byte], max: UInt = UInt.MAX
+    ptr: UnsafePointer[mut=False, Byte], max: Optional[UInt] = None
 ) -> UInt:
     """Get the length of a null-terminated string from a pointer.
 
     Args:
         ptr: The null-terminated pointer to the string.
-        max: The maximum number of bytes to scan. Defaults to `UInt.MAX`,
-             which means the scan is unbounded and relies on the string
-             being null-terminated. Pass an explicit value to cap the scan
+        max: The maximum number of bytes to scan. If `None` (the default),
+             the scan is unbounded and relies on the string being
+             null-terminated. Pass an explicit value to cap the scan
              (e.g. when reading from a fixed-size buffer such as a dirent
              name field).
 
@@ -2669,12 +2669,13 @@ fn _unsafe_strlen(
     Notes:
         The length does NOT include the null terminator.
     """
+    var bound = max.or_else(UInt.MAX)
     if is_compile_time():
         var offset = UInt(0)
-        while offset < max and ptr[offset]:
+        while offset < bound and ptr[offset]:
             offset += 1
         return offset
-    return _unsafe_strlen_impl(ptr, max)
+    return _unsafe_strlen_impl(ptr, bound)
 
 
 fn _unsafe_strlen_impl(

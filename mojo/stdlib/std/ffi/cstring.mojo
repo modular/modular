@@ -16,7 +16,7 @@ from std.collections.string.string_slice import _unsafe_strlen
 
 @always_inline
 fn _validate_bytes(slice: Span[Byte]) raises:
-    var length = Int(_unsafe_strlen(slice.unsafe_ptr(), UInt(len(slice))))
+    var length = Int(_unsafe_strlen(slice.unsafe_ptr(), Optional(UInt(len(slice)))))
     if length == len(slice) - 1:
         return
     elif length == 0 or length == len(slice):
