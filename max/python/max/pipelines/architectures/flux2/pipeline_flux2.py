@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Device
+from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
@@ -400,10 +400,10 @@ class Flux2Pipeline(DiffusionPipeline):
         batch_size = 1  # text encoder always outputs a single batch
 
         with Tracer("text_encoder"):
-            text_input_ids = Tensor.constant(
-                tokens.array,
-                dtype=DType.int64,
-                device=self.text_encoder.devices[0],
+            text_input_ids = Tensor(
+                storage=Buffer.from_dlpack(tokens.array).to(
+                    self.text_encoder.devices[0]
+                )
             )
             prompt_embeds = self.text_encoder(text_input_ids)
 
@@ -549,7 +549,11 @@ class Flux2Pipeline(DiffusionPipeline):
         )  # (seq_len, 4)
 
         text_ids = np.tile(coords[np.newaxis, :, :], (batch_size, 1, 1))
-        return Tensor.from_dlpack(text_ids).to(device)
+        return Tensor(
+            storage=Buffer.from_dlpack(np.ascontiguousarray(text_ids)).to(
+                device
+            )
+        )
 
     @traced
     def preprocess_latents(
@@ -558,8 +562,10 @@ class Flux2Pipeline(DiffusionPipeline):
         latent_image_ids: npt.NDArray[np.float32],
     ) -> tuple[Tensor, Tensor]:
         with Tracer("host_to_device_latents"):
-            latents_tensor = Tensor.from_dlpack(latents).to(
-                self.transformer.devices[0]
+            latents_tensor = Tensor(
+                storage=Buffer.from_dlpack(latents).to(
+                    self.transformer.devices[0]
+                )
             )
 
         with Tracer("patchify_and_pack"):
@@ -573,9 +579,11 @@ class Flux2Pipeline(DiffusionPipeline):
             latents_tensor = self._patchify_and_pack(latents_tensor)
 
         with Tracer("host_to_device_ids"):
-            latent_image_ids_tensor = Tensor.from_dlpack(
-                latent_image_ids.astype(np.int64)
-            ).to(self.transformer.devices[0])
+            latent_image_ids_tensor = Tensor(
+                storage=Buffer.from_dlpack(
+                    np.ascontiguousarray(latent_image_ids.astype(np.int64))
+                ).to(self.transformer.devices[0])
+            )
 
         return latents_tensor, latent_image_ids_tensor
 
