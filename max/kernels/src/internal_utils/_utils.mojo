@@ -25,8 +25,7 @@ from std.benchmark import (
     clobber_memory,
     keep,
 )
-from buffer import Dim, DimList
-from buffer.dimlist import _make_tuple
+from buffer import Dim
 from std.compile import compile_info
 from std.gpu import *
 from std.gpu.host import DeviceBuffer, DeviceContext

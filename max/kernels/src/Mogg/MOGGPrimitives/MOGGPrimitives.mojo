@@ -48,8 +48,6 @@ from weights_registry import WeightsRegistry
 
 from std.utils import Index, IndexList, StaticTuple
 
-from .MOGGIntList import IntList
-
 # ===-----------------------------------------------------------------------===#
 # Helper Structures
 # ===-----------------------------------------------------------------------===#
@@ -823,16 +821,16 @@ fn mgp_tensor_spec_create[
     aRawDims: DimList,
     aRawDimsRank: Int,
 ](*runtimeDims: Int) -> IndexList[aRawDimsRank]:
-    var static_shape = IntList[aRawDims]()
     var shape = IndexList[aRawDimsRank]()
     var runtimeIndex = 0
     # Update Shape with runtime elements.
-    for i in range(aRawDimsRank):
-        if static_shape[i] > -1:
-            shape[i] = static_shape[i]
+    comptime for i in range(aRawDimsRank):
+        var dim = aRawDims.at[i]()
+        if dim.get() > -1:
+            shape[i] = dim.get()
         else:
             shape[i] = runtimeDims[runtimeIndex]
-            runtimeIndex = runtimeIndex + 1
+            runtimeIndex += 1
     return shape
 
 

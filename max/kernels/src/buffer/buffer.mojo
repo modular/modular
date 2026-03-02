@@ -29,7 +29,7 @@ from std.sys.intrinsics import (
     prefetch,
 )
 
-from buffer.dimlist import Dim, DimList, _make_tuple
+from buffer.dimlist import Dim, DimList
 from std.builtin.device_passable import DevicePassable
 from std.memory import (
     # Keep LegacyOpaquePointer for DevicePassable trait compatibility
@@ -87,43 +87,6 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
         curr_index = curr_index / dim
 
     return result
-
-
-@always_inline
-fn _compute_ndbuffer_offset(
-    buf: NDBuffer,
-    index: VariadicParamList[Int],
-) -> Int:
-    """Computes the NDBuffer's offset using the index positions provided.
-
-    Args:
-        buf: The NDBuffer.
-        index: The index positions.
-
-    Returns:
-        The offset into the NDBuffer given the indices.
-    """
-
-    comptime rank = buf.rank
-
-    comptime if buf.rank == 0:
-        return 0
-
-    comptime if _use_32bit_indexing[buf.address_space]():
-        var result: Int32 = 0
-
-        comptime for i in range(buf.rank):
-            result = fma(Int32(buf.stride[i]()), Int32(index[i]), result)
-
-        return Int(result)
-
-    else:
-        var result: Int = 0
-
-        comptime for i in range(buf.rank):
-            result = fma(buf.stride[i](), index[i], result)
-
-        return result
 
 
 @always_inline
@@ -303,9 +266,9 @@ struct NDBuffer[
     ]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
-    var dynamic_shape: IndexList[Self.rank, element_type = DType.uint64]
+    var dynamic_shape: IndexList[Self.rank]
     """The dynamic value of the shape."""
-    var dynamic_stride: IndexList[Self.rank, element_type = DType.uint64]
+    var dynamic_stride: IndexList[Self.rank]
     """The dynamic stride of the buffer."""
 
     @staticmethod
@@ -344,9 +307,8 @@ struct NDBuffer[
         ](), "dimensions must all be known"
 
         self.data = ptr
-        self.dynamic_shape = _make_tuple[
-            Self.rank, element_type = DType.uint64
-        ](Self.shape)
+        self.dynamic_shape = comptime (Self.shape.into_index_list[Self.rank]())
+
         self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
             self.dynamic_shape
         )

@@ -640,26 +640,6 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
 
 
 @always_inline
-fn _make_tuple[
-    size: Int, *, element_type: DType = DType.int64
-](values: DimList, out result: IndexList[size, element_type=element_type]):
-    """Creates a tuple constant using the specified values.
-
-    Args:
-        values: The list of values.
-
-    Returns:
-        A tuple with the values filled in.
-    """
-    var tup = StaticTuple[result._int_type, size](fill=result._int_type(0))
-
-    comptime for idx in range(size):
-        tup = tup._replace[idx](result._int_type(values.at[idx]().get()))
-
-    return {tup}
-
-
-@always_inline
 fn _make_partially_static_index_list[
     size: Int, static_list: DimList, *, element_type: DType = DType.int64
 ](

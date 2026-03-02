@@ -14,7 +14,7 @@
 from std.collections import OptionalReg
 
 from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList, _make_tuple
+from buffer.dimlist import Dim, DimList
 from std.gpu.host import DeviceContext
 from std.random import rand
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
