@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
+from std.math import sqrt
 
 
 struct Complex(

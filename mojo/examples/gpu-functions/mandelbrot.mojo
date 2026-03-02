@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import has_accelerator
+from std.math import ceildiv
+from std.sys import has_accelerator
 
-from complex import ComplexSIMD, ComplexScalar
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.complex import ComplexSIMD, ComplexScalar
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 
 comptime GRID_WIDTH = 60

@@ -28,14 +28,14 @@ The implementation shows:
 This example uses only open source Mojo standard library and layout package.
 """
 
-from math import ceildiv
-from sys import exit, has_accelerator
+from std.math import ceildiv
+from std.sys import exit, has_accelerator
 
 # GPU programming imports from open source stdlib
-from gpu.sync import barrier
-from gpu.host import DeviceContext
-from gpu import thread_idx, block_idx
-from gpu.memory import AddressSpace
+from std.gpu.sync import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx, block_idx
+from std.gpu.memory import AddressSpace
 
 # Layout tensor support from open source layout package
 from layout import Layout, LayoutTensor

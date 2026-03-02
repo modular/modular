@@ -13,7 +13,7 @@
 
 # DOC: mojo/docs/manual/layout/tensors.mdx
 
-from gpu import (
+from std.gpu import (
     thread_idx,
     block_idx,
     global_idx,
@@ -23,21 +23,21 @@ from gpu import (
     lane_id,
     WARP_SIZE,
 )
-from gpu.memory import async_copy_wait_all
-from gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from std.gpu.memory import async_copy_wait_all
+from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Layout, LayoutTensor, print_layout
 from layout.layout_tensor import copy_sram_to_local
-from memory import UnsafePointer
-from sys import has_accelerator
-from sys.info import (
+from std.memory import UnsafePointer
+from std.sys import has_accelerator
+from std.sys.info import (
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_apple_gpu,
     is_nvidia_gpu,
     simd_width_of,
 )
-from testing import assert_equal, assert_false, assert_true
-from sys import exit
+from std.testing import assert_equal, assert_false, assert_true
+from std.sys import exit
 
 
 # start-initialize-tensor-from-cpu-example
@@ -161,8 +161,8 @@ def shared_memory_alloc_example() raises:
 
 fn simd_width_example():
     # start-simd-width-example
-    from sys.info import simd_width_of
-    from gpu.host.compile import get_gpu_target
+    from std.sys.info import simd_width_of
+    from std.gpu.host.compile import get_gpu_target
 
     comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]
     # end-simd-width-example

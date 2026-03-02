@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from my_math import inc
-from testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
 
 def test_inc_valid() raises:

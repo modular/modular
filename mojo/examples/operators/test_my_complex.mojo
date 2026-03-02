@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from my_complex import Complex
-from testing import *
+from std.testing import *
 
 
 def test_init() raises:

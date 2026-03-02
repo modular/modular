@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import perf_counter_ns
+from std.time import perf_counter_ns
 
 import gridv1
 import gridv2

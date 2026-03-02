@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import random
-from collections import Optional
+import std.random
+from std.collections import Optional
 
-from algorithm import parallelize
-from memory import memcpy, memset_zero
+from std.algorithm import parallelize
+from std.memory import memcpy, memset_zero
 
 
 struct Grid[rows: Int, cols: Int](Copyable, Stringable):

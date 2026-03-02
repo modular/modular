@@ -13,8 +13,8 @@
 
 # DOC: mojo/docs/manual/get-started.mdx
 
-import random
-from collections import Optional
+import std.random
+from std.collections import Optional
 
 
 @fieldwise_init

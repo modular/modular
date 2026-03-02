@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import random
-from collections import Optional
+import std.random
+from std.collections import Optional
 
-from memory import memcpy, memset_zero
+from std.memory import memcpy, memset_zero
 
 
 struct Grid[rows: Int, cols: Int](Copyable, Stringable):
