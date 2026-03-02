@@ -435,6 +435,114 @@ class TestPipelineConfigUtilityMethods:
         assert config.model.kv_cache.cache_dtype == DType.bfloat16
         assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
 
+    @pytest.mark.parametrize(
+        "arch_name",
+        (
+            "DeepseekV3ForCausalLM",
+            "DeepseekV32ForCausalLM",
+            "DeepseekV3ForCausalLMNextN",
+        ),
+    )
+    @mock_pipeline_config_resolve
+    def test_apply_deepseek_defaults_multi_gpu(
+        self, arch_name: str
+    ) -> None:
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()] * 8,
+            )
+        )
+        config.ep_size = 1
+        config.model.data_parallel_degree = 1
+
+        config._apply_deepseek_multi_gpu_parallelism_defaults(
+            SimpleNamespace(name=arch_name), config.model, 8
+        )
+
+        assert config.ep_size == 8
+        assert config.model.data_parallel_degree == 8
+
+    @mock_pipeline_config_resolve
+    def test_apply_deepseek_defaults_multi_gpu_ep_only(self) -> None:
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()] * 8,
+            )
+        )
+        config.ep_size = 8
+        config.model.data_parallel_degree = 1
+
+        config._apply_deepseek_multi_gpu_parallelism_defaults(
+            SimpleNamespace(name="DeepseekV3ForCausalLM"),
+            config.model,
+            8,
+        )
+
+        assert config.ep_size == 8
+        assert config.model.data_parallel_degree == 8
+
+    @mock_pipeline_config_resolve
+    def test_apply_deepseek_defaults_multi_gpu_dp_only(self) -> None:
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()] * 8,
+            )
+        )
+        config.ep_size = 1
+        config.model.data_parallel_degree = 8
+
+        config._apply_deepseek_multi_gpu_parallelism_defaults(
+            SimpleNamespace(name="DeepseekV3ForCausalLM"),
+            config.model,
+            8,
+        )
+
+        assert config.ep_size == 8
+        assert config.model.data_parallel_degree == 8
+
+    @mock_pipeline_config_resolve
+    def test_apply_deepseek_defaults_non_deepseek_unchanged(self) -> None:
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()] * 8,
+            )
+        )
+        config.ep_size = 1
+        config.model.data_parallel_degree = 1
+
+        arch = SimpleNamespace(name="LlamaForCausalLM")
+        if config._is_deepseek_arch(arch):
+            config._apply_deepseek_multi_gpu_parallelism_defaults(
+                arch, config.model, 8
+            )
+
+        assert config.ep_size == 1
+        assert config.model.data_parallel_degree == 1
+
+    @mock_pipeline_config_resolve
+    def test_apply_deepseek_defaults_single_gpu_unchanged(self) -> None:
+        config = PipelineConfig(
+            model=MAXModelConfig(
+                model_path="test/model",
+                device_specs=[DeviceSpec.accelerator()],
+            )
+        )
+        config.ep_size = 1
+        config.model.data_parallel_degree = 1
+
+        config._apply_deepseek_multi_gpu_parallelism_defaults(
+            SimpleNamespace(name="DeepseekV3ForCausalLM"),
+            config.model,
+            1,
+        )
+
+        assert config.ep_size == 1
+        assert config.model.data_parallel_degree == 1
+
 
 @prepare_registry
 @mock_estimate_memory_footprint
