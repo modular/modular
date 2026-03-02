@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines quantization encodings and configuration types for MAX graph weights."""
+
 import enum
 from dataclasses import dataclass
 

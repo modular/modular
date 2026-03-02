@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides on-device dtype casting utilities for :obj:`max.driver.Buffer` tensors."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines symbolic value types used within a :class:`Graph`, including tensors and buffers."""
+
 from __future__ import annotations
 
 import builtins

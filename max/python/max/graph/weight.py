@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines :class:`Weight` and sharding strategies for distributed MAX graph execution."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable

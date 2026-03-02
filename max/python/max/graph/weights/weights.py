@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines the :class:`Weights` protocol and :class:`WeightData` container for model weight management."""
+
 from __future__ import annotations
 
 import dataclasses
