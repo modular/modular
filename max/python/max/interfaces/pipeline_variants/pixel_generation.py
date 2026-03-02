@@ -147,8 +147,18 @@ class PixelGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def num_images_per_prompt(self) -> int:
+    def num_visuals_per_prompt(self) -> int:
         """Number of images to generate."""
+        ...
+
+    @property
+    def num_frames(self) -> int | None:
+        """Number of frames to generate for video output."""
+        ...
+
+    @property
+    def frame_rate(self) -> int | None:
+        """Frame rate for generated video."""
         ...
 
 
@@ -198,6 +208,11 @@ class PixelGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
         default_factory=lambda: np.array([], dtype=np.float32)
     )
     """The generated pixel data, if available."""
+
+    audio_data: npt.NDArray[np.float32] = msgspec.field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Optional generated audio data for video+audio pixel generation models."""
 
     @property
     def is_done(self) -> bool:

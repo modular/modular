@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,10 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Activation function modules for MAX neural networks.
 
-from .arch import ltx2_module_v3_arch
-from .model_config import LTX2Config
+This module is a compatibility shim. Use max.nn.module_v3 directly.
+"""
 
-ARCHITECTURES = [ltx2_module_v3_arch]
-
-__all__ = ["ARCHITECTURES", "LTX2Config", "ltx2_module_v3_arch"]
+from .module_v3.activations import (  # noqa: F401
+    GEGLU,
+    GELU,
+    ApproximateGELU,
+    FeedForward,
+    Identity,
+    SiLU,
+    SwiGLU,
+)

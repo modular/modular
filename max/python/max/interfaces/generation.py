@@ -21,7 +21,11 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 
 from .request import RequestID
-from .request.open_responses import OutputContent
+from .request.open_responses import (
+    OutputAudioContent,
+    OutputImageContent,
+    OutputVideoContent,
+)
 from .status import GenerationStatus
 
 
@@ -81,8 +85,8 @@ class GenerationOutput(BaseModel):
     final_status: GenerationStatus
     """The final status of the generation process."""
 
-    output: list[OutputContent]
-    """List of OutputContent objects (text, images, etc.) representing generated content."""
+    output: list[OutputImageContent | OutputVideoContent | OutputAudioContent]
+    """List of OutputContent objects representing generated content."""
 
     @property
     def is_done(self) -> bool:

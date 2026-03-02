@@ -38,18 +38,19 @@ from typing import Any, TypeAlias, TypeVar, overload
 
 from max import driver
 from max._mlir_context import MLIRThreadPoolExecutor
+from max.driver import Device
 from max.dtype import DType
 from max.experimental import realization_context as rc
 from max.experimental import tensor
 from max.graph import (
     BufferValue,
+    DeviceRef,
     Graph,
     TensorValue,
     TensorValueLike,
     Type,
     ops,
 )
-from max.graph.type import DeviceRef
 from max.graph.value import Value
 from typing_extensions import ParamSpec
 
@@ -601,6 +602,8 @@ logsoftmax = functional(ops.logsoftmax)
 #: Scatters values according to a mask.
 #: See :func:`max.graph.ops.masked_scatter` for details.
 masked_scatter = functional(ops.masked_scatter)
+#: Performs batch matrix multiplication. Alias for :func:`matmul`.
+bmm = functional(ops.matmul)
 #: Performs matrix multiplication.
 #: See :func:`max.graph.ops.matmul` for details.
 matmul = functional(ops.matmul)
@@ -738,12 +741,61 @@ arange = functional(ops.range)
 #: Rebinds the shape of a tensor, asserting dimension consistency at runtime.
 #: See :func:`max.graph.ops.rebind` for details.
 rebind = functional(ops.rebind)
+
+@functional
+def linspace(
+    start: float,
+    end: float,
+    steps: int,
+    *,
+    dtype: DType | None = None,
+    device: Device | DeviceRef | None = None,
+) -> TensorValue:
+    """Creates a tensor with evenly spaced values between start and end.
+
+    Returns a 1D tensor containing ``steps`` evenly spaced values
+    starting from ``start`` (inclusive) and ending at ``end`` (inclusive).
+
+    Args:
+        start: The starting value of the sequence.
+        end: The ending value of the sequence (inclusive).
+        steps: The number of values to generate. Must be >= 1.
+        dtype: The data type for the tensor elements. Defaults to float32.
+        device: The device where the tensor will be allocated.
+
+    Returns:
+        A 1D tensor containing evenly spaced values.
+    """
+    if steps < 1:
+        raise ValueError(f"linspace requires steps >= 1, got {steps}")
+
+    if dtype is None:
+        dtype = DType.float32
+
+    if device is None:
+        device = DeviceRef.CPU()
+    elif isinstance(device, Device):
+        device = DeviceRef.from_device(device)
+
+    if steps == 1:
+        return ops.constant(start, dtype, device).reshape([1])
+
+    # Create indices [0, 1, 2, ..., steps-1]
+    indices = ops.range(0, steps, 1, dtype=dtype, device=device)
+    # Scale and shift: start + (end - start) * i / (steps - 1)
+    scale = (end - start) / (steps - 1)
+    return indices * scale + start
+
+
 #: Applies the ReLU activation function.
 #: See :func:`max.graph.ops.relu` for details.
 relu = functional(ops.relu)
 #: Repeats elements of a tensor.
 #: See :func:`max.graph.ops.repeat_interleave` for details.
 repeat_interleave = functional(ops.repeat_interleave)
+#: Rebinds a tensor to a new shape.
+#: See :func:`max.graph.ops.rebind` for details.
+rebind = functional(ops.rebind)
 #: Reshapes a tensor to a new shape.
 #: See :func:`max.graph.ops.reshape` for details.
 reshape = functional(ops.reshape)

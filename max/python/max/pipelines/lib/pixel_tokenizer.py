@@ -69,6 +69,7 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
+    LTX2 = "LTX2Pipeline"
 
     @classmethod
     def from_diffusers_config(
@@ -149,6 +150,11 @@ class PixelGenerationTokenizer(
                 subfolder=subfolder,
             )
 
+            # Gemma expects left padding for chat-style prompts
+            self.delegate.padding_side = "left"
+            if self.delegate.pad_token is None:
+                self.delegate.pad_token = self.delegate.eos_token
+
             if subfolder_2 is not None:
                 self.delegate_2 = AutoTokenizer.from_pretrained(
                     model_path,
@@ -205,10 +211,53 @@ class PixelGenerationTokenizer(
         self._vae_scale_factor = (
             2 ** (len(block_out_channels) - 1) if block_out_channels else 8
         )
+        self._vae_temporal_compression_ratio = vae_config.get(
+            "temporal_compression_ratio"
+        )
 
         # Store static model dimensions
         self._default_sample_size = 128
         self._num_channels_latents = transformer_config["in_channels"] // 4
+
+        # Store guidance embeds flag
+        self._use_guidance_embeds = transformer_config.get(
+            "guidance_embeds", False
+        )
+
+        # LTX2-specific constants (video+audio) used when _pipeline_class_name == "LTX2Pipeline".
+        # These match the current MAX LTX2 pipeline implementation.
+        self._is_ltx2 = self._pipeline_class_name == "LTX2Pipeline"
+        if self._is_ltx2:
+            # LTX-2 uses CausalVideoAutoencoder with no standard block_out_channels;
+            # read spatial/temporal compression ratios directly from the VAE config.
+            self._vae_scale_factor = vae_config.get(
+                "spatial_compression_ratio", 32
+            )
+            # LTX-2 uses patch_size=1 (no spatial packing), so VAE latent
+            # channels == transformer in_channels (128), not in_channels // 4.
+            self._num_channels_latents = transformer_config["in_channels"]
+            # VAE temporal downsample factor (frames per latent frame).
+            # Audio configuration: read from audio_vae config with safe fallbacks.
+            audio_vae_config = components.get("audio_vae", {}).get(
+                "config_dict", {}
+            )
+            self._ltx2_audio_sampling_rate = audio_vae_config.get(
+                "sample_rate", 16_000
+            )
+            self._ltx2_audio_hop_length = audio_vae_config.get(
+                "mel_hop_length", 160
+            )
+            self._ltx2_num_mel_bins = audio_vae_config.get("mel_bins", 64)
+            # Mel compression = 2^(num_downsampling_stages); ch_mult has one entry per
+            # resolution level, so num_downsampling_stages = len(ch_mult) - 1.
+            ch_mult = audio_vae_config.get("ch_mult", [1, 2, 4])
+            self._ltx2_audio_mel_compression_ratio = 2 ** (len(ch_mult) - 1)
+
+        # _vae_spatial_compression_ratio mirrors _vae_scale_factor at all times.
+        # For standard models it is 2^(len(block_out_channels)-1); for LTX-2 it
+        # is overridden to vae.spatial_compression_ratio (32) in the block above.
+        # new_context() uses this attribute directly for latent dimension math.
+        self._vae_spatial_compression_ratio = self._vae_scale_factor
 
         # Create scheduler
         scheduler_class_name = components.get("scheduler", {}).get(
@@ -230,6 +279,129 @@ class PixelGenerationTokenizer(
             PipelineClassName.FLUX2_KLEIN,
         ):
             self._max_pixel_size = 1024 * 1024
+
+    def _prepare_ltx2_video_coords(
+        self,
+        batch_size: int,
+        latent_num_frames: int,
+        latent_height: int,
+        latent_width: int,
+        frame_rate: float,
+    ) -> npt.NDArray[np.float32]:
+        """Pure-numpy equivalent of LTX2AudioVideoRotaryPosEmbed.prepare_video_coords.
+
+        Returns float32 array of shape [batch_size, 3, num_patches, 2] containing
+        per-patch pixel-space [start, end) boundaries for the (frame, height, width)
+        dimensions, scaled to seconds on the temporal axis.
+        """
+        # LTX2 constants (patch sizes are always 1 for this model).
+        patch_size_t: int = 1
+        patch_size: int = 1
+        # scale_factors converts latent → pixel space: (temporal, height, width).
+        scale_f: int = self._vae_temporal_compression_ratio  # 8
+        scale_h: int = self._vae_scale_factor  # 32
+        scale_w: int = self._vae_scale_factor  # 32
+        causal_offset: int = 1
+
+        # 1. 1-D grids for each spatial/temporal dimension.
+        grid_f = np.arange(0, latent_num_frames, patch_size_t, dtype=np.float32)
+        grid_h = np.arange(0, latent_height, patch_size, dtype=np.float32)
+        grid_w = np.arange(0, latent_width, patch_size, dtype=np.float32)
+
+        # 2. Broadcast to 3-D grid [N_F, N_H, N_W] then stack → [3, N_F, N_H, N_W].
+        grid_f_3d = np.broadcast_to(
+            grid_f[:, None, None], (len(grid_f), len(grid_h), len(grid_w))
+        )
+        grid_h_3d = np.broadcast_to(
+            grid_h[None, :, None], (len(grid_f), len(grid_h), len(grid_w))
+        )
+        grid_w_3d = np.broadcast_to(
+            grid_w[None, None, :], (len(grid_f), len(grid_h), len(grid_w))
+        )
+        grid = np.stack(
+            [grid_f_3d, grid_h_3d, grid_w_3d], axis=0
+        )  # [3, N_F, N_H, N_W]
+
+        # 3. Patch [start, end) boundaries → [3, N_F, N_H, N_W, 2] → [3, num_patches, 2].
+        patch_delta = np.array(
+            [patch_size_t, patch_size, patch_size], dtype=np.float32
+        ).reshape(3, 1, 1, 1)
+        patch_ends = grid + patch_delta
+        latent_coords = np.stack(
+            [grid, patch_ends], axis=-1
+        )  # [3, N_F, N_H, N_W, 2]
+        latent_coords = latent_coords.reshape(3, -1, 2)  # [3, num_patches, 2]
+
+        # 4. Tile for batch → [B, 3, num_patches, 2].
+        latent_coords = np.tile(latent_coords[None], (batch_size, 1, 1, 1))
+
+        # 5. Convert latent → pixel-space coordinates.
+        scale = np.array([scale_f, scale_h, scale_w], dtype=np.float32).reshape(
+            1, 3, 1, 1
+        )
+        pixel_coords = latent_coords * scale
+
+        # 6. Causal temporal fix-up: the first latent frame covers fewer pixel frames.
+        pixel_coords[:, 0] = np.clip(
+            pixel_coords[:, 0] + causal_offset - scale_f, 0, None
+        )
+
+        # 7. Convert pixel frames → seconds.
+        pixel_coords[:, 0] /= frame_rate
+
+        return pixel_coords  # float32, [B, 3, num_patches, 2]
+
+    def _prepare_ltx2_audio_coords(
+        self,
+        batch_size: int,
+        audio_num_frames: int,
+    ) -> npt.NDArray[np.float32]:
+        """Pure-numpy equivalent of LTX2AudioVideoRotaryPosEmbed.prepare_audio_coords.
+
+        Returns float32 array of shape [batch_size, 1, num_patches, 2] containing
+        per-patch [start, end) timestamps in seconds for the temporal dimension.
+        """
+        audio_scale_factor: int = self._ltx2_audio_mel_compression_ratio  # 4
+        audio_patch_size_t: int = 1
+        causal_offset: int = 1
+
+        grid_f = np.arange(
+            0, audio_num_frames, audio_patch_size_t, dtype=np.float32
+        )
+
+        # Start timestamps in seconds.
+        grid_start_mel = np.clip(
+            grid_f * audio_scale_factor + causal_offset - audio_scale_factor,
+            0,
+            None,
+        )
+        grid_start_s = (
+            grid_start_mel
+            * self._ltx2_audio_hop_length
+            / self._ltx2_audio_sampling_rate
+        )
+
+        # End timestamps in seconds.
+        grid_end_mel = np.clip(
+            (grid_f + audio_patch_size_t) * audio_scale_factor
+            + causal_offset
+            - audio_scale_factor,
+            0,
+            None,
+        )
+        grid_end_s = (
+            grid_end_mel
+            * self._ltx2_audio_hop_length
+            / self._ltx2_audio_sampling_rate
+        )
+
+        audio_coords = np.stack(
+            [grid_start_s, grid_end_s], axis=-1
+        )  # [num_patches, 2]
+        # Tile for batch and add modality dimension → [B, 1, num_patches, 2].
+        audio_coords = np.tile(audio_coords[None, None], (batch_size, 1, 1, 1))
+
+        return audio_coords  # float32, [B, 1, num_patches, 2]
 
     def _prepare_latent_image_ids(
         self, height: int, width: int, batch_size: int = 1
@@ -365,9 +537,20 @@ class PixelGenerationTokenizer(
         latent_height: int,
         latent_width: int,
         seed: int | None,
+        num_frames: int | None = None,
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
         shape = (batch_size, num_channels_latents, latent_height, latent_width)
-
+        if num_frames is not None:
+            num_latent_frames = (
+                num_frames - 1
+            ) // self._vae_temporal_compression_ratio + 1
+            shape = (
+                batch_size,
+                num_channels_latents,
+                num_latent_frames,
+                latent_height,
+                latent_width,
+            )
         latents = self._randn_tensor(shape, seed)
         latent_image_ids = self._prepare_latent_image_ids(
             latent_height // 2, latent_width // 2, batch_size
@@ -427,6 +610,7 @@ class PixelGenerationTokenizer(
         negative_token_ids: npt.NDArray[np.int64] | None = None
         negative_attn_mask: npt.NDArray[np.bool_] | None = None
         negative_token_ids_2: npt.NDArray[np.int64] | None = None
+        attn_mask_neg: npt.NDArray[np.bool_] | None = None
         if do_true_cfg:
             negative_token_ids, negative_attn_mask = await self.encode(
                 negative_prompt or ""
@@ -440,6 +624,7 @@ class PixelGenerationTokenizer(
         return (
             token_ids,
             attn_mask,
+            attn_mask_neg,
             token_ids_2,
             attn_mask_2,
             negative_token_ids,
@@ -756,28 +941,54 @@ class PixelGenerationTokenizer(
 
         # Extract image provider options (always available via defaults)
         image_options = request.body.provider_options.image
-        if image_options is None:
-            raise ValueError(
-                "Image provider options are required for pixel generation. "
-                "This should not happen as defaults are applied at request creation."
-            )
+        video_options = request.body.provider_options.video
 
-        if (
-            image_options.guidance_scale < 1.0
-            or image_options.true_cfg_scale < 1.0
-        ):
+        # For LTX-2 and other video models, we should consolidate options from both image and video
+        # Prioritize video options if present, then image options.
+        neg_prompt = (
+            video_options.negative_prompt if video_options else None
+        ) or (image_options.negative_prompt if image_options else None)
+        sec_prompt = image_options.secondary_prompt if image_options else None
+        sec_neg_prompt = (
+            image_options.secondary_negative_prompt if image_options else None
+        )
+        guidance_scale = (
+            video_options.guidance_scale
+            if video_options and video_options.guidance_scale is not None
+            else None
+        ) or (image_options.guidance_scale if image_options else 3.5)
+        true_cfg_scale = (
+            video_options.true_cfg_scale
+            if video_options and video_options.true_cfg_scale is not None
+            else None
+        ) or (image_options.true_cfg_scale if image_options else 1.0)
+        height = (
+            video_options.height
+            if video_options and video_options.height is not None
+            else None
+        ) or (image_options.height if image_options else None)
+        width = (
+            video_options.width
+            if video_options and video_options.width is not None
+            else None
+        ) or (image_options.width if image_options else None)
+        steps = (
+            video_options.steps
+            if video_options and video_options.steps is not None
+            else None
+        ) or (image_options.steps if image_options else 50)
+        num_images = image_options.num_images if image_options else 1
+
+        if guidance_scale < 1.0 or true_cfg_scale < 1.0:
             logger.warning(
-                f"Guidance scales < 1.0 detected (guidance_scale={image_options.guidance_scale}, "
-                f"true_cfg_scale={image_options.true_cfg_scale}). This is mathematically possible"
+                f"Guidance scales < 1.0 detected (guidance_scale={guidance_scale}, "
+                f"true_cfg_scale={true_cfg_scale}). This is mathematically possible"
                 " but may produce lower quality or unexpected results."
             )
 
-        if (
-            image_options.true_cfg_scale > 1.0
-            and image_options.negative_prompt is None
-        ):
+        if true_cfg_scale > 1.0 and neg_prompt is None:
             logger.warning(
-                f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
+                f"true_cfg_scale={true_cfg_scale} is set, but no negative_prompt "
                 "is provided. True classifier-free guidance requires a negative prompt; "
                 "falling back to standard generation."
             )
@@ -812,6 +1023,7 @@ class PixelGenerationTokenizer(
         (
             token_ids,
             attn_mask,
+            attn_mask_neg,
             token_ids_2,
             _attn_mask_2,
             negative_token_ids,
@@ -819,10 +1031,10 @@ class PixelGenerationTokenizer(
             negative_token_ids_2,
         ) = await self._generate_tokens_ids(
             prompt,
-            image_options.secondary_prompt,
-            image_options.negative_prompt,
-            image_options.secondary_negative_prompt,
-            do_true_cfg,
+            sec_prompt,
+            neg_prompt,
+            sec_neg_prompt,
+            do_true_cfg or (self._is_ltx2 and do_cfg),
             images=images_for_tokenization,
         )
 
@@ -865,27 +1077,153 @@ class PixelGenerationTokenizer(
                 image_options.width or default_sample_size * vae_scale_factor
             )
 
+        video_options = request.body.provider_options.video
         # 3. Resolve image dimensions using cached static values
-        latent_height = 2 * (int(height) // (self._vae_scale_factor * 2))
-        latent_width = 2 * (int(width) // (self._vae_scale_factor * 2))
-        image_seq_len = (latent_height // 2) * (latent_width // 2)
+        latent_height = int(height) // self._vae_spatial_compression_ratio
+        latent_width = int(width) // self._vae_spatial_compression_ratio
+        latent_frames = (
+            video_options.num_frames - 1
+        ) // self._vae_temporal_compression_ratio + 1
+        visual_seq_len = (
+            latent_height
+            * latent_width
+            * (latent_frames if video_options.num_frames is not None else 1)
+        )
 
-        num_inference_steps = image_options.steps
+        num_inference_steps = steps
         timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
-            image_seq_len, num_inference_steps
+            visual_seq_len, num_inference_steps
         )
 
         num_warmup_steps: int = max(
-            len(timesteps) - num_inference_steps * self._scheduler.order, 0
+            len(timesteps) - steps * self._scheduler.order, 0
         )
 
+        num_frames = (
+            video_options.num_frames if video_options is not None else None
+        )
         latents, latent_image_ids = self._prepare_latents(
-            image_options.num_images,
+            num_images,
             self._num_channels_latents,
             latent_height,
             latent_width,
             request.body.seed,
+            num_frames,
         )
+
+        guidance: npt.NDArray[np.float32] | None = None
+        if self._use_guidance_embeds:
+            guidance = np.array([guidance_scale], dtype=np.float32)
+
+        extra_params: dict[str, npt.NDArray[Any]] = {}
+        if self._is_ltx2:
+            frame_rate = (
+                video_options.frames_per_second
+                if video_options is not None
+                else None
+            )
+
+            if num_frames is None or num_frames <= 0:
+                num_frames = 1
+            if frame_rate is None or frame_rate <= 0:
+                frame_rate = 24
+
+            # Audio latents: [B, 8, L, M]. Match the MAX LTX2 pipeline's defaults.
+            num_mel_bins = self._ltx2_num_mel_bins
+            latent_mel_bins = (
+                num_mel_bins // self._ltx2_audio_mel_compression_ratio
+            )
+            duration_s = float(num_frames) / float(frame_rate)
+            audio_latents_per_second = (
+                self._ltx2_audio_sampling_rate
+                / float(self._ltx2_audio_hop_length)
+                / float(self._ltx2_audio_mel_compression_ratio)
+            )
+            audio_num_frames = round(duration_s * audio_latents_per_second)
+            if audio_num_frames <= 0:
+                audio_num_frames = 1
+
+            audio_shape = (
+                num_images,
+                8,
+                audio_num_frames,
+                latent_mel_bins,
+            )
+            audio_latents = self._randn_tensor(audio_shape, request.body.seed)
+            extra_params["ltx2_audio_latents"] = audio_latents
+
+            # Pre-compute positional embedding coordinates on CPU so the
+            # pipeline doesn't need to run tensor ops at inference time.
+            # These are deterministic functions of the resolution/duration
+            # and can be computed once here, avoiding repeated compilation.
+            # Store scalar latent dimensions so the pipeline can skip
+            # recomputing them from scratch.
+            latent_num_frames = (
+                num_frames - 1
+            ) // self._vae_temporal_compression_ratio + 1
+            extra_params["ltx2_latent_num_frames"] = np.array(
+                latent_num_frames, dtype=np.int64
+            )
+            extra_params["ltx2_latent_height"] = np.array(
+                latent_height, dtype=np.int64
+            )
+            extra_params["ltx2_latent_width"] = np.array(
+                latent_width, dtype=np.int64
+            )
+            extra_params["ltx2_audio_num_frames"] = np.array(
+                audio_num_frames, dtype=np.int64
+            )
+            extra_params["ltx2_latent_mel_bins"] = np.array(
+                latent_mel_bins, dtype=np.int64
+            )
+
+            # Pre-compute positional embedding coordinates on CPU so the
+            # pipeline doesn't need to run tensor ops at inference time.
+            # These are deterministic functions of the resolution/duration
+            # and can be computed once here, avoiding repeated compilation.
+
+            video_coords = self._prepare_ltx2_video_coords(
+                batch_size=num_images,
+                latent_num_frames=latent_num_frames,
+                latent_height=latent_height,
+                latent_width=latent_width,
+                frame_rate=float(frame_rate),
+            )
+            audio_coords = self._prepare_ltx2_audio_coords(
+                batch_size=num_images,
+                audio_num_frames=audio_num_frames,
+            )
+
+            # Pre-double for CFG on CPU (guidance_scale is already known here),
+            # avoiding an eager F.concat tensor compilation in the pipeline.
+            if do_cfg:
+                video_coords = np.concatenate(
+                    [video_coords, video_coords], axis=0
+                )
+                audio_coords = np.concatenate(
+                    [audio_coords, audio_coords], axis=0
+                )
+            extra_params["ltx2_video_coords"] = video_coords
+            extra_params["ltx2_audio_coords"] = audio_coords
+            extra_params["ltx2_coords_cfg_doubled"] = np.array(do_cfg)
+
+            # Number of real (non-padding) text tokens per batch item (uint32).
+            # Pre-doubled for CFG here on CPU, mirroring the coords treatment
+            # above, so the pipeline can wrap it in a Tensor without any
+            # further mask arithmetic.
+            valid_length_np = np.atleast_2d(
+                np.array(attn_mask.sum(axis=-1), dtype=np.uint32)
+            )
+
+            if do_cfg:
+                extra_params["ltx2_attn_mask_neg"] = attn_mask_neg
+                valid_length_neg_np = np.atleast_2d(
+                    np.array(attn_mask_neg.sum(axis=-1), dtype=np.uint32)
+                )
+                valid_length_np = np.concatenate(
+                    [valid_length_neg_np, valid_length_np], axis=0
+                )
+            extra_params["ltx2_valid_length"] = valid_length_np
 
         # 5. Build the context
         context = PixelContext(
@@ -902,12 +1240,24 @@ class PixelGenerationTokenizer(
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,
-            guidance_scale=image_options.guidance_scale,
-            num_images_per_prompt=image_options.num_images,
-            true_cfg_scale=image_options.true_cfg_scale,
+            guidance_scale=guidance_scale,
+            guidance=guidance,
+            true_cfg_scale=true_cfg_scale,
+            num_visuals_per_prompt=num_images,
+            num_frames=(
+                video_options.num_frames
+                if self._is_ltx2 and video_options is not None
+                else None
+            ),
+            frame_rate=(
+                video_options.frames_per_second
+                if self._is_ltx2 and video_options is not None
+                else None
+            ),
             num_warmup_steps=num_warmup_steps,
             model_name=request.body.model,
             input_image=preprocessed_image_array,  # Pass numpy array instead of PIL.Image
+            extra_params=extra_params,
         )
 
         for validator in self._context_validators:

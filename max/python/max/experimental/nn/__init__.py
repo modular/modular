@@ -12,7 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Module implementation using eager tensors."""
 
-from .conv import Conv2d
+from .activations import (
+    GEGLU,
+    GELU,
+    ApproximateGELU,
+    FeedForward,
+    Identity,
+    SiLU,
+    SwiGLU,
+)
+from .conv import Conv1d, Conv2d, Conv3d, ConvTranspose1d
+from .dropout import Dropout
 from .embedding import Embedding
 from .linear import Linear
 from .module import Module, module_dataclass
@@ -21,10 +31,19 @@ from .rope import RotaryEmbedding, TransposedRotaryEmbedding
 from .sequential import ModuleList, Sequential
 
 __all__ = [
+    "GEGLU",
+    "GELU",
+    "ApproximateGELU",
+    "Conv1d",
     "Conv2d",
+    "Conv3d",
+    "ConvTranspose1d",
+    "Dropout",
     "Embedding",
+    "FeedForward",
     "GemmaRMSNorm",
     "GroupNorm",
+    "Identity",
     "LayerNorm",
     "Linear",
     "Module",
@@ -32,6 +51,8 @@ __all__ = [
     "RMSNorm",
     "RotaryEmbedding",
     "Sequential",
+    "SiLU",
+    "SwiGLU",
     "TransposedRotaryEmbedding",
     "module_dataclass",
 ]

@@ -51,4 +51,10 @@ class SchedulerFactory:
             )
 
         scheduler_cls = _SCHEDULER_REGISTRY[class_name]
-        return scheduler_cls(**(config_dict or {}))
+        # Filter out metadata keys like _class_name that some schedulers don't accept
+        filtered_config = {
+            k: v
+            for k, v in (config_dict or {}).items()
+            if not k.startswith("_")
+        }
+        return scheduler_cls(**filtered_config)

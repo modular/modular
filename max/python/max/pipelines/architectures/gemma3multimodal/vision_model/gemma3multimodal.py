@@ -175,6 +175,7 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
         self.layers = LayerList(layers)
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
+        self.return_hidden_states = config.return_hidden_states
 
     def __call__(
         self,

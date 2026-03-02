@@ -26,13 +26,14 @@ class FlowMatchEulerDiscreteScheduler:
 
     def __init__(
         self,
-        base_image_seq_len: int = 256,
+        base_image_seq_len: int = 1024,
         max_image_seq_len: int = 4096,
-        base_shift: float = 0.5,
-        max_shift: float = 1.15,
+        base_shift: float = 0.95,
+        max_shift: float = 2.05,
         use_flow_sigmas: bool = False,
-        use_dynamic_shifting: bool = False,
+        use_dynamic_shifting: bool = True,
         use_empirical_mu: bool = False,
+        shift_terminal: float | None = None,
         order: int = 1,
         **unused_kwargs,
     ) -> None:
@@ -46,6 +47,10 @@ class FlowMatchEulerDiscreteScheduler:
             use_flow_sigmas: Whether to use flow sigmas.
             use_dynamic_shifting: Whether to use dynamic shifting.
             use_empirical_mu: Whether to use empirical mu.
+            shift_terminal: If set, sigmas are stretched so the last sigma equals
+                this value before the appended 0.  Matches diffusers'
+                ``FlowMatchEulerDiscreteScheduler`` ``shift_terminal`` config key.
+                LTX-2 uses 0.1.
             order: Order of the scheduler.
             **unused_kwargs: Unused keyword arguments.
         """
@@ -56,6 +61,7 @@ class FlowMatchEulerDiscreteScheduler:
         self.use_flow_sigmas = use_flow_sigmas
         self.use_dynamic_shifting = use_dynamic_shifting
         self.use_empirical_mu = use_empirical_mu
+        self.shift_terminal = shift_terminal
         self.order = order
 
         self._use_flow_sigmas = use_flow_sigmas
@@ -76,6 +82,23 @@ class FlowMatchEulerDiscreteScheduler:
         t_safe = np.clip(t.astype(np.float64), 1e-7, 1.0)
         out = np.exp(mu) / (np.exp(mu) + (1.0 / t_safe - 1.0) ** sigma_param)
         return out.astype(np.float32)
+
+    def _stretch_shift_to_terminal(
+        self, t: npt.NDArray[np.float32]
+    ) -> npt.NDArray[np.float32]:
+        """Stretch and shift the sigma schedule so it terminates at ``self.shift_terminal``.
+
+        Mirrors ``diffusers.schedulers.FlowMatchEulerDiscreteScheduler.stretch_shift_to_terminal``.
+        Reference:
+        https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
+        """
+        terminal = self.shift_terminal
+        if terminal is None:
+            return t
+        one_minus_z = 1.0 - t.astype(np.float64)
+        scale_factor = one_minus_z[-1] / (1.0 - terminal)
+        stretched = 1.0 - (one_minus_z / scale_factor)
+        return stretched.astype(np.float32)
 
     @staticmethod
     def _compute_empirical_mu(
@@ -145,6 +168,8 @@ class FlowMatchEulerDiscreteScheduler:
             if self._use_dynamic_shifting:
                 mu = self._calculate_mu(image_seq_len, num_inference_steps)
                 sigmas = self._time_shift_exponential(mu, 1.0, sigmas)
+            if self.shift_terminal is not None:
+                sigmas = self._stretch_shift_to_terminal(sigmas)
             timesteps = sigmas * 1000.0
             if reverse:
                 timesteps = ((1000.0 - timesteps) / 1000.0).astype(np.float32)
