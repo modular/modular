@@ -256,11 +256,20 @@ class MambaModel(PipelineModel[TextContext]):
                 unary = False
 
         session = _session()
-        compiled = F.functional(session.load(graph, weights_registry=weights))
+        session_model = session.load(graph, weights_registry=weights)
+
+        # Use a lightweight wrapper instead of F.functional, which creates
+        # an EagerRealizationContext on every call (building a new MLIR graph,
+        # running optimization passes, and compiling a seed mini-graph).
+        # This matches the approach used by Module.compile().
+        def _compiled(*args: Any) -> list[Tensor]:
+            return [Tensor(storage=r) for r in session_model(*args)]
 
         if unary:
-            return functools.wraps(module)(lambda *inputs: compiled(*inputs)[0])
-        return compiled
+            return functools.wraps(module)(
+                lambda *inputs: _compiled(*inputs)[0]
+            )
+        return _compiled
 
     @traced
     def _load_models(self) -> tuple[Any, Any]:
