@@ -3,10 +3,17 @@
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
 def _modular_versioned_expand_template_impl(ctx):
-    major = ctx.attr._modular_version_major[BuildSettingInfo].value
-    minor = ctx.attr._modular_version_minor[BuildSettingInfo].value
-    patch = ctx.attr._modular_version_patch[BuildSettingInfo].value
-    label = ctx.attr._modular_version_label[BuildSettingInfo].value
+    max_base_version = ctx.attr._max_base_version[BuildSettingInfo].value
+    max_major, max_minor, max_patch = max_base_version.split(".")
+    max_label = ctx.attr._max_version_label[BuildSettingInfo].value
+
+    mojo_base_version = ctx.attr._mojo_base_version[BuildSettingInfo].value
+
+    # TODO (Mojo 1.0): We currently have 4 parts in the Mojo version,
+    # but the first will go away eventually, and is always a 0.
+    _zero, mojo_major, mojo_minor, mojo_patch = mojo_base_version.split(".")
+    mojo_label = ctx.attr._mojo_version_label[BuildSettingInfo].value
+
     release_type = ctx.attr._release_type[BuildSettingInfo].value
     sha = ctx.attr._modular_version_sha[BuildSettingInfo].value
 
@@ -25,18 +32,25 @@ def _modular_versioned_expand_template_impl(ctx):
         template = ctx.file.template,
         output = ctx.outputs.out,
         substitutions = expanded_substitutions | {
-            "@MODULAR_VERSION_MAJOR@": major,
-            "@MODULAR_VERSION_MINOR@": minor,
-            "@MODULAR_VERSION_PATCH@": patch,
+            "@MAX_VERSION_MAJOR@": max_major,
+            "@MAX_VERSION_MINOR@": max_minor,
+            "@MAX_VERSION_PATCH@": max_patch,
+            "@MAX_VERSION_LABEL@": max_label,
+            "@MAX_VERSION_STRING@": max_base_version + max_label,
             "@MODULAR_VERSION_REVISION@": sha,
-            "@MODULAR_VERSION_LABEL@": label,
             "@MODULAR_BUILD_TYPE_LOWER@": release_type,
-            "@MODULAR_VERSION_STRING@": "{}.{}.{}{}".format(
-                major,
-                minor,
-                patch,
-                label,
-            ),
+            "@MOJO_VERSION_MAJOR@": mojo_major,
+            "@MOJO_VERSION_MINOR@": mojo_minor,
+            "@MOJO_VERSION_PATCH@": mojo_patch,
+            "@MOJO_VERSION_LABEL@": mojo_label,
+            "@MOJO_VERSION_STRING@": mojo_base_version + mojo_label,
+
+            # For backward compatibility, TODO REMOVE
+            "@MODULAR_VERSION_MAJOR@": max_major,
+            "@MODULAR_VERSION_MINOR@": max_minor,
+            "@MODULAR_VERSION_PATCH@": max_patch,
+            "@MODULAR_VERSION_LABEL@": max_label,
+            "@MODULAR_VERSION_STRING@": max_base_version + max_label,
         },
     )
 
@@ -68,10 +82,10 @@ explicitly add delimiters to the key strings, for example "{KEY}" or "@KEY@"."""
             mandatory = True,
             doc = "The destination of the expanded file.",
         ),
-        "_modular_version_major": attr.label(default = "//:modular_version_major"),
-        "_modular_version_minor": attr.label(default = "//:modular_version_minor"),
-        "_modular_version_patch": attr.label(default = "//:modular_version_patch"),
-        "_modular_version_label": attr.label(default = "//:modular_version_label"),
+        "_max_base_version": attr.label(default = "//:max_base_version"),
+        "_mojo_base_version": attr.label(default = "//:mojo_base_version"),
+        "_max_version_label": attr.label(default = "//:max_version_label"),
+        "_mojo_version_label": attr.label(default = "//:mojo_version_label"),
         "_modular_version_sha": attr.label(default = "//:modular_version_sha"),
         "_release_type": attr.label(default = "//:release_type"),
     },
