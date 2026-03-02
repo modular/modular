@@ -56,6 +56,8 @@ from buffer.dimlist import Dim, DimList
 from std.builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import allreduce
+
+from nn.allreduce_residual_rmsnorm_fp8 import allreduce_residual_rmsnorm_fp8
 from comm.reducescatter import reducescatter
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
@@ -9869,6 +9871,87 @@ struct DistributedMatmulAllReduce:
                 ngpus=num_devices,
                 outputs_lambda=outputs_lambda,
             ](in_bufs, weight_bufs, c_temp_bufs, out_bufs, rank_sigs, dev_ctxs)
+
+
+@compiler.register("mo.distributed.allreduce_add_rms_norm_quant_fp8")
+struct DistributedAllReduceAddRMSNormQuantFP8:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        output_type: DType,
+        scales_type: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=rank],
+        output_scales: OutputTensor[dtype=scales_type, rank=rank],
+        output_residual: OutputTensor[dtype=dtype, rank=rank],
+        inputs: InputVariadicTensors[dtype, rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, ...
+        ],
+        residual: InputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        scale_ub: Float32,
+        device_ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        # Marshal input tensors into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
+        ](fill={})
+
+        comptime for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+
+        # Marshal output tensors
+        var out_buf = managed_tensor_slice_to_ndbuffer(output)
+        var out_scales_buf = managed_tensor_slice_to_ndbuffer(output_scales)
+        var out_residual_buf = managed_tensor_slice_to_ndbuffer(output_residual)
+
+        # Marshal signal buffers.
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        comptime for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        # Marshal gamma
+        var gamma_tensor = gamma.to_tile_tensor[DType.int64]()
+
+        # Marshal residual
+        var residual_buf = managed_tensor_slice_to_ndbuffer(
+            residual
+        ).make_dims_unknown()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            allreduce_residual_rmsnorm_fp8(
+                in_bufs,
+                residual_buf,
+                out_buf,
+                out_residual_buf,
+                gamma_tensor,
+                epsilon,
+                weight_offset,
+                scale_ub,
+                out_scales_buf,
+                rank_sigs,
+                device_ctx[],
+            )
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
