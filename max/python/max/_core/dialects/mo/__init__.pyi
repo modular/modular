@@ -21,6 +21,7 @@ import max._core
 import max._core.dialects.builtin
 import max._core.dialects.kgen
 import max._core.dialects.m
+import max._core.dialects.mosh
 import max._core.dtype
 from max.mlir import Context, Location
 

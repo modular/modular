@@ -2,6 +2,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MLIR Rewrite Bindings"""
+
 import enum
 from collections.abc import Callable, Sequence
 from typing import Any, overload

@@ -2,6 +2,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MLIR Python Native Extension"""
+
 from collections.abc import Callable
 from typing import TypeVar
 

@@ -13,6 +13,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""Max DType definitions."""
+
 import enum
 
 import numpy

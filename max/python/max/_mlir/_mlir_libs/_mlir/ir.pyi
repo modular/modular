@@ -2,6 +2,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MLIR IR Bindings"""
+
 import enum
 import types
 from collections.abc import Callable, Iterator, Sequence
