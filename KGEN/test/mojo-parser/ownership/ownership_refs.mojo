@@ -339,7 +339,7 @@ fn testMethodRef(a: SomeStructWithReferenceSelfArgument):
 
 # CHECK-LABEL: lit.fn @"variadic_inout_mems_iter
 fn variadic_inout_mems_iter(mut *mems: MemExample):
-  # Verify the iterator keeps the VariadicListMem alive.
+  # Verify the iterator keeps the VariadicList alive.
   # CHECK-NEXT: %mems_0 = lit.var.decl
 
   # CHECK: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :

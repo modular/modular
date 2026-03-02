@@ -473,8 +473,7 @@ public:
   ASTType getBuiltinStringSliceType(ASTDecl &context, llvm::SMLoc loc) {
     return lookupBuiltinType("StringSlice", context, loc);
   }
-  ASTType getBuiltinVariadicListType(ASTDecl &context, llvm::SMLoc loc,
-                                     bool inMem);
+  ASTType getBuiltinVariadicListType(ASTDecl &context, llvm::SMLoc loc);
   ASTType getBuiltinVariadicPackType(ASTDecl &context, llvm::SMLoc loc) {
     return lookupBuiltinType("VariadicPack", context, loc);
   }

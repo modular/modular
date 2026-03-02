@@ -724,7 +724,7 @@ fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
   _ = Pointer(to=a)
   _ = origin_of(a)
   _ = __get_mvalue_as_litref(a)
-  # This is okay. The VariadicListMem has a origin.
+  # This is okay. The VariadicList has a origin.
   _ = Pointer(to=args)
   _ = Pointer(to=args[0])
 
@@ -1117,4 +1117,3 @@ comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B]
 fn take_anytype[T: AnyType]():
   # expected-error @below {{'take_anytype' parameter 'T' has 'AnyType' type, but value has type '[B: Int] AnyStruct[TwoParamsType[B, ?]]'}}
     take_anytype[TwoParamsTypeAlias]()
-

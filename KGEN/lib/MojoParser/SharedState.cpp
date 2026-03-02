@@ -1314,9 +1314,8 @@ ASTType SharedState::lookupBuiltinType(StringRef name, ASTDecl &context,
 }
 
 ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
-                                                llvm::SMLoc loc, bool inMem) {
-  return lookupBuiltinType(inMem ? "VariadicListMem" : "VariadicList", context,
-                           loc);
+                                                llvm::SMLoc loc) {
+  return lookupBuiltinType("VariadicList", context, loc);
 }
 
 ASTDecl *SharedState::getBuiltinCoroutineType(llvm::SMLoc loc) {

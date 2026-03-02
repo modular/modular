@@ -907,7 +907,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
 
 
 @fieldwise_init
-struct _VariadicListMemIter[
+struct _VariadicListIter[
     elt_is_mutable: Bool,
     //,
     elt_type: AnyType,
@@ -915,16 +915,16 @@ struct _VariadicListMemIter[
     list_origin: ImmutOrigin,
     is_owned: Bool,
 ]:
-    """Iterator for VariadicListMem.
+    """Iterator for VariadicList.
 
     Parameters:
         elt_is_mutable: Whether the elements in the list are mutable.
         elt_type: The type of the elements in the list.
         elt_origin: The origin of the elements.
-        list_origin: The origin of the VariadicListMem.
+        list_origin: The origin of the VariadicList.
     """
 
-    comptime variadic_list_type = VariadicListMem[
+    comptime variadic_list_type = VariadicList[
         origin = Self.elt_origin,
         Self.elt_type,
         Self.is_owned,
@@ -939,7 +939,7 @@ struct _VariadicListMemIter[
         raise StopIteration()
 
 
-struct VariadicListMem[
+struct VariadicList[
     elt_is_mutable: Bool,
     # NOTE: origin._mlir_origin is here in the param list.
     origin: Origin[mut=elt_is_mutable],
@@ -973,7 +973,7 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-        out result: _VariadicListMemIter[
+        out result: _VariadicListIter[
             Self.element_type, Self.origin, origin_of(self), Self.is_owned
         ],
     ):

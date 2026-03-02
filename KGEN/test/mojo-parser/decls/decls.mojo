@@ -434,7 +434,7 @@ struct Outer[X: Int]:
 
 # CHECK-LABEL: lit.fn @"variadics({{.*}}Int*)"{{.*}}(%a: !kgen.variadic<!lit.ref<!Int, {{.*}}>> read_mem|pos_vararg)
 fn variadics(*a: Int):
-    # CHECK: lit.call {{.*}}VariadicListMem{{.*}}__init__
+    # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__
     pass
 
 
@@ -1591,4 +1591,3 @@ struct BinStruct[x: Int, y: Int where bin_pred(x, y)]:
     # CHECK-SAME: %__result__: !lit.ref<!lit.struct<#BinStruct
     fn get_with_z[z: Int where bin_pred(Self.x, z)](self) -> BinStruct[Self.xx, z]:
         return {}
-
