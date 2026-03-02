@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
+from dataclasses import replace
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -32,6 +33,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineRuntimeConfig,
     SamplingConfig,
+    SupportedArchitecture,
 )
 from max.pipelines.lib.config import AudioGenerationConfig
 from test_common.mocks import (
@@ -86,6 +88,10 @@ class TestClickFlagParsing:
 
 class TestPipelineConfigUtilityMethods:
     """Test suite for the refactored utility methods in PipelineConfig."""
+
+    @staticmethod
+    def _arch_with_name(name: str) -> SupportedArchitecture:
+        return replace(DUMMY_LLAMA_ARCH, name=name)
 
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_basic(self) -> None:
@@ -457,7 +463,7 @@ class TestPipelineConfigUtilityMethods:
         config.model.data_parallel_degree = 1
 
         config._apply_deepseek_multi_gpu_parallelism_defaults(
-            SimpleNamespace(name=arch_name), config.model, 8
+            self._arch_with_name(arch_name), config.model, 8
         )
 
         assert config.ep_size == 8
@@ -475,7 +481,7 @@ class TestPipelineConfigUtilityMethods:
         config.model.data_parallel_degree = 1
 
         config._apply_deepseek_multi_gpu_parallelism_defaults(
-            SimpleNamespace(name="DeepseekV3ForCausalLM"),
+            self._arch_with_name("DeepseekV3ForCausalLM"),
             config.model,
             8,
         )
@@ -495,7 +501,7 @@ class TestPipelineConfigUtilityMethods:
         config.model.data_parallel_degree = 8
 
         config._apply_deepseek_multi_gpu_parallelism_defaults(
-            SimpleNamespace(name="DeepseekV3ForCausalLM"),
+            self._arch_with_name("DeepseekV3ForCausalLM"),
             config.model,
             8,
         )
@@ -514,7 +520,7 @@ class TestPipelineConfigUtilityMethods:
         config.ep_size = 1
         config.model.data_parallel_degree = 1
 
-        arch = SimpleNamespace(name="LlamaForCausalLM")
+        arch = self._arch_with_name("LlamaForCausalLM")
         if config._is_deepseek_arch(arch):
             config._apply_deepseek_multi_gpu_parallelism_defaults(
                 arch, config.model, 8
@@ -535,7 +541,7 @@ class TestPipelineConfigUtilityMethods:
         config.model.data_parallel_degree = 1
 
         config._apply_deepseek_multi_gpu_parallelism_defaults(
-            SimpleNamespace(name="DeepseekV3ForCausalLM"),
+            self._arch_with_name("DeepseekV3ForCausalLM"),
             config.model,
             1,
         )
