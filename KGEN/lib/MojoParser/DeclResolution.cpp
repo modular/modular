@@ -1981,66 +1981,64 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
                                    ASTDecl &parentDecl, IREmitter &emitter,
                                    SMLoc loc, ArgConvention convention) {
 
-  // Determine if this is VariadicList or VariadicListMem, and get it.
+  // Get the right VariadicList instantiation.
   auto variadicType = sugarCast<VariadicType>(argValue.getType());
   ASTType variadicEltType = variadicType.getElementType();
-  auto refType = sugarDynCast<RefType>(variadicEltType);
+  auto refType = sugarCast<RefType>(variadicEltType);
   ASTType varListType =
-      emitter.shared.getBuiltinVariadicListType(parentDecl, loc, (bool)refType);
+      emitter.shared.getBuiltinVariadicListType(parentDecl, loc);
   if (varListType.isTypeCheckErrorType())
     return {};
   ASTDecl *varListStructDecl = varListType.getDecl(emitter.shared);
   if (!varListStructDecl) {
-    emitter.emitError(loc, "malformed VariadicListInMem");
+    emitter.emitError(loc, "malformed VariadicList");
     return {};
   }
   auto varListStruct =
       dyn_cast_if_present<StructDeclOp>(varListStructDecl->getIfOperation());
   if (!varListStruct) {
-    emitter.emitError(loc, "malformed VariadicListInMem");
+    emitter.emitError(loc, "malformed VariadicList");
     return {};
   }
 
   // Bind the "is_owned" parameter, start by filling the parameter list with ?.
-  if (refType) {
-    assert(varListStruct.getSignature().getParamTypes().size() == 5);
-    SmallVector<TypedAttr> typeParams(5);
-    Type boolType = varListStruct.getSignature().getParamTypes()[0];
-    Type eltType = varListStruct.getSignature().getParamTypes()[3];
+  assert(varListStruct.getSignature().getParamTypes().size() == 5);
+  SmallVector<TypedAttr> typeParams(5);
+  Type boolType = varListStruct.getSignature().getParamTypes()[0];
+  Type eltType = varListStruct.getSignature().getParamTypes()[3];
 
-    SyntheticNode expr(loc);
+  SyntheticNode expr(loc);
 
-    // The first parameter is the "elt_is_mutable" parameter.
-    // Emit the "is_mutable" parameter
-    auto makeBoolAttr = [&](bool value) -> PValue {
-      auto boolAttr = BoolAttr::get(emitter.getContext(), value);
-      return emitter.emitPValue({boolAttr, &expr}, EC_Type, boolType);
-    };
+  // The first parameter is the "elt_is_mutable" parameter.
+  // Emit the "is_mutable" parameter
+  auto makeBoolAttr = [&](bool value) -> PValue {
+    auto boolAttr = BoolAttr::get(emitter.getContext(), value);
+    return emitter.emitPValue({boolAttr, &expr}, EC_Type, boolType);
+  };
 
-    // isMut
-    typeParams[0] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
-                                 convention == ArgConvention::DeinitMem ||
-                                 convention == ArgConvention::Mut);
-    // mlir_origin
-    typeParams[1] = refType.getOrigin();
-    // origin
-    typeParams[2] = emitter.getStdlibOriginOf(refType.getOrigin(), loc);
-    // element_type
-    typeParams[3] =
-        emitter.emitPValue({refType.getElementType(), &expr}, EC_Type, eltType);
-    // is_owned.
-    typeParams[4] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
-                                 convention == ArgConvention::DeinitMem);
-    // Check for any emitted errors.
-    for (auto param : typeParams)
-      if (!param)
-        return {};
+  // isMut
+  typeParams[0] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
+                               convention == ArgConvention::DeinitMem ||
+                               convention == ArgConvention::Mut);
+  // mlir_origin
+  typeParams[1] = refType.getOrigin();
+  // origin
+  typeParams[2] = emitter.getStdlibOriginOf(refType.getOrigin(), loc);
+  // element_type
+  typeParams[3] =
+      emitter.emitPValue({refType.getElementType(), &expr}, EC_Type, eltType);
+  // is_owned.
+  typeParams[4] = makeBoolAttr(convention == ArgConvention::OwnedMem ||
+                               convention == ArgConvention::DeinitMem);
+  // Check for any emitted errors.
+  for (auto param : typeParams)
+    if (!param)
+      return {};
 
-    varListType = varListStruct.bindReference(typeParams);
-    assert(varListType && "Failed to bind type params");
-  }
+  varListType = varListStruct.bindReference(typeParams);
+  assert(varListType && "Failed to bind type params");
 
-  // Emit a VarDeclOp: VariadicListMem needs a origin for its self accesses.
+  // Emit a VarDeclOp: VariadicList needs a origin for its self accesses.
   // This also provides a user name for the argument.
   auto mlirLoc = emitter.translateLocation(loc);
   VarDeclOp varDecl =
@@ -2051,10 +2049,8 @@ static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
   // type checker will deduce all the parameters.
   ValueDest ctorDest(varDecl, EC_VarArgArgument);
 
-  // Expr to provide location information.
-  SyntheticNode srcLocNode(loc);
-  CallOperands operands(CallSyntax::kTypeCall, &srcLocNode);
-  operands.add({argValue, &srcLocNode});
+  CallOperands operands(CallSyntax::kTypeCall, &expr);
+  operands.add({argValue, &expr});
   CValue ctorResult =
       emitter.emitConstructorCall(varListType, std::move(operands), ctorDest);
   if (!ctorResult) {

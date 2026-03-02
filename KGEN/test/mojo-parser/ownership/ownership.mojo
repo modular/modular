@@ -721,7 +721,7 @@ fn test_or(a: MemExample) -> MemExample:
 fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
-  # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
+  # CHECK-NEXT: lit.call {{.*}}@VariadicList::@"__init__
   # CHECK-SAME: <{{.*}}origin<0> *"mems`", {{.*}}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
   pass
 
@@ -782,7 +782,7 @@ fn variadic_field_sensitivity():
 fn variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
-  # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
+  # CHECK-NEXT: lit.call {{.*}}@VariadicList::@"__init__
   # CHECK-SAME: <:!Bool {:i1 1}, {{.*}}origin<1> *"mems`", {{.*}}, :!AnyType !MemExample, :!Bool {:i1 0}>(%mems, %mems_0)
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mems_0 :
   # CHECK-NEXT: [[ZERO:%.*]] = kgen.param.constant
@@ -816,9 +816,9 @@ fn call_variadic_inout_mems():
 
 # CHECK-LABEL: lit.fn @"variadic_owned_mems
 fn variadic_owned_mems(var *mems: MemExample):
-    # CHECK: lit.call {{.*}}::@VariadicListMem::@"__init__{{.*}}"[{{.*}}]<{{.*}}>({{.*}}) :
+    # CHECK: lit.call {{.*}}::@VariadicList::@"__init__{{.*}}"[{{.*}}]<{{.*}}>({{.*}}) :
     # CHECK-SAME: !lit.generator<[1]("value": !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">>
-    # CHECK-SAME: "self": !lit.ref<{{.*}}#VariadicListMem <:!Bool {:i1 1},
+    # CHECK-SAME: "self": !lit.ref<{{.*}}#VariadicList <:!Bool {:i1 1},
     mems[0].x += 1
 
 
@@ -1489,4 +1489,3 @@ struct TestRaiseFromInit:
         # CHECK-NEXT: kgen.param.constant: !Int = <{42}>
         self.y = String()
         raise 42
-

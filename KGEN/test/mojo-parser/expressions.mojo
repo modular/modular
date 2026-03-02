@@ -1056,7 +1056,7 @@ struct TwoParamsStruct[a: Int, b: Int](ImplicitlyCopyable):
 # CHECK-LABEL: lit.fn @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> pos_vararg>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK: %b_0 = lit.var.decl "b"
-    # CHECK: lit.call {{.*}}VariadicListMem{{.*}}__init__{{.*}}(%b, %b_0)
+    # CHECK: lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b, %b_0)
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
     comptime v0 = a[2]
 
@@ -1165,7 +1165,7 @@ fn dependent_callee[dtype: DType](storage: UnsafePointer[SIMD[dtype, 1], MutAnyO
 fn variadic_attr_caller(*inputs: Tuple[Int]):
    variadic_attr_callee[Int](inputs)
 fn variadic_attr_callee[key_type: ImplicitlyCopyable](
-       inputs: VariadicListMem[Tuple[key_type], _]
+       inputs: VariadicList[Tuple[key_type], _]
     ):
   pass
 
@@ -1241,4 +1241,3 @@ fn testHasOverloadedFooMethods():
     foo.foo()
     # CHECK: lit.call {{.*}}@HasOverloadedFooMethods::@"foo{{.*}}(%foo){{.*}}owned_in_mem) -> !kgen.none>
     foo^.foo()
-

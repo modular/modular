@@ -1798,7 +1798,7 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
   // FIXME: This is not setting the correct type for Variadics.  We shouldn't
   // expose something like !kgen.variadic to subsequent arguments, we should
-  // expose VariadicListMem.  This will require moving the VariadicList
+  // expose VariadicList.  This will require moving the VariadicList
   // formation to the caller side.
   ASTDecl &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
       argIRValue, arg.name, arg.loc, &typeEmitter.declScope);

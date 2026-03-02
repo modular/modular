@@ -732,7 +732,7 @@ fn example4():
   use_generic_hvariadic(my_str1, my_str2)
 ```
 
-This turns into `VariadicListInMem` and passes the addresses of my_str1 and
+This turns into `VariadicList` and passes the addresses of my_str1 and
 my_str2 in as a list
 
 ### Homogenous variadics are half transitioned
@@ -741,7 +741,7 @@ Well here we get to some unpaved roads, the paver (me) got tired and wandered
 on to different things that were more important and interesting. I'll point out
 some problems.
 
-1. Generic `VariadicListInMem` is not transformed into a better form when the
+1. Generic `VariadicList` is not transformed into a better form when the
    elements are RP, they're always an array of pointers to the elements. This
    sucks.
 

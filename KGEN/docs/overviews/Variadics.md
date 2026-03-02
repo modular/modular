@@ -9,7 +9,7 @@ TL;DR:
 - `VariadicList`: basically a run-time array of a single register-passable type,
   all elements are next to each other contiguously.
   - Example:  `fn foo(*args: Int): ...`
-- `VariadicListMem`: a run-time array of pointers. Like `VariadicList`, but the
+- `VariadicList`: a run-time array of pointers. Like `VariadicList`, but the
   pointees can be memory types too.
   - Example: `fn foo(*args: Spaceship): ...`
 - `VariadicPack`: basically a tuple of pointers, pointing to a heterogeneous
