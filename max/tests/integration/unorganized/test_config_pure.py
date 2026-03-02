@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 import pickle
-from dataclasses import replace
 from collections.abc import Generator
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -450,9 +450,7 @@ class TestPipelineConfigUtilityMethods:
         ),
     )
     @mock_pipeline_config_resolve
-    def test_apply_deepseek_defaults_multi_gpu(
-        self, arch_name: str
-    ) -> None:
+    def test_apply_deepseek_defaults_multi_gpu(self, arch_name: str) -> None:
         config = PipelineConfig(
             model=MAXModelConfig(
                 model_path="test/model",
