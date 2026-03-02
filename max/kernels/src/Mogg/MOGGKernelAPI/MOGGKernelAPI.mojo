@@ -9408,29 +9408,20 @@ struct DistributedAllReduceSum:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank],
+        outputs: FusedOutputVariadicTensors[dtype, rank, ...],
         inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype = DType.uint8, rank=1, ...
         ],
-        device_ctx: DeviceContextPtr,
+        dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
         """Distributed allreduce operation implementation for sum reduction.
 
-        This executes on a single device specified by device_ctx.
-        The Python API creates multiple instances of this op (one per device) to
-        enable multi-threaded execution.
-
         Args:
-            output: Output tensor for this device to store reduced result.
+            outputs: Output tensors (one per GPU) to store reduced results.
             inputs: Input tensors (one per GPU) containing values to reduce.
             signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
-            device_ctx: The device context for this specific op instance.
-
-        Implementation Notes:
-            1. Each op instance only launches kernels on its assigned device.
-            2. Still requires all inputs/signal_buffers for coordination.
-            3. The output is only for the assigned device.
+            dev_ctxs_input: Device contexts for participating GPUs.
 
         Limitations:
             - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo)
@@ -9446,45 +9437,54 @@ struct DistributedAllReduceSum:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input tensors into the expected format.
+        # Marshal input tensors, output tensors, and signal buffers into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
+            NDBuffer[dtype, rank, ImmutAnyOrigin], num_devices
         ](fill={})
-
-        comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
-
-        # Marshal output tensor
-        var out_buf = managed_tensor_slice_to_ndbuffer(output)
-
-        # Marshal signal buffers.
+        var out_bufs = InlineArray[
+            NDBuffer[dtype, rank, MutAnyOrigin], num_devices
+        ](fill={})
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        comptime for i in range(signal_buffers.size):
+        comptime for i in range(num_devices):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs[i]
+            ).make_dims_unknown()
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
         @parameter
         fn output_lambda[
+            input_index: Int,
             _dtype: DType,
             _rank: Int,
             _width: Int,
             *,
             _alignment: Int,
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-            output._lambda_store[width=_width, element_alignment=_alignment](
+            outputs[input_index]._lambda_store[
+                width=_width, element_alignment=_alignment
+            ](
                 rebind[IndexList[rank]](coords),
                 rebind[SIMD[dtype, _width]](val),
             )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            allreduce[ngpus=num_devices, output_lambda=output_lambda](
-                in_bufs, out_buf.make_dims_unknown(), rank_sigs, device_ctx[]
-            )
+            comptime for i in range(num_devices):
+                allreduce[
+                    ngpus=num_devices,
+                    output_lambda = output_lambda[input_index=i],
+                ](
+                    in_bufs,
+                    out_bufs[i].make_dims_unknown(),
+                    rank_sigs,
+                    dev_ctxs_input[i],
+                )
 
 
 @compiler.register("mo.distributed.reducescatter.sum")
