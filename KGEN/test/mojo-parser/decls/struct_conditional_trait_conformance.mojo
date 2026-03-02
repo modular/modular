@@ -106,9 +106,6 @@ struct DisprovedWithProvableAlternative[T: Movable](
     fn __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.value = take.value^
-
     # This method is "disproved" - its constraint contradicts the conformance.
     # The conformance requires T: Copyable, but this method requires NOT that.
     fn where_not_method(self) where not conforms_to(Self.T, Copyable):
@@ -148,9 +145,6 @@ struct WitnessSelectionWithWhereNot[T: Movable](
     fn __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.value = take.value^
-
     # Overload 1: Provable - constraint matches the conformance.
     # This is selected as the witness for the Greeter trait.
     fn greet(self) where conforms_to(Self.T, Copyable):
@@ -187,9 +181,6 @@ struct CompoundConformanceWithWhereNot[T: Movable](
     fn __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.value = take.value^
-
     # Overload 1: Provable - conformance implies both Copyable AND Intable,
     # so it certainly implies just Intable.
     fn format(self) where conforms_to(Self.T, Intable):
@@ -225,9 +216,6 @@ struct CompoundMethodConstraint[T: Movable](
 
     fn __init__(out self, var value: Self.T):
         self.value = value^
-
-    fn __moveinit__(out self, deinit take: Self):
-        self.value = take.value^
 
     # Overload 1: Provable - constraint matches the conformance.
     # This is selected as the witness.
@@ -270,9 +258,6 @@ struct CompositionConditional[T: Movable](
     fn __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.value = take.value^
-
     fn comp_a_method(self) where conforms_to(Self.T, Copyable):
         pass
 
@@ -301,9 +286,6 @@ struct DuplicateSameConstraint[T: Movable](
 
     fn __init__(out self, var value: Self.T):
         self.value = value^
-
-    fn __moveinit__(out self, deinit take: Self):
-        self.value = take.value^
 
     fn dup_method(self) where conforms_to(Self.T, Copyable):
         pass
@@ -336,9 +318,6 @@ struct CompositionStandaloneSameConstraint[T: Movable](
 
     fn __init__(out self, var value: Self.T):
         self.value = value^
-
-    fn __moveinit__(out self, deinit take: Self):
-        self.value = take.value^
 
     fn cs_a_method(self) where conforms_to(Self.T, Copyable):
         pass

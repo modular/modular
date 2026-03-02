@@ -34,7 +34,7 @@ trait DiamondDerivedB(DiamondBase):
 
 
 struct DiamondMissingExplicitBase[T: Movable](
-    # expected-error @below {{ancestor trait}}
+    # expected-error @below {{ancestor trait ''DiamondBase'' is reached via multiple inheritance paths with different constraints; it must be explicitly listed in the inheritance list with the desired constraint}}
     DiamondDerivedA where conforms_to(T, Copyable),
     DiamondDerivedB where conforms_to(T, Intable),
     Movable,
@@ -44,8 +44,6 @@ struct DiamondMissingExplicitBase[T: Movable](
     fn __init__(out self, var data: Self.T):
         self.data = data^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.data = take.data^
 
 
 # ===========================================================================
@@ -67,7 +65,7 @@ struct DerivedDoesNotImplyAncestor[T: Movable](
     # Base requires Intable
     AncestorImplicationBase where conforms_to(T, Intable),
     # But Derived only requires Copyable - this doesn't imply Intable!
-    # expected-error @below {{constraint for}}
+    # expected-error @below {{constraint for ''AncestorImplicationDerived'' does not imply constraint for ancestor trait ''AncestorImplicationBase''; strengthen the derived constraint by adding the ancestor's constraint with 'and'}}
     AncestorImplicationDerived where conforms_to(T, Copyable),
     Movable,
 ):
@@ -76,8 +74,6 @@ struct DerivedDoesNotImplyAncestor[T: Movable](
     fn __init__(out self, var data: Self.T):
         self.data = data^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.data = take.data^
 
 
 # ===========================================================================
@@ -98,7 +94,7 @@ trait UnconditionalDerivedChild(UnconditionalDerivedBase):
 
 struct UnconditionalDerivedConditionalAncestor[T: Movable](
     # Derived is unconditional - always conforms
-    # expected-error @below {{constraint for}}
+    # expected-error @below {{constraint for ''UnconditionalDerivedChild'' does not imply constraint for ancestor trait ''UnconditionalDerivedBase''; strengthen the derived constraint by adding the ancestor's constraint with 'and'}}
     UnconditionalDerivedChild,
     # But ancestor is conditional - inconsistent!
     UnconditionalDerivedBase where conforms_to(T, Copyable),
@@ -109,8 +105,6 @@ struct UnconditionalDerivedConditionalAncestor[T: Movable](
     fn __init__(out self, var data: Self.T):
         self.data = data^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.data = take.data^
 
 
 # ===========================================================================
@@ -156,8 +150,6 @@ struct ConditionalImplicitlyDestructible[T: Movable](
     fn __init__(out self, var data: Self.T):
         self.data = data^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.data = take.data^
 
 
 # ===========================================================================
@@ -183,8 +175,6 @@ struct UnconditionalWithConditionalMethod[x: Int](
     fn do_something(self) where Self.x > 10:
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
-        pass
 
 
 # ===========================================================================
@@ -211,8 +201,6 @@ struct MismatchedConstraints[T: Movable](
     fn process(self) where conforms_to(Self.T, Copyable):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
-        pass
 
 
 # ===========================================================================
@@ -241,8 +229,6 @@ struct WeakerConformanceStrongerMethod[T: Movable](
     ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Intable):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
-        pass
 
 
 # ===========================================================================
@@ -275,8 +261,6 @@ struct AmbiguousUnconditionalAndConditional[T: Movable](
     fn perform(self) where conforms_to(Self.T, Copyable):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
-        pass
 
 
 # ===========================================================================
@@ -311,8 +295,6 @@ struct AmbiguousBothConditional[T: Movable](
     fn run(self) where conforms_to(Self.T, Intable):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
-        pass
 
 
 # ===========================================================================
@@ -349,8 +331,6 @@ struct UnprovableWithValidCandidate[T: Movable](
     fn handle(self) where conforms_to(Self.T, Copyable):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
-        pass
 
 
 # ===========================================================================
@@ -380,8 +360,6 @@ struct DisprovedWithWhereNot[T: Movable](
     fn apply(self) where not conforms_to(Self.T, Copyable):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
-        pass
 
 
 # ===========================================================================
@@ -407,8 +385,6 @@ struct ConditionalDefaultMethod[T: Movable](
     fn __init__(out self):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
-        pass
 
 
 fn call_default_externally[T: Movable](x: ConditionalDefaultMethod[T]):
@@ -441,8 +417,6 @@ struct ZeroFieldConditional[T: Movable](
     fn __init__(out self):
         pass
 
-    fn __moveinit__(out self, deinit take: Self):
-        pass
 
 
 fn call_on_zero_field[T: Movable](x: ZeroFieldConditional[T]):
