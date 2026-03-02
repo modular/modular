@@ -30,6 +30,7 @@ _FILECHECK_TESTS = [
 ]
 
 _LIT_TESTS = [
+    "test_bool_indexer_compile_fail.mojo",
     "test_default_equatable_compile_fail.mojo",
     "test_default_hashable_compile_fail.mojo",
     "test_format_compile_fail.mojo",

@@ -1112,7 +1112,7 @@ def test_string_mul() raises:
 
 def test_indexing() raises:
     a = "abc"
-    assert_equal(a[byte=False], "a")
+    assert_equal(a[byte=0], "a")
     assert_equal(a[byte = Int(1)], "b")
     assert_equal(a[byte=2], "c")
 

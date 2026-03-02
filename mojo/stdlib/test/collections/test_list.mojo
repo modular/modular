@@ -945,8 +945,6 @@ def test_list_init_iter() raises:
 def test_indexing() raises:
     var l = [1, 2, 3]
     assert_equal(l[Int(1)], 2)
-    assert_equal(l[False], 1)
-    assert_equal(l[True], 2)
     assert_equal(l[2], 3)
 
 

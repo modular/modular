@@ -99,11 +99,6 @@ def test_bitwise() raises:
     assert_false(value)
 
 
-def test_indexer() raises:
-    assert_true(1 == index(Bool(True)))
-    assert_true(0 == index(Bool(False)))
-
-
 def test_comparisons() raises:
     assert_true(False == False)
     assert_true(True == True)

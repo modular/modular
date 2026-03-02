@@ -254,6 +254,11 @@ what we publish.
 
 ### Library changes
 
+- `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
+  used to index into collections (e.g., `nums[True]`), which is not desirable
+  behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly
+  convert a `Bool` to an index.
+
 - `TString.write_to()` now uses a compact encoding for format strings. The
   format string is flattened at compile time into NUL-terminated literal
   segments, producing considerably smaller static data and faster runtime than
