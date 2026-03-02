@@ -2074,38 +2074,6 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPVariadicSplat
-//===----------------------------------------------------------------------===//
-
-/// Converts a `pop.variadic.splat` to the same machinery as
-/// `pop.variadic.create`.
-class ConvertPOPVariadicSplat
-    : public ConvertPOPToLLVMPattern<VariadicSplatOp> {
-public:
-  explicit ConvertPOPVariadicSplat(mlir::LLVMTypeConverter &typeConverter,
-                                   TargetInfoAttr target)
-      : ConvertPOPToLLVMPattern(typeConverter), target(target) {}
-
-  LogicalResult
-  matchAndRewrite(VariadicSplatOp op, VariadicSplatOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-
-    auto numElements = dyn_cast<IntegerAttr>(adaptor.getNumElements());
-    if (!numElements)
-      return op.emitError("pop.variadic.splat has parametric # elements");
-
-    SmallVector<Value> operands(numElements.getInt(), adaptor.getOperand());
-    return convertVariadicCreate(op.getType(), operands, op, rewriter,
-                                 typeConverter, target);
-  }
-
-private:
-  /// The enclosing function body.
-  /// The target info.
-  TargetInfoAttr target;
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertPOPVariadicLoadValues
 //===----------------------------------------------------------------------===//
 
@@ -3570,7 +3538,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
   mlir::populateNVVMToLLVMConversionPatterns(patterns);
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPVariadicCreate,
-                  ConvertPOPVariadicSplat, ConvertPOPStackAllocLifetimeStart,
+                  ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
   if (failed(mlir::applyPartialConversion(*func, target, std::move(patterns))))

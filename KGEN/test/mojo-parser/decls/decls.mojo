@@ -314,7 +314,7 @@ fn callerFn(arg0: BorrowStruct):
     # CHECK-NEXT: lit.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
 
-    # CHECK: %1 = pop.variadic.splat 2, %arg0
+    # CHECK: %1 = pop.variadic.create [%arg0, %arg0]
     # CHECK: lit.call {{.*}}borrowedVarArgs{{.*}}(%arg0,
     arg0.borrowedVarArgs(arg0, arg0)
 
@@ -463,7 +463,7 @@ fn callVariadic[p: Int](x: Int):
     # CHECK: %[[VARIADIC:.*]] = pop.variadic.create [{{.*}}]
     # CHECK: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}(%[[VARIADIC]])
     variadics(7, 11)
-    # CHECK: %[[VAR:.*]] = pop.variadic.splat 1, %{{.*}}
+    # CHECK: %[[VAR:.*]] = pop.variadic.create [%{{.*}}]
     # CHECK: lit.call {{.*}}@"variadics({{.*}}Int*)"{{.*}}(%[[VAR]])
     variadics(x)
     # CHECK: %[[VAR:.*]] = pop.variadic.create [{{.*}}]
