@@ -334,6 +334,18 @@ private:
   ParseResult resolveBody(TraitType traitType, ASTDecl &decl);
   ParseResult resolveBody(ConformanceOp op, ASTDecl &decl);
 
+  /// For a package `module`, find the __init__ module, resolve its body, and
+  /// return it. Returns nullptr if `module` is not a package or has no
+  /// __init__. Returns failure() if body resolution fails.
+  FailureOr<ASTDecl *> bodyResolvePackageInit(ASTDecl &module, SMLoc loc);
+
+  /// Look up `name` in `initDecl`'s scope and return only non-module/package
+  /// declarations (i.e. re-exported symbols from __init__.mojo). The caller
+  /// must have already resolved `initDecl`'s body.
+  SmallVector<ASTDecl *> lookupNonModuleDecls(ASTDecl &initDecl,
+                                              StringAttr name, SMLoc loc,
+                                              bool resolveTarget);
+
   /// This map tracks the ASTDecl for every MLIR type declaration with a symbol.
   /// This does not include functions, only things that may be referred to by a
   /// StructType: StructTypes, aliases, etc.

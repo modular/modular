@@ -627,6 +627,42 @@ LogicalResult DeclResolver::importModule(ASTDecl &dest,
                           dest, false);
 }
 
+FailureOr<ASTDecl *> DeclResolver::bodyResolvePackageInit(ASTDecl &module,
+                                                          SMLoc loc) {
+  // Not a package — nothing to do.
+  if (!isa_and_nonnull<PackageOp>(module.getIfOperation()))
+    return FailureOr<ASTDecl *>(nullptr);
+  StringAttr initName = StringAttr::get(getContext(), "__init__");
+  auto initResult = shared.lookupAndResolveDecl(initName, loc, module,
+                                                /*searchParentScopes=*/false,
+                                                /*resolveTarget=*/false);
+  // Package has no __init__.
+  if (!initResult.isSuccess())
+    return FailureOr<ASTDecl *>(nullptr);
+  ASTDecl *initDecl = initResult.getIfSuccess().front();
+  if (failed(resolveBody(*initDecl, loc)))
+    return failure();
+  return initDecl;
+}
+
+SmallVector<ASTDecl *> DeclResolver::lookupNonModuleDecls(ASTDecl &initDecl,
+                                                          StringAttr name,
+                                                          SMLoc loc,
+                                                          bool resolveTarget) {
+  SmallVector<ASTDecl *> nonModuleDecls;
+  auto lookup =
+      shared.lookupAndResolveDecl(name, loc, initDecl,
+                                  /*searchParentScopes=*/false, resolveTarget);
+  if (lookup.isSuccess()) {
+    for (ASTDecl *d : lookup.getIfSuccess()) {
+      auto *op = d->getIfOperation();
+      if (!isa_and_nonnull<FileModuleOp, PackageOp>(op))
+        nonModuleDecls.push_back(d);
+    }
+  }
+  return nonModuleDecls;
+}
+
 LogicalResult DeclResolver::importDeclFromModule(
     ASTDecl &dest, PackageOp currentPackage, StringAttr moduleName,
     StringAttr sourceName, StringAttr destName, SMLoc loc, SMLoc sourceNameLoc,
@@ -659,33 +695,21 @@ LogicalResult DeclResolver::importDeclFromModule(
   // the name might also refer to a re-exported symbol from __init__.mojo.
   // The directory-scan creates whole-module imports that shadow wildcard
   // imports from __init__, so look up the name directly in __init__'s scope.
-  SmallVector<ASTDecl *> initNonModuleDecls;
-  if (isa_and_nonnull<PackageOp>(module.getIfOperation()) &&
-      llvm::all_of(results, [](ASTDecl *d) {
+  // Note: the lookup results here are already resolved, so we only need to
+  // check for FileModuleOp/PackageOp (unlike the wildcard path which also
+  // sees UnresolvedImportOp entries from raw getDeclsInScope()).
+  SmallVector<ASTDecl *> reExported;
+  if (llvm::all_of(results, [](ASTDecl *d) {
         return isa_and_nonnull<FileModuleOp, PackageOp>(d->getIfOperation());
       })) {
-    StringAttr initName = StringAttr::get(getContext(), "__init__");
-    auto initResult = shared.lookupAndResolveDecl(
-        initName, sourceNameLoc, module,
-        /*searchParentScopes=*/false, /*resolveTarget=*/false);
-    if (initResult.isSuccess()) {
-      ASTDecl &initDecl = *initResult.getIfSuccess().front();
-      if (failed(resolveBody(initDecl, loc)))
-        return failure();
-      auto initLookup = shared.lookupAndResolveDecl(
-          sourceName, sourceNameLoc, initDecl,
-          /*searchParentScopes=*/false, resolveTarget);
-      if (initLookup.isSuccess()) {
-        // Filter to only non-module decls from __init__ (the re-exported
-        // symbols). These should take priority over submodule names.
-        for (ASTDecl *d : initLookup.getIfSuccess()) {
-          auto *op = d->getIfOperation();
-          if (!isa_and_nonnull<FileModuleOp, PackageOp>(op))
-            initNonModuleDecls.push_back(d);
-        }
-        if (!initNonModuleDecls.empty())
-          results = ArrayRef(initNonModuleDecls);
-      }
+    auto initOrFailure = bodyResolvePackageInit(module, loc);
+    if (failed(initOrFailure))
+      return failure();
+    if (ASTDecl *initDecl = *initOrFailure) {
+      reExported = lookupNonModuleDecls(*initDecl, sourceName, sourceNameLoc,
+                                        resolveTarget);
+      if (!reExported.empty())
+        results = ArrayRef(reExported);
     }
   }
 
@@ -767,6 +791,13 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
   if (failed(resolveAllWildcardImports(module)))
     return failure();
 
+  // For packages, resolve __init__'s body so we can look up re-exported
+  // symbols that may be shadowed by submodule names of the same name.
+  FailureOr<ASTDecl *> initOrFailure = bodyResolvePackageInit(module, loc);
+  if (failed(initOrFailure))
+    return failure();
+  ASTDecl *initDecl = *initOrFailure;
+
   // Wildcard imports don't import decls with a leading '_'.
   LogicalResult result = success();
   for (const auto &[name, decls] : module.getDeclsInScope()) {
@@ -775,8 +806,32 @@ LogicalResult DeclResolver::importWildCardDeclsFromModule(ASTDecl &context,
       continue;
     if (!isFullImport && isInternalName(name))
       continue;
-    if (failed(aliasImportDecls(decls, name, name, moduleName, loc, context,
-                                false)))
+
+    ArrayRef<ASTDecl *> importDecls = decls;
+
+    // If this name only has whole-module imports (from directory scanning) or
+    // resolved module/package decls, check __init__'s scope for re-exported
+    // non-module decls that should take priority. Unlike the explicit import
+    // path, we iterate raw getDeclsInScope() entries here, so we must also
+    // check for UnresolvedImportOp (whole-module imports without a declName).
+    SmallVector<ASTDecl *> reExported;
+    if (initDecl && llvm::all_of(decls, [](ASTDecl *d) {
+          auto *op = d->getIfOperation();
+          if (isa_and_nonnull<FileModuleOp, PackageOp>(op))
+            return true;
+          // Whole-module imports (no declName) from directory scanning.
+          if (auto importOp = dyn_cast_or_null<UnresolvedImportOp>(op))
+            return !importOp.getDeclNameAttr();
+          return false;
+        })) {
+      reExported = lookupNonModuleDecls(*initDecl, name, loc,
+                                        /*resolveTarget=*/true);
+      if (!reExported.empty())
+        importDecls = ArrayRef(reExported);
+    }
+
+    if (failed(aliasImportDecls(importDecls, name, name, moduleName, loc,
+                                context, false)))
       result = failure();
   }
 
