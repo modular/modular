@@ -26,6 +26,7 @@
 #include "lldb/DataFormatters/DumpValueObjectOptions.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Host/HostInfo.h"
+#include "lldb/Host/StreamFile.h"
 #include "lldb/Interpreter/CommandInterpreter.h"
 #include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Utility/AnsiTerminal.h"
@@ -615,7 +616,8 @@ MojoREPL::handleREPLCodeComplete(Target &target, StringRef code,
 // Variable Printing
 //===----------------------------------------------------------------------===//
 
-bool MojoREPL::PrintOneVariable(Debugger &debugger, lldb::StreamFileSP &output,
+bool MojoREPL::PrintOneVariable(Debugger &debugger,
+                                lldb::LockableStreamFileSP &output,
                                 lldb::ValueObjectSP &valobj,
                                 ExpressionVariable *var) {
   // TODO: If a ExpressionVariable was passed, check first if that variable is
@@ -625,15 +627,18 @@ bool MojoREPL::PrintOneVariable(Debugger &debugger, lldb::StreamFileSP &output,
   auto options = DumpValueObjectOptions::DefaultOptions();
   options.SetShowTypes(true);
 
+  lldb_private::LockedStreamFile lockedStream = output->Lock();
+
   bool useColor = debugger.GetUseColor();
   if (useColor)
-    fprintf(output->GetFile().GetStream(), ANSI_ESCAPE1(ANSI_FG_COLOR_CYAN));
+    fprintf(lockedStream.GetFile().GetStream(),
+            ANSI_ESCAPE1(ANSI_FG_COLOR_CYAN));
 
-  if (llvm::Error error = valobj->Dump(*output, options))
-    *output << "error: " << llvm::toString(std::move(error));
+  if (llvm::Error error = valobj->Dump(lockedStream, options))
+    lockedStream << "error: " << llvm::toString(std::move(error));
 
   if (useColor)
-    fprintf(output->GetFile().GetStream(), ANSI_ESCAPE1(ANSI_CTRL_NORMAL));
+    fprintf(lockedStream.GetFile().GetStream(), ANSI_ESCAPE1(ANSI_CTRL_NORMAL));
 
   return true;
 }

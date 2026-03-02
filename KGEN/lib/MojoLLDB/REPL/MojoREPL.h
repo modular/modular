@@ -98,7 +98,8 @@ protected:
   /// Print the value of the given value object to the given output stream. An
   /// expression variable may optionally be provided.
   bool
-  PrintOneVariable(lldb_private::Debugger &debugger, lldb::StreamFileSP &output,
+  PrintOneVariable(lldb_private::Debugger &debugger,
+                   lldb::LockableStreamFileSP &output,
                    lldb::ValueObjectSP &valobj,
                    lldb_private::ExpressionVariable *var = nullptr) override;
 
