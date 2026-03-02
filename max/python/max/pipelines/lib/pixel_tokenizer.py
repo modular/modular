@@ -211,9 +211,6 @@ class PixelGenerationTokenizer(
         self._vae_scale_factor = (
             2 ** (len(block_out_channels) - 1) if block_out_channels else 8
         )
-        self._vae_temporal_compression_ratio = vae_config.get(
-            "temporal_compression_ratio"
-        )
 
         # Store static model dimensions
         self._default_sample_size = 128
@@ -228,11 +225,17 @@ class PixelGenerationTokenizer(
         # These match the current MAX LTX2 pipeline implementation.
         self._is_ltx2 = self._pipeline_class_name == "LTX2Pipeline"
         if self._is_ltx2:
+            self._causal_offset = 1
+            self._vae_temporal_compression_ratio = vae_config.get(
+                "temporal_compression_ratio"
+            )
             # LTX-2 uses CausalVideoAutoencoder with no standard block_out_channels;
             # read spatial/temporal compression ratios directly from the VAE config.
-            self._vae_scale_factor = vae_config.get(
-                "spatial_compression_ratio", 32
+            self._vae_spatial_compression_ratio = vae_config.get(
+                "spatial_compression_ratio"
             )
+            self._patch_size = vae_config.get("patch_size")
+            self._patch_size_t = vae_config.get("patch_size_t")
             # LTX-2 uses patch_size=1 (no spatial packing), so VAE latent
             # channels == transformer in_channels (128), not in_channels // 4.
             self._num_channels_latents = transformer_config["in_channels"]
@@ -252,12 +255,6 @@ class PixelGenerationTokenizer(
             # resolution level, so num_downsampling_stages = len(ch_mult) - 1.
             ch_mult = audio_vae_config.get("ch_mult", [1, 2, 4])
             self._ltx2_audio_mel_compression_ratio = 2 ** (len(ch_mult) - 1)
-
-        # _vae_spatial_compression_ratio mirrors _vae_scale_factor at all times.
-        # For standard models it is 2^(len(block_out_channels)-1); for LTX-2 it
-        # is overridden to vae.spatial_compression_ratio (32) in the block above.
-        # new_context() uses this attribute directly for latent dimension math.
-        self._vae_spatial_compression_ratio = self._vae_scale_factor
 
         # Create scheduler
         scheduler_class_name = components.get("scheduler", {}).get(
@@ -294,19 +291,12 @@ class PixelGenerationTokenizer(
         per-patch pixel-space [start, end) boundaries for the (frame, height, width)
         dimensions, scaled to seconds on the temporal axis.
         """
-        # LTX2 constants (patch sizes are always 1 for this model).
-        patch_size_t: int = 1
-        patch_size: int = 1
-        # scale_factors converts latent → pixel space: (temporal, height, width).
-        scale_f: int = self._vae_temporal_compression_ratio  # 8
-        scale_h: int = self._vae_scale_factor  # 32
-        scale_w: int = self._vae_scale_factor  # 32
-        causal_offset: int = 1
-
         # 1. 1-D grids for each spatial/temporal dimension.
-        grid_f = np.arange(0, latent_num_frames, patch_size_t, dtype=np.float32)
-        grid_h = np.arange(0, latent_height, patch_size, dtype=np.float32)
-        grid_w = np.arange(0, latent_width, patch_size, dtype=np.float32)
+        grid_f = np.arange(
+            0, latent_num_frames, self._patch_size_t, dtype=np.float32
+        )
+        grid_h = np.arange(0, latent_height, self._patch_size, dtype=np.float32)
+        grid_w = np.arange(0, latent_width, self._patch_size, dtype=np.float32)
 
         # 2. Broadcast to 3-D grid [N_F, N_H, N_W] then stack → [3, N_F, N_H, N_W].
         grid_f_3d = np.broadcast_to(
@@ -324,7 +314,8 @@ class PixelGenerationTokenizer(
 
         # 3. Patch [start, end) boundaries → [3, N_F, N_H, N_W, 2] → [3, num_patches, 2].
         patch_delta = np.array(
-            [patch_size_t, patch_size, patch_size], dtype=np.float32
+            [self._patch_size_t, self._patch_size, self._patch_size],
+            dtype=np.float32,
         ).reshape(3, 1, 1, 1)
         patch_ends = grid + patch_delta
         latent_coords = np.stack(
@@ -336,14 +327,23 @@ class PixelGenerationTokenizer(
         latent_coords = np.tile(latent_coords[None], (batch_size, 1, 1, 1))
 
         # 5. Convert latent → pixel-space coordinates.
-        scale = np.array([scale_f, scale_h, scale_w], dtype=np.float32).reshape(
-            1, 3, 1, 1
-        )
+        scale = np.array(
+            [
+                self._vae_temporal_compression_ratio,
+                self._vae_spatial_compression_ratio,
+                self._vae_spatial_compression_ratio,
+            ],
+            dtype=np.float32,
+        ).reshape(1, 3, 1, 1)
         pixel_coords = latent_coords * scale
 
         # 6. Causal temporal fix-up: the first latent frame covers fewer pixel frames.
         pixel_coords[:, 0] = np.clip(
-            pixel_coords[:, 0] + causal_offset - scale_f, 0, None
+            pixel_coords[:, 0]
+            + self._causal_offset
+            - self._vae_temporal_compression_ratio,
+            0,
+            None,
         )
 
         # 7. Convert pixel frames → seconds.
@@ -363,7 +363,6 @@ class PixelGenerationTokenizer(
         """
         audio_scale_factor: int = self._ltx2_audio_mel_compression_ratio  # 4
         audio_patch_size_t: int = 1
-        causal_offset: int = 1
 
         grid_f = np.arange(
             0, audio_num_frames, audio_patch_size_t, dtype=np.float32
@@ -371,7 +370,9 @@ class PixelGenerationTokenizer(
 
         # Start timestamps in seconds.
         grid_start_mel = np.clip(
-            grid_f * audio_scale_factor + causal_offset - audio_scale_factor,
+            grid_f * audio_scale_factor
+            + self._causal_offset
+            - audio_scale_factor,
             0,
             None,
         )
@@ -384,7 +385,7 @@ class PixelGenerationTokenizer(
         # End timestamps in seconds.
         grid_end_mel = np.clip(
             (grid_f + audio_patch_size_t) * audio_scale_factor
-            + causal_offset
+            + self._causal_offset
             - audio_scale_factor,
             0,
             None,
@@ -972,7 +973,7 @@ class PixelGenerationTokenizer(
             if video_options and video_options.width is not None
             else None
         ) or (image_options.width if image_options else None)
-        steps = (
+        num_inference_steps = (
             video_options.steps
             if video_options and video_options.steps is not None
             else None
@@ -1081,22 +1082,21 @@ class PixelGenerationTokenizer(
         # 3. Resolve image dimensions using cached static values
         latent_height = int(height) // self._vae_spatial_compression_ratio
         latent_width = int(width) // self._vae_spatial_compression_ratio
-        latent_frames = (
+        num_latent_frames = (
             video_options.num_frames - 1
         ) // self._vae_temporal_compression_ratio + 1
         visual_seq_len = (
             latent_height
             * latent_width
-            * (latent_frames if video_options.num_frames is not None else 1)
+            * (num_latent_frames if video_options.num_frames is not None else 1)
         )
 
-        num_inference_steps = steps
         timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
             visual_seq_len, num_inference_steps
         )
 
         num_warmup_steps: int = max(
-            len(timesteps) - steps * self._scheduler.order, 0
+            len(timesteps) - num_inference_steps * self._scheduler.order, 0
         )
 
         num_frames = (
@@ -1183,15 +1183,15 @@ class PixelGenerationTokenizer(
             # and can be computed once here, avoiding repeated compilation.
 
             video_coords = self._prepare_ltx2_video_coords(
-                batch_size=num_images,
-                latent_num_frames=latent_num_frames,
-                latent_height=latent_height,
-                latent_width=latent_width,
-                frame_rate=float(frame_rate),
+                num_images,
+                latent_num_frames,
+                latent_height,
+                latent_width,
+                float(frame_rate),
             )
             audio_coords = self._prepare_ltx2_audio_coords(
-                batch_size=num_images,
-                audio_num_frames=audio_num_frames,
+                num_images,
+                audio_num_frames,
             )
 
             # Pre-double for CFG on CPU (guidance_scale is already known here),

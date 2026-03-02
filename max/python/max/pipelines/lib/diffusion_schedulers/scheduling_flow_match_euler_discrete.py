@@ -92,17 +92,14 @@ class FlowMatchEulerDiscreteScheduler:
         Reference:
         https://github.com/Lightricks/LTX-Video/blob/a01a171f8fe3d99dce2728d60a73fecf4d4238ae/ltx_video/schedulers/rf.py#L51
         """
-        terminal = self.shift_terminal
-        if terminal is None:
-            return t
         one_minus_z = 1.0 - t.astype(np.float64)
-        scale_factor = one_minus_z[-1] / (1.0 - terminal)
-        stretched = 1.0 - (one_minus_z / scale_factor)
-        return stretched.astype(np.float32)
+        scale_factor = one_minus_z[-1] / (1.0 - self.shift_terminal)
+        stretched_t = 1.0 - (one_minus_z / scale_factor)
+        return stretched_t.astype(np.float32)
 
     @staticmethod
     def _compute_empirical_mu(
-        image_seq_len: int, num_inference_steps: int
+        visual_seq_len: int, num_inference_steps: int
     ) -> float:
         """Compute empirical mu for Flux2 timestep scheduling.
 
@@ -110,7 +107,7 @@ class FlowMatchEulerDiscreteScheduler:
         https://github.com/black-forest-labs/flux2/blob/5a5d316b1b42f6b59a8c9194b77c8256be848432/src/flux2/sampling.py#L251
 
         Args:
-            image_seq_len: Length of image sequence (H*W after packing).
+            visual_seq_len: Length of visual sequence (H*W*F after packing).
             num_inference_steps: Number of inference steps.
 
         Returns:
@@ -119,12 +116,12 @@ class FlowMatchEulerDiscreteScheduler:
         a1, b1 = 8.73809524e-05, 1.89833333
         a2, b2 = 0.00016927, 0.45666666
 
-        if image_seq_len > 4300:
-            mu = a2 * image_seq_len + b2
+        if visual_seq_len > 4300:
+            mu = a2 * visual_seq_len + b2
             return float(mu)
 
-        m_200 = a2 * image_seq_len + b2
-        m_10 = a1 * image_seq_len + b1
+        m_200 = a2 * visual_seq_len + b2
+        m_10 = a1 * visual_seq_len + b1
 
         a = (m_200 - m_10) / 190.0
         b = m_200 - 200.0 * a
@@ -133,25 +130,25 @@ class FlowMatchEulerDiscreteScheduler:
         return float(mu)
 
     def _calculate_mu(
-        self, image_seq_len: int, num_inference_steps: int
+        self, visual_seq_len: int, num_inference_steps: int
     ) -> float:
         if self._use_empirical_mu:
-            mu = self._compute_empirical_mu(image_seq_len, num_inference_steps)
+            mu = self._compute_empirical_mu(visual_seq_len, num_inference_steps)
         else:
-            mu = self._shift_slope * image_seq_len + self._shift_intercept
+            mu = self._shift_slope * visual_seq_len + self._shift_intercept
             mu = float(mu)
         return mu
 
     def retrieve_timesteps_and_sigmas(
         self,
-        image_seq_len: int,
+        visual_seq_len: int,
         num_inference_steps: int,
         reverse: bool = False,
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
         """Retrieve timesteps and sigmas for the diffusion process.
 
         Args:
-            image_seq_len: Length of image sequence (H*W after packing).
+            visual_seq_len: Length of visual sequence (H*W*F after packing).
             num_inference_steps: Number of inference steps.
             reverse: Whether to reverse the timesteps and sigmas.
 
@@ -166,7 +163,7 @@ class FlowMatchEulerDiscreteScheduler:
                 dtype=np.float32,
             )
             if self._use_dynamic_shifting:
-                mu = self._calculate_mu(image_seq_len, num_inference_steps)
+                mu = self._calculate_mu(visual_seq_len, num_inference_steps)
                 sigmas = self._time_shift_exponential(mu, 1.0, sigmas)
             if self.shift_terminal is not None:
                 sigmas = self._stretch_shift_to_terminal(sigmas)

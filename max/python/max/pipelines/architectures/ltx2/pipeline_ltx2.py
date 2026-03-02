@@ -1205,8 +1205,7 @@ class LTX2Pipeline(DiffusionPipeline):
             np.array([guidance_scale], dtype=np.float32),
         ).to(device)
 
-        num_video_noise_tokens = int(video_latents.shape[1])
-        num_audio_noise_tokens = int(audio_latents.shape[1])
+        num_noise_tokens = int(video_latents.shape[1])
 
         for i in tqdm(range(num_inference_steps), desc="Denoising"):
             timestep = timesteps_seq[i : i + 1]
@@ -1245,10 +1244,10 @@ class LTX2Pipeline(DiffusionPipeline):
 
             with Tracer("scheduler_steps"):
                 video_latents = self.scheduler_step_video(
-                    video_latents, noise_pred_video, dt, num_video_noise_tokens
+                    video_latents, noise_pred_video, dt, num_noise_tokens
                 )
                 audio_latents = self.scheduler_step_audio(
-                    audio_latents, noise_pred_audio, dt, num_audio_noise_tokens
+                    audio_latents, noise_pred_audio, dt, num_noise_tokens
                 )
 
             if callback_queue is not None:
