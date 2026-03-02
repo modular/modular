@@ -25,7 +25,7 @@ trait DupTraitA:
 
 struct DupUnconditionalAndConditional[T: Movable](
     DupTraitA,
-    # expected-error @below {{trait}}
+    # expected-error @below {{trait ''DupTraitA'' appears multiple times in the inheritance list with different constraints}}
     DupTraitA where conforms_to(T, Copyable),
     Movable,
 ):
@@ -34,8 +34,6 @@ struct DupUnconditionalAndConditional[T: Movable](
     fn __init__(out self, var data: Self.T):
         self.data = data^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.data = take.data^
 
 
 # ===========================================================================
@@ -49,7 +47,7 @@ trait DupTraitB:
 
 struct DupDifferentConstraints[T: Movable](
     DupTraitB where conforms_to(T, Copyable),
-    # expected-error @below {{trait}}
+    # expected-error @below {{trait ''DupTraitB'' appears multiple times in the inheritance list with different constraints}}
     DupTraitB where conforms_to(T, Intable),
     Movable,
 ):
@@ -58,8 +56,6 @@ struct DupDifferentConstraints[T: Movable](
     fn __init__(out self, var data: Self.T):
         self.data = data^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.data = take.data^
 
 
 # ===========================================================================
@@ -79,7 +75,7 @@ trait CompB:
 
 struct CompositionConflictsWithStandalone[T: Movable](
     CompA & CompB where conforms_to(T, Copyable),
-    # expected-error @below {{trait}}
+    # expected-error @below {{trait ''CompA'' appears multiple times in the inheritance list with different constraints}}
     CompA,
     Movable,
 ):
@@ -87,6 +83,3 @@ struct CompositionConflictsWithStandalone[T: Movable](
 
     fn __init__(out self, var data: Self.T):
         self.data = data^
-
-    fn __moveinit__(out self, deinit take: Self):
-        self.data = take.data^

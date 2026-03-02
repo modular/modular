@@ -24,12 +24,6 @@ struct CopyableType(Copyable, ImplicitlyDestructible, Movable):
     fn __init__(out self, x: Int):
         self.x = x
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.x = take.x
-
-    fn __copyinit__(out self, copy: Self, /):
-        self.x = copy.x
-
 
 # ===========================================================================
 # Test 1: Simple Conditional Conformance
@@ -48,12 +42,7 @@ struct SimpleWrapper[T: ImplicitlyDestructible & Movable](
     fn __init__(out self, var value: Self.T):
         self.value = value^
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.value = take.value^
-
-    fn __copyinit__(
-        out self, copy: Self, /
-    ) where conforms_to(Self.T, Copyable):
+    fn __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         self.value = rebind_var[Self.T](
             trait_downcast[Copyable](copy.value).copy()
         )
@@ -200,12 +189,6 @@ struct CopyableIntableType(Copyable, ImplicitlyDestructible, Intable, Movable):
     fn __init__(out self, x: Int):
         self.x = x
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.x = take.x
-
-    fn __copyinit__(out self, copy: Self, /):
-        self.x = copy.x
-
     fn __int__(self) -> Int:
         return self.x
 
@@ -282,9 +265,6 @@ struct MovableOnlyType(ImplicitlyDestructible, Movable):
     fn __init__(out self, x: Int):
         self.x = x
 
-    fn __moveinit__(out self, deinit take: Self):
-        self.x = take.x
-
 
 struct DiamondOneUnconditional[T: ImplicitlyDestructible & Movable](
     DerivedA where conforms_to(T, Copyable),
@@ -349,9 +329,7 @@ struct MultipleConditional[T: ImplicitlyDestructible & Movable](
     fn __init__(out self, var data: Self.T):
         self.data = data^
 
-    fn __copyinit__(
-        out self, copy: Self, /
-    ) where conforms_to(Self.T, Copyable):
+    fn __init__(out self, *, copy: Self) where conforms_to(Self.T, Copyable):
         self.data = rebind_var[Self.T](
             trait_downcast[Copyable](copy.data).copy()
         )
@@ -499,9 +477,6 @@ struct ViolatedTakesPrecedence[T: ImplicitlyDestructible & Movable](
 
     fn __init__(out self, var data: Self.T):
         self.data = data^
-
-    fn __moveinit__(out self, deinit take: Self):
-        self.data = take.data^
 
     # First where clause: unprovable (Intable is independent of Copyable).
     # Second where clause: contradicts the conformance (conformance requires
