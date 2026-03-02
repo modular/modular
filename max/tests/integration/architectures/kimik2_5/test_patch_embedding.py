@@ -62,9 +62,9 @@ def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
 
 
 def _create_state_dict(has_bias: bool) -> dict[str, torch.Tensor]:
-    """State dict keys match Module.raw_state_dict (proj has name='proj' -> proj.proj.*)."""
+    """State dict keys match Module.raw_state_dict."""
     state: dict[str, torch.Tensor] = {
-        "proj.proj.weight": _generate_tensor(
+        "proj.weight": _generate_tensor(
             (HIDDEN_SIZE, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
         ),
         "pos_emb.weight": _generate_tensor(
@@ -72,7 +72,7 @@ def _create_state_dict(has_bias: bool) -> dict[str, torch.Tensor]:
         ),
     }
     if has_bias:
-        state["proj.proj.bias"] = _generate_tensor((HIDDEN_SIZE,))
+        state["proj.bias"] = _generate_tensor((HIDDEN_SIZE,))
     return state
 
 
@@ -271,9 +271,9 @@ def _torch_full_patch_embed(
         pos_emb_time=INIT_POS_EMB_TIME,
         has_bias=has_bias,
     ).to(dtype=TORCH_DTYPE)
-    model.proj.weight = nn.Parameter(state_dict["proj.proj.weight"])
+    model.proj.weight = nn.Parameter(state_dict["proj.weight"])
     if has_bias:
-        model.proj.bias = nn.Parameter(state_dict["proj.proj.bias"])
+        model.proj.bias = nn.Parameter(state_dict["proj.bias"])
     model.pos_emb.weight = nn.Parameter(state_dict["pos_emb.weight"])
     model.eval()
     with torch.no_grad():

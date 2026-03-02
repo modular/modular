@@ -246,7 +246,6 @@ class PatchEmbedding(Module, Shardable):
                 dtype=dtype,
                 device=device,
                 permute=True,
-                name="proj",
             )
 
             self.pos_emb = Learnable2DInterpPosEmbDividedFixed(
