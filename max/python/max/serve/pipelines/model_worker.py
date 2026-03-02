@@ -102,8 +102,15 @@ def get_reset_prefix_cache_backend(
         The paged KV cache manager if available, None otherwise.
     """
 
-    if hasattr(pipeline, "kv_managers") and pipeline.kv_managers:
-        kv_manager = pipeline.kv_managers[0]
+    kv_managers = getattr(pipeline, "kv_managers", None)
+    if kv_managers:
+        kv_manager = kv_managers[0]
+    elif hasattr(pipeline, "kv_manager"):
+        kv_manager = pipeline.kv_manager
+    else:
+        kv_manager = None
+
+    if kv_manager is not None:
         if isinstance(kv_manager, PagedKVCacheManager) and not isinstance(
             kv_manager, DummyKVCache
         ):

@@ -45,6 +45,20 @@ from .utils import SchedulerLogger, get_cancelled_reqs
 logger = logging.getLogger("max.serve")
 
 
+def _get_kv_cache(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> PagedKVCacheManager | None:
+    """Extract the KV cache manager from a pipeline.
+
+    Supports both the ``kv_managers`` list API (for pipelines that optionally
+    omit KV cache, e.g. Mamba SSM) and the singular ``kv_manager`` property.
+    """
+    kv_managers = getattr(pipeline, "kv_managers", None)
+    if kv_managers is not None:
+        return kv_managers[0] if kv_managers else None
+    return getattr(pipeline, "kv_manager", None)
+
+
 class TokenGenerationScheduler(Scheduler):
     def __init__(
         self,
@@ -231,7 +245,7 @@ def load_text_generation_scheduler(
         # arbitrarily uses either the draft or target one. The other kvcache is
         # hidden from scheduler currently and managed by pipelines.
         # For non-KV-cache models (e.g. Mamba SSM), kv_managers is empty.
-        kv_cache=pipeline.kv_managers[0] if pipeline.kv_managers else None,
+        kv_cache=_get_kv_cache(pipeline),
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,

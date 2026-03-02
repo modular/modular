@@ -3,7 +3,6 @@
 load(
     "//bazel:api.bzl",
     "modular_py_test",
-    "requirement",
 )
 
 package(default_visibility = [
@@ -17,15 +16,7 @@ modular_py_test(
     name = "mamba",
     timeout = "long",
     srcs = glob(["test_*.py"]),
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/mlir",
-        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
-        requirement("numpy"),
     ],
 )
