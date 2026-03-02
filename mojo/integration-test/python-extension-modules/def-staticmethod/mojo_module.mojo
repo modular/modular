@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
