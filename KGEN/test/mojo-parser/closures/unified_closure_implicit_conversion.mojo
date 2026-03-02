@@ -5,9 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
-from std.builtin.stubs import *
-
-
 fn id_simd[
     w: Int
 ](v: SIMD[DType.uint32, w]) -> SIMD[DType.uint32, w]:

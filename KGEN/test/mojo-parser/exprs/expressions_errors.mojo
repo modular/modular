@@ -130,7 +130,7 @@ fn test_var_decl_patterns(cond: Bool):
 
   y = (var 42) # expected-error {{'var' patterns are only valid on the left side of an assignment}}
 
-import builtin
+import std.builtin
 def test_member_access() raises:
     # MOCO-2006: This crashed because it was trying to synthesize the vardecl in
     # the package.
