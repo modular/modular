@@ -830,14 +830,87 @@ kgen.func @bitcast_index() -> (!pop.simd<2, ui64>, !pop.simd<2, index>,
                                !pop.simd<2, index>, !pop.simd<2, f64>
 }
 
+// CHECK-LABEL: @bitcast_bool_nonfoldable
+kgen.func @bitcast_bool_nonfoldable(%arg0: !pop.scalar<bool>) -> (!pop.scalar<ui1>) {
+  // Non-constant bool operand: bitcast should not be folded.
+  // CHECK-NEXT: pop.bitcast %arg0 : !pop.scalar<bool> to !pop.scalar<ui1>
+  %0 = pop.bitcast %arg0 : !pop.scalar<bool> to !pop.scalar<ui1>
+  kgen.return %0 : !pop.scalar<ui1>
+}
+
 // CHECK-LABEL: @bitcast_from_bool
 kgen.func @bitcast_from_bool() -> (!pop.scalar<ui1>) {
-  // CHECK-NEXT: %[[TRUE:.*]] = kgen.param.constant: scalar<bool> = <true>
   %true = kgen.param.constant: scalar<bool> = <true>
-  // CHECK-NEXT: %[[RESULT:.*]] = pop.bitcast %[[TRUE]] : !pop.scalar<bool> to !pop.scalar<ui1>
+  // CHECK: kgen.param.constant: scalar<ui1> = <1>
   %0 = pop.bitcast %true : !pop.scalar<bool> to !pop.scalar<ui1>
-  // CHECK-NEXT: return %[[RESULT]]
   kgen.return %0 : !pop.scalar<ui1>
+}
+
+// CHECK-LABEL: @bitcast_bool_to_ui1_false
+kgen.func @bitcast_bool_to_ui1_false() -> (!pop.scalar<ui1>) {
+  %false = kgen.param.constant: scalar<bool> = <false>
+  // CHECK: kgen.param.constant: scalar<ui1> = <0>
+  %0 = pop.bitcast %false : !pop.scalar<bool> to !pop.scalar<ui1>
+  kgen.return %0 : !pop.scalar<ui1>
+}
+
+// CHECK-LABEL: @bitcast_ui1_to_bool
+kgen.func @bitcast_ui1_to_bool() -> (!pop.scalar<bool>) {
+  %one = kgen.param.constant: scalar<ui1> = <1>
+  // CHECK: kgen.param.constant: scalar<bool> = <true>
+  %0 = pop.bitcast %one : !pop.scalar<ui1> to !pop.scalar<bool>
+  kgen.return %0 : !pop.scalar<bool>
+}
+
+// CHECK-LABEL: @bitcast_pack_bools_to_ui8
+kgen.func @bitcast_pack_bools_to_ui8() -> (!pop.scalar<ui8>) {
+  // 0b01010111 = 0x57 = 87
+  %bools = kgen.param.constant: simd<8, bool> = <<true, true, true, false, true, false, true, false>>
+  // CHECK: kgen.param.constant: scalar<ui8> = <87>
+  %0 = pop.bitcast %bools : !pop.simd<8, bool> to !pop.scalar<ui8>
+  kgen.return %0 : !pop.scalar<ui8>
+}
+
+// CHECK-LABEL: @bitcast_unpack_ui8_to_bools
+kgen.func @bitcast_unpack_ui8_to_bools() -> (!pop.simd<8, bool>) {
+  // 87 = 0x57 = 0b01010111
+  %byte = kgen.param.constant: scalar<ui8> = <87>
+  // CHECK: kgen.param.constant: simd<8, bool> = <<true, true, true, false, true, false, true, false>>
+  %0 = pop.bitcast %byte : !pop.scalar<ui8> to !pop.simd<8, bool>
+  kgen.return %0 : !pop.simd<8, bool>
+}
+
+// CHECK-LABEL: @bitcast_all_false_bools
+kgen.func @bitcast_all_false_bools() -> (!pop.scalar<ui8>) {
+  %bools = kgen.param.constant: simd<8, bool> = <<false, false, false, false, false, false, false, false>>
+  // CHECK: kgen.param.constant: scalar<ui8> = <0>
+  %0 = pop.bitcast %bools : !pop.simd<8, bool> to !pop.scalar<ui8>
+  kgen.return %0 : !pop.scalar<ui8>
+}
+
+// CHECK-LABEL: @bitcast_all_true_bools
+kgen.func @bitcast_all_true_bools() -> (!pop.scalar<ui8>) {
+  %bools = kgen.param.constant: simd<8, bool> = <<true, true, true, true, true, true, true, true>>
+  // CHECK: kgen.param.constant: scalar<ui8> = <255>
+  %0 = pop.bitcast %bools : !pop.simd<8, bool> to !pop.scalar<ui8>
+  kgen.return %0 : !pop.scalar<ui8>
+}
+
+// CHECK-LABEL: @bitcast_pack_bools_to_simd
+kgen.func @bitcast_pack_bools_to_simd() -> (!pop.simd<2, ui8>) {
+  // First 8 bools → 87 (0x57), next 8 bools → 170 (0xAA)
+  %bools = kgen.param.constant: simd<16, bool> = <<true, true, true, false, true, false, true, false, false, true, false, true, false, true, false, true>>
+  // CHECK: kgen.param.constant: simd<2, ui8> = <<87, 170>>
+  %0 = pop.bitcast %bools : !pop.simd<16, bool> to !pop.simd<2, ui8>
+  kgen.return %0 : !pop.simd<2, ui8>
+}
+
+// CHECK-LABEL: @bitcast_unpack_simd_to_bools
+kgen.func @bitcast_unpack_simd_to_bools() -> (!pop.simd<16, bool>) {
+  %bytes = kgen.param.constant: simd<2, ui8> = <<87, 170>>
+  // CHECK: kgen.param.constant: simd<16, bool> = <<true, true, true, false, true, false, true, false, false, true, false, true, false, true, false, true>>
+  %0 = pop.bitcast %bytes : !pop.simd<2, ui8> to !pop.simd<16, bool>
+  kgen.return %0 : !pop.simd<16, bool>
 }
 
 // CHECK-LABEL: @pointer_bitcast
@@ -911,6 +984,50 @@ kgen.func @cast_uindex_index() -> (!pop.scalar<index>, !pop.scalar<uindex>) {
   // CHECK-NEXT: return %[[C0]], %[[C1]]
   kgen.return %0, %1 : !pop.scalar<index>, !pop.scalar<uindex>
 }
+}
+
+// -----
+
+// Big-endian (BE) bool bitcast tests.
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="E-p:64:64", simd_bit_width = 128, index_bit_width = 64>} {
+
+// CHECK-LABEL: @bitcast_pack_bools_to_ui8_be
+kgen.func @bitcast_pack_bools_to_ui8_be() -> (!pop.scalar<ui8>) {
+  // Same input as LE test, but big-endian packs elem0 into MSB.
+  // BE: 0b11101010 = 234
+  %bools = kgen.param.constant: simd<8, bool> = <<true, true, true, false, true, false, true, false>>
+  // CHECK: kgen.param.constant: scalar<ui8> = <234>
+  %0 = pop.bitcast %bools : !pop.simd<8, bool> to !pop.scalar<ui8>
+  kgen.return %0 : !pop.scalar<ui8>
+}
+
+// CHECK-LABEL: @bitcast_unpack_ui8_to_bools_be
+kgen.func @bitcast_unpack_ui8_to_bools_be() -> (!pop.simd<8, bool>) {
+  // 87 = 0b01010111, BE: bit7→elem0, bit0→elem7
+  %byte = kgen.param.constant: scalar<ui8> = <87>
+  // CHECK: kgen.param.constant: simd<8, bool> = <<false, true, false, true, false, true, true, true>>
+  %0 = pop.bitcast %byte : !pop.scalar<ui8> to !pop.simd<8, bool>
+  kgen.return %0 : !pop.simd<8, bool>
+}
+
+// CHECK-LABEL: @bitcast_pack_bools_to_simd_be
+kgen.func @bitcast_pack_bools_to_simd_be() -> (!pop.simd<2, ui8>) {
+  // First 8 bools BE → 234 (0xEA), next 8 bools BE → 85 (0x55)
+  %bools = kgen.param.constant: simd<16, bool> = <<true, true, true, false, true, false, true, false, false, true, false, true, false, true, false, true>>
+  // CHECK: kgen.param.constant: simd<2, ui8> = <<234, 85>>
+  %0 = pop.bitcast %bools : !pop.simd<16, bool> to !pop.simd<2, ui8>
+  kgen.return %0 : !pop.simd<2, ui8>
+}
+
+// CHECK-LABEL: @bitcast_unpack_simd_to_bools_be
+kgen.func @bitcast_unpack_simd_to_bools_be() -> (!pop.simd<16, bool>) {
+  // 87 BE → F,T,F,T,F,T,T,T; 170 = 0xAA BE → T,F,T,F,T,F,T,F
+  %bytes = kgen.param.constant: simd<2, ui8> = <<87, 170>>
+  // CHECK: kgen.param.constant: simd<16, bool> = <<false, true, false, true, false, true, true, true, true, false, true, false, true, false, true, false>>
+  %0 = pop.bitcast %bytes : !pop.simd<2, ui8> to !pop.simd<16, bool>
+  kgen.return %0 : !pop.simd<16, bool>
+}
+
 }
 
 // -----
