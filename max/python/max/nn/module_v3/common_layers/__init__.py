@@ -10,22 +10,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-from max.nn.module_v3.common_layers.mlp import MLP
-from max.nn.module_v3.common_layers.rotary_embedding import (
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
-
-from .attention import Olmo3Attention
-from .rms_norm import Olmo3RMSNorm
-from .transformer_block import Olmo3TransformerBlock
-
-__all__ = [
-    "MLP",
-    "Olmo3Attention",
-    "Olmo3RMSNorm",
-    "Olmo3TransformerBlock",
-    "YarnRotaryEmbedding",
-    "YarnScalingParams",
-]
+"""Common layers for ModuleV3-based model architectures."""

@@ -19,8 +19,7 @@ from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.module_v3 import Module
-
-from ...common_layers.attention import AttentionWithRope
+from max.nn.module_v3.common_layers.attention import AttentionWithRope
 
 
 class LlamaTransformerBlock(Module[..., Tensor]):

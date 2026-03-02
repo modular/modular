@@ -27,13 +27,12 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.module_v3 import Linear, Module
-
-from ...common_layers.functional_kernels import (
+from max.nn.module_v3.common_layers.functional_kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
 )
-from ...common_layers.rotary_embedding import YarnRotaryEmbedding
+from max.nn.module_v3.common_layers.rotary_embedding import YarnRotaryEmbedding
 
 
 class GptOssAttention(Module[..., Tensor]):

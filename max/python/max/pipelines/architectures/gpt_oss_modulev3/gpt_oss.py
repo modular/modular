@@ -27,14 +27,14 @@ from max.nn.kv_cache import (
     unflatten_ragged_mha_decode_inputs,
 )
 from max.nn.module_v3 import Module
+from max.nn.module_v3.common_layers.rotary_embedding import (
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
 from max.nn.module_v3.embedding import Embedding
 from max.nn.module_v3.linear import Linear
 from max.nn.module_v3.sequential import ModuleList
 
-from ..common_layers.rotary_embedding import (
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
 from .layers.attention import GptOssAttention
 from .layers.moe import GptOssMoE
 from .layers.rms_norm import GptOssRMSNorm

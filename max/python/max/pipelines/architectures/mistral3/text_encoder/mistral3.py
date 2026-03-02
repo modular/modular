@@ -26,10 +26,10 @@ from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.nn.module_v3 import Embedding, Linear, Module
+from max.nn.module_v3.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.module_v3.norm import RMSNorm
 from max.nn.module_v3.sequential import ModuleList
 
-from ...common_layers.rotary_embedding import RotaryEmbedding
 from .attention import EncoderAttention
 
 if TYPE_CHECKING:

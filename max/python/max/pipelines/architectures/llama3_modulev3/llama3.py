@@ -28,14 +28,14 @@ from max.nn.kv_cache import (
     unflatten_ragged_mha_decode_inputs,
 )
 from max.nn.module_v3 import Module
+from max.nn.module_v3.common_layers.attention import AttentionWithRope
+from max.nn.module_v3.common_layers.mlp import MLP
 from max.nn.module_v3.embedding import Embedding
 from max.nn.module_v3.linear import Linear
 from max.nn.module_v3.norm import LayerNorm, RMSNorm
 from max.nn.module_v3.sequential import ModuleList
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 
-from ..common_layers.attention import AttentionWithRope
-from ..common_layers.mlp import MLP
 from .layers.mlp import LlamaStackedMLP
 from .layers.rotary_embedding import (
     Llama3RotaryEmbedding,

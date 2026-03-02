@@ -24,14 +24,14 @@ from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.module_v3 import Linear, Module
-
-from ...common_layers.functional_kernels import (
+from max.nn.module_v3.common_layers.functional_kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
-from ...common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.module_v3.common_layers.rotary_embedding import RotaryEmbedding
+
 from .rms_norm import Olmo3RMSNorm
 
 

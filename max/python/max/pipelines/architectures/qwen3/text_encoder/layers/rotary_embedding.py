@@ -18,10 +18,10 @@ from max.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.nn.rotary_embedding import Llama3RopeScalingParams
-from max.pipelines.architectures.common_layers.rotary_embedding import (
+from max.nn.module_v3.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
+from max.nn.rotary_embedding import Llama3RopeScalingParams
 
 __all__ = ["Llama3RotaryEmbedding", "RotaryEmbedding"]
 

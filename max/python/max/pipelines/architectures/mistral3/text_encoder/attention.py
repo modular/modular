@@ -24,7 +24,7 @@ from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
 from max.nn.module_v3 import Linear, Module
 
 if TYPE_CHECKING:
-    from ...common_layers.rotary_embedding import RotaryEmbedding
+    from max.nn.module_v3.common_layers.rotary_embedding import RotaryEmbedding
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 
