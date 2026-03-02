@@ -283,8 +283,13 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from std.runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from runtime.asyncrt import (
+    DeviceContextPtr,
+    DeviceContextPtrList,
+    TaskGroup,
+    parallelism_level,
+)
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor import (
     DynamicTensor,
     ElementwiseBinaryComparisonOp,
@@ -9399,6 +9404,58 @@ fn _check_signal_buffer_size(
         )
 
 
+@always_inline("nodebug")
+fn task_id_for_device(device_id: Int, num_workers: Int) -> Int:
+    # Map from device ID to task ID for CPU affinity.
+    # Note: Keep in sync with taskIdForDevice() in MGPPrimitives.cpp
+    if num_workers <= 1:
+        return -1
+    return 1 + (device_id % (num_workers - 1))
+
+
+@always_inline
+fn _launch_device_collective[
+    num_devices: Int,
+    F: fn[Int]() raises unified -> None,
+](func: F, dev_ctxs: DeviceContextPtrList) raises:
+    """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
+
+    comptime assert (
+        dev_ctxs.size == num_devices
+    ), "expected dev_ctxs to have the same number of elements as num_devices"
+
+    # One Optional[Error] slot per device; None means no error.
+    # Each task writes only to its own index, so there is no data race.
+    var errors = InlineArray[Optional[Error], num_devices](
+        fill=Optional[Error]()
+    )
+
+    # Wrap the launch function in a Mojo async function which does not raise.
+    @always_inline
+    @parameter
+    async fn wrapper[index: Int]() -> None:
+        try:
+            func[index]()
+        except e:
+            errors[index] = e^
+
+    # Set up a task group to launch the tasks in parallel.
+    var tg = TaskGroup()
+    var num_workers = parallelism_level()
+    comptime for i in range(num_devices):
+        # Dispatch to the worker thread that has affinity for this device.
+        var worker_id = task_id_for_device(Int(dev_ctxs[i].id()), num_workers)
+        tg._create_task(wrapper[i](), desired_worker_id=worker_id)
+
+    # Wait for all tasks to complete.
+    tg.wait()
+
+    # Re-raise the first error encountered.
+    comptime for i in range(num_devices):
+        if errors[i]:
+            raise errors[i].take()
+
+
 @compiler.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
     @staticmethod
@@ -9458,33 +9515,46 @@ struct DistributedAllReduceSum:
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
-        @parameter
-        fn output_lambda[
-            input_index: Int,
-            _dtype: DType,
-            _rank: Int,
-            _width: Int,
-            *,
-            _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-            outputs[input_index]._lambda_store[
-                width=_width, element_alignment=_alignment
+        fn launch_allreduce[
+            index: Int
+        ]() raises unified {
+            read in_bufs,
+            read out_bufs,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            @always_inline
+            @parameter
+            fn output_lambda[
+                output_index: Int,
+                _dtype: DType,
+                _rank: Int,
+                _width: Int,
+                *,
+                _alignment: Int,
+            ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+                outputs[output_index]._lambda_store[
+                    width=_width, element_alignment=_alignment
+                ](
+                    rebind[IndexList[rank]](coords),
+                    rebind[SIMD[dtype, _width]](val),
+                )
+
+            allreduce[
+                ngpus=num_devices,
+                output_lambda = output_lambda[output_index=index],
             ](
-                rebind[IndexList[rank]](coords),
-                rebind[SIMD[dtype, _width]](val),
+                in_bufs,
+                out_bufs[index].make_dims_unknown(),
+                rank_sigs,
+                dev_ctxs_input[index],
             )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            comptime for i in range(num_devices):
-                allreduce[
-                    ngpus=num_devices,
-                    output_lambda = output_lambda[input_index=i],
-                ](
-                    in_bufs,
-                    out_bufs[i].make_dims_unknown(),
-                    rank_sigs,
-                    dev_ctxs_input[i],
-                )
+            _launch_device_collective[num_devices](
+                launch_allreduce, dev_ctxs_input
+            )
 
 
 @compiler.register("mo.distributed.reducescatter.sum")
