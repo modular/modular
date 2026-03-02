@@ -99,7 +99,6 @@ class TextGenerationPipelineInterface(
 ):
     """Interface for text generation pipelines."""
 
-    # TODO: Get rid of these fields
     _devices: list[Device]
     _pipeline_model: PipelineModel[TextGenerationContextType]
 
@@ -187,6 +186,10 @@ class TextGenerationPipeline(
         # Retrieve the weights repo id (falls back to model_path when unset).
         weight_paths: list[Path] = get_weight_paths(model_config)
 
+        if not issubclass(pipeline_model, PipelineModelWithKVCache):
+            raise ValueError(
+                f"TextGenerationPipeline requires a model with KV cache support, found {pipeline_model.__name__}"
+            )
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
@@ -397,17 +400,13 @@ class TextGenerationPipeline(
             num_steps = 1
 
         # Retrieve the KV Cache Inputs (if model uses KV cache).
-        kv_manager = getattr(self._pipeline_model, "kv_manager", None)
-        if kv_manager is not None:
-            kv_cache_inputs_seq: KVCacheInputsSequence | None = (
-                KVCacheInputsSequence(
-                    kv_cache_inputs=kv_manager.runtime_inputs(
-                        replica_batches, num_steps
-                    )
+        kv_cache_inputs_seq: KVCacheInputsSequence | None = None
+        if self._kv_manager is not None:
+            kv_cache_inputs_seq = KVCacheInputsSequence(
+                kv_cache_inputs=self._kv_manager.runtime_inputs(
+                    replica_batches, num_steps
                 )
             )
-        else:
-            kv_cache_inputs_seq = None
 
         # Log batch details
         if self.batch_info_output_fname is not None:
@@ -604,8 +603,7 @@ class TextGenerationPipeline(
             if i == num_steps - 1:
                 break
 
-            kv_manager = getattr(self._pipeline_model, "kv_manager", None)
-            if kv_manager is not None:
+            if self._kv_manager is not None:
                 assert isinstance(
                     curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
                 ), (
@@ -617,7 +615,7 @@ class TextGenerationPipeline(
                     "increment_cache_lengths instantiates and passes this as a list"
                 )
                 curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
-                    kv_manager.increment_cache_lengths(
+                    self._kv_manager.increment_cache_lengths(
                         curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
                         curr_step_inputs,
                     )
@@ -664,9 +662,8 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
-        kv_manager = getattr(self._pipeline_model, "kv_manager", None)
-        if kv_manager is not None:
-            kv_manager.step(inputs.batches)
+        if self._kv_manager is not None:
+            self._kv_manager.step(inputs.batches)
 
         return res
 
