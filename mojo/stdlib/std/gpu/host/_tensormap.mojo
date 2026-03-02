@@ -94,7 +94,6 @@ struct SwizzleMode(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -158,6 +157,7 @@ struct SwizzleMode(
         """
         return Int((2**self._value) * 16)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert SwizzleMode to string representation.

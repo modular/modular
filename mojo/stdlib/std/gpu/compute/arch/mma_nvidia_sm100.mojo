@@ -29,9 +29,7 @@ from std.hashlib.hasher import Hasher
 
 
 @fieldwise_init("implicit")
-struct UMMAKind(
-    Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable
-):
+struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
     """Struct for UMMA instruction types.
 
     This struct defines the different types of UMMA instructions that is supported by BlackWell.
@@ -93,6 +91,7 @@ struct UMMAKind(
         """
         return self._value != other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert UMMA kind to a string, this can be used as the instruction qualifier.

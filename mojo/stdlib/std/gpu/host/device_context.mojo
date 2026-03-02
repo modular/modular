@@ -220,7 +220,7 @@ struct _DeviceTimer:
 
 
 @fieldwise_init
-struct StreamPriorityRange(Stringable, TrivialRegisterPassable, Writable):
+struct StreamPriorityRange(TrivialRegisterPassable, Writable):
     """Represents the range of valid stream priorities for a GPU device.
 
     Stream priorities control the scheduling of GPU operations, with higher
@@ -233,6 +233,7 @@ struct StreamPriorityRange(Stringable, TrivialRegisterPassable, Writable):
     var greatest: Int
     """The highest (numerically largest) priority value."""
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the stream priority range.
@@ -269,9 +270,7 @@ struct _DeviceBufferMode(TrivialRegisterPassable):
         return self._mode == other._mode
 
 
-struct HostBuffer[dtype: DType](
-    ImplicitlyCopyable, Sized, Stringable, Writable
-):
+struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     """Represents a block of host-resident storage. For GPU devices, a host
     buffer is allocated in the host's global memory.
 
@@ -700,6 +699,7 @@ struct HostBuffer[dtype: DType](
             )
         writer.write(")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of the `HostBuffer`.
 
@@ -765,7 +765,7 @@ struct HostBuffer[dtype: DType](
 
 
 struct DeviceBuffer[dtype: DType](
-    DevicePassable, ImplicitlyCopyable, Sized, Stringable, Writable
+    DevicePassable, ImplicitlyCopyable, Sized, Writable
 ):
     """Represents a block of device-resident storage. For GPU devices, a device
     buffer is allocated in the device's global memory.
@@ -1342,6 +1342,7 @@ struct DeviceBuffer[dtype: DType](
         except e:
             abort(t"failed to write DeviceBuffer:{e}")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of the `DeviceBuffer`.
 
