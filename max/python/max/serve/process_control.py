@@ -152,6 +152,8 @@ async def run_subprocess(
                     )
                 except (TimeoutError, queue.Empty):
                     pass
+                if proc.exitcode is not None:
+                    return None, None  # will check exitcode below
 
         try:
             value, exception = await get_result()
@@ -232,6 +234,7 @@ class ProcessManager:
         return self.task
 
     async def ready(self, event: Event, timeout: float | None) -> None:
+        assert self.task is not None
         loop = asyncio.get_event_loop()
         t0 = time.monotonic()
         while True:
@@ -242,6 +245,11 @@ class ProcessManager:
                 break
             except TimeoutError:
                 pass
+            if self.task.done():
+                # task is done but event never got set, so something went wrong
+                raise RuntimeError(
+                    f"{self.name} failed to become ready"
+                ) from self.task.exception()  # may be None, that's ok
             t1 = time.monotonic()
             if timeout is not None and t1 - t0 > timeout:
                 raise TimeoutError(

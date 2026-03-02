@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 import asyncio
+import ctypes
 import functools
 import multiprocessing
 import sys
@@ -47,6 +48,12 @@ def work(alive: Event, reps: int, pause: float) -> int:
         time.sleep(pause)
         alive.set()
     return 123
+
+
+def run_segfault(_: Event) -> None:
+    # this will segfault, bypassing all subproc try/catch
+    # forcing us to monitor process liveness externally
+    print(ctypes.string_at(0))
 
 
 def run_exception(alive: Event) -> NoReturn:
@@ -110,6 +117,19 @@ async def test_exception_propagate() -> None:
             task = proc.start(run_exception, alive)
             await proc.ready(alive, timeout=10)
             await asyncio.sleep(11)
+
+
+@async_timeout(30)
+async def test_segfault() -> None:
+    # would normally match="Segmentation fault"
+    # but ASAN CI turns this into "Aborted" status
+    # so we simply check for SubprocessExit
+    with pytest.raises(SubprocessExit):
+        async with subprocess_manager("test1") as proc:
+            alive = ctx.Event()
+            task = proc.start(run_segfault, alive)
+            await proc.ready(alive, timeout=30)
+            raise AssertionError("Should not reach here")
 
 
 @async_timeout(10)
