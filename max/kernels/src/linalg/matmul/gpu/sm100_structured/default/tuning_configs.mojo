@@ -68,8 +68,17 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_split_k = num_split_k
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
-        return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
 
     fn __init__(
         out self,

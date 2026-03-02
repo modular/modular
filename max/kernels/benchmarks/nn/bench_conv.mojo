@@ -211,7 +211,7 @@ struct ConvSpecStatic(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
+struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Writable):
     var n: Int
     var input_dims: IndexList[Self.static_info.rank]
     var c: Int
@@ -222,10 +222,19 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
     var pad: IndexList[2 * Self.static_info.rank]
     var num_groups: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
-        # fmt: off
-        return String(
+        return String.write(self)
+
+    # fmt: off
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the conv spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "n=", self.n,
             ";input=", self.input_dims,
             ";c=", self.c,
@@ -234,7 +243,7 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
             ";stride=", self.stride,
             ";padding=", self.pad,
         )
-        # fmt: on
+    # fmt: on
 
     fn flops(self) -> Int:
         var output_dims = IndexList[Self.static_info.rank](1)

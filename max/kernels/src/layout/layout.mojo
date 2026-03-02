@@ -313,7 +313,6 @@ struct Layout(
     Iterable,
     LayoutTrait,
     Sized,
-    Stringable,
     Writable,
 ):
     """Represents a memory layout for multi-dimensional data.
@@ -803,6 +802,7 @@ struct Layout(
     # ===------------------------------------------------------------------===#
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the layout to a string representation.
 

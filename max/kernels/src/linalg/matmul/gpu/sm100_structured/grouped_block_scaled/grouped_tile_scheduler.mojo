@@ -108,7 +108,7 @@ struct GroupedAdvanceContext[
 
 @fieldwise_init
 struct GroupedWorkInfo(
-    ImplicitlyCopyable, Movable, Stringable, TrivialRegisterPassable, Writable
+    ImplicitlyCopyable, Movable, TrivialRegisterPassable, Writable
 ):
     """Work info for grouped GEMM with group-specific metadata.
 
@@ -157,6 +157,7 @@ struct GroupedWorkInfo(
         """Get (m, n) tile coordinates as a tuple."""
         return (UInt(self.m), UInt(self.n))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

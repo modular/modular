@@ -86,22 +86,31 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
 
 
 @fieldwise_init
-struct GatherSpec(ImplicitlyCopyable, Stringable):
+struct GatherSpec(ImplicitlyCopyable, Writable):
     var axis: Int
     var m1: Int
     var m2: Int
     var n1: Int
     var n2: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
-        # fmt: off
-        return String(
+        return String.write(self)
+
+    # fmt: off
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the gather spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "axis=", self.axis,
             ";Dim=(", self.m1, ",", self.m2, ")",
             "(", self.n1, ",", self.n2, ")",
         )
-        # fmt: on
+    # fmt: on
 
 
 def main() raises:

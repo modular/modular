@@ -37,7 +37,7 @@ from ..tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -50,6 +50,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     fn is_valid(self) -> Bool:
         return self.is_valid_tile
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

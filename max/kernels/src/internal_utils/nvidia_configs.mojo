@@ -30,14 +30,28 @@ struct TuningConfigNvidia(TrivialRegisterPassable, TuningConfig):
     var TUNE_NUM_WARP_K_PARTITIONS: Int
     var nranks: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
-        var s = List[String]()
-        s += ["m:" + String(self.M)]
-        s += ["n:" + String(self.N)]
-        s += ["k:" + String(self.K)]
-        s += ["bm:" + String(self.TUNE_BM)]
-        s += ["bn:" + String(self.TUNE_BN)]
-        return "/".join(s)
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
+            "m:",
+            self.M,
+            "/n:",
+            self.N,
+            "/k:",
+            self.K,
+            "/bm:",
+            self.TUNE_BM,
+            "/bn:",
+            self.TUNE_BN,
+        )
 
 
 comptime configs: List[TuningConfigNvidia] = [

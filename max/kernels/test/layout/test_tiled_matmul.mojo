@@ -20,7 +20,7 @@ from layout._utils import ManagedLayoutTensor
 
 
 @fieldwise_init
-struct Dim(ImplicitlyCopyable, RegisterPassable, Stringable):
+struct Dim(ImplicitlyCopyable, RegisterPassable, Writable):
     var m: Int
     var n: Int
     var k: Int
@@ -30,9 +30,18 @@ struct Dim(ImplicitlyCopyable, RegisterPassable, Stringable):
             self.m // sub_dim.m, self.n // sub_dim.n, self.k // sub_dim.k
         )
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
-        return String("m: ", self.m, ", n: ", self.n, ", k: ", self.k)
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the dim.
+
+        Args:
+            writer: The writer to write to.
+        """
+        t"m: {self.m}, n: {self.n}, k: {self.k}".write_to(writer)
 
 
 trait TiledOp:

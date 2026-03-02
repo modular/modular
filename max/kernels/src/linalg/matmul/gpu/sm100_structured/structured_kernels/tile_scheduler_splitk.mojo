@@ -40,7 +40,7 @@ from .tmem import TmemAddress, TmemTensor
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -60,6 +60,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     fn is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

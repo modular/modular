@@ -32,8 +32,17 @@ struct TuningConfigAllreduce(TrivialRegisterPassable, TuningConfig):
     var sm_version: StaticString
     var num_blocks: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
-        return String(
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             self.ngpus, self.num_bytes, self.sm_version, self.num_blocks
         )
 

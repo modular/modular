@@ -69,7 +69,7 @@ comptime logger = Logger()
 
 
 @fieldwise_init
-struct GEMVAlgorithm(ImplicitlyCopyable, Stringable, Writable):
+struct GEMVAlgorithm(ImplicitlyCopyable, Writable):
     var _value: Int
 
     comptime GEMV_KERNEL = Self(0)
@@ -91,6 +91,7 @@ struct GEMVAlgorithm(ImplicitlyCopyable, Stringable, Writable):
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns the string representation of this algorithm.
 

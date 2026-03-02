@@ -279,7 +279,7 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 # Stores the layout of the vectorized buffer element.
 #
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
-    Defaultable, ImplicitlyCopyable, Stringable, Writable
+    Defaultable, ImplicitlyCopyable, Writable
 ):
     var stride: IndexList[Self.rank]
 
@@ -287,6 +287,7 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
         self.stride = IndexList[Self.rank]()
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 

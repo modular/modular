@@ -107,7 +107,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](Stringable, TrivialRegisterPassable, Writable):
+](TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -250,6 +250,7 @@ struct MatmulConfig[
         else:
             return False
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -271,6 +272,7 @@ struct MatmulConfig[
         # transpose B
         writer.write("T" if Self.transpose_b else "N")
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         return String.write(self)
 

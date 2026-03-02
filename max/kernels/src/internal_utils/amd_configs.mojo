@@ -26,14 +26,28 @@ struct TuningConfigAMD(TrivialRegisterPassable, TuningConfig):
     var bm: Int
     var bn: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
-        var s = List[String]()
-        s += ["m:" + String(self.m)]
-        s += ["n:" + String(self.n)]
-        s += ["k:" + String(self.k)]
-        s += ["bm:" + String(self.bm)]
-        s += ["bn:" + String(self.bn)]
-        return "/".join(s)
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
+            "m:",
+            self.m,
+            "/n:",
+            self.n,
+            "/k:",
+            self.k,
+            "/bm:",
+            self.bm,
+            "/bn:",
+            self.bn,
+        )
 
 
 # Put the tuning results in this file.

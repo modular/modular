@@ -304,7 +304,7 @@ fn shiftl(a: Scalar, s: Scalar[a.dtype]) -> Scalar[a.dtype]:
 # ===-----------------------------------------------------------------------===#
 
 
-struct Swizzle(LayoutTrait, Stringable, TrivialRegisterPassable, Writable):
+struct Swizzle(LayoutTrait, TrivialRegisterPassable, Writable):
     """Swizzle functor for memory access pattern optimization.
 
     Implements a swizzling pattern to reduce bank conflicts in shared
@@ -460,6 +460,7 @@ struct Swizzle(LayoutTrait, Stringable, TrivialRegisterPassable, Writable):
         """
         writer.write("(", self.bits, ",", self.base, ",", self.shift, ")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Convert the swizzle to a string representation.
 
