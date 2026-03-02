@@ -82,6 +82,7 @@ conflicts = [[
 overrides = [
     { name = "numba", specifier = "==0.63.1" },
     { name = "numpy", specifier = ">=2.2.0" },
+    { name = "transformers", specifier = "==4.57.1" },
 ]
 
 [[package]]

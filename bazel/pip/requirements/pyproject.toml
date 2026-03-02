@@ -242,6 +242,8 @@ override-dependencies = [
   "numba==0.63.1",
   # Override lmcache's numpy<=2.2.6 constraint to allow our numpy>=2.3.0
   "numpy>=2.2.0",
+  # Override vllm's `transformers` constraint (TODO: update to >=5)
+  "transformers==4.57.1",
 ]
 
 [tool.uv.sources]

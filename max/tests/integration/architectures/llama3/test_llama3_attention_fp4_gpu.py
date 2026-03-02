@@ -20,6 +20,7 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
+import transformers
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -40,6 +41,9 @@ from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack
 from transformers.models.llama.configuration_llama import LlamaConfig
+
+# This version is detached from the one pulled from rules_pycross, assert that the override is working.
+assert transformers.__version__ == "4.57.6"
 
 RTOL = 0.006
 ATOL = 0.006
