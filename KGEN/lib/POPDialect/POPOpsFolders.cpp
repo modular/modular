@@ -1023,15 +1023,17 @@ static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
   if (!operand)
     return {};
 
-  // The reshape is invalid.
-  ssize_t outWidth = outputDType.getWidthInBits();
-  ssize_t inWidth = inputDType.getWidthInBits();
+  // The reshape is invalid.  Bool has 1 bit of data despite 8-bit storage.
+  ssize_t outWidth = outputDType.isBool() ? 1 : outputDType.getWidthInBits();
+  ssize_t inWidth = inputDType.isBool() ? 1 : inputDType.getWidthInBits();
   if (inSize * inWidth != outSize * outWidth)
     return {};
 
   SmallVector<DTypeValue> typeValues;
   auto addValue = [&outputDType, &typeValues](APInt value) -> void {
-    if (outputDType.isFloat()) {
+    if (outputDType.isBool()) {
+      typeValues.push_back(DTypeValue(!value.isZero(), outputDType));
+    } else if (outputDType.isFloat()) {
       const llvm::fltSemantics *sem = outputDType.getFloatSemantics();
       unsigned floatBits = APFloat::semanticsSizeInBits(*sem);
       APInt extractedBits = value.extractBits(floatBits, 0);
@@ -1051,6 +1053,8 @@ static OpFoldResult reshape(SIMDAttr operand, KGENDType inputDType,
       for (unsigned elemIdx = 0; elemIdx < elementsPerOutput; ++elemIdx) {
         unsigned inIdx = outIdx * elementsPerOutput + elemIdx;
         APInt inputValue = operand.getValues()[inIdx].getData();
+        if (inputDType.isBool())
+          inputValue = inputValue.trunc(1);
 
         unsigned shiftAmount =
             isLittleEndian ? (elemIdx * inWidth)
@@ -1092,15 +1096,16 @@ static OpFoldResult evaluate(SIMDType resultType, SIMDType inputType,
   if (!dtype || !inputDType || !inputSize || !outputSize)
     return {};
 
-  if (inputDType->isBool() ||
-      dtype->isBool()) // Modeling bool bitcast requires packing.
-    return {};
-
-  if (isa_and_nonnull<SIMDAttr>(operand) && inputSize != outputSize &&
-      operand) {
+  if (isa_and_nonnull<SIMDAttr>(operand) &&
+      (inputSize != outputSize || inputDType->isBool() || dtype->isBool())) {
     return reshape(cast<SIMDAttr>(operand), *inputDType, *inputSize, *dtype,
                    *outputSize, target);
   }
+
+  // Bool can only be folded through reshape() above.
+  if (inputDType->isBool() || dtype->isBool())
+    return {};
+
   if (dtype->isInt()) {
     return bitcastSIMDIndex(
         operand, *inputDType, *dtype, target,
