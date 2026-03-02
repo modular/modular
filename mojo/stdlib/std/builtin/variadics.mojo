@@ -168,6 +168,24 @@ struct Variadic:
         count: The number of times to splat the type.
     """
 
+    comptime splat_value[T: AnyType, //, value: T, count: Int] = __mlir_attr[
+        `#kgen.variadic.splat<:`,
+        +T,
+        ` `,
+        +value,
+        `,`,
+        count._mlir_value,
+        `> : `,
+        Variadic.ValuesOfType[T],
+    ]
+    """Splat a value into a variadic sequence.
+
+    Parameters:
+        T: The type of the value to splat.
+        value: The value to splat.
+        count: The number of times to splat the value.
+    """
+
     comptime contains[
         Trait: type_of(AnyType),
         //,

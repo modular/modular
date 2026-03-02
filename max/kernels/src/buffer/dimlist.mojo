@@ -580,15 +580,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             A list of all dynamic dimension values.
         """
         comptime assert length > 0, "length must be positive"
-
-        return Self(
-            VariadicParamList[Dim](
-                __mlir_op.`pop.variadic.splat`[
-                    numElements = length._mlir_value,
-                    _type = Variadic.ValuesOfType[Dim],
-                ](Dim())
-            )
-        )
+        return Self(Variadic.splat_value[Dim(), length])
 
     fn __str__(self) -> String:
         """Converts the DimList to a String. The String is a comma separated
