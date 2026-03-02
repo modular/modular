@@ -193,9 +193,6 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    mojo_deps = [
-        "//max/kernels/src/state_space:state_space",
-    ],
     tags = [
         "gpu",
         "no-sandbox",

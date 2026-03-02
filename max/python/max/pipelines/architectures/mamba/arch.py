@@ -28,10 +28,10 @@ mamba_arch = SupportedArchitecture(
     example_repo_ids=[
         "state-spaces/mamba-130m-hf",
     ],
-    default_encoding="bfloat16",
+    default_encoding="float32",
     supported_encodings={
-        "bfloat16": [],
         "float32": [],
+        "bfloat16": [],
     },
     pipeline_model=MambaModel,
     tokenizer=MambaTokenizer,

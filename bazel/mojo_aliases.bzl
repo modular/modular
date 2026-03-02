@@ -23,6 +23,7 @@ _MAX_PACKAGES = {
     "weights_registry": "kernels/src/weights_registry",
     "internal_utils": "kernels/src/internal_utils",
     "comm": "kernels/src/comm",
+    "state_space": "kernels/src/state_space",
     "testdata": "kernels/test/testdata",
     "compiler": "compiler/src:compiler",
     "_cublas": "kernels/src/_cublas",

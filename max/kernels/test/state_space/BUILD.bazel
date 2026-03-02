@@ -8,7 +8,7 @@ package(default_visibility = ["//max:consumers"])
         srcs = [src],
         deps = [
             "//max:internal_utils",
-            "//max/kernels/src/state_space",
+            "//max:state_space",
             "@mojo//:std",
         ],
     )

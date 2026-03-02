@@ -12,12 +12,6 @@ package(default_visibility = [
     "//open-source/max/max/tests:__subpackages__",
 ])
 
-# Mamba-specific kernels (causal_conv1d, selective_scan_fwd) are in the
-# state_space package.
-MAMBA_MOJOPKGS = [
-    "//max/kernels/src/state_space:state_space",
-]
-
 modular_py_test(
     name = "test_mamba_130m",
     size = "enormous",
@@ -43,7 +37,6 @@ modular_py_test(
     imports = [
         "../../..",  # For hf_repo_lock
     ],
-    mojo_deps = MAMBA_MOJOPKGS,
     tags = [
         "no-sandbox",
         "requires-network",
@@ -76,7 +69,6 @@ modular_py_test(
     imports = [
         "../../..",  # For hf_repo_lock
     ],
-    mojo_deps = MAMBA_MOJOPKGS,
     tags = [
         "no-sandbox",
         "requires-network",
