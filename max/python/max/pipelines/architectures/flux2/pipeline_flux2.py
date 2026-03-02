@@ -511,16 +511,16 @@ class Flux2Pipeline(DiffusionPipeline):
             prompt_embeds = self.text_encoder(tokens)
 
         with Tracer("post_process"):
-            if num_images_per_prompt != 1:
+            if num_visuals_per_prompt != 1:
                 prompt_embeds = F.tile(
-                    prompt_embeds, (1, num_images_per_prompt, 1)
+                    prompt_embeds, (1, num_visuals_per_prompt, 1)
                 )
                 prompt_embeds = F.reshape(
                     prompt_embeds,
-                    [batch_size * num_images_per_prompt, seq_len, -1],
+                    [batch_size * num_visuals_per_prompt, seq_len, -1],
                 )
 
-            batch_size_final = batch_size * num_images_per_prompt
+            batch_size_final = batch_size * num_visuals_per_prompt
             text_ids_key = f"{batch_size_final}_{seq_len}"
             if text_ids_key in self._cached_text_ids:
                 text_ids = self._cached_text_ids[text_ids_key]
@@ -681,7 +681,7 @@ class Flux2Pipeline(DiffusionPipeline):
         # 1) Encode prompts.
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
-            num_images_per_prompt=model_inputs.num_images_per_prompt,
+            num_visuals_per_prompt=model_inputs.num_visuals_per_prompt,
         )
         batch_size = int(prompt_embeds.shape[0])
 

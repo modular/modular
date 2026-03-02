@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import logging
 from dataclasses import dataclass
-from typing import Any, Literal
+from queue import Queue
+from typing import Any, Literal, cast
 
 import max.experimental.functional as F
 import numpy as np
@@ -29,6 +29,7 @@ from max.pipelines.lib.interfaces import (
     PixelModelInputs,
 )
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
+from max.profiler import Tracer
 from tqdm import tqdm
 from transformers import Gemma3ForConditionalGeneration
 
@@ -42,36 +43,24 @@ from .model import (
     LTX2VocoderModel,
 )
 
-logger = logging.getLogger("max.pipelines")
-
 
 @dataclass(kw_only=True)
 class LTX2ModelInputs(PixelModelInputs):
-    """A class representing inputs for the LTX2 model.
-
-    This class encapsulates the input tensors required for the LTX2 model execution
-    and extends the generic PixelModelInputs used by other diffusion pipelines.
-
-    Core scalar and array fields such as height, width, timesteps, sigmas, and
-    latents are inherited from PixelModelInputs and populated via
-    `from_context(PixelContext)` in `prepare_inputs`.
-
-    Only LTX2-specific optional fields are added here.
+    """
+    LTX2-specific PixelModelInputs.
     """
 
     width: int = 768
     height: int = 512
     guidance_scale: float = 4.0
     num_inference_steps: int = 40
+    num_visuals_per_prompt: int = 1
     num_frames: int = 121
     frame_rate: float = 24.0
-    audio_sampling_rate: int = 24000
-    """Audio sampling rate of the generated waveform (from vocoder output_sampling_rate)."""
-    num_visuals_per_prompt: int = 1
     mask: npt.NDArray[np.bool_] | None = None
-    """Attention mask for the text encoder (True = attend, False = ignore)."""
+    """Attention mask for the text encoder."""
     extra_params: dict[str, npt.NDArray[Any]] | None = None
-    """LTX2-specific preprocessed arrays (e.g. ltx2_video_latents_5d, ltx2_audio_latents)."""
+    """LTX2-specific preprocessed arrays."""
 
     @property
     def do_true_cfg(self) -> bool:
@@ -88,15 +77,16 @@ class LTX2PipelineOutput:
         audio: Generated audio waveform tensor of shape ``(batch, channels, samples)``.
     """
 
-    frames: Tensor
-    audio: Tensor
+    frames: np.ndarray | Tensor
+    audios: np.ndarray | Tensor
 
 
 class LTX2Pipeline(DiffusionPipeline):
-    """A LTX2 pipeline for text-to-video and image-to-video generation."""
+    """A LTX2 pipeline for text-to-video-audio generation."""
 
     vae: AutoencoderKLLTX2VideoModel
     audio_vae: AutoencoderKLLTX2AudioModel
+    # text_encoder: Gemma3TextEncoderModel
     transformer: LTX2TransformerModel
     connectors: LTX2TextConnectorsModel
     vocoder: LTX2VocoderModel
@@ -104,48 +94,25 @@ class LTX2Pipeline(DiffusionPipeline):
     components = {
         "vae": AutoencoderKLLTX2VideoModel,
         "audio_vae": AutoencoderKLLTX2AudioModel,
+        # "text_encoder": Gemma3TextEncoderModel,
         "transformer": LTX2TransformerModel,
         "connectors": LTX2TextConnectorsModel,
         "vocoder": LTX2VocoderModel,
     }
 
     def init_remaining_components(self) -> None:
-        """Initialize non-ComponentModel parts of the LTX2 pipeline.
+        """Initialize derived attributes that depend on loaded components."""
 
-        - Using pre-loaded component models (vae, audio_vae, transformer, connectors, vocoder)
-        - Setting basic VAE/audio compression ratios
-        - Pre-compiling hot-path functions via max_compile
-        """
-
-        # VAE compression ratios: fall back to known LTX2 defaults if not present.
-        # LTX2 uses (t, h, w) scale factors of (8, 32, 32) for the video VAE.
-        self.vae_temporal_compression_ratio = 8
-        self.vae_spatial_compression_ratio = 32
-
-        # Audio VAE configuration (matching AutoencoderKLLTX2AudioConfig defaults).
         self.audio_vae_mel_compression_ratio = 4
-
-        # Instantiate Gemma3 text encoder (PyTorch) from the same model path.
-        # NOTE: text encoder init is intentionally left as-is (uses PyTorch, not MAX).
-        import torch
 
         model_id = str(self.pipeline_config.model.model_path)
         self.text_encoder = Gemma3ForConditionalGeneration.from_pretrained(
             model_id,
             subfolder="text_encoder",
             torch_dtype=torch.bfloat16,
-        )
+        ).to("cuda")
 
-        self.text_encoder.to("cuda")
-
-        # Cache VAE latent statistics as Tensors for use in compiled postprocess functions.
-        # Must be set up BEFORE build_decode_video_latents / build_decode_audio_latents.
-        # Stats are registered buffers in the safetensors weights; BaseAutoencoderModel.
-        # load_model() extracts them and exposes them as self.latents_mean / self.latents_std.
         device = self.transformer.devices[0]
-        dtype = self.transformer.config.dtype
-        # Latent stats are scaling constants — keep them in float32 regardless of
-        # the model's compute dtype (which is typically bfloat16).
         stats_dtype = DType.float32
         vae_mean = getattr(self.vae, "latents_mean", None)
         vae_std = getattr(self.vae, "latents_std", None)
@@ -181,7 +148,6 @@ class LTX2Pipeline(DiffusionPipeline):
             self._audio_latents_mean = None
             self._audio_latents_std = None
 
-        # Pre-compile hot-path tensor functions via max_compile (Flux2-style).
         self.build_pack_latents()
         self.build_pack_audio_latents()
         self.build_prepare_scheduler()
@@ -192,8 +158,7 @@ class LTX2Pipeline(DiffusionPipeline):
         self.build_prepare_cfg_latents_timesteps()
         self.build_apply_cfg_guidance()
 
-        self._joint_attention_kwargs: dict[str, Any] | None = None
-        self._num_timesteps: int = 0
+        self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
 
     def prepare_inputs(self, context: PixelContext) -> LTX2ModelInputs:  # type: ignore[override]
@@ -261,7 +226,7 @@ class LTX2Pipeline(DiffusionPipeline):
         )
 
     def build_scheduler_step_video(self) -> None:
-        """Compile _scheduler_step_video: Euler update for video latents.
+        """Compile scheduler_step_video: Euler update for video latents.
 
         batch=1, seq=6144 (16*16*24), channels=128
         """
@@ -281,13 +246,13 @@ class LTX2Pipeline(DiffusionPipeline):
             TensorType(DType.float32, shape=[1], device=device),
             TensorType(DType.int64, shape=[], device=DeviceRef.CPU()),
         ]
-        self.__dict__["_scheduler_step_video"] = max_compile(
+        self.__dict__["scheduler_step_video"] = max_compile(
             self.scheduler_step,
             input_types=input_types,
         )
 
     def build_scheduler_step_audio(self) -> None:
-        """Compile _scheduler_step_audio: Euler update for audio latents.
+        """Compile scheduler_step_audio: Euler update for audio latents.
 
         batch=1, seq=126 (round((121/24)*25)=126), channels=128
         """
@@ -307,7 +272,7 @@ class LTX2Pipeline(DiffusionPipeline):
             TensorType(DType.float32, shape=[1], device=device),
             TensorType(DType.int64, shape=[], device=DeviceRef.CPU()),
         ]
-        self.__dict__["_scheduler_step_audio"] = max_compile(
+        self.__dict__["scheduler_step_audio"] = max_compile(
             self.scheduler_step,
             input_types=input_types,
         )
@@ -374,7 +339,7 @@ class LTX2Pipeline(DiffusionPipeline):
         )
 
     def build_prepare_cfg_latents_timesteps(self) -> None:
-        """Compile _prepare_cfg_latents_timesteps: concat+cast for CFG latent doubling.
+        """Compile prepare_cfg_latents_timesteps: concat+cast for CFG latent doubling.
 
         Fuses two F.concat calls and two casts into a single compiled graph,
         eliminating per-step Python dispatch overhead.
@@ -396,13 +361,13 @@ class LTX2Pipeline(DiffusionPipeline):
             ),
             TensorType(dtype, shape=[1], device=device),
         ]
-        self.__dict__["_prepare_cfg_latents_timesteps"] = max_compile(
-            self._prepare_cfg_latents_timesteps,
+        self.__dict__["prepare_cfg_latents_timesteps"] = max_compile(
+            self.prepare_cfg_latents_timesteps,
             input_types=input_types,
         )
 
     def build_apply_cfg_guidance(self) -> None:
-        """Compile _apply_cfg_guidance: CFG formula for video+audio noise preds.
+        """Compile apply_cfg_guidance: CFG formula for video+audio noise preds.
 
         Fuses cast + split + guidance arithmetic into a single compiled graph:
           video in:  [2, 6144, 128] bfloat16 -> [1, 6144, 128] bfloat16
@@ -424,8 +389,8 @@ class LTX2Pipeline(DiffusionPipeline):
             ),
             TensorType(DType.float32, shape=[1], device=device),
         ]
-        self.__dict__["_apply_cfg_guidance"] = max_compile(
-            self._apply_cfg_guidance,
+        self.__dict__["apply_cfg_guidance"] = max_compile(
+            self.apply_cfg_guidance,
             input_types=input_types,
         )
 
@@ -789,7 +754,7 @@ class LTX2Pipeline(DiffusionPipeline):
     # Compiled instance methods (overridden in __dict__ by build_* at startup)
     # -----------------------------------------------------------------------
 
-    def _prepare_cfg_latents_timesteps(
+    def prepare_cfg_latents_timesteps(
         self, video_latents: Tensor, audio_latents: Tensor, timesteps: Tensor
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Concat+cast video and audio latents for CFG [1,S,D]->[2,S,D].
@@ -803,7 +768,7 @@ class LTX2Pipeline(DiffusionPipeline):
         timesteps = F.concat([timesteps, timesteps], axis=0)
         return video, audio, timesteps
 
-    def _apply_cfg_guidance(
+    def apply_cfg_guidance(
         self,
         noise_pred_video: Tensor,
         noise_pred_audio: Tensor,
@@ -938,22 +903,6 @@ class LTX2Pipeline(DiffusionPipeline):
             latents.dtype
         )
 
-    @property
-    def guidance_scale(self) -> float:
-        return self._guidance_scale
-
-    @property
-    def do_classifier_free_guidance(self) -> bool:
-        return self._guidance_scale > 1
-
-    @property
-    def joint_attention_kwargs(self) -> dict[str, Any] | None:
-        return self._joint_attention_kwargs
-
-    @property
-    def num_timesteps(self) -> int:
-        return self._num_timesteps
-
     def decode_video_latents(
         self,
         latents: Tensor,
@@ -1057,16 +1006,19 @@ class LTX2Pipeline(DiffusionPipeline):
     def execute(  # type: ignore[override]
         self,
         model_inputs: LTX2ModelInputs,
+        callback_queue: Queue[np.ndarray] | None = None,
+        output_type: Literal["np", "latent"] = "np",
     ) -> LTX2PipelineOutput:
         r"""
         Executes the LTX2 model with the prepared inputs.
 
         Args:
-            model_inputs: A LTX2Inputs instance containing all image generation parameters
-                including prompt, dimensions, guidance scale, etc.
+            model_inputs: Inputs containing tokens, latents, timesteps, sigmas, and IDs.
+            callback_queue: Optional queue for streaming intermediate decoded outputs.
+            output_type: Output mode ("np", "latent")
 
         Returns:
-            ModelOutputs containing the generated images.
+            LTX2PipelineOutput containing one output per batch element.
         """
         num_inference_steps = model_inputs.num_inference_steps
         guidance_scale = model_inputs.guidance_scale
@@ -1086,9 +1038,6 @@ class LTX2Pipeline(DiffusionPipeline):
         coords_cfg_doubled: bool = bool(
             extra_params.get("ltx2_coords_cfg_doubled", False)
         )
-
-        self._guidance_scale = guidance_scale
-        self._num_timesteps = num_inference_steps
 
         latent_num_frames = int(extra_params["ltx2_latent_num_frames"])
         latent_height = int(extra_params["ltx2_latent_height"])
@@ -1149,8 +1098,8 @@ class LTX2Pipeline(DiffusionPipeline):
         prompt_embeds = self._pack_text_embeds(
             text_encoder_hidden_states, prompt_valid_length, device
         )
-
-        if self.do_classifier_free_guidance:
+        do_classifier_free_guidance = model_inputs.guidance_scale > 1.0
+        if do_classifier_free_guidance:
             if model_inputs.negative_tokens is not None:
                 negative_ids_np: np.ndarray = model_inputs.negative_tokens.array
                 if negative_ids_np.ndim == 1:
@@ -1214,9 +1163,9 @@ class LTX2Pipeline(DiffusionPipeline):
         batch_size = video_latents_np.shape[0]
         batch_size = int(batch_size)
 
-        latents = Tensor.from_dlpack(video_latents_np).to(device)
-        # Pack latents: [B, C, F, H, W] -> [B, S, D]
-        latents = self._pack_video_latents(latents)
+        video_latents = Tensor.from_dlpack(video_latents_np).to(device)
+        # Pack video_latents: [B, C, F, H, W] -> [B, S, D]
+        video_latents = self._pack_video_latents(video_latents)
 
         if audio_latents_np is None:
             raise ValueError(
@@ -1248,7 +1197,7 @@ class LTX2Pipeline(DiffusionPipeline):
         audio_coords_np_f32 = audio_coords_np.astype(np.float32)
         audio_coords = Tensor.from_dlpack(audio_coords_np_f32).to(device)
 
-        if self.do_classifier_free_guidance and not coords_cfg_doubled:
+        if do_classifier_free_guidance and not coords_cfg_doubled:
             video_coords = F.concat([video_coords, video_coords], axis=0)
             audio_coords = F.concat([audio_coords, audio_coords], axis=0)
 
@@ -1256,21 +1205,21 @@ class LTX2Pipeline(DiffusionPipeline):
             np.array([guidance_scale], dtype=np.float32),
         ).to(device)
 
-        num_video_noise_tokens = int(latents.shape[1])
+        num_video_noise_tokens = int(video_latents.shape[1])
         num_audio_noise_tokens = int(audio_latents.shape[1])
 
         for i in tqdm(range(num_inference_steps), desc="Denoising"):
             timestep = timesteps_seq[i : i + 1]
             dt = dts_seq[i : i + 1]
 
-            if self.do_classifier_free_guidance:
+            if do_classifier_free_guidance:
                 latent_model_input, audio_latent_model_input, timestep = (
-                    self._prepare_cfg_latents_timesteps(
-                        latents, audio_latents, timestep
+                    self.prepare_cfg_latents_timesteps(
+                        video_latents, audio_latents, timestep
                     )
                 )
             else:
-                latent_model_input = latents
+                latent_model_input = video_latents
                 audio_latent_model_input = audio_latents
 
             latent_model_input = latent_model_input.cast(prompt_embeds.dtype)
@@ -1288,27 +1237,77 @@ class LTX2Pipeline(DiffusionPipeline):
                 video_coords,
                 audio_coords,
             )
-            if self.do_classifier_free_guidance:
-                noise_pred_video, noise_pred_audio = self._apply_cfg_guidance(
+
+            if do_classifier_free_guidance:
+                noise_pred_video, noise_pred_audio = self.apply_cfg_guidance(
                     noise_pred_video, noise_pred_audio, guidance_scale_tensor
                 )
 
-            latents = self._scheduler_step_video(
-                latents, noise_pred_video, dt, num_video_noise_tokens
-            )
-            audio_latents = self._scheduler_step_audio(
-                audio_latents, noise_pred_audio, dt, num_audio_noise_tokens
-            )
+            with Tracer("scheduler_steps"):
+                video_latents = self.scheduler_step_video(
+                    video_latents, noise_pred_video, dt, num_video_noise_tokens
+                )
+                audio_latents = self.scheduler_step_audio(
+                    audio_latents, noise_pred_audio, dt, num_audio_noise_tokens
+                )
 
-        frames = self.decode_video_latents(
-            latents, latent_num_frames, latent_height, latent_width
-        )
-        audio = self.decode_audio_latents(
-            audio_latents,
-            audio_num_frames,
-            latent_mel_bins,
-        )
-        return LTX2PipelineOutput(
-            frames=frames,
-            audio=audio,
-        )
+            if callback_queue is not None:
+                if hasattr(device, "synchronize"):
+                    device.synchronize()
+                callback_queue.put_nowait(
+                    cast(
+                        np.ndarray,
+                        self.decode_video_latents(
+                            video_latents,
+                            latent_num_frames,
+                            latent_height,
+                            latent_width,
+                            output_type,
+                        ),
+                    )
+                )
+                if hasattr(device, "synchronize"):
+                    device.synchronize()
+                callback_queue.put_nowait(
+                    cast(
+                        np.ndarray,
+                        self.decode_audio_latents(
+                            audio_latents,
+                            audio_num_frames,
+                            latent_mel_bins,
+                            output_type,
+                        ),
+                    )
+                )
+
+        # 5) Decode final outputs per batch element.
+        video_list = []
+        with Tracer("decode_video_latents"):
+            for b in range(batch_size):
+                with Tracer("slice_batch"):
+                    video_latents_b = video_latents[b : b + 1]
+                video_list.append(
+                    self.decode_video_latents(
+                        video_latents_b,
+                        latent_num_frames,
+                        latent_height,
+                        latent_width,
+                        output_type,
+                    )
+                )
+
+        audio_list = []
+        with Tracer("decode_audio_latents"):
+            for b in range(batch_size):
+                with Tracer("slice_batch"):
+                    audio_latents_b = audio_latents[b : b + 1]
+                audio_list.append(
+                    self.decode_audio_latents(
+                        audio_latents_b,
+                        audio_num_frames,
+                        latent_mel_bins,
+                        output_type,
+                    )
+                )
+
+        return LTX2PipelineOutput(video_list, audio_list)
