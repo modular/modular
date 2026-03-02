@@ -11,21 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Tested on T4 GPU 2 Dec 2025
-
-
+from std.memory import UnsafePointer
 from std.gpu.host import DeviceContext
 
+comptime `✅`: Int32 = 1
+comptime `❌`: Int32 = 0
 
-fn kernel():
-    # Does not work on Apple Silicon
-    # Can't test due to CI
-    # print("Hello from the GPU")
-    pass
+
+fn kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
+    value[0] = `✅`
 
 
 def main() raises:
-    # Launch GPU kernel
     with DeviceContext() as ctx:
-        ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
-        ctx.synchronize()
+        # Build it
+        var out = ctx.enqueue_create_buffer[DType.int32](1)
+        out.enqueue_fill(`❌`)
+
+        # Run it
+        ctx.enqueue_function[kernel, kernel](out, grid_dim=1, block_dim=1)
+
+        # Print it
+        with out.map_to_host() as out_host:
+            print("GPU responded:", "✅" if out_host[0] == `✅` else "❌")
