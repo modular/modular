@@ -18,7 +18,7 @@
 #
 # TODO: Remove XFAIL when fixed in MOCO-3375.
 
-from ffi import external_call
+from std.ffi import external_call
 
 
 fn test_string_literal():

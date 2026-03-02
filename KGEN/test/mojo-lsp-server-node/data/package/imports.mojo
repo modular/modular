@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import builtin.simd as _simd
-import collections.string
+import std.builtin.simd as _simd
+import std.collections.string
 from .aliases import function, StructWithAlias
 
 
