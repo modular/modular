@@ -7598,6 +7598,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
         q: InputTensor[dtype = DType.bfloat16, rank=3],
+        kv: InputTensor[dtype = DType.bfloat16, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
@@ -7636,6 +7637,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
+                kv.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
                 freqs_cis.to_tile_tensor[DType.int64](),
                 kv_norm_gamma.to_tile_tensor[DType.int64](),
@@ -7666,6 +7668,7 @@ struct Struct_mla_decode_graph_bf16_paged:
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
         q: InputTensor[dtype = DType.bfloat16, rank=3],
+        kv: InputTensor[dtype = DType.bfloat16, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
@@ -7701,6 +7704,7 @@ struct Struct_mla_decode_graph_bf16_paged:
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
+                kv.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
                 freqs_cis.to_tile_tensor[DType.int64](),
                 kv_norm_gamma.to_tile_tensor[DType.int64](),
@@ -7814,6 +7818,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
         q: InputTensor[dtype = DType.bfloat16, rank=3],
+        kv: InputTensor[dtype = DType.bfloat16, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
@@ -7853,6 +7858,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
+                kv.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
                 freqs_cis.to_tile_tensor[DType.int64](),
                 kv_norm_gamma.to_tile_tensor[DType.int64](),

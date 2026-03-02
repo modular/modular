@@ -33,7 +33,6 @@ from ..comm import Allreduce
 from ..float8_config import Float8Config
 from ..kernels import (
     flare_mla_prefill_plan,
-    fused_qkv_ragged_matmul,
     mla_decode_graph,
     mla_prefill_decode_graph,
     mla_prefill_graph,
@@ -456,16 +455,6 @@ class LatentAttentionWithRope(Module, Shardable):
             )
 
     @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q and kv_a_proj_with_mqa weight vectors."""
-        if self.q_lora_rank is not None:
-            wqkv = ops.concat((self.q_a_proj, self.kv_a_proj_with_mqa))
-        else:
-            wqkv = ops.concat((self.q_proj, self.kv_a_proj_with_mqa))
-
-        return wqkv
-
-    @property
     def _kv_b_proj_weight(self) -> TensorValue:
         """Returns `kv_b_proj` reshaped for per-head projection slicing."""
         kv_b_proj_weight: TensorValue = self.kv_b_proj.transpose(0, 1)
@@ -498,6 +487,7 @@ class LatentAttentionWithRope(Module, Shardable):
     def _mla_impl(
         self,
         xq: TensorValue,
+        kv: TensorValue,
         kv_collection: PagedCacheValues,
         layer_idx: TensorValue,
         input_row_offsets: TensorValue,
@@ -508,6 +498,7 @@ class LatentAttentionWithRope(Module, Shardable):
     ) -> TensorValue:
         attn_kwargs: dict[str, Any] = {
             "q": xq,
+            "kv": kv,
             "input_row_offsets": input_row_offsets,
             "freqs_cis": freqs_cis,
             "kv_norm_gamma": kv_norm_gamma,
@@ -565,18 +556,12 @@ class LatentAttentionWithRope(Module, Shardable):
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
-        _xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            x,
-            input_row_offsets,
-            self.wqkv,
-            kv_collection,
-            layer_idx,
-            self.n_heads,
-            _output_dim=self.q_lora_rank
-            if self.q_lora_rank is not None
-            else self.n_heads * self.qk_head_dim,
-        )
+        if self.q_lora_rank is not None:
+            _xq = x @ self.q_a_proj.T
+        else:
+            _xq = x @ self.q_proj.T
+
+        kv = x @ self.kv_a_proj_with_mqa.T
 
         if self.q_lora_rank is not None:
             xq = self.q_a_layernorm(_xq) @ self.q_b_proj.T
@@ -588,6 +573,7 @@ class LatentAttentionWithRope(Module, Shardable):
 
         attn_out = self._mla_impl(
             xq,
+            kv,
             kv_collection,
             layer_idx,
             input_row_offsets,

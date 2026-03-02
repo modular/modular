@@ -37,7 +37,7 @@ from std.utils import IndexList
 
 
 @always_inline
-fn _rope[
+fn rope_value[
     dtype: DType,
     freq_dtype: DType,
     width: Int,
@@ -112,7 +112,7 @@ fn rope_q_proj[
             )
         )
 
-    var res = _rope(val, freq_val)
+    var res = rope_value(val, freq_val)
 
     comptime if interleaved:
         output.store(coord, res)
@@ -157,7 +157,7 @@ fn rope_k_cache[
             )
         )
 
-    var res = _rope(val, freq_val).cast[cache_type]()
+    var res = rope_value(val, freq_val).cast[cache_type]()
 
     comptime if interleaved:
         k_cache.store(b_idx, h_idx, s_idx, d_idx, res)
