@@ -20,6 +20,7 @@ and both CPU and GPU kernel benchmarking.
 
 import std.time
 from std.collections import Dict, Optional
+import std.format._utils as fmt
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys.arg import argv
@@ -79,6 +80,19 @@ struct BenchMetric(ImplicitlyCopyable, Writable):
             writer: The object to write to.
         """
         writer.write(self.name, " (", self.unit, ")")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `BenchMetric` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "BenchMetric").fields(
+            fmt.Named("code", self.code),
+            fmt.Named("name", fmt.Repr(self.name)),
+            fmt.Named("unit", fmt.Repr(self.unit)),
+        )
 
     fn __eq__(self, other: Self) -> Bool:
         """Compares two metrics for equality.
@@ -152,7 +166,7 @@ struct BenchMetric(ImplicitlyCopyable, Writable):
 
 
 @fieldwise_init
-struct ThroughputMeasure(ImplicitlyCopyable):
+struct ThroughputMeasure(ImplicitlyCopyable, Writable):
     """Records a throughput metric of metric BenchMetric and value."""
 
     var metric: BenchMetric
@@ -202,6 +216,18 @@ struct ThroughputMeasure(ImplicitlyCopyable):
             writer: The object to write to.
         """
         return writer.write(self.metric)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `ThroughputMeasure` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "ThroughputMeasure").fields(
+            fmt.Named("metric", fmt.Repr(self.metric)),
+            fmt.Named("value", self.value),
+        )
 
     fn compute(self, elapsed_sec: Float64) -> Float64:
         """Computes throughput rate for this metric per unit of time (second).
@@ -272,6 +298,17 @@ struct Format(ImplicitlyCopyable, Writable):
             writer: The writer to write the `Format` to.
         """
         writer.write(self.value)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `Format` to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        fmt.FormatStruct(writer, "Format").fields(
+            fmt.Repr(self.value),
+        )
 
     fn __eq__(self, other: Self) -> Bool:
         """Checks if two Format objects are equal.
@@ -1213,6 +1250,17 @@ struct Bench(Writable):
                 writer.write(" |")
 
             writer.write("\n")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `Bench` to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        fmt.FormatStruct(writer, "Bench").fields(
+            fmt.Named("num_benchmarks", len(self.info_vec)),
+        )
 
     fn _get_max_name_width(self, label: StaticString) -> Int:
         var max_val = len(label)

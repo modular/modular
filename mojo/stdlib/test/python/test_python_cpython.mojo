@@ -18,6 +18,8 @@ from std.python._cpython import (
     Py_file_input,
     Py_ssize_t,
     PyMethodDef,
+    PyModuleDef,
+    PyObject,
     PyObjectPtr,
     Py_TPFLAGS_LONG_SUBCLASS,
     Py_TPFLAGS_LIST_SUBCLASS,
@@ -523,6 +525,32 @@ def test_with_cpython_common_object_structure_api() raises:
     var python = Python()
     ref cpython = python.cpython()
     _test_common_object_structure_api(cpython)
+
+
+def test_pyobjectptr_write_repr_to() raises:
+    var ptr = PyObjectPtr()
+    var s = String()
+    ptr.write_repr_to(s)
+    assert_true(s.startswith("PyObjectPtr("))
+    assert_true(s.endswith(")"))
+
+
+def test_pyobject_write_repr_to() raises:
+    var obj = PyObject()
+    var s = String()
+    obj.write_repr_to(s)
+    assert_true(s.startswith("PyObject("))
+    assert_true("object_ref_count=" in s)
+    assert_true("object_type=" in s)
+
+
+def test_pymoduledef_write_repr_to() raises:
+    var mod = PyModuleDef("test_module")
+    var s = String()
+    mod.write_repr_to(s)
+    assert_true(s.startswith("PyModuleDef("))
+    assert_true("name=" in s)
+    assert_true("size=" in s)
 
 
 def main() raises:

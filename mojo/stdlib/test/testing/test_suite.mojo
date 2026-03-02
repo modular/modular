@@ -11,8 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import assert_raises, assert_equal, assert_false, TestSuite
-from std.testing.suite import TestSuiteReport
+from std.testing import (
+    assert_raises,
+    assert_equal,
+    assert_false,
+    assert_true,
+    TestSuite,
+)
+from std.testing.suite import TestResult, TestReport, TestSuiteReport
 
 
 def nonconforming_name() raises:
@@ -97,3 +103,30 @@ def main() raises:
     ):
         var suite = TestSuite.discover_tests[failing_funcs]()
         suite^.abandon()
+
+    var result_repr = String()
+    TestResult.PASS.write_repr_to(result_repr)
+    assert_equal(result_repr, "TestResult.PASS")
+
+    result_repr = String()
+    TestResult.FAIL.write_repr_to(result_repr)
+    assert_equal(result_repr, "TestResult.FAIL")
+
+    result_repr = String()
+    TestResult.SKIP.write_repr_to(result_repr)
+    assert_equal(result_repr, "TestResult.SKIP")
+
+    var test_report = TestReport.passed(name="my_test", duration_ns=1234)
+    var report_repr = String()
+    test_report.write_repr_to(report_repr)
+    assert_true(report_repr.startswith("TestReport("))
+    assert_true("name=" in report_repr)
+    assert_true("result=TestResult.PASS" in report_repr)
+    assert_true("duration_ns=1234" in report_repr)
+
+    var suite_report_repr = String()
+    report.write_repr_to(suite_report_repr)
+    assert_true(suite_report_repr.startswith("TestSuiteReport("))
+    assert_true("passed=2" in suite_report_repr)
+    assert_true("failed=1" in suite_report_repr)
+    assert_true("skipped=1" in suite_report_repr)

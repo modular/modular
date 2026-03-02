@@ -830,5 +830,17 @@ def test_python_object_string() raises:
         _ = String(py=a)
 
 
+def test_python_object_write_repr_to() raises:
+    var obj = PythonObject(42)
+    var s = String()
+    obj.write_repr_to(s)
+    assert_equal(s, "PythonObject(42)")
+
+    var str_obj = PythonObject("hello")
+    s = String()
+    str_obj.write_repr_to(s)
+    assert_equal(s, "PythonObject('hello')")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
