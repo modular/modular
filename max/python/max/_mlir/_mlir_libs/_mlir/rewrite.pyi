@@ -135,6 +135,11 @@ class TypeConverter:
     def add_conversion(self, convert: Callable) -> None:
         """Register a type conversion function."""
 
+    def convert_type(
+        self, type: max._mlir._mlir_libs._mlir.ir.Type
+    ) -> max._mlir._mlir_libs._mlir.ir.Type | None:
+        """Convert the given type. Returns None if conversion fails."""
+
 class PDLResultList:
     @overload
     def append(self, arg: max._mlir._mlir_libs._mlir.ir.Value, /) -> None: ...
