@@ -86,7 +86,6 @@ from max.graph.weights import (
     weights_format,
 )
 from max.interfaces import (
-    DUMMY_REQUEST_ID,
     BatchType,
     PipelineOutputsDict,
     PipelineTokenizer,
@@ -160,7 +159,8 @@ class AsyncBatch(Generic[TextGenerationContextType]):
     """A batch that is being asynchronously executed on the GPU."""
 
     inputs: TextGenerationInputs[TextGenerationContextType]
-    """The inputs for the batch."""
+    """The inputs for the batch.
+    """
 
     generated_tokens_device: Buffer
     """The generated tokens for the batch on the gpu.
@@ -494,30 +494,30 @@ class OverlapTextGenerationPipeline(
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
     def _warmup_model_inputs(self, batch_size: int) -> Iterator[ModelInputs]:
-        capture_contexts = [
-            TextContext(
-                max_length=self._pipeline_model.max_seq_len,
-                tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
-                eos_token_ids=self._eos_token_id,
-                model_name=self._pipeline_config.model.model_name,
-                request_id=RequestID(
-                    f"{DUMMY_REQUEST_ID}-overlap-capture-b{batch_size}-i{idx}"
-                ),
+        dp_size = self._pipeline_config.model.data_parallel_degree
+        replica_batches: list[list[TextContext]] = []
+        for _replica_idx in range(dp_size):
+            replica_batches.append(
+                [
+                    TextContext(
+                        max_length=self._pipeline_model.max_seq_len,
+                        tokens=TokenBuffer(np.zeros(1, dtype=np.int64)),
+                        eos_token_ids=self._eos_token_id,
+                        model_name=self._pipeline_config.model.model_name,
+                    )
+                    for idx in range(batch_size)
+                ]
             )
-            for idx in range(batch_size)
-        ]
-        with self._kv_manager.reserve(
-            capture_contexts, replica_idx=0, num_steps=1
-        ):
+        with self._kv_manager.reserve(replica_batches, num_steps=1):
             kv_cache_inputs = self._kv_manager.runtime_inputs(
-                [capture_contexts],
+                replica_batches,
                 num_steps=1,
                 max_cache_length=self._pipeline_model.max_seq_len,
             )
             with Tracer("prepare_initial_token_inputs"):
                 model_inputs = (
                     self._pipeline_model.prepare_initial_token_inputs(
-                        replica_batches=[capture_contexts],
+                        replica_batches=replica_batches,
                         kv_cache_inputs=KVCacheInputsSequence(
                             kv_cache_inputs=kv_cache_inputs
                         ),
@@ -568,11 +568,12 @@ class OverlapTextGenerationPipeline(
     ) -> ModelOutputs:
         """Runs the forward pass for the provided inputs and returns the ModelOutputs."""
         runner = self._graph_capture_runner
+        batch_per_rank = max((len(b) for b in inputs.batches), default=0)
         use_graph_capture_replay = (
             runner is not None
             and bool(inputs)
             and inputs.batch_type == BatchType.TG
-            and len(inputs.flat_batch) <= self._max_graph_capture_batch_size
+            and batch_per_rank <= self._max_graph_capture_batch_size
         )
         debug_verify_replay_enabled = (
             use_graph_capture_replay
@@ -671,7 +672,7 @@ class OverlapTextGenerationPipeline(
     def _run_forward_and_sample_logits(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
     ) -> AsyncBatch[TextGenerationContextType]:
-        """Runs the forward pass for the provided inputs and returns the AsyncBatch."""
+        """Runs the forward pass, samples logits, and returns an AsyncBatch."""
         device0 = self._devices[0]
         assert not device0.is_host
 
@@ -687,7 +688,6 @@ class OverlapTextGenerationPipeline(
 
         model_outputs = self._run_forward(inputs)
 
-        curr_batch: AsyncBatch[TextGenerationContextType] | None = None
         with Tracer("apply_logits_processors"):
             apply_logits_processors(
                 context_batch=flat_batch,
@@ -712,13 +712,12 @@ class OverlapTextGenerationPipeline(
             # block until the d2h copy is complete, and no more.
             copy_event = device0.default_stream.record_event()
 
-        curr_batch = AsyncBatch(
+        return AsyncBatch(
             inputs=inputs,
             generated_tokens_device=generated_tokens_device,
             generated_tokens_host=generated_tokens_host,
             copy_event=copy_event,
         )
-        return curr_batch
 
     @traced
     def execute(

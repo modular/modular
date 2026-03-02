@@ -185,20 +185,20 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
     context_3 = create_text_context(prompt)
 
     # Get cache hit of 0 tokens since the prefix cache is empty
-    with kv_manager.reserve([context_1], replica_idx=0, num_steps=1):
+    with kv_manager.reserve([[context_1]], num_steps=1):
         kv_manager.runtime_inputs([[context_1]])
         context_1.update(15)
         kv_manager.step([[context_1]])
     assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 0
 
     # Get cache hit of 4 tokens
-    with kv_manager.reserve([context_2], replica_idx=0, num_steps=1):
+    with kv_manager.reserve([[context_2]], num_steps=1):
         pass
     assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 4
 
     # Get cache hit of 0 tokens since we reset the prefix cache
     kv_manager.reset_prefix_cache()
-    with kv_manager.reserve([context_3], replica_idx=0, num_steps=1):
+    with kv_manager.reserve([[context_3]], num_steps=1):
         pass
     assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 4
 
@@ -215,7 +215,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         prompt = np.array([100, 101, 102, 103, 104], dtype=np.int64)
         batch = [create_text_context(prompt)]
         context = batch[0]
-        with kv_manager.reserve([context], replica_idx=0, num_steps=1):
+        with kv_manager.reserve([[context]], num_steps=1):
             _ = kv_manager.runtime_inputs([batch])
 
             if i == 0:

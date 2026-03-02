@@ -205,6 +205,9 @@ def test_scheduler_handle_chunked_requests() -> None:
     mock_2: TextGenerationOutput = Mock(is_done=False, tokens=[])
     batch_responses = {req_1.request_id: mock_1}
 
+    batch_constructor.enqueue_new_request(req_1)
+    batch_constructor.enqueue_new_request(req_2)
+
     batch_constructor.advance_requests(
         TextGenerationInputs(batches=[[req_1, req_2]], num_steps=1)
     )
@@ -233,6 +236,8 @@ def test_schedule_ce() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
+    scheduler.batch_constructor.enqueue_new_request(mock_request)
+
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[mock_request]],
         num_steps=1,

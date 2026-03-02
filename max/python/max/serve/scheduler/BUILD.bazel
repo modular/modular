@@ -17,5 +17,6 @@ modular_py_library(
         "//max/python/max/serve/worker_interface",
         "//max/python/max/support",
         requirement("msgspec"),
+        requirement("numpy"),
     ],
 )

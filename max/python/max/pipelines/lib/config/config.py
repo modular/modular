@@ -675,13 +675,6 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.device_graph_capture:
             return
 
-        # TODO(GENAI-363): Support device graph capture warmup with data
-        # parallelism by capturing per-replica inputs.
-        if self.model.data_parallel_degree > 1:
-            raise ValueError(
-                "device_graph_capture currently requires "
-                "data_parallel_degree=1."
-            )
         if self.max_batch_size is None:
             raise ValueError(
                 "device_graph_capture requires max_batch_size to be set."

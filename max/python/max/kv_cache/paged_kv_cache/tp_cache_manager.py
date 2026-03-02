@@ -478,6 +478,15 @@ class _TPPagedKVCacheManager:
 
         return ret_list
 
+    def alloc_dummy(
+        self, request_id: RequestID, sentinel_request_id: RequestID
+    ) -> None:
+        """Claims a dummy request and shares the sentinel's block."""
+        self.claim(request_id)
+        self.block_manager.register_dummy_request(
+            request_id, sentinel_request_id
+        )
+
     def release(self, request_id: RequestID) -> None:
         """Releases the sequence associated with :obj:`request_id`, marking it complete.
 

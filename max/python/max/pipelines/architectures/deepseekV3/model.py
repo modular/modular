@@ -68,6 +68,24 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
     data_parallel_splits: Buffer = field(kw_only=True)
     """Tensor containing the data parallel splits for the MLA layer."""
 
+    ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
+    """EP communication buffers injected at prepare time."""
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
+        return (
+            self.tokens,
+            self.input_row_offsets,
+            self.host_input_row_offsets,
+            self.return_n_logits,
+            self.data_parallel_splits,
+            *self.signal_buffers,
+            *kv_cache_inputs,
+            *self.batch_context_lengths,
+            *self.ep_inputs,
+        )
+
 
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
@@ -514,24 +532,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
         assert isinstance(model_inputs, DeepseekV3Inputs)
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-        ep_inputs = (
-            ()
-            if self.ep_comm_initializer is None
-            else self.ep_comm_initializer.model_inputs()
-        )
 
-        model_outputs = self.model.execute(
-            model_inputs.tokens,
-            model_inputs.input_row_offsets,
-            model_inputs.host_input_row_offsets,
-            model_inputs.return_n_logits,
-            model_inputs.data_parallel_splits,
-            *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
-            *model_inputs.batch_context_lengths,
-            *ep_inputs,
-        )
+        model_outputs = self.model.execute(*model_inputs.buffers)
 
         num_hidden_state_outputs = len(self.devices)
         num_outputs = len(model_outputs)
@@ -708,6 +710,12 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             compute_data_parallel_splits(replica_batches)
         )
 
+        ep_inputs = (
+            ()
+            if self.ep_comm_initializer is None
+            else tuple(self.ep_comm_initializer.model_inputs())
+        )
+
         return DeepseekV3Inputs(
             tokens=tokens,
             input_row_offsets=device_input_row_offsets,
@@ -719,6 +727,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 np.array([return_n_logits], dtype=np.int64)
             ),
             data_parallel_splits=data_parallel_splits,
+            ep_inputs=ep_inputs,
         )
 
     def prepare_next_token_inputs(
@@ -743,4 +752,5 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
             data_parallel_splits=prev_model_inputs.data_parallel_splits,
+            ep_inputs=prev_model_inputs.ep_inputs,
         )
