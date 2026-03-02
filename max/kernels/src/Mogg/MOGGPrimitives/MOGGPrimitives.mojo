@@ -574,7 +574,7 @@ fn fill_buffer[
     dtype: DType
 ](
     buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
-    vals: VariadicListMem[Int, is_owned=False],
+    vals: VariadicList[Int, is_owned=False],
 ):
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0

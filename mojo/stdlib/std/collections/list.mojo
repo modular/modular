@@ -345,7 +345,7 @@ struct List[T: Copyable](
         """
         self = Self(elements=values^)
 
-    fn __init__(out self, *, var elements: VariadicListMem[Self.T, _]):
+    fn __init__(out self, *, var elements: VariadicList[Self.T, _]):
         """Constructs a list from the given values.
 
         Args:

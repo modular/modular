@@ -175,6 +175,11 @@ what we publish.
   `__copyinit__is_trivial` members of `Movable` and `Copyable` have been renamed
   to `__move_ctor_is_trivial` and `__copy_ctor_is_trivial` respectively.
 
+- Homogenous variadic parameters are now passed with the `VariadicParamList`
+  type (formerly known as `VariadicList`) and arguments are now passed
+  consistently passed with `VariadicList` (formerly `VariadicListMem`) instead
+  of trivial types being passed directly.
+
 - Slice literals in subscripts has changed to be more similar to collection
   literals. They now pass an empty tuple as a required `__slice_literal__`
   keyword argument to disambiguate slices. If you have defined your own range

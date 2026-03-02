@@ -143,7 +143,7 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
 
     @always_inline
     fn __init__(
-        out self, values: VariadicListMem[Self.element_type, is_owned=False]
+        out self, values: VariadicList[Self.element_type, is_owned=False]
     ):
         """Creates a tuple constant using the specified values.
 

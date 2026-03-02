@@ -129,7 +129,7 @@ fn _compute_ndbuffer_offset(
 @always_inline
 fn _compute_ndbuffer_offset(
     buf: NDBuffer,
-    index: VariadicListMem[Int, is_owned=False],
+    index: VariadicList[Int, is_owned=False],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
@@ -714,7 +714,7 @@ struct NDBuffer[
 
     @always_inline
     fn _offset(
-        self, idx: VariadicListMem[Int, is_owned=False]
+        self, idx: VariadicList[Int, is_owned=False]
     ) -> UnsafePointer[
         Scalar[Self.dtype],
         Self.origin,
@@ -873,9 +873,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
-    ](self, idx: VariadicListMem[Int, is_owned=False]) -> SIMD[
-        Self.dtype, width
-    ]:
+    ](self, idx: VariadicList[Int, is_owned=False]) -> SIMD[Self.dtype, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:

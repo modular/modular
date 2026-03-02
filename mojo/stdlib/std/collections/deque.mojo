@@ -157,9 +157,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         self = Self(elements=values^)
 
-    fn __init__(
-        out self, *, var elements: VariadicListMem[Self.ElementType, _]
-    ):
+    fn __init__(out self, *, var elements: VariadicList[Self.ElementType, _]):
         """Constructs a deque from the given values.
 
         Args:

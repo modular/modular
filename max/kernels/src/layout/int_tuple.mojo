@@ -374,7 +374,7 @@ struct IntTuple(
 
     @staticmethod
     @always_inline("nodebug")
-    fn elements_size(elements: VariadicListMem[IntTuple]) -> Int:
+    fn elements_size(elements: VariadicList[IntTuple]) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct
@@ -463,7 +463,7 @@ struct IntTuple(
         self = Self(elements)
 
     @always_inline
-    fn __init__(out self, elements: VariadicListMem[Int, is_owned=False]):
+    fn __init__(out self, elements: VariadicList[Int, is_owned=False]):
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.

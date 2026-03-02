@@ -149,7 +149,7 @@ from std.builtin.value import (
 from std.builtin.variadics import (
     Variadic,
     VariadicParamList,
-    VariadicListMem,
+    VariadicList,
     VariadicPack,
 )
 from std.documentation import doc_private

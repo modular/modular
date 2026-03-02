@@ -361,7 +361,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
     ](
         out self,
         *,
-        var storage: VariadicListMem[
+        var storage: VariadicList[
             elt_is_mutable=True, origin=origin, Self.ElementType, is_owned=True
         ],
     ):

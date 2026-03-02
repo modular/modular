@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the VariadicListMem, VariadicParamList and VariadicPack types.
+"""Implements the VariadicList, VariadicParamList and VariadicPack types.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -428,7 +428,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
     `VariadicPack` (which is heterogeneous), `VariadicParamList` requires all
     elements to have the same type.
 
-    `VariadicParamList` is only used for parameter lists, `VariadicListMem` is
+    `VariadicParamList` is only used for parameter lists, `VariadicList` is
     used for function arguments.
 
     For example, in the following function signature, `*args: Int` creates a
@@ -485,7 +485,7 @@ struct VariadicParamList[type: TrivialRegisterPassable](
     @always_inline
     fn __init__(
         out self,
-        values: VariadicListMem[Self.type, is_owned=False],
+        values: VariadicList[Self.type, is_owned=False],
         comptime_only: (),
     ):
         """Constructs a VariadicParamList from a variadic list of values at comptime.
@@ -544,12 +544,12 @@ struct VariadicParamList[type: TrivialRegisterPassable](
 
 
 # ===-----------------------------------------------------------------------===#
-# VariadicListMem
+# VariadicList
 # ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
-struct _VariadicListMemIter[
+struct _VariadicListIter[
     elt_is_mutable: Bool,
     //,
     elt_type: AnyType,
@@ -557,18 +557,18 @@ struct _VariadicListMemIter[
     list_origin: ImmutOrigin,
     is_owned: Bool,
 ]:
-    """Iterator for VariadicListMem.
+    """Iterator for VariadicList.
 
     Parameters:
         elt_is_mutable: Whether the elements in the list are mutable.
         elt_type: The type of the elements in the list.
         elt_origin: The origin of the elements.
-        list_origin: The origin of the VariadicListMem.
+        list_origin: The origin of the VariadicList.
         is_owned: Whether the elements are owned by the list because they are
                   passed as an 'var' argument.
     """
 
-    comptime variadic_list_type = VariadicListMem[
+    comptime variadic_list_type = VariadicList[
         origin = Self.elt_origin,
         Self.elt_type,
         Self.is_owned,
@@ -603,7 +603,7 @@ struct _VariadicListMemIter[
         )[]
 
 
-struct VariadicListMem[
+struct VariadicList[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable],
     //,
@@ -641,7 +641,7 @@ struct VariadicListMem[
     @always_inline
     @implicit
     fn __init__(out self, value: Self._mlir_type):
-        """Constructs a VariadicListMem from a variadic argument type.
+        """Constructs a VariadicList from a variadic argument type.
 
         Args:
             value: The variadic argument to construct the list with.
@@ -739,7 +739,7 @@ struct VariadicListMem[
 
     fn __iter__(
         self,
-    ) -> _VariadicListMemIter[
+    ) -> _VariadicListIter[
         Self.element_type, Self.origin, origin_of(self), Self.is_owned
     ]:
         """Iterate over the list.
