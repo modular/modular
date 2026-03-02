@@ -743,7 +743,7 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if not draft_arch:
-            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
+            # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.draft_model.huggingface_model_repo,
@@ -764,7 +764,7 @@ class PipelineConfig(ConfigFileModel):
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
         if not target_arch:
-            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
+            # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.model.huggingface_model_repo,
@@ -851,7 +851,7 @@ class PipelineConfig(ConfigFileModel):
 
         # If nothing is provided, we should not update any more params.
         if not arch:
-            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
+            # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=model_config.huggingface_model_repo,

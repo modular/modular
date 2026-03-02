@@ -398,9 +398,10 @@ class PipelineRegistry:
 
         Args:
             huggingface_repo: The Hugging Face repository to match against.
-            prefer_module_v3: Whether to prefer ModuleV3 architecture (default=False).
-                When False, uses the standard Hugging Face architecture name for ModuleV2.
-                When True, appends "_ModuleV3" suffix to find ModuleV3 architecture.
+            prefer_module_v3: Whether to use the eager API architecture variant.
+                When ``False`` (default), uses the standard graph API architecture name.
+                When ``True``, appends the ``_ModuleV3`` suffix to look up the
+                eager API architecture.
             task: Optional task to disambiguate when multiple architectures share the same name.
                   If not provided and multiple architectures share the same name, the task will
                   be inferred from the Hugging Face Hub's pipeline_tag.
