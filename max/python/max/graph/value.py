@@ -1245,11 +1245,15 @@ class TensorValue(Value[mo.TensorType]):
 
 @runtime_checkable
 class HasTensorValue(Protocol):
+    """Protocol for objects convertible to a :class:`TensorValue`."""
+
     def __tensorvalue__(self) -> TensorValue: ...
 
 
 @runtime_checkable
 class HasBufferValue(Protocol):
+    """Protocol for objects convertible to a :class:`BufferValue`."""
+
     def __buffervalue__(self) -> BufferValue: ...
 
 

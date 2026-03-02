@@ -33,6 +33,8 @@ from .unsqueeze import unsqueeze
 
 
 class Normalization(Enum):
+    """The normalization mode for inverse real FFT operations."""
+
     BACKWARD = "backward"
     ORTHO = "ortho"
     FORWARD = "forward"
