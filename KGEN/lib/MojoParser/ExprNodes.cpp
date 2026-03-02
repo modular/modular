@@ -1535,7 +1535,6 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     return {};
   }
   // Otherwise we'll be calling the getter and/or setter.
-
   // Check to see if the subscript operands should be passed as arguments or
   // parameters of a getitem.  While this support could be expanded in the
   // future, we just handle the simple case of a getitem that takes parameters.
@@ -1545,12 +1544,18 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // Check for a getitem with no arguments.
     for (ASTDecl *elt : getterSet.fnDecls) {
       // TODO: This is really naive: it doesn't account for default arguments,
-      // variadic, parameter names, etc etc etc.
-      FnTypeGeneratorType sig =
-          cast<FnOp>(elt->getIfOperation()).getFuncTypeGenerator();
-      // If there is no argument for the attr label, bind the label as
-      // parameter.
-      if (sig.getNumArguments() != /*self*/ 1 + sig.hasMemoryOnlyResult()) {
+      // variadic, byref_result, etc etc etc.
+      auto fnGen = cast<FnOp>(elt->getIfOperation()).getFuncTypeGenerator();
+      size_t implicitArguments = /*self*/ 1 + fnGen.hasMemoryOnlyResult();
+
+      // A raising operation will have two added arguments, because the return
+      // value is changed to a boolean and the result (or error) is emitted via
+      // two out arguments. We only need to add one extra argument here, because
+      // the hasMemoryOnlyResult test above will handle one of them.
+      if (fnGen.getFnEffects().isThrows())
+        implicitArguments += 1;
+
+      if (fnGen.getNumArguments() != implicitArguments) {
         shouldBindParameters = false;
         break;
       }
