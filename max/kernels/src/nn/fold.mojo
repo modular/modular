@@ -13,11 +13,11 @@
 """Implements the fold operation."""
 
 
-from algorithm import elementwise
+from std.algorithm import elementwise
 from layout import TileTensor
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn fold[

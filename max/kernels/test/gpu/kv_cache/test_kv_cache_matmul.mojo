@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from random import random_ui64, seed
+from std.collections import Set
+from std.random import random_ui64, seed
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -25,9 +25,9 @@ from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
 from nn.kv_cache import _fused_qkv_matmul_kv_cache_impl
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime replit_num_q_heads = 24

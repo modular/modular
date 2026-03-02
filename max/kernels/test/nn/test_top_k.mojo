@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import iota
-from random import rand, seed
+from std.math import iota
+from std.random import rand, seed
 
 from layout.coord import Coord, DynamicCoord, Idx, coord_to_index_list
 from layout._layout import Layout, row_major
@@ -21,7 +21,7 @@ from layout import TileTensor
 
 from nn.topk import _top_k_cpu, _top_k_sampling
 
-from utils.index import IndexList, product
+from std.utils.index import IndexList, product
 
 
 struct TestTensor[rank: Int, dtype: DType](Movable):

@@ -10,29 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from math import ceildiv
-from sys import simd_width_of, size_of
+from std.collections import Optional
+from std.math import ceildiv
+from std.sys import simd_width_of, size_of
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from gpu.primitives.cluster import (
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
+from std.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import (
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import (
     block_id_in_cluster,
     block_idx,
     grid_dim,
     thread_idx,
 )
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import external_memory, fence_mbarrier_init
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import external_memory, fence_mbarrier_init
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
@@ -45,9 +45,9 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from .matmul_kernels import HopperMatmulSM90Kernel
 from .matmul import _get_c_smem_layout

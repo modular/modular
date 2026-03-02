@@ -15,7 +15,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -27,12 +27,12 @@ from linalg.packing import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime alignment = 64
 

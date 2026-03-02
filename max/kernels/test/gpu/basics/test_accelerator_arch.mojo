@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
-from testing import *
+from std.testing import *
 
 
 def main() raises:

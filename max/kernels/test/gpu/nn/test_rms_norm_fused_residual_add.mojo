@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
+from std.math import sqrt
 
-from algorithm.functional import elementwise
-from gpu.host import DeviceContext
+from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
 from layout._fillers import random
 from nn.normalization import *
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn run_rms_norm_fused_residual_add_gpu[

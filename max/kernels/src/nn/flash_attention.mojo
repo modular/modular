@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import align_down, align_up, ceildiv, exp
+from std.collections import OptionalReg
+from std.math import align_down, align_up, ceildiv, exp
 
-from os import abort
-from sys import align_of, simd_width_of
-from sys.info import CompilationTarget
+from std.os import abort
+from std.sys import align_of, simd_width_of
+from std.sys.info import CompilationTarget
 
-from algorithm import sync_parallelize, tile, vectorize
-from algorithm.reduction import (
+from std.algorithm import sync_parallelize, tile, vectorize
+from std.algorithm.reduction import (
     _simd_max,
     _simd_max_elementwise,
     _simd_sum,
@@ -36,12 +36,12 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from memory import memset_zero, stack_allocation
+from std.memory import memset_zero, stack_allocation
 from nn.mha_mask import MHAMask
-from runtime.asyncrt import parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.asyncrt import parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 @fieldwise_init

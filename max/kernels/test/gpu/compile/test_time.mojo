@@ -11,12 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import global_perf_counter_ns, perf_counter_ns, sleep, time_function
+from std.time import (
+    global_perf_counter_ns,
+    perf_counter_ns,
+    sleep,
+    time_function,
+)
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.intrinsics import *
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.intrinsics import *
+from std.testing import *
 
 
 fn clock_functions():

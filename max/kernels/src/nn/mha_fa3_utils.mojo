@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv, align_up
-from math.constants import log2e
-from memory import (
+from std.collections import OptionalReg
+from std.math import ceildiv, align_up
+from std.math.constants import log2e
+from std.memory import (
     bitcast,
 )
 
-from sys import size_of
+from std.sys import size_of
 
 import gpu.primitives.warp as warp
-from algorithm.functional import unswitch
-from gpu import block_idx, thread_idx
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.mma import st_matrix
-from gpu.sync import async_copy_arrive
+from std.algorithm.functional import unswitch
+from std.gpu import block_idx, thread_idx
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.mma import st_matrix
+from std.gpu.sync import async_copy_arrive
 from layout.int_tuple import IntTuple
 from layout.layout import UNKNOWN_VALUE, Layout
 from layout._layout import Layout as InternalLayout, row_major
@@ -67,10 +67,10 @@ from nn.mha_utils import (
     get_start_and_end_for_partitions,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
-from builtin.device_passable import DevicePassable
-from utils import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
+from std.builtin.device_passable import DevicePassable
+from std.utils import StaticTuple
 
 
 comptime _LocalTT[dtype: DType, layout: InternalLayout] = TileTensor[

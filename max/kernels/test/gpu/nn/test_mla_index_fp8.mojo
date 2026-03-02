@@ -12,19 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for mla_indexer_ragged_float8_paged."""
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
 from nn.mla_index_fp8 import mla_indexer_ragged_float8_paged
 from nn.mha_mask import MaskName
-from random import rand, random_ui64
+from std.random import rand, random_ui64
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensor
-from utils.index import Index, IndexList
-from testing import assert_true
-from collections import Set
+from std.utils.index import Index, IndexList
+from std.testing import assert_true
+from std.collections import Set
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

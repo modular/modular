@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp2, recip, align_up
-from math.constants import log2e
+from std.math import ceildiv, exp2, recip, align_up
+from std.math.constants import log2e
 
-from sys import align_of, simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 
-from gpu import warp_id
+from std.gpu import warp_id
 import gpu.primitives.warp as warp
-from algorithm.functional import unswitch
-from collections import OptionalReg
-from gpu import (
+from std.algorithm.functional import unswitch
+from std.collections import OptionalReg
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -29,22 +29,22 @@ from gpu import (
     thread_idx,
     block_idx,
 )
-from gpu.primitives.cluster import elect_one_sync
-from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import external_memory
-from gpu.compute.mma import MMAOperandDescriptor
-from gpu.compute.arch.mma_nvidia_sm100 import (
+from std.gpu.primitives.cluster import elect_one_sync
+from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import external_memory
+from std.gpu.compute.mma import MMAOperandDescriptor
+from std.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptor,
     UMMAInsDescriptor,
     UMMAKind,
     mma,
     mma_arrive,
 )
-from gpu.sync import named_barrier
-from gpu.compute.arch.tcgen05 import (
+from std.gpu.sync import named_barrier
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -74,8 +74,8 @@ from layout.tma_async import (
     SharedMemBarrier,
     RaggedTMA3DTile,
 )
-from logger import Logger
-from memory import bitcast, stack_allocation
+from std.logger import Logger
+from std.memory import bitcast, stack_allocation
 from nn.mha_fa3_utils import (
     _apply_mask,
     _get_position,
@@ -114,9 +114,9 @@ from nn.softmax import (
 )
 from tensor import ManagedTensorSlice
 
-from utils.index import Index
-from utils.numerics import get_accum_type, min_or_neg_inf
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index
+from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils.static_tuple import StaticTuple
 
 comptime logger = Logger()
 

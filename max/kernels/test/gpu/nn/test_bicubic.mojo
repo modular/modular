@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
+from std.math import isclose
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Coord, CoordLike, TileTensor, coord
 from layout._layout import row_major
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
-from testing import assert_almost_equal
-from utils import Index, IndexList
+from std.testing import assert_almost_equal
+from std.utils import Index, IndexList
 
 comptime num_elements = 20
 

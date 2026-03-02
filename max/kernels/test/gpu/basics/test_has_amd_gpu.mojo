@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import has_amd_gpu_accelerator
+from std.sys import has_amd_gpu_accelerator
 
-from testing import assert_true
+from std.testing import assert_true
 
 
 def test_has_amd_gpu_accelerator() raises:

@@ -353,7 +353,8 @@ method is implemented for any `ElementType` that's also `Stringable`.
 For a real-world example of a parameterized type, let's look at the
 [`SIMD`](/mojo/std/builtin/simd/SIMD) type from Mojo's standard library.
 
-[Single instruction, multiple data (SIMD)](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) is a parallel processing technology built into many modern CPUs,
+[Single instruction, multiple data (SIMD)](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data)
+is a parallel processing technology built into many modern CPUs,
 GPUs, and custom accelerators. SIMD allows you to perform a single operation on
 multiple pieces of data at once. For example, if you want to take the square
 root of each element in an array, you can use SIMD to parallelize the work.
@@ -707,9 +708,10 @@ you can't leave it out of the parameter list and let Mojo infer it from `value`:
 dependent_type[Float64(2.2)]() # Error!
 ```
 
-Infer-only parameters are a special class of parameters that are **always** either
-inferred from context or specified by keyword. Infer-only parameters are placed at the
-**beginning** of the parameter list, set off from other parameters by the `//` sigil:
+Infer-only parameters are a special class of parameters that are **always**
+either inferred from context or specified by keyword. Infer-only parameters are
+placed at the **beginning** of the parameter list, set off from other parameters
+by the `//` sigil:
 
 ```mojo
 fn example[type: Copyable, //, list: List[type]]()
@@ -768,19 +770,20 @@ struct MyTensor[*dimensions: Int]:
     pass
 ```
 
-Variadic parameters currently have some limitations that variadic arguments don't have:
+Variadic parameters currently have some limitations that variadic arguments
+don't have:
 
 - Variadic parameters must be homogeneous—that is, all the values must be the
   same type.
 
 - The parameter type must be register-passable.
 
-- The parameter values aren't automatically projected into a `VariadicList`, so you
-  need to construct the list explicitly:
+- The parameter values aren't automatically projected into a
+  `VariadicParamList`, so you need to construct the list explicitly:
 
 ```mojo
 fn sum_params[*values: Int]() -> Int:
-    comptime list = VariadicList(values)
+    comptime list = VariadicParamList(values)
     var sum = 0
     for v in list:
         sum += v
@@ -976,7 +979,7 @@ on.
 You can also define `comptime` values as members of a `struct` or `trait`
 declaration:
 
-```
+```mojo
 struct Circle[radius: Float64]:
     comptime pi = 3.14159265359
     comptime circumference = 2 * Self.pi * Self.radius

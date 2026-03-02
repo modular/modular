@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv
-from random import random_ui64, seed
+from std.collections import Set
+from std.math import ceildiv
+from std.random import random_ui64, seed
 
 from buffer import NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -27,7 +27,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.matmul.gpu import _matmul_gpu
-from memory import memcpy, LegacyUnsafePointer
+from std.memory import memcpy, LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.kv_cache_ragged import (
@@ -35,9 +35,9 @@ from nn.kv_cache_ragged import (
     _matmul_k_cache_ragged_impl,
     _matmul_kv_cache_ragged_impl,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 

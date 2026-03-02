@@ -13,12 +13,12 @@
 
 # Meant to be run on an AVX512 system
 
-from sys import prefetch
-from sys.intrinsics import PrefetchOptions
+from std.sys import prefetch
+from std.sys.intrinsics import PrefetchOptions
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
-from sys._assembly import inlined_assembly
+from std.pathlib import Path
+from std.sys._assembly import inlined_assembly
 
-from gpu import barrier, thread_idx
-from gpu.host import DeviceContext
-from gpu.host.compile import _compile_code
-from memory import LegacyUnsafePointer, stack_allocation
+from std.gpu import barrier, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.host.compile import _compile_code
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

@@ -16,7 +16,7 @@ from layout._layout import Layout, TensorLayout
 from layout import TileTensor
 from register import register_internal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # Reshape assumes inputs are contiguous. It should always be fused last and

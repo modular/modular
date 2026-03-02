@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_si64
+from std.math import ceildiv
+from std.random import random_si64
 
-from gpu import WARP_SIZE, block_idx
-from gpu.host import DeviceContext
-from gpu.compute.mma import mma
-from gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a
-from gpu.compute.mma_util import load_matrix_b_amd as load_matrix_b
-from gpu.compute.mma_util import store_matrix_d
-from memory import LegacyUnsafePointer
+from std.gpu import WARP_SIZE, block_idx
+from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import mma
+from std.gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a
+from std.gpu.compute.mma_util import load_matrix_b_amd as load_matrix_b
+from std.gpu.compute.mma_util import store_matrix_d
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn matmul_naive[

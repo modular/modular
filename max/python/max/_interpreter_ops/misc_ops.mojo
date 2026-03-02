@@ -16,22 +16,22 @@
 Contains range and random operations.
 """
 
-from os import abort
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from sys.info import has_accelerator
+from std.os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.sys.info import has_accelerator
 
-from math import iota
-from random import NormalRandom, Random
-from algorithm.functional import elementwise, IndexList
-from memory import OpaquePointer
-from runtime.asyncrt import DeviceContextPtr
+from std.math import iota
+from std.random import NormalRandom, Random
+from std.algorithm.functional import elementwise, IndexList
+from std.memory import OpaquePointer
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import ManagedTensorSlice
 from tensor.io_spec import FusedOutput
 from compiler_internal import StaticTensorSpec
 from MOGGKernelAPI.MOGGKernelAPI import Range
 
-from utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type
 
 from op_utils import (
     _get_dtype,

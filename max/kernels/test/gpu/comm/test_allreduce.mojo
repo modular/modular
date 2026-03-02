@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import time
-from sys import size_of, has_amd_gpu_accelerator, simd_width_of
-from itertools import product
+from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
+from std.itertools import product
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -26,16 +26,16 @@ from comm.allreduce import (
 )
 import comm.vendor.ccl as vendor_ccl
 from internal_utils import human_readable_size
-from gpu.host import (
+from std.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
     get_gpu_target,
 )
-from testing import assert_almost_equal, assert_true
-from collections import Optional
+from std.testing import assert_almost_equal, assert_true
+from std.collections import Optional
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # Shared test configurations
 comptime test_lengths = (
@@ -106,7 +106,9 @@ fn allreduce_test[
         host_buffers.append(host_buffer)
 
         # Initialize host buffer with values (i + 1).0
-        var host_nd_buf = NDBuffer[dtype, rank](host_buffer, DimList(length))
+        var host_nd_buf = NDBuffer[dtype, rank](
+            host_buffer, IndexList[rank](length)
+        )
         host_nd_buf.fill(Scalar[dtype](i + 1))
 
         # Create and initialize signal buffers
@@ -140,17 +142,17 @@ fn allreduce_test[
         # All GPUs use the same multicast pointer
         in_bufs[0] = NDBuffer[dtype, rank](
             multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
-            DimList(length),
+            IndexList[rank](length),
         )
     else:
         for i in range(ngpus):
             in_bufs[i] = NDBuffer[dtype, rank](
-                in_bufs_list[i].unsafe_ptr(), DimList(length)
+                in_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
             )
 
     for i in range(ngpus):
         out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(length)
+            out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
 
     for i in range(ngpus):
@@ -163,7 +165,7 @@ fn allreduce_test[
 
     for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(length)
+            out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
 
     # Custom epilogue that negates values to distinguish from default
@@ -218,7 +220,7 @@ fn allreduce_test[
                     list_of_ctx[i].enqueue_create_buffer[dtype](length)
                 )
                 out_bufs_vendor[i] = NDBuffer[dtype, rank](
-                    out_dev_vendor[i].unsafe_ptr(), DimList(length)
+                    out_dev_vendor[i].unsafe_ptr(), IndexList[rank](length)
                 )
 
             # Test RCCL.
@@ -311,7 +313,7 @@ def allreduce_naive_test() raises -> None:
         out_dev.append(ctxs[i].enqueue_create_buffer[DType.float32](length))
         var h = alloc[Float32](length)
         host_ptrs.append(h)
-        var h_nd = NDBuffer[DType.float32, 1](h, DimList(length))
+        var h_nd = NDBuffer[DType.float32, 1](h, IndexList[1](length))
         h_nd.fill(Float32(i + 1))
         ctxs[i].enqueue_copy(in_dev[i], host_ptrs[i])
 
@@ -325,10 +327,10 @@ def allreduce_naive_test() raises -> None:
 
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[DType.float32, 1](
-            in_dev[i].unsafe_ptr(), DimList(length)
+            in_dev[i].unsafe_ptr(), IndexList[1](length)
         )
         out_bufs[i] = NDBuffer[DType.float32, 1](
-            out_dev[i].unsafe_ptr(), DimList(length)
+            out_dev[i].unsafe_ptr(), IndexList[1](length)
         )
 
     # Prepare an output lambda that writes into the correct device's out buffer.
@@ -337,7 +339,7 @@ def allreduce_naive_test() raises -> None:
     ](NDBuffer[DType.float32, 1, MutAnyOrigin]())
     for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[DType.float32, 1](
-            out_dev[i].unsafe_ptr(), DimList(length)
+            out_dev[i].unsafe_ptr(), IndexList[1](length)
         )
 
     @always_inline

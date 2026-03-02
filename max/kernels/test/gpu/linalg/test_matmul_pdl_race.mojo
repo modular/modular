@@ -31,9 +31,9 @@ and only for bfloat16.
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import block_idx, thread_idx, block_dim, grid_dim
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.primitives.grid_controls import (
+from std.gpu import block_idx, thread_idx, block_dim, grid_dim
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
@@ -41,11 +41,11 @@ from gpu.primitives.grid_controls import (
 )
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul.gpu import _matmul_gpu
-from math import ceildiv
-from memory import LegacyUnsafePointer
-from sys import env_get_int, size_of
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
+from std.sys import env_get_int, size_of
 
-from utils import IndexList
+from std.utils import IndexList
 
 # Use LegacyUnsafePointer for alloc support
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -127,13 +127,13 @@ fn run_pdl_race_test[
     comptime c_static_shape = DimList(Dim(), Dim(N))
 
     var a_buf = NDBuffer[dtype, 2, MutAnyOrigin, a_static_shape](
-        a_device.unsafe_ptr(), DimList(M, K)
+        a_device.unsafe_ptr(), IndexList[2](M, K)
     )
     var b_buf = NDBuffer[dtype, 2, MutAnyOrigin, b_static_shape](
-        b_device.unsafe_ptr(), DimList(N, K)
+        b_device.unsafe_ptr(), IndexList[2](N, K)
     )
     var c_buf = NDBuffer[dtype, 2, MutAnyOrigin, c_static_shape](
-        c_device.unsafe_ptr(), DimList(M, N)
+        c_device.unsafe_ptr(), IndexList[2](M, N)
     )
 
     # Run multiple iterations to increase chance of catching race

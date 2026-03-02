@@ -13,9 +13,9 @@
 
 """Tests for the fully-fused allreduce + RMSNorm + FP8 quantization kernel."""
 
-from sys import is_amd_gpu, size_of
+from std.sys import is_amd_gpu, size_of
 
-from memory import bitcast
+from std.memory import bitcast
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -25,16 +25,16 @@ from nn.allreduce_residual_rmsnorm_fp8 import (
     allreduce_rmsnorm_fp8,
 )
 from comm.sync import enable_p2p
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 from layout._layout import row_major
 from layout._utils import ManagedLayoutTensor
 from nn.normalization import rms_norm_fused_fp8
-from runtime.asyncrt import DeviceContextPtr
-from testing import assert_true
-from utils import IndexList
-from utils.index import Index
-from utils.numerics import max_finite
+from std.runtime.asyncrt import DeviceContextPtr
+from std.testing import assert_true
+from std.utils import IndexList
+from std.utils.index import Index
+from std.utils.numerics import max_finite
 
 from internal_utils._testing import test_value_for_gpu_element
 
@@ -214,7 +214,7 @@ fn test_fused_allreduce_rmsnorm_fp8[
     )
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[in_dtype, 2](
-            in_dev[i].unsafe_ptr(), DimList(rows, cols)
+            in_dev[i].unsafe_ptr(), IndexList[2](rows, cols)
         )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -305,10 +305,10 @@ fn test_fused_allreduce_rmsnorm_fp8[
     var fused_scales_dev = ctx.enqueue_create_buffer[DType.float32](rows)
 
     var fused_fp8_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-        fused_fp8_dev.unsafe_ptr(), DimList(rows, cols)
+        fused_fp8_dev.unsafe_ptr(), IndexList[2](rows, cols)
     )
     var fused_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-        fused_scales_dev.unsafe_ptr(), DimList(rows, 1)
+        fused_scales_dev.unsafe_ptr(), IndexList[2](rows, 1)
     )
 
     group_start()
@@ -418,7 +418,7 @@ fn test_fused_allreduce_residual_rmsnorm_fp8[
     )
     for i in range(ngpus):
         in_bufs[i] = NDBuffer[in_dtype, 2](
-            in_dev[i].unsafe_ptr(), DimList(rows, cols)
+            in_dev[i].unsafe_ptr(), IndexList[2](rows, cols)
         )
     for i in range(ngpus):
         list_of_ctx[i].synchronize()
@@ -516,16 +516,16 @@ fn test_fused_allreduce_residual_rmsnorm_fp8[
     var fused_residual_output_dev = ctx.enqueue_create_buffer[in_dtype](length)
 
     var fused_fp8_ndbuf = NDBuffer[out_dtype, 2, MutAnyOrigin](
-        fused_fp8_dev.unsafe_ptr(), DimList(rows, cols)
+        fused_fp8_dev.unsafe_ptr(), IndexList[2](rows, cols)
     )
     var fused_scales_ndbuf = NDBuffer[DType.float32, 2, MutAnyOrigin](
-        fused_scales_dev.unsafe_ptr(), DimList(rows, 1)
+        fused_scales_dev.unsafe_ptr(), IndexList[2](rows, 1)
     )
     var residual_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
-        residual_dev.unsafe_ptr(), DimList(rows, cols)
+        residual_dev.unsafe_ptr(), IndexList[2](rows, cols)
     )
     var fused_residual_output_ndbuf = NDBuffer[in_dtype, 2, MutAnyOrigin](
-        fused_residual_output_dev.unsafe_ptr(), DimList(rows, cols)
+        fused_residual_output_dev.unsafe_ptr(), IndexList[2](rows, cols)
     )
 
     group_start()

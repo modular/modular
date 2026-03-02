@@ -2539,7 +2539,7 @@ fn _get_kgen_string[
 
 @always_inline("nodebug")
 fn _get_kgen_string[
-    string: StaticString, extra: VariadicList[StaticString]
+    string: StaticString, extra: VariadicParamList[StaticString]
 ]() -> __mlir_type.`!kgen.string`:
     """Form a `!kgen.string` from compile-time StringSlice values concatenated.
 

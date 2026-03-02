@@ -30,25 +30,25 @@ This is a port of grouped_matmul_sm100_1d1d.mojo to the structured kernels
 architecture.
 """
 
-from collections import Optional
-from math import ceildiv
-from memory import Pointer
-from sys import size_of
+from std.collections import Optional
+from std.math import ceildiv
+from std.memory import Pointer
+from std.sys import size_of
 
-from gpu import (
+from std.gpu import (
     WARP_SIZE,
     block_id_in_cluster,
     thread_idx,
 )
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.primitives.cluster import (
+from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.sync import syncwarp
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.sync import syncwarp
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import TileTensor
 from layout._layout import TensorLayout
 from ..structured_kernels.tile_types import (
@@ -64,8 +64,8 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K

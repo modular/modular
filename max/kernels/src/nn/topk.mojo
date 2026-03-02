@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp, iota
-from memory import alloc
-from sys import align_of, simd_width_of, size_of, env_get_bool
+from std.math import ceildiv, exp, iota
+from std.memory import alloc
+from std.sys import align_of, simd_width_of, size_of, env_get_bool
 
 import gpu.primitives.warp as warp
-from algorithm.functional import parallelize_over_rows
-from algorithm.reduction import _get_nd_indices_from_flat_index
-from bit import log2_floor
-from builtin.sort import _quicksort
-from gpu import (
+from std.algorithm.functional import parallelize_over_rows
+from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from std.bit import log2_floor
+from std.builtin.sort import _quicksort
+from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
@@ -30,11 +30,11 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.info import is_cpu
-from gpu.memory import AddressSpace, external_memory
-from random import Random
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host.info import is_cpu
+from std.gpu.memory import AddressSpace, external_memory
+from std.random import Random
 from layout.coord import (
     ComptimeInt,
     Coord,
@@ -46,17 +46,17 @@ from layout.coord import (
 )
 from layout._layout import TensorLayout, Layout, RowMajorLayout, row_major
 from layout import TileTensor
-from math import log2
-from memory import stack_allocation
+from std.math import log2
+from std.memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.softmax import softmax_with_temperature
 from nn.topk_fi import topk_topp_sampling_from_prob
-from os.env import getenv
-from runtime.asyncrt import DeviceContextPtr
+from std.os.env import getenv
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList, StaticTuple, product
-from utils.numerics import max_or_inf, min_or_neg_inf
+from std.utils.index import IndexList, StaticTuple, product
+from std.utils.numerics import max_or_inf, min_or_neg_inf
 
 
 @always_inline

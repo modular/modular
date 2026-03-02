@@ -23,12 +23,12 @@ Key features:
 - Phase-based synchronization to prevent data races
 """
 
-from gpu import thread_idx, WARP_SIZE
+from std.gpu import thread_idx, WARP_SIZE
 from layout import Layout
 from linalg.structuring import SMemArray
-from os.atomic import Atomic
-from sys._assembly import inlined_assembly
-from utils import StaticTuple
+from std.os.atomic import Atomic
+from std.sys._assembly import inlined_assembly
+from std.utils import StaticTuple
 
 from .structured import SMemBuffer
 from .ring_buffer_traits import (

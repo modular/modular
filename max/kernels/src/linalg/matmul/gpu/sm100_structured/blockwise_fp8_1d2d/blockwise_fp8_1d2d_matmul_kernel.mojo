@@ -26,18 +26,18 @@ Architecture:
   with bounds checking
 """
 
-from math import ceildiv
-from sys import size_of
+from std.math import ceildiv
+from std.sys import size_of
 
-from gpu import WARP_SIZE, thread_idx
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, thread_idx
+from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.sync import named_barrier, syncwarp
+from std.gpu.sync import named_barrier, syncwarp
 from layout._layout import TensorLayout
 from layout import TileTensor
 from ..structured_kernels.tile_types import (
@@ -45,8 +45,8 @@ from ..structured_kernels.tile_types import (
     static_row_major,
 )
 
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 

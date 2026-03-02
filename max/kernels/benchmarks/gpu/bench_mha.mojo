@@ -11,24 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose, rsqrt
-from sys import env_get_bool, env_get_dtype, env_get_int
+from std.math import isclose, rsqrt
+from std.sys import env_get_bool, env_get_dtype, env_get_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu import *
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu import *
+from std.gpu.host import DeviceContext
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index
-from utils.numerics import min_or_neg_inf
+from std.utils.index import Index
+from std.utils.numerics import min_or_neg_inf
 
 
 fn run_mha[

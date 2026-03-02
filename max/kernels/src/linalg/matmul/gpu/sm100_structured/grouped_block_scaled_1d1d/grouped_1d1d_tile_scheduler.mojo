@@ -23,16 +23,16 @@ Key characteristics:
 - 3-warp specialization (no scheduler warp)
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, grid_dim, thread_idx
+from std.gpu import block_idx, grid_dim, thread_idx
 from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
 
 from ..structured_kernels.tile_types import GMEMLayout1D
-from memory import UnsafePointer
+from std.memory import UnsafePointer
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
 
 
 # ===----------------------------------------------------------------------=== #

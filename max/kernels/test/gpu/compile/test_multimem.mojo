@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.compile import _compile_code
-from gpu.host.info import H100
-from gpu.memory import *
-from gpu.intrinsics import Scope
-from testing import *
+from std.gpu.host.compile import _compile_code
+from std.gpu.host.info import H100
+from std.gpu.memory import *
+from std.gpu.intrinsics import Scope
+from std.testing import *
 
 
 def test_multimem_ld_reduce() raises:

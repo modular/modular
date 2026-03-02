@@ -15,8 +15,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import OptionalReg
-from math import (
+from std.collections import OptionalReg
+from std.math import (
     acos,
     atanh,
     ceil,
@@ -35,33 +35,33 @@ from math import (
     sqrt,
     tanh,
 )
-from random import randn, seed
-from ffi import external_call
-from sys import align_of, llvm_intrinsic
-from sys.info import simd_width_of, size_of, _current_target
-from sys.intrinsics import _type_is_eq
+from std.random import randn, seed
+from std.ffi import external_call
+from std.sys import align_of, llvm_intrinsic
+from std.sys.info import simd_width_of, size_of, _current_target
+from std.sys.intrinsics import _type_is_eq
 
 import compiler_internal as compiler
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from algorithm import max as reduce_max
-from algorithm import mean
-from algorithm import min as reduce_min
-from algorithm import elementwise, product, sum
-from algorithm.reduction import _reduce_generator
+from std.algorithm import max as reduce_max
+from std.algorithm import mean
+from std.algorithm import min as reduce_min
+from std.algorithm import elementwise, product, sum
+from std.algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from builtin.simd import _pow
+from std.builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 from comm.reducescatter import reducescatter
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu, is_gpu, is_valid_target
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -281,8 +281,8 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor import (
     DynamicTensor,
     ElementwiseBinaryComparisonOp,
@@ -328,11 +328,11 @@ from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 from tensor.transitional import managed_tensor_slice_to_ndbuffer
-from time import sleep
+from std.time import sleep
 
-from utils import IndexList, StaticTuple
-from utils.index import Index
-from utils.numerics import isinf, isnan
+from std.utils import IndexList, StaticTuple
+from std.utils.index import Index
+from std.utils.numerics import isinf, isnan
 from nn.learnable_2d_interp_pos_emb import learnable_2d_interp_pos_emb
 from nn.spatial_merge import spatial_merge
 from nn.tpool_patch_merger import (

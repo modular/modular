@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from memory import LegacyUnsafePointer
+from std.math import ceildiv, isclose
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import rand, random_float64
-from sys import size_of
+from std.random import rand, random_float64
+from std.sys import size_of
 
-from algorithm import sync_parallelize
+from std.algorithm import sync_parallelize
 from layout import (
     LayoutTensor,
     Layout,
@@ -38,7 +38,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype]]):

@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 
-from sys import has_amd_gpu_accelerator, size_of
-from ffi import _get_global_or_null, external_call
+from std.sys import has_amd_gpu_accelerator, size_of
+from std.ffi import _get_global_or_null, external_call
 
 import _rocblas
 from _cublas.cublas import (
@@ -87,17 +87,17 @@ from _rocblas.hipblaslt import (
     hipDataType_t,
 )
 from buffer import NDBuffer
-from gpu.host import DeviceContext
-from gpu.host._amdgpu_hip import HIP
-from gpu.host._nvidia_cuda import CUDA
+from std.gpu.host import DeviceContext
+from std.gpu.host._amdgpu_hip import HIP
+from std.gpu.host._nvidia_cuda import CUDA
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from buffer import DimList, NDBuffer
-from utils import IndexList
-from utils.variant import Variant
-from gpu.host.info import B200
-from collections import OptionalReg, Optional
+from std.utils import IndexList
+from std.utils.variant import Variant
+from std.gpu.host.info import B200
+from std.collections import OptionalReg, Optional
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,

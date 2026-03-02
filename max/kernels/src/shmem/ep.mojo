@@ -16,20 +16,20 @@
 Helper functions for Expert Parallelism (EP) Communication Kernels.
 """
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from gpu.primitives.grid_controls import pdl_launch_attributes
-from gpu.host.info import is_gpu
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.host.info import is_gpu
 from layout import Layout, LayoutTensor
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from sys.info import size_of
-from ffi import external_call
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.sys.info import size_of
+from std.ffi import external_call
 
 from shmem import shmem_module_init, shmem_my_pe
 from shmem.ep_comm import (

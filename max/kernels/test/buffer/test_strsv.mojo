@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from testing import TestSuite
-from utils import IndexList
+from std.testing import TestSuite
+from std.utils import IndexList
 
 comptime simd_width = 8
 

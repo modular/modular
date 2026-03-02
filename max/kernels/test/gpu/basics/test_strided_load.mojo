@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import strided_load
+from std.sys.intrinsics import strided_load
 
-from gpu.host.compile import _compile_code
-from memory import LegacyUnsafePointer
+from std.gpu.host.compile import _compile_code
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn strided_load_kernel[

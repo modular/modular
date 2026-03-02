@@ -33,18 +33,18 @@ Usage:
             process_tile(current)
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, block_id_in_cluster, grid_dim, thread_idx
-from gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
-from gpu.memory import fence_async_view_proxy
+from std.gpu import block_idx, block_id_in_cluster, grid_dim, thread_idx
+from std.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
+from std.gpu.memory import fence_async_view_proxy
 from layout import Layout, LayoutTensor
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.structuring import SMemPtr, SMemArray
 from linalg.matmul.gpu.tile_scheduler import RasterOrder

@@ -3002,7 +3002,7 @@ fn gcd(*values: Int) -> Int:
     Returns:
         The greatest common divisor of the given integers.
     """
-    # TODO: Deduplicate when we can create a Span from VariadicList
+    # TODO: Deduplicate when we can create a Span from VariadicParamList
     if len(values) == 0:
         return 0
     var result = values[0]
@@ -3073,7 +3073,7 @@ fn lcm(*values: Int) -> Int:
     Returns:
         The least common multiple of the list.
     """
-    # TODO: Deduplicate when we can create a Span from VariadicList
+    # TODO: Deduplicate when we can create a Span from VariadicParamList
     if len(values) == 0:
         return 1
 

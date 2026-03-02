@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import product
+from std.itertools import product
 from layout._layout import row_major
 from layout import TileTensor
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 # CHECK-LABEL: test_where_size

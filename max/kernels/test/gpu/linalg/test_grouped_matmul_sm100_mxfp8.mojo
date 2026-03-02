@@ -10,15 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_up
-from sys import argv, size_of
+from std.math import align_up
+from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
@@ -34,10 +34,10 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig as StructuredBlockScaledMatmulConfig,
 )
-from math import ceildiv, align_up
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.math import ceildiv, align_up
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     SF_MN_GROUP_SIZE,
@@ -46,8 +46,8 @@ from linalg.fp4_utils import (
     MXFP8_SF_VECTOR_SIZE,
     set_scale_factor,
 )
-from random import random_ui64, seed, rand
-from builtin.simd import _convert_f32_to_float8_ue8m0
+from std.random import random_ui64, seed, rand
+from std.builtin.simd import _convert_f32_to_float8_ue8m0
 from layout import (
     Coord,
     Idx,
@@ -60,7 +60,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from layout._layout import row_major
 
 
@@ -155,9 +155,11 @@ def _test_kernel_impl[
         num_experts, expert_shape[0], expert_shape[1]
     )
     comptime static_c_shape = DimList(Dim(), expert_shape[0])
-    var dynamic_a_shape = DimList(total_num_tokens, K)
-    var dynamic_b_shape = DimList(num_experts, expert_shape[0], expert_shape[1])
-    var dynamic_c_shape = DimList(total_num_tokens, expert_shape[0])
+    var dynamic_a_shape = IndexList[2](total_num_tokens, K)
+    var dynamic_b_shape = IndexList[3](
+        num_experts, expert_shape[0], expert_shape[1]
+    )
+    var dynamic_c_shape = IndexList[2](total_num_tokens, expert_shape[0])
 
     var a_size = total_num_tokens * K
     var b_size = num_experts * expert_shape[0] * expert_shape[1]
@@ -252,33 +254,33 @@ def _test_kernel_impl[
         # ceildiv(total_num_tokens, SF_MN_GROUP_SIZE),
         Dim(),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         num_experts,
         ceildiv(expert_shape[0], SF_MN_GROUP_SIZE),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         a_scale_dim0,
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[6](
         num_experts,
         ceildiv(expert_shape[0], SF_MN_GROUP_SIZE),
         ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_scales_total = (

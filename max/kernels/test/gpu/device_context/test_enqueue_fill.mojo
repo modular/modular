@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from testing import assert_equal
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
 
 def test_enqueue_fill_host_buffer(ctx: DeviceContext) raises:

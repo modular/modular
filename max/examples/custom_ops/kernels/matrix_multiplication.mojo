@@ -13,11 +13,11 @@
 
 # DOC: max/develop/custom-ops-matmul.mdx
 
-from math import ceildiv
-from sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
+from std.math import ceildiv
+from std.sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
 
 import compiler
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -26,16 +26,16 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceBuffer
-from gpu.memory import AddressSpace, async_copy_wait_all
+from std.gpu.host import DeviceBuffer
+from std.gpu.memory import AddressSpace, async_copy_wait_all
 from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-from utils import StaticTuple
-from utils.index import Index
+from std.utils import StaticTuple
+from std.utils.index import Index
 
 # The number of threads per block to use for the optimized kernels
 # Used only in llvm_metadata for MAX_THREADS_PER_BLOCK_METADATA

@@ -22,13 +22,13 @@ Supports two write modes:
   grouped matmul with expert boundary bounds checking
 """
 
-from sys import align_of, simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 
-from gpu import WARP_SIZE, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace, fence_async_view_proxy
-from gpu.sync import named_barrier
+from std.gpu import WARP_SIZE, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace, fence_async_view_proxy
+from std.gpu.sync import named_barrier
 from layout import (
     Coord,
     Idx,
@@ -44,7 +44,7 @@ from layout.layout_tensor import zipped_divide, upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from .blockwise_fp8_accumulator import BlockwiseFP8Accumulator
 from ..structured_kernels.epilogue_components import (

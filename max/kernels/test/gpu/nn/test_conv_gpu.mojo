@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv
-from random import rand
+from std.math import ceildiv
+from std.random import rand
 
 from layout import LayoutTensor, Layout
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from nn.conv import Naive2dConvolution, conv3d_gpu_naive_ndhwc_qrscf
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn test_conv3d_gpu[

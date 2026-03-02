@@ -26,7 +26,7 @@ These components enable efficient tensor operations by ensuring memory accesses
 follow optimal patterns defined by the layout system.
 """
 
-from sys import align_of
+from std.sys import align_of
 
 from layout.layout import coalesce, is_contiguous_dim
 

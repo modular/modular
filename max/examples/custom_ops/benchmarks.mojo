@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from random import rand
-from sys import (
+from std.math import iota
+from std.random import rand
+from std.sys import (
     argv,
     has_amd_gpu_accelerator,
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
 )
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -28,9 +28,9 @@ from benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from bit import log2_floor
+from std.bit import log2_floor
 from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from kernels.matrix_multiplication import MatrixMultiplication
 from kernels.tensor_core_mma import TensorCoreMMA
 from kernels.top_k import TopK

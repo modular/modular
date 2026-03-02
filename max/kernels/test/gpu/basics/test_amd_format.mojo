@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from builtin._format_float import _write_float
-from builtin.simd import Float8_e4m3fn, Float8_e5m2
-from gpu.host import DeviceContext
-from memory import memcmp, memcpy
+from std.builtin._format_float import _write_float
+from std.builtin.simd import Float8_e4m3fn, Float8_e5m2
+from std.gpu.host import DeviceContext
+from std.memory import memcmp, memcpy
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):

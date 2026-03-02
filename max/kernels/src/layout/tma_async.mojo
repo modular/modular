@@ -32,23 +32,23 @@ Key Components:
   various configurations for different tensor shapes and memory access patterns.
 """
 
-from math import ceildiv, log2
-from sys import align_of, llvm_intrinsic, simd_width_of, size_of
-from sys._assembly import inlined_assembly
+from std.math import ceildiv, log2
+from std.sys import align_of, llvm_intrinsic, simd_width_of, size_of
+from std.sys._assembly import inlined_assembly
 
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._tensormap import (
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host._tensormap import (
     SwizzleMode as _SwizzleMode,
     create_tensormap_im2col as _create_tensormap_im2col,
 )
-from gpu.host.nvidia.tma import (
+from std.gpu.host.nvidia.tma import (
     TensorMapSwizzle,
     TMADescriptor,
     create_tma_descriptor,
     prefetch_tma_descriptor,
 )
-from gpu.intrinsics import Scope
-from gpu.memory import (
+from std.gpu.intrinsics import Scope
+from std.gpu.memory import (
     ReduceOp,
     async_copy,
     cp_async_bulk_tensor_global_shared_cta,
@@ -59,7 +59,7 @@ from gpu.memory import (
     cp_async_bulk_tensor_shared_cluster_global_multicast,
     CacheEviction,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
     mbarrier_arrive,
@@ -76,10 +76,10 @@ from layout.runtime_tuple import (
 )
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 
-from utils.index import Index, IndexList
-from builtin.device_passable import DevicePassable
-from utils.static_tuple import StaticTuple
-from os import abort
+from std.utils.index import Index, IndexList
+from std.builtin.device_passable import DevicePassable
+from std.utils.static_tuple import StaticTuple
+from std.os import abort
 from layout.layout_tensor import LayoutTensorIter
 
 

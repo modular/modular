@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from random import randn, seed
-from sys.info import CompilationTarget
+from std.math import iota
+from std.random import randn, seed
+from std.sys.info import CompilationTarget
 
 from nn.activations import elu, leaky_relu, relu, relu_n1
 from test_utils import compare, libm_call
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
 # CHECK-LABEL: test_elu

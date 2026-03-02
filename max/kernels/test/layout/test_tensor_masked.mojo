@@ -14,7 +14,7 @@
 
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
-from utils import Index
+from std.utils import Index
 
 
 fn test_tile_masked():

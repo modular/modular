@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.io import _printf
+from std.io.io import _printf
 
-from gpu.host import DeviceContext
-from gpu import thread_idx
-from gpu.compute.mma import mma
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.compute.mma import mma
 
 
 fn mma_sync_16x8x32_E4M3():

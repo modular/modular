@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of, simd_width_of
-from itertools import product
+from std.sys import size_of, simd_width_of
+from std.itertools import product
 
 from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
-from collections import Optional
+from std.collections import Optional
 from comm import Signal, MAX_GPUS
 from comm.sync import enable_p2p
 from comm.reducescatter import (
@@ -26,10 +26,10 @@ from comm.reducescatter import (
 )
 from internal_utils import human_readable_size
 from internal_utils._testing import test_value_for_gpu_element
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from testing import assert_almost_equal, assert_true
-from utils import IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.testing import assert_almost_equal, assert_true
+from std.utils import IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
 # Shared test configurations
 comptime test_lengths = (

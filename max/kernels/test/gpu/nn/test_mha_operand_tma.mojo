@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from random import random_ui64, seed
-from sys import size_of
+from std.collections import Set
+from std.random import random_ui64, seed
+from std.sys import size_of
 
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, thread_idx
-from gpu.memory import fence_async_view_proxy
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, thread_idx
+from std.gpu.memory import fence_async_view_proxy
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -29,7 +29,7 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
 from layout.tma_async import SharedMemBarrier, TMATensorTile
-from memory import stack_allocation
+from std.memory import stack_allocation
 from nn.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
@@ -37,9 +37,9 @@ from nn.mha_operand import (
     RaggedMHAOperand,
 )
 from nn.mha_fa3_utils import kv_coord
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)

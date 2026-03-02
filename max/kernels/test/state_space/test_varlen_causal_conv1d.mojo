@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp
-from sys.info import simd_width_of
+from std.math import exp
+from std.sys.info import simd_width_of
 
 from layout import (
     UNKNOWN_VALUE,
@@ -22,15 +22,15 @@ from layout import (
     RuntimeLayout,
 )
 from layout._fillers import random
-from memory import alloc
+from std.memory import alloc
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_update_cpu,
     causal_conv1d_varlen_states_cpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # Constants

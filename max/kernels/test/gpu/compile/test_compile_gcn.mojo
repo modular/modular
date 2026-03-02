@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp
-from memory import LegacyUnsafePointer
+from std.math import exp
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from gpu import (
+from std.gpu import (
     AMDScheduleBarrierMask,
     barrier,
     block_dim,
@@ -28,23 +28,23 @@ from gpu import (
     s_waitcnt,
     s_waitcnt_barrier,
 )
-from gpu.globals import WARP_SIZE
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.intrinsics import (
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.intrinsics import (
     ds_read_tr16_b64,
     load_acquire,
     store_release,
     permlane_shuffle,
     permlane_swap,
 )
-from gpu.primitives.warp import (
+from std.gpu.primitives.warp import (
     shuffle_down,
     shuffle_idx,
     shuffle_up,
     shuffle_xor,
 )
-from benchmark import keep
+from std.benchmark import keep
 
 comptime MI300X_TARGET = get_gpu_target["mi300x"]()
 comptime MI355X_TARGET = get_gpu_target["mi355x"]()

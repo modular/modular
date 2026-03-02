@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host.compile import _compile_code
-from gpu.memory import CacheEviction, CacheOperation, load
-from memory import LegacyUnsafePointer
+from std.gpu.host.compile import _compile_code
+from std.gpu.memory import CacheEviction, CacheOperation, load
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
 
 fn load_value[

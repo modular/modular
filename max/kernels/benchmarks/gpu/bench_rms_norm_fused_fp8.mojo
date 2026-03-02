@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_float64
-from sys import env_get_bool, env_get_dtype
+from std.random import random_float64
+from std.sys import env_get_bool, env_get_dtype
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
-from gpu.host import DeviceContext
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple, CacheBustingBuffer
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from layout import (
     Coord,
     Layout,
@@ -32,8 +32,8 @@ from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
 from buffer import NDBuffer
 from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
-from memory import LegacyUnsafePointer
-from utils.index import Index, IndexList
+from std.memory import LegacyUnsafePointer
+from std.utils.index import Index, IndexList
 
 
 fn bench_rms_norm_fused_fp8[
@@ -433,7 +433,7 @@ fn bench_rms_norm_fused_fp8[
     ctx.synchronize()
 
     # Compare outputs
-    from testing import assert_almost_equal
+    from std.testing import assert_almost_equal
 
     var max_diff = Float32(0.0)
     var max_rel_diff = Float32(0.0)

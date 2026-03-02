@@ -56,12 +56,12 @@ var tiled = blocked_product(layout^, Layout([2, 2]))
 """
 
 import sys
-from collections.string.string import _calc_initial_buffer_size_int32
-from os import abort
+from std.collections.string.string import _calc_initial_buffer_size_int32
+from std.os import abort
 
 from buffer.dimlist import DimList
 
-from utils import IndexList
+from std.utils import IndexList
 
 from .int_tuple import (
     UNKNOWN_VALUE,
@@ -478,7 +478,7 @@ struct Layout(
         return Layout(shape, prefix_product(shape))
 
     @staticmethod
-    fn col_major[rank: Int](dims: DimList) -> Layout:
+    fn col_major[*, dims: DimList]() -> Layout:
         """Creates a col-major layout from a DimList with compile-time rank.
 
         This method creates a col-major layout where the first dimension varies fastest in memory.
@@ -487,9 +487,6 @@ struct Layout(
         also be marked as unknown.
 
         Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
-        Args:
             dims: A DimList containing the dimensions of the layout.
 
         Returns:
@@ -502,14 +499,15 @@ struct Layout(
             from layout.layout import DimList
 
             # Create a col-major layout with compile-time rank
-            var dims = DimList(3, 4)
-            var layout = Layout.col_major[2](dims)
+            comptime dims = DimList(3, 4)
+            comptime layout = Layout.col_major[dims]()
             # Result: Layout with shape (3,4) and stride (1,3)
             ```
         """
         var c_stride = 1
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
+        comptime rank = len(dims)
 
         comptime for i in range(rank):
             var dim = dims.get[i]()
@@ -548,7 +546,7 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from utils import IndexList
+            from std.utils import IndexList
 
             # Create a row-major layout with compile-time rank
             var idx_list = IndexList[2](3, 4)
@@ -603,7 +601,7 @@ struct Layout(
         return Self.row_major(shape)
 
     @staticmethod
-    fn row_major[rank: Int](dims: DimList) -> Layout:
+    fn row_major[*, dims: DimList]() -> Layout:
         """Creates a row-major layout from a DimList with compile-time rank.
 
         This method creates a row-major layout where the last dimension varies fastest in memory.
@@ -612,9 +610,6 @@ struct Layout(
         also be marked as unknown.
 
         Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
-        Args:
             dims: A DimList containing the dimensions of the layout.
 
         Returns:
@@ -627,14 +622,15 @@ struct Layout(
             from layout.layout import DimList
 
             # Create a row-major layout with compile-time rank
-            var dims = DimList(3, 4)
-            var layout = Layout.row_major[2](dims)
+            comptime dims = DimList(3, 4)
+            comptime layout = Layout.row_major[2](dims)
             # Result: Layout with shape (3,4) and stride (4,1)
             ```
         """
         var c_stride = 1
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
+        comptime rank = len(dims)
 
         comptime for i in range(rank):
             var dim = dims.get[i]()
@@ -673,7 +669,7 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from utils import IndexList
+            from std.utils import IndexList
 
             # Create a row-major layout with compile-time rank
             var idx_list = IndexList[2](3, 4)

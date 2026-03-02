@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Test loading and executing an external cubin binary."""
 
-from gpu.host import DeviceContext
-from gpu.host.device_context import DeviceExternalFunction
-from os import getenv
-from testing import assert_equal
+from std.gpu.host import DeviceContext
+from std.gpu.host.device_context import DeviceExternalFunction
+from std.os import getenv
+from std.testing import assert_equal
 
 
 def test_external_cubin_vec_add(ctx: DeviceContext) raises:

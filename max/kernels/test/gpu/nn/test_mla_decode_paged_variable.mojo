@@ -24,31 +24,31 @@ The key stress scenarios:
   - Extreme disparity in cache lengths within the same batch
 """
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from collections import Optional, OptionalReg
-from math import ceildiv, exp
-from random import randn, seed
-from sys import argv, has_nvidia_gpu_accelerator, size_of
+from std.collections import Optional, OptionalReg
+from std.math import ceildiv, exp
+from std.random import randn, seed
+from std.sys import argv, has_nvidia_gpu_accelerator, size_of
 
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.memory import AddressSpace
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.memory import AddressSpace
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCache,
     PagedKVCacheCollection,
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import alloc
+from std.memory import alloc
 from nn.mha import mha_gpu_naive
 from nn.mha_mask import NullMask
 from nn.mha_operand import KVCacheMHAOperand
 from nn.mla import flare_mla_decoding
-from testing import assert_almost_equal, assert_true
-from gpu.host.info import B200
-from utils.index import Index, IndexList
+from std.testing import assert_almost_equal, assert_true
+from std.gpu.host.info import B200
+from std.utils.index import Index, IndexList
 
 
 # ===-----------------------------------------------------------------------===#

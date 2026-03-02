@@ -19,11 +19,11 @@ You can import these APIs from the `buffer` package. For example:
 from buffer import Dim
 ```
 """
-from math import CeilDivable, ceildiv
+from std.math import CeilDivable, ceildiv
 
-from builtin.variadics import Variadic
+from std.builtin.variadics import Variadic
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Dim
@@ -289,7 +289,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
-    var value: VariadicList[Dim]
+    var value: VariadicParamList[Dim]
     """The underlying storage for the list of dimensions."""
 
     fn __init__(out self, *, copy: Self):
@@ -311,7 +311,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         Args:
             value: The initial dim values list.
         """
-        self.value = VariadicList[Dim](index(value))
+        self = Self(Dim(value), _dim_version=())
 
     @always_inline("nodebug")
     fn __init__[I0: Indexer, I1: Indexer](out self, val0: I0, val1: I1):
@@ -325,7 +325,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             val0: The initial dim value.
             val1: The initial dim value.
         """
-        self.value = VariadicList[Dim](index(val0), index(val1))
+        self = Self(Dim(val0), Dim(val1), _dim_version=())
 
     @always_inline("nodebug")
     fn __init__[
@@ -343,7 +343,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             val1: The initial dim value.
             val2: The initial dim value.
         """
-        self.value = VariadicList[Dim](index(val0), index(val1), index(val2))
+        self = Self(Dim(val0), Dim(val1), Dim(val2), _dim_version=())
 
     @always_inline("nodebug")
     fn __init__[
@@ -363,14 +363,10 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             val2: The initial dim value.
             val3: The initial dim value.
         """
-        self = Self(
-            VariadicList[Dim](
-                index(val0), index(val1), index(val2), index(val3)
-            )
-        )
+        self = Self(Dim(val0), Dim(val1), Dim(val2), Dim(val3), _dim_version=())
 
     @always_inline("nodebug")
-    fn __init__(out self, values: VariadicList[Dim]):
+    fn __init__(out self, values: VariadicParamList[Dim]):
         """Creates a dimension list from the given list of values.
 
         Args:
@@ -379,13 +375,14 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         self.value = values
 
     @always_inline("nodebug")
-    fn __init__(out self, *values: Dim):
+    fn __init__(out self, *values: Dim, _dim_version: () = ()):
         """Creates a dimension list from the given Dim values.
 
         Args:
             values: The initial dim values.
+            _dim_version: Used to help overload resolution.
         """
-        self.value = values
+        self.value = VariadicParamList[Dim](values, comptime_only=())
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -555,8 +552,8 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         ```mojo
         from buffer import DimList
 
-        var dim_list = DimList(2, 4)
-        var index_list = dim_list.into_index_list[rank=2]()
+        comptime dim_list = DimList(2, 4)
+        var index_list = comptime(dim_list.into_index_list[rank=2]())
         ```
         """
         var num_elements = len(self)
@@ -583,15 +580,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             A list of all dynamic dimension values.
         """
         comptime assert length > 0, "length must be positive"
-
-        return Self(
-            VariadicList[Dim](
-                __mlir_op.`pop.variadic.splat`[
-                    numElements = length._mlir_value,
-                    _type = Variadic.ValuesOfType[Dim],
-                ](Dim())
-            )
-        )
+        return Self(Variadic.splat_value[Dim(), length])
 
     fn __str__(self) -> String:
         """Converts the DimList to a String. The String is a comma separated
@@ -648,26 +637,6 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
             writer.write(self.value[i])
 
         writer.write("]")
-
-
-@always_inline
-fn _make_tuple[
-    size: Int, *, element_type: DType = DType.int64
-](values: DimList, out result: IndexList[size, element_type=element_type]):
-    """Creates a tuple constant using the specified values.
-
-    Args:
-        values: The list of values.
-
-    Returns:
-        A tuple with the values filled in.
-    """
-    var tup = StaticTuple[result._int_type, size](fill=result._int_type(0))
-
-    comptime for idx in range(size):
-        tup = tup._replace[idx](result._int_type(values.at[idx]().get()))
-
-    return {tup}
 
 
 @always_inline

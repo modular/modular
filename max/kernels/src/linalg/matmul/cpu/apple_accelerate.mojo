@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from math import fma
-from memory import alloc
-from os import abort
-from sys import CompilationTarget, simd_width_of
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle
+from std.collections import Optional
+from std.math import fma
+from std.memory import alloc
+from std.os import abort
+from std.sys import CompilationTarget, simd_width_of
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle
 
-from algorithm import elementwise, vectorize
-from algorithm.functional import (
+from std.algorithm import elementwise, vectorize
+from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     parallelize_over_rows,
 )
 from buffer.buffer import NDBuffer
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 from ...bmm import _reshape_nd_buffer_with_batch_to_3d
 from ...bmm import (

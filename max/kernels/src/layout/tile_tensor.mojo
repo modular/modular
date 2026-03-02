@@ -12,25 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 """TileTensor type for structured memory access with compile-time layout information."""
 
-from sys import align_of, simd_width_of
-from os import abort
+from std.sys import align_of, simd_width_of
+from std.os import abort
 
 from buffer import Dim, DimList, NDBuffer
-from builtin.builtin_slice import ContiguousSlice
-from builtin.device_passable import DevicePassable
-from builtin.variadics import (
+from std.builtin.builtin_slice import ContiguousSlice
+from std.builtin.device_passable import DevicePassable
+from std.builtin.variadics import (
     Variadic,
     _MapValuesAndIdxToType,
     _MapVariadicAndIdxToType,
 )
-from builtin.dtype import _unsigned_integral_type_of
-from gpu import thread_idx, block_dim, lane_id
-from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from utils.numerics import max_finite
+from std.builtin.dtype import _unsigned_integral_type_of
+from std.gpu import thread_idx, block_dim, lane_id
+from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from std.utils.numerics import max_finite
 from layout._fillers import BATCH_SIZE
-from sys import prefetch
-from sys.intrinsics import PrefetchOptions, readfirstlane
-from utils import IndexList
+from std.sys import prefetch
+from std.sys.intrinsics import PrefetchOptions, readfirstlane
+from std.utils import IndexList
 
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
@@ -297,7 +297,7 @@ struct TileTensor[
         to construct a `LayoutTensor` that you can use on the GPU.
 
         ```mojo
-        from gpu.host import DeviceContext, DeviceBuffer
+        from std.gpu.host import DeviceContext, DeviceBuffer
         from layout._layout import row_major
         from layout import TileTensor
         from layout import Idx
@@ -346,7 +346,7 @@ struct TileTensor[
         The resulting tensor's data can only be accessed on the CPU.
 
         ```mojo
-        from gpu.host import DeviceContext, HostBuffer
+        from std.gpu.host import DeviceContext, HostBuffer
         from layout._layout import row_major
         from layout import TileTensor
         from layout import Idx

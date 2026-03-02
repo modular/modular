@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
-from sys.info import simd_width_of
+from std.math import sqrt
+from std.sys.info import simd_width_of
 
-from algorithm.functional import elementwise
+from std.algorithm.functional import elementwise
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._fillers import random
 from layout._layout import row_major
-from memory import alloc
+from std.memory import alloc
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn run_rms_norm_fused_residual_add_gpu[

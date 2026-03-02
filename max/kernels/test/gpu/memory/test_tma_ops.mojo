@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.primitives.cluster import elect_one_sync
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.memory import (
+from std.gpu.primitives.cluster import elect_one_sync
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.memory import (
     CacheEviction,
     ReduceOp,
     AddressSpace,
@@ -25,13 +25,13 @@ from gpu.memory import (
     fence_proxy_tensormap_generic_sys_release,
 )
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
-from utils.index import Index
+from std.utils.index import Index
 
 
 # CHECK-LABEL: test_async_copy_asm
@@ -74,7 +74,7 @@ fn test_async_store_asm():
         cp_async_bulk_tensor_global_shared_cta(
             src_mem, tma_descriptor, Index(coords[0], coords[1])
         )
-        # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r4, %r5}], [%r1], %rd4;
+        # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r4, %r5}], [%r1], %rd8;
         cp_async_bulk_tensor_global_shared_cta[
             eviction_policy = CacheEviction.EVICT_FIRST
         ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
@@ -82,7 +82,7 @@ fn test_async_store_asm():
         cp_async_bulk_tensor_global_shared_cta(
             src_mem, tma_descriptor, Index(coords[0])
         )
-        # CHECK: cp.async.bulk.tensor.1d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r7}], [%r1], %rd5;
+        # CHECK: cp.async.bulk.tensor.1d.global.shared::cta.tile.bulk_group.L2::cache_hint [%rd1, {%r7}], [%r1], %rd11;
         cp_async_bulk_tensor_global_shared_cta[
             eviction_policy = CacheEviction.EVICT_LAST
         ](src_mem, tma_descriptor, Index(coords[0]))

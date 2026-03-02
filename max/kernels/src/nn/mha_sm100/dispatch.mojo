@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv
-from sys import size_of
-from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.collections import OptionalReg
+from std.math import ceildiv
+from std.sys import size_of
+from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.tma_async import RaggedTMA3DTile
-from logger import Logger
+from std.logger import Logger
 from nn.fa4_config import FA4Config
 from nn.mha_fa3_utils import (
     NonNullPointer,

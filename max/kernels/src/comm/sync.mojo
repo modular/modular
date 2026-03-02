@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from utils import StaticTuple
-from sys import size_of
+from std.utils import StaticTuple
+from std.sys import size_of
 
-from gpu.host import DeviceContext
-from gpu import (
+from std.gpu.host import DeviceContext
+from std.gpu import (
     barrier,
     block_idx,
     thread_idx,
 )
-from gpu.intrinsics import (
+from std.gpu.intrinsics import (
     load_acquire,
     store_release,
 )

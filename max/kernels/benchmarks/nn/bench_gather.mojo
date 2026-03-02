@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import rand, randint
+from std.random import rand, randint
 
-from benchmark import *
+from std.benchmark import *
 from layout._layout import row_major
 from layout import Coord, TileTensor
 from nn.gather_scatter import gather_elements
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn bench_gather(mut m: Bench, spec: GatherSpec) raises:

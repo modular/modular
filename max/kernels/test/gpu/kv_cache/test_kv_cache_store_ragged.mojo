@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from math import ceildiv
-from random import seed
+from std.collections import Optional
+from std.math import ceildiv
+from std.random import seed
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
 from layout import *
 from layout._utils import ManagedLayoutTensor, UNKNOWN_VALUE
-from memory import memcpy, memset_zero
+from std.memory import memcpy, memset_zero
 from nn.kv_cache_ragged import kv_cache_store_padded, kv_cache_store_ragged
-from testing import assert_equal, assert_almost_equal
+from std.testing import assert_equal, assert_almost_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 

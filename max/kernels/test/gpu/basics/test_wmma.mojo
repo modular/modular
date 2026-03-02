@@ -11,23 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_si64
+from std.math import ceildiv
+from std.random import random_si64
 
-from gpu import WARP_SIZE, block_idx
-from gpu.host import DeviceContext
-from gpu.compute.mma import mma
-from gpu.compute.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
+from std.gpu import WARP_SIZE, block_idx
+from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import mma
+from std.gpu.compute.mma_util import (
+    load_matrix_a,
+    load_matrix_b,
+    store_matrix_d,
+)
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_false
+from std.testing import assert_false
 
-from utils.index import IndexList
-from utils.numerics import isnan
+from std.utils.index import IndexList
+from std.utils.numerics import isnan
 
 
 # TF32 Tensor core Matmul with shape m16n8k8

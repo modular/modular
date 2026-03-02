@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
-from algorithm import parallelize
-from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
-from math import iota
-from memory import LegacyUnsafePointer
+from std.algorithm import parallelize
+from std.gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
+from std.math import iota
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
+from std.os import abort
 from shmem import *
-from ffi import c_int
-from sys.info import size_of
-from gpu.host import DeviceBuffer
+from std.ffi import c_int
+from std.sys.info import size_of
+from std.gpu.host import DeviceBuffer
 
 comptime min_size = 1024 * 1024 * 32
 comptime max_size = min_size * 16

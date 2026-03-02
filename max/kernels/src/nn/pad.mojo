@@ -22,10 +22,10 @@ from layout._layout import TensorLayout, row_major
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
-from memory import memcpy
+from std.memory import memcpy
 
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 @always_inline

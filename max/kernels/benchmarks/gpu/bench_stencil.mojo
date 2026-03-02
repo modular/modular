@@ -11,20 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_dtype, env_get_int, env_get_string
+from std.sys import env_get_dtype, env_get_int, env_get_string
 
-from algorithm.functional import stencil, stencil_gpu
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import stencil, stencil_gpu
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils import IndexList
+from std.utils.numerics import min_or_neg_inf
 
 
 fn assert_allclose[
@@ -53,9 +59,15 @@ fn bench_stencil_avg_pool[
     comptime simd_width = 1
 
     comptime input_shape = DimList(1, input_height, input_width, num_channels)
+    comptime dynamic_input_shape = IndexList[4](
+        1, input_height, input_width, num_channels
+    )
     comptime output_height = input_height - pool_window_h + 1
     comptime output_width = input_width - pool_window_w + 1
     comptime output_shape = DimList(
+        1, output_height, output_width, num_channels
+    )
+    comptime dynamic_output_shape = IndexList[4](
         1, output_height, output_width, num_channels
     )
 
@@ -83,12 +95,14 @@ fn bench_stencil_avg_pool[
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
+    var d_input = NDBuffer[dtype, rank](
+        d_input_buf.unsafe_ptr(), dynamic_input_shape
+    )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf.unsafe_ptr(), output_shape
+        d_output_buf.unsafe_ptr(), dynamic_output_shape
     )
 
     # Copy to device
@@ -273,9 +287,15 @@ fn bench_stencil_max_pool[
     comptime simd_width = 1
 
     comptime input_shape = DimList(1, input_height, input_width, num_channels)
+    comptime dynamic_input_shape = IndexList[4](
+        1, input_height, input_width, num_channels
+    )
     comptime output_height = input_height - pool_window_h + 1
     comptime output_width = input_width - pool_window_w + 1
     comptime output_shape = DimList(
+        1, output_height, output_width, num_channels
+    )
+    comptime dynamic_output_shape = IndexList[4](
         1, output_height, output_width, num_channels
     )
 
@@ -303,12 +323,14 @@ fn bench_stencil_max_pool[
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
+    var d_input = NDBuffer[dtype, rank](
+        d_input_buf.unsafe_ptr(), dynamic_input_shape
+    )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf.unsafe_ptr(), output_shape
+        d_output_buf.unsafe_ptr(), dynamic_output_shape
     )
 
     # Copy to device
@@ -489,9 +511,13 @@ fn bench_stencil_avg_pool_padded[
     comptime dilation = 1
 
     comptime input_shape = DimList(1, input_height, input_width, 1)
+    var dynamic_input_shape = IndexList[4](1, input_height, input_width, 1)
     comptime output_height = input_height - pool_window_h + pad_h * 2 + 1
     comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
     comptime output_shape = DimList(1, output_height, output_width, 1)
+    comptime dynamic_output_shape = IndexList[4](
+        1, output_height, output_width, 1
+    )
 
     # Create host buffers
     var h_input_ptr = UnsafePointer[Scalar[dtype]].alloc(
@@ -517,12 +543,14 @@ fn bench_stencil_avg_pool_padded[
     var d_input_buf = ctx.enqueue_create_buffer[dtype](
         Int(input_shape.product())
     )
-    var d_input = NDBuffer[dtype, rank](d_input_buf.unsafe_ptr(), input_shape)
+    var d_input = NDBuffer[dtype, rank](
+        d_input_buf.unsafe_ptr(), dynamic_input_shape
+    )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](
         Int(output_shape.product())
     )
     var d_output = NDBuffer[dtype, rank](
-        d_output_buf.unsafe_ptr(), output_shape
+        d_output_buf.unsafe_ptr(), dynamic_output_shape
     )
 
     # Copy to device

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
-from math import ceildiv
+from std.sys import size_of
+from std.math import ceildiv
 from nn.mha_operand import MHAOperand
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_tile_scheduler import (
@@ -53,12 +53,12 @@ from layout.layout_tensor import LayoutTensor
 from layout.swizzle import make_swizzle
 
 import gpu.primitives.warp as warp
-from gpu.globals import WARP_SIZE
-from gpu.memory import AddressSpace, external_memory
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu import (
+from std.gpu.globals import WARP_SIZE
+from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     thread_idx,
@@ -69,10 +69,10 @@ from nn.mha_utils import (
     NoPartition,
     OptionallyStaticInt,
 )
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
-from utils.static_tuple import StaticTuple
-from utils.index import Index
+from std.utils.static_tuple import StaticTuple
+from std.utils.index import Index
 from kv_cache.types import swizzle_granularity, padded_depth
 
 from nn.mla_prefill_sm100_utils import (

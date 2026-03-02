@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp, inf, log
+from std.math import ceildiv, exp, inf, log
 
-from algorithm.functional import parallelize
+from std.algorithm.functional import parallelize
 from compiler_internal import register
-from gpu import global_idx
-from gpu.host.info import is_cpu, is_gpu
+from std.gpu import global_idx
+from std.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:

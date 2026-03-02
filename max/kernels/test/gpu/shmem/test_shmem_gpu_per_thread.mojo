@@ -18,9 +18,9 @@ See `test_shmem_gpu_per_process.mojo` for how you can launch one GPU per process
 using mpirun (NVIDIA only).
 """
 # RUN: %mojo %s
-from memory import UnsafePointer, alloc
+from std.memory import UnsafePointer, alloc
 
-from testing import assert_equal
+from std.testing import assert_equal
 from shmem import *
 
 

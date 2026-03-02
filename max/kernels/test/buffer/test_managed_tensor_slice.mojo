@@ -16,9 +16,9 @@
 from buffer.dimlist import DimList
 from compiler_internal.directives import StaticTensorSpec
 from tensor import ManagedTensorSlice, IOUnknown
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def test_basic_construction() raises:

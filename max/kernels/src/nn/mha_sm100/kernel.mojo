@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import simd_width_of, size_of
+from std.math import align_up
+from std.sys import simd_width_of, size_of
 import gpu.primitives.warp as warp
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     thread_idx,
     warp_id,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import AddressSpace, external_memory
+from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAllocation,
 )
@@ -62,8 +62,8 @@ from nn.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from utils.index import Index
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index
+from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 from .softmax_warp import fa4_softmax
 from .correction_warp import fa4_correction

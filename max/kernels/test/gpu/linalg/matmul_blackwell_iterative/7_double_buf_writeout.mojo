@@ -11,35 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib import default_comp_time_hasher
-from math import align_up, ceildiv
-from memory import LegacyUnsafePointer, bitcast
+from std.hashlib import default_comp_time_hasher
+from std.math import align_up, ceildiv
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import argv, size_of
+from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from bit import next_power_of_two, prev_power_of_two
+from std.bit import next_power_of_two, prev_power_of_two
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import fence_async_view_proxy, external_memory
-from gpu.compute.mma import st_matrix
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.sync import named_barrier
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import fence_async_view_proxy, external_memory
+from std.gpu.compute.mma import st_matrix
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.sync import named_barrier
+from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import (
     UNKNOWN_VALUE,
@@ -67,9 +67,9 @@ from layout.tma_async import (
 )
 from linalg.arch.sm100 import MmaOpSM100_SS
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -910,16 +910,14 @@ def test_blackwell_kernel_7[
             )
         )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
     comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    comptime static_c_shape = DimList(m.dim, n.dim)
 
     # Define layouts for LayoutTensor
-    comptime a_layout = Layout.row_major[2](static_a_shape)
-    comptime b_layout = Layout.row_major[2](static_b_shape)
-    comptime c_layout = Layout.row_major[2](static_c_shape)
+    comptime a_layout = Layout.row_major[dims = DimList(m.dim, k.dim)]()
+    comptime b_layout = Layout.row_major[dims=static_b_shape]()
+    comptime c_layout = Layout.row_major[dims = DimList(m.dim, n.dim)]()
 
     # Host memory allocation
     var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)

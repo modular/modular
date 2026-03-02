@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """FA4 (Flash Attention 4) configuration for SM100 (Blackwell) kernels."""
 
-from math import ceildiv, align_up, align_down, gcd
-from sys import size_of
-from sys import env_get_bool
-from bit import prev_power_of_two
-from gpu.globals import WARP_SIZE
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
+from std.math import ceildiv, align_up, align_down, gcd
+from std.sys import size_of
+from std.sys import env_get_bool
+from std.bit import prev_power_of_two
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
 
 
 comptime EnableForcedOrdering = env_get_bool[

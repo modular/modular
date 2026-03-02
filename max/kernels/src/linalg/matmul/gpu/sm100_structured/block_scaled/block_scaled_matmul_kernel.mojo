@@ -38,40 +38,40 @@ Key structured patterns:
 - Automatic wait/step in context manager __enter__/__exit__
 """
 
-from collections import Optional
-from math import ceildiv
-from memory import LegacyUnsafePointer, Pointer
+from std.collections import Optional
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer, Pointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import size_of
+from std.sys import size_of
 
-from gpu import WARP_SIZE, thread_idx
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, thread_idx
+from std.gpu.primitives.cluster import (
     cluster_sync,
     elect_one_sync,
 )
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import (
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_mbarrier_init,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.primitives.grid_controls import (
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,
 )
-from gpu.sync import syncwarp
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.sync import syncwarp
+from std.gpu.compute.arch.tcgen05 import *
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
     tile_sf_layout_k_major,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.utils import elementwise_compute_lambda_type

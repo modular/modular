@@ -11,12 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from random import random_ui64, seed
-from sys import env_get_dtype, env_get_int
+from std.collections import Set
+from std.random import random_ui64, seed
+from std.sys import env_get_dtype, env_get_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -35,7 +41,7 @@ from layout._layout import row_major
 from layout._fillers import random
 from nn.fused_qk_rope import fused_qk_rope_ragged
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn _get_run_name[

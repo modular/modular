@@ -19,16 +19,16 @@ is only compiled when `dispatch_sm100_conv2d` is called with a supported
 dtype inside a @parameter if guard.
 """
 
-from math import ceildiv
+from std.math import ceildiv
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_dim, block_idx, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime MutPointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # =========================================================================
@@ -195,13 +195,13 @@ fn dispatch_sm100_conv2d[
 
         comptime static_shape = DimList(-1, -1, -1, -1)
         var act_nd = NDBuffer[input_type, 4, _, static_shape](
-            input.ptr, DimList(batch, in_h, in_w, in_c)
+            input.ptr, IndexList[4](batch, in_h, in_w, in_c)
         )
         var filter_nd = NDBuffer[filter_type, 4, _, static_shape](
-            filter_krsc_ptr, DimList(out_c, fh, fw, in_c)
+            filter_krsc_ptr, IndexList[4](out_c, fh, fw, in_c)
         )
         var out_nd = NDBuffer[output_type, 4, _, static_shape](
-            output.ptr, DimList(batch, out_h, out_w, out_c)
+            output.ptr, IndexList[4](batch, out_h, out_w, out_c)
         )
 
         comptime config = Conv2dConfig[

@@ -11,11 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
-from utils.numerics import get_accum_type
+from std.collections import InlineArray
+from std.sys import (
+    env_get_bool,
+    env_get_dtype,
+    env_get_int,
+    size_of,
+    simd_width_of,
+)
+from std.utils.numerics import get_accum_type
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -27,7 +33,7 @@ from comm.reducescatter import reducescatter, ReduceScatterConfig
 from layout import Idx, TileTensor
 from layout._layout import row_major
 from comm import MAX_GPUS, Signal
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
@@ -35,7 +41,7 @@ from internal_utils import (
     human_readable_size,
 )
 
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
 
 @always_inline

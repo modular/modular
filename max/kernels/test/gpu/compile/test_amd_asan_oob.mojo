@@ -28,10 +28,10 @@
 # CHECK: AddressSanitizer: heap-buffer-overflow on amdgpu device
 # CHECK: at {{.*}}test_amd_asan_oob.mojo:37
 
-from sys import argv
+from std.sys import argv
 
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

@@ -21,22 +21,22 @@ This module contains common components used by all SM100 matmul kernel variants:
 - consumer_main_loop: Legacy MMA consumer loop (deprecated but kept for compatibility)
 """
 
-from gpu import WARP_SIZE, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu import block_id_in_cluster
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu import block_id_in_cluster
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import SharedMemBarrier
 from layout._layout import RowMajorLayout, TensorLayout, row_major
 from layout.coord import ComptimeInt, Coord, Idx
 from layout.tile_tensor import TileTensor
 
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.structuring import SMemPtr, SMemArray, SMemTileIter

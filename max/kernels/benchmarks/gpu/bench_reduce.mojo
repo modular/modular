@@ -11,14 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of, env_get_int, env_get_string, simd_width_of
-from sys.info import _TargetType
+from std.sys import align_of, env_get_int, env_get_string, simd_width_of
+from std.sys.info import _TargetType
 
-from algorithm._gpu.reduction import reduce_launch
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm._gpu.reduction import reduce_launch
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from layout import LayoutTensor, Layout, RuntimeLayout
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
@@ -26,13 +32,13 @@ from internal_utils import (
     int_list_to_tuple,
     update_bench_config_args,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList, StaticTuple
-from utils.index import product
+from std.utils import IndexList, StaticTuple
+from std.utils.index import product
 
 
 fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:

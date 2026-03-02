@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import randn, seed
+from std.math import ceildiv
+from std.random import randn, seed
 
 import gpu.primitives.warp as warp
 from buffer import NDBuffer
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
 from linalg.gemv import gemv_kernel, gevm_kernel
 from linalg.matmul.gpu import matmul_kernel
 
-from utils import Index, IndexList
-from utils.numerics import isnan
+from std.utils import Index, IndexList
+from std.utils.numerics import isnan
 from internal_utils import assert_almost_equal
 
 

@@ -17,11 +17,11 @@
 #
 # ===-----------------------------------------------------------------------===#
 
-from sys._assembly import inlined_assembly
+from std.sys._assembly import inlined_assembly
 
 from buffer import DimList
 from layout import Layout, LayoutTensor
-from memory import (
+from std.memory import (
     LegacyUnsafePointer,
     memcpy,
     memset_zero,

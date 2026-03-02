@@ -13,7 +13,7 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from sys import (
+from std.sys import (
     align_of,
     bit_width_of,
     has_nvidia_gpu_accelerator,
@@ -21,21 +21,21 @@ from sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from algorithm.functional import elementwise
+from std.algorithm.functional import elementwise
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import arange as arange, random
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils_gpu import MatmulConfig
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from test_utils import ulp_distance
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
@@ -166,19 +166,19 @@ fn test[
 
     var a_device = NDBuffer[dtype, 2, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
-        DimList(m, k),
+        IndexList[2](m, k),
     )
     var b_device = NDBuffer[dtype, 2, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
-        DimList(n, k) if transpose_b else DimList(k, n),
+        IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
     var c_device = NDBuffer[dtype, 2, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
     var c_device_ref = NDBuffer[dtype, 2, _, static_c_shape](
         c_device_ref_buffer.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
 
     # Initialize matmul operands

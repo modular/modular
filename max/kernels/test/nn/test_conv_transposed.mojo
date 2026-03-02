@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from random import rand
-from sys.info import simd_width_of
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import simd_width_of
 
-from algorithm.functional import vectorize
+from std.algorithm.functional import vectorize
 from layout import Coord, TileTensor
 from layout._layout import row_major
 from nn.conv_transpose import (
@@ -34,9 +34,9 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime simd_size: Int = simd_width_of[DType.float32]()
 comptime dtype = DType.float32

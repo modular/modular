@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import fma
-from ffi import external_call
-from sys import size_of, align_of
+from std.math import fma
+from std.ffi import external_call
+from std.sys import size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
-from collections import InlineArray
-from gpu.host import DeviceBuffer
-from gpu.host.info import is_cpu, is_gpu
+from std.collections import InlineArray
+from std.gpu.host import DeviceBuffer
+from std.gpu.host.info import is_cpu, is_gpu
 from layout import (
     Coord,
     Idx,
@@ -31,11 +31,11 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout._layout import row_major
-from memory import memcpy
+from std.memory import memcpy
 
 from nn.concat import concat
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
     DynamicTensor,
     InputTensor,
@@ -46,9 +46,7 @@ from tensor.io_spec import IO
 from tensor.managed_tensor_slice import get_kernel_simd_width
 from weights_registry import WeightsRegistry
 
-from utils import Index, IndexList, StaticTuple
-
-from .MOGGIntList import IntList
+from std.utils import Index, IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Helper Structures
@@ -504,7 +502,7 @@ fn mgp_tensor_extract_buffer[
 ]:
     # Unwrap the tensor into a size-less buffer pointer.
     return NDBuffer[DType.int8, 1](
-        buffer.data.bitcast[Int8](), buffer.bytecount()
+        buffer.data.bitcast[Int8](), IndexList[1](buffer.bytecount())
     )
 
 
@@ -536,7 +534,7 @@ fn mgp_buffer_constant(
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
     return NDBuffer[DType.int8, 1](
-        resource_ptr.bitcast[Int8](), resource_bytecount
+        resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
     )
 
 
@@ -564,13 +562,18 @@ fn mgp_buffer_constant_external(
             align,
         )
 
-    return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(size))
+    return NDBuffer[DType.int8, 1](
+        weight_ptr.bitcast[Int8](), IndexList[1](Int(size))
+    )
 
 
 @no_inline
 fn fill_buffer[
     dtype: DType
-](buf: NDBuffer[DType.int8, 1, MutAnyOrigin], vals: VariadicList[Int]):
+](
+    buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    vals: VariadicList[Int, is_owned=False],
+):
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
@@ -818,16 +821,16 @@ fn mgp_tensor_spec_create[
     aRawDims: DimList,
     aRawDimsRank: Int,
 ](*runtimeDims: Int) -> IndexList[aRawDimsRank]:
-    var static_shape = IntList[aRawDims]()
     var shape = IndexList[aRawDimsRank]()
     var runtimeIndex = 0
     # Update Shape with runtime elements.
-    for i in range(aRawDimsRank):
-        if static_shape[i] > -1:
-            shape[i] = static_shape[i]
+    comptime for i in range(aRawDimsRank):
+        var dim = aRawDims.at[i]()
+        if dim.get() > -1:
+            shape[i] = dim.get()
         else:
             shape[i] = runtimeDims[runtimeIndex]
-            runtimeIndex = runtimeIndex + 1
+            runtimeIndex += 1
     return shape
 
 

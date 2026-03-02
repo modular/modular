@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv
+from std.math import align_down, ceildiv
 
-from gpu import barrier, thread_idx
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.host.info import MI355X
-from gpu.intrinsics import AMDBufferResource
-from gpu.memory import CacheOperation
-from memory import LegacyUnsafePointer, stack_allocation
+from std.gpu import barrier, thread_idx
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.host.info import MI355X
+from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.memory import CacheOperation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
 comptime size = 257
 comptime size_clip = size - 5

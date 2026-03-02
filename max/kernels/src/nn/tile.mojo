@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor
-from memory import memcpy
+from std.memory import memcpy
 
-from utils import IndexList
+from std.utils import IndexList
 
 # TODO: This implementation supports up to 4 dimensions.
 

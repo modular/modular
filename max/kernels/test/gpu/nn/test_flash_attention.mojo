@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import exp
-from random import rand, random_float64, seed
-from sys import argv, has_amd_gpu_accelerator
+from std.math import exp
+from std.random import rand, random_float64, seed
+from std.sys import argv, has_amd_gpu_accelerator
 
-from gpu import *
-from gpu.host import DeviceContext
-from gpu.host.info import A100, B200, H100, GPUInfo, Vendor
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import A100, B200, H100, GPUInfo, Vendor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import (
     _naive_attention_with_transpose,
@@ -28,9 +28,9 @@ from nn.mha import (
     mha_gpu_naive,
 )
 from nn.mha_mask import MaterializedMask, NullMask
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn is_benchmark() -> Bool:

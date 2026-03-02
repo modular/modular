@@ -19,28 +19,29 @@ GEMM kernel output. Verifies that:
 3. Both register-based and SMEM-based epilogues work correctly
 """
 
-from collections import Optional
-from math import align_up, ceildiv
-from random import rand, random_float64, seed
-from sys import align_of, size_of
+from std.collections import Optional
+from std.math import align_up, ceildiv
+from std.random import rand, random_float64, seed
+from std.sys import align_of, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from internal_utils import assert_almost_equal
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout._utils import ManagedLayoutTensor
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
@@ -107,11 +108,11 @@ fn test_grouped_gemm_epilogue[
     )
     comptime static_c_shape = DimList(m.dim, n.dim)
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     var a_size = m.value * k.value
     var b_size = n.value * k.value
@@ -126,13 +127,19 @@ fn test_grouped_gemm_epilogue[
     var b_host = NDBuffer[b_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
+    var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
+        c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
+    )
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
     var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
+        c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
     var c_host_original_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
     var c_host_original = NDBuffer[c_type, 2, _, static_c_shape](
@@ -161,26 +168,26 @@ fn test_grouped_gemm_epilogue[
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
         SF_ATOM_M[0],
@@ -188,8 +195,8 @@ fn test_grouped_gemm_epilogue[
         SF_ATOM_K,
     )
 
-    var sfa_size = dynamic_a_scales_shape.product[]().get()
-    var sfb_size = dynamic_b_scales_shape.product[]().get()
+    var sfa_size = comptime (static_a_scales_shape.product[]().get())
+    var sfb_size = comptime (static_b_scales_shape.product[]().get())
 
     # Scale factor device allocations
     var sfa_device = ctx.enqueue_create_buffer[scales_dtype](sfa_size)
@@ -250,7 +257,7 @@ fn test_grouped_gemm_epilogue[
     # Copy to device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device, c_host.data)
     ctx.enqueue_copy(sfa_device, sfa_host_ptr)
     ctx.enqueue_copy(sfb_device, sfb_host_ptr)
 
@@ -379,8 +386,8 @@ fn test_grouped_gemm_epilogue[
     ctx.synchronize()
 
     # Copy results back
-    ctx.enqueue_copy(c_host_ptr, c_device)
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.enqueue_copy(c_host.data, c_device)
+    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
     ctx.synchronize()
 
     # Apply epilogue lambda on CPU to reference
@@ -421,8 +428,6 @@ fn test_grouped_gemm_epilogue[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     c_host_original_ptr.free()
     sfa_host_ptr.free()
     sfb_host_ptr.free()
@@ -432,18 +437,6 @@ fn test_grouped_gemm_epilogue[
     c_ptrs_host.free()
     sfa_ptrs_host.free()
     sfb_ptrs_host.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
-    _ = sfa_device^
-    _ = sfb_device^
-    _ = problem_sizes_device^
-    _ = a_ptrs_device^
-    _ = b_ptrs_device^
-    _ = c_ptrs_device^
-    _ = sfa_ptrs_device^
-    _ = sfb_ptrs_device^
 
 
 def main() raises:

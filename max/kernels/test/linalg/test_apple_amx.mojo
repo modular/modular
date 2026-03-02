@@ -18,7 +18,7 @@
 
 from layout import Layout, LayoutTensor
 from linalg.arch.cpu.apple_amx_intrinsics import *
-from testing import *
+from std.testing import *
 
 
 fn fill_a(buf: LayoutTensor[mut=True, ...]):

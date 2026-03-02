@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import (
+from std.math import align_up
+from std.sys import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
@@ -20,14 +20,20 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import has_amd_gpu_accelerator
+from std.sys.info import has_amd_gpu_accelerator
 
 from layout import TileTensor
 import linalg.matmul.vendor.blas as vendor_blas
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
@@ -35,7 +41,7 @@ from internal_utils._utils import (
 )
 from linalg.bmm import _batched_matmul_gpu
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 

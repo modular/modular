@@ -23,17 +23,17 @@ requires per-K-iteration scaling in CUDA cores:
     result = accum  # write to SMEM → GMEM
 """
 
-from math import gcd
+from std.math import gcd
 
-from gpu import WARP_SIZE, lane_id
-from gpu import warp_id as get_warp_id
-from gpu.memory import AddressSpace
-from gpu.primitives.cluster import block_rank_in_cluster
-from gpu.sync import syncwarp
+from std.gpu import WARP_SIZE, lane_id
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import AddressSpace
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.sync import syncwarp
 from layout import Coord, Idx, TileTensor, stack_allocation
 from layout._layout import TensorLayout, row_major
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.tile_types import (
     SMemTileArray2DRowMajor,

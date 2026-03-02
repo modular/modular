@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler_internal as compiler
-from gpu.host.device_context import DeviceExternalFunction
-from os import abort, getenv
+from std.gpu.host.device_context import DeviceExternalFunction
+from std.os import abort, getenv
 from tensor import (
     foreach,
     DynamicTensor,
@@ -26,8 +26,8 @@ from tensor import OutputVariadicTensors
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
-from utils.index import IndexList
-from runtime.asyncrt import DeviceContextPtr
+from std.utils.index import IndexList
+from std.runtime.asyncrt import DeviceContextPtr
 
 
 @compiler.register("my_add")

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simd_width_of
+from std.sys.info import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.packing import PackMatrixCols
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime type = DType.float32
 comptime simd_size: Int = simd_width_of[DType.float32]()

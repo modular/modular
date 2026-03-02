@@ -15,7 +15,7 @@ from layout import Coord, TileTensor
 from layout._layout import row_major
 from nn.conv_transpose import conv_transpose_naive
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_convtranspose_pads

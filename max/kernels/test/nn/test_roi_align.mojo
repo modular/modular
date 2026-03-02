@@ -14,9 +14,9 @@
 from layout._layout import row_major
 from layout import TileTensor
 from nn.roi_align import roi_align_nhwc
-from testing import *
+from std.testing import *
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def test_roi_align_avg[scale_type: DType]() raises:

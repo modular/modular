@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import align_up, ceildiv
+from std.math import align_up, ceildiv
 
-from sys import simd_width_of, size_of
-from utils.index import Index, IndexList
+from std.sys import simd_width_of, size_of
+from std.utils.index import Index, IndexList
 
-from algorithm.functional import _elementwise_impl_gpu
-from gpu import (
+from std.algorithm.functional import _elementwise_impl_gpu
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -26,14 +26,14 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, CoordLike, Idx, TileTensor, coord_to_index_list
 from layout._layout import TensorLayout, Layout as TileLayout, row_major
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
-from utils.index import StaticTuple
-from utils.numerics import get_accum_type
+from std.utils.index import StaticTuple
+from std.utils.numerics import get_accum_type
 from linalg.fp8_quantization import (
     matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,

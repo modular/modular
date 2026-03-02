@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import has_nvidia_gpu_accelerator
+from std.sys import has_nvidia_gpu_accelerator
 
-from benchmark import Bench
-from gpu.host import DeviceBuffer, DeviceContext
+from std.benchmark import Bench
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout.layout_tensor import (
     Layout,
     LayoutTensor,
@@ -35,8 +35,8 @@ from matmul_kernels import (
     run_gemm_kernel_6,
     run_gemm_kernel_tc,
 )
-from testing import assert_almost_equal
-from utils import IndexList
+from std.testing import assert_almost_equal
+from std.utils import IndexList
 
 comptime run_gemm_kernel_type = fn(
     mut m: Bench,

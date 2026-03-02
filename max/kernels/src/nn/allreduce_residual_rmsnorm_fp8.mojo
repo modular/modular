@@ -50,20 +50,20 @@ row counts beyond the hardware-tuned block limit. Gamma weights are
 preloaded once and reused across all rows in the loop.
 """
 
-from collections import InlineArray, Optional
-from math import ceildiv, rsqrt
-from sys import (
+from std.collections import InlineArray, Optional
+from std.math import ceildiv, rsqrt
+from std.sys import (
     align_of,
     env_get_int,
     has_amd_gpu_accelerator,
     simd_width_of,
     size_of,
 )
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -71,19 +71,19 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.primitives import block
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.primitives import block
 from layout import Coord, Idx, TileTensor
 from layout._layout import TensorLayout, row_major
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout as LegacyLayout
 from layout.layout_tensor import LayoutTensor as LegacyLayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from utils import IndexList, StaticTuple
-from utils.index import Index
-from utils.numerics import get_accum_type, max_finite
+from std.utils import IndexList, StaticTuple
+from std.utils.index import Index
+from std.utils.numerics import get_accum_type, max_finite
 
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from linalg.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
 
 from .normalization import rms_norm_fused_fp8
@@ -825,7 +825,7 @@ fn _launch_split_allreduce_rmsnorm_fp8[
 
     comptime for i in range(ngpus):
         input_buffers[i] = NDBuffer[in_dtype, 2, ImmutAnyOrigin](
-            src_ptrs[i], DimList(rows, cols)
+            src_ptrs[i], IndexList[2](rows, cols)
         )
 
     var res_ptr = residual.data
@@ -844,7 +844,7 @@ fn _launch_split_allreduce_rmsnorm_fp8[
 
     var shape = IndexList[2](rows, cols)
     var scale_output_2d = NDBuffer[mut=True, scales_dtype, 2, MutAnyOrigin](
-        scale_output_1d.data, DimList(rows, 1)
+        scale_output_1d.data, IndexList[2](rows, 1)
     )
 
     # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.
@@ -1236,10 +1236,10 @@ fn allreduce_rmsnorm_fp8[
 
     # Create internal 2D/1D views and dispatch.
     var output_2d = NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin](
-        output.data, DimList(rows, cols)
+        output.data, IndexList[2](rows, cols)
     )
     var scale_output_1d = NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin](
-        scale_output.data, DimList(rows)
+        scale_output.data, IndexList[1](rows)
     )
 
     _dispatch_fused_kernel[in_dtype, out_dtype, scales_dtype, ngpus](
@@ -1367,16 +1367,16 @@ fn allreduce_residual_rmsnorm_fp8[
 
     # Create internal 2D/1D views and dispatch.
     var output_2d = NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin](
-        output.data, DimList(rows, cols)
+        output.data, IndexList[2](rows, cols)
     )
     var residual_2d = NDBuffer[in_dtype, 2, ImmutAnyOrigin](
-        residual.data, DimList(rows, cols)
+        residual.data, IndexList[2](rows, cols)
     )
     var residual_output_2d = NDBuffer[mut=True, in_dtype, 2, MutAnyOrigin](
-        residual_output.data, DimList(rows, cols)
+        residual_output.data, IndexList[2](rows, cols)
     )
     var scale_output_1d = NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin](
-        scale_output.data, DimList(rows)
+        scale_output.data, IndexList[1](rows)
     )
 
     _dispatch_fused_kernel[

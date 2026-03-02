@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from bit import log2_floor
-from sys import simd_width_of, size_of
+from std.math import ceildiv
+from std.bit import log2_floor
+from std.sys import simd_width_of, size_of
 
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -22,28 +22,28 @@ from gpu import (
     thread_idx,
     grid_dim,
 )
-from gpu import warp_id
-from gpu.host import DeviceContext
-from gpu.intrinsics import AMDBufferResource
-from gpu.memory import AddressSpace
-from gpu.compute.mma import mma
-from sys import llvm_intrinsic
-from gpu.sync import barrier, schedule_barrier, s_waitcnt
-from memory import LegacyUnsafePointer
+from std.gpu import warp_id
+from std.gpu.host import DeviceContext
+from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.memory import AddressSpace
+from std.gpu.compute.mma import mma
+from std.sys import llvm_intrinsic
+from std.gpu.sync import barrier, schedule_barrier, s_waitcnt
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 
-from utils import Index, IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.utils import Index, IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
-from sys.intrinsics import readfirstlane, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from os.atomic import Atomic
+from std.sys.intrinsics import readfirstlane, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.os.atomic import Atomic
 
-from gpu._utils import to_i64
+from std.gpu._utils import to_i64
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
 from ....structuring import SMemTile, RegTile, eval
 from ....utils import elementwise_epilogue_type

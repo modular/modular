@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 import gpu.primitives.warp as warp
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_false
+from std.testing import assert_false
 
-from utils.index import IndexList
-from utils.numerics import isnan
+from std.utils.index import IndexList
+from std.utils.numerics import isnan
 
 
 fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:

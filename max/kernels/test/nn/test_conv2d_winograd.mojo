@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import isclose
-from random import rand
+from std.math import isclose
+from std.random import rand
 
 from buffer import DimList, NDBuffer
 from nn.conv import Naive2dConvolution
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 @always_inline

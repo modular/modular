@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
-from sys.info import CompilationTarget
+from std.math import sqrt
+from std.sys.info import CompilationTarget
 
-from itertools import product
+from std.itertools import product
 from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
 from nn.normalization import *
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn compute_rms[

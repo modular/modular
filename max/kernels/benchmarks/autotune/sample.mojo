@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_dtype, env_get_int
+from std.sys import env_get_dtype, env_get_int
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from internal_utils import (
     Mode,
     arg_parse,
@@ -22,8 +22,8 @@ from internal_utils import (
     update_bench_config_args,
 )
 
-from time import sleep
-from os import getenv
+from std.time import sleep
+from std.os import getenv
 
 # mojo build sample.mojo
 # mpirun -n 8 ./sample -o output.csv

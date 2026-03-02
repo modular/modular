@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp2, recip
-from math.constants import log2e
-from sys import align_of, env_get_int, simd_width_of, size_of
+from std.math import ceildiv, exp2, recip
+from std.math.constants import log2e
+from std.sys import align_of, env_get_int, simd_width_of, size_of
 
 import gpu.primitives.warp as warp
-from collections import OptionalReg
-from gpu import (
+from std.collections import OptionalReg
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -26,13 +26,13 @@ from gpu import (
     thread_idx,
     block_idx,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import H100
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import external_memory
-from gpu.sync import named_barrier
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import H100
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import external_memory
+from std.gpu.sync import named_barrier
 from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import (
@@ -95,9 +95,9 @@ from nn.softmax import (
 )
 from tensor import ManagedTensorSlice
 
-from utils.index import Index
-from utils.numerics import get_accum_type, min_or_neg_inf
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index
+from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils.static_tuple import StaticTuple
 
 
 @always_inline

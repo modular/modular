@@ -14,8 +14,8 @@
 from buffer import DimList
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from nn._ragged_utils import get_batch_from_row_offsets
-from testing import assert_equal
-from utils import Index
+from std.testing import assert_equal
+from std.utils import Index
 
 
 def test_get_batch_from_row_offsets() raises:
