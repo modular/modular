@@ -79,7 +79,7 @@ class Shardable(Protocol):
 
 
 class Layer:
-    """.. deprecated:: 25.2.
+    """.. deprecated:: 25.2
 
     Base class for neural network components.
     Use :obj:`Module` instead.
