@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
+import std.time
 from std.collections import Optional
 from std.math import ceildiv, floor
 from std.sys import argv, env_get_string

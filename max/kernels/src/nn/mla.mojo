@@ -28,7 +28,7 @@ from std.sys import (
 )
 
 from nn.mha import q_num_matrix_view_rows
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,

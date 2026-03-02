@@ -26,7 +26,7 @@ from std.sys import (
     size_of,
 )
 from std.sys.info import _cdna_4_or_newer, _is_amd_rdna
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm import elementwise
 from std.algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from std.bit import next_power_of_two

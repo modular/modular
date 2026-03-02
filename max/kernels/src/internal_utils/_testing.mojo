@@ -15,7 +15,7 @@
 from std.collections import Optional
 from std.math import exp2
 
-import testing
+import std.testing
 from std.reflection import call_location, SourceLocation
 from std.testing.testing import _assert_cmp_error
 

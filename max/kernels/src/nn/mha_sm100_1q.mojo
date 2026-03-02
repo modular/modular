@@ -17,7 +17,7 @@ from std.math.constants import log2e
 from std.sys import align_of, simd_width_of, size_of
 
 from std.gpu import warp_id
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm.functional import unswitch
 from std.collections import OptionalReg
 from std.gpu import (

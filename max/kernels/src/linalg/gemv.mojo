@@ -14,7 +14,7 @@ from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList

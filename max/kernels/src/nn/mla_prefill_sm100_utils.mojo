@@ -63,7 +63,7 @@ from std.gpu import thread_idx
 from std.gpu.compute.arch.tcgen05 import *
 from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from std.gpu.primitives.warp import _vote_nvidia_helper
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,

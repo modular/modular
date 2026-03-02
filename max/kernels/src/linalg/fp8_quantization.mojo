@@ -15,7 +15,7 @@ from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of
-import gpu.primitives.block
+import std.gpu.primitives.block
 from std.algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList

@@ -15,7 +15,7 @@ from std.collections import OptionalReg
 
 from std.os.atomic import Atomic
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.builtin.device_passable import DevicePassable
 from std.gpu.host.info import H100
 from std.gpu import block_idx, thread_idx

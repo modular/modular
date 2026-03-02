@@ -52,7 +52,7 @@ from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.swizzle import make_swizzle
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.gpu.globals import WARP_SIZE
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.host.nvidia.tma import TensorMapSwizzle

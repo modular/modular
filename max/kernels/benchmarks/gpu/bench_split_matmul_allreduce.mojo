@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import random
+import std.random
 from std.sys import env_get_bool, env_get_dtype, env_get_int, size_of
 
 from std.benchmark import (

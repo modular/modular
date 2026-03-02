@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.sys import has_amd_gpu_accelerator
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.gpu import barrier, thread_idx
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host import DeviceContext

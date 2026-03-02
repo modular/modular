@@ -13,7 +13,7 @@
 from std.hashlib import default_comp_time_hasher
 from std.math import align_up
 from std.sys import argv, size_of
-import itertools
+import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList, Dim

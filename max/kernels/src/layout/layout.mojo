@@ -55,7 +55,7 @@ var tiled = blocked_product(layout^, Layout([2, 2]))
 ```
 """
 
-import sys
+import std.sys
 from std.collections.string.string import _calc_initial_buffer_size_int32
 from std.os import abort
 

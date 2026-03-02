@@ -18,7 +18,7 @@ from layout import Layout, LayoutTensor
 from std.utils.index import IndexList
 from std.memory import UnsafePointer
 from std.algorithm import sync_parallelize
-import math
+import std.math
 from std.math import ceildiv, exp2
 from state_space.causal_conv1d import silu
 from state_space.selective_scan import softplus

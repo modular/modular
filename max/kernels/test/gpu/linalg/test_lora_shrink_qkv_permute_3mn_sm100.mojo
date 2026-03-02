@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import itertools
+import std.itertools
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext

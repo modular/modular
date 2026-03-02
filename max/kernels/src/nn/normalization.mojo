@@ -14,7 +14,7 @@
 from std.math import align_down, ceildiv, clamp, rsqrt
 from std.sys.info import align_of, simd_width_of, size_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm import map_reduce, mean, variance, vectorize
 from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,

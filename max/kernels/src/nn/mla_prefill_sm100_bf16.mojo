@@ -50,7 +50,7 @@ from layout.tma_async import (
 )
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.host.nvidia.tma import TensorMapSwizzle

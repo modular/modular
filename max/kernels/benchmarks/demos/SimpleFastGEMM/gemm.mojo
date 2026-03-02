@@ -17,7 +17,7 @@ from std.math import align_up
 from std.sys import align_of, prefetch, simd_width_of
 from std.sys.intrinsics import PrefetchOptions
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
 from std.memory import LegacyUnsafePointer
 

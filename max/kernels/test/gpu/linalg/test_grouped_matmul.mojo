@@ -28,7 +28,7 @@ from std.testing import assert_almost_equal
 
 from std.utils import IndexList
 from std.utils.index import Index
-import itertools
+import std.itertools
 
 
 @always_inline

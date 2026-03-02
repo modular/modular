@@ -13,7 +13,7 @@
 
 from std.math import align_up
 from std.sys import simd_width_of, size_of
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,

@@ -21,7 +21,7 @@ from std.sys import (
     size_of,
 )
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from buffer.dimlist import Dim
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

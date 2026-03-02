@@ -18,7 +18,7 @@
 
 from std.collections import Optional
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.bmm import batched_matmul

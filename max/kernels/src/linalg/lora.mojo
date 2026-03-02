@@ -25,7 +25,7 @@ from std.gpu.host.info import B200
 
 from std.utils import IndexList
 from std.utils.index import Index
-import itertools
+import std.itertools
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout

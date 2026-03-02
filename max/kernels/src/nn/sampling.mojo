@@ -14,7 +14,7 @@
 from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
-import gpu.primitives.block as block
+import std.gpu.primitives.block as block
 from std.algorithm.functional import elementwise
 from std.gpu import block_idx, thread_idx
 from std.gpu.host.info import is_gpu

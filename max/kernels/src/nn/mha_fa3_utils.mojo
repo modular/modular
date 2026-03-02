@@ -20,7 +20,7 @@ from std.memory import (
 
 from std.sys import size_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm.functional import unswitch
 from std.gpu import block_idx, thread_idx
 from std.gpu.globals import WARPGROUP_SIZE

@@ -15,7 +15,7 @@
 Script to generate random inputs and expected output values:
 
 ```python
-import math
+import std.math
 import torch
 
 def run_fold(output_size, kernel_size, stride=1, dilation=1, padding=0, batch=1, channel=1) raises:

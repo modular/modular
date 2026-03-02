@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
+import std.time
 
 from std.gpu import memory, sync, thread_idx
 from std.gpu.host import DeviceContext

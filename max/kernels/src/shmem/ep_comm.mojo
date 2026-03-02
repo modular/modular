@@ -24,7 +24,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.collections import OptionalReg
 from std.gpu import (
     PDL,

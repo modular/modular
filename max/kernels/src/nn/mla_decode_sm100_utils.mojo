@@ -14,7 +14,7 @@
 from std.math import exp2, recip, align_up, log2, ceildiv
 from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.gpu import (
     barrier,
     thread_idx,
