@@ -473,11 +473,10 @@ struct CausalConv1DUpdate[activation: StaticString]:
         var out_c_stride: UInt32 = UInt32(output.strides()[1])
         var out_l_stride: UInt32 = UInt32(output.strides()[2])
 
-        var bias_stride: UInt32 = UInt32(bias.strides()[0])
-
         var silu_activation = Self.activation == "silu"
 
         comptime if is_cpu[target]():
+            memcpy(dest=CS.ptr, src=CS_IN.ptr, count=total_state_elements)
             causal_conv1d_update_cpu[
                 X.dtype,
                 X.layout,
