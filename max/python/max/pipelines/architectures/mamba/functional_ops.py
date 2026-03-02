@@ -138,9 +138,9 @@ def causal_conv1d_update(
 ) -> tuple[Tensor, Tensor]:
     """Causal 1D convolution update (step, single token).
 
-    Implemented using standard ops because the Mojo causal_conv1d_update
-    kernel uses in-place mutation of conv_state (OutputTensor only),
-    which is incompatible with the non-legacy functional graph model.
+    Uses the optimized Mojo causal_conv1d_update kernel. The op accepts
+    the previous conv_state as an input and produces the updated state as
+    a separate output (functional/pure semantics, no in-place mutation).
 
     Args:
         x: Input tensor of shape (batch, channels, 1).
@@ -148,38 +148,45 @@ def causal_conv1d_update(
         weight: Weight tensor of shape (channels, width).
         bias: Optional bias tensor of shape (channels,).
         activation: Activation function ("none" or "silu").
-        custom_extensions: Unused (kept for API compatibility).
+        custom_extensions: Paths to kernel libraries.
 
     Returns:
         Tuple of (output, updated_conv_state).
         output: (batch, channels, 1)
         updated_conv_state: (batch, channels, width)
     """
-    # Shift conv_state: drop leftmost, append x
-    # conv_state: (batch, channels, width), x: (batch, channels, 1)
-    x_cast = x.cast(conv_state.dtype)
-    new_conv_state = F.concat([conv_state[:, :, 1:], x_cast], axis=2)
+    if custom_extensions is None:
+        custom_extensions = _get_state_space_paths()
 
-    # Dot product: sum(new_conv_state * weight, axis=-1)
-    # weight: (channels, width) -> (1, channels, width) for broadcast
-    # Cast new_conv_state to x.dtype for the multiply to avoid mixed dtypes
+    activation_param = activation.lower() if activation else "none"
+    if activation_param == "swish":
+        activation_param = "silu"
+    if activation_param not in ("none", "silu"):
+        activation_param = "none"
+
     weight_cast = weight.cast(x.dtype)
-    weight_3d = F.reshape(weight_cast, [1, weight.shape[0], weight.shape[1]])
-    new_conv_state_cast = new_conv_state.cast(x.dtype)
-    # F.sum keeps the reduced dim (size 1), so result is (batch, channels, 1)
-    conv_out = F.sum(new_conv_state_cast * weight_3d, axis=2)
+    conv_state_cast = conv_state.cast(x.dtype)
 
-    if bias is not None:
-        bias_cast = bias.cast(x.dtype)
-        # Reshape bias to (1, channels, 1) for correct broadcast
-        bias_3d = F.reshape(bias_cast, [1, bias.shape[0], 1])
-        conv_out = conv_out + bias_3d
+    if bias is None:
+        bias_tensor = F.constant(0.0, dtype=x.dtype, device=x.device)
+        bias_tensor = bias_tensor.broadcast_to([x.shape[1]])
+    else:
+        bias_tensor = bias.cast(x.dtype)
 
-    if activation.lower() in ("silu", "swish"):
-        conv_out = F.silu(conv_out)
+    output_type = TensorType(dtype=x.dtype, shape=x.shape, device=x.device)
+    conv_state_out_type = TensorType(
+        dtype=x.dtype, shape=conv_state.shape, device=x.device
+    )
 
-    # conv_out is (batch, channels, 1) -- already the expected output shape
-    return conv_out, new_conv_state
+    results = F.custom(
+        "causal_conv1d_update",
+        x.device,
+        [x, conv_state_cast, weight_cast, bias_tensor],
+        [output_type, conv_state_out_type],
+        parameters={"activation": activation_param},
+        custom_extensions=custom_extensions,
+    )
+    return results[0], results[1]
 
 
 # ---------------------------------------------------------------------------

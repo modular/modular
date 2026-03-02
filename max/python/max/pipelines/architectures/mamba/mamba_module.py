@@ -104,6 +104,10 @@ class MambaSSMModule(Module[[Tensor], Tensor]):
         b = self.dt_proj.bias
         return b if isinstance(b, Tensor) else None
 
+    def _get_A(self) -> Tensor:
+        """Compute A = -exp(A_log) from the stored log-space weight."""
+        return -F.exp(self.A_log)
+
     def prefill(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """Prefill: full sequence through SSM, return output + final states.
 
@@ -165,7 +169,7 @@ class MambaSSMModule(Module[[Tensor], Tensor]):
             [1, 1, self._d_state, seqlen],
         )
 
-        A = -F.exp(self.A_log)
+        A = self._get_A()
         result = selective_scan_fwd(
             u=x_conv,
             delta=dt_3d,
@@ -232,7 +236,7 @@ class MambaSSMModule(Module[[Tensor], Tensor]):
         B_grouped = F.reshape(B_val, [batch, 1, self._d_state])
         C_grouped = F.reshape(C_val, [batch, 1, self._d_state])
 
-        A = -F.exp(self.A_log)
+        A = self._get_A()
         updated_ssm, y = selective_scan_update(
             state=ssm_state,
             x=x_flat,
