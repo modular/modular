@@ -31,7 +31,6 @@ from max.pipelines.lib.memory_estimation import (
     to_human_readable_bytes,
 )
 from max.pipelines.lib.pipeline_runtime_config import (
-    DEFAULT_MAX_BATCH_INPUT_TOKENS,
     PipelineRuntimeConfig,
 )
 from max.pipelines.lib.registry import (
@@ -92,14 +91,6 @@ class PipelineConfig(ConfigFileModel):
         description=(
             "The expert parallelism size. Needs to be 1 (no expert parallelism) "
             "or the total number of GPUs across nodes."
-        ),
-    )
-
-    max_batch_input_tokens: int = Field(
-        default=DEFAULT_MAX_BATCH_INPUT_TOKENS,
-        description=(
-            "The target number of un-encoded tokens to include in each batch. "
-            "This value is used for chunked prefill and memory estimation."
         ),
     )
 
@@ -1084,7 +1075,7 @@ class PipelineConfig(ConfigFileModel):
             ("max_seq_len", self.model.max_length),
             ("max_batch_size", self.max_batch_size),
             ("chunked_prefill", self.runtime.enable_chunked_prefill),
-            ("max_batch_input_tokens", self.max_batch_input_tokens),
+            ("max_batch_input_tokens", self.runtime.max_batch_input_tokens),
             (
                 "in_flight_batching",
                 self.runtime.enable_in_flight_batching,

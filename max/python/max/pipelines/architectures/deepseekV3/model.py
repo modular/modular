@@ -133,7 +133,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.max_batch_input_tokens,
+                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_fp8_config=None,
@@ -326,7 +326,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # Estimate activation memory during Expert Parallel MoE.
         if pipeline_config.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
-            max_input_len_per_rank = pipeline_config.max_batch_input_tokens
+            max_input_len_per_rank = (
+                pipeline_config.runtime.max_batch_input_tokens
+            )
 
             # Calculate the maximum number of tokens a rank may receive during all-to-all routing.
             max_recv_tokens_per_rank = (
@@ -369,7 +371,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 hidden_size=huggingface_config.hidden_size,
                 dispatch_dtype=supported_encoding_dtype(encoding),
                 combine_dtype=DType.bfloat16,
-                max_tokens_per_rank=pipeline_config.max_batch_input_tokens,
+                max_tokens_per_rank=pipeline_config.runtime.max_batch_input_tokens,
                 n_experts=huggingface_config.n_routed_experts,
                 top_k=huggingface_config.num_experts_per_tok,
             )

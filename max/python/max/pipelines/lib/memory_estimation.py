@@ -248,13 +248,13 @@ class MemoryEstimator:
         assert pipeline_config.max_batch_size is not None
         if (
             pipeline_config.max_batch_size
-            > pipeline_config.max_batch_input_tokens
+            > pipeline_config.runtime.max_batch_input_tokens
         ):
             logger.info(
-                f"max_batch_size of {pipeline_config.max_batch_size} cannot be larger than max_batch_input_tokens of {pipeline_config.max_batch_input_tokens}, overriding max_batch_size to {pipeline_config.max_batch_input_tokens}"
+                f"max_batch_size of {pipeline_config.max_batch_size} cannot be larger than max_batch_input_tokens of {pipeline_config.runtime.max_batch_input_tokens}, overriding max_batch_size to {pipeline_config.runtime.max_batch_input_tokens}"
             )
             pipeline_config.max_batch_size = (
-                pipeline_config.max_batch_input_tokens
+                pipeline_config.runtime.max_batch_input_tokens
             )
 
         actual_kv_cache_size = cls._calculate_kv_cache_size(

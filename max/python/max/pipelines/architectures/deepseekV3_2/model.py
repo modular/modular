@@ -129,7 +129,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.max_batch_input_tokens,
+                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_fp8_config=None,
