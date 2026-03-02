@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
+from std.algorithm.functional import elementwise
 from asyncrt_test_utils import create_test_device_context
-from gpu import *
-from gpu.host import DeviceContext, get_gpu_target
-from testing import TestSuite, assert_equal
+from std.gpu import *
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.testing import TestSuite, assert_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
@@ -81,25 +81,25 @@ fn run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             )
 
 
-def test_elementwise_float32():
+def test_elementwise_float32() raises:
     var ctx = create_test_device_context()
     run_elementwise[DType.float32](ctx)
 
 
-def test_elementwise_bfloat16():
+def test_elementwise_bfloat16() raises:
     var ctx = create_test_device_context()
     run_elementwise[DType.bfloat16](ctx)
 
 
-def test_elementwise_float16():
+def test_elementwise_float16() raises:
     var ctx = create_test_device_context()
     run_elementwise[DType.float16](ctx)
 
 
-def test_elementwise_int8():
+def test_elementwise_int8() raises:
     var ctx = create_test_device_context()
     run_elementwise[DType.int8](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

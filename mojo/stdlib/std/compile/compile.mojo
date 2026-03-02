@@ -27,7 +27,7 @@ Key features:
 
 Example:
 ```mojo
-from compile import compile_info
+from std.compile import compile_info
 
 fn my_func(x: Int) -> Int:
     return x
@@ -38,12 +38,12 @@ print(info)
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string
-from os import PathLike
-from pathlib import Path
-from sys.info import CompilationTarget, _current_target, _TargetType
+from std.collections.string.string_slice import _get_kgen_string
+from std.os import PathLike
+from std.pathlib import Path
+from std.sys.info import CompilationTarget, _current_target, _TargetType
 
-from reflection import get_linkage_name
+from std.reflection import get_linkage_name
 
 # ===-----------------------------------------------------------------------===#
 # compile_info
@@ -84,7 +84,7 @@ struct CompiledFunctionInfo[
     func_type: __TypeOfAllTypes,
     func: func_type,
     target: _TargetType,
-](Stringable, TrivialRegisterPassable, Writable):
+](TrivialRegisterPassable, Writable):
     """Contains compilation information and results for a function.
 
     Stores assembly/IR code, function metadata, and error information from
@@ -141,6 +141,7 @@ struct CompiledFunctionInfo[
         """
         return writer.write(self.asm)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the assembly/IR to a string.
 
@@ -259,7 +260,7 @@ fn compile_info[
     Example:
 
         ```mojo
-        from compile import compile_info
+        from std.compile import compile_info
 
         fn my_func(x: Int) -> Int:
             return x

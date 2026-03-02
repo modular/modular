@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the IntLiteral class."""
 
-from math import Ceilable, Floorable, Truncable
+from std.math import Ceilable, Floorable, Truncable
 
 
 @__nonmaterializable(Int)
@@ -23,9 +23,9 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Floorable,
     Indexer,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Truncable,
+    Writable,
 ):
     """This type represents a static integer literal value with
     infinite precision.  This type is a compile-time construct which stores its
@@ -255,7 +255,27 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         """
         return {}
 
-    # TODO: implement __pow__
+    @always_inline("builtin")
+    fn __pow__(
+        self, exp: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<pow `,
+            self.value,
+            `,`,
+            exp.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
+        """Return the value raised to the power of the given exponent.
+
+        Args:
+            exp: The exponent value.
+
+        Returns:
+            The value of `self` raised to the power of `exp`.
+        """
+        return {}
 
     @always_inline("builtin")
     fn __floordiv__(
@@ -460,6 +480,25 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         """
         return self
 
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the IntLiteral in string form.
+
+        Args:
+            writer: The Writer to write the value to.
+        """
+        Int(self).write_to(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the IntLiteral in repr form.
+
+        Args:
+            writer: The Writer to write the value to.
+        """
+        Int(self).write_repr_to(writer)
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert from IntLiteral to String.

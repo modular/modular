@@ -286,6 +286,6 @@ fn test_swizzle_gemm_store() raises:
     assert_equal(wfs_swizzle_smem_to_gmem_bf16.excess_wavefronts(), 0)
 
 
-def main():
+def main() raises:
     test_swizzle_basic()
     test_swizzle_gemm_store()

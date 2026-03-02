@@ -54,7 +54,7 @@ from utils.index import Index
 # CHECK-DAG: thread 29 a_vals=[57 121 61 125], b_vals=[15 47], d_vals=[14617 15093 29977 30965]
 # CHECK-DAG: thread 30 a_vals=[58 122 62 126], b_vals=[23 55], d_vals=[15569 16045 31953 32941]
 # CHECK-DAG: thread 31 a_vals=[59 123 63 127], b_vals=[31 63], d_vals=[16521 16997 33929 34917]
-def test_load_and_mma_f32_f32_16x8x8(ctx: DeviceContext):
+def test_load_and_mma_f32_f32_16x8x8(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x8x8")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 8, 8)
@@ -94,7 +94,7 @@ def test_load_and_mma_f32_f32_16x8x8(ctx: DeviceContext):
 # CHECK-DAG: thread 29 a_vals=[57 121 61 125], b_vals=[57 61], d_vals=[9325 13133 19309 27213]
 # CHECK-DAG: thread 30 a_vals=[58 122 62 126], b_vals=[58 62], d_vals=[16941 20749 35117 43021]
 # CHECK-DAG: thread 31 a_vals=[59 123 63 127], b_vals=[59 63], d_vals=[24557 28365 50925 58829]
-def test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x8x8_b_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 8, 8), transpose_b=True
@@ -134,7 +134,7 @@ def test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx: DeviceContext):
 # CHECK-DAG: thread 29 a_vals=[29 61], b_vals=[15], d_vals=[1693 1811 3485 3731]
 # CHECK-DAG: thread 30 a_vals=[30 62], b_vals=[23], d_vals=[1929 2047 3977 4223]
 # CHECK-DAG: thread 31 a_vals=[31 63], b_vals=[31], d_vals=[2165 2283 4469 4715]
-def test_load_and_mma_f32_f32_16x8x4(ctx: DeviceContext):
+def test_load_and_mma_f32_f32_16x8x4(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x8x4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 8, 4)
@@ -176,7 +176,7 @@ def test_load_and_mma_f32_f32_16x8x4(ctx: DeviceContext):
 # CHECK-DAG: thread 31 a_vals=[118 119 246 247 126 127 254 255], b_vals=[55 63 119 127], d_vals=[128913 130825 264081 268041]
 
 
-def test_load_and_mma_f32_bf16_16x8x16(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_16x8x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x8x16")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 8, 16)
@@ -216,7 +216,7 @@ def test_load_and_mma_f32_bf16_16x8x16(ctx: DeviceContext):
 # CHECK: thread 29 a_vals=[114 115 242 243 122 123 250 251], b_vals=[114 115 122 123], d_vals=[75865 106457 156761 220121]
 # CHECK: thread 30 a_vals=[116 117 244 245 124 125 252 253], b_vals=[116 117 124 125], d_vals=[137049 167641 283481 346841]
 # CHECK: thread 31 a_vals=[118 119 246 247 126 127 254 255], b_vals=[118 119 126 127], d_vals=[198233 228825 410201 473561]
-def test_load_and_mma_f32_bf16_16x8x16_b_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_16x8x16_b_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x8x16_b_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 8, 16), transpose_b=True
@@ -240,7 +240,7 @@ def test_load_and_mma_f32_bf16_16x8x16_b_transpose(ctx: DeviceContext):
 # CHECK: 20.0 20.0 21.0 21.0 22.0 22.0 23.0 23.0
 # CHECK: 24.0 24.0 25.0 25.0 26.0 26.0 27.0 27.0
 # CHECK: 28.0 28.0 29.0 29.0 30.0 30.0 31.0 31.0
-def test_write_f32_f32_16x8x8(ctx: DeviceContext):
+def test_write_f32_f32_16x8x8(ctx: DeviceContext) raises:
     print("== test_write_f32_f32_16x8x8")
     test_write_res_operand[DType.float32, DType.float32, Index(16, 8, 8)](ctx)
 
@@ -262,7 +262,7 @@ def test_write_f32_f32_16x8x8(ctx: DeviceContext):
 # CHECK: 20.0 20.0 21.0 21.0 22.0 22.0 23.0 23.0
 # CHECK: 24.0 24.0 25.0 25.0 26.0 26.0 27.0 27.0
 # CHECK: 28.0 28.0 29.0 29.0 30.0 30.0 31.0 31.0
-def test_write_f32_f32_16x8x4(ctx: DeviceContext):
+def test_write_f32_f32_16x8x4(ctx: DeviceContext) raises:
     print("== test_write_f32_f32_16x8x4")
     test_write_res_operand[DType.float32, DType.float32, Index(16, 8, 4)](ctx)
 
@@ -302,7 +302,7 @@ def test_write_f32_f32_16x8x4(ctx: DeviceContext):
 # CHECK-DAG thread 31 a_vals=[126 127 254 255 118 119 246 247], b_vals=[55 63 119 127]
 
 
-def test_load_f32_bf16_16x8x16_ldmatrix(ctx: DeviceContext):
+def test_load_f32_bf16_16x8x16_ldmatrix(ctx: DeviceContext) raises:
     print("== test_load_f32_bf16_16x8x16_ldmatrix")
     test_load_operands_ldmatrix[
         DType.float32, DType.bfloat16, Index(16, 8, 16)
@@ -342,14 +342,14 @@ def test_load_f32_bf16_16x8x16_ldmatrix(ctx: DeviceContext):
 # CHECK-DAG thread 29 a_vals=[61 125 57 121], b_vals=[15 47]
 # CHECK-DAG thread 30 a_vals=[62 126 58 122], b_vals=[23 55]
 # CHECK-DAG thread 31 a_vals=[63 127 59 123], b_vals=[31 63]
-def test_load_f32_f32_16x8x8_ldmatrix(ctx: DeviceContext):
+def test_load_f32_f32_16x8x8_ldmatrix(ctx: DeviceContext) raises:
     print("== test_load_f32_f32_16x8x8_ldmatrix")
     test_load_operands_ldmatrix[DType.float32, DType.float32, Index(16, 8, 8)](
         ctx
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_load_and_mma_f32_f32_16x8x8(ctx)
         test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx)

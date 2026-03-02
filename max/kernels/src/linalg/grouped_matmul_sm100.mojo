@@ -142,7 +142,7 @@ fn load_AB[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
     a_smem: LayoutTensorIter[
@@ -201,9 +201,9 @@ fn load_AB[
         scheduler.static_MN
     )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1]
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1])
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -223,14 +223,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * UInt(BK), UInt(a_gmem_slice_coord)),
+            (Int(iter_idx) * BK, Int(a_gmem_slice_coord)),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[stage],
-            (UInt(iter_idx) * UInt(BK), b_gmem_slice_coord),
+            (Int(iter_idx) * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -565,7 +565,7 @@ fn multi_stage_store_C[
             + UInt(BN * Int(warp_id // 2))
         )
 
-        var coord_n = (
+        var coord_n = Int(
             coord_n_mma_m256 if MMA_M == 256
             or cta_group == 1 else coord_n_mma_m128
         )
@@ -589,7 +589,7 @@ fn multi_stage_store_C[
                         c_tma_op.async_store(
                             c_smem_warp_tile,
                             (
-                                work_tile_coord[0] + UInt(i * 16),
+                                Int(work_tile_coord[0]) + i * 16,
                                 coord_n,
                             ),
                         )
@@ -603,7 +603,7 @@ fn multi_stage_store_C[
                         (
                             coord_n,
                             # UInt(work_tile_coord[0] * BM),
-                            work_tile_coord[0],
+                            Int(work_tile_coord[0]),
                         ),
                     )
                 c_tma_op.commit_group()
@@ -758,9 +758,9 @@ fn blackwell_tma_umma_warp_specialized_kernel[
 ](
     num_active_experts: Int,
     a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
     b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    b_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    b_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
     c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
     c: LayoutTensor[c_type, c_tensor_layout, MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
@@ -1173,11 +1173,11 @@ fn grouped_matmul_sm100_persistent[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
+    a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
     max_num_tokens_per_expert: Int,
-    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
-    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+    b: NDBuffer[b_type, 3, ImmutAnyOrigin, b_shape],
+    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -1246,9 +1246,9 @@ fn _grouped_matmul_sm100_persistent[
 ](
     c_device: LayoutTensor[c_type, c_layout, ...],
     a_device: LayoutTensor[a_type, a_layout, ...],
-    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+    expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
     b_device: LayoutTensor[b_type, b_layout, ...],
-    b_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
+    b_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:

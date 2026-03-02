@@ -14,12 +14,13 @@
 import math
 from collections.abc import Callable
 
-from max import functional as F
 from max.dtype import DType
-from max.nn import Linear, Module
-from max.tensor import Tensor
-
-from .activations import ACT2FN
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.nn.module_v3 import Linear, Module
+from max.pipelines.architectures.common_layers.activation import (
+    activation_function_from_name,
+)
 
 
 def get_timestep_embedding(
@@ -293,7 +294,7 @@ class TimestepEmbedding(Module[[Tensor], Tensor]):
         else:
             self.cond_proj = None
 
-        self.act: Callable[[Tensor], Tensor] = ACT2FN[act_fn]  # type: ignore[assignment]
+        self.act = activation_function_from_name(act_fn)
 
         if out_dim is not None:
             time_embed_dim_out = out_dim
@@ -306,7 +307,7 @@ class TimestepEmbedding(Module[[Tensor], Tensor]):
 
         self.post_act: Callable[[Tensor], Tensor] | None
         if post_act_fn is not None:
-            self.post_act = ACT2FN[post_act_fn]  # type: ignore[assignment]
+            self.post_act = activation_function_from_name(post_act_fn)
         else:
             self.post_act = None
 

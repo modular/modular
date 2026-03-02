@@ -354,7 +354,7 @@ The additions to the Google style guide for docstrings are `Parameters:` and
 `Constraints:`.
 
 `Constraints:` should be used to document requirements when using the
-`constrained` builtin function:
+`comptime assert` statement:
 
 ```mojo
 fn add_param_arg[foo: Int](bar: Int) -> Int:
@@ -363,7 +363,7 @@ fn add_param_arg[foo: Int](bar: Int) -> Int:
     Constraints:
         `foo` must be more than 0.
     """
-    constrained[foo > 0]()
+    comptime assert foo > 0
     return foo + bar
 ```
 

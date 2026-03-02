@@ -15,7 +15,7 @@
 You can import these APIs from the `python` package. For example:
 
 ```mojo
-from python import ConvertibleToPython
+from std.python import ConvertibleToPython
 ```
 """
 

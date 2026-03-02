@@ -21,7 +21,7 @@ fn print_static_shape[x: List[Int]]():
         print("dim", i, "=", xi)
 
 
-def main():
+def main() raises:
     comptime shape_mnk = parse_shape["10x20x30"]()
     print_static_shape[shape_mnk]()
     comptime assert shape_mnk[0] == 10

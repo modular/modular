@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import math
 
-from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.nn import Linear, Module
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.nn.attention import MHAMaskVariant
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.module_v3 import Linear, Module
 
 from .functional_kernels import (
     flash_attention_ragged,
@@ -101,12 +101,6 @@ class AttentionWithRope(Module[..., Tensor]):
 
         if stacked_qkv and has_bias:
             raise ValueError("Bias is not supported with stacked_qkv.")
-
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy is not"
-                " supported in the Attention layer."
-            )
 
         q_weight_dim = self.kv_params.head_dim * num_attention_heads
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads

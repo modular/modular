@@ -86,8 +86,9 @@ class PrefillScheduler(Scheduler):
 
         self.transfer_engine = KVTransferEngine(
             name=f"prefill_agent_{uuid.uuid4()}",
+            # TODO: Also support scales tensors
             tensors=[
-                kv_cache.get_device_tensors(replica_idx)
+                kv_cache.get_device_buffer(replica_idx).values
                 for replica_idx in range(kv_cache.num_replicas)
             ],
             # Assume all replicas have the same number of pages.
@@ -332,10 +333,9 @@ def load_prefill_scheduler(
         pipeline_config
     )
 
-    if len(pipeline.kv_managers) != 1:
+    if not pipeline.kv_managers:
         raise ValueError(
-            "Expected exactly one KV cache manager in pipeline for PrefillScheduler, found: "
-            f"{len(pipeline.kv_managers)}. "
+            "PrefillScheduler requires a pipeline with a KV cache manager. "
             "SSM-based models (e.g. Mamba) should use PipelineRole.PrefillAndDecode."
         )
 

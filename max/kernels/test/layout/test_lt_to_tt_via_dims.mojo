@@ -13,7 +13,7 @@
 """Step-by-step tests for lt_to_tt via _DimsToCoordLike (the working path)."""
 
 from buffer import Dim, DimList
-from layout._coord import (
+from layout.coord import (
     _DimsToCoordLike,
     Coord,
     CoordLike,
@@ -21,7 +21,7 @@ from layout._coord import (
     RuntimeInt,
 )
 from layout._layout import Layout as InternalLayout
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 
 
 # ============================================================
@@ -269,7 +269,7 @@ fn test_lt_to_tt_function() raises:
     print("  PASSED")
 
 
-def main():
+def main() raises:
     test_dims_to_coord_like_static()
     test_dims_to_coord_like_dynamic()
     test_tiletensor_type_from_dims()

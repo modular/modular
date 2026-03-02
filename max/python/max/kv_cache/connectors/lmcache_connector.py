@@ -53,6 +53,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
 import torch  # type: ignore[import-not-found]
 from lmcache.utils import CacheEngineKey  # type: ignore[import-not-found]
 from lmcache.v1.cache_engine import (  # type: ignore[import-not-found]
@@ -75,9 +76,9 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, Graph, TensorType, Type
 from max.graph.type import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext
-from max.nn.legacy.kernels import lmcache_offload, lmcache_onload
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kernels import lmcache_offload, lmcache_onload
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
 logger = logging.getLogger("max.pipelines")
@@ -121,7 +122,7 @@ class MAXGPUConnector(GPUConnectorInterface):
     def __init__(
         self,
         params: KVCacheParams,
-        device_tensors: list[Buffer],
+        device_buffer: KVCacheBuffer,
         devices: Sequence[Device],
         total_num_blocks: int,
         session: InferenceSession | None = None,
@@ -130,19 +131,19 @@ class MAXGPUConnector(GPUConnectorInterface):
 
         Args:
             params: KV cache parameters containing model configuration.
-            device_tensors: List of KV cache Buffers, one per TP shard.
-            devices: Devices for the KV cache tensors.
+            device_buffer: Device buffer for KV cache (owned by manager).
+            devices: Devices for the KV cache buffers.
             total_num_blocks: Total number of blocks in the paged cache.
             session: Inference session for loading kernels.
         """
-        self._device_tensors = device_tensors
+        self._device_buffer = device_buffer
         self._num_layers = params.num_layers
-        self._num_kv_heads = params.n_kv_heads
+        self._num_kv_heads = params.n_kv_heads_per_device
         self._head_dim = params.head_dim
         self._block_size = params.page_size
         self._kv_dtype = _max_dtype_to_torch(params.dtype)
         self._max_dtype = params.dtype
-        self._hidden_dim = params.n_kv_heads * params.head_dim
+        self._hidden_dim = params.n_kv_heads_per_device * params.head_dim
         self._kv_dim = 1 if params.is_mla else 2
         self._session = session
         self._devices = list(devices)
@@ -361,114 +362,18 @@ class MAXGPUConnector(GPUConnectorInterface):
     ) -> None:
         """Copy KV cache data from GPU to memory object.
 
-        Args:
-            memory_obj: Target LMCache memory object.
-            start: Starting token index.
-            end: Ending token index (exclusive).
-            **kwargs: Must contain 'slot_mapping' tensor.
+        Delegates to batched_from_gpu.
         """
-        if "slot_mapping" not in kwargs:
-            raise ValueError("'slot_mapping' must be provided in kwargs")
-
-        slot_mapping: torch.Tensor = kwargs["slot_mapping"]
-        num_tokens = end - start
-        assert memory_obj.tensor is not None
-
-        if num_tokens <= 0:
-            return
-
-        if self._offload_models is None:
-            raise RuntimeError(
-                "MAXGPUConnector requires a session for GPU transfers. "
-                "Pass session to LMCacheConnector constructor."
-            )
-
-        device_tensor = self._device_tensors[self._current_tp_idx]
-        model = self._offload_models[self._current_tp_idx]
-
-        # TODO: SERVOPT-1026
-        # Create output buffer from the memory object tensor.
-        # LMCache uses pinned memory tensors, but Buffer.from_dlpack
-        # doesn't support pinned CPU tensors, so clone to unpin first.
-        cpu_tensor = memory_obj.tensor.cpu().contiguous().clone()
-        output_buffer = Buffer.from_dlpack(cpu_tensor).to(device_tensor.device)
-
-        # slot_mapping is already on GPU (int64), use from_dlpack directly
-        slot_mapping_buffer = Buffer.from_dlpack(slot_mapping)
-
-        # Create scalar tensors for start/end
-        start_buffer = Buffer.from_numpy(
-            torch.tensor([start], dtype=torch.int64).numpy()
-        )
-        end_buffer = Buffer.from_numpy(
-            torch.tensor([end], dtype=torch.int64).numpy()
-        )
-
-        model.execute(
-            output_buffer,
-            device_tensor,
-            slot_mapping_buffer,
-            start_buffer,
-            end_buffer,
-        )
-
-        result_tensor = torch.from_dlpack(output_buffer)
-        memory_obj.tensor.copy_(result_tensor)
+        self.batched_from_gpu([memory_obj], [start], [end], **kwargs)
 
     def to_gpu(
         self, memory_obj: MemoryObj, start: int, end: int, **kwargs: Any
     ) -> None:
         """Copy KV cache data from memory object to GPU.
 
-        Args:
-            memory_obj: Source LMCache memory object.
-            start: Starting token index.
-            end: Ending token index (exclusive).
-            **kwargs: Must contain 'slot_mapping' tensor.
+        Delegates to batched_to_gpu.
         """
-        if "slot_mapping" not in kwargs:
-            raise ValueError("'slot_mapping' must be provided in kwargs")
-
-        slot_mapping: torch.Tensor = kwargs["slot_mapping"]
-        num_tokens = end - start
-        assert memory_obj.tensor is not None
-
-        if num_tokens <= 0:
-            return
-
-        if self._onload_models is None:
-            raise RuntimeError(
-                "MAXGPUConnector requires a session for GPU transfers. "
-                "Pass session to LMCacheConnector constructor."
-            )
-
-        device_tensor = self._device_tensors[self._current_tp_idx]
-        model = self._onload_models[self._current_tp_idx]
-
-        # TODO: SERVOPT-1026
-        # Create input buffer from the memory object tensor.
-        # LMCache uses pinned memory tensors — clone to unpin for from_dlpack.
-        cpu_tensor = memory_obj.tensor.cpu().contiguous().clone()
-        input_buffer = Buffer.from_dlpack(cpu_tensor).to(device_tensor.device)
-
-        # slot_mapping is already on GPU (int64), use from_dlpack directly
-        slot_mapping_buffer = Buffer.from_dlpack(slot_mapping)
-
-        # Create scalar tensors for start/end
-        start_buffer = Buffer.from_numpy(
-            torch.tensor([start], dtype=torch.int64).numpy()
-        )
-        end_buffer = Buffer.from_numpy(
-            torch.tensor([end], dtype=torch.int64).numpy()
-        )
-
-        model.execute(
-            device_tensor,
-            input_buffer,
-            slot_mapping_buffer,
-            start_buffer,
-            end_buffer,
-        )
+        self.batched_to_gpu([memory_obj], [start], [end], **kwargs)
 
     def batched_from_gpu(
         self,
@@ -477,12 +382,66 @@ class MAXGPUConnector(GPUConnectorInterface):
         ends: list[int],
         **kwargs: Any,
     ) -> None:
-        """Batched copy from GPU to memory objects."""
-        # TODO: SERVOPT-1025
-        for memory_obj, start, end in zip(
-            memory_objs, starts, ends, strict=True
+        """Batched offload from GPU paged cache to memory objects.
+
+        Allocates a combined output buffer and runs a single kernel call
+        covering the full token range, then splits results back into
+        individual memory objects. Requires contiguous start/end ranges.
+        """
+        if "slot_mapping" not in kwargs:
+            raise ValueError("'slot_mapping' must be provided in kwargs")
+
+        slot_mapping: torch.Tensor = kwargs["slot_mapping"]
+        chunk_sizes = [e - s for s, e in zip(starts, ends, strict=True)]
+        total_tokens = sum(chunk_sizes)
+
+        if total_tokens <= 0:
+            return
+
+        if self._offload_models is None:
+            raise RuntimeError(
+                "MAXGPUConnector requires a session for GPU transfers. "
+                "Pass session to LMCacheConnector constructor."
+            )
+
+        device_buffer = self._device_buffer.values[self._current_tp_idx]
+        model = self._offload_models[self._current_tp_idx]
+        slot_mapping_buffer = Buffer.from_dlpack(slot_mapping.cpu()).to(
+            device_buffer.device
+        )
+
+        for memory_obj, start, end, chunk_size in zip(
+            memory_objs, starts, ends, chunk_sizes, strict=True
         ):
-            self.from_gpu(memory_obj, start, end, **kwargs)
+            if chunk_size <= 0:
+                continue
+
+            # TODO: should we use pinned buffer per tp rank?
+            output_buffer = Buffer(
+                dtype=self._max_dtype,
+                shape=[
+                    self._kv_dim,
+                    self._num_layers,
+                    chunk_size,
+                    self._hidden_dim,
+                ],
+                device=device_buffer.device,
+            )
+
+            start_buffer = Buffer.from_numpy(np.array([start], dtype=np.int64))
+            end_buffer = Buffer.from_numpy(np.array([end], dtype=np.int64))
+
+            model.execute(
+                output_buffer,
+                device_buffer,
+                slot_mapping_buffer,
+                start_buffer,
+                end_buffer,
+            )
+
+            # copy_ is a single optimized D2H memcpy to existing memory.
+            result_tensor = torch.from_dlpack(output_buffer)
+            memory_obj.tensor[:, :, :chunk_size, :].copy_(result_tensor)
 
     def batched_to_gpu(
         self,
@@ -491,13 +450,54 @@ class MAXGPUConnector(GPUConnectorInterface):
         ends: list[int],
         **kwargs: Any,
     ) -> None:
-        """Batched copy from memory objects to GPU."""
+        """Batched onload from memory objects to GPU paged cache.
 
-        # TODO: SERVOPT-1025
-        for memory_obj, start, end in zip(
-            memory_objs, starts, ends, strict=True
+        Copies all memory object tensors into a pre-allocated combined buffer
+        and runs a single kernel call covering the full token range.
+        """
+        if "slot_mapping" not in kwargs:
+            raise ValueError("'slot_mapping' must be provided in kwargs")
+
+        slot_mapping: torch.Tensor = kwargs["slot_mapping"]
+        chunk_sizes = [e - s for s, e in zip(starts, ends, strict=True)]
+        total_tokens = sum(chunk_sizes)
+
+        if total_tokens <= 0:
+            return
+
+        if self._onload_models is None:
+            raise RuntimeError(
+                "MAXGPUConnector requires a session for GPU transfers. "
+                "Pass session to LMCacheConnector constructor."
+            )
+
+        device_buffer = self._device_buffer.values[self._current_tp_idx]
+        model = self._onload_models[self._current_tp_idx]
+        slot_mapping_buffer = Buffer.from_dlpack(slot_mapping.cpu()).to(
+            device_buffer.device
+        )
+
+        for memory_obj, start, end, chunk_size in zip(
+            memory_objs, starts, ends, chunk_sizes, strict=True
         ):
-            self.to_gpu(memory_obj, start, end, **kwargs)
+            if chunk_size <= 0:
+                continue
+
+            # LMCache uses pinned memory tensors. Buffer.from_dlpack
+            # doesn't support pinned CPU tensors, so clone to unpin first.
+            # TODO: SERVOPT-1026
+            chunk = memory_obj.tensor[:, :, :chunk_size, :].contiguous().clone()
+            input_buffer = Buffer.from_dlpack(chunk).to(device_buffer.device)
+            start_buffer = Buffer.from_numpy(np.array([start], dtype=np.int64))
+            end_buffer = Buffer.from_numpy(np.array([end], dtype=np.int64))
+
+            model.execute(
+                device_buffer,
+                input_buffer,
+                slot_mapping_buffer,
+                start_buffer,
+                end_buffer,
+            )
 
 
 class LMCacheConnector:
@@ -527,8 +527,7 @@ class LMCacheConnector:
         self,
         params: KVCacheParams,
         devices: Sequence[Device],
-        device_tensors: list[Buffer],
-        device_scale_tensors: list[Buffer] | None,
+        device_buffer: KVCacheBuffer,
         total_num_blocks: int,
         session: InferenceSession | None = None,
     ) -> None:
@@ -537,8 +536,7 @@ class LMCacheConnector:
         Args:
             params: KV cache parameters containing configuration.
             devices: List of devices for tensor parallelism.
-            device_tensors: Device tensors for KV cache (owned by manager).
-            device_scale_tensors: Device scale tensors for FP8, or None.
+            device_buffer: Device buffer for KV cache (owned by manager).
             total_num_blocks: Total number of device blocks.
             session: Optional inference session for loading kernels.
 
@@ -554,8 +552,7 @@ class LMCacheConnector:
             )
 
         self._devices = list(devices)
-        self._device_tensors = device_tensors
-        self._device_scale_tensors = device_scale_tensors
+        self._device_buffer = device_buffer
         self._block_size = params.page_size
         self._total_num_blocks = total_num_blocks
         self.params = params
@@ -564,7 +561,7 @@ class LMCacheConnector:
 
         self._gpu_connector = MAXGPUConnector(
             params=params,
-            device_tensors=device_tensors,
+            device_buffer=device_buffer,
             devices=devices,
             total_num_blocks=total_num_blocks,
             session=session,
@@ -599,12 +596,13 @@ class LMCacheConnector:
         # kv_shape format: (num_layers, kv_dim, chunk_size, num_kv_heads, head_dim)
         # MLA caches a single fused latent vector (kv_dim=1) instead of
         # separate K and V tensors (kv_dim=2).
+        # Use per-device heads since each TP shard operates independently.
         kv_dim = 1 if self.params.is_mla else 2
         kv_shape = (
             self.params.num_layers,
             kv_dim,
             self._block_size,
-            self.params.n_kv_heads,
+            self.params.n_kv_heads_per_device,
             self.params.head_dim,
         )
 
@@ -723,14 +721,12 @@ class LMCacheConnector:
         self,
         ctx: TextGenerationContext,
         target_block_ids: list[int],
-        device_tensors: list[Buffer],
     ) -> list[int]:
         """Load data from LMCache into device blocks.
 
         Args:
             ctx: The request context.
             target_block_ids: Device block IDs to load data into.
-            device_tensors: Device KV cache tensors to copy into.
 
         Returns:
             List of block hashes for the loaded blocks.
@@ -793,13 +789,11 @@ class LMCacheConnector:
 
         # Fetch data from LMCache to GPU
         if valid_memory_objs and slot_mapping:
+            # Create slot_mapping on CPU once, reuse across TP shards.
+            # The connector uploads to each device internally.
+            slot_mapping_tensor = torch.tensor(slot_mapping, dtype=torch.long)
             for tp_idx in range(self._world_size):
                 self._gpu_connector.set_tp_shard(tp_idx)
-                slot_mapping_tensor = torch.tensor(
-                    slot_mapping,
-                    dtype=torch.long,
-                    device=f"cuda:{self._devices[tp_idx].id}",
-                )
                 self._gpu_connector.batched_to_gpu(
                     valid_memory_objs,
                     starts,
@@ -856,18 +850,26 @@ class LMCacheConnector:
             for offset in range(self._block_size):
                 slot_mapping.append(block_id * self._block_size + offset)
 
+        # Create slot_mapping on CPU once, reuse across TP shards.
+        # The GPU connector uploads to each device internally,
+        # avoiding CUDA syncs from repeated .cpu() roundtrips.
+        slot_mapping_tensor = torch.tensor(slot_mapping, dtype=torch.long)
+
         for tp_idx in range(self._world_size):
             self._gpu_connector.set_tp_shard(tp_idx)
-            slot_mapping_tensor = torch.tensor(
-                slot_mapping,
-                dtype=torch.long,
-                device=f"cuda:{self._devices[tp_idx].id}",
-            )
-            self._engine.store(
-                hashes=hashes,
-                offsets=offsets,
-                slot_mapping=slot_mapping_tensor,
-            )
+            try:
+                self._engine.store(
+                    hashes=hashes,
+                    offsets=offsets,
+                    slot_mapping=slot_mapping_tensor,
+                )
+            except FileNotFoundError:
+                # LMCache disk backend TOCTOU race: concurrent eviction
+                # deletes a file between existence check and os.remove().
+                logger.warning(
+                    "LMCache disk eviction race during store for TP shard %d.",
+                    tp_idx,
+                )
 
         self._d2h_blocks_copied += len(self._pending_saves)
         self._pending_saves.clear()
@@ -919,22 +921,6 @@ class LMCacheConnector:
         Note: Host blocks are managed by LMCache internally.
         """
         return 0
-
-    @property
-    def host_tensors(self) -> list[Buffer] | None:
-        """Host tensors.
-
-        Note: LMCache manages host storage internally.
-        """
-        return None
-
-    @property
-    def host_scale_tensors(self) -> list[Buffer] | None:
-        """Host scale tensors.
-
-        Note: LMCache manages host storage internally.
-        """
-        return None
 
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache.

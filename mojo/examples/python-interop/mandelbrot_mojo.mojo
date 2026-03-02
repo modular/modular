@@ -52,7 +52,7 @@ fn PyInit_mandelbrot_mojo() -> PythonObject:
 fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     """The main GPU dispatch function for the Mandelbrot calculation called from Python.
     """
-    constrained[has_accelerator(), "This example requires a supported GPU"]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Get the context for the attached GPU
     var ctx = DeviceContext()
@@ -118,7 +118,7 @@ fn mandelbrot(
 
 def draw_mandelbrot(
     tensor: LayoutTensor[int_dtype, layout], iterations: Int32
-) -> String:
+) raises -> String:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
     var buffer = String()

@@ -14,25 +14,22 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from . import weight_adapters
 from .model import MPNetPipelineModel
 from .model_config import MPNetConfig
 
 mpnet_arch = SupportedArchitecture(
-    name="MPNetForMaskedLM_Legacy",
+    name="MPNetForMaskedLM",
     task=PipelineTask.EMBEDDINGS_GENERATION,
     example_repo_ids=[
         "sentence-transformers/all-mpnet-base-v2",
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": [],
-        "bfloat16": [],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=MPNetPipelineModel,
     tokenizer=TextTokenizer,

@@ -88,37 +88,32 @@ fn validate_config[
 ]():
     """Validates the configuration parameters for the matrix multiplication kernel.
     """
-    constrained[
-        BM % WM == 0 and BN % WN == 0,
-        "Block dims must be divisible by warp dims",
-    ]()
-    constrained[
-        m_warps % producer_a == 0,
+    comptime assert (
+        BM % WM == 0 and BN % WN == 0
+    ), "Block dims must be divisible by warp dims"
+    comptime assert m_warps % producer_a == 0, (
         "M warps must be divisible by A producers: "
         + String(m_warps)
         + " % "
         + String(producer_a)
-        + " == 0",
-    ]()
-    constrained[
-        n_warps % producer_b == 0,
+        + " == 0"
+    )
+    comptime assert n_warps % producer_b == 0, (
         "N warps must be divisible by B producers: "
         + String(n_warps)
         + " % "
         + String(producer_b)
-        + " == 0",
-    ]()
-    constrained[
-        m_warps * n_warps % consumer == 0,
-        "Total warps must be divisible by consumers",
-    ]()
-    constrained[
-        consumer >= producer_a and consumer >= producer_b,
-        "Need enough consumers",
-    ]()
-    constrained[
-        consumer.is_power_of_two(), "Consumer warps must be power of 2"
-    ]()
+        + " == 0"
+    )
+    comptime assert (
+        m_warps * n_warps % consumer == 0
+    ), "Total warps must be divisible by consumers"
+    comptime assert (
+        consumer >= producer_a and consumer >= producer_b
+    ), "Need enough consumers"
+    comptime assert (
+        consumer.is_power_of_two()
+    ), "Consumer warps must be power of 2"
 
 
 @always_inline
@@ -171,10 +166,9 @@ fn smem_tile_layout[
     # └─────────────────────────────────────────────────────────────────────────┘
     # stride between blocks = block_rows x k_tile_size = 64 x 32 = 2048
 
-    constrained[
-        block_cols % k_tile_size == 0,
-        "block_cols must be a multiple of k_tile_size",
-    ]()
+    comptime assert (
+        block_cols % k_tile_size == 0
+    ), "block_cols must be a multiple of k_tile_size"
 
     comptime base_layout = Layout.row_major(block_rows, k_tile_size)
     comptime num_repeats = block_cols // k_tile_size
@@ -213,22 +207,20 @@ fn get_producer_warp_thread_layout[
 
     comptime num_repeats_col = block_cols // k_tile_size
 
-    constrained[
-        num_repeats_col < (WARP_SIZE // inner_block_size),
+    comptime assert num_repeats_col < (WARP_SIZE // inner_block_size), (
         "not enough threads per warp to cover block k dimension: "
         + String(num_repeats_col)
         + " < "
         + String(WARP_SIZE)
         + " // "
-        + String(inner_block_size),
-    ]()
+        + String(inner_block_size)
+    )
     comptime outer_block_size = num_repeats_col * inner_block_size
     comptime num_repeats_row = WARP_SIZE // outer_block_size
 
-    constrained[
-        block_rows % (inner_block_rows * num_repeats_row) == 0,
-        "shared block size is not evenly distributable among threads",
-    ]()
+    comptime assert (
+        block_rows % (inner_block_rows * num_repeats_row) == 0
+    ), "shared block size is not evenly distributable among threads"
 
     comptime tiler_layout = Layout.row_major(
         num_repeats_row,

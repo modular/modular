@@ -26,8 +26,7 @@ Key characteristics:
 from math import ceildiv
 
 from gpu import block_idx, grid_dim, thread_idx
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout._tile_tensor import TileTensor
+from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
 
 from ..structured_kernels.tile_types import GMEMLayout1D
 from memory import UnsafePointer
@@ -184,13 +183,13 @@ struct GroupedWorkIterator1D1D[
 
     # Derived constants
     comptime cta_group_tile_shape = Index(
-        Self.tile_shape[0] * Self.cta_group, Self.tile_shape[1] * Self.cta_group
+        Self.tile_shape[0] * Self.cta_group, Self.tile_shape[1]
     )
     comptime div_dynamic_block = FastDiv[DType.uint32](
         Self.cta_group_tile_shape[0]  # M dimension is dynamic
     )
     comptime num_static_dim_blocks: UInt32 = UInt32(
-        ceildiv(Self.static_N, Self.tile_shape[1])
+        ceildiv(Self.static_N, Self.cta_group_tile_shape[1])
     )
     comptime kNum1DBlocksPerGroup: UInt32 = 16
 
@@ -236,9 +235,11 @@ struct GroupedWorkIterator1D1D[
     fn _fetch_next_work(mut self) -> Tuple[GroupedWorkInfo1D1D, UInt32]:
         """Internal method to compute next work tile."""
         self.current_iter += 1
+        # Normalize by cta_group so all CTAs in a cluster get the same
+        # work tile.  For cta_group==1 this is a no-op.
         var next_block_idx = UInt32(self.current_iter) * UInt32(
-            grid_dim.x
-        ) + UInt32(block_idx.x)
+            grid_dim.x // Scalar[DType.uint](Self.cta_group)
+        ) + UInt32(block_idx.x // Scalar[DType.uint](Self.cta_group))
         var start_idx = rebind[Scalar[DType.uint32]](
             self.group_offsets[Int(self.current_group_idx)]
         )
@@ -302,7 +303,7 @@ struct GroupedWorkIterator1D1D[
 
         # Compute actual coordinates
         # M is in contiguous token space, offset by start_idx
-        var m = m_block_idx * UInt32(Self.tile_shape[0]) + start_idx
+        var m = m_block_idx * UInt32(Self.cta_group_tile_shape[0]) + start_idx
         var n = n_block_idx * UInt32(Self.cta_group_tile_shape[1])
 
         return (

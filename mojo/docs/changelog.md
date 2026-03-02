@@ -21,6 +21,25 @@ what we publish.
 
 ### Language enhancements
 
+- Mojo now supports t-strings (template strings) for building structured
+  string templates with interpolated expressions. T-strings use the `t"..."`
+  prefix and produce a `TString` value that captures both the static
+  format string and any runtime arguments, rather than immediately producing a
+  `String`:
+
+  ```mojo
+  fn main():
+      var x = 10
+      var y = 20
+      print(t"{x} + {y} = {x + y}")  # prints: 10 + 20 = 30
+  ```
+
+  Use `{{` and `}}` to include literal braces in the output:
+
+  ```mojo
+  print(t"Use {{braces}} like this")  # prints: Use {braces} like this
+  ```
+
 - Mojo now supports `comptime if` and `comptime for` as the preferred syntax
   for compile-time conditional and loop constructs, replacing the legacy
   `@parameter if` and `@parameter for` decorator forms:
@@ -121,6 +140,22 @@ what we publish.
     # take.__del__() runs here.
   ```
 
+- `def` functions now allows a `raises` specifier, and support typed errors.
+  `def` will soon *require* an exception specifier to throw, so we strongly
+  recommend changing `def` functions to have an explicit `raises` keyword.
+
+  ```mojo
+  # Older behavior
+  def foo():        # implicitly raises Error.
+  def bar() raises: # was invalid
+  # Current behavior
+  def bar():        # Still implicitly raises Error (not recommended)
+  def bar() raises: # Explicit raises Error (recommended)
+  # Near future behavior
+  def bar():        # Does not raise.
+  def bar() raises: # Explicit raises Error (required)
+  ```
+
 ### Language changes
 
 - `**_` and `*_` are no longer supported in parameter binding lists. Use a more
@@ -129,11 +164,12 @@ what we publish.
 - As part of "init unification", the `__moveinit__` and `__copyinit__` methods
   [are now
   renamed](https://github.com/modular/modular/blob/main/mojo/proposals/remove_move_and_copy_init.md)
-  to `__init__(*, take=)` and `__init__(*, copy=)` respectively.  Mojo now
+  to `fn __init__(out self, *, take: Self)` and
+  `fn __init__(out self, *, copy: Self)` respectively.  Mojo now
   accepts these names for initializers, but also supports the legacy
   `__moveinit__` and `__copyinit__` names as well (for now).  However, the
   argument name for these legacy methods must now be named `take` and `copy`
-  respectively.  Please move to the more modern names.
+  respectively.  Please move to the more modern `__init__` names when possible.
 
 - As part of init unification, the `__moveinit__is_trivial` and
   `__copyinit__is_trivial` members of `Movable` and `Copyable` have been renamed
@@ -203,7 +239,20 @@ what we publish.
 - `comptime assert` no longer errors on always false conditions. The assertion
   will only trigger if its parent scope is concretized.
 
+- A statically False `comptime assert` now ends a scope. Any code following it
+  in the same scope is now a warning, and can be removed.
+
+- Re-exported functions from a package's `__init__.mojo` are no longer shadowed
+  by a submodule of the same name. For example, if `pkg/foo.mojo` defines
+  `fn foo` and `pkg/__init__.mojo` does `from .foo import foo`, then
+  `from pkg import foo` now correctly resolves to the function.
+
 ### Library changes
+
+- `TString.write_to()` now uses a compact encoding for format strings. The
+  format string is flattened at compile time into NUL-terminated literal
+  segments, producing considerably smaller static data and faster runtime than
+  the previous struct-based precompiled entries.
 
 - `Set.pop()` now uses `Dict.popitem()` directly, avoiding a redundant rehash.
   Order changes from FIFO to LIFO, matching Python's unordered `set.pop()`.
@@ -227,6 +276,10 @@ what we publish.
   The `power_of_two_initial_capacity` keyword argument has been renamed to
   `capacity` and now accepts any positive integer (it is rounded up to the
   next power of two internally, minimum 16).
+
+- `Dict` now performs in-place tombstone rehashing when the table is full of
+  tombstones but the live element count is low. This prevents unnecessary
+  capacity doubling after repeated insert/delete cycles.
 
 - Implicit conversions from `Int` to `SIMD` are now deprecated, and will be
   removed in a future version of Mojo. This includes deprecating converions from
@@ -361,6 +414,11 @@ what we publish.
   - `Variant`
   - `Optional`
 
+- The `stdlib` is beginning to remove support for the `Stringable` and `Representable`
+  traits in favor of the unified `Writable` trait. Most stdlib types have had their
+  conformance to `Stringable` and `Representable` removed and the associated `__str__()`
+  and `__repr__()` methods have been deprecated.
+
 - The `testing` module now provides `assert_equal` and `assert_not_equal`
   overloads for `Tuple`, enabling direct tuple-to-tuple comparisons in tests
   instead of element-by-element assertions. Element types must conform to
@@ -437,10 +495,18 @@ what we publish.
     types based on a compile-time boolean condition. It is the type-level
     equivalent of the ternary conditional expression `Then if If else Else`.
 
+- `reflection/traits` has been added, providing compile-time meta functions
+  (`AllWritable`, `AllMovable`, `AllCopyable`, `AllImplicitlyCopyable`,
+  `AllDefaultable`, `AllEquatable`) that evaluate to `True` if all types in a
+  variadic type list conform to the corresponding trait.
+
 - `UnsafeMaybeUninit` has been renamed as such, and it's methods have had their
   names updated to reflect the `init` name. It also now exposes a `zeroed()` method
   to get zeroed out uninitialized memory. It also no longer calls `abort()` when
   being copied or moved, allowing for more practical uses.
+
+- `Span[T]` is no longer restricted to `Copyable` types. It now works with `T: AnyType`.
+  There are a few restrictions including iteration requiring `T: Copyable`.
 
 - `Int.write_padded` now accounts for a negative sign when calculating the
   width, resulting in a consistent width regardless of sign:
@@ -479,6 +545,10 @@ what we publish.
   print(a.__floordiv__(b))
   ```
 
+- Remove `DType.get_dtype[T]()` and `DType.is_scalar[T]()`. These were low-level
+  operations for extracting the `DType` of a `SIMD` in generic code. There are
+  better alternatives available in Mojo today using reflection capabilities.
+
 ### Tooling changes
 
 - The Mojo compiler now accepts conjoined `-D` options in addition to the
@@ -499,6 +569,16 @@ what we publish.
   conflicted with Python-specific formatters in pre-commit hooks. Users who
   want to format Python files can use `mblack` directly.
 
+- `mojo format` now supports `--print-cache-dir` (hidden, use `--help-hidden`
+  to see it) to display the path to the formatter cache directory.
+
+- `mojo build --emit=asm` now also emits GPU kernel assembly files alongside
+  the host `.s` output. For NVIDIA targets, PTX is written as
+  `<out>_<kernelfn>.ptx`; for Apple Metal targets, LLVM IR is written as
+  `<out>_<kernelfn>.ll`; for AMD targets, `.amdgcn` files are written.
+  Multiple kernels generated from the same function are disambiguated with a
+  numeric suffix (e.g. `<out>_<kernelfn>_1.ptx`).
+
 ### ❌ Removed
 
 - The `owned` keyword has been removed. Use `var` for parameters or `deinit`
@@ -512,6 +592,13 @@ what we publish.
   removed in a future release.
 
 ### 🛠️ Fixed
+
+- Fixed a bug where Mojo incorrectly passed or returned structs in `extern` C
+  function calls. The compiler now applies platform ABI coercion (System V
+  AMD64 on x86-64, AAPCS on ARM64) when lowering external calls, decomposing
+  structs into the register types the C ABI requires — matching the behavior of
+  Clang and Rust. This resolves silent wrong-answer bugs when calling C
+  functions that take or return struct types.
 
 - [Issue #5845](https://github.com/modular/modular/issues/5845): Functions
   raising custom type with conversion fails when returning StringSlice

@@ -56,7 +56,7 @@ When you create a tensor, you can specify its dtype using the `dtype` parameter 
 ```python
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create a tensor with float32 (default for most operations)
 float_tensor = Tensor.ones([2, 3], dtype=DType.float32, device=CPU())
@@ -74,8 +74,8 @@ Float tensor dtype: DType.float32
 Int tensor dtype: DType.int32
 ```
 
-In this example, the [`ones()`](/max/api/python/tensor#max.tensor.Tensor.ones) function creates a tensor filled with ones, and
-the [`constant()`](/max/api/python/tensor#max.tensor.Tensor.constant) function creates a tensor filled with the given values. The
+In this example, the [`ones()`](/max/api/python/tensor#max.experimental.tensor.Tensor.ones) function creates a tensor filled with ones, and
+the [`constant()`](/max/api/python/tensor#max.experimental.tensor.Tensor.constant) function creates a tensor filled with the given values. The
 `dtype` parameter is used to specify the dtype of the tensor.
 
 If you don't specify a dtype, MAX uses:
@@ -85,13 +85,13 @@ If you don't specify a dtype, MAX uses:
 
 ## Check tensor dtype
 
-Every tensor has a [`dtype`](/max/api/python/tensor#max.tensor.Tensor.dtype) property that returns its data type:
+Every tensor has a [`dtype`](/max/api/python/tensor#max.experimental.tensor.Tensor.dtype) property that returns its data type:
 
 {/* @sync: _examples/dtypes/check_dtype.py */}
 ```python
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create tensors of different types
 weights = Tensor.ones([3, 3], dtype=DType.float32, device=CPU())
@@ -119,7 +119,7 @@ is a `int64` tensor.
 
 ## Convert between dtypes
 
-The [`cast()`](/max/api/python/tensor#max.tensor.Tensor.cast) method is used to convert a tensor from one dtype to another. This
+The [`cast()`](/max/api/python/tensor#max.experimental.tensor.Tensor.cast) method is used to convert a tensor from one dtype to another. This
 is useful when you need to convert a tensor from a floating-point type to an
 integer type, or from a higher precision type to a lower precision type. For
 example:
@@ -128,7 +128,7 @@ example:
 ```python
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create a float32 tensor
 x = Tensor.constant([1.7, 2.3, 3.9], dtype=DType.float32, device=CPU())
@@ -198,7 +198,7 @@ which enables zero-copy conversion when possible:
 {/* @sync: _examples/dtypes/dlpack_conversion.py */}
 ```python
 import numpy as np
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create a NumPy array
 np_array = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
@@ -219,7 +219,7 @@ MAX tensor dtype: DType.float32
 MAX tensor shape: [Dim(2), Dim(2)]
 ```
 
-In this example, the [`from_dlpack()`](/max/api/python/tensor#max.tensor.Tensor.from_dlpack) method converts the NumPy array to a MAX tensor.
+In this example, the [`from_dlpack()`](/max/api/python/tensor#max.experimental.tensor.Tensor.from_dlpack) method converts the NumPy array to a MAX tensor.
 You can use this method when converting data from other libraries to MAX.
 
 :::note NumPy compatibility

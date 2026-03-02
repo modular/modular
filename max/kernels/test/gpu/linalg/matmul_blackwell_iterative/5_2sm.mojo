@@ -43,6 +43,7 @@ from layout import (
     RuntimeTuple,
     RuntimeLayout,
 )
+from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
@@ -278,18 +279,18 @@ fn kernel_5[
         transpose_b=transpose_b,
     ]()
 
-    for i in range(num_iters):
+    for i in range(Int(num_iters)):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-                a_tma_rows
-            ) + block_idx.x * UInt(BM)
+            var a_gmem_slice_coord = (
+                Int(peer_cta_coord[2]) * a_tma_rows + Int(block_idx.x) * BM
+            )
             var b_gmem_slice_coord = (
-                peer_cta_coord[1] * UInt(b_tma_rows)
-                + peer_cta_coord[0] * UInt(BN)
-                + block_idx.y * UInt(MMA_N)
+                Int(peer_cta_coord[1]) * b_tma_rows
+                + Int(peer_cta_coord[0]) * BN
+                + Int(block_idx.y) * MMA_N
             )
 
             comptime for j in range(BK // 64):
@@ -312,14 +313,14 @@ fn kernel_5[
                 a_tma_op.async_multicast_load[cta_group](
                     a_smem_slice,
                     tma_mbar[0],
-                    (UInt(i * BK + k), a_gmem_slice_coord),
+                    (i * BK + k, a_gmem_slice_coord),
                     a_multicast_mask,
                 )
 
                 b_tma_op.async_multicast_load[cta_group](
                     b_smem_slice,
                     tma_mbar[0],
-                    (UInt(i * BK + k), b_gmem_slice_coord),
+                    (i * BK + k, b_gmem_slice_coord),
                     b_multicast_mask,
                 )
 
@@ -441,9 +442,9 @@ fn kernel_5[
     # UMMA (tensor memory) → registers → shared memory → global memory
     #           c_frag                   c_smem_tile      c_tma_op
     if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
-        var row_start = block_idx.x * UInt(BM)
+        var row_start = Int(block_idx.x) * BM
 
-        var col_start = block_idx.y * UInt(MMA_N) + thread_idx.x * UInt(TMA_BN)
+        var col_start = Int(block_idx.y) * MMA_N + Int(thread_idx.x) * TMA_BN
 
         fence_async_view_proxy()
         var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
@@ -578,7 +579,7 @@ def test_blackwell_kernel_5[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     print(
         "mma_"
         + "s"
@@ -617,8 +618,8 @@ def test_blackwell_kernel_5[
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
+    var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
 
     var a_device = ctx.enqueue_create_buffer[a_type](M * K)
     var a_device_lt = LayoutTensor[a_type, a_layout](a_device.unsafe_ptr())
@@ -641,15 +642,15 @@ def test_blackwell_kernel_5[
                 b_type
             ]()
     for i in range(M * N):
-        c_host_ptr[i] = Scalar[c_type](0)
-        c_host_ref_ptr[i] = Scalar[c_type](0)
+        c_host.tensor[update=False]().ptr[i] = Scalar[c_type](0)
+        c_host_ref.tensor[update=False]().ptr[i] = Scalar[c_type](0)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device, c_host_ptr)
-    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
+    ctx.enqueue_copy(c_device, c_host.tensor[update=False]().ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref.tensor[update=False]().ptr)
 
     blackwell_kernel_5[
         transpose_b=transpose_b,
@@ -717,15 +718,15 @@ def test_blackwell_kernel_5[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host_ptr, c_device)
-        ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+        ctx.enqueue_copy(c_host.tensor[update=False]().ptr, c_device)
+        ctx.enqueue_copy(c_host_ref.tensor[update=False]().ptr, c_device_ref)
         ctx.synchronize()
 
         comptime rtol = 1e-2
 
         assert_almost_equal(
-            c_host_ptr,
-            c_host_ref_ptr,
+            c_host.tensor[update=False]().ptr,
+            c_host_ref.tensor[update=False]().ptr,
             M * N,
             atol=0.0001,
             rtol=rtol,
@@ -735,12 +736,6 @@ def test_blackwell_kernel_5[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 fn get_dic_of_shapes(
@@ -802,7 +797,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
         ](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             # Run the benchmark

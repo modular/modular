@@ -29,16 +29,16 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.allreduce import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.moe import MoE
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.comm import Signals
+from max.nn.comm.allreduce import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.layer import LayerList, Module
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.moe import MoE, MoEQuantized
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
@@ -79,6 +79,8 @@ class Qwen3TransformerBlock(Module):
             devices=config.devices,
             scale=config.attention_multiplier,
             has_bias=config.attention_bias,
+            norm_dtype=config.norm_dtype or config.dtype,
+            float8_config=config.float8_config,
         )
         self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
             num_devices
@@ -125,7 +127,8 @@ class Qwen3TransformerBlock(Module):
         )
 
         if use_moe:
-            return MoE(
+            moe_cls = MoEQuantized if config.float8_config is not None else MoE
+            return moe_cls(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
                 num_experts=config.num_experts,
@@ -353,7 +356,7 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         )
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         """Get input types for graph construction.
 
@@ -389,7 +392,5 @@ class Qwen3(DistributedLogitsPostprocessMixin, Module):
         signal_buffer_types = signals.input_types()
 
         # Flatten KV types for all devices
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
         return tuple(base_inputs + signal_buffer_types + flattened_kv_types)

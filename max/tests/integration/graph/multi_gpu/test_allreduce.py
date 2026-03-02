@@ -36,7 +36,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.legacy import Allreduce, Module, Signals
+from max.nn import Allreduce, Module, Signals
 
 M = 512
 N = 1024
@@ -257,3 +257,459 @@ def test_allreduce_signal_buffer_too_small_error_message(
 
     with pytest.raises(ValueError, match=error_regex):
         compiled.execute(*input_tensors, *signals.buffers())
+
+
+class DoubleAllreduceWithOp(Module):
+    """Two allreduce operations with an intermediate element-wise multiply.
+
+    Tests the pattern: allreduce -> other_kernel -> allreduce.
+    """
+
+    allreduce1: Allreduce
+    allreduce2: Allreduce
+    num_devices: int
+
+    def __init__(self, num_devices: int) -> None:
+        super().__init__()
+        self.allreduce1 = Allreduce(num_accelerators=num_devices)
+        self.allreduce2 = Allreduce(num_accelerators=num_devices)
+        self.num_devices = num_devices
+
+    def __call__(
+        self,
+        *args: TensorValue | BufferValue,
+    ) -> list[TensorValue]:
+        inputs = [cast(TensorValue, arg) for arg in args[: self.num_devices]]
+        signal_buffers = [
+            cast(BufferValue, arg) for arg in args[self.num_devices :]
+        ]
+
+        first_results = self.allreduce1(inputs, signal_buffers)
+        intermediate_results = [x * 2.0 for x in first_results]
+        second_results = self.allreduce2(intermediate_results, signal_buffers)
+
+        return second_results
+
+
+@pytest.mark.parametrize("num_gpus", [2, 4, 8])
+def test_allreduce_chained_with_intermediate_op(num_gpus: int) -> None:
+    """Tests allreduce -> other_kernel -> allreduce."""
+    if (available_gpus := accelerator_count()) < num_gpus:
+        pytest.skip(
+            f"skipping {num_gpus=} test since only {available_gpus} available"
+        )
+
+    graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    session = InferenceSession(devices=[host] + devices)
+
+    model = DoubleAllreduceWithOp(num_devices=num_gpus)
+    graph = Graph(
+        "DoubleAllreduce",
+        forward=model,
+        input_types=[
+            *[
+                TensorType(DType.float32, shape=[M, N], device=graph_devices[i])
+                for i in range(num_gpus)
+            ],
+            *signals.input_types(),
+        ],
+    )
+
+    compiled = session.load(graph)
+
+    inputs = []
+    a_np = np.ones((M, N), np.float32)
+    for i in range(num_gpus):
+        inputs.append(Buffer.from_numpy(a_np).to(devices[i]))
+
+    for dev in devices:
+        dev.synchronize()
+
+    outputs = compiled.execute(*inputs, *signals.buffers())
+
+    # First allreduce sums to num_gpus, multiply by 2 gives 2*num_gpus,
+    # second allreduce sums num_gpus copies: 2*num_gpus^2
+    expected = np.full((M, N), 2.0 * num_gpus * num_gpus, dtype=np.float32)
+
+    for tensor in outputs:
+        assert isinstance(tensor, Buffer)
+        assert np.allclose(expected, tensor.to(host).to_numpy(), atol=1e-6)
+
+
+class AllreduceFollowedBySubgraph(Module):
+    """Allreduce followed by a sequence of fused operations.
+
+    Tests the pattern: allreduce -> subgraph (multiply, add, relu).
+    """
+
+    allreduce: Allreduce
+    num_devices: int
+
+    def __init__(self, num_devices: int) -> None:
+        super().__init__()
+        self.allreduce = Allreduce(num_accelerators=num_devices)
+        self.num_devices = num_devices
+
+    def __call__(
+        self,
+        *args: TensorValue | BufferValue,
+    ) -> list[TensorValue]:
+        inputs = [cast(TensorValue, arg) for arg in args[: self.num_devices]]
+        signal_buffers = [
+            cast(BufferValue, arg) for arg in args[self.num_devices :]
+        ]
+
+        allreduce_results = self.allreduce(inputs, signal_buffers)
+
+        subgraph_results = []
+        for result in allreduce_results:
+            x = result * 3.0
+            x = x + 10.0
+            x = ops.relu(x)
+            subgraph_results.append(x)
+
+        return subgraph_results
+
+
+@pytest.mark.parametrize("num_gpus", [2, 4, 8])
+def test_allreduce_followed_by_subgraph(num_gpus: int) -> None:
+    """Tests allreduce -> subgraph (multiply, add, relu)."""
+    if (available_gpus := accelerator_count()) < num_gpus:
+        pytest.skip(
+            f"skipping {num_gpus=} test since only {available_gpus} available"
+        )
+
+    graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    session = InferenceSession(devices=[host] + devices)
+
+    model = AllreduceFollowedBySubgraph(num_devices=num_gpus)
+    graph = Graph(
+        "AllreduceSubgraph",
+        forward=model,
+        input_types=[
+            *[
+                TensorType(DType.float32, shape=[M, N], device=graph_devices[i])
+                for i in range(num_gpus)
+            ],
+            *signals.input_types(),
+        ],
+    )
+
+    compiled = session.load(graph)
+
+    inputs = []
+    a_np = np.ones((M, N), np.float32)
+    for i in range(num_gpus):
+        inputs.append(Buffer.from_numpy(a_np).to(devices[i]))
+
+    for dev in devices:
+        dev.synchronize()
+
+    outputs = compiled.execute(*inputs, *signals.buffers())
+
+    # allreduce sums to num_gpus, * 3 + 10, relu is no-op
+    expected = np.full((M, N), num_gpus * 3.0 + 10.0, dtype=np.float32)
+
+    for tensor in outputs:
+        assert isinstance(tensor, Buffer)
+        assert np.allclose(expected, tensor.to(host).to_numpy(), atol=1e-6)
+
+
+class SubgraphFollowedByAllreduce(Module):
+    """Sequence of fused operations followed by allreduce.
+
+    Tests the pattern: subgraph (scale, add, max) -> allreduce.
+    """
+
+    allreduce: Allreduce
+    num_devices: int
+
+    def __init__(self, num_devices: int) -> None:
+        super().__init__()
+        self.allreduce = Allreduce(num_accelerators=num_devices)
+        self.num_devices = num_devices
+
+    def __call__(
+        self,
+        *args: TensorValue | BufferValue,
+    ) -> list[TensorValue]:
+        inputs = [cast(TensorValue, arg) for arg in args[: self.num_devices]]
+        signal_buffers = [
+            cast(BufferValue, arg) for arg in args[self.num_devices :]
+        ]
+
+        subgraph_results = []
+        for i, inp in enumerate(inputs):
+            x = inp * float(i + 1)
+            x = x + 5.0
+            x = ops.max(x, 0.0)
+            subgraph_results.append(x)
+
+        allreduce_results = self.allreduce(subgraph_results, signal_buffers)
+
+        return allreduce_results
+
+
+@pytest.mark.parametrize("num_gpus", [2, 4, 8])
+def test_subgraph_followed_by_allreduce(num_gpus: int) -> None:
+    """Tests subgraph (scale, add, max) -> allreduce."""
+    if (available_gpus := accelerator_count()) < num_gpus:
+        pytest.skip(
+            f"skipping {num_gpus=} test since only {available_gpus} available"
+        )
+
+    graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    session = InferenceSession(devices=[host] + devices)
+
+    model = SubgraphFollowedByAllreduce(num_devices=num_gpus)
+    graph = Graph(
+        "SubgraphAllreduce",
+        forward=model,
+        input_types=[
+            *[
+                TensorType(DType.float32, shape=[M, N], device=graph_devices[i])
+                for i in range(num_gpus)
+            ],
+            *signals.input_types(),
+        ],
+    )
+
+    compiled = session.load(graph)
+
+    inputs = []
+    a_np = np.ones((M, N), np.float32)
+    for i in range(num_gpus):
+        inputs.append(Buffer.from_numpy(a_np).to(devices[i]))
+
+    for dev in devices:
+        dev.synchronize()
+
+    outputs = compiled.execute(*inputs, *signals.buffers())
+
+    # Device i computes max(1*(i+1) + 5, 0) = i+6 (0-indexed: i+1+5)
+    # sum = num_gpus*(num_gpus+1)/2 + 5*num_gpus
+    expected_sum = (num_gpus * (num_gpus + 1)) // 2 + 5 * num_gpus
+    expected = np.full((M, N), float(expected_sum), dtype=np.float32)
+
+    for tensor in outputs:
+        assert isinstance(tensor, Buffer)
+        assert np.allclose(expected, tensor.to(host).to_numpy(), atol=1e-6)
+
+
+class FakeTransformerBlock(Module):
+    """Mimics a distributed transformer block: two allreduce calls
+    (attention + MLP) with per-device constants, designed to be invoked
+    as a subgraph via ops.call.
+
+    Pattern: scale -> allreduce -> residual -> scale -> allreduce -> residual
+    """
+
+    attn_allreduce: Allreduce
+    mlp_allreduce: Allreduce
+    num_devices: int
+
+    def __init__(self, num_devices: int) -> None:
+        super().__init__()
+        self.attn_allreduce = Allreduce(num_accelerators=num_devices)
+        self.mlp_allreduce = Allreduce(num_accelerators=num_devices)
+        self.num_devices = num_devices
+
+    def __call__(
+        self,
+        *args: TensorValue | BufferValue,
+    ) -> list[TensorValue]:
+        xs = [cast(TensorValue, arg) for arg in args[: self.num_devices]]
+        signal_buffers = [
+            cast(BufferValue, arg) for arg in args[self.num_devices :]
+        ]
+
+        # Per-device constants simulate RMSNorm weights (triggers hoisting)
+        attn_scales = [
+            ops.constant(2.0, dtype=DType.float32, device=DeviceRef.GPU(i))
+            for i in range(self.num_devices)
+        ]
+        mlp_scales = [
+            ops.constant(3.0, dtype=DType.float32, device=DeviceRef.GPU(i))
+            for i in range(self.num_devices)
+        ]
+
+        # Attention path: scale -> allreduce -> residual add
+        attn_out = [x * s for x, s in zip(xs, attn_scales, strict=True)]
+        attn_out = self.attn_allreduce(attn_out, signal_buffers)
+        hs = [x + a for x, a in zip(xs, attn_out, strict=True)]
+
+        # MLP path: scale -> allreduce -> residual add
+        mlp_out = [h * s for h, s in zip(hs, mlp_scales, strict=True)]
+        mlp_out = self.mlp_allreduce(mlp_out, signal_buffers)
+        hs = [h + m for h, m in zip(hs, mlp_out, strict=True)]
+
+        return hs
+
+
+@pytest.mark.parametrize("num_gpus", [2, 4, 8])
+def test_transfer_to_subgraph_with_allreduce(num_gpus: int) -> None:
+    """Tests transfers from GPU 0 -> subgraph with two allreduce calls.
+
+    Mimics the Llama distributed transformer pattern:
+    1. Input on GPU 0 is transferred to all peers (serialized rmo.mo.transfer)
+    2. A subgraph (via ops.call) performs two allreduce operations with
+       shared signal buffers and per-device constants
+    3. Constants inside the subgraph trigger the HoistConstantSubgraphs pass
+
+    This pattern exposed GEX-3097: the hoisting pass scrambled chain ordering
+    at the subgraph boundary, causing GPU 0 to race ahead past transfers and
+    deadlock in the allreduce barrier.
+    """
+    if (available_gpus := accelerator_count()) < num_gpus:
+        pytest.skip(
+            f"skipping {num_gpus=} test since only {available_gpus} available"
+        )
+
+    graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    session = InferenceSession(devices=[host] + devices)
+
+    model = FakeTransformerBlock(num_devices=num_gpus)
+
+    with Graph(
+        "TransferSubgraphAllreduce",
+        input_types=[
+            TensorType(DType.float32, shape=[M, N], device=DeviceRef.GPU(0)),
+            *signals.input_types(),
+        ],
+    ) as graph:
+        input_tensor = graph.inputs[0].tensor
+        signal_bufs = [inp.buffer for inp in graph.inputs[1:]]
+
+        # Serialized transfers from GPU 0 to all peers
+        h = [input_tensor.to(DeviceRef.GPU(i)) for i in range(num_gpus)]
+
+        # Build and invoke transformer block as a subgraph
+        subgraph_input_types = [
+            TensorType(DType.float32, shape=[M, N], device=graph_devices[i])
+            for i in range(num_gpus)
+        ] + list(signals.input_types())
+
+        subgraph = model.build_subgraph(
+            "transformer_block", subgraph_input_types
+        )
+
+        results = ops.call(subgraph, *h, *signal_bufs)
+        graph.output(*[r.tensor for r in results])
+
+    compiled = session.load(graph)
+
+    input_np = np.ones((M, N), np.float32)
+    input_buf = Buffer.from_numpy(input_np).to(devices[0])
+
+    outputs = compiled.execute(input_buf, *signals.buffers())
+
+    # Expected: after attn allreduce: 1 + 2*N, after MLP allreduce:
+    # (1+2N) + 3N*(1+2N) = (1+2N)(1+3N)
+    expected_val = (1.0 + 2.0 * num_gpus) * (1.0 + 3.0 * num_gpus)
+    expected = np.full((M, N), expected_val, dtype=np.float32)
+
+    for tensor in outputs:
+        assert isinstance(tensor, Buffer)
+        assert np.allclose(expected, tensor.to(host).to_numpy(), atol=1e-6)
+
+
+def test_multi_device_epilogue_fusion_with_scalar_broadcast() -> None:
+    """Regression test: epilogue fusion of a broadcast scalar into a multi-device op.
+
+    Multi-device ops (MO_MultiDevice trait) produce a MOGG KernelOp whose
+    output lambdas run inside GPU sub-kernels.  The MOGG code-gen must use
+    the GPU-safe pointer-decomposition path for those lambdas so that
+    captured tensor data survives the host-to-device transition.
+
+    When the fused epilogue includes a scalar (0-D) constant that must be
+    broadcast to the output shape, the load inside the lambda requires the
+    GPU-safe ``simd_load_from_tensor_pointer`` (with explicit rank via
+    ``getRankNonZero``) rather than ``simd_load_from_managed_tensor_slice``.
+    If the kernel's device is incorrectly reported as "host", the non-GPU
+    path is chosen and the ManagedTensorSlice capture produces garbage
+    pointers on the device, leading to CUDA_ERROR_ILLEGAL_ADDRESS.
+
+    This test exercises the pattern via ``matmul_allreduce``, which uses the
+    ``MO_MultiDevice`` trait.
+    """
+    num_gpus = 2
+    if (available_gpus := accelerator_count()) < num_gpus:
+        pytest.skip(
+            f"skipping {num_gpus=} test since only {available_gpus} available"
+        )
+
+    K = 64
+    out_n = 32
+
+    graph_devices = [DeviceRef.GPU(id) for id in range(num_gpus)]
+    signals = Signals(devices=graph_devices)
+
+    host = CPU()
+    devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]
+    session = InferenceSession(devices=[host] + devices)
+
+    # Weights are [N, K] per device (matmul_allreduce does A @ B^T).
+    weight_np = np.ones((out_n, K), dtype=np.float32)
+    weight_bufs = [Buffer.from_numpy(weight_np).to(d) for d in devices]
+    for d in devices:
+        d.synchronize()
+
+    with Graph(
+        "matmul_allreduce_scalar_epilogue",
+        input_types=[
+            *[
+                TensorType(DType.float32, shape=[M, K], device=d)
+                for d in graph_devices
+            ],
+            *[
+                TensorType(DType.float32, shape=[out_n, K], device=d)
+                for d in graph_devices
+            ],
+            *signals.input_types(),
+        ],
+    ) as graph:
+        inputs = [graph.inputs[i].tensor for i in range(num_gpus)]
+        weights = [graph.inputs[num_gpus + i].tensor for i in range(num_gpus)]
+        signal_bufs = [inp.buffer for inp in graph.inputs[2 * num_gpus :]]
+
+        ma_outs = ops.allreduce.matmul_allreduce(inputs, weights, signal_bufs)
+
+        # Scalar (0-D) constants that must broadcast to [M, out_n].
+        biases = [
+            ops.constant(7, dtype=DType.float32, device=DeviceRef.GPU(id))
+            for id in range(num_gpus)
+        ]
+        graph.output(*[x + b for x, b in zip(ma_outs, biases, strict=True)])
+
+    compiled = session.load(graph)
+
+    a_np = np.ones((M, K), np.float32)
+    input_bufs = [Buffer.from_numpy(a_np).to(d) for d in devices]
+    for d in devices:
+        d.synchronize()
+
+    outputs = compiled.execute(*input_bufs, *weight_bufs, *signals.buffers())
+
+    # Each device: matmul([M,K] @ [K,N]) = [M,N] of all K's.
+    # Allreduce sums num_gpus copies → K * num_gpus, then + 7.
+    expected_val = float(K * num_gpus) + 7.0
+    expected = np.full((M, out_n), expected_val, dtype=np.float32)
+    for tensor in outputs:
+        assert isinstance(tensor, Buffer)
+        assert np.allclose(expected, tensor.to(host).to_numpy(), atol=1e-6)

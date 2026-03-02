@@ -73,7 +73,7 @@ struct Complex(
     # ===-------------------------------------------------------------------===#
 
     fn __getitem__[idx: Int](ref self) -> ref[self] Float64:
-        constrained[idx in (0, 1), "idx must be 0 or 1"]()
+        comptime assert idx in (0, 1), "idx must be 0 or 1"
 
         comptime if idx == 0:
             var p = UnsafePointer(to=self.re).unsafe_origin_cast[

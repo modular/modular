@@ -11,6 +11,8 @@ what we publish.
 
 ### Documentation {#26-2-docs}
 
+- Removed `--cache-strategy` cli flag.
+
 ### MAX models {#26-2-models}
 
 - Add support for Olmo3ForCausalLM architecture.
@@ -42,6 +44,14 @@ what we publish.
   at creation time and provides a clear error message when the driver version
   is too old, matching the behavior of the Python `Accelerator()` API.
 
+- Runtime GPU errors now include a **Python source traceback** showing where
+  the failing operation was defined in your graph-building code. Build with
+  `MODULAR_MAX_DEBUG=True` to enable source note collection; when source notes
+  are not available, error messages include a hint about how to enable them.
+
+- Fixed Mojo and MAX compatibility with NVIDIA unified memory systems, like
+  the Jetson series or the DGX Spark.
+
 #### Inference server {#26-2-max-serve}
 
 - Enabled overlap scheduling for select model architectures like
@@ -55,13 +65,17 @@ what we publish.
 
 #### Python API {#26-2-max-python}
 
+- `DeviceEvent` now accepts an `enable_timing=True` parameter to enable GPU
+  event timing. Use `start.elapsed_time(end)` to measure elapsed GPU time in
+  milliseconds between two timing-enabled events.
+
 - Keep a global MLIR context active and drop per-graph context plumbing so
   algebraic dims and graph/custom op construction work without an explicit
   context manager. Threadpool-backed MAX paths now scope worker-thread MLIR
   usage to the default context automatically.
 
 - Added the `prod` op for computing the product of elements along an axis,
-  available as `max.graph.ops.prod`, `max.functional.prod`, and
+  available as `max.graph.ops.prod`, `max.experimental.functional.prod`, and
   `Tensor.prod()`.
 
 ### Breaking changes {#26-2-breaking}
@@ -82,6 +96,21 @@ what we publish.
   quantization encoding configuration. Users who directly instantiate
   `PipelineModel` subclasses (advanced use case) should remove the `encoding`
   argument from constructor calls.
+
+- Device-graph APIs now require explicit caller-provided graph keys for
+  capture/replay/verification. Update calls from
+  `model.capture(*inputs)`, `model.replay(*inputs)`, and
+  `model.debug_verify_replay(*inputs)` to
+  `model.capture(graph_key, *inputs)`, `model.replay(graph_key, *inputs)`,
+  and `model.debug_verify_replay(graph_key, *inputs)`.
+
+- **`max.nn` namespace reorganization**. The graph-based neural network API has
+  been restored as the default `max.nn` namespace (previously located under
+  `max.nn.legacy`). The eager module API has moved from `max.nn` to
+  `max.nn.module_v3`. Additionally, `max.tensor`, `max.functional`, and
+  `max.random` have moved back under `max.experimental` (i.e.,
+  `max.experimental.tensor`, `max.experimental.functional`,
+  `max.experimental.random`). Update imports accordingly.
 
 #### Mojo API {#26-2-max-mojo}
 

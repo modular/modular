@@ -18,7 +18,7 @@ import gridv2
 import gridv3
 
 
-def main():
+def main() raises:
     comptime warmup_iterations = 10
     comptime benchmark_iterations = 1000
     comptime rows = 1024

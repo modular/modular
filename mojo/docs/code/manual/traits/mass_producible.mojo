@@ -35,7 +35,7 @@ struct Thing(MassProducible):
         self.id = take.id
 
 
-def main():
+def main() raises:
     var thing = factory[Thing]()
     # end-trait-lifecycle-methods
     _ = thing^

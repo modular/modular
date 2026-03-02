@@ -29,7 +29,15 @@ from gpu import warp_id as get_warp_id
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.memory import AddressSpace, fence_async_view_proxy
 from gpu.sync import named_barrier
-from layout import Layout, LayoutTensor, RuntimeTuple, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import row_major
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
@@ -40,6 +48,7 @@ from utils.index import IndexList
 
 from .blockwise_fp8_accumulator import BlockwiseFP8Accumulator
 from ..structured_kernels.epilogue_components import (
+    EpilogueConfig,
     TMEMToSMemWriter,
     TMAStoreCoords,
     TMAStoreExecutor,
@@ -47,8 +56,6 @@ from ..structured_kernels.epilogue_components import (
 )
 from ..structured_kernels.barriers import WarpGroupBarrier
 from layout._layout import TensorLayout
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 
@@ -116,21 +123,26 @@ struct BlockwiseFP8TileWriter[
     comptime stageN = Self.repeats * (Self.bits // 32)
     comptime fragments_per_stage = Self.fragment_size * Self.repeats
 
+    # EpilogueConfig bundles common epilogue parameters
+    comptime epc = EpilogueConfig.create(
+        MMA_M=Self.MMA_M,
+        MMA_N=Self.MMA_N,
+        stageN=Self.stageN,
+        cta_group=Self.cta_group,
+        transpose_c=False,  # blockwise FP8 never transposes
+        BM=Self.BM,
+        BN=Self.BN,
+    )
+
     # Reuse TMEMToSMemWriter for fragment → SMEM path
     comptime SMEMWriter = TMEMToSMemWriter[
         Self.c_type,
         Self.accum_type,
         Self.c_smem_dim0,
         Self.c_smem_dim1,
-        Self.BM,
-        Self.BN,
-        Self.MMA_M,
-        Self.MMA_N,
-        Self.stageN,
-        Self.cta_group,
+        Self.epc,
         Int(Self.num_output_warps),
         Self.c_swizzle,
-        False,  # transpose_c (blockwise FP8 never transposes)
     ]
 
     # ========== Public Write Method ==========
@@ -197,7 +209,7 @@ struct BlockwiseFP8TileWriter[
             var c_smem_tile = c_tiles[stage % 2]  # double-buffer
 
             # Cast from accum_type to c_type, then write to SMEM
-            comptime frag_size = Self.SMEMWriter.Config.fragment_size * Self.repeats
+            comptime frag_size = Self.epc.fragment_size * Self.repeats
             smem_writer.write_fragments[Self.repeats](
                 rebind[SIMD[Self.c_type, frag_size]](
                     upper_frag.cast[Self.c_type]()
@@ -214,12 +226,7 @@ struct BlockwiseFP8TileWriter[
 
             # Use shared TMA store components from epilogue_components
             comptime StoreCoords = TMAStoreCoords[
-                Self.BM,
-                Self.BN,
-                Self.MMA_M,
-                Self.MMA_N,
-                Self.stageN,
-                Self.cta_group,
+                Self.epc,
                 Self.c_smem_dim0,
                 stage,
             ]
@@ -231,16 +238,9 @@ struct BlockwiseFP8TileWriter[
                 Self.c_type,
                 Self.c_smem_dim0,
                 Self.c_smem_dim1,
-                Self.BM,
-                Self.BN,
-                Self.MMA_M,
-                Self.MMA_N,
-                Self.stageN,
+                Self.epc,
                 Self.stageN,  # stage_contiguous_size
-                Self.cta_group,
                 Self.c_swizzle,
-                False,  # transpose_c
-                Self.is_lower_frag_required,
             ]
             StoreExec.execute[c_layout, c_desc_layout](
                 c_smem_tile,

@@ -24,12 +24,12 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from math import iota, ceildiv
-from sys import llvm_intrinsic
+from std.math import iota, ceildiv
+from std.sys import llvm_intrinsic
 
-from memory import Span, bitcast, memcpy
+from std.memory import Span, bitcast, memcpy
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime Bytes = SIMD[DType.uint8, _]
 

@@ -40,10 +40,8 @@ from max.kv_cache.connectors.lmcache_connector import (
     MAXGPUConnector,
 )
 from max.kv_cache.paged_kv_cache.cache_manager import PagedKVCacheManager
-from max.kv_cache.paged_kv_cache.tp_cache_manager import (
-    _TPPagedKVCacheManager,
-)
-from max.nn.legacy.kv_cache import KVCacheParams
+from max.kv_cache.paged_kv_cache.tp_cache_manager import _TPPagedKVCacheManager
+from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 from max.pipelines.core import TextContext
 from test_common.context_utils import create_text_context
 
@@ -197,7 +195,9 @@ def create_max_gpu_connector(
 
     connector = MAXGPUConnector(
         params=params,
-        device_tensors=[paged_cache],
+        device_buffer=KVCacheBuffer(
+            total_num_pages=config.num_blocks, values=[paged_cache]
+        ),
         devices=[device],
         total_num_blocks=config.num_blocks,
         session=session,
@@ -315,7 +315,6 @@ def _make_kv_cache_manager(
         num_layers=2,
         n_kv_heads=4,
         head_dim=64,
-        cache_strategy="paged",
         enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=False,
         page_size=INTEGRATION_PAGE_SIZE,

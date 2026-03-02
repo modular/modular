@@ -43,18 +43,14 @@ from math import ceildiv
 from memory import LegacyUnsafePointer, Pointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import align_of, size_of, simd_width_of
+from sys import size_of
 
-from gpu import WARP_SIZE, barrier, warp_id
+from gpu import WARP_SIZE, thread_idx
 from gpu.primitives.cluster import (
-    block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
-    elect_one_sync_with_mask,
 )
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
 from gpu.memory import (
     AddressSpace,
     external_memory,
@@ -66,46 +62,51 @@ from gpu.primitives.grid_controls import (
     PDLLevel,
     wait_on_dependent_grids,
 )
-from gpu.sync import named_barrier, named_barrier_arrive, syncwarp
+from gpu.sync import syncwarp
 from gpu.compute.arch.tcgen05 import *
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
     tile_sf_layout_k_major,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
-from linalg.utils import (
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
-)
+from linalg.utils import elementwise_compute_lambda_type
 from linalg.fp4_utils import (
-    MXFP8_SF_DTYPE,
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
     SF_ATOM_K,
 )
-from ..structured_kernels.config import BlockScaledMatmulConfig
+from ..structured_kernels.config import (
+    BlockScaledMatmulConfig,
+    OutputPipelineConfig,
+)
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 
 # Structured kernel imports
-from ..structured_kernels.kernel_common import WarpRole, KernelContext
+from ..structured_kernels.kernel_common import (
+    WarpRole,
+    KernelContext,
+    compute_tma_tile_dims,
+    compute_clc_barrier_counts,
+    compute_accum_barrier_counts,
+    compute_input_consumer_count,
+    init_core_barriers,
+    init_clc_barriers,
+)
 from .block_scaled_smem import BlockScaledSmem
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
-    InputProducerStage,
-    InputConsumerStage,
+    ProducerTiles,
+    ConsumerTiles,
     BlockScaledTilePayload,
 )
 from layout._layout import RowMajorLayout, _IntToComptimeInt
 from ..structured_kernels.tile_types import (
     TMATile,
-    TmaOpType,
     internal_k_major_128B,
     tma_desc_layout_3d,
     tma_desc_layout_5d,
@@ -201,22 +202,39 @@ struct BlackwellBlockScaledMatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
-    # TMEM configuration
+    # TMEM configuration — stride matches MMA output width for scaled kernels.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = Self.config.num_sf_k_tiles * (Self.BM // 32)
     comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
     comptime stage_stride_cols = Self.MMA_N
 
+    # Output pipeline config (bundles accum stages, stride, and cta_group)
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Barrier Arrival Counts ==========
 
-    comptime clc_producer_arv_count = 1
-    comptime clc_consumer_arv_count = Self.SCHEDULER_THREADS + Self.CLUSTER_SIZE * (
-        Self.TMA_LOAD_THREADS + Self.MMA_THREADS + Self.EPILOGUE_THREADS
-    )
-    comptime clc_throttle_producer_arv_count = Self.TMA_LOAD_THREADS
-    comptime clc_throttle_consumer_arv_count = Self.SCHEDULER_THREADS
-    comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = Self.cta_group * Self.EPILOGUE_THREADS
+    comptime _clc_barrier_counts = compute_clc_barrier_counts[
+        Self.SCHEDULER_THREADS,
+        Self.TMA_LOAD_THREADS,
+        Self.MMA_THREADS,
+        Self.EPILOGUE_THREADS,
+        Self.CLUSTER_SIZE,
+        Self.cta_group,
+    ]()
+    comptime clc_producer_arv_count = Self._clc_barrier_counts[0]
+    comptime clc_consumer_arv_count = Self._clc_barrier_counts[1]
+    comptime clc_throttle_producer_arv_count = Self._clc_barrier_counts[2]
+    comptime clc_throttle_consumer_arv_count = Self._clc_barrier_counts[3]
+
+    comptime _accum_barrier_counts = compute_accum_barrier_counts[
+        Self.EPILOGUE_THREADS, Self.cta_group
+    ]()
+    comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
+    comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
     # ========== Shared Memory Layout Types ==========
 
@@ -270,8 +288,18 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # ========== TMA Layouts (computed from config, new Layout types) ==========
 
-    comptime a_tile_dim1 = Self.BM // Self.CLUSTER_N
-    comptime b_tile_dim1 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime _tma_tile_dims = compute_tma_tile_dims[
+        Self.BM,
+        Self.BN,
+        Self.MMA_M,
+        Self.OutputM,
+        Self.CLUSTER_M,
+        Self.CLUSTER_N,
+        Self.cta_group,
+        AB_swapped = Self.config.AB_swapped,
+    ]()
+    comptime a_tile_dim0 = Self._tma_tile_dims[0]
+    comptime b_tile_dim0 = Self._tma_tile_dims[1]
     comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
         Self.a_type
     ]()
@@ -283,32 +311,28 @@ struct BlackwellBlockScaledMatmulKernel[
     ]()
 
     # C tile shape depends on MMA shape, cta_group, and AB_swapped
-    comptime c_tile_dim1 = (
-        Self.OutputM if (Self.MMA_M == 256 or Self.cta_group == 1) else (
-            Self.OutputM if Self.config.AB_swapped else 64
-        )
-    )
+    comptime c_tile_dim0 = Self._tma_tile_dims[2]
 
     # 3D tile layout types (batch=1, rows, cols)
     comptime ATileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.a_tile_dim1, Self.BK]
+        *_IntToComptimeInt[1, Self.a_tile_dim0, Self.BK]
     ]
     comptime ADescLayout = tma_desc_layout_3d[
-        Self.a_type, 1, Self.a_tile_dim1, Self.config.a_swizzle
+        Self.a_type, 1, Self.a_tile_dim0, Self.config.a_swizzle
     ]
     comptime BTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.b_tile_dim1, Self.BK]
+        *_IntToComptimeInt[1, Self.b_tile_dim0, Self.BK]
     ]
     comptime BDescLayout = tma_desc_layout_3d[
-        Self.b_type, 1, Self.b_tile_dim1, Self.config.b_swizzle
+        Self.b_type, 1, Self.b_tile_dim0, Self.config.b_swizzle
     ]
     # C tile shape: when AB_swapped, last dim is swizzle elems
-    comptime c_tile_dim2 = Self.OutputN if not Self.config.AB_swapped else Self.c_swizzle_elems
+    comptime c_tile_dim1 = Self.OutputN if not Self.config.AB_swapped else Self.c_swizzle_elems
     comptime CTileLayout = RowMajorLayout[
-        *_IntToComptimeInt[1, Self.c_tile_dim1, Self.c_tile_dim2]
+        *_IntToComptimeInt[1, Self.c_tile_dim0, Self.c_tile_dim1]
     ]
     comptime CDescLayout = tma_desc_layout_3d[
-        Self.c_type, 1, Self.c_tile_dim1, Self.config.c_swizzle
+        Self.c_type, 1, Self.c_tile_dim0, Self.config.c_swizzle
     ]
 
     # 5D scale factor layout types (SWIZZLE_NONE)
@@ -364,10 +388,10 @@ struct BlackwellBlockScaledMatmulKernel[
     comptime SFBTmaOp = Self.SFBTmaTile.InnerType
 
     # TMA load size constants (from desc layout dimensions)
-    comptime a_tma_load_size = Self.a_tile_dim1 * Self.a_swizzle_elems
-    comptime b_tma_load_size = Self.b_tile_dim1 * Self.b_swizzle_elems
-    comptime a_tma_rows = Self.a_tile_dim1
-    comptime b_tma_rows = Self.b_tile_dim1
+    comptime a_tma_load_size = Self.a_tile_dim0 * Self.a_swizzle_elems
+    comptime b_tma_load_size = Self.b_tile_dim0 * Self.b_swizzle_elems
+    comptime a_tma_rows = Self.a_tile_dim0
+    comptime b_tma_rows = Self.b_tile_dim0
 
     # ========== Shared Memory Type ==========
     # Uses BlockScaledSmem with typed accessors (same pattern as B200MatmulSmem)
@@ -429,23 +453,23 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        # A tile dimensions (BM x BK)
-        Self.SmemType.BM,
-        Self.SmemType.BK,
-        # B tile dimensions (BN x BK)
-        Self.SmemType.BN,
-        Self.SmemType.BK,
-        # SFA tile dimensions
-        Self.SmemType.SFA_DIM0,
-        Self.SmemType.SFA_DIM1,
-        # SFB tile dimensions
-        Self.SmemType.SFB_DIM0,
-        Self.SmemType.SFB_DIM1,
-        Self.SmemType.num_pipeline_stages,
+        IndexList[2](
+            Self.SmemType.Core.BM, Self.SmemType.Core.BK
+        ),  # A tile shape
+        IndexList[2](
+            Self.SmemType.Core.BN, Self.SmemType.Core.BK
+        ),  # B tile shape
+        IndexList[2](
+            Self.SmemType.Core.SFA_DIM0, Self.SmemType.Core.SFA_DIM1
+        ),  # SFA shape
+        IndexList[2](
+            Self.SmemType.Core.SFB_DIM0, Self.SmemType.Core.SFB_DIM1
+        ),  # SFB shape
+        Self.SmemType.Core.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
         Self.TilePayload,
-        Self.SmemType.num_group_pipeline_stages,
+        Self.SmemType.Core.num_group_pipeline_stages,
         Self.config.k_group_size,
     ]
 
@@ -460,13 +484,9 @@ struct BlackwellBlockScaledMatmulKernel[
     ]
 
     # ========== TMEM and Output Pipeline Types ==========
-    comptime Tmem = TmemAllocation[Self.cta_group]
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # ========== Warp Context Types ==========
     # MMA-Epilogue handoff barrier (barrier_id=1)
@@ -476,18 +496,14 @@ struct BlackwellBlockScaledMatmulKernel[
 
     # MMA warp context (TMEM + dealloc + OutputPipeline)
     comptime MmaCtx = MmaWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     # Epilogue warp context
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
@@ -499,14 +515,12 @@ struct BlackwellBlockScaledMatmulKernel[
         accum_type = Self.accum_type,
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
+        opc = Self.opc,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
-        c_smem_dim0 = Self.SmemType.OutputM,
-        c_smem_dim1 = Self.SmemType.OutputN,
+        c_smem_dim0 = Self.SmemType.Core.OutputM,
+        c_smem_dim1 = Self.SmemType.Core.OutputN,
         num_output_stages = Self.config.num_output_stages,
-        stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
         batched=True,  # Block-scaled uses 3D batched coordinates
     ]
@@ -523,10 +537,10 @@ struct BlackwellBlockScaledMatmulKernel[
         b_tma_op: Self.BTmaOp,
         sfa_tma_op: Self.SFATmaOp,
         sfb_tma_op: Self.SFBTmaOp,
-        tiles: InputProducerStage[
+        tiles: ProducerTiles[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -536,7 +550,7 @@ struct BlackwellBlockScaledMatmulKernel[
         iter_idx: UInt32,
         elect_one_cta: Bool,
     ):
-        """Load A, B, SFA, SFB tiles using TMA with InputProducerStage.
+        """Load A, B, SFA, SFB tiles using TMA with ProducerTiles.
 
         This method uses the structured ProducerStage pattern from
         matmul_kernels.mojo, with tiles and barrier encapsulated in the stage.
@@ -554,20 +568,20 @@ struct BlackwellBlockScaledMatmulKernel[
             iter_idx: K iteration index (base index for k_group).
             elect_one_cta: True if this CTA should call expect_bytes.
         """
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # Global memory coordinates
-        var a_gmem_m_coord = peer_m_rank * UInt(
-            Self.a_tma_rows
-        ) + work_tile_coord[0] * UInt(Self.BM)
-        var b_gmem_n_coord = (
-            peer_rank_m * UInt(Self.b_tma_rows)
-            + peer_rank_n * UInt(Self.BN)
-            + work_tile_coord[1] * UInt(Self.MMA_N)
+        var a_gmem_m_coord = (
+            peer_m_rank * Self.a_tma_rows + Int(work_tile_coord[0]) * Self.BM
         )
-        var batch_coord = work_tile_coord[2]
+        var b_gmem_n_coord = (
+            peer_rank_m * Self.b_tma_rows
+            + peer_rank_n * Self.BN
+            + Int(work_tile_coord[1]) * Self.MMA_N
+        )
+        var batch_coord = Int(work_tile_coord[2])
 
         if elect_one_sync():
             # Set expected bytes ONCE for all k_group tiles
@@ -589,15 +603,15 @@ struct BlackwellBlockScaledMatmulKernel[
 
                 # Peer CTA slice using TileTensor pattern (ptr + layout)
                 var a_peer_tile = type_of(a_tile)(
-                    a_tile.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tile.ptr + peer_m_rank * Self.a_tma_load_size,
                     a_tile.layout,
                 )
                 var b_peer_tile = type_of(b_tile)(
-                    b_tile.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tile.ptr + peer_rank_m * Self.b_tma_load_size,
                     b_tile.layout,
                 )
 
-                var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
+                var k_coord = Int(iter_idx + j) * Self.BK
 
                 # Load A and B with multicast - TileTensor directly to TMA
                 a_tma_op.async_multicast_load_3d[Self.cta_group](
@@ -625,7 +639,7 @@ struct BlackwellBlockScaledMatmulKernel[
                             (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
                         ),
                         Int(work_tile_coord[0]) * (Self.BM // SF_MN_GROUP_SIZE),
-                        Int(batch_coord),
+                        batch_coord,
                     ),
                 )
                 sfb_tma_op.async_copy_5d[Self.cta_group](
@@ -639,7 +653,7 @@ struct BlackwellBlockScaledMatmulKernel[
                         ),
                         Int(work_tile_coord[1])
                         * (Self.MMA_N // SF_MN_GROUP_SIZE),
-                        Int(batch_coord),
+                        batch_coord,
                     ),
                 )
 
@@ -651,10 +665,10 @@ struct BlackwellBlockScaledMatmulKernel[
         tiles_origin: MutOrigin,
         //,
     ](
-        tiles: InputConsumerStage[
+        tiles: ConsumerTiles[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         mma_op: Self.MmaOp,
@@ -664,7 +678,7 @@ struct BlackwellBlockScaledMatmulKernel[
         iter_idx: UInt32,
         k_start: UInt32,
     ):
-        """Execute MMA operations using InputConsumerStage.
+        """Execute MMA operations using ConsumerTiles.
 
         This method uses the structured ConsumerStage pattern from
         matmul_kernels.mojo, with tiles and barrier encapsulated in the stage.
@@ -723,7 +737,7 @@ struct BlackwellBlockScaledMatmulKernel[
     @staticmethod
     @always_inline
     fn epilogue(
-        c_tiles: Self.SmemType.CTileArray,
+        c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
         stage: Self.TileWriterType.Stage,
         work_tile_coord: Tuple[UInt32, UInt32, UInt32],
@@ -766,19 +780,76 @@ struct BlackwellBlockScaledMatmulKernel[
     @staticmethod
     fn validate_config():
         """Validate configuration constraints at compile time."""
-        constrained[Self.transpose_b, "Only support transposed B"]()
-        constrained[
-            Self.sfa_dtype == Self.sfb_dtype,
-            "sfa_dtype and sfb_dtype must match",
-        ]()
-        constrained[
-            Self.cta_group in (1, 2),
-            "Only support cta_group == 1 or 2",
-        ]()
-        constrained[
-            Self.config.k_group_size == 1,
-            "Only support k_group_size == 1 for block-scaled",
-        ]()
+        comptime assert Self.transpose_b, "Only support transposed B"
+        comptime assert (
+            Self.sfa_dtype == Self.sfb_dtype
+        ), "sfa_dtype and sfb_dtype must match"
+        comptime assert Self.cta_group in (
+            1,
+            2,
+        ), "Only support cta_group == 1 or 2"
+        comptime assert (
+            Self.config.k_group_size == 1
+        ), "Only support k_group_size == 1 for block-scaled"
+
+    # ========== Static Helper Methods ==========
+
+    @staticmethod
+    @always_inline
+    fn init_barriers(
+        ctx: Self.Context,
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_op: Self.CTmaOp,
+        sfa_tma_op: Self.SFATmaOp,
+        sfb_tma_op: Self.SFBTmaOp,
+        input_barriers: Self.SmemType.Pipelines.InputBarriers,
+        accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
+        clc_throttle: Self.SmemType.Pipelines.ClcThrottleBarriers,
+        clc_full: Self.SmemType.Pipelines.ClcBarriers,
+        clc_empty: Self.SmemType.Pipelines.ClcBarriers,
+        tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
+    ):
+        """Initialize barriers and prefetch TMA descriptors."""
+        if ctx.elect_one_warp and ctx.elect_one_thread:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+            c_tma_op.prefetch_descriptor()
+            sfa_tma_op.prefetch_descriptor()
+            sfb_tma_op.prefetch_descriptor()
+
+            init_core_barriers[
+                Self.num_group_pipeline_stages,
+                Self.num_accum_pipeline_stages,
+            ](
+                input_barriers.ptr,
+                Int32(
+                    compute_input_consumer_count[
+                        Self.CLUSTER_M, Self.CLUSTER_N, Self.cta_group
+                    ]()
+                ),
+                accum_barriers.ptr,
+                Int32(Self.accum_pipeline_producer_arv_count),
+                Int32(Self.accum_pipeline_consumer_arv_count),
+                tmem_dealloc.ptr,
+                Int32(Self.EPILOGUE_THREADS * Self.cta_group),
+            )
+
+            Self.Scheduler.init_throttle_barriers(
+                clc_throttle.ptr,
+                Int32(Self.clc_throttle_producer_arv_count),
+                Int32(Self.clc_throttle_consumer_arv_count),
+            )
+
+            init_clc_barriers[Self.num_clc_pipeline_stages](
+                clc_full.ptr,
+                clc_empty.ptr,
+                Int32(Self.clc_producer_arv_count),
+                Int32(Self.clc_consumer_arv_count),
+            )
+
+        fence_mbarrier_init()
+        cluster_sync()
 
     # ========== Kernel Entry Point ==========
 
@@ -844,48 +915,20 @@ struct BlackwellBlockScaledMatmulKernel[
         var ctx = Self.Context(tmem_addr_storage)
 
         # ===== Barrier Initialization =====
-        if ctx.elect_one_warp and ctx.elect_one_thread:
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-            c_tma_op.prefetch_descriptor()
-            sfa_tma_op.prefetch_descriptor()
-            sfb_tma_op.prefetch_descriptor()
-
-            # Initialize input pipeline barriers
-            Self.InputTilePipeline.init_barriers(
-                input_barriers.ptr,
-                Int32(1),
-                Int32(
-                    Self.config.cluster_shape[0] // Self.cta_group
-                    + Self.config.cluster_shape[1]
-                    - 1
-                ),
-            )
-            # Initialize output pipeline barriers (using static method)
-            Self.OutputPipeline.init_barriers(
-                accum_barriers.ptr,
-                Self.accum_pipeline_producer_arv_count,
-                Int32(Self.accum_pipeline_consumer_arv_count),
-            )
-            # Initialize throttle barriers via scheduler
-            Self.Scheduler.init_throttle_barriers(
-                clc_throttle.ptr,
-                Int32(Self.clc_throttle_producer_arv_count),
-                Int32(Self.clc_throttle_consumer_arv_count),
-            )
-
-            # Initialize TMEM deallocation barrier
-            smem.pipelines.tmem_dealloc().ptr[].init(
-                Int32(Self.EPILOGUE_THREADS * Self.cta_group)
-            )
-
-            # Initialize CLC barriers
-            comptime for i in range(Self.num_clc_pipeline_stages):
-                clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
-
-        fence_mbarrier_init()
-        cluster_sync()
+        Self.init_barriers(
+            ctx,
+            a_tma_op,
+            b_tma_op,
+            c_tma_op,
+            sfa_tma_op,
+            sfb_tma_op,
+            input_barriers,
+            accum_barriers,
+            clc_throttle,
+            clc_full,
+            clc_empty,
+            smem.pipelines.tmem_dealloc(),
+        )
 
         var mma_op = Self.MmaOp()
 
@@ -971,7 +1014,7 @@ struct BlackwellBlockScaledMatmulKernel[
                 var mma_ctx = Self.MmaCtx(
                     tmem,
                     Self.OutputPipeline(
-                        accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                        accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                     ),
                     Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
                 )
@@ -1022,7 +1065,7 @@ struct BlackwellBlockScaledMatmulKernel[
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
                 Self.OutputPipeline(
-                    accum_barriers, tmem, UInt16(ctx.mma_complete_mask)
+                    accum_barriers.ptr, tmem, UInt16(ctx.mma_complete_mask)
                 ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )

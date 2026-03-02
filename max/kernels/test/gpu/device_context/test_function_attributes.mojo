@@ -20,7 +20,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
-def test_function_attributes():
+def test_function_attributes() raises:
     fn kernel(x: UnsafePointer[Int]):
         x[0] = Int(thread_idx.x)
 
@@ -29,5 +29,5 @@ def test_function_attributes():
         assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
 
 
-def main():
+def main() raises:
     test_function_attributes()

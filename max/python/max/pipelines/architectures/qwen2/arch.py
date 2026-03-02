@@ -19,19 +19,19 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3_legacy import weight_adapters
+from ..llama3 import weight_adapters
 from .model import Qwen2Model
 from .model_config import Qwen2Config
 
 qwen2_arch = SupportedArchitecture(
-    name="Qwen2ForCausalLM_Legacy",
+    name="Qwen2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["Qwen/Qwen2.5-7B-Instruct", "Qwen/QwQ-32B"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=Qwen2Model,
     tokenizer=TextTokenizer,

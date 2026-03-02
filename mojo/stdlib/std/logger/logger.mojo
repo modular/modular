@@ -25,7 +25,7 @@ The main components are:
 Example:
 
 ```mojo
-from logger import Logger
+from std.logger import Logger
 
 var logger = Logger()  # Uses default level from LOGGING_LEVEL env var
 logger.info("Starting process")
@@ -37,13 +37,13 @@ The logger can be configured to write to different file descriptors (default
 stdout). Messages below the configured level will be silently ignored.
 """
 
-import sys
-from format._utils import _WriteBufferStack
-from os import abort
-from sys.param_env import env_get_string
-from utils._ansi import Text, Color
+import std.sys
+from std.format._utils import _WriteBufferStack
+from std.os import abort
+from std.sys.param_env import env_get_string
+from std.utils._ansi import Text, Color
 
-from reflection import call_location, SourceLocation
+from std.reflection import call_location, SourceLocation
 
 # ===-----------------------------------------------------------------------===#
 # DEFAULT_LEVEL
@@ -63,7 +63,6 @@ comptime DEFAULT_LEVEL = Level._from_str(
 struct Level(
     Comparable,
     ImplicitlyCopyable,
-    Stringable,
     Writable,
 ):
     """Represents logging severity levels.
@@ -188,6 +187,7 @@ struct Level(
         elif self == Self.CRITICAL:
             writer.write("CRITICAL")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of this level.
@@ -198,6 +198,7 @@ struct Level(
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns the detailed string representation of this level.
@@ -206,7 +207,7 @@ struct Level(
             String: A string representation including the type name and level
                 value (e.g., "Level.DEBUG").
         """
-        return String("Level.", self)
+        return t"Level.{self}"
 
 
 # ===-----------------------------------------------------------------------===#

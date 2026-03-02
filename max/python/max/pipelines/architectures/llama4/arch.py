@@ -17,17 +17,14 @@ from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 
 # TODO(bduke): Replace with actual Llama4 model once implemented.
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from . import weight_adapters
 from .model import Llama4Model
 from .model_config import Llama4Config
 
 llama4_arch = SupportedArchitecture(
-    name="Llama4ForConditionalGeneration_Legacy",
+    name="Llama4ForConditionalGeneration",
     example_repo_ids=[
         "meta-llama/Llama-4-Scout-17B-16E-Instruct",
         "meta-llama/Llama-4-Scout-17B-16E",
@@ -36,7 +33,7 @@ llama4_arch = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     pipeline_model=Llama4Model,
     task=PipelineTask.TEXT_GENERATION,

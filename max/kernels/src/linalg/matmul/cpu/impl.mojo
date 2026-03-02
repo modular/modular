@@ -290,7 +290,7 @@ struct TiledMatmul[
         comptime if Self.kernel_id == InnerKernelID.I8MM:
             tile[
                 row_iteration,
-                VariadicList[Int](2 * Self.config.kernel_rows, 8, 6, 4, 2, 1),
+                [2 * Self.config.kernel_rows, 8, 6, 4, 2, 1],
             ](
                 0,  # starting row offset
                 knm_bounds.M,  # row bound
@@ -298,7 +298,7 @@ struct TiledMatmul[
         else:
             tile[
                 row_iteration,
-                VariadicList[Int](Self.config.kernel_rows, 4, 3, 2, 1),
+                [Self.config.kernel_rows, 4, 3, 2, 1],
             ](0, knm_bounds.M)
 
     # Iterate on the N dimension of the gemm space.
@@ -333,24 +333,23 @@ struct TiledMatmul[
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
         comptime if not Self.b_packed:
-            comptime secondary_tiles = VariadicList[Int](
+            comptime secondary_tiles = [
                 Self.config.kernel_cols,
                 2 * Self.config.simd_size,
                 Self.config.simd_size,
-            )
-            var primary_tiles = VariadicList[Int](
-                tile_n, 2 * Self.config.simd_size, Self.config.simd_size
-            )
+            ]
             tile[secondary_tiles, Self.config.simd_size, m_loop](
-                0, valid_col_count, primary_tiles, Self.config.simd_size
+                0,
+                valid_col_count,
+                tile_n,
+                2 * Self.config.simd_size,
+                Self.config.simd_size,
+                primary_cleanup_tile=Self.config.simd_size,
             )
         else:
-            comptime secondary_tiles_packed_b = VariadicList[Int](
-                Self.config.kernel_cols
-            )
-            var primary_tiles_packed_b = VariadicList[Int](tile_n)
+            comptime secondary_tiles_packed_b = [Self.config.kernel_cols]
             tile[secondary_tiles_packed_b, Self.config.kernel_cols, m_loop](
-                0, valid_col_count, primary_tiles_packed_b, tile_n
+                0, valid_col_count, tile_n, primary_cleanup_tile=tile_n
             )
 
     # Iterate over the K dimension of the gemm space.
@@ -388,7 +387,11 @@ struct TiledMatmul[
         tile_k: Int,
         n_inner_size: Int,
     ) -> NDBuffer[
-        Self.b_type, 3, b_packed_ptr.origin, Self.config.packed_shape
+        Self.b_type,
+        3,
+        b_packed_ptr.origin,
+        Self.config.packed_shape,
+        address_space = b_packed_ptr.address_space,
     ]:
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
@@ -400,7 +403,13 @@ struct TiledMatmul[
             n_inner_size: Inner dimension size to use for the packed data
                 layout.
         """
-        return NDBuffer[Self.b_type, 3, _, Self.config.packed_shape](
+        return NDBuffer[
+            Self.b_type,
+            3,
+            b_packed_ptr.origin,
+            Self.config.packed_shape,
+            address_space = b_packed_ptr.address_space,
+        ](
             b_packed_ptr,
             DimList(tile_n // n_inner_size, tile_k, n_inner_size),
         )
@@ -508,8 +517,8 @@ fn _matmul_cpu_impl[
 ](
     alg: algorithm,
     c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    a: NDBuffer[mut=False, _, 2, _, _],
+    b: NDBuffer[mut=False, _, 2, _, _],
     num_threads: Int = -1,
 ) raises:
     comptime if (
@@ -529,19 +538,12 @@ fn _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = NDBuffer[c.type, 1](c.data, c.dim[0]())
+        var out = NDBuffer[c.type, 1, c.origin](c.data, c.dim[0]())
         var lhs = a
-        var rhs = NDBuffer[b.type, 1](b.data, b.dim[0]())
-        gemv[
-            c_size = out.shape.at[0](),
-            c_type = out.type,
-            a_shape = lhs.shape,
-            a_type = lhs.type,
-            b_size = rhs.shape.at[0](),
-            b_type = rhs.type,
-            parallelize=True,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](out, lhs, rhs)
+        var rhs = NDBuffer[b.type, 1, b.origin](b.data, b.dim[0]())
+        gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
+            out, lhs, rhs
+        )
     else:
         # SGEMM calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
         # directed to the special Apple-specific implementations.
@@ -675,8 +677,8 @@ fn matmul[
     single_thread_blocking_override: Bool = False,
 ](
     c: NDBuffer[mut=True, _, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    a: NDBuffer[mut=False, _, 2, _, _],
+    b: NDBuffer[mut=False, _, 2, _, _],
     kernel_type_m: Int,
     num_threads: Int = -1,
 ) raises:

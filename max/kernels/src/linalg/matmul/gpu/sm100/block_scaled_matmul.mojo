@@ -309,15 +309,15 @@ fn load_AB_SFA_SFB[
 
     var stage = load_mma_pipeline.producer_stage()
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
-    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-        a_tma_rows
-    ) + work_tile_coord[0] * UInt(BM)
-    var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1] * UInt(MMA_N)
+    var a_gmem_slice_coord = (
+        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
     )
-    var batch_coord = work_tile_coord[2]
+    var b_gmem_slice_coord = (
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1]) * MMA_N
+    )
+    var batch_coord = Int(work_tile_coord[2])
 
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
@@ -345,9 +345,9 @@ fn load_AB_SFA_SFB[
                 a_smem_slice,
                 tma_mbar[0],
                 (
-                    UInt(iter_idx + j) * UInt(BK),
-                    UInt(a_gmem_slice_coord),
-                    UInt(batch_coord),
+                    Int(iter_idx + j) * BK,
+                    a_gmem_slice_coord,
+                    batch_coord,
                 ),
                 a_multicast_mask,
             )
@@ -356,9 +356,9 @@ fn load_AB_SFA_SFB[
                 b_smem_slice,
                 tma_mbar[0],
                 (
-                    UInt(iter_idx + j) * UInt(BK),
-                    UInt(b_gmem_slice_coord),
-                    UInt(batch_coord),
+                    Int(iter_idx + j) * BK,
+                    b_gmem_slice_coord,
+                    batch_coord,
                 ),
                 b_multicast_mask,
             )
@@ -370,7 +370,7 @@ fn load_AB_SFA_SFB[
                     0,
                     Int(iter_idx + j) * num_sf_k_tiles,
                     Int(work_tile_coord[0]) * (BM // SF_MN_GROUP_SIZE),
-                    Int(batch_coord),
+                    batch_coord,
                 ),
             )
 
@@ -382,7 +382,7 @@ fn load_AB_SFA_SFB[
                     0,
                     Int(iter_idx + j) * num_sf_k_tiles,
                     (Int(work_tile_coord[1]) * MMA_N) // SF_MN_GROUP_SIZE,
-                    Int(batch_coord),
+                    batch_coord,
                 ),
             )
 
@@ -552,7 +552,7 @@ fn multi_stage_store_C[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     # TODO (GEX-2630): This is a temporary workaround to support float32 compute epilogue for FP8 models for which we use compute lambda for dequantization.
     # We should remove this once GEX-2630 is fixed.
@@ -1725,8 +1725,8 @@ fn _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_tensor: LayoutTensor[c_type, c_layout, ...],
     a_tensor: LayoutTensor[a_type, a_layout, ...],
     b_tensor: LayoutTensor[b_type, b_layout, ...],
-    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
-    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
+    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
+    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:
@@ -2105,8 +2105,8 @@ fn blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     c_tensor: LayoutTensor[c_type, c_layout, ...],
     a_tensor: LayoutTensor[a_type, a_layout, ...],
     b_tensor: LayoutTensor[b_type, b_layout, ...],
-    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, MutAnyOrigin],
-    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, MutAnyOrigin],
+    a_scales_tensor: LayoutTensor[sfa_dtype, sfa_layout, ImmutAnyOrigin],
+    b_scales_tensor: LayoutTensor[sfb_dtype, sfb_layout, ImmutAnyOrigin],
     ctx: DeviceContext,
     alpha: Float32 = 1.0,
 ) raises:

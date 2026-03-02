@@ -13,12 +13,12 @@
 
 """Implement UTF-8 utils."""
 
-from base64._b64encode import _sub_with_saturation
-from sys import is_compile_time, simd_width_of
-from sys.intrinsics import likely
+from std.base64._b64encode import _sub_with_saturation
+from std.sys import is_compile_time, simd_width_of
+from std.sys.intrinsics import likely
 
-from bit import count_leading_zeros
-from memory import Span
+from std.bit import count_leading_zeros
+from std.memory import Span
 
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8
@@ -287,7 +287,9 @@ fn _is_utf8_start_byte(w: Byte) -> Bool:
 
 @always_inline
 fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
-    return Int(span.count[func=_is_utf8_continuation_byte]())
+    return Int(
+        span.count[_is_utf8_continuation_byte](_is_utf8_continuation_byte)
+    )
 
 
 @always_inline

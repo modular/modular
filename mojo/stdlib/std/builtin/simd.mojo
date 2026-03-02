@@ -40,13 +40,13 @@ components, including tensor operations, linear algebra routines, and
 domain-specific libraries for machine learning and scientific computing.
 """
 
-import math
-from collections import InlineArray
-from collections.string.string import _calc_initial_buffer_size
-from hashlib.hasher import Hasher
-from math import Ceilable, CeilDivable, Floorable, Truncable
-from math.math import _call_ptx_intrinsic, trunc
-from sys import (
+import std.math
+from std.collections import InlineArray
+from std.collections.string.string import _calc_initial_buffer_size
+from std.hashlib.hasher import Hasher
+from std.math import Ceilable, CeilDivable, Floorable, Truncable
+from std.math.math import _call_ptx_intrinsic, trunc
+from std.sys import (
     CompilationTarget,
     _RegisterPackType,
     align_of,
@@ -61,35 +61,35 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys._assembly import inlined_assembly
-from sys.info import (
+from std.sys._assembly import inlined_assembly
+from std.sys.info import (
     _cdna_4_or_newer,
     _is_amd_mi300x,
     _is_sm_9x_or_newer,
     _is_sm_100x_or_newer,
 )
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
-from bit import bit_width, byte_swap, pop_count
-from builtin._format_float import _write_float
-from builtin.device_passable import DevicePassable
-from builtin.format_int import _write_int
-from math import DivModable, Powable
-from documentation import doc_private
-from memory import bitcast, memcpy, pack_bits
-from python import ConvertibleToPython, Python, PythonObject
+from std.bit import bit_width, byte_swap, pop_count
+from std.builtin._format_float import _write_float
+from std.builtin.device_passable import DevicePassable
+from std.builtin.format_int import _write_int
+from std.math import DivModable, Powable
+from std.documentation import doc_private
+from std.memory import bitcast, memcpy, pack_bits
+from std.python import ConvertibleToPython, Python, PythonObject
 
-from utils import IndexList, StaticTuple
-from utils._visualizers import lldb_formatter_wrapping_type
-from utils.numerics import FPUtils
-from utils.numerics import inf as _inf
-from utils.numerics import isinf as _isinf
-from utils.numerics import isnan as _isnan
-from utils.numerics import max_finite as _max_finite
-from utils.numerics import max_or_inf as _max_or_inf
-from utils.numerics import min_finite as _min_finite
-from utils.numerics import min_or_neg_inf as _min_or_neg_inf
-from utils.numerics import nan as _nan
+from std.utils import IndexList, StaticTuple
+from std.utils._visualizers import lldb_formatter_wrapping_type
+from std.utils.numerics import FPUtils
+from std.utils.numerics import inf as _inf
+from std.utils.numerics import isinf as _isinf
+from std.utils.numerics import isnan as _isnan
+from std.utils.numerics import max_finite as _max_finite
+from std.utils.numerics import max_or_inf as _max_or_inf
+from std.utils.numerics import min_finite as _min_finite
+from std.utils.numerics import min_or_neg_inf as _min_or_neg_inf
+from std.utils.numerics import nan as _nan
 
 from .dtype import (
     _integral_type_of,
@@ -240,8 +240,8 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
       dtype: The data type of SIMD vector elements.
       size: The number of elements in the SIMD vector. The size must not be greater than 2**15.
     """
-    constrained[dtype != DType.invalid, "simd type cannot be DType.invalid"]()
-    constrained[size.is_power_of_two(), "simd width must be power of 2"]()
+    comptime assert dtype != DType.invalid, "simd type cannot be DType.invalid"
+    comptime assert size.is_power_of_two(), "simd width must be power of 2"
     # MOCO-1388: Until LLVM's issue #122571 is fixed, LLVM's SelectionDAG has
     # a limit of 2^15 for the number of operands of the instruction.
     # NOTE: Even after the limit increases in LLVM, compile time might be 3x
@@ -249,9 +249,9 @@ fn _simd_construction_checks[dtype: DType, size: Int]():
     # SIMD, we better to keep limit at 2^15.
     # NOTE: Might need to revisit the limit for targets that use GlobalISel
     # as it does have smaller limit now.
-    constrained[
-        size <= 2**15, "simd size is too large and must be less than 2^15"
-    ]()
+    comptime assert (
+        size <= 2**15
+    ), "simd size is too large and must be less than 2^15"
 
 
 @always_inline("nodebug")
@@ -381,10 +381,8 @@ struct SIMD[dtype: DType, size: Int](
     Indexer,
     Intable,
     Powable,
-    Representable,
     Roundable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Truncable,
     Writable,
@@ -558,7 +556,7 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             This type's name.
         """
-        return String("SIMD[", repr(Self.dtype), ", ", repr(Self.size), "]")
+        return t"SIMD[{repr(Self.dtype)}, {repr(Self.size)}]"
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -1285,13 +1283,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is greater than `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Strict inequality is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.gt(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Strict inequality is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.gt(...)`?"
+        )
         return self.gt(rhs).__bool__()
 
     @always_inline("builtin")
@@ -1304,13 +1299,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is greater than or equal to `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Greater than or equal is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.ge(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Greater than or equal is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.ge(...)`?"
+        )
         return self.ge(rhs).__bool__()
 
     @always_inline("builtin")
@@ -1323,13 +1315,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is less than `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Strict inequality is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.lt(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Strict inequality is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.lt(...)`?"
+        )
         return self.lt(rhs).__bool__()
 
     @always_inline("builtin")
@@ -1342,13 +1331,10 @@ struct SIMD[dtype: DType, size: Int](
         Returns:
             True if `self` is less than or equal to `rhs`, False otherwise.
         """
-        constrained[
-            Self.size == 1,
-            (
-                "Less than or equal is only defined for `Scalar`s; "
-                "did you mean to use `SIMD.le(...)`?"
-            ),
-        ]()
+        comptime assert Self.size == 1, (
+            "Less than or equal is only defined for `Scalar`s; "
+            "did you mean to use `SIMD.le(...)`?"
+        )
         return self.le(rhs).__bool__()
 
     # ===------------------------------------------------------------------=== #
@@ -1886,6 +1872,7 @@ struct SIMD[dtype: DType, size: Int](
         comptime assert Self.size == 1, "expected a scalar type"
         return self._refine[new_size=1]().cast[DType.float64]()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the SIMD as a string.
@@ -1896,6 +1883,7 @@ struct SIMD[dtype: DType, size: Int](
 
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Get the representation of the SIMD value e.g. "SIMD[DType.int8, 2](1, 2)".
@@ -2156,7 +2144,7 @@ struct SIMD[dtype: DType, size: Int](
         ](self._mlir_value)
         return SIMD(mlir_value=res)
 
-    @always_inline
+    @always_inline("builtin")
     fn is_power_of_two(self) -> SIMD[DType.bool, Self.size]:
         """Checks if the input value is a power of 2 for each element of a SIMD vector.
 
@@ -2169,10 +2157,7 @@ struct SIMD[dtype: DType, size: Int](
         """
         comptime assert Self.dtype.is_integral(), "must be integral"
 
-        comptime if Self.dtype.is_unsigned():
-            return pop_count(self).eq(1)
-        else:
-            return self.gt(0) & (self & (self - 1)).eq(0)
+        return self.gt(0) & (self & (self - 1)).eq(0)
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
@@ -3243,7 +3228,6 @@ fn _pshuf_or_tbl1(lookup_table: U8x16, indices: U8x16) -> U8x16:
     else:
         # TODO: Change the error message when we allow SSE3
         comptime assert False, "To call _pshuf_or_tbl1() you need sse4 or neon."
-        return {}
 
 
 fn _pshuf(lookup_table: U8x16, indices: U8x16) -> U8x16:
@@ -3313,7 +3297,6 @@ fn _pow[
             result[i] = _powi(base[i], exp[i].cast[DType.int32]())
     else:
         comptime assert False, "unsupported type combination"
-        return {}
 
 
 @always_inline
@@ -4029,6 +4012,6 @@ fn _write_scalar[
     elif dtype.is_integral():
         _ = _write_int(writer, value)
     else:
-        constrained[
-            False, "unable to write dtype, only integral/float/bool supported"
-        ]()
+        comptime assert (
+            False
+        ), "unable to write dtype, only integral/float/bool supported"

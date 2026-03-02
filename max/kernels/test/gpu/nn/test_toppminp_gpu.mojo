@@ -22,10 +22,8 @@ from benchmark import Bench, Bencher, BenchId
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout._coord import Idx
+from layout import Idx, Layout, LayoutTensor, RuntimeLayout, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.softmax import softmax
 from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from testing import assert_almost_equal, assert_equal
@@ -476,7 +474,7 @@ fn test_all_types[
     test_all_out_idx_types[DType.bfloat16, fill_fn](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("\n====== Testing Fill Iota ======\n")
         test_all_types[fill_iota](ctx)

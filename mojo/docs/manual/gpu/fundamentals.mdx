@@ -52,11 +52,10 @@ These functions are useful for conditional compilation or execution depending on
 whether a supported GPU is available.
 
 ```mojo title="detect_gpu.mojo"
-from sys import has_accelerator
+from std.sys import has_accelerator
 
-def main():
-    @parameter
-    if has_accelerator():
+def main() raises:
+    comptime if has_accelerator():
         print("GPU detected")
         # Enable GPU processing
     else:
@@ -69,11 +68,11 @@ def main():
 Mojo requires a [compatible GPU development
 environment](/max/faq/#gpu-requirements) to compile kernel functions, otherwise
 it raises a compile-time error. In this example, we're using the
-[`@parameter`](/mojo/manual/decorators/parameter) decorator to evaluate the
-`has_accelerator()` function at compile time and compile only the corresponding
-branch of the `if` statement. As a result, if you don't have a compatible GPU
-development environment, you'll see the following message when you run the
-program:
+[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+statement to evaluate the `has_accelerator()` function at compile time and
+compile only the corresponding branch of the `if` statement. As a result, if you
+don't have a compatible GPU development environment, you'll see the following
+message when you run the program:
 
 ```output
 No GPU detected
@@ -110,11 +109,11 @@ but all of the types, functions, and methods are discussed in more detail in
 later sections of this document.
 
 ```mojo title="scalar_add.mojo"
-from math import iota
-from sys import exit, has_accelerator
+from std.math import iota
+from std.sys import exit, has_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 
 comptime num_elements = 20
 
@@ -153,9 +152,8 @@ fn scalar_add(
         vector[idx] += scalar
 
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime for not has_accelerator():
         print("No GPUs detected")
         exit(0)
     else:
@@ -333,10 +331,10 @@ Here is a complete example showing a kernel function that simply prints the
 thread block index, thread index, and global index for each thread executed.
 
 ```mojo title="print_threads.mojo"
-from sys import exit, has_accelerator, has_apple_gpu_accelerator
+from std.sys import exit, has_accelerator, has_apple_gpu_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
 
 fn print_threads():
     """Print thread block and thread indices."""
@@ -361,9 +359,8 @@ fn print_threads():
         "]",
     )
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime for not has_accelerator():
         print("No compatible GPU found")
     elif has_apple_gpu_accelerator():
         print(
@@ -467,7 +464,7 @@ could perform a boundary check like this to ensure that it doesn't attempt to
 process out-of-bounds elements:
 
 ```mojo
-from gpu import global_idx
+from std.gpu import global_idx
 
 fn process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int):
     if global_idx.x < size:

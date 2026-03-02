@@ -29,10 +29,14 @@ from gpu import (
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200, H100
-from layout import IntTuple, Layout, LayoutTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    coord_to_index_list,
+)
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._coord import coord_to_index_list
-from layout._tile_tensor import TileTensor
 from logger import Logger
 from memory import LegacyUnsafePointer, bitcast
 
@@ -126,8 +130,8 @@ fn quantize_dynamic_scaled_fp8[
     group_size_or_per_token: Int,
     num_cols: Int,
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin],
-    scales: NDBuffer[mut=True, scales_dtype, 2, MutAnyOrigin],
+    scaled_output: NDBuffer[mut=True, out_dtype, 2, _],
+    scales: NDBuffer[mut=True, scales_dtype, 2, _],
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
@@ -279,8 +283,8 @@ fn batched_quantize_dynamic_scaled_fp8[
     group_size_or_per_token: Int,
     num_cols: Int,
 ](
-    scaled_output: NDBuffer[mut=True, out_dtype, 3, MutAnyOrigin],
-    scales: NDBuffer[mut=True, scales_dtype, 3, MutAnyOrigin],
+    scaled_output: NDBuffer[mut=True, out_dtype, 3, _],
+    scales: NDBuffer[mut=True, scales_dtype, 3, _],
     scale_ub: Float32,
     ctx: DeviceContext,
     num_rows: Int,
@@ -447,7 +451,7 @@ fn matmul_dynamic_scaled_fp8[
     comptime a_stride = DimList(
         dim[a.static_stride[0]], dim[a.static_stride[1]]
     )
-    var a_buf = NDBuffer[a_type, 2, _, a_shape, a_stride](
+    var a_buf = NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape, a_stride](
         a.ptr,
         rebind[IndexList[2]](coord_to_index_list(a.layout.shape_coord())),
         rebind[IndexList[2]](coord_to_index_list(a.layout.stride_coord())),
@@ -456,7 +460,7 @@ fn matmul_dynamic_scaled_fp8[
     comptime b_stride = DimList(
         dim[b.static_stride[0]], dim[b.static_stride[1]]
     )
-    var b_buf = NDBuffer[b_type, 2, _, b_shape, b_stride](
+    var b_buf = NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape, b_stride](
         b.ptr,
         rebind[IndexList[2]](coord_to_index_list(b.layout.shape_coord())),
         rebind[IndexList[2]](coord_to_index_list(b.layout.stride_coord())),
@@ -505,7 +509,7 @@ fn matmul_dynamic_scaled_fp8[
         transpose_b,
         target,
     ](
-        c_buf,
+        c_buf.make_dims_unknown(),
         a_buf,
         b_buf,
         a_scales_buf,
@@ -531,8 +535,8 @@ fn matmul_dynamic_scaled_fp8[
     target: StaticString = "cpu",
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     a_scales: NDBuffer[a_scales_type, 2, _, _, _],
     b_scales: NDBuffer[b_scales_type, 2, _, _, _],
     ctx: DeviceContext,
@@ -694,13 +698,12 @@ fn matmul_dynamic_scaled_fp8[
         ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
 
     else:
-        constrained[
-            False,
+        comptime assert False, (
             "Unsupported scaling mode: input_scale_granularity="
             + input_scale_granularity
             + ", weight_scale_granularity="
-            + weight_scale_granularity,
-        ]()
+            + weight_scale_granularity
+        )
 
 
 fn naive_blockwise_scaled_fp8_matmul[
@@ -1078,12 +1081,14 @@ fn naive_blockwise_scaled_fp8_grouped_matmul[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutAnyOrigin],
-    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[
+        expert_ids_type, expert_ids_layout, ImmutAnyOrigin
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1174,12 +1179,14 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, MutAnyOrigin],
-    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scale_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scale_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[
+        expert_ids_type, expert_ids_layout, ImmutAnyOrigin
+    ],
+    a_scales: LayoutTensor[a_scales_type, a_scale_layout, ImmutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scale_layout, ImmutAnyOrigin],
 ):
     comptime assert (
         accum_type == DType.float32
@@ -1232,22 +1239,22 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
         var b_expert_ptr = b.ptr + expert * N * K
         for k in range(K):
             var a_val = rebind[Scalar[a_type]](a_row_ptr[k]).cast[accum_type]()
-            var a_scale = rebind[Scalar[accum_type]](
+            var a_scale = rebind[Scalar[a_scales_type]](
                 a_scales[
                     k // Int(MAT_A_ROWS_SCALE_SIZE),
                     m_global // Int(MAT_A_COLS_SCALE_SIZE),
                 ]
-            )
+            ).cast[accum_type]()
             var b_val = rebind[Scalar[b_type]](b_expert_ptr[n * K + k]).cast[
                 accum_type
             ]()
-            var b_scale = rebind[Scalar[accum_type]](
+            var b_scale = rebind[Scalar[b_scales_type]](
                 b_scales[
                     UInt(expert),
                     n // Int(MAT_B_ROWS_SCALE_SIZE),
                     k // Int(MAT_B_COLS_SCALE_SIZE),
                 ]
-            )
+            ).cast[accum_type]()
             accum += a_val * b_val * a_scale * b_scale
 
     comptime if elementwise_lambda_fn:

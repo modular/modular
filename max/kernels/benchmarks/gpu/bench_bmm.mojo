@@ -22,7 +22,7 @@ from sys import (
 )
 from sys.info import has_amd_gpu_accelerator
 
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -375,7 +375,7 @@ fn create_bmm_bench[
     )
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var b = Int(arg_parse("B", 1))

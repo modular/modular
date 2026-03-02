@@ -42,7 +42,7 @@ fn test_kernel[
         print(block_idx.x, work_info)
 
 
-def test(ctx: DeviceContext):
+def test(ctx: DeviceContext) raises:
     comptime group_len = 3
     comptime offset_shape = DimList(group_len + 1)
 
@@ -149,6 +149,6 @@ def test(ctx: DeviceContext):
     _ = dev_group_offsets_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test(ctx)

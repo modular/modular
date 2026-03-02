@@ -121,9 +121,7 @@ fn matmul_sram(
 
         barrier()
 
-    tile_and_unswitch[update_tile](
-        0, K, VariadicList[Int](tile_size, K_remainder)
-    )
+    tile_and_unswitch[update_tile](0, K, tile_size, K_remainder)
 
     if row < UInt(M) and col < UInt(N):
         c[Index(row, col)] = result
@@ -206,6 +204,6 @@ fn run_matmul(ctx: DeviceContext) raises:
     _ = c_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_matmul(ctx)

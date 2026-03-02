@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the  Set datatype."""
 
-from format._utils import (
+from std.format._utils import (
     write_sequence_to,
     FormatStruct,
     Named,
     TypeNames,
     constrained_conforms_to_writable,
 )
-from hashlib import Hasher, default_hasher
+from std.hashlib import Hasher, default_hasher
 
 from .dict import Dict, KeyElement, _DictEntryIter, _DictKeyIter
-from builtin.constrained import _constrained_conforms_to
+from std.builtin.constrained import _constrained_conforms_to
 
 
 struct Set[T: KeyElement, H: Hasher = default_hasher](
@@ -32,9 +32,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     Hashable,
     Iterable,
     KeyElement,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A set data type.
@@ -42,7 +40,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     O(1) average-case amortized add, remove, and membership check.
 
     ```mojo
-    from collections import Set
+    from std.collections import Set
 
     var set = { 1, 2, 3 }
     print(len(set))  # 3
@@ -308,6 +306,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             hash_value ^= hash(e)
         hasher.update(hash_value)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns the string representation of the set.
@@ -319,6 +318,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         self.write_to(output)
         return output
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Returns the string representation of the set.

@@ -15,7 +15,7 @@ from my_complex import Complex
 from testing import *
 
 
-def test_init():
+def test_init() raises:
     re1 = -1.2
     im1 = 6.5
     c1 = Complex(re1, im1)
@@ -29,7 +29,7 @@ def test_init():
     assert_equal(im2, c2.im)
 
 
-def test_bool():
+def test_bool() raises:
     c1 = Complex(0.0, 0.0)
     c2 = Complex(1.0, 0.0)
     c3 = Complex(0.0, 1.0)
@@ -41,7 +41,7 @@ def test_bool():
     assert_true(c4)
 
 
-def test_str():
+def test_str() raises:
     re1 = 3.3
     im1 = 5.1
     str1 = "({} + {}i)".format(re1, im1)
@@ -63,7 +63,7 @@ def test_str():
     assert_equal(str2, out_str2)
 
 
-def test_indexing():
+def test_indexing() raises:
     re1 = -1.2
     im1 = 6.5
     c1 = Complex(re1, im1)
@@ -78,7 +78,7 @@ def test_indexing():
     assert_equal(im2, c1[1])
 
 
-def test_unary():
+def test_unary() raises:
     re1 = -1.2
     im1 = 6.5
     c1 = Complex(re1, im1)
@@ -103,7 +103,7 @@ def test_unary():
     assert_equal(-c2.im, c2_neg.im)
 
 
-def test_binary_complex():
+def test_binary_complex() raises:
     c1 = Complex(-1.2, 6.5)
     c2 = Complex(3.14159, -2.71828)
 
@@ -131,7 +131,7 @@ def test_binary_complex():
     assert_almost_equal(quot_im, quot.im, atol=0.000001)
 
 
-def test_binary_float():
+def test_binary_float() raises:
     c1 = Complex(-1.2, 6.5)
     f1 = 2.5
 
@@ -159,7 +159,7 @@ def test_binary_float():
     assert_almost_equal(quot_im, quot.im, atol=0.000001)
 
 
-def test_binary_rfloat():
+def test_binary_rfloat() raises:
     c1 = Complex(-1.2, 6.5)
     f1 = 2.5
 
@@ -187,7 +187,7 @@ def test_binary_rfloat():
     assert_almost_equal(quot_im, quot.im, atol=0.000001)
 
 
-def test_complex_inplace():
+def test_complex_inplace() raises:
     c1 = Complex(-1, -1)
     c1 += Complex(0.5, -0.5)
     assert_almost_equal(-0.5, c1.re, atol=0.000001)
@@ -229,7 +229,7 @@ def test_complex_inplace():
     assert_almost_equal(3.5, c1.im, atol=0.000001)
 
 
-def test_equality():
+def test_equality() raises:
     c1 = Complex(-1.2, 6.5)
     c2 = Complex(-1.2, 0.0)
     c3 = Complex(0.0, 6.5)
@@ -244,5 +244,5 @@ def test_equality():
     assert_false(c1 == c3)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

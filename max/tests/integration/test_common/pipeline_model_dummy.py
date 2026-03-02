@@ -29,7 +29,7 @@ from max.interfaces import (
     TextGenerationRequest,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -39,13 +39,12 @@ from max.pipelines import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
     SupportedArchitecture,
     TextContext,
     TextTokenizer,
     upper_bounded_default,
 )
-from max.pipelines.lib import KVCacheMixin
+from max.pipelines.lib import PipelineModelWithKVCache
 from max.pipelines.lib.interfaces import ArchConfigWithAttentionKVCache
 from transformers import AutoConfig
 
@@ -58,7 +57,7 @@ class DummyModelInputs(ModelInputs):
     input4: Buffer | None = None
 
 
-class DummyPipelineModel(PipelineModel, KVCacheMixin):
+class DummyPipelineModel(PipelineModelWithKVCache):
     """A pipeline model with setup, input preparation and execution methods."""
 
     def execute(
@@ -183,7 +182,6 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
             n_kv_heads=num_kv_heads,
             head_dim=head_dim,
             num_layers=cls._get_num_layers(huggingface_config),
-            cache_strategy=kv_cache_config.cache_strategy,
             enable_prefix_caching=kv_cache_config.enable_prefix_caching,
             enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
@@ -198,7 +196,8 @@ class DummyPipelineModel(PipelineModel, KVCacheMixin):
         session: InferenceSession,
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
-        kv_inputs = self.kv_params.get_symbolic_inputs()[0]
+        assert hasattr(self, "kv_params")
+        kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
         with Graph(
             "dummy",
             input_types=[
@@ -351,14 +350,14 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "gptq": ["paged"],
+        "gptq",
         # q4_k intentionally left out to test a valid SupportedEncoding but not
         # supported by the model (supported_encoding).
-        "q4_0": ["paged"],
-        "q6_k": ["paged"],
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
-        "float8_e4m3fn": ["paged"],
+        "q4_0",
+        "q6_k",
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=DummyTextTokenizer,
@@ -378,9 +377,9 @@ DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
     ],
     default_encoding="float32",
     supported_encodings={
-        "gptq": ["paged"],
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "gptq",
+        "float32",
+        "bfloat16",
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=DummyTextTokenizer,
@@ -410,7 +409,7 @@ DUMMY_GEMMA_ARCH = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     pipeline_model=DummyPipelineModel,
     tokenizer=DummyTextTokenizer,

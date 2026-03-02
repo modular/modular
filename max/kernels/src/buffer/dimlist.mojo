@@ -285,14 +285,20 @@ struct Dim(
 # ===-----------------------------------------------------------------------===#
 
 
-struct DimList(
-    Representable, Sized, Stringable, TrivialRegisterPassable, Writable
-):
+struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
     var value: VariadicList[Dim]
     """The underlying storage for the list of dimensions."""
+
+    fn __init__(out self, *, copy: Self):
+        """Creates a dimension list from the given list of values.
+
+        Args:
+            copy: The list to copy.
+        """
+        self.value = copy.value.copy()
 
     @always_inline("nodebug")
     @implicit
@@ -308,58 +314,7 @@ struct DimList(
         self.value = VariadicList[Dim](index(value))
 
     @always_inline("nodebug")
-    fn __init__[I: Indexer & Copyable](out self, values: Tuple[I]):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = VariadicList[Dim](index(values[0]))
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer & Copyable,
-        I1: Indexer & Copyable,
-    ](out self, values: Tuple[I0, I1]):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I0: A type that can be used as an Index.
-            I1: A type that can be used as an Index.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = VariadicList[Dim](index(values[0]), index(values[1]))
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer & Copyable,
-        I1: Indexer & Copyable,
-        I2: Indexer & Copyable,
-    ](out self, values: Tuple[I0, I1, I2]):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I0: A type that can be used as an Index.
-            I1: A type that can be used as an Index.
-            I2: A type that can be used as an Index.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = VariadicList[Dim](
-            index(values[0]), index(values[1]), index(values[2])
-        )
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer & Copyable,
-        I1: Indexer & Copyable,
-    ](out self, val0: I0, val1: I1):
+    fn __init__[I0: Indexer, I1: Indexer](out self, val0: I0, val1: I1):
         """Creates a dimension list from the given list of values.
 
         Parameters:

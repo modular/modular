@@ -15,9 +15,9 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
-from sys.intrinsics import _type_is_eq_parse_time
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast
+from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 struct Variadic:
@@ -216,7 +216,7 @@ struct Variadic:
 
     ```mojo
     from std.builtin.variadics import Variadic
-    from testing import *
+    from std.testing import *
 
     trait MyError:
         comptime ErrorType: AnyType
@@ -341,8 +341,8 @@ struct Variadic:
 
     ```mojo
     from std.builtin.variadics import Variadic
-    from utils import Variant
-    from sys.intrinsics import _type_is_eq
+    from std.utils import Variant
+    from std.sys.intrinsics import _type_is_eq
 
     comptime FullVariant = Variant[Int, String, Float64, Bool]
 
@@ -453,7 +453,7 @@ struct VariadicList[type: TrivialRegisterPassable](
 
         return total
 
-    def main():
+    def main() raises:
         print(sum_values(1, 2, 3, 4, 5))
     ```
 
@@ -509,14 +509,11 @@ struct VariadicList[type: TrivialRegisterPassable](
         return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
 
     @always_inline
-    fn __getitem__[I: Indexer](self, idx: I) -> Self.type:
+    fn __getitem__(self, idx: Int) -> Self.type:
         """Gets a single element on the variadic list.
 
         Args:
             idx: The index of the element to access on the list.
-
-        Parameters:
-            I: A type that can be used as an index.
 
         Returns:
             The element on the list corresponding to the given index.
@@ -707,9 +704,7 @@ struct VariadicListMem[
         # cast mutability of self to match the mutability of the element,
         # since that is what we want to use in the ultimate reference and
         # the union overall doesn't matter.
-        Origin[mut = Self.elt_is_mutable](
-            unsafe_mut_cast=origin_of(Self.origin, self)
-        )
+        origin_of(Self.origin, self).unsafe_mut_cast[Self.elt_is_mutable]()
     ] Self.element_type:
         """Gets a single element on the variadic list.
 
@@ -749,7 +744,7 @@ struct VariadicPack[
     is_owned: Bool,
     element_trait: type_of(AnyType),
     *element_types: element_trait,
-](RegisterPassable, Sized):
+](Copyable, RegisterPassable, Sized):
     """A utility class to access heterogeneous variadic function arguments.
 
     `VariadicPack` is used when you need to accept variadic arguments where each
@@ -787,7 +782,7 @@ struct VariadicPack[
 
         return total
 
-    def main():
+    def main() raises:
         print(count_many_things(5, 11.7, 12))  # Prints: 28
     ```
 
@@ -830,6 +825,20 @@ struct VariadicPack[
             value: The argument to construct the pack with.
         """
         self._value = value
+
+    @always_inline("nodebug")
+    fn __init__(out self, *, copy: Self):
+        """Copy construct the variadic pack.
+
+        Args:
+            copy: The pack to copy from.
+
+        Constraints:
+            The variadic pack must not be owned.
+        """
+
+        comptime assert not Self.is_owned, "Cannot copy an owned variadic pack."
+        self._value = copy._value
 
     @always_inline("nodebug")
     fn __del__(deinit self):

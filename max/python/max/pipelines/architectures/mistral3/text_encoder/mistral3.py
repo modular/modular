@@ -21,13 +21,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from max import functional as F
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import TensorType
-from max.nn import Embedding, Linear, Module
-from max.nn.norm import RMSNorm
-from max.nn.sequential import ModuleList
-from max.tensor import Tensor
+from max.nn.module_v3 import Embedding, Linear, Module
+from max.nn.module_v3.norm import RMSNorm
+from max.nn.module_v3.sequential import ModuleList
 
 from ...common_layers.rotary_embedding import RotaryEmbedding
 from .attention import EncoderAttention
@@ -102,7 +102,8 @@ class EncoderTransformerBlock(Module[..., Tensor]):
 class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
     """Mistral3 text encoder transformer without KV cache dependency.
 
-    Returns hidden states from all layers for use in diffusion pipelines.
+    Encodes tokens and returns fused prompt embeddings by stacking hidden
+    states from the configured layers and merging the layer/hidden dimensions.
     """
 
     def __init__(self, config: Mistral3TextEncoderConfigBase) -> None:
@@ -111,6 +112,8 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
         self.device = config.device
+        self._hidden_state_layers = set(config.hidden_state_layers)
+        self._sorted_hidden_state_layers = sorted(config.hidden_state_layers)
 
         self.rope = RotaryEmbedding(
             dim=config.hidden_size,
@@ -150,19 +153,43 @@ class Mistral3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
         )
 
     def forward(self, tokens: Tensor) -> tuple[Tensor, ...]:
-        """Forward pass returning hidden states from all layers.
+        """Forward pass returning fused prompt embeddings.
+
+        Runs the transformer up to the last configured layer, collects hidden
+        states from the configured layers, then stacks and reshapes them into
+        a single prompt-embedding tensor.
 
         Args:
             tokens: Input token IDs [total_seq_len]
 
         Returns:
-            Tuple of hidden states from all layers, each with shape [seq_len, hidden_dim]
+            Tensor of shape [1, seq_len, num_layers * hidden_dim] with the
+            selected hidden states stacked and the layer/hidden dimensions
+            merged, ready for the diffusion transformer.
         """
         h = self.embed_tokens(tokens)
 
-        all_hidden_states: list[Tensor] = []
-        for layer in self.layers:
+        selected: dict[int, Tensor] = {}
+        max_layer = self._sorted_hidden_state_layers[-1]
+        for i, layer in enumerate(self.layers):
             h = layer(h, self.rope)
-            all_hidden_states.append(h)
+            if i in self._hidden_state_layers:
+                selected[i] = h
+            if i == max_layer:
+                break
 
-        return tuple(all_hidden_states)
+        hidden_states = [selected[i] for i in self._sorted_hidden_state_layers]
+
+        # Stack [L tensors of (S, D)] -> [L, S, D]
+        # then fuse into [1, S, L*D] for the diffusion transformer.
+        stacked = F.stack(hidden_states, axis=0)  # [L, S, D]
+        stacked = F.unsqueeze(stacked, axis=0)  # [1, L, S, D]
+        stacked = F.permute(stacked, [0, 2, 1, 3])  # [1, S, L, D]
+        # Read L and D directly from the tensor dims to avoid any Python-side
+        # constant that could force a device sync at eager execution time.
+        seq_len = stacked.shape[1]
+        return (
+            F.reshape(
+                stacked, [1, seq_len, stacked.shape[2] * stacked.shape[3]]
+            ),
+        )

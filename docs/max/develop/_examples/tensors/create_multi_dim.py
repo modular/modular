@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: max/develop/tensors.mdx
 
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create a 2-D tensor (a matrix)
 matrix = Tensor.constant([[1, 2, 3], [4, 5, 6]])

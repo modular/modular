@@ -154,7 +154,7 @@ def test_load_and_mma_and_multiply_operands[
     dtype: DType,
     shape: IndexList[3],
     transpose_b: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = shape[0]
     comptime N = shape[1]
     comptime K = shape[2]
@@ -180,13 +180,10 @@ def test_load_and_mma_and_multiply_operands[
     )
     ctx.synchronize()
 
-    _ = lhs^
-    _ = rhs^
-
 
 def test_write_res_operand[
     dst_dtype: DType, dtype: DType, shape: IndexList[3]
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = shape[0]
     comptime N = shape[1]
     comptime K = shape[2]
@@ -202,8 +199,6 @@ def test_write_res_operand[
     ctx.synchronize()
 
     print(dst.tensor())
-
-    _ = dst^
 
 
 fn mma_load_and_print_operands_kernel_ldmatrix[
@@ -322,7 +317,7 @@ def test_load_operands_ldmatrix[
     dtype: DType,
     shape: IndexList[3],
     transpose_b: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = shape[0]
     comptime N = shape[1]
     comptime K = shape[2]
@@ -344,5 +339,3 @@ def test_load_operands_ldmatrix[
         block_dim=(WARP_SIZE),
     )
     ctx.synchronize()
-    _ = lhs^
-    _ = rhs^

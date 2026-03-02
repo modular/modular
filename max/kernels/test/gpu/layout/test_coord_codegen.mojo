@@ -15,7 +15,7 @@
 import sys
 
 from gpu.host.compile import _compile_code, get_gpu_target
-from layout._coord import ComptimeInt, Idx, Coord, RuntimeInt
+from layout import ComptimeInt, Idx, Coord, RuntimeInt
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -52,5 +52,5 @@ fn test_coord_codegen_memory() raises:
     assert_true("st.global.b32 \t[%rd3+4], %rd1" in nvidia_asm)
 
 
-def main():
+def main() raises:
     test_coord_codegen_memory()

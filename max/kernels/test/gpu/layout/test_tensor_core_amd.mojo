@@ -139,7 +139,7 @@ comptime bf8_dtype = (
 # CHECK: 6224.0 6471.0 6718.0 6965.0 7212.0 7459.0 7706.0 7953.0 8200.0 8447.0 8694.0 8941.0 9188.0 9435.0 9682.0 9929.0
 
 
-def test_load_and_mma_f32_f32_16x16x4(ctx: DeviceContext):
+def test_load_and_mma_f32_f32_16x16x4(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x16x4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 16, 4), False
@@ -252,7 +252,7 @@ def test_load_and_mma_f32_f32_16x16x4(ctx: DeviceContext):
 # CHECK: 480880.0 484841.0 488802.0 492763.0 496724.0 500685.0 504646.0 508607.0 512568.0 516529.0 520490.0 524451.0 528412.0 532373.0 536334.0 540295.0
 
 
-def test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx: DeviceContext):
+def test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x16x4_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 16, 4), False, 4
@@ -363,7 +363,7 @@ def test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx: DeviceContext):
 # CHECK: 534.0 1391.0 2248.0 3105.0 3962.0 4819.0 5676.0 6533.0 7390.0 8247.0 9104.0 9961.0 10818.0 11675.0 12532.0 13389.0
 # CHECK: 574.0 1495.0 2416.0 3337.0 4258.0 5179.0 6100.0 7021.0 7942.0 8863.0 9784.0 10705.0 11626.0 12547.0 13468.0 14389.0
 # CHECK: 614.0 1599.0 2584.0 3569.0 4554.0 5539.0 6524.0 7509.0 8494.0 9479.0 10464.0 11449.0 12434.0 13419.0 14404.0 15389.0
-def test_load_and_mma_f32_f32_16x16x4_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f32_16x16x4_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x16x4_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 16, 4), True
@@ -476,7 +476,7 @@ def test_load_and_mma_f32_f32_16x16x4_transpose(ctx: DeviceContext):
 # CHECK: 30280.0 93641.0 157002.0 220363.0 283724.0 347085.0 410446.0 473807.0 537168.0 600529.0 663890.0 727251.0 790612.0 853973.0 917334.0 980695.0
 def test_load_and_mma_f32_f32_16x16x4_transpose_k_group_size_4(
     ctx: DeviceContext,
-):
+) raises:
     print("== test_load_and_mma_f32_f32_16x16x4_transpose_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 16, 4), True, 4
@@ -587,7 +587,7 @@ def test_load_and_mma_f32_f32_16x16x4_transpose_k_group_size_4(
 # CHECK: 419408.0 422857.0 426306.0 429755.0 433204.0 436653.0 440102.0 443551.0 447000.0 450449.0 453898.0 457347.0 460796.0 464245.0 467694.0 471143.0
 # CHECK: 450144.0 453849.0 457554.0 461259.0 464964.0 468669.0 472374.0 476079.0 479784.0 483489.0 487194.0 490899.0 494604.0 498309.0 502014.0 505719.0
 # CHECK: 480880.0 484841.0 488802.0 492763.0 496724.0 500685.0 504646.0 508607.0 512568.0 516529.0 520490.0 524451.0 528412.0 532373.0 536334.0 540295.0
-def test_load_and_mma_f32_bf16_16x16x16(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_16x16x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 16, 16), False
@@ -698,7 +698,9 @@ def test_load_and_mma_f32_bf16_16x16x16(ctx: DeviceContext):
 # CHECK: 28204240.0 28217672.0 28258482.0 28411868.0 28425300.0 28438732.0 28592118.0 28632928.0 28646360.0 28659792.0 28700602.0 28853988.0 28867420.0 28880852.0 29034238.0 29075048.0
 # CHECK: 30268640.0 30283096.0 30326978.0 30491628.0 30506084.0 30520540.0 30685190.0 30729072.0 30743528.0 30757984.0 30801866.0 30966516.0 30980972.0 30995428.0 31160078.0 31203960.0
 # CHECK: 32333040.0 32348520.0 32395474.0 32571388.0 32586868.0 32602348.0 32778262.0 32825216.0 32840696.0 32856176.0 32903130.0 33079044.0 33094524.0 33110004.0 33285918.0 33332872.0
-def test_load_and_mma_f32_bf16_16x16x16_k_group_size_4(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_16x16x16_k_group_size_4(
+    ctx: DeviceContext,
+) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 16, 16), False, 4
@@ -809,7 +811,7 @@ def test_load_and_mma_f32_bf16_16x16x16_k_group_size_4(ctx: DeviceContext):
 # CHECK: 26408.0 81577.0 136746.0 191915.0 247084.0 302253.0 357422.0 412591.0 467760.0 522929.0 578098.0 633267.0 688436.0 743605.0 798774.0 853943.0
 # CHECK: 28344.0 87609.0 146874.0 206139.0 265404.0 324669.0 383934.0 443199.0 502464.0 561729.0 620994.0 680259.0 739524.0 798789.0 858054.0 917319.0
 # CHECK: 30280.0 93641.0 157002.0 220363.0 283724.0 347085.0 410446.0 473807.0 537168.0 600529.0 663890.0 727251.0 790612.0 853973.0 917334.0 980695.0
-def test_load_and_mma_f32_bf16_16x16x16_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_16x16x16_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 16, 16), True
@@ -922,7 +924,7 @@ def test_load_and_mma_f32_bf16_16x16x16_transpose(ctx: DeviceContext):
 # CHECK: 2021040.0 6082225.0 10143410.0 14204595.0 18265844.0 22327028.0 26388214.0 30449400.0 34510712.0 38571896.0 42633080.0 46694270.0 50755450.0 54816636.0 58877824.0 62939010.0
 def test_load_and_mma_f32_bf16_16x16x16_transpose_k_group_size_4(
     ctx: DeviceContext,
-):
+) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16_transpose_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 16, 16), True, 4
@@ -1035,7 +1037,7 @@ def test_load_and_mma_f32_bf16_16x16x16_transpose_k_group_size_4(
 # CHECK: 480880.0 484841.0 488802.0 492763.0 496724.0 500685.0 504646.0 508607.0 512568.0 516529.0 520490.0 524451.0 528412.0 532373.0 536334.0 540295.0
 
 
-def test_load_and_mma_f32_f16_16x16x16(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_16x16x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_16x16x16")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(16, 16, 16), False
@@ -1148,7 +1150,7 @@ def test_load_and_mma_f32_f16_16x16x16(ctx: DeviceContext):
 # CHECK: 30280.0 93641.0 157002.0 220363.0 283724.0 347085.0 410446.0 473807.0 537168.0 600529.0 663890.0 727251.0 790612.0 853973.0 917334.0 980695.0
 
 
-def test_load_and_mma_f32_f16_16x16x16_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_16x16x16_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_16x16x16_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(16, 16, 16), True
@@ -1293,7 +1295,7 @@ def test_load_and_mma_f32_f16_16x16x16_transpose(ctx: DeviceContext):
 # CHECK: 227680.0 229693.0 231706.0 233719.0 235732.0 237745.0 239758.0 241771.0 243784.0 245797.0 247810.0 249823.0 251836.0 253849.0 255862.0 257875.0 259888.0 261901.0 263914.0 265927.0 267940.0 269953.0 271966.0 273979.0 275992.0 278005.0 280018.0 282031.0 284044.0 286057.0 288070.0 290083.0
 
 
-def test_load_and_mma_f32_bf16_32x32x8(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_32x32x8(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_32x32x8")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(32, 32, 8), False
@@ -1438,7 +1440,7 @@ def test_load_and_mma_f32_bf16_32x32x8(ctx: DeviceContext):
 # CHECK: 8076.0 24173.0 40270.0 56367.0 72464.0 88561.0 104658.0 120755.0 136852.0 152949.0 169046.0 185143.0 201240.0 217337.0 233434.0 249531.0 265628.0 281725.0 297822.0 313919.0 330016.0 346113.0 362210.0 378307.0 394404.0 410501.0 426598.0 442695.0 458792.0 474889.0 490986.0 507083.0
 
 
-def test_load_and_mma_f32_bf16_32x32x8_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_32x32x8_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_32x32x8_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(32, 32, 8), True
@@ -1583,7 +1585,7 @@ def test_load_and_mma_f32_bf16_32x32x8_transpose(ctx: DeviceContext):
 # CHECK: 227680.0 229693.0 231706.0 233719.0 235732.0 237745.0 239758.0 241771.0 243784.0 245797.0 247810.0 249823.0 251836.0 253849.0 255862.0 257875.0 259888.0 261901.0 263914.0 265927.0 267940.0 269953.0 271966.0 273979.0 275992.0 278005.0 280018.0 282031.0 284044.0 286057.0 288070.0 290083.0
 
 
-def test_load_and_mma_f32_f16_32x32x8(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_32x32x8(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_32x32x8")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(32, 32, 8), False
@@ -1728,7 +1730,7 @@ def test_load_and_mma_f32_f16_32x32x8(ctx: DeviceContext):
 # CHECK: 8076.0 24173.0 40270.0 56367.0 72464.0 88561.0 104658.0 120755.0 136852.0 152949.0 169046.0 185143.0 201240.0 217337.0 233434.0 249531.0 265628.0 281725.0 297822.0 313919.0 330016.0 346113.0 362210.0 378307.0 394404.0 410501.0 426598.0 442695.0 458792.0 474889.0 490986.0 507083.0
 
 
-def test_load_and_mma_f32_f16_32x32x8_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_32x32x8_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_32x32x8_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(32, 32, 8), True
@@ -1841,7 +1843,7 @@ def test_load_and_mma_f32_f16_32x32x8_transpose(ctx: DeviceContext):
 # CHECK: 522.47656 553.5156 584.375 612.5 645.90625 675.0 702.3125 725.5 762.5625 795.375 825.25 851.625 883.375 920.375 953.0 982.5
 
 
-def test_load_and_mma_f32_bf8_16x16x32(ctx: DeviceContext):
+def test_load_and_mma_f32_bf8_16x16x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf8_16x16x32")
     test_load_and_mma_and_multiply_operands[
         DType.float32, bf8_dtype, Index(16, 16, 32), False
@@ -1952,7 +1954,7 @@ def test_load_and_mma_f32_bf8_16x16x32(ctx: DeviceContext):
 # CHECK: 751.5625 765.83594 779.2656 792.2031 813.09375 825.40625 843.53125 855.625 873.5 884.78125 902.25 913.25 930.4375 949.375 963.6875 980.0
 # CHECK: 777.5625 792.3594 805.8125 819.90625 841.0625 853.53125 872.1875 884.3125 902.1875 914.0 931.5 942.5 959.75 978.6875 995.5625 1011.875
 # CHECK: 804.9531 820.0 833.5625 847.71875 869.03125 881.8125 902.625 914.78125 932.75 944.6875 962.5625 973.6875 991.0 1010.0 1026.875 1045.8125
-def test_load_and_mma_f32_bf8_16x16x32_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_bf8_16x16x32_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf8_16x16x32_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, bf8_dtype, Index(16, 16, 32), True
@@ -2067,7 +2069,7 @@ def test_load_and_mma_f32_bf8_16x16x32_transpose(ctx: DeviceContext):
 
 def test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(
     ctx: DeviceContext,
-):
+) raises:
     print("== test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2")
     test_load_and_mma_and_multiply_operands[
         DType.float32, bf8_dtype, Index(16, 16, 32), True, 2
@@ -2120,7 +2122,7 @@ fn test_load_b_tr(ctx: DeviceContext) raises:
                 assert_equal(flag_host[i], True, "frags_simd != frags_tr")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_load_and_mma_f32_f32_16x16x4(ctx)
         test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx)

@@ -20,7 +20,7 @@ fn test_cannot_cast_immutable_to_mutable[
     pass
 
 
-def main():
+def main() raises:
     var x = 42
 
     var p = UnsafePointer(to=x).as_immutable()

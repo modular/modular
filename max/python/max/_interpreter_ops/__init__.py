@@ -27,7 +27,10 @@ from max._core.driver import Buffer
 # Import op bindings from categorized Mojo modules
 from . import (  # type: ignore[attr-defined]
     data_movement_ops,
-    elementwise_ops,
+    elementwise_binary_ops,
+    elementwise_cast_ops,
+    elementwise_comparison_ops,
+    elementwise_unary_ops,
     layer_norm_ops,
     matmul_ops,
     misc_ops,
@@ -42,51 +45,51 @@ from . import (  # type: ignore[attr-defined]
 BINARY_ELEMENTWISE: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
 ] = {
-    mo.AddOp: elementwise_ops.Add,
-    mo.SubOp: elementwise_ops.Sub,
-    mo.MulOp: elementwise_ops.Mul,
-    mo.DivOp: elementwise_ops.Div,
-    mo.ModOp: elementwise_ops.Mod,
-    mo.MaxOp: elementwise_ops.Max,
-    mo.MinOp: elementwise_ops.Min,
-    mo.AndOp: elementwise_ops.And,
-    mo.OrOp: elementwise_ops.Or,
-    mo.XorOp: elementwise_ops.Xor,
-    mo.PowOp: elementwise_ops.Pow,
+    mo.AddOp: elementwise_binary_ops.Add,
+    mo.SubOp: elementwise_binary_ops.Sub,
+    mo.MulOp: elementwise_binary_ops.Mul,
+    mo.DivOp: elementwise_binary_ops.Div,
+    mo.ModOp: elementwise_binary_ops.Mod,
+    mo.MaxOp: elementwise_binary_ops.Max,
+    mo.MinOp: elementwise_binary_ops.Min,
+    mo.AndOp: elementwise_binary_ops.And,
+    mo.OrOp: elementwise_binary_ops.Or,
+    mo.XorOp: elementwise_binary_ops.Xor,
+    mo.PowOp: elementwise_binary_ops.Pow,
 }
 
 # Comparison binary ops: output dtype is always bool
 BINARY_ELEMENTWISE_COMPARISON: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, Buffer, int], None]
 ] = {
-    mo.EqualOp: elementwise_ops.Equal,
-    mo.GreaterOp: elementwise_ops.Greater,
-    mo.GreaterEqualOp: elementwise_ops.GreaterEqual,
-    mo.NotEqualOp: elementwise_ops.NotEqual,
+    mo.EqualOp: elementwise_comparison_ops.Equal,
+    mo.GreaterOp: elementwise_comparison_ops.Greater,
+    mo.GreaterEqualOp: elementwise_comparison_ops.GreaterEqual,
+    mo.NotEqualOp: elementwise_comparison_ops.NotEqual,
 }
 
 # Unary elementwise ops: output dtype matches input dtype
 UNARY_ELEMENTWISE: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int], None]
 ] = {
-    mo.NegativeOp: elementwise_ops.Negative,
-    mo.AbsOp: elementwise_ops.Abs,
-    mo.ReluOp: elementwise_ops.ReLU,
-    mo.CeilOp: elementwise_ops.Ceil,
-    mo.FloorOp: elementwise_ops.Floor,
-    mo.RoundOp: elementwise_ops.Round,
-    mo.ExpOp: elementwise_ops.Exp,
-    mo.LogOp: elementwise_ops.Log,
-    mo.Log1pOp: elementwise_ops.Log1p,
-    mo.SqrtOp: elementwise_ops.Sqrt,
-    mo.RsqrtOp: elementwise_ops.Rsqrt,
-    mo.TanhOp: elementwise_ops.Tanh,
-    mo.AtanhOp: elementwise_ops.ATanh,
-    mo.TruncOp: elementwise_ops.Trunc,
-    mo.SinOp: elementwise_ops.Sin,
-    mo.CosOp: elementwise_ops.Cos,
-    mo.ErfOp: elementwise_ops.Erf,
-    mo.NotOp: elementwise_ops.Not,
+    mo.NegativeOp: elementwise_unary_ops.Negative,
+    mo.AbsOp: elementwise_unary_ops.Abs,
+    mo.ReluOp: elementwise_unary_ops.ReLU,
+    mo.CeilOp: elementwise_unary_ops.Ceil,
+    mo.FloorOp: elementwise_unary_ops.Floor,
+    mo.RoundOp: elementwise_unary_ops.Round,
+    mo.ExpOp: elementwise_unary_ops.Exp,
+    mo.LogOp: elementwise_unary_ops.Log,
+    mo.Log1pOp: elementwise_unary_ops.Log1p,
+    mo.SqrtOp: elementwise_unary_ops.Sqrt,
+    mo.RsqrtOp: elementwise_unary_ops.Rsqrt,
+    mo.TanhOp: elementwise_unary_ops.Tanh,
+    mo.AtanhOp: elementwise_unary_ops.ATanh,
+    mo.TruncOp: elementwise_unary_ops.Trunc,
+    mo.SinOp: elementwise_unary_ops.Sin,
+    mo.CosOp: elementwise_unary_ops.Cos,
+    mo.ErfOp: elementwise_unary_ops.Erf,
+    mo.NotOp: elementwise_unary_ops.Not,
 }
 
 # Reduce ops: reduce along an axis, output shape has reduced dim = 1
@@ -106,9 +109,9 @@ REDUCE: dict[
 UNARY_MIXED: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int], None]
 ] = {
-    mo.CastOp: elementwise_ops.Cast,
-    mo.IsNanOp: elementwise_ops.IsNan,
-    mo.IsInfOp: elementwise_ops.IsInf,
+    mo.CastOp: elementwise_cast_ops.Cast,
+    mo.IsNanOp: elementwise_unary_ops.IsNan,
+    mo.IsInfOp: elementwise_unary_ops.IsInf,
 }
 
 # Softmax ops: output shape matches input, applied along an axis

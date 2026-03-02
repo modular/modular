@@ -20,8 +20,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.hooks.print_hook import PrintHook
-from max.nn.legacy.layer import Layer, add_layer_hook, clear_hooks
+from max.nn.hooks.print_hook import PrintHook
+from max.nn.layer import Layer, add_layer_hook, clear_hooks
 from pytest_mock import MockerFixture
 
 

@@ -901,7 +901,7 @@ fn test_grouped_kernel_nvfp4_multi_group[
     _ = sfb_ptrs_device^
 
 
-def main():
+def main() raises:
     print("\n" + "=" * 60)
     print("Test: Grouped Block-Scaled GEMM with NVFP4 Execution")
     print("=" * 60)

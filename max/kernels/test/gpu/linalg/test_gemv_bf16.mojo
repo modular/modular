@@ -190,6 +190,6 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     _ = c_host_n
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_matvec(4096, 1, 4096, ctx=ctx)

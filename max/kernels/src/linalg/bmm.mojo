@@ -22,7 +22,7 @@ from sys.info import (
     simd_width_of,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from algorithm import sync_parallelize, vectorize
+from algorithm import elementwise, sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume_uint
 from algorithm.reduction import _reduce_generator
 from buffer import Dim, NDBuffer
@@ -32,11 +32,17 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import A100, is_cpu, is_valid_target
-from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
 from layout._layout import Layout as TileLayout, row_major, TensorLayout
-from layout._tile_tensor import TileTensor
-from layout._coord import (
+from layout.coord import (
     Coord,
     CoordLike,
     ComptimeInt,
@@ -65,6 +71,9 @@ from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from .matmul.gpu.amd import gemm_kernel_amd
 from .matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
+)
+from .matmul.gpu.sm100_structured.default.dispatch import (
+    batched_matmul_dispatch_sm100_bf16,
 )
 from .utils import GemmShape
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
@@ -228,7 +237,7 @@ fn _reshape_tile_tensor_with_batch_to_3d(
         origin = tensor.origin,
         address_space = tensor.address_space,
         linear_idx_type = tensor.linear_idx_type,
-        element_shape_types = tensor.element_shape_types,
+        element_size = tensor.element_size,
     ],
 ):
     """
@@ -459,8 +468,8 @@ fn batched_matmul[
     target: StaticString = "cpu",
 ](
     c_buf: NDBuffer[mut=True, c_type, rank, _, _, _],
-    a_buf: NDBuffer[a_type, rank, _, _, _],
-    b_buf: NDBuffer[b_type, rank, _, _, _],
+    a_buf: NDBuffer[mut=False, a_type, rank, _, _, _],
+    b_buf: NDBuffer[mut=False, b_type, rank, _, _, _],
     *,
     context: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
@@ -496,7 +505,11 @@ fn batched_matmul[
                 b_type,
                 c_type,
                 elementwise_epilogue_fn,
-            ](c_buf, a_buf, b_buf)
+            ](
+                c_buf.make_dims_unknown(),
+                a_buf.make_dims_unknown(),
+                b_buf.make_dims_unknown(),
+            )
 
         batched_matmul[
             transpose_b=transpose_b,
@@ -914,6 +927,54 @@ fn _batched_matmul_gpu[
     comptime a_k = a_tensor_reshaped.LayoutType._shape_types[2].static_value
     comptime c_n = c_tensor_reshaped.LayoutType._shape_types[2].static_value
 
+    # SM100 (B200+) batched BF16 matmul dispatch
+    comptime use_SM100_kernels = (
+        has_nvidia_gpu_accelerator()
+        and ctx.default_device_info.compute > H100.compute
+    )
+    comptime if use_SM100_kernels and has_static_NK and transpose_b:
+        comptime bf16_ok = (a_type == b_type == c_type == DType.bfloat16)
+        comptime align_ok = (
+            c_n * size_of[c_type]() % 16 == 0
+            and a_k * size_of[a_type]() % 16 == 0
+        )
+        comptime if bf16_ok and align_ok:
+            batched_matmul_dispatch_sm100_bf16[
+                c_type, a_type, b_type, transpose_b
+            ](
+                c_tensor_reshaped,
+                a_tensor_reshaped,
+                b_tensor_reshaped,
+                ctx,
+            )
+
+            comptime if elementwise_epilogue_fn:
+                comptime epilogue = elementwise_epilogue_fn.value()
+                # SM100+ supports 32B load/store to global memory.
+                comptime simd_size = 32 // size_of[c_type]()
+
+                var c_ndbuf = c_tensor_reshaped._to_ndbuffer()
+
+                @parameter
+                @__copy_capture(c_ndbuf)
+                fn epilogue_wrapper[
+                    simd_width: Int, rank: Int, alignment: Int = 1
+                ](idx: IndexList[rank]):
+                    var c_coord = Index(idx[0], idx[1], idx[2])
+                    var c_val = c_ndbuf.load[
+                        width=simd_width,
+                        alignment = alignment * size_of[c_type](),
+                    ](c_coord)
+                    epilogue[c_type, simd_width, alignment=alignment](
+                        c_coord, c_val
+                    )
+
+                elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                    Index(batch_size, m, n), ctx
+                )
+
+            return
+
     comptime multistage_gemm_cond = (
         c_n % 128 == 0 and a_k % 32 == 0 and a_k >= 128
     )
@@ -1067,7 +1128,11 @@ fn batched_matmul[
             transpose_b=transpose_b,
             elementwise_epilogue_fn=elementwise_epilogue_fn,
             saturated_vnni=saturated_vnni,
-        ](c_buf, a_buf, b_buf)
+        ](
+            c_buf.make_dims_unknown(),
+            a_buf.make_dims_unknown(),
+            b_buf.make_dims_unknown(),
+        )
     else:
         comptime assert (
             saturated_vnni == False

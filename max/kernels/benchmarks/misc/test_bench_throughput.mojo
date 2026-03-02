@@ -81,7 +81,7 @@ fn bench_func[
     """
 
 
-def main():
+def main() raises:
     var m = Bench()
     bench_func[test, 8](m, "test8")
     bench_func[test, 16](m, "test16")

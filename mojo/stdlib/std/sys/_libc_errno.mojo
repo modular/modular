@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import c_int, external_call
-from sys.info import CompilationTarget, platform_map
+from std.ffi import c_int, external_call
+from std.sys.info import CompilationTarget, platform_map
 
 
 fn _errno_ptr(out result: UnsafePointer[c_int, MutExternalOrigin]):
@@ -62,7 +62,7 @@ comptime pm = platform_map[T=Int, ...]
 
 
 @fieldwise_init
-struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
+struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
     """Represents a error number from libc.
 
     This struct acts as an enum providing a wrapper around C library error codes,
@@ -70,8 +70,8 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
 
     Example:
         ```mojo
-        import os
-        from ffi import get_errno, set_errno, ErrNo
+        import std.os
+        from std.ffi import get_errno, set_errno, ErrNo
 
         try:
             _ = os.path.realpath("non-existent-file")
@@ -430,6 +430,7 @@ struct ErrNo(Equatable, Stringable, TrivialRegisterPassable, Writable):
         var string = StringSlice(unsafe_from_utf8_ptr=ptr)
         string.write_to(writer)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns the human-readable error description as a string.
 

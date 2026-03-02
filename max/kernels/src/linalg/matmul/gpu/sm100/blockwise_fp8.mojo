@@ -93,15 +93,14 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
-    constrained[transpose_b, "Only support transposed B"]()
-    constrained[num_threads == 128]()
+    comptime assert transpose_b, "Only support transposed B"
+    comptime assert num_threads == 128
 
     comptime accum_type = get_accum_type[a_type]()
 
-    constrained[
-        b_scales_type == a_scales_type == accum_type == DType.float32,
-        "Only support float32 for a_scales and b_scales",
-    ]()
+    comptime assert (
+        b_scales_type == a_scales_type == accum_type == DType.float32
+    ), "Only support float32 for a_scales and b_scales"
 
     comptime N = c_layout.shape[1].value()
     comptime K = a_layout.shape[2].value()
@@ -117,11 +116,10 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime num_n_mmas = BN // MMA_N
     comptime num_k_mmas = BK // MMA_K
 
-    constrained[N % BN == 0, "N must be divisible by BN"]()
-    constrained[
-        BN <= BK or gcd(BN, BK) == BN - BK,
-        "BN <= BK or gcd(BN, BK) == BN - BK",
-    ]()
+    comptime assert N % BN == 0, "N must be divisible by BN"
+    comptime assert (
+        BN <= BK or gcd(BN, BK) == BN - BK
+    ), "BN <= BK or gcd(BN, BK) == BN - BK"
 
     # make sure A and B scales are compatible
     comptime b_scales_n = b_scales_layout.shape[0].value()
@@ -203,16 +201,15 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime b_size = b_smem_layout.size()
     comptime a_scales_size = a_scales_smem_layout.size()
 
-    constrained[
-        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((b_size * size_of[b_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((a_scales_size * size_of[a_scales_type]()) % 16) == 0,
-        "preserve alignment",
-    ]()
+    comptime assert (
+        (a_size * size_of[a_type]()) % 128
+    ) == 0, "preserve alignment"
+    comptime assert (
+        (b_size * size_of[b_type]()) % 128
+    ) == 0, "preserve alignment"
+    comptime assert (
+        (a_scales_size * size_of[a_scales_type]()) % 16
+    ) == 0, "preserve alignment"
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
     var a_scales_smem = (b_smem + b_size).bitcast[Scalar[a_scales_type]]()
@@ -282,9 +279,9 @@ fn matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     comptime repeat = 1  # a higher repeat will probably get us better performance, but it will increase register pressure
     comptime temp_cfrags_size = 4 * repeat
 
-    constrained[
-        total_repeat % repeat == 0, "total_repeat must be divisible by repeat"
-    ]()
+    comptime assert (
+        total_repeat % repeat == 0
+    ), "total_repeat must be divisible by repeat"
     var c_frag_temp = SIMD[accum_type, temp_cfrags_size]()
 
     for k_iter in range(num_iters):
@@ -566,20 +563,15 @@ fn matmul_sm100_blockwise_scaled_fp8[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    comptime assert transpose_b, "Only support transposed B"
 
-    constrained[
-        a_type == b_type and a_type == DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
+    comptime assert (
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
 
-    constrained[
-        a_scales_type == b_scales_type and a_scales_type == DType.float32,
-        "Only support float32 for scales",
-    ]()
+    comptime assert (
+        a_scales_type == b_scales_type and a_scales_type == DType.float32
+    ), "Only support float32 for scales"
 
     comptime a_layout_tensor_3D = LayoutTensor[
         a_type,
@@ -642,7 +634,7 @@ fn matmul_sm100_blockwise_scaled_fp8[
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    constrained[BK == 128, "blockwise scaled fp8 only works with BK = 128"]()
+    comptime assert BK == 128, "blockwise scaled fp8 only works with BK = 128"
 
     var M = c.dim(0)
     var N = c.dim(1)

@@ -374,10 +374,9 @@ fn multistage_mma[
     comptime num_k_mma_iters: UInt = num_k_mmas // k_group_size
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // MMA_N
-    constrained[
-        num_k_mmas % UInt(2 * Int(k_group_size)) == 0,
-        "num_k_mmas must be an integer multiple of 2*k_group_size",
-    ]()
+    comptime assert (
+        num_k_mmas % UInt(2 * Int(k_group_size)) == 0
+    ), "num_k_mmas must be an integer multiple of 2*k_group_size"
 
     comptime accum_type = get_accum_type[a_type]()
     comptime frag_size = get_fragment_size[mma_shape]()
@@ -446,14 +445,13 @@ fn multistage_mma[
         mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, UInt(warp_x))
 
     comptime if static_num_iters.has_value():
-        constrained[
+        comptime assert (
             a_iter.address_space == AddressSpace.SHARED
-            or a_iter.address_space == AddressSpace.LOCAL,
-            (
-                "Using input in registers or shared memory requires static"
-                " iteration bound.\n"
-            ),
-        ]()
+            or a_iter.address_space == AddressSpace.LOCAL
+        ), (
+            "Using input in registers or shared memory requires static"
+            " iteration bound.\n"
+        )
 
         comptime for k_tile_id in range(static_num_iters.get()):
             var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
@@ -732,15 +730,13 @@ fn multistage_gemm_kernel[
     ],
 ):
     # Hold on adding fp16 because it could have different precisions than bf16.
-    constrained[
-        (a_type in (DType.float32, DType.bfloat16) and a_type == b_type)
-        or (
-            a_type in (DType.float8_e4m3fn, DType.float8_e5m2)
-            and a_type == b_type
-            and c_type == DType.float32
-        ),
-        "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma",
-    ]()
+    comptime assert (
+        a_type in (DType.float32, DType.bfloat16) and a_type == b_type
+    ) or (
+        a_type in (DType.float8_e4m3fn, DType.float8_e5m2)
+        and a_type == b_type
+        and c_type == DType.float32
+    ), "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma"
     comptime simd_size = simd_width_of[c_type]()
 
     var M = UInt(c.dim[0]())
@@ -912,10 +908,9 @@ fn multistage_gemm_kernel[
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication
-        constrained[
-            elementwise_lambda_fn is not None,
-            "elementwise_lambda_fn is not valid",
-        ]()
+        comptime assert (
+            elementwise_lambda_fn is not None
+        ), "elementwise_lambda_fn is not valid"
         comptime thread_layout = Layout.row_major(
             8, 4
         ) if is_nvidia_gpu() else Layout.row_major(4, 16)

@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max.nn.rope import yarn
+from max.nn.module_v3.rope import yarn
 
 
 def test_yarn() -> None:

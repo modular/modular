@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: max/develop/index.mdx
 
-from max import functional as F
-from max import random
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental import functional as F
+from max.experimental import random
+from max.experimental.tensor import Tensor
 
 # Create input data
 x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32, device=CPU())

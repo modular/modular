@@ -19,7 +19,7 @@ from testing import TestSuite, assert_equal, assert_false, assert_true
 
 
 # CHECK-LABEL: test_dim_list
-def test_dim_list():
+def test_dim_list() raises:
     print("== test_dim_list")
 
     var lst0 = DimList(1, 2, 3, 4)
@@ -54,7 +54,7 @@ def test_dim_list():
 
 
 # CHECK-LABEL: test_dim
-def test_dim():
+def test_dim() raises:
     print("== test_dim")
 
     var dim0 = Dim(8)
@@ -76,19 +76,19 @@ def test_dim():
     print(dim3.has_value())
 
 
-def test_dim_to_string():
+def test_dim_to_string() raises:
     assert_equal(String(Dim()), "?")
     assert_equal(String(Dim(33)), "33")
     assert_equal(String(DimList(2, Dim(), 3)), "[2, ?, 3]")
     assert_equal(String(DimList.create_unknown[5]()), "[?, ?, ?, ?, ?]")
 
 
-def test_dimlist_repr():
+def test_dimlist_repr() raises:
     assert_equal(repr(DimList(2, Dim(), 3)), "DimList([2, ?, 3])")
     assert_equal(repr(DimList.create_unknown[5]()), "DimList([?, ?, ?, ?, ?])")
 
 
-def test_dimlist_eq():
+def test_dimlist_eq() raises:
     assert_true(DimList(Dim(), 42, Dim()) == DimList(Dim(), 42, Dim()))
     assert_true(DimList(Dim(), Dim()) == DimList(Dim(), Dim()))
     assert_true(DimList() == DimList())
@@ -122,5 +122,5 @@ fn test_dim_ceildiv() raises:
     assert_equal(String(test_dim_ceildiv(static[120]())), "1")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

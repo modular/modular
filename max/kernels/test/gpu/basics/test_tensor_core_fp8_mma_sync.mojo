@@ -34,7 +34,7 @@ fn mma_sync_16x8x32_E4M3():
     )
 
 
-def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext):
+def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext) raises:
     print("== test_mma_sync_16x8x32_E4M3")
     comptime kernel = mma_sync_16x8x32_E4M3
     ctx.enqueue_function_experimental[kernel](
@@ -60,7 +60,7 @@ fn mma_sync_16x8x32_E4M2():
     )
 
 
-def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
+def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext) raises:
     print("== test_mma_sync_16x8x32_E5M2")
     comptime kernel = mma_sync_16x8x32_E4M2
     ctx.enqueue_function_experimental[kernel](
@@ -70,7 +70,7 @@ def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK-LABEL: test_mma_sync_16x8x32_E4M3
         # CHECK-DAG: thread 0 : 64 64 64 64

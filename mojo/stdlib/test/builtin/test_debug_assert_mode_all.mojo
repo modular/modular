@@ -15,15 +15,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 # CHECK-LABEL: test_debug_assert_mode_all_true
-def test_debug_assert_mode_all_true():
+def test_debug_assert_mode_all_true() raises:
     print("== test_debug_assert_mode_all_true")
     debug_assert(True, "ok")
     debug_assert[assert_mode="safe"](True, "ok")

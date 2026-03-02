@@ -166,19 +166,14 @@ struct TileScheduler[
     @always_inline
     fn __init__(out self, prob_shape: IndexList[3]):
         comptime if Self.schedule == MatmulSchedule.TILE2D:
-            constrained[
-                _check_cluster(Self.cluster, Self.raster_dim),
-                "Only support block cluster in along raster dimension.",
-            ]()
+            comptime assert _check_cluster(
+                Self.cluster, Self.raster_dim
+            ), "Only support block cluster in along raster dimension."
 
         if Self.schedule == MatmulSchedule.DS_SCHEDULER:
-            constrained[
-                Self.cluster[0] == Self.cluster[1] == Self.cluster[2] == 1,
-                (
-                    "Currently multicasting is not supported for DeepSeek"
-                    " Scheduler"
-                ),
-            ]()
+            comptime assert (
+                Self.cluster[0] == Self.cluster[1] == Self.cluster[2] == 1
+            ), "Currently multicasting is not supported for DeepSeek Scheduler"
 
         self.prob_shape = prob_shape
         self.num_waves_m = UInt32(

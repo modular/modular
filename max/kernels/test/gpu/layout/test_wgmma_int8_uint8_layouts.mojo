@@ -172,7 +172,7 @@ fn wgmma_kernel[
 # CHECK: 269 267 280 243 271 269 267 280
 # CHECK: 219 236 268 225 272 219 236 268
 # CHECK: 286 259 292 270 273 286 259 292
-def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
+def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_s8_s8_s32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -293,7 +293,7 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
 # CHECK: 255 246 242 248 269 255 246 242
 # CHECK: 273 256 264 262 275 273 256 264
 # CHECK: 237 239 241 258 245 237 239 241
-def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
+def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_u8_u8_s32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -414,7 +414,7 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
 # CHECK: 273 256 264 262 275 273 256 264
 # CHECK: 237 239 241 258 245 237 239 241
 # CHECK: 282 285 263 281 269 282 285 263
-def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
+def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_s8_u8_s32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -537,7 +537,7 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
 # CHECK: 220 271 247 243 279 220 271 247
 # CHECK: 269 267 280 243 271 269 267 280
 # CHECK: 219 236 268 225 272 219 236 268
-def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
+def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_u8_s8_s32_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -595,7 +595,7 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
     _ = res^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         wgmma_s8_s8_s32_64x8x32(ctx)
         wgmma_u8_u8_s32_64x8x32(ctx)

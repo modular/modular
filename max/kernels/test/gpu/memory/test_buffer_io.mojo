@@ -157,35 +157,35 @@ fn _verify_cache_bits_volatile(asm: StringSlice) raises -> None:
     assert_true(" nt" not in asm)  # Space prefix to avoid matching "int"
 
 
-def test_cache_policy_assembly_always():
+def test_cache_policy_assembly_always() raises:
     var asm = _compile_code[
         cache_policy_kernel_always, target = get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_always(asm)
 
 
-def test_cache_policy_assembly_streaming():
+def test_cache_policy_assembly_streaming() raises:
     var asm = _compile_code[
         cache_policy_kernel_streaming, target = get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_streaming(asm)
 
 
-def test_cache_policy_assembly_global():
+def test_cache_policy_assembly_global() raises:
     var asm = _compile_code[
         cache_policy_kernel_global, target = get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_global(asm)
 
 
-def test_cache_policy_assembly_volatile():
+def test_cache_policy_assembly_volatile() raises:
     var asm = _compile_code[
         cache_policy_kernel_volatile, target = get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_volatile(asm)
 
 
-def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
+def test_buffer[dtype: DType, width: Int](ctx: DeviceContext) raises:
     a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
     a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
@@ -209,7 +209,7 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
     a_host_buf.free()
 
 
-def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext):
+def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext) raises:
     a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
     a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
@@ -231,7 +231,7 @@ def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext):
         assert_equal(a_host_buf[i], 0)
 
 
-def main():
+def main() raises:
     # Test assembly generation for cache policies (AMD GPU only)
     test_cache_policy_assembly_always()
     test_cache_policy_assembly_streaming()

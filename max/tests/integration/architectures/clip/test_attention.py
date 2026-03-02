@@ -16,15 +16,15 @@ from types import SimpleNamespace
 from typing import Any
 
 import torch
-from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.pipelines.architectures.clip.clip import (
     CLIPAttention as MaxCLIPAttention,
 )
 from max.pipelines.architectures.clip.model_config import ClipConfigBase
-from max.tensor import Tensor
 from torch.utils.dlpack import from_dlpack
 from transformers.models.clip.modeling_clip import CLIPAttention
 

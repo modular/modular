@@ -43,7 +43,7 @@ struct AttentionSpec(ImplicitlyCopyable, Stringable):
         # fmt: on
 
 
-def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
+def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     var q_shape = Index(spec.batch_size, spec.seq_len, spec.depth_dim)
     var kv_shape = Index(spec.batch_size, spec.kv_seq_len, spec.depth_dim)
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
@@ -134,7 +134,7 @@ def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
     m.bench_function[flash_bench_fn](BenchId("flash", String(spec)))
 
 
-def main():
+def main() raises:
     var specs = [
         # bert-base-uncased-seqlen-16-onnx.yaml
         AttentionSpec(

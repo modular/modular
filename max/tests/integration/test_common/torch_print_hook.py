@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import torch
-from max.nn.legacy.hooks.base_print_hook import BasePrintHook
+from max.nn.hooks.base_print_hook import BasePrintHook
 
 
 class TorchPrintHook(BasePrintHook):

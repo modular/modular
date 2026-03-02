@@ -536,7 +536,7 @@ fn bench_structured_kernel[
     sfb_ptrs_host.free()
 
 
-def main():
+def main() raises:
     print("=" * 70)
     print("Comparison: cuBLAS (per-group) vs Structured Grouped GEMM")
     print("=" * 70)

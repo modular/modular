@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""CPU entrypoint for grouped 1D-1D blockwise FP8 SM100 matmul.
+"""CPU entrypoint for grouped 1D2D blockwise FP8 SM100 matmul.
 
-This module provides the public API for launching the grouped 1D-1D blockwise
+This module provides the public API for launching the grouped 1D2D blockwise
 FP8 matmul kernel for Mixture of Experts (MoE) layers.
 
 Usage:
@@ -37,8 +37,12 @@ from sys import size_of
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout as LegacyLayout, LayoutTensor
-from layout._tile_tensor import TileTensor, flatten_leading
+from layout import (
+    Layout as LegacyLayout,
+    LayoutTensor,
+    TileTensor,
+    flatten_leading,
+)
 from ..structured_kernels.tile_types import create_tma_tile
 
 from utils.index import Index, IndexList
@@ -89,19 +93,18 @@ fn grouped_matmul_1d2d_blockwise_fp8[
         num_active_experts: Number of active experts.
         ctx: Device context.
     """
-    constrained[transpose_b, "Only support transposed B"]()
-    constrained[
-        a_type == b_type and a_type == DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
-    constrained[
-        a_scales_type == b_scales_type,
-        "a_scales_type and b_scales_type must match",
-    ]()
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
-    constrained[not config.AB_swapped, "Swapped AB is not supported"]()
+    comptime assert transpose_b, "Only support transposed B"
+    comptime assert (
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
+    comptime assert (
+        a_scales_type == b_scales_type
+    ), "a_scales_type and b_scales_type must match"
+    comptime assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
+    comptime assert not config.AB_swapped, "Swapped AB is not supported"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -111,7 +114,7 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[BK == 128, "Only support BK = 128"]()
+    comptime assert BK == 128, "Only support BK = 128"
 
     comptime num_experts = type_of(b_device).LayoutType.static_shape[0]
     comptime N = type_of(c_device).LayoutType.static_shape[1]

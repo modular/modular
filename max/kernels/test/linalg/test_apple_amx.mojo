@@ -39,7 +39,7 @@ fn clear_c(buf: LayoutTensor[mut=True, ...]):
     _ = buf.fill(0)
 
 
-def test_dot_at_b[dtype: DType, M: Int, N: Int]():
+def test_dot_at_b[dtype: DType, M: Int, N: Int]() raises:
     # Create LayoutTensors with static shapes
     var a_matrix = LayoutTensor[
         dtype, Layout.row_major(M, N), MutAnyOrigin
@@ -69,6 +69,6 @@ def test_dot_at_b[dtype: DType, M: Int, N: Int]():
             )
 
 
-def main():
+def main() raises:
     test_dot_at_b[DType.float32, 16, 16]()
     test_dot_at_b[DType.float16, 32, 32]()

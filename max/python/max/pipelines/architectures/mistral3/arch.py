@@ -22,13 +22,13 @@ from .model_config import Mistral3Config
 from .tokenizer import Mistral3Tokenizer
 
 mistral3_arch = SupportedArchitecture(
-    name="Mistral3ForConditionalGeneration_Legacy",
+    name="Mistral3ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
     default_weights_format=WeightsFormat.safetensors,
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     multi_gpu_supported=True,
     pipeline_model=Mistral3Model,

@@ -19,7 +19,7 @@ is called (not implemented yet).
 
 Example:
 ```mojo
-from collections import BitSet
+from std.collections import BitSet
 
 var bs = BitSet[128]()  # 128-bit set, all clear
 bs.set(42)              # Mark value 42 as present.
@@ -32,12 +32,13 @@ print(len(bs))          # Prints 0.
 # ---------------------------------------------------------------------------
 
 
-from math import ceildiv
-from sys import simd_width_of, bit_width_of
+from std.math import ceildiv
+from std.sys import simd_width_of, bit_width_of
 
-from algorithm import vectorize
-from bit import log2_floor, pop_count
-from memory import pack_bits
+from std.algorithm import vectorize
+from std.bit import log2_floor, pop_count
+from std.format._utils import FormatStruct
+from std.memory import pack_bits
 
 from .inline_array import InlineArray
 
@@ -88,9 +89,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
 # ===-----------------------------------------------------------------------===#
 
 
-struct BitSet[size: Int](
-    Boolable, Copyable, Defaultable, Sized, Stringable, Writable
-):
+struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     """A grow-only set storing non-negative integers efficiently using bits.
 
     Parameters:
@@ -449,6 +448,16 @@ struct BitSet[size: Int](
 
         writer.write("}")
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the `BitSet` to the writer.
+
+        Args:
+            writer: The value to write to.
+        """
+        FormatStruct(writer, "BitSet").params(Self.size).fields(self)
+
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a developer-friendly string representation of the bitset.
 
@@ -459,6 +468,7 @@ struct BitSet[size: Int](
         """
         return String(self)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a user-friendly string representation of the bitset.
 

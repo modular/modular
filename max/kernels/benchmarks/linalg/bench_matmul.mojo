@@ -99,8 +99,6 @@ fn bench_matmul[
     var padded_n_k = pack_matmul_b_shape_func[
         a_type,
         DimList.create_unknown[2](),
-        b_type,
-        DimList.create_unknown[2](),
         c_type,
         DimList.create_unknown[2](),
         transpose_in_0=False,
@@ -118,8 +116,6 @@ fn bench_matmul[
     if b_packed:
         pack_b_ndbuffer[
             a_type,
-            DimList.create_unknown[2](),
-            b_type,
             DimList.create_unknown[2](),
             c_type,
             DimList.create_unknown[2](),
@@ -183,7 +179,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](
         return 2 * self.m * self.n * self.k
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
 
     comptime packed_float32 = MatmulSpecStatic(

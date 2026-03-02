@@ -32,9 +32,9 @@ from layout.layout_tensor import (
     copy_local_to_dram,
 )
 
-from layout._tile_tensor import TileTensor, stack_allocation
+from layout import TileTensor, stack_allocation
 from layout._layout import TensorLayout, row_major
-from layout._coord import (
+from layout.coord import (
     Coord,
     coord,
     Idx,
@@ -478,7 +478,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Run minimal test first for debugging
         var run_minimal = False

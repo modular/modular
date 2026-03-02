@@ -23,7 +23,7 @@ import re
 from conftest import assert_all_close
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.tensor import Tensor, default_dtype
+from max.experimental.tensor import Tensor, default_dtype
 
 
 def test_ones_defaults() -> None:

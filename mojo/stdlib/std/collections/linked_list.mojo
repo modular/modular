@@ -19,11 +19,11 @@ traversal. The implementation includes iterator support for forward and reverse
 traversal.
 """
 
-from collections._index_normalization import normalize_index
-import format._utils as fmt
-from os import abort
+from std.collections._index_normalization import normalize_index
+import std.format._utils as fmt
+from std.os import abort
 
-from builtin.constrained import _constrained_conforms_to
+from std.builtin.constrained import _constrained_conforms_to
 
 
 struct Node[
@@ -143,9 +143,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     Copyable,
     Defaultable,
     Iterable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A doubly-linked list implementation.
@@ -776,6 +774,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = iterator^
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Convert the list to its string representation.
 
@@ -789,6 +788,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self.write_to(writer)
         return writer
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Convert the list to its string representation.
 

@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from layout._coord import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
@@ -127,7 +126,7 @@ fn test_pad_constant_gpu[
     _ = out_device
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
     with DeviceContext() as ctx:
         # 1D test

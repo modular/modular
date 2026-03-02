@@ -15,7 +15,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy import Signals
+from max.nn import Signals
 
 
 def test_broadcast_basic() -> None:

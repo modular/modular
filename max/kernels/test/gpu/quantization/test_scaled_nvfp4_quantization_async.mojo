@@ -73,7 +73,7 @@ def test_nvfp4_quantization[
     m: ValOrDim,
     n: ValOrDim,
     tensor_sf: Float32,
-):
+) raises:
     comptime out_dtype = DType.uint8
 
     var B = batch.value
@@ -261,7 +261,7 @@ def test_nvfp4_quantization[
     scales_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_nvfp4_quantization[
             DType.bfloat16,

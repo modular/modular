@@ -12,32 +12,34 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the core `String` type and related utilities."""
 
-from collections import KeyElement
-from collections.string import CodepointsIter
-from collections.string._parsing_numbers.parsing_floats import _atof
-from collections.string._utf8 import UTF8Chunks, _is_valid_utf8
-from collections.string.format import _FormatUtils
-from collections.string.string_slice import (
+from std.builtin.globals import global_constant
+from std.collections import KeyElement
+from std.collections.string import CodepointsIter
+from std.collections.string._parsing_numbers.parsing_floats import _atof
+from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
+from std.collections.string.format import _FormatUtils
+from std.collections.string.string_slice import (
     CodepointSliceIter,
     _to_string_list,
     _unsafe_strlen,
 )
-from builtin.builtin_slice import ContiguousSlice
-from hashlib.hasher import Hasher
-from format._utils import (
+from std.builtin.builtin_slice import ContiguousSlice
+from std.hashlib.hasher import Hasher
+from std.format.tstring import TString
+from std.format._utils import (
     STACK_BUFFER_BYTES,
     _TotalWritableBytes,
     _WriteBufferStack,
 )
-from os import PathLike, abort
-from os.atomic import Atomic, Consistency, fence
-from sys import size_of, bit_width_of
-from ffi import c_char, CStringSlice
-from sys.info import is_32bit
+from std.os import PathLike, abort
+from std.os.atomic import Atomic, Consistency, fence
+from std.sys import size_of, bit_width_of
+from std.ffi import c_char, CStringSlice
+from std.sys.info import is_32bit
 
-from bit import count_leading_zeros
-from memory import memcmp, memcpy, memset
-from python import ConvertibleFromPython, ConvertibleToPython, PythonObject
+from std.bit import count_leading_zeros
+from std.memory import memcmp, memcpy, memset
+from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -55,9 +57,7 @@ struct String(
     IntableRaising,
     KeyElement,
     PathLike,
-    Representable,
     Sized,
-    Stringable,
     Writable,
     Writer,
 ):
@@ -352,6 +352,19 @@ struct String(
         # Always use static constant representation initially, defer inlining
         # decision until mutation to avoid unnecessary memcpy.
         self._capacity_or_data = Self.FLAG_HAS_NUL_TERMINATOR
+
+    @implicit
+    fn __init__(out self, tstring: TString):
+        """Construct a string from a TString (template string).
+
+        This constructor enables implicit conversion from TString to String,
+        allowing t-strings to be used seamlessly where strings are expected.
+
+        Args:
+            tstring: The TString to convert to a String.
+        """
+        self = Self()
+        tstring.write_to(self)
 
     fn __init__(out self, *, unsafe_from_utf8: Span[Byte]):
         """Construct a string by copying the data. This constructor is explicit
@@ -1017,7 +1030,7 @@ struct String(
         Query the length of a string, in bytes and Unicode codepoints:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = "ನಮಸ್ಕಾರ"
 
@@ -1029,7 +1042,7 @@ struct String(
         Unicode codepoint length:
 
         ```mojo
-        from testing import assert_equal
+        from std.testing import assert_equal
 
         var s = "abc"
 
@@ -1039,6 +1052,7 @@ struct String(
         """
         return self.byte_length()
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __str__(self) -> String:
         """Gets the string itself.
@@ -1051,13 +1065,14 @@ struct String(
         """
         return self
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Return a Mojo-compatible representation of the `String` instance.
 
         Returns:
             A new representation of the string.
         """
-        return StringSlice(self).__repr__()
+        return repr(StringSlice(self))
 
     @always_inline("nodebug")
     fn __fspath__(self) -> String:
@@ -1158,7 +1173,7 @@ struct String(
         Print the characters in a string:
 
         ```mojo
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         var s = "abc"
         var iter = s.codepoints()
@@ -1173,7 +1188,7 @@ struct String(
         codepoints:
 
         ```mojo
-        from testing import assert_equal, assert_raises
+        from std.testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
         var s = "á"
@@ -1203,7 +1218,7 @@ struct String(
         Iterate over the character slices in a string:
 
         ```mojo
-        from testing import assert_equal, assert_raises, assert_true
+        from std.testing import assert_equal, assert_raises, assert_true
 
         var s = "abc"
         var iter = s.codepoint_slices()
@@ -2132,7 +2147,7 @@ fn chr(c: Int) -> String:
     var char_opt = Codepoint.from_u32(UInt32(c))
     if not char_opt:
         # TODO: Raise ValueError instead.
-        abort(String("chr(", c, ") is not a valid Unicode codepoint"))
+        abort(t"chr({c}) is not a valid Unicode codepoint")
 
     # SAFETY: We just checked that `char` is present.
     return String(char_opt.unsafe_value())
@@ -2214,9 +2229,9 @@ fn ascii(value: StringSlice) -> String:
         use_dquote = use_dquote or (char == ord_squote)
 
     if use_dquote:
-        return String('"', result, '"')
+        return t'"{result}"'
     else:
-        return String("'", result, "'")
+        return t"'{result}'"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2514,7 +2529,7 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
     # See https://commaok.xyz/post/lookup_tables/ and
     # https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
     # for a description.
-    comptime lookup_table = VariadicList[Int](
+    comptime lookup_table: InlineArray[Int, 32] = [
         4294967296,
         8589934582,
         8589934582,
@@ -2547,12 +2562,15 @@ fn _calc_initial_buffer_size_int32(n0: Int) -> Int:
         41949672960,
         42949672960,
         42949672960,
-    )
+    ]
+
+    ref lookup_table_ref = global_constant[lookup_table]()
+
     var n = UInt32(n0)
     var log2 = Int(
         UInt32(bit_width_of[DType.uint32]() - 1) ^ count_leading_zeros(n | 1)
     )
-    return (n0 + lookup_table[log2]) >> 32
+    return (n0 + lookup_table_ref[log2]) >> 32
 
 
 fn _calc_initial_buffer_size_int64(n0: UInt64) -> Int:

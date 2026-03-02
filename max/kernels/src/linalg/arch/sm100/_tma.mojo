@@ -396,4 +396,3 @@ fn to_swizzle[dtype: DType, mode: SwizzleMode]() -> Swizzle:
         return Swizzle(Int(mode), log2_floor(16 // type_size), 3)
     else:
         comptime assert False, "Only support 32B, 64B, 128B, or no swizzle"
-        return Swizzle(0, 0, 0)

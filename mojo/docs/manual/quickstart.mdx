@@ -281,7 +281,7 @@ conda install numpy
 Then, add the following imports at the top of your file:
 
 ```mojo
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 ```
 
 Now, calculate Python stats at the end of the `try` block in `main()`:
@@ -297,7 +297,7 @@ Now, calculate Python stats at the end of the `try` block in `main()`:
 Your complete `analyzer.mojo`:
 
 ```mojo
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 
 fn calculate_average(temps: List[Float64]) raises -> Float64:
     if len(temps) == 0:

@@ -22,7 +22,7 @@ comptime data4x4: List[List[Int8]] = [
 ]
 
 
-def grid4x4() -> Grid[4, 4]:
+def grid4x4() raises -> Grid[4, 4]:
     grid = Grid[4, 4]()
     for row in range(4):
         for col in range(4):
@@ -30,7 +30,7 @@ def grid4x4() -> Grid[4, 4]:
     return grid^
 
 
-def test_gridv3_init():
+def test_gridv3_init() raises:
     grid = Grid[4, 4]()
     assert_equal(4, grid.rows)
     assert_equal(4, grid.cols)
@@ -39,7 +39,7 @@ def test_gridv3_init():
             assert_equal(Int8(0), grid[row, col])
 
 
-def test_gridv3_index():
+def test_gridv3_index() raises:
     grid = grid4x4()
     for row in range(4):
         for col in range(4):
@@ -50,14 +50,14 @@ def test_gridv3_index():
             assert_equal(Int8(0), grid[row, col])
 
 
-def test_gridv3_str():
+def test_gridv3_str() raises:
     grid = grid4x4()
     grid_str = String(grid)
     var str4x4 = " ** \n**  \n  **\n*  *"
     assert_equal(str4x4, grid_str)
 
 
-def test_gridv3_evolve():
+def test_gridv3_evolve() raises:
     data_gen2: List[List[Int8]] = [
         [0, 0, 1, 0],
         [1, 0, 0, 0],
@@ -84,5 +84,5 @@ def test_gridv3_evolve():
             assert_equal(data_gen3[row][col], grid_gen3[row, col])
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -35,7 +35,7 @@ from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host.info import is_cpu
 from gpu.memory import AddressSpace, external_memory
 from random import Random
-from layout._coord import (
+from layout.coord import (
     ComptimeInt,
     Coord,
     CoordLike,
@@ -45,11 +45,13 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import TensorLayout, Layout, RowMajorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from math import log2
 from memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
+from nn.softmax import softmax_with_temperature
+from nn.topk_fi import topk_topp_sampling_from_prob
 from os.env import getenv
 from runtime.asyncrt import DeviceContextPtr
 
@@ -1671,6 +1673,75 @@ fn topk_gpu[
     _ = internal_idxs_buf^
 
 
+fn _topk_topp_sampling_fi[
+    dtype: DType,
+    out_idx_type: DType,
+    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    TemperatureLayoutType: TensorLayout = RowMajorLayout[
+        RuntimeInt[DType.int64]
+    ],
+    TopPLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    SeedLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+](
+    ctx: DeviceContext,
+    max_k: Int,
+    min_top_p: Float32,
+    input: TileTensor[dtype, ...],
+    out_idxs: TileTensor[mut=True, out_idx_type, ...],
+    k: Optional[TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]] = None,
+    temperature: Optional[
+        TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
+    ] = None,
+    top_p: Optional[
+        TileTensor[DType.float32, TopPLayoutType, ImmutAnyOrigin]
+    ] = None,
+    rng_seed: Optional[
+        TileTensor[DType.uint64, SeedLayoutType, ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """Top-K + top-P sampling.
+
+    Applies softmax with per-row temperature scaling, then performs top-k+top-p
+    rejection sampling via the dual-pivot algorithm.
+    """
+    var shape = coord_to_index_list(input.layout.shape_coord())
+    var batch_size = shape[0]
+    var d = shape[1]
+
+    # Step 1: softmax with temperature.
+    var probs_buf = ctx.enqueue_create_buffer[dtype](batch_size * d)
+    var probs = TileTensor(
+        probs_buf.unsafe_ptr(),
+        row_major(Coord(IndexList[2](batch_size, d))),
+    )
+    softmax_with_temperature[dtype](
+        ctx,
+        input,
+        probs,
+        temperature_arr=temperature,
+    )
+
+    # Step 2: top-k + top-p rejection sampling from probabilities.
+    # Reshape out_idxs from [batch, 1] (rank 2) to [batch] (rank 1).
+    var out_shape = coord_to_index_list(out_idxs.layout.shape_coord())
+    var out_1d = TileTensor(
+        out_idxs.ptr,
+        row_major(Idx(out_shape[0])),
+    )
+    topk_topp_sampling_from_prob[dtype, out_idx_type](
+        ctx,
+        probs,
+        out_1d,
+        max_k,
+        top_p_val=min_top_p,
+        top_k_arr=k,
+        top_p_arr=top_p,
+        rng_seed=rng_seed,
+    )
+
+    _ = probs_buf^
+
+
 @always_inline
 fn fused_token_sampling_gpu[
     dtype: DType,
@@ -1723,10 +1794,32 @@ fn fused_token_sampling_gpu[
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
 
-    var bound_max_k = 255 if max_k == -1 else max_k
+    comptime assert input.flat_rank == 2
+
+    var vocab_size = input.layout.shape[1]().value()
+    var adjusted_max_k = vocab_size if max_k == -1 else max_k
+
+    # softmax with temperature, then top-k+top-p
+    # rejection sampling. Enabled via compile-time env var.
+
+    if adjusted_max_k >= 75:
+        _topk_topp_sampling_fi[dtype, out_idx_type](
+            ctx,
+            adjusted_max_k,
+            min_top_p,
+            input,
+            out_idxs,
+            k=rebind[
+                Optional[TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]]
+            ](k),
+            temperature=temperature,
+            top_p=top_p,
+            rng_seed=seed,
+        )
+        return
 
     var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
-    out_vals_shape[input.rank - 1] = bound_max_k
+    out_vals_shape[input.rank - 1] = adjusted_max_k
     var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
     )
@@ -1737,7 +1830,7 @@ fn fused_token_sampling_gpu[
 
     topk_gpu[sampling=True, largest=True](
         ctx,
-        bound_max_k,
+        adjusted_max_k,
         input,
         out_vals,
         out_idxs,

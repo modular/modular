@@ -29,7 +29,7 @@ from utils.index import Index, IndexList
 comptime bf16 = DType.bfloat16
 
 
-def main():
+def main() raises:
     print("\n" + "=" * 60)
     print("SWAPAB COMPARISON TEST SUITE")
     print("=" * 60 + "\n")

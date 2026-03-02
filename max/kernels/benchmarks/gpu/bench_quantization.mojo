@@ -181,7 +181,7 @@ fn bench_1d1d_quantization[
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     comptime in_dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var rows = Int(arg_parse("M", 1))

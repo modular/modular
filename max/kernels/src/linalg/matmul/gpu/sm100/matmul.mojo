@@ -100,7 +100,7 @@ struct WarpRole[has_scheduler: Bool = True](TrivialRegisterPassable):
     @staticmethod
     @always_inline
     fn is_scheduler() -> Bool:
-        constrained[Self.has_scheduler, "Scheduler warp is not enabled"]()
+        comptime assert Self.has_scheduler, "Scheduler warp is not enabled"
         return Self.Scheduler == warp_id()
 
 

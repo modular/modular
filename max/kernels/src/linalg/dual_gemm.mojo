@@ -951,9 +951,9 @@ fn dual_gemm[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     # TODO: Autotune. Currently, these are a copy+paste of `_matmul_gpu`.
@@ -1320,9 +1320,9 @@ fn dual_gemv[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, a_shape],
+    b0: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
+    b1: NDBuffer[b_type, 2, ImmutAnyOrigin, b_shape],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim(0)
@@ -1366,19 +1366,12 @@ fn dual_gemv[
 @register_internal("swishGLU")
 @always_inline
 fn swishGLU[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    //,
     target: StaticString = "cpu",
 ](
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b0: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    b1: NDBuffer[b_type, 2, MutAnyOrigin, b_shape],
-    c: NDBuffer[c_type, 2, MutAnyOrigin, c_shape],
+    a: NDBuffer[_, 2, ImmutAnyOrigin, _],
+    b0: NDBuffer[_, 2, ImmutAnyOrigin, _],
+    b1: NDBuffer[_, 2, ImmutAnyOrigin, _],
+    c: NDBuffer[_, 2, MutAnyOrigin, _],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -1413,4 +1406,6 @@ fn swishGLU[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(ctx),
     ):
-        dual_gemm[transpose_b=True](c, a, b0, b1, ctx=ctx.get_device_context())
+        dual_gemm[transpose_b=True](
+            c, a, b0, rebind[type_of(b0)](b1), ctx=ctx.get_device_context()
+        )

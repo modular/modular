@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.constrained import _constrained_field_conforms_to
-from builtin.range import _ZeroStartingRange
-from reflection import struct_field_names, struct_field_types
+from std.builtin.constrained import _constrained_field_conforms_to
+from std.builtin.range import _ZeroStartingRange
+from std.reflection import struct_field_names, struct_field_types
 
 
 trait Equatable(ImplicitlyDestructible):

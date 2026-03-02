@@ -89,6 +89,6 @@ fn run_vec_add(ctx: DeviceContext) raises:
     in_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_vec_add(ctx)

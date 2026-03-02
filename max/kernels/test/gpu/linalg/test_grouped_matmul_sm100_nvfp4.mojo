@@ -49,16 +49,18 @@ from linalg.fp4_utils import (
 from random import random_ui64, seed, rand
 from builtin.simd import _convert_f32_to_float8_scalar
 from layout import (
-    LayoutTensor,
+    Coord,
+    Idx,
+    IntTuple,
     Layout,
+    LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
+    TileTensor,
     UNKNOWN_VALUE,
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from layout._tile_tensor import TileTensor
-from layout._coord import Coord, Idx, RuntimeInt
 from layout._layout import row_major
 
 
@@ -95,7 +97,7 @@ def _test_kernel_impl[
     num_tokens_by_expert: List[Int],
     expert_ids: List[Int],
     ctx: DeviceContext,
-):
+) raises:
     seed(1234)
     total_num_tokens = 0
     for i in range(len(num_tokens_by_expert)):
@@ -530,7 +532,7 @@ def _test_kernel_impl[
             AB_swapped=swapAB,
             k_group_size=k_group_size,
             num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
-            c_swizzle_for_AB_swapped=TensorMapSwizzle.SWIZZLE_32B,
+            is_gmm=True,
         )
 
         # Construct scale TileTensors from raw pointers with explicit
@@ -591,13 +593,10 @@ def _test_kernel_impl[
         comptime assert False, "kernel_type must be 'old' or 'new'"
         pass
 
-    constrained[
-        a_type != DType.float8_e4m3fn or transpose_b,
-        (
-            "Testing is only supported for transposed_b==True when"
-            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
-        ),
-    ]()
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        "Testing is only supported for transposed_b==True when"
+        " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+    )
 
     comptime new_c_layout = Layout.row_major(UNKNOWN_VALUE, expert_shape[0])
     comptime new_a_layout = Layout.row_major(
@@ -778,7 +777,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     num_tokens_by_expert: List[Int],
     expert_ids: List[Int],
     ctx: DeviceContext,
-):
+) raises:
     """Test old kernel - backward compatible wrapper."""
     _test_kernel_impl[
         "old",
@@ -804,7 +803,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ](num_active_experts, num_tokens_by_expert, expert_ids, ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.uint8  # TODO: (KERN-2238): Replace with float4-e2m1fn
         comptime out_dtype = DType.bfloat16
@@ -1046,6 +1045,82 @@ def main():
                     4,
                     [0, 3, 1, 2],
                     [-1, 2, -1, 0],
+                    ctx,
+                )
+
+            # 2SM tests (new structured kernel only, swapAB=True required)
+            comptime if structured:
+                comptime umma_shape_2sm = Index(2 * bm, 2 * bn, MMA_K)
+
+                # 2SM: Large token counts
+                _test_kernel_impl[
+                    "new",
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape_2sm,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cta_group=2,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=6,
+                    expert_shape = Index(2048, 1024),
+                    swapAB=True,
+                ](
+                    4,
+                    [512, 1000, 2000, 3000],
+                    [0, 3, 2, 4],
+                    ctx,
+                )
+
+                # 2SM: Unaligned token counts
+                _test_kernel_impl[
+                    "new",
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape_2sm,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cta_group=2,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=4,
+                    expert_shape = Index(2048, 1024),
+                    swapAB=True,
+                ](
+                    3,
+                    [64 + 1, 1024 + 3, 128 * 3 + 2],
+                    [2, 0, 1],
+                    ctx,
+                )
+
+                # 2SM: Small token counts
+                _test_kernel_impl[
+                    "new",
+                    dtype,
+                    dtype,
+                    out_dtype,
+                    scale_dtype,
+                    block_tile_shape,
+                    umma_shape_2sm,
+                    cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+                    cta_group=2,
+                    a_swizzle=swizzle,
+                    b_swizzle=swizzle,
+                    block_swizzle_size=8,
+                    num_experts=4,
+                    expert_shape = Index(2048, 1024),
+                    swapAB=True,
+                ](
+                    3,
+                    [31, 97, 63],
+                    [2, 0, 1],
                     ctx,
                 )
 

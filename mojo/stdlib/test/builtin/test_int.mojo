@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import bit_width_of
-from python import PythonObject
-from testing import (
+from std.sys import bit_width_of
+from std.python import PythonObject
+from std.testing import (
     assert_equal,
     assert_false,
     assert_raises,
@@ -22,12 +22,12 @@ from testing import (
 )
 
 
-def test_properties():
+def test_properties() raises:
     assert_equal(Int.MAX, (1 << bit_width_of[DType.int]() - 1) - 1)
     assert_equal(Int.MIN, -(1 << bit_width_of[DType.int]() - 1))
 
 
-def test_add():
+def test_add() raises:
     assert_equal(Int.__add__(Int(3), Int(3)), 6)
     assert_equal(Int.__add__(Int(-2), Int(3)), 1)
     assert_equal(Int.__add__(Int(2), Int(-3)), -1)
@@ -35,7 +35,7 @@ def test_add():
     assert_equal(Int.__add__(Int(-5), Int(-4)), -9)
 
 
-def test_sub():
+def test_sub() raises:
     assert_equal(Int.__sub__(Int(3), Int(3)), 0)
     assert_equal(Int.__sub__(Int(-2), Int(3)), -5)
     assert_equal(Int.__sub__(Int(2), Int(-3)), 5)
@@ -43,7 +43,7 @@ def test_sub():
     assert_equal(Int.__sub__(Int(4), Int(5)), -1)
 
 
-def test_div():
+def test_div() raises:
     var n = Int(5)
     var d = Int(2)
     # TODO: re-enable when Int.__truediv__ is re-enabled
@@ -52,25 +52,38 @@ def test_div():
     assert_equal(2, n)
 
 
-def test_pow():
+def test_pow() raises:
     assert_equal(1, Int.__pow__(Int(3), Int(0)))
     assert_equal(27, Int.__pow__(Int(3), Int(3)))
     assert_equal(81, Int.__pow__(Int(3), Int(4)))
 
+    # Negative exponents: 1 ** n == 1 for all n.
+    assert_equal(1, Int.__pow__(Int(1), Int(-1)))
+    assert_equal(1, Int.__pow__(Int(1), Int(-5)))
 
-def test_ceil():
+    # Negative exponents: (-1) ** n depends on parity.
+    assert_equal(-1, Int.__pow__(Int(-1), Int(-1)))
+    assert_equal(1, Int.__pow__(Int(-1), Int(-2)))
+    assert_equal(-1, Int.__pow__(Int(-1), Int(-3)))
+
+    # Negative exponents: |base| > 1 truncates to 0.
+    assert_equal(0, Int.__pow__(Int(2), Int(-1)))
+    assert_equal(0, Int.__pow__(Int(3), Int(-2)))
+
+
+def test_ceil() raises:
     assert_equal(Int.__ceil__(Int(5)), 5)
     assert_equal(Int.__ceil__(Int(0)), 0)
     assert_equal(Int.__ceil__(Int(-5)), -5)
 
 
-def test_floor():
+def test_floor() raises:
     assert_equal(Int.__floor__(Int(5)), 5)
     assert_equal(Int.__floor__(Int(0)), 0)
     assert_equal(Int.__floor__(Int(-5)), -5)
 
 
-def test_round():
+def test_round() raises:
     assert_equal(Int.__round__(Int(5)), 5)
     assert_equal(Int.__round__(Int(0)), 0)
     assert_equal(Int.__round__(Int(-5)), -5)
@@ -86,13 +99,13 @@ def test_round():
     assert_equal(Int.__round__(1342, -5), 0)
 
 
-def test_trunc():
+def test_trunc() raises:
     assert_equal(Int.__trunc__(Int(5)), 5)
     assert_equal(Int.__trunc__(Int(0)), 0)
     assert_equal(Int.__trunc__(Int(-5)), -5)
 
 
-def test_floordiv():
+def test_floordiv() raises:
     assert_equal(1, Int.__floordiv__(Int(2), Int(2)))
     assert_equal(0, Int.__floordiv__(Int(2), Int(3)))
     assert_equal(-1, Int.__floordiv__(Int(2), Int(-2)))
@@ -100,7 +113,7 @@ def test_floordiv():
     assert_equal(-1, Int.__floordiv__(Int(-1), Int(10)))
 
 
-def test_mod():
+def test_mod() raises:
     assert_equal(0, Int.__mod__(Int(99), Int(1)))
     assert_equal(0, Int.__mod__(Int(99), Int(3)))
     assert_equal(-1, Int.__mod__(Int(99), Int(-2)))
@@ -112,7 +125,7 @@ def test_mod():
     assert_equal(1, Int.__mod__(Int(-3), Int(2)))
 
 
-def test_divmod():
+def test_divmod() raises:
     var a, b = divmod(7, 3)
     assert_equal(a, 2)
     assert_equal(b, 1)
@@ -138,30 +151,14 @@ def test_divmod():
     assert_equal(b, 0)
 
 
-def test_abs():
+def test_abs() raises:
     assert_equal(Int(-5).__abs__(), 5)
     assert_equal(Int(2).__abs__(), 2)
     assert_equal(Int(0).__abs__(), 0)
     assert_equal(Int.MIN.__abs__(), Int.MIN)
 
 
-def test_string_conversion():
-    assert_equal(Int(3).__str__(), "3")
-    assert_equal(Int(-3).__str__(), "-3")
-    assert_equal(Int(0).__str__(), "0")
-    assert_equal(Int(100).__str__(), "100")
-    assert_equal(Int(-100).__str__(), "-100")
-
-
-def test_int_representation():
-    assert_equal(Int(3).__repr__(), "3")
-    assert_equal(Int(-3).__repr__(), "-3")
-    assert_equal(Int(0).__repr__(), "0")
-    assert_equal(Int(100).__repr__(), "100")
-    assert_equal(Int(-100).__repr__(), "-100")
-
-
-def test_int_write_repr_to():
+def test_int_write_repr_to() raises:
     fn check(i: Int, expected: String) raises:
         var string = String()
         i.write_repr_to(string)
@@ -174,17 +171,17 @@ def test_int_write_repr_to():
     check(Int(-100), "Int(-100)")
 
 
-def test_indexer():
+def test_indexer() raises:
     assert_true(5 == index(Int(5)))
     assert_true(987 == index(Int(987)))
 
 
-def test_bool():
+def test_bool() raises:
     assert_true(Int(5).__bool__())
     assert_false(Int(0).__bool__())
 
 
-def test_decimal_digit_count():
+def test_decimal_digit_count() raises:
     assert_equal(Int(0)._decimal_digit_count(), 1)
     assert_equal(Int(1)._decimal_digit_count(), 1)
     assert_equal(Int(2)._decimal_digit_count(), 1)
@@ -209,7 +206,7 @@ def test_decimal_digit_count():
     assert_equal(Int.MIN._decimal_digit_count(), 19)
 
 
-def test_int_uint():
+def test_int_uint() raises:
     var u1 = UInt(42)
     assert_equal(42, Int(u1))
 
@@ -217,7 +214,7 @@ def test_int_uint():
     assert_equal(0, Int(u2))
 
 
-def test_comparison():
+def test_comparison() raises:
     assert_true(Int(5).__lt__(Int(10)))
     assert_true(Int(-10).__lt__(Int(-5)))
     assert_false(Int(0).__lt__(Int(0)))
@@ -249,11 +246,11 @@ def test_comparison():
     assert_false(Int(5).__ge__(Int(10)))
 
 
-def test_float_conversion():
+def test_float_conversion() raises:
     assert_equal(Float64(Int(45)), Float64(45))
 
 
-def test_is_power_of_two():
+def test_is_power_of_two() raises:
     assert_equal(Int.MIN.is_power_of_two(), False)
     assert_equal(Int(-(2**59)).is_power_of_two(), False)
     assert_equal(Int(-1).is_power_of_two(), False)
@@ -263,9 +260,8 @@ def test_is_power_of_two():
     assert_equal(Int(3).is_power_of_two(), False)
     assert_equal(Int(4).is_power_of_two(), True)
     assert_equal(Int(5).is_power_of_two(), False)
-    assert_equal(Int(2**59).is_power_of_two(), True)
     assert_equal(Int.MAX.is_power_of_two(), False)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

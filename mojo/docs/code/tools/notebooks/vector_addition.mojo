@@ -14,10 +14,10 @@
 # Tested on T4 GPU 2 Dec 2025
 
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 comptime VECTOR_WIDTH = 10
 comptime layout = Layout.row_major(VECTOR_WIDTH)
@@ -31,12 +31,9 @@ fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
     output[idx] = left[idx] + right[idx]
 
 
-def main():
+def main() raises:
     # Ensure a supported GPU (NVIDIA or AMD) is available
-    constrained[
-        has_accelerator(),
-        "This example requires a supported GPU",
-    ]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Create GPU device context
     var ctx = DeviceContext()

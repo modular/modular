@@ -15,11 +15,37 @@ from __future__ import annotations
 
 from typing import Literal
 
-from ..llama3.model import Llama3Model
+from max.driver import Device
+from max.engine import InferenceSession
+from max.graph.weights import Weights, WeightsAdapter
+from max.nn.transformer import ReturnLogits
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+
+from ..llama3.model import LlamaModelBase
 
 
-class Phi3Model(Llama3Model):
+class Phi3Model(LlamaModelBase):
     """Phi 3 pipeline model implementation."""
 
     norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
     """Normalization layer."""
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        adapter: WeightsAdapter | None = None,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+    ) -> None:
+        super().__init__(
+            pipeline_config,
+            session,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter,
+            return_logits,
+        )

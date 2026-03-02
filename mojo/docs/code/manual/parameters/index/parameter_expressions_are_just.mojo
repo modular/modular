@@ -19,17 +19,15 @@ fn concat[
 ]:
     var result = SIMD[dtype, ls_size + rh_size]()
 
-    @parameter
-    for i in range(ls_size):
+    comptime for i in range(ls_size):
         result[i] = lhs[i]
 
-    @parameter
-    for j in range(rh_size):
+    comptime for j in range(rh_size):
         result[ls_size + j] = rhs[j]
     return result
 
 
-def main():
+def main() raises:
     var a = SIMD[DType.float32, 2](1, 2)
     var x = concat(a, a)
 

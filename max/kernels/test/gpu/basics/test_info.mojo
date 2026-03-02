@@ -15,7 +15,7 @@ from gpu.host.info import *
 from testing import *
 
 
-def main():
+def main() raises:
     assert_true(materialize[H100.compute > A100.compute]())
     assert_false(materialize[H100.compute < A100.compute]())
     assert_true(materialize[A100.compute < H100.compute]())

@@ -89,7 +89,7 @@ struct FusedAttention:
         value: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
-        constrained[rank == 2, "rank must be 2"]()
+        comptime assert rank == 2, "rank must be 2"
 
         # Query tensor
         Q = query.to_layout_tensor()
@@ -269,7 +269,7 @@ fn matmul[
 
         comptime BK = 8
 
-        constrained[K % 8 == 0, "K needs to be a multiple of 8"]()
+        comptime assert K % 8 == 0, "K needs to be a multiple of 8"
 
         mma_b_t = TensorCore[
             lhs.dtype, res.dtype, Index(M, N, BK), transpose_b
@@ -358,7 +358,7 @@ def fused_attention_gpu[
     K: LayoutTensor,
     V: LayoutTensor,
     mut O: LayoutTensor,
-):
+) raises:
     comptime kernel_func = fused_attention_kernel[
         Q.dtype,
         Q.layout,

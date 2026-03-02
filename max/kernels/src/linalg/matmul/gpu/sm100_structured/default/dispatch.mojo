@@ -27,6 +27,7 @@ from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.nvidia.tma import TensorMapSwizzle
 from gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     lt_to_tt,
 )
@@ -50,6 +51,7 @@ from ....vendor.matmul import matmul as matmul_vendor
 from ...tile_scheduler import RasterOrder
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
+    blackwell_batched_matmul_tma_umma_warp_specialized,
     matmul_sm100_fallback,
 )
 from internal_utils import Table
@@ -80,11 +82,11 @@ fn matmul_dispatch_sm100[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
-    constrained[a_type == b_type, "a_type and b_type must be the same"]()
+    comptime assert a_type == b_type, "a_type and b_type must be the same"
 
     var m = c.dim[0]()
     comptime static_N = c.shape.get[1]()
@@ -151,10 +153,7 @@ fn matmul_dispatch_sm100[
             else:
                 raise Error("Heuristic and outliers dispatch failed.")
         else:
-            constrained[
-                False,
-                "Unsupported shape for benchmarking mode.",
-            ]()
+            comptime assert False, "Unsupported shape for benchmarking mode."
 
     var epilogue_type = String("None")
 
@@ -1364,10 +1363,10 @@ fn heuristic_and_outliers_dispatch[
     comptime static_N = c.shape.get[1]()
     comptime static_K = a.shape.get[1]()
 
-    constrained[
-        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
-        "Only support bfloat16 and float8_e4m3fn input types",
-    ]()
+    comptime assert a_type == b_type and a_type in (
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+    ), "Only support bfloat16 and float8_e4m3fn input types"
 
     comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
@@ -1405,6 +1404,9 @@ fn heuristic_and_outliers_dispatch[
                 k_group_size=Int(tuning_config.k_group_size),
                 num_split_k=tuning_config.num_split_k,
             )
+
+            logger.info("dispatching to outlier config: ", matmul_config)
+
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=matmul_config,
@@ -1424,6 +1426,8 @@ fn heuristic_and_outliers_dispatch[
 
     comptime for config in configs:
         if config_runtime == config:
+            logger.info("dispatching to config: ", config)
+
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
@@ -1475,12 +1479,31 @@ fn matmul_dispatch_sm100_bf16[
         Index(4096, 7168),
     ]
 
+    comptime DeepSeek_NK = [
+        Index(16384, 512),
+        Index(256, 7168),
+        Index(1536, 7168),
+        Index(576, 7168),
+        Index(2112, 7168),
+        Index(24576, 1536),
+    ]
+
     comptime miscellaneous_NK = [
         Index(1536, 4096),
         Index(4096, 1536),
     ]
 
-    comptime if Index(static_N, static_K) in miscellaneous_NK:
+    comptime static_NK = Index(static_N, static_K)
+
+    comptime if static_NK in DeepSeek_NK:
+        return heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
+    comptime if static_NK in miscellaneous_NK:
         return heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
@@ -1970,8 +1993,8 @@ fn _vendor_blas_matmul_sm100[
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    a: NDBuffer[mut=False, a_type, 2, _, _],
+    b: NDBuffer[mut=False, b_type, 2, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime K = a.shape.get[1]()
@@ -2072,10 +2095,9 @@ fn _matmul_dispatch_sm100[
     var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
     var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
 
-    constrained[
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None,
-        "Either the epilogue lambda or the compute lambda can be used",
-    ]()
+    comptime assert (
+        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
+    ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if not elementwise_lambda_fn:
         if not c.data:
@@ -2154,3 +2176,40 @@ fn _matmul_dispatch_sm100[
         ](c_tmp, a, b, ctx)
 
         _ = tmp_device_buffer^
+
+
+@always_inline
+fn batched_matmul_dispatch_sm100_bf16[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    transpose_b: Bool,
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Dispatch batched BF16 matmul to SM100 kernel with a default config.
+
+    Uses a reasonable default config (256x256x16 MMA, 2x1x1 cluster, cta_group=2)
+    which works well for a variety of batched matmul shapes.
+    """
+    comptime MMA_K = 16
+    comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+
+    comptime block_tile_shape = Index(128, 128, BK)
+    comptime umma_shape = Index(
+        block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+    )
+    comptime cluster_shape = Index(2, 1, 1)
+    comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        mma_shape=umma_shape,
+        cluster_shape=cluster_shape,
+        block_swizzle_size=0,
+    )
+
+    blackwell_batched_matmul_tma_umma_warp_specialized[
+        transpose_b=transpose_b,
+        config=config,
+    ](c, a, b, ctx)

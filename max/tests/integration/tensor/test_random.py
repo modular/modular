@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import pytest
 from conftest import assert_all_close
-from max import random
 from max.driver import CPU
 from max.dtype import DType
+from max.experimental import random
 
 
 def test_normal() -> None:

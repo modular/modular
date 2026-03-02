@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides extended utilities for :obj:`max.driver.Buffer`, including dtype casting, numpy interop, and DLPack integration."""
+
 from __future__ import annotations
 
 import struct
@@ -21,6 +24,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Buffer as Buffer
+from max._core.driver import DevicePinnedBuffer as DevicePinnedBuffer
 from max.dtype import DType
 
 from .driver import CPU
@@ -113,7 +117,7 @@ def _to_numpy(self: Buffer) -> npt.NDArray[Any]:
         cpu_buf = self.to(CPU())
 
     try:
-        return np.from_dlpack(cpu_buf)
+        arr = np.from_dlpack(cpu_buf)
     except RuntimeError as e:
         if str(e).startswith("Unsupported device in DLTensor"):
             raise RuntimeError(
@@ -121,6 +125,11 @@ def _to_numpy(self: Buffer) -> npt.NDArray[Any]:
                 " the host using `Buffer.to`"
             ) from e
         raise
+    # DLPack v0 capsules may produce read-only arrays in numpy >= 1.26.
+    # Callers expect a writable view, so return a writable copy when needed.
+    if not arr.flags.writeable:
+        arr = arr.copy()
+    return arr
 
 
 def _from_dlpack(array: Any, *, copy: bool | None = None) -> Buffer:

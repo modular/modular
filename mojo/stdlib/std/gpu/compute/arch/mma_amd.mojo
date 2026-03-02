@@ -18,9 +18,9 @@ center GPUs using the MFMA (Matrix Fused Multiply-Add) instructions.
 Reference: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
-from sys import llvm_intrinsic
-from sys.info import _cdna_4_or_newer, _is_amd_rdna
-from memory import bitcast
+from std.sys import llvm_intrinsic
+from std.sys.info import _cdna_4_or_newer, _is_amd_rdna
+from std.memory import bitcast
 
 # Import helper functions from parent module
 from ..mma import (
@@ -99,9 +99,9 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
     comptime if _has_type[DType.float16](a.dtype, b.dtype, c.dtype, d.dtype):
-        constrained[
-            False, "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
-        ]()
+        comptime assert (
+            False
+        ), "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
 
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32

@@ -20,9 +20,8 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 
 from nn.topk import _top_k_cpu, _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
@@ -648,7 +647,7 @@ fn test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     test_case_multi_rank[dtype, fill_iota](ctx, test_case_multi_rank3)
 
 
-def main():
+def main() raises:
     comptime llama3_vocab_size = 128256
     with DeviceContext() as ctx:
         comptime dtype = DType.float32

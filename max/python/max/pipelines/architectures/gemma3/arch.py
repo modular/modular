@@ -15,17 +15,14 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from . import weight_adapters
 from .model import Gemma3Model
 from .model_config import Gemma3Config
 
 gemma3_arch = SupportedArchitecture(
-    name="Gemma3ForCausalLM_Legacy",
+    name="Gemma3ForCausalLM",
     example_repo_ids=[
         # it = Instruction tuned (recommended).
         # pt = Pre-trained.
@@ -36,7 +33,7 @@ gemma3_arch = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     pipeline_model=Gemma3Model,
     task=PipelineTask.TEXT_GENERATION,

@@ -18,9 +18,8 @@ import linalg.matmul.vendor.blas as vendor_blas
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from gpu.host import DeviceContext, get_gpu_target
-from layout._coord import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
 from linalg.bmm import _batched_matmul_gpu
 
 from random import rand
@@ -359,7 +358,7 @@ fn test_non_row_major_layout[
     c_host_ref_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Test zero-dimension edge cases
         test_dynamic_shapes[

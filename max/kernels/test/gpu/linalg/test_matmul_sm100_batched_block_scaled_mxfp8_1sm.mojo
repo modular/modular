@@ -26,7 +26,7 @@ from internal_utils import assert_almost_equal
 from random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._tile_tensor import TileTensor
+from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -45,7 +45,6 @@ from linalg.fp4_utils import (
 )
 from random import random_ui64
 from builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import LayoutTensor, Layout, RuntimeLayout
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
@@ -74,7 +73,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     SF_VECTOR_SIZE: Int = MXFP8_SF_VECTOR_SIZE,
-](ctx: DeviceContext, batch: ValOrDim, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](
+    ctx: DeviceContext, batch: ValOrDim, m: ValOrDim, n: ValOrDim, k: ValOrDim
+) raises:
     var B = batch.value
     var M = m.value
     var N = n.value
@@ -412,13 +413,10 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    constrained[
-        a_type != DType.float8_e4m3fn or transpose_b,
-        (
-            "Testing is only supported for transposed_b==True when"
-            " a_type==float8_e4m3fn. Add the non-transposed case if needed."
-        ),
-    ]()
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        "Testing is only supported for transposed_b==True when"
+        " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+    )
 
     @parameter
     fn _reshape_to_2d[layout: Layout]() -> Layout:
@@ -544,7 +542,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     _ = b_scales_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.float8_e4m3fn
         comptime out_dtype = DType.bfloat16

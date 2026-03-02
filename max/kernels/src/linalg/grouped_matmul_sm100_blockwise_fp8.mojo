@@ -234,7 +234,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         alignment=128,
     ]
     comptime a_scales_smem_tile_t = LayoutTensor[
-        accum_type,
+        a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -252,7 +252,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         (b_size * size_of[b_type]()) % 128
     ) == 0, "preserve alignment"
     comptime assert (
-        (a_scales_size * size_of[accum_type]()) % 16
+        (a_scales_size * size_of[a_scales_type]()) % 16
     ) == 0, "preserve alignment"
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
@@ -376,18 +376,18 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
-                    b_scale = rebind[Scalar[accum_type]](
+                    b_scale = rebind[Scalar[b_scales_type]](
                         b_scales_2d[b_scale_m_offset + idx0, k_iter]
-                    )
+                    ).cast[accum_type]()
                 else:
-                    b_scale = rebind[Scalar[accum_type]](
+                    b_scale = rebind[Scalar[b_scales_type]](
                         b_scales_2d[b_scale_m_offset + idx0 + 1, k_iter]
-                    )
+                    ).cast[accum_type]()
 
             else:
-                b_scale = rebind[Scalar[accum_type]](
+                b_scale = rebind[Scalar[b_scales_type]](
                     b_scales_2d[b_scale_m_offset + block_idx.x, k_iter]
-                )
+                ).cast[accum_type]()
 
             var m_offset = (warp_id * 16) + (lane_id() // 4)
 
@@ -604,7 +604,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
 
     comptime smem_use = (
         BM * size_of[a_type]() + BN * size_of[b_type]()
-    ) * BK + 24 + size_of[accum_type]() * BM
+    ) * BK + 24 + size_of[a_scales_type]() * BM
 
     comptime block_dim = 128
 
@@ -748,7 +748,7 @@ fn load_AB[
     iter_idx: UInt,
     elect_one_cta: Bool,
     scheduler: TileScheduler,
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
 ):
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -778,8 +778,8 @@ fn load_AB[
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
 
-    var a_gmem_slice_coord = (
-        peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
+    var a_gmem_slice_coord = Int(peer_cta_coord[2]) * a_tma_rows + Int(
+        work_tile_coord[0]
     )
     var expert_id = expert_ids[Int(scheduler.current_group_idx)]
     var b_gmem_slice_coord_vec = type_of(expert_id)(
@@ -788,7 +788,7 @@ fn load_AB[
         + work_tile_coord[1]
     ) + expert_id * type_of(expert_id)(scheduler.static_MN)
     comptime assert b_gmem_slice_coord_vec.size == 1
-    var b_gmem_slice_coord = b_gmem_slice_coord_vec[0]
+    var b_gmem_slice_coord = Int(b_gmem_slice_coord_vec[0])
 
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
@@ -809,14 +809,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), a_gmem_slice_coord),
+            (Int(iter_idx) * BK, a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
+            (Int(iter_idx) * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -1033,8 +1033,8 @@ fn multi_stage_reg_epilogue[
                 c_tma_op.async_store(
                     c_smem_split,
                     (
-                        coord_n,
-                        coord_m,
+                        Int(coord_n),
+                        Int(coord_m),
                     ),
                 )
                 c_tma_op.commit_group()
@@ -1071,7 +1071,7 @@ fn promote_accumulators[
     is_lower_frag_required: Bool,
     num_output_warps: Int,
 ](
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     b_scales_n: Int,
     a_scales_smem_iter: LayoutTensorIter[
         a_scales_type,
@@ -1102,7 +1102,7 @@ fn promote_accumulators[
     stage_stride_cols: UInt,
     k_iter: UInt,
     problem_shape: StaticTuple[Int32, 3],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
     scheduler: TileScheduler,
 ):
     comptime BM = block_tile_shape[0]
@@ -1119,7 +1119,7 @@ fn promote_accumulators[
 
     comptime assert (
         a_scales_type == b_scales_type and accum_type == DType.float32
-    ), "Only support float32 for a_scales, b_scales, and accum_type"
+    ), "a_scales_type must equal b_scales_type, and accum_type must be float32"
     # Rows each warp is responsible for:
     # warp_id 0 -> 0-15 upper, 16-31 lower
     # warp_id 1 -> 32-47 upper, 48-63 lower
@@ -1418,10 +1418,10 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_scales_tma_op: TMATensorTile[
         a_scales_type, a_scales_tile_layout, a_scales_desc_layout
     ],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutAnyOrigin],
+    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, ImmutAnyOrigin],
     num_iters: UInt,
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
 ):
     comptime num_output_warps = 4
@@ -1430,7 +1430,7 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     comptime assert (
         b_scales_type == a_scales_type and accum_type == DType.float32
-    ), "Only support float32 for a_scales and b_scales"
+    ), "a_scales_type must equal b_scales_type, and accum_type must be float32"
     comptime assert transpose_b, "only support k-major B"
 
     comptime SCHEDULER_THREADS = WARP_SIZE
@@ -1964,12 +1964,16 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: LayoutTensor[c_type, c_layout, ...],
-    a: LayoutTensor[a_type, a_layout, ...],
-    b: LayoutTensor[b_type, b_layout, ...],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
-    a_offsets: LayoutTensor[a_offsets_type, a_offsets_layout, ...],
-    expert_ids: LayoutTensor[expert_ids_type, expert_ids_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin, ...],
+    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin, ...],
+    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ImmutAnyOrigin, ...],
+    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin, ...],
+    a_offsets: LayoutTensor[
+        a_offsets_type, a_offsets_layout, ImmutAnyOrigin, ...
+    ],
+    expert_ids: LayoutTensor[
+        expert_ids_type, expert_ids_layout, ImmutAnyOrigin, ...
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -1990,7 +1994,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
 
     comptime assert (
         a_scales_type == b_scales_type
-    ), "Only support float32 for scales"
+    ), "a_scales_type must equal b_scales_type"
 
     if (a_scales.dim(1) * size_of[a_scales_type]()) % 16 != 0:
         raise Error(
@@ -2215,12 +2219,12 @@ fn grouped_matmul_dynamic_scaled_fp8[
     target: StaticString = "cpu",
 ](
     c: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, _],
-    b: NDBuffer[b_type, 3, MutAnyOrigin, _],
-    a_scales: NDBuffer[a_scales_type, 2, MutAnyOrigin, _],
-    b_scales: NDBuffer[b_scales_type, 3, MutAnyOrigin, _],
-    a_offsets: NDBuffer[a_offsets_type, 1, MutAnyOrigin, _],
-    expert_ids: NDBuffer[expert_ids_type, 1, MutAnyOrigin, _],
+    a: NDBuffer[a_type, 2, ImmutAnyOrigin, _],
+    b: NDBuffer[b_type, 3, ImmutAnyOrigin, _],
+    a_scales: NDBuffer[a_scales_type, 2, ImmutAnyOrigin, _],
+    b_scales: NDBuffer[b_scales_type, 3, ImmutAnyOrigin, _],
+    a_offsets: NDBuffer[a_offsets_type, 1, ImmutAnyOrigin, _],
+    expert_ids: NDBuffer[expert_ids_type, 1, ImmutAnyOrigin, _],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
@@ -2236,9 +2240,9 @@ fn grouped_matmul_dynamic_scaled_fp8[
     comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
-    comptime assert (
-        a_scales_type == b_scales_type == DType.float32
-    ), "input A and B scales dtype should be float32"
+    comptime assert a_scales_type == b_scales_type and (
+        a_scales_type == DType.float32 or a_scales_type == DType.bfloat16
+    ), "input A and B scales dtype should be float32 or bfloat16"
     comptime assert (
         input_scale_granularity == "block"
         and weight_scale_granularity == "block"

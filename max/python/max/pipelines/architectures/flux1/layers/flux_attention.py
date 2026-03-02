@@ -14,16 +14,16 @@
 import math
 from typing import Any
 
-from max import functional as F
 from max.driver.driver import Device
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
-from max.nn import Linear, Module
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
-from max.nn.norm import RMSNorm
-from max.nn.sequential import ModuleList
-from max.tensor import Tensor
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn.module_v3 import Linear, Module
+from max.nn.module_v3.norm import RMSNorm
+from max.nn.module_v3.sequential import ModuleList
 
 from .activations import GELU
 from .embeddings import apply_rotary_emb

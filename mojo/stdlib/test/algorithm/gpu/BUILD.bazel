@@ -2,22 +2,13 @@ load("//bazel:api.bzl", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
 
-_APPLE_GPU_INCOMPATIBLE = select({
-    "//:apple_gpu": ["@platforms//:incompatible"],
-    "//conditions:default": [],
-})
-
-_EXTRA_CONSTRAINTS = {
-    "test_reduce_atomic.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2423
-}
-
 [
     mojo_test(
         name = src + ".test",
         size = "large",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        target_compatible_with = ["//:has_gpu"],
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",

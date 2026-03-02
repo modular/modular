@@ -21,9 +21,8 @@ from gpu import block_id_in_cluster
 from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.compute.arch.tcgen05 import *
 from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import IntTuple, Layout, LayoutTensor
-from layout._coord import coord_to_int_tuple
-from layout._tile_tensor import TileTensor
+from layout import IntTuple, Layout, LayoutTensor, TileTensor
+from layout.coord import coord_to_int_tuple
 from layout.layout import coalesce
 from layout.tensor_core_async import (
     tile_to_descriptor,
@@ -86,7 +85,6 @@ fn max_contiguous_tile_shape[
         return IntTuple(8, swizzle_mode.bytes() // size_of[dtype]())
     else:
         comptime assert False, "Invalid major"
-        return IntTuple()
 
 
 # TODO: add create method to mma_operand trait and unify this with
@@ -399,11 +397,10 @@ struct MmaOpSM100_SS[
         elif dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
             return UMMAKind.KIND_F8F6F4
         else:
-            constrained[
-                False,
+            comptime assert False, String(
                 "Unsupported/not implemented operand type for UMMA: ",
                 String(dtype),
-            ]()
+            )
 
         return UMMAKind(-1)
 

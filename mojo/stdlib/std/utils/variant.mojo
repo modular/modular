@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Defines a Variant type."""
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.rebind import downcast
-from builtin.variadics import Variadic
-from format._utils import (
+from std.builtin.constrained import _constrained_conforms_to
+from std.builtin.rebind import downcast
+from std.builtin.variadics import Variadic
+from std.format._utils import (
     FormatStruct,
     TypeNames,
     constrained_conforms_to_writable,
 )
-from os import abort
-from sys.intrinsics import _type_is_eq
+from std.os import abort
+from std.sys.intrinsics import _type_is_eq
 
 # ===----------------------------------------------------------------------=== #
 # Variant
@@ -58,8 +58,8 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
     Example:
 
     ```mojo
-    from utils import Variant
-    import random
+    from std.utils import Variant
+    import std.random
 
     comptime IntOrString = Variant[Int, String]
 
@@ -122,6 +122,19 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         elif item.isa[Bool]():
             print("Boolean:", item[Bool])
     ```
+
+    ## Layout
+
+    The layout of `Variant` is not guaranteed and may change at any time. The
+    implementation may apply niche optimizations (for example, encoding the
+    discriminant inside spare bits of one of the types in `Ts`) that alter the
+    resulting layout. Do not rely on `size_of[Variant[...]]()` or
+    `align_of[Variant[...]]()` being stable across language versions. The only
+    guarantee is that the size and alignment will be at least as large as those
+    of the largest type among `Ts`.
+
+    If you need to inspect the current size or alignment, use `size_of` and
+    `align_of`, but treat the results as non-stable implementation details.
 
     Parameters:
         Ts: The possible types that this variant can hold. All types must
@@ -492,13 +505,13 @@ struct Variant[*Ts: AnyType](ImplicitlyCopyable, Writable):
         Example:
 
         ```mojo
-        from utils import Variant
+        from std.utils import Variant
 
-        def takes_variant(mut arg: Variant):
+        def takes_variant(mut arg: Variant) raises:
             if arg.is_type_supported[Float64]():
                 arg = Float64(1.5)
 
-        def main():
+        def main() raises:
             var x = Variant[Int, Float64](1)
             takes_variant(x)
             if x.isa[Float64]():

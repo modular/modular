@@ -16,9 +16,8 @@ from math import ceil, floor
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from layout._coord import Coord, coord_to_index_list
+from layout import Coord, TileTensor, coord_to_index_list
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
 from layout.int_tuple import fill_like
 from memory import memcpy
 
@@ -73,7 +72,6 @@ fn coord_transform[
         return out_coord_f32 / scale
     else:
         comptime assert False, "coordinate_transformation_mode not implemented"
-        return 0
 
 
 struct RoundMode(ImplicitlyCopyable):
@@ -122,7 +120,6 @@ struct Interpolator[mode: InterpolationMode](
             return 1
         else:
             comptime assert False, "InterpolationMode not supported"
-            return -1
 
     @always_inline
     fn filter(self, x: Float32) -> Float32:
@@ -130,7 +127,6 @@ struct Interpolator[mode: InterpolationMode](
             return linear_filter(x)
         else:
             comptime assert False, "InterpolationMode not supported"
-            return -1
 
 
 fn resize_nearest_neighbor[
@@ -163,7 +159,6 @@ fn resize_nearest_neighbor[
             return ceil(val)
         else:
             comptime assert False, "round_mode not implemented"
-            return val
 
     @__copy_capture(scales)
     @parameter

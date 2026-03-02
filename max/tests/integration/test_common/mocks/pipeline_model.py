@@ -14,7 +14,7 @@
 
 from collections.abc import Sequence
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import Mock
 
 import numpy as np
 from max.driver import CPU, Buffer, Device
@@ -22,12 +22,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -35,7 +31,7 @@ from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -77,7 +73,7 @@ class MockModelInputs(ModelInputs):
         )
 
 
-class MockPipelineModel(PipelineModel):
+class MockPipelineModel(PipelineModelWithKVCache):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -105,7 +101,7 @@ class MockPipelineModel(PipelineModel):
 
         # This is required to smuggle these parameters in.
         self.max_length = pipeline_config.model.max_length
-        self.kv_manager = MagicMock(spec=PagedKVCacheManager)
+        self.kv_params = Mock(spec=KVCacheParams)
 
         # These mypy ignores, are needed to smuggle in these settings without
         # reworking these globally.
@@ -121,7 +117,7 @@ class MockPipelineModel(PipelineModel):
                 n_heads=self.huggingface_config.num_attention_heads,
                 n_kv_heads=self.huggingface_config.num_key_value_heads,
                 head_dim=self.huggingface_config.head_dim,
-                zmq_endpoint_base=self.pipeline_config.zmq_endpoint_base,
+                zmq_endpoint_base=self.pipeline_config.runtime.zmq_endpoint_base,
             )
             if self.pipeline_config.lora
             and self.pipeline_config.lora.enable_lora
@@ -164,7 +160,6 @@ class MockPipelineModel(PipelineModel):
             head_dim=1,
             num_layers=1,
             enable_prefix_caching=False,
-            cache_strategy="paged",
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )

@@ -15,18 +15,18 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from builtin.constrained import _constrained_conforms_to
-from format._utils import (
+from std.builtin.constrained import _constrained_conforms_to
+from std.format._utils import (
     write_sequence_to,
     TypeNames,
     FormatStruct,
     constrained_conforms_to_writable,
 )
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
-from reflection.type_info import _unqualified_type_name
+from std.reflection.type_info import _unqualified_type_name
 
-from utils._visualizers import lldb_formatter_wrapping_type
+from std.utils._visualizers import lldb_formatter_wrapping_type
 
 # ===-----------------------------------------------------------------------===#
 # Tuple

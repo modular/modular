@@ -434,7 +434,10 @@ class TextBatchConstructor:
             )
         ]
 
-        if self.scheduler_config.max_batch_total_tokens is not None:
+        if (
+            self.scheduler_config.max_batch_total_tokens is not None
+            and self.kv_cache is not None
+        ):
             token_budgets.append(
                 TotalContextTokenBudget(
                     capacity=self.scheduler_config.max_batch_total_tokens,

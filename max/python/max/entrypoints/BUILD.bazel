@@ -91,6 +91,41 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "pipelines_lmcache",
+    srcs = [
+        "pipelines.py",
+    ],
+    data = [
+        "@nvshmem_prebuilt//:host",
+    ],
+    env = {
+        "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": "base2_exponential_bucket_histogram",
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    ignore_extra_deps = [
+        requirement("lmcache"),
+    ],
+    main = "//max/python/max/entrypoints:pipelines.py",
+    mojo_deps = PROD_MOJOPKGS,
+    target_compatible_with = select({
+        "@//:linux_x86_64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":entrypoints",
+        "//max/python/max:_core",
+        "//max/python/max/benchmark:benchmark_serving_lib",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/telemetry",
+        requirement("typing-extensions"),
+        requirement("click"),
+        requirement("lmcache"),
+    ],
+)
+
+modular_py_binary(
     name = "replay_recording",
     srcs = ["replay_recording.py"],
     deps = [

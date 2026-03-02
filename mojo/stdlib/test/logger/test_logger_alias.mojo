@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Level, Logger
-from testing import TestSuite
+from std.logger import Level, Logger
+from std.testing import TestSuite
 
 comptime log = Logger[Level.INFO]()
 
 
-def test_log_alias():
+def test_log_alias() raises:
     # CHECK-NOT: DEBUG
     # CHECK-NOT: :::     hello world
     log.debug("hello", "world")

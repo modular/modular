@@ -556,9 +556,9 @@ See real-world examples by searching for these functions:
 Each example demonstrates the complete target configuration for that GPU family.
 """
 
-from math import ceildiv, floor
-from os import abort
-from sys.info import CompilationTarget, _accelerator_arch, _TargetType
+from std.math import ceildiv, floor
+from std.os import abort
+from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
 comptime _KB = 1024
 comptime _K = 1024
@@ -1122,7 +1122,7 @@ fn _get_jetson_thor_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_110", `,
-        `features = "+ptx85,+sm_110", `,
+        `features = "+ptx90,+sm_110", `,
         `tune_cpu = "sm_110", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
@@ -1157,7 +1157,7 @@ fn _get_dgx_spark_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_121", `,
-        `features = "+ptx86,+sm_121", `,
+        `features = "+ptx88,+sm_121", `,
         `tune_cpu = "sm_121", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
@@ -1383,7 +1383,7 @@ fn _get_rtx5090_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_120a", `,
-        `features = "+ptx86,+sm_120a", `,
+        `features = "+ptx87,+sm_120a", `,
         `tune_cpu = "sm_120a", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,

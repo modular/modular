@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 from gpu.host import DeviceContext
 from gpu.host.info import Vendor
-from layout._coord import Coord
+from layout import Coord, TileTensor
 from layout._fillers import random
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
 from testing import assert_almost_equal
 
@@ -222,7 +221,7 @@ fn test_conv_transposed_cudnn[
     _ = d_output^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
         if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:

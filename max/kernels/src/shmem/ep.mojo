@@ -311,8 +311,6 @@ fn ep_dispatch_wait_kernel_api[
     comptime n_ranks = n_gpus_per_node * n_nodes
     comptime hw_info = gpu_ctx.default_device_info
 
-    comptime expert_m_padding = token_fmt_type.expert_m_padding
-
     comptime dispatch_wait = dispatch_wait_kernel[
         hw_info.max_thread_block_size,
         row_offsets.layout,
@@ -324,7 +322,6 @@ fn ep_dispatch_wait_kernel_api[
         max_token_per_rank,
         token_fmt_type,
         fused_shared_expert=fused_shared_expert,
-        expert_m_padding=expert_m_padding,
         input_scales_wrapper=input_scales_wrapper,
     ]
 
@@ -461,7 +458,6 @@ fn ep_fused_dispatch_kernel_api[
 
     comptime hw_info = gpu_ctx.default_device_info
     comptime n_ranks = n_gpus_per_node * n_nodes
-    comptime expert_m_padding = token_fmt_type.expert_m_padding
 
     comptime fused_dispatch = dispatch_kernel[
         dispatch_dtype,
@@ -477,7 +473,6 @@ fn ep_fused_dispatch_kernel_api[
         max_token_per_rank,
         n_gpus_per_node,  # p2p world size
         token_fmt_type,
-        expert_m_padding=expert_m_padding,
         fused_shared_expert=fused_shared_expert,
         input_scales_wrapper=input_scales_wrapper,
         use_shmem=use_shmem,

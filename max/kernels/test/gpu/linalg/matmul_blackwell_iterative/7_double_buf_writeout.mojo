@@ -49,6 +49,7 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
+from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
@@ -191,13 +192,13 @@ fn load_AB[
     if elect_one_cta:
         tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
-    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-        a_tma_rows
-    ) + work_tile_coord[0] * UInt(BM)
+    var a_gmem_slice_coord = (
+        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+    )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1] * UInt(MMA_N)
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1]) * MMA_N
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -213,14 +214,14 @@ fn load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), a_gmem_slice_coord),
+        (Int(iter_idx) * BK, a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), b_gmem_slice_coord),
+        (Int(iter_idx) * BK, b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -446,8 +447,8 @@ fn multi_stage_store_C[
             c_tma_op.async_store(
                 c_smem_tile,
                 (
-                    work_tile_coord[1] * UInt(MMA_N) + UInt(stage * stageN),
-                    work_tile_coord[0] * UInt(BM),
+                    Int(work_tile_coord[1]) * MMA_N + stage * stageN,
+                    Int(work_tile_coord[0]) * BM,
                 ),
             )
             c_tma_op.commit_group()
@@ -889,7 +890,7 @@ def test_blackwell_kernel_7[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     benchmark: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -933,16 +934,16 @@ def test_blackwell_kernel_7[
             Index(N, K) if transpose_b else Index(K, N)
         ),
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host = LayoutTensor[c_type, c_layout, MutAnyOrigin](
-        c_host_ptr,
+    var c_host_managed = ManagedLayoutTensor[c_type, c_layout](
         RuntimeLayout[c_layout].row_major(Index(M, N)),
+        ctx,
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host_ref = LayoutTensor[c_type, c_layout, MutAnyOrigin](
-        c_host_ref_ptr,
+    var c_host = c_host_managed.tensor[update=False]()
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, c_layout](
         RuntimeLayout[c_layout].row_major(Index(M, N)),
+        ctx,
     )
+    var c_host_ref = c_host_ref_managed.tensor[update=False]()
 
     # Device memory allocation
     var a_device = ctx.enqueue_create_buffer[a_type](M * K)
@@ -1054,14 +1055,14 @@ def test_blackwell_kernel_7[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host_ptr, c_device)
-        ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+        ctx.enqueue_copy(c_host.ptr, c_device)
+        ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
         ctx.synchronize()
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host_ptr,
-            c_host_ref_ptr,
+            c_host.ptr,
+            c_host_ref.ptr,
             M * N,
             atol=0.0001,
             rtol=rtol,
@@ -1070,12 +1071,6 @@ def test_blackwell_kernel_7[
 
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 fn get_shapes_dict(
@@ -1129,7 +1124,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             print("error")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Run the benchmark
         if is_benchmark():

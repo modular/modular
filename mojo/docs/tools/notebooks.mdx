@@ -122,7 +122,7 @@ Each Mojo cell must contain a complete program, including a `main()` function.
 ```mojo
 %%mojo
 
-def main():
+def main() raises:
   print("Hello Mojo")
 ```
 
@@ -139,8 +139,7 @@ Hello Mojo
 
 # Compiler-parameterized function
 fn repeat[count: Int](msg: String):
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         print(msg)
 
 # Compiler-argumented function
@@ -148,7 +147,7 @@ fn threehello():
     repeat[3]("Hello 🔥!")
 
 # Run
-def main():
+def main() raises:
     threehello()
 ```
 
@@ -172,12 +171,12 @@ select _Runtime > Change runtime type > [GPU]_.
 ```mojo
 %%mojo
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 fn kernel():
     print("Hello from the GPU")
 
-def main():
+def main() raises:
     # Launch GPU kernel
     with DeviceContext() as ctx:
         ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
@@ -198,10 +197,10 @@ Each GPU thread updates one element.
 ```mojo
 %%mojo
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 comptime VECTOR_WIDTH = 10
 comptime layout = Layout.row_major(VECTOR_WIDTH)
@@ -215,12 +214,9 @@ fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
     output[idx] = left[idx] + right[idx]
 
 
-def main():
+def main() raises:
     # Ensure a supported GPU (NVIDIA or AMD) is available
-    constrained[
-        has_accelerator(),
-        "This example requires a supported GPU",
-    ]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Create GPU device context
     var ctx = DeviceContext()

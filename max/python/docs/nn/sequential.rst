@@ -2,12 +2,10 @@
 :type: module
 :lang: python
 
-.. py:currentmodule:: max.nn
-
-.. note::
-   This module contains both ``Sequential`` and ``ModuleList`` containers.
-   For the legacy graph-based sequential container, see [legacy/sequential](/max/api/python/nn/legacy/sequential).
-
 .. automodule:: max.nn.sequential
    :members:
    :undoc-members:
+
+.. note::
+   ``ModuleList`` is re-exported here for backward compatibility.
+   Its canonical location is :py:class:`max.nn.module_v3.sequential.ModuleList`.

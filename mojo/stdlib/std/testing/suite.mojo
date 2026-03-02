@@ -18,15 +18,15 @@ formatted reporting. It includes support for colored output, timing statistics,
 and flexible test selection via CLI arguments.
 """
 
-from math import ceil, floor
-from os import sep
-from time import perf_counter_ns
-from utils._ansi import Color, Text
-from collections import Set
+from std.math import ceil, floor
+from std.os import sep
+from std.time import perf_counter_ns
+from std.utils._ansi import Color, Text
+from std.collections import Set
 
-from reflection import get_function_name, call_location, SourceLocation
-from sys.intrinsics import _type_is_eq
-from sys import argv
+from std.reflection import get_function_name, call_location, SourceLocation
+from std.sys.intrinsics import _type_is_eq
+from std.sys import argv
 
 
 struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
@@ -204,7 +204,7 @@ struct TestReport(Copyable, Writable):
     @staticmethod
     fn _format_error(e: Error) -> String:
         var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
-        return e.__str__().replace("\n", replacement)
+        return String(e).replace("\n", replacement)
 
     fn write_to(self, mut writer: Some[Writer]):
         """Write the formatted test report to the writer.
@@ -341,27 +341,27 @@ struct TestSuite(Movable):
     Example:
 
     ```mojo
-    from testing import assert_equal, TestSuite
+    from std.testing import assert_equal, TestSuite
 
-    def test_something():
+    def test_something() raises:
         assert_equal(1 + 1, 2)
 
-    def test_some_other_thing():
+    def test_some_other_thing() raises:
         assert_equal(2 + 2, 4)
 
-    def main():
+    def main() raises:
         TestSuite.discover_tests[__functions_in_module()]().run()
     ```
 
     Alternatively, you can manually register tests by calling the `test` method.
 
     ```mojo
-    from testing import assert_equal, TestSuite
+    from std.testing import assert_equal, TestSuite
 
-    def some_test():
+    def some_test() raises:
         assert_equal(1 + 1, 2)
 
-    def main():
+    def main() raises:
         var suite = TestSuite()
         suite.test[some_test]()
         suite^.run()

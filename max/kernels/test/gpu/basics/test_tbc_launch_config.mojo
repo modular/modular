@@ -115,7 +115,7 @@ fn test_tbc_launch_config_2x2x2(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_tbc_launch_config_2x1x1(ctx)
         test_tbc_launch_config_1x2x1(ctx)

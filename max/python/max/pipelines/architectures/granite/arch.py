@@ -19,12 +19,12 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
-from ..llama3_legacy import weight_adapters
-from ..llama3_legacy.model import Llama3Model
-from ..llama3_legacy.model_config import Llama3Config
+from ..llama3 import weight_adapters
+from ..llama3.model import Llama3Model
+from ..llama3.model_config import Llama3Config
 
 granite_arch = SupportedArchitecture(
-    name="GraniteForCausalLM_Legacy",
+    name="GraniteForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "ibm-granite/granite-3.1-8b-instruct",
@@ -33,10 +33,11 @@ granite_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
     default_encoding="float32",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=Llama3Model,
+    multi_gpu_supported=False,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     rope_type="normal",

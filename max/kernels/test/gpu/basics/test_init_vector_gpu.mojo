@@ -64,7 +64,7 @@ fn test_vec_init[
     timer.print()
 
 
-def main():
+def main() raises:
     comptime block_dim = 256
     comptime dtype = DType.float32
     var length = 32 * 1024

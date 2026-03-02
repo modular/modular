@@ -30,9 +30,11 @@ from sys.info import _accelerator_arch
 from bit import prev_power_of_two
 from gpu import WARP_SIZE, lane_id
 from gpu.host.nvidia.tma import TensorMapSwizzle
+from gpu.memory import AddressSpace
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
+from layout.runtime_layout import RuntimeLayout
 from layout.swizzle import make_ldmatrix_swizzle
 from nn.mha_mask import (
     CausalMask,
@@ -44,7 +46,6 @@ from nn.mha_mask import (
     NullMask,
     SlidingWindowCausalMask,
 )
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf
@@ -57,6 +58,22 @@ from utils.numerics import min_or_neg_inf
 comptime is_sm90 = "sm_90" in _accelerator_arch()
 comptime is_sm100 = "sm_100" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
+
+
+@always_inline
+fn as_dynamic_row_major_1d[
+    dtype: DType
+](
+    tensor: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
+    return LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin](
+        tensor.ptr,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            tensor.get_shape()
+        ),
+    )
 
 
 struct FlashAttentionAlgorithm(
@@ -639,28 +656,21 @@ fn get_start_and_end_for_partitions[
     # return (start, end)
 
 
-comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait](
-    mask: mask_t, score_mod: score_mod_t
+comptime callback_fn_type = fn[mask_t: MHAMask](
+    mask: mask_t
 ) raises capturing -> None
 
 
 @always_inline
-fn dispatch_mask_and_score_mod[
+fn dispatch_mask[
     mask_type: String,
-    score_mod_type: String,
     callback_fn: callback_fn_type,
     local_window_size: Int = -1,
-    num_heads: Int = -1,
 ]() raises -> None:
     @always_inline
     @parameter
     fn outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
-        @always_inline
-        @parameter
-        fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
-            return callback_fn(mask, score_mod)
-
-        return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
+        return callback_fn(mask)
 
     # TODO: attach string constants to mask types themselves.
     comptime if MaskName.CAUSAL == mask_type:
@@ -687,13 +697,11 @@ fn dispatch_mask_and_score_mod[
 
 
 @always_inline
-fn dispatch_materialized_mask_and_score_mod[
+fn dispatch_materialized_mask[
     dtype: DType,
     layout: Layout,
     //,
-    score_mod_type: String,
     callback_fn: callback_fn_type,
-    num_heads: Int = -1,
 ](
     mask_nd: LayoutTensor[dtype, layout, MutAnyOrigin],
     start_pos_nd: OptionalReg[
@@ -703,38 +711,7 @@ fn dispatch_materialized_mask_and_score_mod[
     ] = None,
 ) raises -> None:
     var mask = MaterializedMask(mask_nd, start_pos_nd)
-
-    @always_inline
-    @__copy_capture(mask)
-    @parameter
-    fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
-        return callback_fn(mask, score_mod)
-
-    return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
-
-
-@always_inline
-fn _dispatch_score_mod[
-    score_mod_type: String,
-    callback_fn: fn[score_mod_t: ScoreModTrait](
-        score_mod: score_mod_t
-    ) raises capturing -> None,
-    num_heads: Int = -1,
-]() raises -> None:
-    @always_inline
-    @parameter
-    fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
-        return callback_fn(score_mod)
-
-    comptime if score_mod_type == AlibiScoreMod.name_str:
-        comptime assert (
-            num_heads > 0
-        ), "You must specify num_heads for AlibiScoreMod"
-        return wrapper(AlibiScoreMod[num_heads]())
-    elif score_mod_type == IdentityScoreMod.name_str:
-        return wrapper(IdentityScoreMod())
-    else:
-        comptime assert False, "Unsupported score mod type: " + score_mod_type
+    return callback_fn(mask)
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`

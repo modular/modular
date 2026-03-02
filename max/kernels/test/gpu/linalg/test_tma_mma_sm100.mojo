@@ -642,7 +642,7 @@ def test_tma_umma[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
     cta_group: Int = 1,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -854,7 +854,7 @@ def test_tma_umma[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
             comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:

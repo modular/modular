@@ -32,7 +32,7 @@ comptime wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
 )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_matmul_sm90[
             DType.bfloat16,

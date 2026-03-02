@@ -19,8 +19,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weight import ShardingStrategy
-from max.nn.legacy import Signals
-from max.nn.legacy.comm import Allreduce
+from max.nn import Signals
+from max.nn.comm import Allreduce
 from max.pipelines.architectures.llama4.layers.moe import (
     Llama4MoE,
     Llama4MoEGate,

@@ -87,7 +87,7 @@ fn test_kl_div() raises:
     assert_almost_equal(0.19430683493087375, ab)
 
 
-def main():
+def main() raises:
     test_assert_with_custom_measure()
     test_correlation()
     test_kl_div()

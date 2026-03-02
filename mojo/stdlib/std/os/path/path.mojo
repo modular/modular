@@ -16,16 +16,16 @@ file system paths.
 You can import these APIs from the `os.path` package. For example:
 
 ```mojo
-from os.path import isdir
+from std.os.path import isdir
 ```
 """
 
-from collections.string.string_slice import _unsafe_strlen
-from pwd import getpwuid
-from stat import S_ISDIR, S_ISLNK, S_ISREG
-from ffi import MAX_PATH, c_char, external_call, get_errno
-from sys import CompilationTarget
-from sys._libc import realpath as libc_realpath
+from std.collections.string.string_slice import _unsafe_strlen
+from std.pwd import getpwuid
+from std.stat import S_ISDIR, S_ISLNK, S_ISREG
+from std.ffi import MAX_PATH, c_char, external_call, get_errno
+from std.sys import CompilationTarget
+from std.sys._libc import realpath as libc_realpath
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -232,7 +232,9 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
+fn realpath[
+    PathLike: os.PathLike & ImplicitlyDestructible, //
+](path: PathLike) raises -> String:
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a
     canonicalized absolute pathname.The resulting path will have no symbolic
@@ -268,16 +270,19 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     """
     var string = String(capacity=MAX_PATH)
 
+    # Bind the fspath result to a variable so its buffer stays alive
+    # through the libc_realpath call (avoids use-after-free).
+    var fspath = path.__fspath__()
     var returned_path_ptr = libc_realpath(
-        path.__fspath__().unsafe_ptr().bitcast[c_char](),
-        string._ptr_or_data.bitcast[Int8](),
+        fspath.as_c_string_slice().unsafe_ptr(),
+        string.unsafe_ptr_mut().bitcast[c_char](),
     )
     if not returned_path_ptr:
         raise Error("realpath failed to resolve: ", get_errno())
 
     # We wrote the data directly into the String buffer
     # now we need to figure out the length
-    string.set_byte_length(Int(_unsafe_strlen(string._ptr_or_data)))
+    string.set_byte_length(Int(_unsafe_strlen(string.unsafe_ptr())))
     string._set_nul_terminated()
 
     return string^
@@ -444,7 +449,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     """Returns the tail section of a path.
 
     ```mojo
-    from os.path import basename
+    from std.os.path import basename
 
     basename("a/path/foo.txt")  # returns "foo.txt"
     ```

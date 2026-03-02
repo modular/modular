@@ -14,7 +14,7 @@
 
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Tensor filled with ones
 ones = Tensor.ones([3, 4], dtype=DType.float32, device=CPU())

@@ -141,7 +141,7 @@ fn test_layout_basic() raises:
     )
 
 
-def test_layout_stride_value_access():
+def test_layout_stride_value_access() raises:
     """Test that Layout stride values can be accessed correctly via `value()` method.
     """
     # Test basic 2D row-major layout
@@ -664,7 +664,7 @@ fn test_zipped_divide() raises:
 
 
 # CHECK-LABEL: test_sublayout
-def test_sublayout():
+def test_sublayout() raises:
     print("== test_sublayout")
     var layout_2x3x4 = Layout(IntTuple(2, 3, 4), IntTuple(12, 4, 1))
     assert_equal(String(sublayout(layout_2x3x4, 0, 2)), "((2, 4):(12, 1))")
@@ -678,7 +678,7 @@ def test_sublayout():
 
 
 # CHECK-LABEL: test_crd2idx
-def test_crd2idx():
+def test_crd2idx() raises:
     print("== test_crd2idx")
     var l_4x4_row_major = Layout.row_major(4, 4)
     var l_4x4_col_major = Layout.col_major(4, 4)
@@ -703,7 +703,7 @@ def test_crd2idx():
 
 
 # CHECK-LABEL: test_expand_modes_alike
-def test_expand_modes_alike():
+def test_expand_modes_alike() raises:
     print("== test_expand_modes_alike")
     comptime layout_0 = Layout(
         IntTuple(IntTuple(3, IntTuple(5, 2)), 4),
@@ -883,7 +883,7 @@ fn test_transpose() raises:
     assert_equal(col_major.cosize(), trans_col.cosize())
 
 
-def test_iter():
+def test_iter() raises:
     var layout = Layout.row_major(1, 2, 3, 4)
     var it = iter(layout)
     assert_equal(next(it), Layout(1, 24))
@@ -898,7 +898,7 @@ def test_iter():
         _ = it.__next__()  # raises StopIteration
 
 
-def test_arange_nested_layout():
+def test_arange_nested_layout() raises:
     """Test arange function with nested layout structures."""
     # Test nested layout with tile structure similar to GPU shared memory tiles
     var nested_tensor = LayoutTensor[
@@ -946,7 +946,7 @@ def test_arange_nested_layout():
     assert_equal(col_major_tensor[1, 1], 5.0)
 
 
-def test_layout_tensor_iterator_print():
+def test_layout_tensor_iterator_print() raises:
     """Test case for MSTDL-1984: Tensors generated from LayoutTensorIter won't print.
     """
     comptime buf_size = 16
@@ -980,7 +980,7 @@ def test_layout_tensor_iterator_print():
         # CHECK: runtime_layout.size(): 4
 
 
-def main():
+def main() raises:
     test_layout_basic()
     test_layout_stride_value_access()
     test_unknowns()

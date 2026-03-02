@@ -103,7 +103,7 @@ trait QuantizedGemm:
     def pack_b_buffer(
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
         b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
-    ):
+    ) raises:
         ...
 
     @staticmethod
@@ -164,7 +164,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     def pack_b_buffer(
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
         b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
-    ):
+    ) raises:
         matmul_qint4_pack_b[_block_Q4_0.group_size](b, b_packed)
 
     @staticmethod
@@ -262,7 +262,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     def pack_b_buffer(
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
         b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
-    ):
+    ) raises:
         matmul_Q4_K_pack_b(b, b_packed)
 
     @staticmethod
@@ -397,7 +397,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     def pack_b_buffer(
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
         b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
-    ):
+    ) raises:
         matmul_Q6_K_pack_b(b, b_packed)
 
     @staticmethod
@@ -517,7 +517,9 @@ struct GemmContext[qgemm: QuantizedGemm]:
     @staticmethod
     def _build_float_buffer(
         M: Int, N: Int
-    ) -> LayoutTensor[DType.float32, Layout.row_major[2](), MutAnyOrigin]:
+    ) raises -> LayoutTensor[
+        DType.float32, Layout.row_major[2](), MutAnyOrigin
+    ]:
         var ptr = UnsafePointer[Float32].alloc(M * N)
         for i in range(M * N):
             ptr[i] = random_float64(min=-1.0, max=+1.0).cast[DType.float32]()
@@ -528,13 +530,13 @@ struct GemmContext[qgemm: QuantizedGemm]:
     @staticmethod
     def _build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) raises -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
         return Self.qgemm.build_b_buffer(N, K)
 
     @staticmethod
     def _pack_b_buffer(
         b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()]
-    ) -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) raises -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
         var b_packed_buffer = UnsafePointer[UInt8].alloc(b.size())
         var b_packed = LayoutTensor[
             DType.uint8, Layout.row_major[2](), MutAnyOrigin
@@ -547,14 +549,14 @@ struct GemmContext[qgemm: QuantizedGemm]:
         Self.qgemm.pack_b_buffer(b, b_packed)
         return b_packed
 
-    def __init__(out self, M: Int, N: Int, K: Int):
+    def __init__(out self, M: Int, N: Int, K: Int) raises:
         self.a = Self._build_float_buffer(M, K)
         self.b = Self._build_b_buffer(N, K)
         self.b_packed = Self._pack_b_buffer(self.b)
         self.c = Self._build_float_buffer(M, N)
         self.c_golden = Self._build_float_buffer(M, N)
 
-    def free(mut self):
+    def free(mut self) raises:
         self.a.ptr.free()
         self.b.ptr.free()
         self.b_packed.ptr.free()
@@ -562,7 +564,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
         self.c_golden.ptr.free()
 
 
-def test_case[qgemm: QuantizedGemm](M: Int, N: Int, K: Int):
+def test_case[qgemm: QuantizedGemm](M: Int, N: Int, K: Int) raises:
     var ctx = GemmContext[qgemm](M, N, K)
 
     if K % qgemm.k_group_size() != 0:
@@ -590,7 +592,7 @@ def test_case[qgemm: QuantizedGemm](M: Int, N: Int, K: Int):
     ctx.free()
 
 
-def test_cases[qgemm: QuantizedGemm]():
+def test_cases[qgemm: QuantizedGemm]() raises:
     for m in range(1, 16):
         test_case[qgemm](m, 128, 256)
         test_case[qgemm](m, 128, 1024)
@@ -603,7 +605,7 @@ def test_cases[qgemm: QuantizedGemm]():
     test_case[qgemm](160, 4096, 4096)
 
 
-def main():
+def main() raises:
     test_cases[qgemm_Q4_0]()
     test_cases[qgemm_Q4_K]()
     test_cases[qgemm_Q6_K]()

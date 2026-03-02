@@ -16,16 +16,17 @@ indices.
 You can import these APIs from the `utils` package. For example:
 
 ```mojo
-from utils import IndexList
+from std.utils import IndexList
 ```
 """
 
-from hashlib.hasher import Hasher
-from sys import bit_width_of
+from std.hashlib.hasher import Hasher
+from std.sys import bit_width_of
 
-from builtin.device_passable import DevicePassable
-from builtin.dtype import _int_type_of_width, _uint_type_of_width
-from builtin.variadics import Variadic
+from std.builtin.device_passable import DevicePassable
+from std.builtin.dtype import _int_type_of_width, _uint_type_of_width
+from std.builtin.variadics import Variadic
+import std.format._utils as fmt
 
 from .static_tuple import StaticTuple
 
@@ -171,7 +172,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
     Hashable,
     ImplicitlyCopyable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -661,6 +661,24 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         writer.write(")")
 
     @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `IndexList` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self.write_to(w)
+
+        fmt.FormatStruct(writer, "IndexList").params(
+            Self.size,
+            Self.element_type,
+        ).fields[FieldsFn=write_fields]()
+
+    @deprecated("Stringable is deprecated. Use Writable instead.")
+    @no_inline
     fn __str__(self) -> String:
         """Get the tuple as a string.
 
@@ -725,7 +743,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         Returns:
             The host type's name.
         """
-        return String("IndexList[", Self.size, ",", Self.element_type, "]")
+        return t"IndexList[{Self.size},{Self.element_type}]"
 
 
 # ===-----------------------------------------------------------------------===#

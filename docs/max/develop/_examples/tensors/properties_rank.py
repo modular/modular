@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: max/develop/tensors.mdx
 
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 scalar = Tensor.constant([42])  # Rank 1 (it's a 1-element vector)
 vector = Tensor.constant([1, 2, 3])  # Rank 1

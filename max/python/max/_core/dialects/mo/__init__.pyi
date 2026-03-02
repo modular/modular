@@ -1080,7 +1080,6 @@ class DistributedAllreduceSumOp(max._core.Operation):
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
         device: max._core.dialects.m.DeviceRefAttr,
-        has_device_barrier: max._core.dialects.builtin.UnitAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -1092,12 +1091,6 @@ class DistributedAllreduceSumOp(max._core.Operation):
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
     def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
-    @property
-    def has_device_barrier(self) -> bool: ...
-    @has_device_barrier.setter
-    def has_device_barrier(
-        self, arg: max._core.dialects.builtin.UnitAttr, /
-    ) -> None: ...
 
 class AndOp(max._core.Operation):
     """
@@ -2747,39 +2740,6 @@ class DebugTensorPrintOp(max._core.Operation):
     @label.setter
     def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
 
-class DebugTensorUnsafePrintOp(max._core.Operation):
-    """
-    Deprecated use mo.debug.tensor.print instead to ensure proper sequencing
-    of print operations.
-
-    This is just kept around due to the Mojo Graph API not supporting chains at
-    the time of writing.
-
-    Prints a debug representation of argument input. If a label attribute
-    is supplied the tensor contents is printed with that label. Otherwise
-    just the tensor metadata is printed. For debugging and testing only.
-
-    Example:
-    ```mlir
-      %arg: !mo.tensor<[5], f32>
-      mo.debug.tensor.print(%arg) {label = "label"} : !mo.tensor<[5], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        label: max._core.dialects.builtin.StringAttr,
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def label(self) -> str: ...
-    @label.setter
-    def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
-
 class DivOp(max._core.Operation):
     """
     Returns `x / y`, where `x` and `y` are input tensors.
@@ -4374,7 +4334,29 @@ class ParallelOp(max._core.Operation):
     in parallel for each set of inputs.
 
     The results of the `mo.parallel` op are the operands of the
-    `mo.yield` op from each iteration, which must all have the same type.
+    `mo.yield` op from each iteration. Each result has the same type as its
+    corresponding input.
+
+    Inputs may have different device IDs but must all have the same device
+    label (e.g., all "gpu" or all "cpu"). The body block argument uses the
+    first input's type as the representative type.
+
+    Example with shared type (all inputs same type):
+    ```mlir
+    %res:2 = mo.parallel %arg in (%a, %b : !mo.tensor<[3], f32, gpu:0>) {
+      %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
+      mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
+
+    Example with individual types (different device IDs):
+    ```mlir
+    %res:2 = mo.parallel %arg in (%a : !mo.tensor<[3], f32, gpu:0>,
+                                  %b : !mo.tensor<[3], f32, gpu:1>) {
+      %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
+      mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
     """
 
     def __init__(
@@ -4895,6 +4877,7 @@ class DistributedReducescatterSumOp(max._core.Operation):
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
         device: max._core.dialects.m.DeviceRefAttr,
+        axis: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -4906,6 +4889,10 @@ class DistributedReducescatterSumOp(max._core.Operation):
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
     def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
+    @property
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
 
 class ReluOp(max._core.Operation):
     """

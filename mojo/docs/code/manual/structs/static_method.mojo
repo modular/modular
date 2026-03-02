@@ -23,7 +23,7 @@ struct Logger:
         # end-static-method-define
 
 
-def main():
+def main() raises:
     # start-static-method-invoke
     Logger.log_info("Static method called.")
     var l = Logger()

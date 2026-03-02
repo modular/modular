@@ -76,7 +76,10 @@ struct _Accumulator[
     fn __init__(
         out self,
         other_storage: NDBuffer[
-            Self.dtype, 1, _, Self.num_rows * Self.num_cols * Self.simd_width
+            Self.dtype,
+            1,
+            MutAnyOrigin,
+            Self.num_rows * Self.num_cols * Self.simd_width,
         ],
     ):
         comptime assert (
@@ -994,7 +997,7 @@ struct _Accumulator[
                 b_ptr = b_ptr + b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
     @always_inline
     fn _accumulate_neon[
@@ -1051,7 +1054,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
     @always_inline
     fn _accumulate_neon[
@@ -1110,7 +1113,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
 
 @always_inline

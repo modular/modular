@@ -510,7 +510,7 @@ fn test_dispatch[
     shmem_free(recv_count)
 
 
-def main():
+def main() raises:
     comptime test_gpu_counts = (2, 4, 8)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):

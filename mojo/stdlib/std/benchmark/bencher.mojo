@@ -18,22 +18,22 @@ It includes support for throughput metrics, warmup iterations, batch execution,
 and both CPU and GPU kernel benchmarking.
 """
 
-import time
-from collections import Dict, Optional
-from os import abort, getenv
-from pathlib import Path
-from sys.arg import argv
+import std.time
+from std.collections import Dict, Optional
+from std.os import abort, getenv
+from std.pathlib import Path
+from std.sys.arg import argv
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
-from utils.numerics import FlushDenormals
-from algorithm import sync_parallelize
+from std.utils.numerics import FlushDenormals
+from std.algorithm import sync_parallelize
 
 from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
 
 @fieldwise_init
-struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
+struct BenchMetric(ImplicitlyCopyable, Writable):
     """Defines a benchmark throughput metric."""
 
     var code: Int
@@ -64,6 +64,7 @@ struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
     ]
     """Default set of benchmark metrics."""
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Gets a string representation of this metric.
 
@@ -216,7 +217,7 @@ struct ThroughputMeasure(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct Format(ImplicitlyCopyable, Stringable, Writable):
+struct Format(ImplicitlyCopyable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -253,8 +254,9 @@ struct Format(ImplicitlyCopyable, Stringable, Writable):
                 ", ",
                 Format.table,
             )
-            abort(String("Invalid format option: ", value, valid_formats))
+            abort(t"Invalid format option: {value}{valid_formats}")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns the string representation of the format.
 
@@ -520,14 +522,14 @@ struct Mode(ImplicitlyCopyable):
         return self.value == other.value
 
 
-struct Bench(Stringable, Writable):
+struct Bench(Writable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 
     Example:
 
     ```mojo
-    from benchmark import (
+    from std.benchmark import (
         Bench,
         BenchConfig,
         Bencher,
@@ -536,9 +538,9 @@ struct Bench(Stringable, Writable):
         BenchMetric,
         Format,
     )
-    from utils import IndexList
-    from gpu.host import DeviceContext
-    from pathlib import Path
+    from std.utils import IndexList
+    from std.gpu.host import DeviceContext
+    from std.pathlib import Path
 
     fn example_kernel():
         print("example_kernel")
@@ -649,7 +651,7 @@ struct Bench(Stringable, Writable):
             # In case of running this binary with mpirun, all the outputs
             # will be written to -o output_file unless a distinct suffix is
             # added to each output.
-            self.append_output_suffix(suffix=String("_", pe_rank))
+            self.append_output_suffix(suffix=t"_{pe_rank}")
         return pe_rank
 
     fn append_output_suffix(mut self, suffix: String):
@@ -1059,6 +1061,7 @@ struct Bench(Stringable, Writable):
             return ""
         return pad_str * (width - len(string))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of the benchmark results.
 
@@ -1168,7 +1171,7 @@ struct Bench(Stringable, Writable):
 
             # TODO: remove when kbench adds the spec column
             if self.config.format == Format.csv:
-                name = String('"', run.name, '"')
+                name = String(t'"{run.name}"')
             else:
                 name = run.name
 

@@ -91,6 +91,6 @@ fn test(ctx: DeviceContext) raises:
     out_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test(ctx)

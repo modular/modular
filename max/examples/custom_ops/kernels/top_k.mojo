@@ -63,11 +63,10 @@ struct TopK:
         in_vals: InputTensor[dtype=dtype, rank=rank],
         ctx: DeviceContextPtr,
     ) raises:
-        constrained[rank == 2, "rank must be 2"]()
-        constrained[
-            not (target == "gpu" and K > WARP_SIZE),
-            "K can't be larger than warp size",
-        ]()
+        comptime assert rank == 2, "rank must be 2"
+        comptime assert not (
+            target == "gpu" and K > WARP_SIZE
+        ), "K can't be larger than warp size"
 
         var shape = in_vals.shape()
         var batch_size = shape[0]

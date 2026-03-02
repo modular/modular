@@ -18,10 +18,10 @@ from typing import Literal
 from max.driver import Device
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 
-from ..llama3_legacy.model import LlamaModelBase
+from ..llama3.model import LlamaModelBase
 
 
 class OlmoModel(LlamaModelBase):

@@ -18,8 +18,7 @@ from random import rand, randint
 
 from benchmark import *
 from layout._layout import row_major
-from layout._coord import Coord
-from layout._tile_tensor import TileTensor
+from layout import Coord, TileTensor
 from nn.gather_scatter import gather_elements
 
 from utils.index import Index
@@ -105,7 +104,7 @@ struct GatherSpec(ImplicitlyCopyable, Stringable):
         # fmt: on
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
     bench_gather(m, GatherSpec(axis=1, m1=400, m2=400, n1=200, n2=200))
     bench_gather(m, GatherSpec(axis=1, m1=1000, m2=1000, n1=200, n2=200))

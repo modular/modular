@@ -27,7 +27,7 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     shmem_p(destination, mype, peer)
 
 
-def main():
+def main() raises:
     with SHMEMContext() as ctx:
         var destination = ctx.enqueue_create_buffer[DType.int32](1)
         ctx.enqueue_function[simple_shift_kernel](
@@ -71,7 +71,8 @@ from .shmem_api import (
     shmem_get,
     shmem_get_nbi,
     shmem_init,
-    shmem_init_thread,
+    shmem_init_thread_mpi,
+    shmem_init_thread_tcp,
     shmem_malloc,
     shmem_module_init,
     shmem_my_pe,

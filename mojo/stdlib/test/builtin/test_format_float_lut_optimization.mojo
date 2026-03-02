@@ -37,7 +37,7 @@
 # Verify that cache_f64 is NOT allocated on the stack
 # NO-STACK-ALLOC-NOT: alloca {{.*}}[619 x i128]
 
-from builtin._format_float import _write_float
+from std.builtin._format_float import _write_float
 
 
 fn test_float32_formatting() -> String:

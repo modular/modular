@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import external_call
-from gpu.host import DeviceContext, DeviceFunction, DeviceStream
-from gpu.host.device_context import (
+from std.ffi import external_call
+from std.gpu.host import DeviceContext, DeviceFunction, DeviceStream
+from std.gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
     _DeviceBufferPtr,

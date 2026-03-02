@@ -16,37 +16,33 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
-    PagedCacheValues,
-    uses_opaque,
 )
-from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.layer import Module
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
 from max.profiler import traced
@@ -76,7 +72,7 @@ class MistralInputs(ModelInputs):
     return_n_logits: Buffer
 
 
-class MistralModel(PipelineModel[TextContext], KVCacheMixin):
+class MistralModel(PipelineModelWithKVCache[TextContext]):
     model: Model
     """Compiled and initialized model ready for inference."""
 
@@ -144,10 +140,6 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
 
         context_batch = replica_batches[0]
 
-        if not uses_opaque(self.kv_cache_config.cache_strategy):
-            # TODO(MODELS-407): Consider deleting the padded path entirely.
-            raise ValueError("Mistral unsupported for padded token batches")
-
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = Buffer.from_numpy(
@@ -178,10 +170,6 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
         prev_model_inputs: ModelInputs,
     ) -> MistralInputs:
         assert isinstance(prev_model_inputs, MistralInputs)
-
-        if not uses_opaque(self.kv_cache_config.cache_strategy):
-            # TODO(MODELS-407): Consider deleting the padded path entirely.
-            raise ValueError("multistep unsupported for padded token batches")
 
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
@@ -286,24 +274,6 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
                 *kv_inputs,
             )
 
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        fetch_types = self.kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(self.kv_params.n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
-
     @traced
     def _build_graph(
         self, weights: Weights, adapter: WeightsAdapter | None = None
@@ -372,15 +342,10 @@ class MistralModel(PipelineModel[TextContext], KVCacheMixin):
                 tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                     graph.inputs
                 )
-                kv_collection = PagedCacheValues(
-                    kv_blocks=kv_cache_inputs[0].buffer,
-                    cache_lengths=kv_cache_inputs[1].tensor,
-                    lookup_table=kv_cache_inputs[2].tensor,
-                    max_lengths=kv_cache_inputs[3].tensor,
-                )
+                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
                 outputs = nn_model(
                     tokens.tensor,
-                    kv_collection,
+                    kv_collections[0],
                     return_n_logits.tensor,
                     input_row_offsets.tensor,
                 )

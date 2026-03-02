@@ -15,18 +15,18 @@
 You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from algorithm import map
+from std.algorithm import map
 ```
 """
 
-import sys
-from collections import OptionalReg
-from collections.string.string_slice import get_static_string
-from math import align_down, ceildiv, clamp
-from os import abort
-from pathlib import Path
+import std.sys
+from std.collections import OptionalReg
+from std.collections.string.string_slice import get_static_string
+from std.math import align_down, ceildiv, clamp
+from std.os import abort
+from std.pathlib import Path
 
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_dim,
     block_idx,
@@ -36,16 +36,18 @@ from gpu import (
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.primitives.grid_controls import pdl_launch_attributes  # @doc_private
-from gpu.host import DeviceContext
-from gpu.host.info import B200, is_cpu, is_gpu
-from runtime import tracing
-from runtime.asyncrt import DeviceContextPtr, TaskGroup, parallelism_level
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.gpu.primitives.grid_controls import (
+    pdl_launch_attributes,
+)  # @doc_private
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import B200, is_cpu, is_gpu
+from std.runtime import tracing
+from std.runtime.asyncrt import DeviceContextPtr, TaskGroup, parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
-from utils.index import Index, IndexList
-from utils.numerics import FlushDenormals
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import FlushDenormals
+from std.utils.static_tuple import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Map
@@ -70,9 +72,9 @@ fn map[
     For example:
 
     ```mojo
-    from algorithm import map
+    from std.algorithm import map
 
-    def main():
+    def main() raises:
         # Create list with initial values to act on
         var list = List[Float32](1.0, 2.0, 3.0, 4.0, 5.0)
 
@@ -142,8 +144,8 @@ fn vectorize[
     the machine:
 
     ```mojo
-    from algorithm.functional import vectorize
-    from sys import simd_width_of
+    from std.algorithm.functional import vectorize
+    from std.sys import simd_width_of
 
     # The amount of elements to loop through
     comptime size = 10
@@ -256,10 +258,10 @@ fn vectorize[
     using SIMD registers, while handling the tail with `evl` by generating a mask:
 
     ```mojo
-    from algorithm.functional import vectorize
-    from sys import simd_width_of
-    from math import iota
-    from sys.intrinsics import masked_store
+    from std.algorithm.functional import vectorize
+    from std.sys import simd_width_of
+    from std.math import iota
+    from std.sys.intrinsics import masked_store
 
     comptime size = 10
     comptime simd_width = simd_width_of[DType.int32]()  # assumed 4 in this example
@@ -374,8 +376,8 @@ fn vectorize[
     the machine:
 
     ```mojo
-    from algorithm.functional import vectorize
-    from sys import simd_width_of
+    from std.algorithm.functional import vectorize
+    from std.sys import simd_width_of
 
     # The amount of elements to loop through
     comptime size = 10
@@ -622,7 +624,7 @@ and a secondary static tile size.
 
 @always_inline
 fn tile[
-    workgroup_function: Static1DTileUnitFunc, tile_size_list: VariadicList[Int]
+    workgroup_function: Static1DTileUnitFunc, tile_size_list: List[Int]
 ](offset: Int, upperbound: Int):
     """A generator that launches work groups in specified list of tile sizes.
 
@@ -664,7 +666,7 @@ fn tile[
 @always_inline
 fn tile[
     workgroup_function: Dynamic1DTileUnitFunc,
-](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
+](offset: Int, upperbound: Int, *tile_size_list: Int):
     """A generator that launches work groups in specified list of tile sizes.
 
     This is the version of tile generator for the case where work_group function
@@ -698,13 +700,13 @@ fn tile[
 
 @always_inline
 fn tile[
-    secondary_tile_size_list: VariadicList[Int],
+    secondary_tile_size_list: List[Int],
     secondary_cleanup_tile: Int,
     workgroup_function: BinaryTile1DTileUnitFunc,
 ](
     offset: Int,
     upperbound: Int,
-    primary_tile_size_list: VariadicList[Int],
+    *primary_tile_size_list: Int,
     primary_cleanup_tile: Int,
 ):
     """A generator that launches work groups in specified list of tile sizes
@@ -761,8 +763,8 @@ The function takes static tile size parameters and offset arguments, i.e.
 @always_inline
 fn tile[
     workgroup_function: Static2DTileUnitFunc,
-    tile_sizes_x: VariadicList[Int],
-    tile_sizes_y: VariadicList[Int],
+    tile_sizes_x: List[Int],
+    tile_sizes_y: List[Int],
 ](offset_x: Int, offset_y: Int, upperbound_x: Int, upperbound_y: Int):
     """Launches workgroup_function using the largest tile sizes possible in each
     dimension, starting from the x and y offset, until the x and y upperbounds
@@ -967,7 +969,7 @@ comptime Static1DTileUnitFuncWithFlag = fn[width: Int, flag: Bool](
 @always_inline("nodebug")
 fn tile_and_unswitch[
     workgroup_function: Static1DTileUnswitchUnitFunc,
-    tile_size_list: VariadicList[Int],
+    tile_size_list: List[Int],
 ](offset: Int, upperbound: Int):
     """Performs time and unswitch functional transformation.
 
@@ -1015,7 +1017,7 @@ comptime Dynamic1DTileUnswitchUnitFunc = fn[sw: Bool](Int, Int, Int) capturing[
 @always_inline
 fn tile_and_unswitch[
     workgroup_function: Dynamic1DTileUnswitchUnitFunc,
-](offset: Int, upperbound: Int, tile_size_list: VariadicList[Int]):
+](offset: Int, upperbound: Int, *tile_size_list: Int):
     """Performs time and unswitch functional transformation.
 
     A variant of dynamic tile given a workgroup function that can be
@@ -1055,7 +1057,7 @@ fn tile_and_unswitch[
 @always_inline
 fn tile_middle_unswitch_boundaries[
     work_fn: Static1DTileUnitFuncWithFlag,
-    middle_tile_sizes: VariadicList[Int],
+    middle_tile_sizes: List[Int],
     left_tile_size: Int = 1,  # No tiling by default.
     right_tile_size: Int = 1,  # No tiling by default.
 ](
@@ -1168,7 +1170,7 @@ fn tile_middle_unswitch_boundaries[
         # `tile` can't handle zero tile size.
         comptime tile_size_remainder = remainder if remainder > 0 else 1
 
-        tile[update_middle, VariadicList[Int](tile_size, tile_size_remainder)](
+        tile[update_middle, [tile_size, tile_size_remainder]](
             tile_size_lbound, size - tile_size_rbound
         )
 
@@ -1499,13 +1501,13 @@ fn elementwise[
     @parameter
     fn description_fn() -> String:
         var shape_str = trace_arg("shape", shape)
-        var vector_width_str = String("vector_width=", simd_width)
+        var vector_width_str = String(t"vector_width={simd_width}")
 
         return ";".join(Span([shape_str, vector_width_str]))
 
     # Intern the kind string as a static string so we don't allocate.
     comptime d = _trace_description
-    comptime desc = String("(", d, ")") if d else ""
+    comptime desc = String(t"({d})") if d else ""
     comptime kind = get_static_string["elementwise", desc]()
 
     with Trace[TraceLevel.OP, target=target](
@@ -1649,6 +1651,10 @@ fn _elementwise_impl_cpu_nd[
         shape: The shape of the buffer.
     """
     comptime assert rank > 1, "Specialization for ND where N > 1"
+
+    # If we know we won't do any work, return early
+    if shape[rank - 1] == 0:
+        return
 
     comptime unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1871,6 +1877,10 @@ fn parallelize_over_rows[
         axis: Rows are slices along the axis dimension of shape.
         grain_size: The minimum number of elements to warrant using an additional thread.
     """
+    # If we know we will have no work, return early
+    if shape[axis] == 0:
+        return
+
     var total_size = shape.flattened_length()
     var num_rows = total_size // shape[axis]
 
@@ -1965,6 +1975,10 @@ fn _stencil_impl_cpu[
     comptime assert (
         stencil_axis[0] == 1 and stencil_axis[1] == 2
     ), "Only stencil spatial axes [1, 2] are supported"
+
+    # If we know we will have no work, return early
+    if shape[rank - 1] == 0:
+        return
 
     var total_size = shape.flattened_length()
 

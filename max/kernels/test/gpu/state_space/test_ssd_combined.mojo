@@ -67,7 +67,7 @@ fn run_ssd_combined_gpu[
     rtol: Float64 = 0.01,
 ) raises:
     """Test SSD combined GPU kernel against CPU reference."""
-    constrained[DSTATE <= 16, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= 16, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -697,5 +697,5 @@ fn test_ssd_combined_gpu_larger_shapes() raises:
     ](batch=4, dim=8, seqlen=16, n_groups=1, ctx=ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

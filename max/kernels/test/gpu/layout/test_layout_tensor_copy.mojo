@@ -104,10 +104,9 @@ fn test_async_copy[
     ctx.synchronize()
 
     print(input.tensor())
-    _ = input^
 
 
-def run_async_copy_tests(ctx: DeviceContext):
+def run_async_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_async_copy
     # CHECK: 0.0   2.0   4.0   3.0   5.0   7.0
     # CHECK: 6.0   8.0   10.0   9.0   11.0   13.0
@@ -247,11 +246,8 @@ fn test_swizzle_copy[
     ctx.synchronize()
     print(b_tensor.tensor())
 
-    _ = a_tensor^
-    _ = b_tensor^
 
-
-def run_swizzle_copy_tests(ctx: DeviceContext):
+def run_swizzle_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_swizzle_copy
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
@@ -389,11 +385,8 @@ fn test_partial_copy_dram_to_sram_async[
 
     print(output.tensor())
 
-    _ = input^
-    _ = output^
 
-
-def run_partial_copy_dram_to_sram_async_tests(ctx: DeviceContext):
+def run_partial_copy_dram_to_sram_async_tests(ctx: DeviceContext) raises:
     # CHECK: === test_partial_copy_dram_to_sram_async
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
@@ -497,11 +490,8 @@ fn test_copy_dram_to_sram[
 
     print(output.tensor())
 
-    _ = input^
-    _ = output^
 
-
-def run_copy_dram_to_sram_tests(ctx: DeviceContext):
+def run_copy_dram_to_sram_tests(ctx: DeviceContext) raises:
     # CHECK: === test_copy_dram_to_sram
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -620,10 +610,8 @@ fn test_copy_sram_to_dram[
 
     print(input.tensor().tile[M - skew_M, N](0, 0))
 
-    _ = input^
 
-
-def run_copy_sram_to_dram_tests(ctx: DeviceContext):
+def run_copy_sram_to_dram_tests(ctx: DeviceContext) raises:
     # CHECK: === test_copy_sram_to_dram
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -780,10 +768,8 @@ fn test_copy_local_to_local[
 
     print(output.tensor())
 
-    _ = output^
 
-
-def run_copy_local_to_local_tests(ctx: DeviceContext):
+def run_copy_local_to_local_tests(ctx: DeviceContext) raises:
     # CHECK: === test_copy_local_to_local
     # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
     # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
@@ -922,11 +908,8 @@ fn test_copy_dram_to_local[
 
     print(output.tensor())
 
-    _ = input^
-    _ = output^
 
-
-def run_copy_dram_to_local_tests(ctx: DeviceContext):
+def run_copy_dram_to_local_tests(ctx: DeviceContext) raises:
     # CHECK: === test_copy_dram_to_local
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -1067,10 +1050,10 @@ fn test_copy_local_to_sram[
 
     print(output.tensor())
 
-    _ = output^
 
-
-def run_copy_local_to_sram_tests_float32_simd_size_12(ctx: DeviceContext):
+def run_copy_local_to_sram_tests_float32_simd_size_12(
+    ctx: DeviceContext,
+) raises:
     # CHECK: === test_copy_local_to_sram_float32_simd_size_12
     # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
     # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
@@ -1115,7 +1098,9 @@ def run_copy_local_to_sram_tests_float32_simd_size_12(ctx: DeviceContext):
     ](ctx)
 
 
-def run_copy_local_to_sram_tests_float32_simd_size_21(ctx: DeviceContext):
+def run_copy_local_to_sram_tests_float32_simd_size_21(
+    ctx: DeviceContext,
+) raises:
     # CHECK: === test_copy_local_to_sram_float32_simd_size_21
     # CHECK: 0.0 0.0 0.0 0.0 1.0 1.0 1.0 1.0 2.0 2.0 2.0 2.0 3.0 3.0 3.0 3.0
     # CHECK: 4.0 4.0 4.0 4.0 5.0 5.0 5.0 5.0 6.0 6.0 6.0 6.0 7.0 7.0 7.0 7.0
@@ -1137,7 +1122,9 @@ def run_copy_local_to_sram_tests_float32_simd_size_21(ctx: DeviceContext):
     ](ctx)
 
 
-def run_copy_local_to_sram_tests_bfloat16_simd_size_12(ctx: DeviceContext):
+def run_copy_local_to_sram_tests_bfloat16_simd_size_12(
+    ctx: DeviceContext,
+) raises:
     # CHECK: === test_copy_local_to_sram_bfloat16_simd_size_12
     # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
     # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
@@ -1159,7 +1146,9 @@ def run_copy_local_to_sram_tests_bfloat16_simd_size_12(ctx: DeviceContext):
     ](ctx)
 
 
-def run_copy_local_to_sram_tests_bfloat16_simd_size_21(ctx: DeviceContext):
+def run_copy_local_to_sram_tests_bfloat16_simd_size_21(
+    ctx: DeviceContext,
+) raises:
     # CHECK: === test_copy_local_to_sram_bfloat16_simd_size_21
     # CHECK: 0.0 0.0 0.0 0.0 1.0 1.0 1.0 1.0 2.0 2.0 2.0 2.0 3.0 3.0 3.0 3.0
     # CHECK: 4.0 4.0 4.0 4.0 5.0 5.0 5.0 5.0 6.0 6.0 6.0 6.0 7.0 7.0 7.0 7.0
@@ -1181,7 +1170,7 @@ def run_copy_local_to_sram_tests_bfloat16_simd_size_21(ctx: DeviceContext):
     ](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_async_copy_tests(ctx)
         run_swizzle_copy_tests(ctx)

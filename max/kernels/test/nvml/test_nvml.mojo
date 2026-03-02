@@ -22,7 +22,7 @@ fn has_nvml_library() -> Bool:
         return False
 
 
-def main():
+def main() raises:
     if not has_nvml_library():
         return
 

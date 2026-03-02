@@ -15,16 +15,16 @@
 # RUN: %mojo  -D TEMP_DIR=%t/tmp %s
 # RUN: rm -rf %t
 
-from os.path import isdir, islink
-from pathlib import Path
-from sys import env_get_string
+from std.os.path import isdir, islink
+from std.pathlib import Path
+from std.sys import env_get_string
 
-from testing import TestSuite, assert_false, assert_true
+from std.testing import TestSuite, assert_false, assert_true
 
 comptime TEMP_DIR = env_get_string["TEMP_DIR"]()
 
 
-def test_islink():
+def test_islink() raises:
     assert_true(
         isdir(Path(TEMP_DIR)), String("Not a directory: {0}").format(TEMP_DIR)
     )
@@ -35,5 +35,5 @@ def test_islink():
     assert_false(islink(String(Path(TEMP_DIR) / "nonexistent")))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

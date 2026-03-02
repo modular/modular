@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 from abc import ABC
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -37,15 +36,19 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.nn.kv_cache import KVCacheParams
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import traced
 from transformers import AutoConfig
 
-from ..hf_utils import download_weight_files
-from ..interfaces import ModelOutputs, PipelineModel
-from ..pipeline_variants.text_generation import TextGenerationPipelineInterface
+from ..interfaces import ModelOutputs, PipelineModel, PipelineModelWithKVCache
+from ..pipeline_variants.text_generation import (
+    TextGenerationPipelineInterface,
+    get_eos_tokens,
+    get_weight_paths,
+)
 from ..sampling import rejection_sampler_with_residuals, token_sampler
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
@@ -150,6 +153,20 @@ def hidden_states_return_config(
         return ReturnHiddenStates.NONE
 
 
+def get_vocab_size(huggingface_config: AutoConfig) -> int:
+    """Get the vocab size from the HuggingFace config."""
+    if hasattr(huggingface_config, "vocab_size"):
+        return huggingface_config.vocab_size
+    elif hasattr(huggingface_config, "text_config") and hasattr(
+        huggingface_config.text_config, "vocab_size"
+    ):
+        return huggingface_config.text_config.vocab_size
+    else:
+        raise ValueError(
+            "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
+        )
+
+
 class SpeculativeDecodingPipelineBase(
     TextGenerationPipelineInterface[TextContext],
     ABC,
@@ -187,49 +204,9 @@ class SpeculativeDecodingPipelineBase(
             revision=self.pipeline_config.model.huggingface_model_revision,
         )
 
-        # Expand EOS
-        if "eos_token_id" in target_config:
-            eos_tokens = target_config.eos_token_id
-            if isinstance(eos_tokens, int):
-                if eos_tokens != eos_token_id:
-                    msg = f"eos_token_id provided in huggingface config ({eos_tokens}), does not match provided eos_token_id ({eos_token_id}), using provided eos_token_id"
-                    logger.warning(msg)
+        self._eos_token_id = get_eos_tokens(target_config, eos_token_id)
 
-                self._eos_token_id = set([eos_tokens])
-            elif isinstance(eos_tokens, list):
-                if eos_token_id in eos_tokens:
-                    self._eos_token_id = set(eos_tokens)
-                else:
-                    self._eos_token_id = set([eos_token_id])
-            else:
-                msg = f"eos_token_id in huggingface_config, is neither int or list: {eos_tokens}"
-                logger.warning(msg)
-                self._eos_token_id = set([eos_token_id])
-        else:
-            self._eos_token_id = set([eos_token_id])
-
-        target_hf_repo = self.pipeline_config.model.huggingface_weight_repo
-
-        weight_paths: list[Path] = []
-        if (
-            self.pipeline_config.model.huggingface_weight_repo.repo_type
-            == "online"
-        ):
-            # Download weight files if not existent.
-            weight_paths = download_weight_files(
-                huggingface_model_id=target_hf_repo.repo_id,
-                filenames=[
-                    str(x) for x in self.pipeline_config.model.weight_path
-                ],
-                revision=self.pipeline_config.model.huggingface_weight_revision,
-                max_workers=8,
-            )
-        else:
-            # Use the resolved repo_id (which points to local cache in offline mode)
-            local_path = Path(target_hf_repo.repo_id)
-            weight_paths = [
-                local_path / x for x in self.pipeline_config.model.weight_path
-            ]
+        weight_paths = get_weight_paths(self.pipeline_config.model)
 
         target_weights = load_weights(weight_paths)
         _target_weights_format = weights_format(weight_paths)
@@ -237,6 +214,29 @@ class SpeculativeDecodingPipelineBase(
         if not self.pipeline_config.model.quantization_encoding:
             raise ValueError(
                 f"quantization_encoding must be provided, {self.pipeline_config.model.quantization_encoding}"
+            )
+
+        # Use draft model's pipeline model and weight adapters if provided
+        # Otherwise fall back to target model's (for backward compatibility)
+        actual_draft_pipeline_model = (
+            draft_pipeline_model
+            if draft_pipeline_model is not None
+            else pipeline_model
+        )
+        actual_draft_weight_adapters = (
+            draft_weight_adapters
+            if draft_weight_adapters is not None
+            else weight_adapters
+        )
+
+        if not (
+            issubclass(pipeline_model, PipelineModelWithKVCache)
+            and issubclass(
+                actual_draft_pipeline_model, PipelineModelWithKVCache
+            )
+        ):
+            raise ValueError(
+                f"Speculative decoding requires both the target and draft models to support KV cache, found {pipeline_model.__name__} and {actual_draft_pipeline_model.__name__}"
             )
 
         self._target_model = pipeline_model(
@@ -285,20 +285,7 @@ class SpeculativeDecodingPipelineBase(
                 "Please ensure the draft model is a standard Transformers model with a valid config.json."
             )
 
-        if hasattr(target_hf_config, "vocab_size"):
-            self.vocab_size = target_hf_config.vocab_size
-        elif hasattr(target_hf_config, "text_config"):
-            if hasattr(target_hf_config.text_config, "vocab_size"):
-                self.vocab_size = target_hf_config.text_config.vocab_size
-            else:
-                raise ValueError(
-                    "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
-                )
-
-        else:
-            raise ValueError(
-                "MAXModelConfig's HuggingFace config must have a 'vocab_size' or 'text_config.vocab_size' param for Speculative Decoding"
-            )
+        self.vocab_size = get_vocab_size(target_hf_config)
 
         # Retrieve Encoding, and Files for Draft Model
         if self.pipeline_config.draft_model is None:
@@ -306,67 +293,13 @@ class SpeculativeDecodingPipelineBase(
                 "draft_model must be provided for speculative decoding"
             )
 
-        draft_hf_repo = self.pipeline_config.draft_model.huggingface_weight_repo
-
-        # Use the quantization_encoding from draft_model if provided
-        if self.pipeline_config.draft_model.quantization_encoding:
-            draft_encoding = (
-                self.pipeline_config.draft_model.quantization_encoding
-            )
-        else:
-            # Fall back to first supported encoding if not specified
-            encodings = draft_hf_repo.supported_encodings
-            if not encodings:
-                raise ValueError(
-                    "could not identify supported encodings for draft model."
-                )
-            logger.warning(
-                f"using first supported encoding for draft model: {encodings[0]}"
-            )
-            draft_encoding = encodings[0]
-
         # Use already-resolved weight paths from draft_model
-        draft_weight_paths: list[Path] = []
-        if (
-            self.pipeline_config.draft_model.huggingface_weight_repo.repo_type
-            == "online"
-        ):
-            # Download weight files if not existent.
-            draft_weight_paths = download_weight_files(
-                huggingface_model_id=self.pipeline_config.draft_model.model_path,
-                filenames=[
-                    str(x) for x in self.pipeline_config.draft_model.weight_path
-                ],
-                revision=self.pipeline_config.draft_model.huggingface_weight_revision,
-                max_workers=8,
-            )
-        else:
-            # Use the resolved repo_id (which points to local cache in offline mode)
-            draft_local_path = Path(
-                self.pipeline_config.draft_model.huggingface_weight_repo.repo_id
-            )
-            draft_weight_paths = [
-                draft_local_path / x
-                for x in self.pipeline_config.draft_model.weight_path
-            ]
+        draft_weight_paths = get_weight_paths(self.pipeline_config.draft_model)
 
         draft_weights = load_weights(draft_weight_paths)
         _draft_weights_format = weights_format(draft_weight_paths)
         assert self.pipeline_config.speculative is not None
         self._speculative_config = self.pipeline_config.speculative
-
-        # Use draft model's pipeline model and weight adapters if provided
-        # Otherwise fall back to target model's (for backward compatibility)
-        actual_draft_pipeline_model = (
-            draft_pipeline_model
-            if draft_pipeline_model is not None
-            else pipeline_model
-        )
-        actual_draft_weight_adapters = (
-            draft_weight_adapters
-            if draft_weight_adapters is not None
-            else weight_adapters
-        )
 
         shared_weights: dict[str, DLPackArray] | None = None
         shared_ep_comm_initializer = None
@@ -457,6 +390,25 @@ class SpeculativeDecodingPipelineBase(
 
         self._num_draft_steps = (
             self.pipeline_config.speculative.num_speculative_tokens
+        )
+
+        target_kv_params = self._target_model.kv_params
+        assert isinstance(target_kv_params, KVCacheParams)
+        self._target_kv_manager: PagedKVCacheManager = load_kv_manager(
+            params=target_kv_params,
+            max_batch_size=pipeline_config.max_batch_size,
+            max_seq_len=self._target_model.max_seq_len,
+            session=self._target_session,
+            available_cache_memory=self._target_model.kv_cache_config._available_cache_memory,
+        )
+        draft_kv_params = self._draft_model.kv_params
+        assert isinstance(draft_kv_params, KVCacheParams)
+        self._draft_kv_manager: PagedKVCacheManager = load_kv_manager(
+            params=draft_kv_params,
+            max_batch_size=pipeline_config.max_batch_size,
+            max_seq_len=self._draft_model.max_seq_len,
+            session=self._draft_session,
+            available_cache_memory=self._draft_model.kv_cache_config._available_cache_memory,
         )
 
     def _maybe_build_deepseekv3_nextn_shared_resources(
@@ -615,13 +567,6 @@ class SpeculativeDecodingPipelineBase(
         return (a, b, c)
 
     @property
-    def kv_managers(
-        self,
-    ) -> list[PagedKVCacheManager]:
-        """Returns the KV cache managers for target and draft models."""
-        return [self._target_model.kv_manager, self._draft_model.kv_manager]
-
-    @property
     def metrics(self) -> SpeculativeDecodingMetrics:
         """Get the current speculative decoding metrics.
 
@@ -741,10 +686,16 @@ class SpeculativeDecodingPipelineBase(
         # The request may not have been claimed yet if it errored before
         # execute() ran the draft model, so check before releasing.
         replica_idx = self._draft_replica_idx.pop(request_id, 0)
-        if self._draft_model.kv_manager.contains(
-            request_id, replica_idx=replica_idx
-        ):
-            self._draft_model.kv_manager.release(
-                request_id, replica_idx=replica_idx
-            )
+        if self._draft_kv_manager.contains(request_id, replica_idx=replica_idx):
+            self._draft_kv_manager.release(request_id, replica_idx=replica_idx)
         # Target model KV cache is released by scheduler via batch_constructor
+
+    @property
+    def kv_managers(self) -> list[PagedKVCacheManager]:
+        """Return the list of KV cache managers backing this pipeline."""
+        return [self._target_kv_manager]
+
+    @property
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the target model KV cache manager."""
+        return self._target_kv_manager

@@ -30,10 +30,10 @@ comptime n_layout = Layout.row_major(J, K)
 comptime p_layout = Layout.row_major(I, K)
 
 
-def main():
-    constrained[
-        has_accelerator(), "This example requires a supported accelerator"
-    ]()
+def main() raises:
+    comptime assert (
+        has_accelerator()
+    ), "This example requires a supported accelerator"
 
     var ctx = DeviceContext()
     var m_buffer = ctx.enqueue_create_buffer[float_dtype](m_layout.size())

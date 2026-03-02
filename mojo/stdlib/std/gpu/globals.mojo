@@ -21,7 +21,7 @@ The constants are resolved at compile time based on the target GPU architecture 
 are used to optimize code generation and ensure hardware compatibility.
 """
 
-from sys.info import (
+from std.sys.info import (
     CompilationTarget,
     _accelerator_arch,
     _is_amd_rdna,
@@ -90,7 +90,7 @@ Warpgroup is used for wgmma instructions on Hopper and tcgen05.ld on Blackwell.
 fn _resolve_warpgroup_size() -> Int:
     # We can't constrain it here because the constant is used on host for
     # compilation test w/o nvidia GPUs.
-    # constrained[is_nvidia_gpu(), "Warpgroup only applies to Nvidia GPUs."]()
+    # comptime assert is_nvidia_gpu(), "Warpgroup only applies to Nvidia GPUs."
 
     return 128
 

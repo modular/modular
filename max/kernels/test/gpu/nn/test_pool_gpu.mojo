@@ -14,7 +14,7 @@
 from gpu.host import DeviceContext, HostBuffer
 from layout._fillers import arange
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from nn.pool import (
     PoolMethod,
     avg_pool,
@@ -27,7 +27,7 @@ from testing import assert_almost_equal
 from utils.index import IndexList
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_max_pool_2d(ctx)
         test_avg_pool_2d(ctx)

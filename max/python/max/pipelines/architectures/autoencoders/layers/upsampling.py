@@ -13,11 +13,11 @@
 
 """Upsampling utilities for MAX framework."""
 
-from max import functional as F
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, TensorValueLike
-from max.nn import Conv2d, Module
-from max.tensor import Tensor
+from max.nn.module_v3 import Conv2d, Module
 
 
 def interpolate_2d_nearest(

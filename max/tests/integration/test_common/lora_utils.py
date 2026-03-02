@@ -228,7 +228,6 @@ def create_pipeline_config_with_lora(
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             device_specs=[DeviceSpec(device_type="gpu", id=0)],
             kv_cache=KVCacheConfig(
-                cache_strategy="paged",
                 enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
             ),
             max_length=512,
@@ -258,7 +257,7 @@ def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
             quantization_encoding="bfloat16",  # Use bfloat16 for GPU
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             device_specs=[DeviceSpec(device_type="gpu", id=0)],
-            kv_cache=KVCacheConfig(cache_strategy="paged"),
+            kv_cache=KVCacheConfig(),
             max_length=512,
         ),
         max_batch_size=4,

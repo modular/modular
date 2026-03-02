@@ -14,7 +14,7 @@
 
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor
+from max.experimental.tensor import Tensor
 
 # Create a tensor with float32 (default for most operations)
 float_tensor = Tensor.ones([2, 3], dtype=DType.float32, device=CPU())

@@ -142,8 +142,18 @@ def _Model_signature(self: Model) -> Signature:
     return Signature(parameters=parameters)
 
 
-def _Model_capture(self: Model, *inputs: Buffer) -> list[Buffer]:
-    """Capture execution into a device graph keyed by input shapes/dtypes.
+def _normalize_graph_key(graph_key: int) -> int:
+    if isinstance(graph_key, bool) or not isinstance(graph_key, int):
+        raise TypeError("graph_key must be an int.")
+    if graph_key < 0 or graph_key > 2**64 - 1:
+        raise ValueError("graph_key must be in range [0, 2^64 - 1].")
+    return graph_key
+
+
+def _Model_capture(
+    self: Model, graph_key: int, *inputs: Buffer
+) -> list[Buffer]:
+    """Capture execution into a device graph for caller-provided key.
 
     Capture is best-effort and model-dependent. If the model issues
     capture-unsafe operations (for example, host-device synchronization),
@@ -151,15 +161,21 @@ def _Model_capture(self: Model, *inputs: Buffer) -> list[Buffer]:
     """
     if not inputs:
         raise ValueError("Model.capture requires input buffers.")
-    return self._capture(list(inputs))
+    normalized_key = _normalize_graph_key(graph_key)
+    return self._capture(normalized_key, list(inputs))
 
 
-def _Model_replay(self: Model, *inputs: Buffer) -> None:
-    """Replay the captured device graph for these inputs."""
-    self._replay(list(inputs))
+def _Model_replay(self: Model, graph_key: int, *inputs: Buffer) -> None:
+    """Replay the captured device graph for a caller-provided key."""
+    if not inputs:
+        raise ValueError("Model.replay requires input buffers.")
+    normalized_key = _normalize_graph_key(graph_key)
+    self._replay(normalized_key, list(inputs))
 
 
-def _Model_debug_verify_replay(self: Model, *inputs: Buffer) -> None:
+def _Model_debug_verify_replay(
+    self: Model, graph_key: int, *inputs: Buffer
+) -> None:
     """Execute eagerly and verify the launch trace matches the captured graph.
 
     This method validates that graph capture correctly represents eager
@@ -168,22 +184,26 @@ def _Model_debug_verify_replay(self: Model, *inputs: Buffer) -> None:
 
     Args:
         self: The model to debug/verify
+        graph_key: Caller-provided key identifying the captured graph.
         inputs: Input buffers matching the captured input signature (same
             shapes and dtypes used during capture).
 
     Raises:
+        TypeError: If ``graph_key`` is not an integer.
+        ValueError: If ``graph_key`` is out of uint64 range.
         ValueError: If no input buffers are provided.
-        RuntimeError: If no graph has been captured for this input configuration.
+        RuntimeError: If no graph has been captured for ``graph_key``.
         RuntimeError: If the eager execution trace doesn't match the captured graph.
 
     Example:
-        >>> model.capture(input_tensor)
-        >>> model.debug_verify_replay(input_tensor)  # Validates capture
-        >>> model.replay(input_tensor)  # Safe to use optimized replay
+        >>> model.capture(1, input_tensor)
+        >>> model.debug_verify_replay(1, input_tensor)  # Validates capture
+        >>> model.replay(1, input_tensor)  # Safe to use optimized replay
     """
     if not inputs:
         raise ValueError("Model.debug_verify_replay requires input buffers.")
-    self._debug_verify_replay(list(inputs))
+    normalized_key = _normalize_graph_key(graph_key)
+    self._debug_verify_replay(normalized_key, list(inputs))
 
 
 Model.execute = _Model_execute  # type: ignore[method-assign]
@@ -366,9 +386,21 @@ class InferenceSession:
         if env_val := os.getenv("MOJO_LOGGING_LEVEL"):
             self.set_mojo_log_level(env_val)
 
+        if env_val := os.getenv("MOJO_ASSERT_LEVEL"):
+            try:
+                assert_level = AssertLevel[env_val.upper()]
+            except KeyError as e:
+                raise TypeError(
+                    f"Invalid assert level ({env_val}). Please use one of: {[x.name for x in AssertLevel]}"
+                ) from e
+            self.set_mojo_assert_level(assert_level)
+
         # TODO: Remove this once the new topk kernel is stable.
         if use_old_top_k_kernel := os.getenv("USE_OLD_TOP_K_KERNEL"):
             self.use_old_top_k_kernel(use_old_top_k_kernel)
+
+        if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
+            self.use_fi_topk_kernel(use_fi_topk)
 
     def __repr__(self) -> str:
         if self.num_threads:
@@ -571,7 +603,13 @@ class InferenceSession:
         self._set_mojo_define("LOGGING_LEVEL", level)
 
     def set_mojo_assert_level(self, level: AssertLevel) -> None:
-        """Sets which mojo asserts are kept in the compiled model."""
+        """Sets which mojo asserts are kept in the compiled model.
+
+        Note:
+            Not all kernels are runnable with asserts enabled. If model
+            compilation or execution fails at higher assert levels, retry with
+            ``AssertLevel.NONE``.
+        """
         self._set_mojo_define("ASSERT", level)
 
     def gpu_profiling(self, mode: GPUProfilingMode) -> None:
@@ -651,6 +689,18 @@ class InferenceSession:
             return
 
         self._set_mojo_define("USE_OLD_TOP_K_KERNEL", 1)
+
+    def use_fi_topk_kernel(self, mode: str) -> None:
+        """Enables the fused-inference top-k kernel.
+
+        Args:
+            mode: String to enable/disable. Accepts "false", "off", "no", "0"
+                to disable, any other value to enable.
+        """
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("USE_FI_TOPK_KERNEL", 1)
 
     def _use_experimental_kernels(self, mode: str) -> None:
         """Enables experimental kernels."""

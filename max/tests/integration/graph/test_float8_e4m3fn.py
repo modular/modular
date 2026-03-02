@@ -15,11 +15,11 @@
 import asyncio
 
 import pytest
-from max import functional as F
 from max.dtype import DType
 from max.engine.api import InferenceSession
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
 from max.graph import Graph
-from max.tensor import Tensor
 from test_common.graph_utils import is_h100_h200
 
 

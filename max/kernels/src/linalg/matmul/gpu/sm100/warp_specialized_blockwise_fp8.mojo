@@ -100,7 +100,7 @@ fn _get_accumulator_size[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime stageN = c_smem_layout.shape[1].value()
     comptime cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
@@ -200,13 +200,13 @@ fn load_AB[
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
 
-    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-        a_tma_rows
-    ) + work_tile_coord[0] * UInt(BM)
+    var a_gmem_slice_coord = (
+        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+    )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1] * UInt(MMA_N)
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1]) * MMA_N
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -228,14 +228,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), a_gmem_slice_coord),
+            (Int(iter_idx) * BK, a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), b_gmem_slice_coord),
+            (Int(iter_idx) * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -298,7 +298,7 @@ fn multi_stage_reg_epilogue[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime num_stages = accum_layout.shape[0].value()
     comptime num_elements = accum_layout.shape[1].value()
@@ -368,8 +368,8 @@ fn multi_stage_reg_epilogue[
 
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
         var cg1_coord_n = coord_n_mma_m256
-        var coord_n = cg2_coord_n if cta_group == 2 else cg1_coord_n
-        var coord_m = c_coord[0] * UInt(BM)
+        var coord_n = Int(cg2_coord_n if cta_group == 2 else cg1_coord_n)
+        var coord_m = Int(c_coord[0] * UInt(BM))
 
         var cg2_c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
         var cg1_c_smem_coord_m = UInt(0)
@@ -463,12 +463,11 @@ fn promote_accumulators[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
-    constrained[
-        a_scales_type == b_scales_type and accum_type == DType.float32,
-        "Only support float32 for a_scales, b_scales, and accum_type",
-    ]()
+    comptime assert (
+        a_scales_type == b_scales_type and accum_type == DType.float32
+    ), "Only support float32 for a_scales, b_scales, and accum_type"
     # Rows each warp is responsible for:
     # warp_id 0 -> 0-15 upper, 16-31 lower
     # warp_id 1 -> 32-47 upper, 48-63 lower
@@ -485,7 +484,7 @@ fn promote_accumulators[
     comptime bits = 256
     comptime num_elements_per_load = bits // 32  # each element in tmem is 4 bytes, 32 bits
     comptime fragment_size = (data_paths * num_elements_per_load) // WARP_SIZE
-    constrained[fragment_size == 4, "fragment_size must be 4"]()
+    comptime assert fragment_size == 4, "fragment_size must be 4"
     comptime repeats = num_elements // fragment_size
     comptime stageN = repeats * (bits // 32)
     comptime load_width = 2
@@ -502,14 +501,13 @@ fn promote_accumulators[
     var b_scale_1: Scalar[accum_type]
 
     comptime if MMA_N != BK:
-        constrained[
-            stageN <= gcd(MMA_N, BK) and (gcd(MMA_N, BK) % stageN == 0),
-            (
-                "gcd(MMA_N, BK) must be divisible by stageN. If not then this"
-                " step should be updated to support non-divisible case"
-                " accordingly"
-            ),
-        ]()
+        comptime assert stageN <= gcd(MMA_N, BK) and (
+            gcd(MMA_N, BK) % stageN == 0
+        ), (
+            "gcd(MMA_N, BK) must be divisible by stageN. If not then this"
+            " step should be updated to support non-divisible case"
+            " accordingly"
+        )
 
         var global_bn_start = bn * UInt(MMA_N)
         var begin_n = min(
@@ -760,11 +758,10 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    constrained[
-        b_scales_type == a_scales_type and accum_type == DType.float32,
-        "Only support float32 for a_scales and b_scales",
-    ]()
-    constrained[transpose_b, "only support k-major B"]()
+    comptime assert (
+        b_scales_type == a_scales_type and accum_type == DType.float32
+    ), "Only support float32 for a_scales and b_scales"
+    comptime assert transpose_b, "only support k-major B"
 
     comptime SCHEDULER_THREADS = WARP_SIZE
     comptime TMA_LOAD_THREADS = WARP_SIZE
@@ -793,14 +790,13 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime MMA_N = config.mma_shape[1]
     comptime MMA_K = config.mma_shape[2]
 
-    constrained[BK == 128, "Only support BK = 128"]()
-    constrained[
-        MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK,
+    comptime assert BK == 128, "Only support BK = 128"
+    comptime assert MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK, (
         "MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK. MMA_N="
         + String(MMA_N)
         + ", GCD="
-        + String(gcd(MMA_N, BK)),
-    ]()
+        + String(gcd(MMA_N, BK))
+    )
 
     comptime num_m_mmas = BM // (config.mma_shape[0] // config.cta_group)
     comptime num_n_mmas = BN // (config.mma_shape[1] // config.cta_group)
@@ -1301,20 +1297,15 @@ fn sm100_warp_specialized_blockwise_fp8[
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
     ctx: DeviceContext,
 ) raises:
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    comptime assert transpose_b, "Only support transposed B"
 
-    constrained[
-        a_type == b_type and a_type == DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
+    comptime assert (
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
 
-    constrained[
-        a_scales_type == b_scales_type,
-        "Only support float32 for scales",
-    ]()
+    comptime assert (
+        a_scales_type == b_scales_type
+    ), "Only support float32 for scales"
 
     if (a_scales.dim(1) * size_of[a_scales_type]()) % 16 != 0:
         raise Error(
@@ -1329,11 +1320,8 @@ fn sm100_warp_specialized_blockwise_fp8[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[config.cta_group in (1, 2), "Only support cta_group == 2"]()
-    constrained[
-        (not config.AB_swapped),
-        "Swapped AB is not supported",
-    ]()
+    comptime assert config.cta_group in (1, 2), "Only support cta_group == 2"
+    comptime assert not config.AB_swapped, "Swapped AB is not supported"
 
     var M = c.dim(0)
     var N = c.dim(1)
@@ -1424,10 +1412,9 @@ fn sm100_warp_specialized_blockwise_fp8[
         smem_leftover // producer_consumer_smem_per_stage
     )
 
-    constrained[
-        max_pipeline_stages >= 1,
-        "not enough smem even for one pipeline stage!",
-    ]()
+    comptime assert (
+        max_pipeline_stages >= 1
+    ), "not enough smem even for one pipeline stage!"
 
     comptime producer_consumer_smem = producer_consumer_smem_per_stage * Int(
         max_pipeline_stages

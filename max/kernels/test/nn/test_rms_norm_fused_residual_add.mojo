@@ -15,10 +15,9 @@ from math import sqrt
 from sys.info import simd_width_of
 
 from algorithm.functional import elementwise
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._fillers import random
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from memory import alloc
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu
 from testing import assert_almost_equal
@@ -219,7 +218,7 @@ fn run_rms_norm_fused_residual_add_gpu[
     gamma2_heap.free()
 
 
-def main():
+def main() raises:
     # Test various shapes similar to test_rms_norm.mojo
     run_rms_norm_fused_residual_add_gpu[DType.float32](Index(5))
     run_rms_norm_fused_residual_add_gpu[DType.float32](Index(3, 4, 10, 20, 8))

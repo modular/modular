@@ -525,7 +525,7 @@ fn test_winograd_conv_gpu[
                 )
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
 
     with DeviceContext() as ctx:

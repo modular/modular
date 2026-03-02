@@ -23,7 +23,9 @@ from testing import assert_false, assert_true
 def test_operation[
     dtype: DType,
     target_arch: StaticString,
-    op_fn: fn[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x),
+    op_fn: fn[width: Int](
+        x: SIMD[dtype, width], y: type_of(x)
+    ) raises -> type_of(x),
     op_name: StaticString,
 ]():
     var scalar: String
@@ -59,34 +61,34 @@ def test_operation[
     assert_true(pairwise in _compile_code[op_fn[width=8], target=target]())
 
 
-def test_add[dtype: DType, target_arch: StaticString]():
+def test_add[dtype: DType, target_arch: StaticString]() raises:
     fn add[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x + y
 
     test_operation[dtype, target_arch, add, "add"]()
 
 
-def test_sub[dtype: DType, target_arch: StaticString]():
+def test_sub[dtype: DType, target_arch: StaticString]() raises:
     fn sub[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x - y
 
     test_operation[dtype, target_arch, sub, "sub"]()
 
 
-def test_mul[dtype: DType, target_arch: StaticString]():
+def test_mul[dtype: DType, target_arch: StaticString]() raises:
     fn mul[width: Int](x: SIMD[dtype, width], y: type_of(x)) -> type_of(x):
         return x * y
 
     test_operation[dtype, target_arch, mul, "mul"]()
 
 
-def test_half_float_instruction_selection():
-    def test_operations[dtype: DType, target_arch: StaticString]():
+def test_half_float_instruction_selection() raises:
+    def test_operations[dtype: DType, target_arch: StaticString]() raises:
         test_add[dtype, target_arch]()
         test_sub[dtype, target_arch]()
         test_mul[dtype, target_arch]()
 
-    def test_types[dtype: DType]():
+    def test_types[dtype: DType]() raises:
         test_operations[dtype, "sm_80"]()
         test_operations[dtype, "sm_90"]()
 
@@ -94,7 +96,7 @@ def test_half_float_instruction_selection():
     test_types[DType.float16]()
 
 
-def test_fma[dtype: DType]():
+def test_fma[dtype: DType]() raises:
     fn fma[
         width: Int
     ](x: SIMD[dtype, width], y: type_of(x), z: type_of(x)) -> type_of(x):
@@ -119,7 +121,7 @@ def test_fma[dtype: DType]():
         assert_true("fma.rn.f16x2 " in _compile_code[fma[width=8]]())
 
 
-def test_cast():
+def test_cast() raises:
     fn cast[
         src_type: DType, dst_type: DType, width: Int
     ](src: SIMD[src_type, width]) -> SIMD[dst_type, width]:
@@ -151,7 +153,7 @@ def test_cast():
     )
 
 
-def main():
+def main() raises:
     test_half_float_instruction_selection()
 
     test_fma[DType.bfloat16]()

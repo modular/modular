@@ -14,15 +14,16 @@
 
 These are Mojo built-ins, so you don't need to import them.
 """
-from collections.string.string_slice import _get_kgen_string
-from reflection import (
+from std.collections.string.string_slice import _get_kgen_string
+from std.reflection import (
     get_type_name,
     struct_field_names,
     struct_field_types,
 )
-from reflection.type_info import _unqualified_type_name
+from std.reflection.type_info import _unqualified_type_name
 
 
+@deprecated("Use `comptime assert` instead")
 @always_inline("nodebug")
 fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     """Asserts that the condition must be true at compile time.
@@ -43,7 +44,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
         comptime assert dtype.is_numeric(), "dtype must be numeric."
         return a / 2
 
-    def main():
+    def main() raises:
         print(half(UInt8(5)))  # prints 2
         print(half(Scalar[DType.bool](True)))  # constraint failed:
                                                #     dtype must be numeric.
@@ -61,6 +62,7 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     ]()
 
 
+@deprecated("Use `comptime assert` instead")
 @always_inline("nodebug")
 fn constrained[cond: Bool]():
     """Asserts that the condition must be true at compile time.

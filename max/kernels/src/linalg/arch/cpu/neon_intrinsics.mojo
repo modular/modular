@@ -41,7 +41,6 @@ fn _neon_dotprod[
         return call_intrinsic["llvm.aarch64.neon.sdot.v4i32.v16i8"]()
     else:
         comptime assert False, "unsupported A and B types"
-        return SIMD[c_type, width]()
 
 
 fn _neon_dotprod_lane[
@@ -96,4 +95,3 @@ fn _neon_matmul[
         return call_intrinsic["llvm.aarch64.neon.smmla.v4i32.v16i8"]()
     else:
         comptime assert False, "unsupported A and B types"
-        return SIMD[c_type, width]()

@@ -16,27 +16,20 @@ import time
 
 import numpy as np
 import pytest
-from max.driver import CPU, Accelerator, Buffer, Device, accelerator_api
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    DevicePinnedBuffer,
+    accelerator_api,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, SymbolicDim, TensorType, ops
-from max.nn.legacy import kernels
+from max.nn import kernels
 
 KERNEL_DURATION_SEC = 3
 CPU_WORK_DURATION_SEC = 1
-
-
-def alloc(
-    device: Device,
-    size: int,
-    dtype: DType = DType.int8,
-    init_value: int | float | None = None,
-    pinned: bool = False,
-) -> Buffer:
-    t = Buffer(dtype=dtype, shape=[size], device=device, pinned=pinned)
-    if init_value is not None:
-        t.to_numpy().fill(init_value)
-    return t
 
 
 def build_graph(device_ref: DeviceRef) -> Model:
@@ -101,21 +94,43 @@ def test_overlap(enable_overlap: bool, expected_elapsed_time: int) -> None:
     # Build and load simple graph
     model = build_graph(device_ref=device_ref)
 
-    # Allocate pinned input tensors and initialize contents
-    a_pinned = alloc(device=device, size=size, init_value=1, pinned=True)
-    b_pinned = alloc(device=device, size=size, init_value=2, pinned=True)
-
-    # Allocate empty output tensors
-    c_pinned = alloc(device=device, size=size, pinned=True)
-    d_pinned = alloc(device=device, size=size, pinned=True)
-
     # Allocate sleep duration buffer
-    sleep_duration = alloc(
-        device=CPU(),
-        dtype=DType.float64,
-        init_value=KERNEL_DURATION_SEC,
-        size=1,
-    )
+    sleep_duration = Buffer(dtype=DType.float64, shape=[1], device=CPU())
+    sleep_duration.to_numpy().fill(KERNEL_DURATION_SEC)
+
+    # Allocate buffers before timing region
+    if not enable_overlap:
+        # Allocate regular pinned buffers for non-overlap case
+        a_pinned = Buffer(
+            dtype=DType.int8, shape=[size], device=device, pinned=True
+        )
+        a_pinned.to_numpy().fill(1)
+        b_pinned = Buffer(
+            dtype=DType.int8, shape=[size], device=device, pinned=True
+        )
+        b_pinned.to_numpy().fill(2)
+        c_pinned = Buffer(
+            dtype=DType.int8, shape=[size], device=device, pinned=True
+        )
+        d_pinned = Buffer(
+            dtype=DType.int8, shape=[size], device=device, pinned=True
+        )
+    else:
+        # Allocate DevicePinnedBuffer for overlap case
+        a_pinned = DevicePinnedBuffer(
+            dtype=DType.int8, shape=[size], device=device
+        )
+        a_pinned.to_numpy().fill(1)
+        b_pinned = DevicePinnedBuffer(
+            dtype=DType.int8, shape=[size], device=device
+        )
+        b_pinned.to_numpy().fill(2)
+        c_pinned = DevicePinnedBuffer(
+            dtype=DType.int8, shape=[size], device=device
+        )
+        d_pinned = DevicePinnedBuffer(
+            dtype=DType.int8, shape=[size], device=device
+        )
 
     t0 = time.monotonic()
 
@@ -140,20 +155,22 @@ def test_overlap(enable_overlap: bool, expected_elapsed_time: int) -> None:
             a_pinned.to(device), b_pinned.to(device), sleep_duration
         )
         c_pinned.inplace_copy_from(c)
-        c_pinned.disable_auto_sync()
-        c_pinned.mark_as_ready()
+        # Record event after batch 1 completes
+        event1 = device.default_stream.record_event()
 
-        # Run batch 2
+        # Run batch 2 (can overlap with CPU work)
         expensive_cpu_preprocessing()
         (d,) = model.execute(c, c, sleep_duration)
         d_pinned.inplace_copy_from(d)
-        d_pinned.disable_auto_sync()
-        d_pinned.mark_as_ready()
+        # Record event after batch 2 completes
+        event2 = device.default_stream.record_event()
 
-        # Postprocess results of batch 1
+        # Postprocess results of batch 1 (wait for batch 1 to complete)
+        event1.synchronize()
         expensive_cpu_postprocessing(c_pinned.to_numpy(), expected=3)
 
-        # Postprocess results of batch 2
+        # Postprocess results of batch 2 (wait for batch 2 to complete)
+        event2.synchronize()
         expensive_cpu_postprocessing(d_pinned.to_numpy(), expected=6)
 
     t1 = time.monotonic()

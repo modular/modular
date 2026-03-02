@@ -46,6 +46,7 @@ from layout import (
     RuntimeTuple,
     RuntimeLayout,
 )
+from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core_async import (
@@ -188,13 +189,13 @@ fn load_AB[
     if elect_one_cta:
         tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
-    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-        a_tma_rows
-    ) + work_tile_coord[0] * UInt(BM)
+    var a_gmem_slice_coord = (
+        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+    )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1] * UInt(MMA_N)
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1]) * MMA_N
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -210,14 +211,14 @@ fn load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), a_gmem_slice_coord),
+        (Int(iter_idx) * BK, a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), b_gmem_slice_coord),
+        (Int(iter_idx) * BK, b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -543,8 +544,8 @@ fn store_C[
     # #           c_frag                   c_smem_tile      c_tma_op
 
     if elect_one_warp and thread_idx.x < UInt(NUM_TMA_TILES):
-        var row_start = block_idx.x * UInt(BM)
-        var col_start = block_idx.y * UInt(MMA_N) + thread_idx.x * UInt(TMA_BN)
+        var row_start = Int(block_idx.x) * BM
+        var col_start = Int(block_idx.y) * MMA_N + Int(thread_idx.x) * TMA_BN
 
         fence_async_view_proxy()
         var c_smem_offset = c_smem_tile.ptr + BM * TMA_BN * Int(thread_idx.x)
@@ -982,7 +983,7 @@ def test_blackwell_kernel_6[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     if not benchmark:
         print(
             String(
@@ -1009,10 +1010,10 @@ def test_blackwell_kernel_6[
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host = LayoutTensor[c_type, c_layout](c_host_ptr)
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    var c_host_ref = LayoutTensor[c_type, c_layout](c_host_ref_ptr)
+    var c_host_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host = c_host_managed.tensor[update=False]()
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host_ref = c_host_ref_managed.tensor[update=False]()
 
     # Device memory allocation
     var a_device = ctx.enqueue_create_buffer[a_type](M * K)
@@ -1037,15 +1038,15 @@ def test_blackwell_kernel_6[
             ]()
     # Zero out c buffers
     for i in range(M * N):
-        c_host_ptr[i] = Scalar[c_type](0)
-        c_host_ref_ptr[i] = Scalar[c_type](0)
+        c_host.ptr[i] = Scalar[c_type](0)
+        c_host_ref.ptr[i] = Scalar[c_type](0)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device, c_host_ptr)
-    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
+    ctx.enqueue_copy(c_device, c_host.ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref.ptr)
 
     blackwell_kernel_6[
         transpose_b=transpose_b,
@@ -1112,8 +1113,8 @@ def test_blackwell_kernel_6[
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host_ptr, c_device)
-        ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+        ctx.enqueue_copy(c_host.ptr, c_device)
+        ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
         ctx.synchronize()
 
         # print(ndbuffer_to_str(c_host))
@@ -1121,8 +1122,8 @@ def test_blackwell_kernel_6[
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host_ptr,
-            c_host_ref_ptr,
+            c_host.ptr,
+            c_host_ref.ptr,
             M * N,
             atol=0.0001,
             rtol=rtol,
@@ -1131,12 +1132,6 @@ def test_blackwell_kernel_6[
 
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 fn get_dic_of_shapes(
@@ -1192,7 +1187,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             print("error")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             # Run the benchmark

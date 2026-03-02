@@ -6,7 +6,7 @@ image: /images/artwork/mojo-get-started.jpg
 ---
 
 import Requirements from '@site/src/components/Requirements';
-import { requirementsNoGPU } from '@site/docs/max/requirements';
+import { requirementsNoGPU } from '../../requirements';
 
 Get ready to learn Mojo! This tutorial gives you a tour of Mojo by building a
 complete program that does much more than simply printing "Hello, world!"
@@ -124,7 +124,7 @@ following lines of code:
 
 ```mojo title="life.mojo"
 # My first Mojo program!
-def main():
+def main() raises:
     print("Hello, World!")
 ```
 
@@ -211,7 +211,7 @@ Let's declare a variable, assign the return value from `input()` to it, and
 build a customized greeting.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     var name: String = input("Who are you? ")
     var greeting: String = "Hi, " + name + "!"
     print(greeting)
@@ -240,7 +240,7 @@ We can replace the code we just entered with the following, and it works
 exactly the same.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     name = input("Who are you? ")
     greeting = "Hi, " + name + "!"
     print(greeting)
@@ -358,7 +358,7 @@ Let's update the `main()` function with the following code that defines an
 pattern.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     num_rows = 8
     num_cols = 8
     glider = [
@@ -379,7 +379,7 @@ Before we move on, let's take a moment to discuss how Mojo handles copying
 values. There's an important difference in Mojo between copying simple types
 like `Int` and `String` and more complex types like `List`:
 
-- An *explicitly copyable* type can be copied by calling its `copy()` method.
+- An *explicitly copyable* type can be copied by calling its copy initializer or `copy()`.
   `List` is explicitly copyable, so if `first` is a `List`, you can copy it like
   this:
 
@@ -391,8 +391,9 @@ like `Int` and `String` and more complex types like `List`:
   This leaves `first` unchanged and assigns `second` its own, uniquely owned
   copy of the list.
 
-- An *implicitly copyable* type can be copied without an explicit call to a
-  `copy()` method. `Int` and `String` are implicitly copyable types, so if
+- An *implicitly copyable* type can be copied without an explicit call to
+  `copy()` or a
+  copy initializer. `Int` and `String` are implicitly copyable types, so if
   `one_value` is an `Int`, you can copy it like this:
 
   ```mojo
@@ -506,7 +507,7 @@ for value in nums:
 Now that we've defined our `grid_str()` function, let's invoke it from `main()`.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     ...
     result = grid_str(num_rows, num_cols, glider)
     print(result)
@@ -641,7 +642,7 @@ compiler automatically generates the missing methods for you. For our simple
 `Grid` struct, indicating that it conforms to the `Copyable`
 trait is enough to have the Mojo compiler automatically generate the missing
 methods for us. The `Copyable` trait also provides a default implementation of
-the `copy()` method, so you don't need to implement it yourself.
+the copy initializer and `copy()`, so you don't need to implement it yourself.
 
 :::note
 
@@ -681,7 +682,7 @@ fn grid_str(grid: Grid) -> String:
             str += "\n"     # Add a newline between rows, but not at the end
     return str
 
-def main():
+def main() raises:
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -794,7 +795,7 @@ update the code in `life.mojo` where we invoke it from `main()`:
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-def main():
+def main() raises:
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],
@@ -849,7 +850,7 @@ struct Grid(Copyable, Stringable):
 Now let's verify that `String()` works with an instance of `Grid`.
 
 ```mojo title="life.mojo"
-def main():
+def main() raises:
     ...
     start = Grid(8, 8, glider^)
     print(String(start))
@@ -1066,7 +1067,7 @@ and print it.
 ```mojo title="life.mojo"
 ...
 
-def main():
+def main() raises:
     start = Grid.random(8, 16)
     print(String(start))
 ```
@@ -1191,7 +1192,7 @@ the updated version of `life.mojo`:
 ```mojo title="life.mojo"
 from gridv1 import Grid
 
-def run_display(var grid: Grid) -> None:
+def run_display(var grid: Grid) raises -> None:
     while True:
         print(String(grid))
         print()
@@ -1199,7 +1200,7 @@ def run_display(var grid: Grid) -> None:
             break
         grid = grid.evolve()
 
-def main():
+def main() raises:
     start = Grid.random(16, 16)
     run_display(start^)
 ```
@@ -1247,9 +1248,9 @@ You must store the reference in a variable so that you can then access the
 functions and objects in the module. For example:
 
 ```mojo
-from python import Python
+from std.python import Python
 
-def run_display():
+def run_display() raises:
     # This is roughly equivalent to Python's `import pygame`
     pygame = Python.import_module("pygame")
 
@@ -1277,7 +1278,7 @@ a look at the updated code for `life.mojo`, and we'll explain more below:
 import time
 
 from gridv1 import Grid
-from python import Python
+from std.python import Python
 
 
 def run_display(
@@ -1287,7 +1288,7 @@ def run_display(
     background_color: String = "black",
     cell_color: String = "green",
     pause: Float64 = 0.1,
-) -> None:
+) raises -> None:
     # Import the pygame Python package
     pygame = Python.import_module("pygame")
 
@@ -1346,7 +1347,7 @@ def run_display(
     pygame.quit()
 
 
-def main():
+def main() raises:
     start = Grid.random(128, 128)
     run_display(start^)
 ```
@@ -1416,31 +1417,20 @@ way, you experienced:
 Now that you've seen what Mojo can do, here are some suggestions for continuing
 your learning journey:
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
 
-export const Puzzles = {
-    title: "GPU Puzzles",
-    description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
-    metadata: {
-        permalink: "https://puzzles.modular.com/introduction.html"
-    }
-};
-
-export const Examples = {
-    title: "Code examples",
-    description: "Browse a wide range of Mojo code examples on GitHub",
-    metadata: {
-        permalink: "https://github.com/modular/modular/tree/main/mojo/examples"
-    }
-};
-
-export const nextSteps = [
-    '../gpu/intro-tutorial',
-    Puzzles,
-    Examples,
-]
-
-<MDXListing mdxList={nextSteps} />
+<ListingCards>
+  <ListingCard title="Get started with GPUs"
+    url="/mojo/manual/gpu/intro-tutorial"
+    description="Learn the basics of GPU programming with Mojo" />
+  <ListingCard title="GPU Puzzles"
+    url="https://puzzles.modular.com/introduction.html"
+    description="Learn to program GPUs in Mojo by solving increasingly complex challenges" />
+  <ListingCard title="Code examples"
+    url="https://github.com/modular/modular/tree/main/mojo/examples"
+    description="Browse a wide range of Mojo code examples on GitHub" />
+</ListingCards>
 
 :::tip
 

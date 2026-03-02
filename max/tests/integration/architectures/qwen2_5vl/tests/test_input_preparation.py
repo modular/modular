@@ -43,8 +43,8 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TokenBuffer,
 )
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.parallel import ParallelArrayOps
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.parallel import ParallelArrayOps
 from max.pipelines.architectures.qwen2_5vl.context import (
     Qwen2_5VLTextAndVisionContext,
 )

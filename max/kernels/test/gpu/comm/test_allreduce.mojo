@@ -18,6 +18,7 @@ from itertools import product
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS, group_start, group_end
+from comm.sync import enable_p2p
 from comm.allreduce import (
     _allreduce_naive_single,
     allreduce,
@@ -122,9 +123,9 @@ fn allreduce_test[
             list_of_ctx[i].enqueue_copy(in_bufs_list[i], host_buffers[i])
 
     # Create and initialize input and output buffers.
-    var in_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], num_buffers](
-        fill={}
-    )
+    var in_bufs = InlineArray[
+        NDBuffer[dtype, rank, ImmutAnyOrigin], num_buffers
+    ](fill={})
     var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
         fill={}
     )
@@ -266,9 +267,6 @@ fn allreduce_test[
     # Cleanup
     for i in range(ngpus):
         host_buffers[i].free()
-    _ = signal_buffers^
-    _ = in_bufs_list^
-    _ = out_bufs_list^
 
 
 fn _get_test_str[
@@ -290,7 +288,7 @@ fn _get_test_str[
     )
 
 
-def allreduce_naive_test() -> None:
+def allreduce_naive_test() raises -> None:
     """Explicit smoke test for the allreduce naive path."""
     print("====allreduce-naive-smoke-DType.float32-2-8Ki elements")
     comptime ngpus = 2
@@ -408,9 +406,9 @@ fn run_allreduce_sweep[use_multimem: Bool]() raises:
 
         # Some checks for raggedness
         comptime simd_width = simd_width_of[dtype, get_gpu_target()]()
-        constrained[
-            length % simd_width == 0, "Length must be multiple of simd_width"
-        ]()
+        comptime assert (
+            length % simd_width == 0
+        ), "Length must be multiple of simd_width"
 
         print(
             _get_test_str[dtype, use_multimem, use_custom_epilogue](
@@ -447,13 +445,15 @@ fn run_allreduce_sweep[use_multimem: Bool]() raises:
                 raise e^
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
 
     # First, explicitly exercise the naive allreduce path by calling it directly.
     allreduce_naive_test()
+
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Standard (non-multimem) sweep
     run_allreduce_sweep[use_multimem=False]()

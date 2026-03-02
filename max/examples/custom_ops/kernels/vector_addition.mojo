@@ -91,8 +91,7 @@ struct VectorAddition:
 
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
-        @parameter
-        if target == "cpu":
+        comptime if target == "cpu":
             _vector_addition_cpu(output, lhs, rhs, ctx)
         elif target == "gpu":
             _vector_addition_gpu(output, lhs, rhs, ctx)

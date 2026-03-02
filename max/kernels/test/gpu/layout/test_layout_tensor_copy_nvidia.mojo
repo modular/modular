@@ -132,11 +132,8 @@ fn test_dynamic_async_copy[
 
     print(output.tensor())
 
-    _ = input^
-    _ = output^
 
-
-def run_dynamic_async_copy_tests(ctx: DeviceContext):
+def run_dynamic_async_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_dynamic_async_copy
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0
     # CHECK: 6.0 7.0 8.0 9.0 10.0 11.0
@@ -260,11 +257,8 @@ fn test_swizzle_copy[
     ctx.synchronize()
     print(b_tensor.tensor())
 
-    _ = a_tensor^
-    _ = b_tensor^
 
-
-def run_swizzle_copy_tests(ctx: DeviceContext):
+def run_swizzle_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_swizzle_copy
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
@@ -377,10 +371,8 @@ fn test_masked_async_copy[
 
     print(input.tensor())
 
-    _ = input^
 
-
-def run_masked_async_copy_tests(ctx: DeviceContext):
+def run_masked_async_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_masked_async_copy
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -502,10 +494,8 @@ fn test_masked_copy[
 
     print(input.tensor())
 
-    _ = input^
 
-
-def run_masked_copy_tests(ctx: DeviceContext):
+def run_masked_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_masked_copy
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -622,11 +612,8 @@ fn test_masked_copy_dram_to_local[
 
     print(output.tensor())
 
-    _ = input^
-    _ = output^
 
-
-def run_copy_dram_to_local_tests(ctx: DeviceContext):
+def run_copy_dram_to_local_tests(ctx: DeviceContext) raises:
     # CHECK: === test_masked_copy_dram_to_local
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -639,7 +626,7 @@ def run_copy_dram_to_local_tests(ctx: DeviceContext):
     test_masked_copy_dram_to_local[Layout.row_major(8, 8), skew_rows=1](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_dynamic_async_copy_tests(ctx)
         run_swizzle_copy_tests(ctx)

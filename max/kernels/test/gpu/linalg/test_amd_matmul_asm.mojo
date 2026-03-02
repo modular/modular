@@ -373,7 +373,7 @@ fn test_amd_pingpong_bf16_max_config() raises:
     print("=== Assembly check passed ===\n")
 
 
-def main():
+def main() raises:
     test_amd_matmul_bf16_max_config()
     test_amd_matmul_fp8_max_config()
     test_amd_pingpong_fp8_max_config()

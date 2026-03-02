@@ -38,7 +38,7 @@ fn warp_sum_kernel[
     output[tid] = warp.sum(input[tid])
 
 
-def test_warp_sum(ctx: DeviceContext):
+def test_warp_sum(ctx: DeviceContext) raises:
     comptime size = WARP_SIZE
     comptime BLOCK_SIZE = WARP_SIZE
 
@@ -100,7 +100,7 @@ fn block_sum_kernel[
     output[tid] = block.sum[block_size=block_size, broadcast=True](input[tid])
 
 
-def test_block_sum(ctx: DeviceContext):
+def test_block_sum(ctx: DeviceContext) raises:
     # Initialize a block with several warps. The sum for each warp is tested
     # above.
     comptime BLOCK_SIZE = WARP_SIZE * 2
@@ -150,7 +150,7 @@ def test_block_sum(ctx: DeviceContext):
     out_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_warp_sum(ctx)
 

@@ -18,7 +18,7 @@ from gpu import thread_idx
 from gpu.host import DeviceContext
 from gpu.host.compile import _compile_code, get_gpu_target
 from layout._layout import Layout
-from layout._coord import Idx, Coord
+from layout import Idx, Coord
 from layout.int_tuple import IntTuple
 from memory import LegacyUnsafePointer
 
@@ -71,6 +71,6 @@ fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
     )
 
 
-def main():
+def main() raises:
     test_codegen_memory[kernel_mixed_dimensions]()
     test_codegen_memory[kernel_thread_idx]()

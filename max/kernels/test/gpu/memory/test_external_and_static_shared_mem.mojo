@@ -23,7 +23,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from testing import assert_equal
 
 
-def test_external_shared_mem(ctx: DeviceContext):
+def test_external_shared_mem(ctx: DeviceContext) raises:
     fn dynamic_smem_kernel(data: UnsafePointer[Float32]):
         var sram = stack_allocation[
             16,
@@ -66,6 +66,6 @@ def test_external_shared_mem(ctx: DeviceContext):
     res_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_external_shared_mem(ctx)

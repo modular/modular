@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 
 @fieldwise_init
@@ -23,9 +23,9 @@ struct Dog(Representable):
         return "Dog(name=" + repr(self.name) + ", age=" + repr(self.age) + ")"
 
 
-def test_explicit_conformance():
+def test_explicit_conformance() raises:
     dog = Dog(name="Fido", age=3)
-    assert_equal(repr(dog), "Dog(name='Fido', age=3)")
+    assert_equal(repr(dog), "Dog(name='Fido', age=Int(3))")
 
 
 @fieldwise_init
@@ -37,14 +37,14 @@ struct Cat(Representable):
         return "Cat(name=" + repr(self.name) + ", age=" + repr(self.age) + ")"
 
 
-def test_implicit_conformance():
+def test_implicit_conformance() raises:
     cat = Cat(name="Whiskers", age=2)
-    assert_equal(repr(cat), "Cat(name='Whiskers', age=2)")
+    assert_equal(repr(cat), "Cat(name='Whiskers', age=Int(2))")
 
 
-def test_none_representation():
+def test_none_representation() raises:
     assert_equal(repr(None), "None")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

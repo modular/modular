@@ -31,7 +31,7 @@ from benchmark import (
     Report,
     ThroughputMeasure,
 )
-from comm.sync import can_enable_p2p
+from comm.sync import enable_p2p
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
@@ -1236,7 +1236,7 @@ def test_dispatch_bf16[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]):
+](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = BF16DispatchTest[
         hidden_size, top_k, n_experts, n_ranks, n_slots, n_tokens_per_rank
     ]
@@ -1253,7 +1253,7 @@ def test_dispatch_blockwise_fp8[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]):
+](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = BlockwiseFP8DispatchTest[
         fp8_dtype = DType.float8_e4m3fn,
         scales_dtype = DType.float32,
@@ -1277,7 +1277,7 @@ def test_dispatch_nvfp4[
     n_slots: Int,
     n_tokens_per_rank: Int,
     bench_e2e: Bool = False,
-](list_of_ctx: List[DeviceContext]):
+](list_of_ctx: List[DeviceContext]) raises:
     comptime dispatch_test_type = NVFP4DispatchTest[
         fp4_dtype = DType.uint8,
         scales_dtype = DType.float8_e4m3fn,
@@ -1293,10 +1293,10 @@ def test_dispatch_nvfp4[
     ](list_of_ctx)
 
 
-def main():
+def main() raises:
     comptime test_gpu_counts = (2, 4, 8)
 
-    if can_enable_p2p():
+    if enable_p2p():
         print("Enabled P2P Mem Access on all GPUs.")
     else:
         raise Error("Cannot enable P2P Mem Access!")
@@ -1304,7 +1304,6 @@ def main():
     comptime assert (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "Only NVIDIA and AMD GPUs are supported"
-    comptime n_local_experts = 32 if has_nvidia_gpu_accelerator() else 16
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
@@ -1316,35 +1315,39 @@ def main():
         for i in range(num_gpus):
             ctx.append(DeviceContext(device_id=i))
 
-        test_dispatch_bf16[
-            hidden_size=3584,  # equivalent to send 7168 FP8s.
-            top_k=8,
-            n_experts = num_gpus * n_local_experts,
-            n_ranks=num_gpus,
-            n_slots=3,
-            n_tokens_per_rank=64,
-            bench_e2e=False,
-        ](ctx)
+        comptime for n_local_experts in [32, 64]:
+            comptime if num_gpus * n_local_experts > 256:
+                continue
 
-        test_dispatch_blockwise_fp8[
-            hidden_size=7168,
-            top_k=8,
-            n_experts = num_gpus * n_local_experts,
-            n_ranks=num_gpus,
-            n_slots=3,
-            n_tokens_per_rank=64,
-            bench_e2e=False,
-        ](ctx)
+            test_dispatch_bf16[
+                hidden_size=3584,  # equivalent to send 7168 FP8s.
+                top_k=8,
+                n_experts = num_gpus * n_local_experts,
+                n_ranks=num_gpus,
+                n_slots=1,
+                n_tokens_per_rank=64,
+                bench_e2e=False,
+            ](ctx)
 
-        comptime device_info = DeviceContext.default_device_info
-
-        comptime if has_nvidia_gpu_accelerator() and device_info == B200:
-            test_dispatch_nvfp4[
+            test_dispatch_blockwise_fp8[
                 hidden_size=7168,
                 top_k=8,
                 n_experts = num_gpus * n_local_experts,
                 n_ranks=num_gpus,
-                n_slots=3,
+                n_slots=1,
                 n_tokens_per_rank=64,
                 bench_e2e=False,
             ](ctx)
+
+            comptime device_info = DeviceContext.default_device_info
+
+            comptime if has_nvidia_gpu_accelerator() and device_info == B200:
+                test_dispatch_nvfp4[
+                    hidden_size=7168,
+                    top_k=8,
+                    n_experts = num_gpus * n_local_experts,
+                    n_ranks=num_gpus,
+                    n_slots=1,
+                    n_tokens_per_rank=64,
+                    bench_e2e=False,
+                ](ctx)

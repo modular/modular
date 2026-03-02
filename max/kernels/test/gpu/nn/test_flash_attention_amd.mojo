@@ -29,7 +29,6 @@ from nn.mha import (
     mha_gpu_naive,
 )
 from nn.mha_mask import MaterializedMask
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils.index import Index
@@ -263,7 +262,6 @@ fn test[
                 k_device,
                 v_device,
                 MaterializedMask(mask3d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
                 num_partitions,
@@ -275,7 +273,6 @@ fn test[
                 k_device,
                 v_device,
                 MaterializedMask(mask4d),
-                IdentityScoreMod(),
                 scale,
                 ctx,
                 num_partitions,
@@ -582,7 +579,7 @@ fn test_decoding[
     ](1, 5120, ctx, use_index_input=use_index_input)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # experimental kernel only supports depth == 128
         comptime experimental_kernel = env_get_bool[

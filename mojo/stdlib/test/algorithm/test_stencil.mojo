@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 # Issue #23536
 
-from algorithm.functional import stencil
-from testing import TestSuite
+from std.algorithm.functional import stencil
+from std.testing import TestSuite
 
-from utils import IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils import IndexList
+from std.utils.numerics import min_or_neg_inf
 
 comptime _map_fn_type = fn[rank: Int](IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
@@ -49,7 +49,7 @@ fn fill_span[
 
 # TODO: Refactor tests
 # CHECK-LABEL: test_stencil_avg_pool
-def test_stencil_avg_pool():
+def test_stencil_avg_pool() raises:
     print("== test_stencil_avg_pool")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -169,7 +169,7 @@ def test_stencil_avg_pool():
 
 
 # CHECK-LABEL: test_stencil_avg_pool_padded
-def test_stencil_avg_pool_padded():
+def test_stencil_avg_pool_padded() raises:
     print("== test_stencil_avg_pool_padded")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -295,7 +295,7 @@ def test_stencil_avg_pool_padded():
 
 
 # CHECK-LABEL: test_stencil_avg_pool_stride_2
-def test_stencil_avg_pool_stride_2():
+def test_stencil_avg_pool_stride_2() raises:
     print("== test_stencil_avg_pool_stride_2")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -418,7 +418,7 @@ def test_stencil_avg_pool_stride_2():
 
 
 # CHECK-LABEL: test_stencil_max_pool_dilation_2
-def test_stencil_max_pool_dilation_2():
+def test_stencil_max_pool_dilation_2() raises:
     print("== test_stencil_max_pool_dilation_2")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -543,5 +543,66 @@ def test_stencil_max_pool_dilation_2():
         print("")
 
 
-def main():
+# CHECK-LABEL: test_stencil_size_0
+def test_stencil_size_0() raises:
+    comptime rank = 4
+    comptime stencil_rank = 2
+
+    # An output shape whose last dimension is 0 means we should do zero work.
+    var output_shape = IndexList[rank](1, 1, 1, 0)
+    var input_shape = IndexList[rank](1, 1, 1, 1)
+
+    @parameter
+    fn map_fn(
+        point: IndexList[stencil_rank, ...],
+    ) -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
+        return IndexList[stencil_rank](0, 0), IndexList[stencil_rank](1, 1)
+
+    @parameter
+    fn map_strides(dim: Int) -> Int:
+        return 1
+
+    @parameter
+    fn load_fn[
+        simd_width: Int, dtype: DType
+    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
+        return 0
+
+    @parameter
+    fn init_fn[simd_width: Int]() -> SIMD[DType.float32, simd_width]:
+        return 0
+
+    @parameter
+    fn compute_fn[
+        simd_width: Int
+    ](
+        point: IndexList[rank, ...],
+        a: SIMD[DType.float32, simd_width],
+        b: SIMD[DType.float32, simd_width],
+    ) -> SIMD[DType.float32, simd_width]:
+        return a + b
+
+    @parameter
+    fn finalize_fn[
+        simd_width: Int
+    ](point: IndexList[rank, ...], val: SIMD[DType.float32, simd_width]):
+        pass
+
+    comptime stencil_axis = IndexList[stencil_rank](1, 2)
+    stencil[
+        rank,
+        stencil_rank,
+        stencil_axis,
+        1,
+        DType.float32,
+        map_fn,
+        map_strides,
+        load_fn,
+        init_fn,
+        compute_fn,
+        finalize_fn,
+    ](output_shape, input_shape)
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

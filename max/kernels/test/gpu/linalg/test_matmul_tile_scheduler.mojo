@@ -51,7 +51,7 @@ fn test_kernel():
 # CHECK-DAG: 1 (8, 12, 0, 5, False)
 # CHECK-DAG: 2 (12, 8, 0, 5, False)
 # CHECK-DAG: 3 (12, 12, 0, 5, False)
-def test(ctx: DeviceContext):
+def test(ctx: DeviceContext) raises:
     comptime kernel = test_kernel
 
     ctx.enqueue_function_experimental[kernel](
@@ -62,6 +62,6 @@ def test(ctx: DeviceContext):
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test(ctx)

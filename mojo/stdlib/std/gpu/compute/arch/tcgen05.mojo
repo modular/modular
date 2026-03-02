@@ -14,24 +14,24 @@
 """This module includes utilities for working with the
 tensorcore 5th generation (tcgen05) instructions."""
 
-from os import abort
-from sys import _RegisterPackType, size_of
-from sys._assembly import inlined_assembly
-from sys.info import _has_blackwell_tcgen05
+from std.os import abort
+from std.sys import _RegisterPackType, size_of
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _has_blackwell_tcgen05
 
-from gpu import external_memory
-from gpu.compute.mma import _str_iota  # TODO: move to a string module
-from gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
-from memory import bitcast
+from std.gpu import external_memory
+from std.gpu.compute.mma import _str_iota  # TODO: move to a string module
+from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptor
+from std.memory import bitcast
 
-comptime check_blackwell_constraint = constrained[
-    _has_blackwell_tcgen05(),
-    (
+
+@always_inline("nodebug")
+fn check_blackwell_constraint():
+    """Compile-time constraint ensuring Blackwell hardware is targeted."""
+    comptime assert _has_blackwell_tcgen05(), (
         "The tcgen05 instructions are only applicable on nVidia Blackwell"
         " (sm_100a, sm_101a) hardware."
-    ),
-]
-"""Compile-time constraint ensuring Blackwell hardware is targeted."""
+    )
 
 
 struct TensorMemory(TrivialRegisterPassable):
@@ -296,7 +296,6 @@ fn tcgen05_ld[
         ]()
     else:
         comptime assert False, "width must be a power of 2 in the range [1, 128]."
-        abort()
     # fmt: on
 
 

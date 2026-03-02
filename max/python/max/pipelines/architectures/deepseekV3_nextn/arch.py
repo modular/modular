@@ -24,15 +24,15 @@ from .model import DeepseekV3NextNModel
 from .model_config import DeepseekV3NextNConfig
 
 deepseekV3_nextn_arch = SupportedArchitecture(
-    name="DeepseekV3ForCausalLMNextN_Legacy",
+    name="DeepseekV3ForCausalLMNextN",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
         "SGLang/DeepSeek-V3-NextN",
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
-        "float8_e4m3fn": ["paged"],
+        "bfloat16",
+        "float8_e4m3fn",
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3NextNModel,

@@ -44,7 +44,7 @@ fn test_kernel[schedule: MHASchedule]():
         work_info = scheduler.fetch_next_work(tile_summary, state)
 
 
-def test[schedule: MHASchedule](ctx: DeviceContext):
+def test[schedule: MHASchedule](ctx: DeviceContext) raises:
     comptime kernel = test_kernel[schedule]
 
     ctx.enqueue_function_experimental[kernel](
@@ -55,7 +55,7 @@ def test[schedule: MHASchedule](ctx: DeviceContext):
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK-LABEL: ==== test default schedule
         # CHECK-DAG: 0 (0, 0, 0, True)

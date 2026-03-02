@@ -18,9 +18,9 @@ import numpy as np
 import pytest
 from max._interpreter import MOInterpreter
 from max._interpreter_ops import _MO_OP_HANDLERS, register_op_handler
-from max._realization_context import EagerRealizationContext
 from max.driver import CPU, Buffer
 from max.dtype import DType
+from max.experimental.realization_context import EagerRealizationContext
 from max.graph import Graph, TensorType, ops
 
 

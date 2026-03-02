@@ -19,10 +19,9 @@ from max.pipelines.lib import (
     TextTokenizer,
 )
 
+from ..llama3 import weight_adapters
 from ..llama3.model_config import Llama3Config
-from ..llama3.weight_adapters import convert_gguf_state_dict
 from .model import Phi3Model
-from .weight_adapters import convert_safetensor_state_dict
 
 phi3_arch = SupportedArchitecture(
     name="Phi3ForCausalLM",
@@ -31,17 +30,16 @@ phi3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=Phi3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     rope_type="longrope",
-    multi_gpu_supported=False,
     weight_adapters={
-        WeightsFormat.safetensors: convert_safetensor_state_dict,
-        WeightsFormat.gguf: convert_gguf_state_dict,
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Llama3Config,
 )

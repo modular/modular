@@ -1,0 +1,34 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "experimental",
+    srcs = [
+        "__init__.py",
+        "_passes.py",
+        "_tensor_repr.py",
+        "functional.py",
+        "random.py",
+        "realization_context.py",
+        "support.py",
+        "tensor.py",
+    ],
+    # engine is used via engine.api.InferenceSession in realization_context.py
+    # interpreter is used via lazy import in realization_context.py
+    ignore_extra_deps = [
+        "//max/python/max/engine",
+        "//max/python/max:interpreter",
+    ],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
+        "//max/python/max:interpreter",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("rich"),
+        requirement("typing-extensions"),
+    ],
+)

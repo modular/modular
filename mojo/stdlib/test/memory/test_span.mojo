@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite
-from testing import assert_equal, assert_raises, assert_true, assert_false
-from math import iota
-from memory import ImmutSpan, MutSpan
+from std.testing import TestSuite
+from std.testing import assert_equal, assert_raises, assert_true, assert_false
+from test_utils import MoveOnly, check_write_to
+from std.math import iota
+from std.memory import ImmutSpan, MutSpan
 
 
-def test_span_list_int():
+def test_span_list_int() raises:
     var l = [1, 2, 3, 4, 5, 6, 7]
     var s = Span(list=l)
     assert_equal(len(s), len(l))
@@ -41,7 +42,7 @@ def test_span_list_int():
     assert_equal(l[-1], 0)
 
 
-def test_span_list_str():
+def test_span_list_str() raises:
     var l = ["a", "b", "c", "d", "e", "f", "g"]
     var s = Span(l)
     assert_equal(len(s), len(l))
@@ -64,7 +65,7 @@ def test_span_list_str():
     assert_equal(l[-1], "i")
 
 
-def test_span_array_int():
+def test_span_array_int() raises:
     var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
     var s = Span[Int](array=l)
     assert_equal(len(s), len(l))
@@ -87,7 +88,7 @@ def test_span_array_int():
     assert_equal(l[-1], 0)
 
 
-def test_span_array_str():
+def test_span_array_str() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var s = Span[String](array=l)
     assert_equal(len(s), len(l))
@@ -110,7 +111,7 @@ def test_span_array_str():
     assert_equal(l[-1], "i")
 
 
-def test_indexing():
+def test_indexing() raises:
     var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
     var s = Span[Int](array=l)
     assert_equal(s[True], 2)
@@ -118,8 +119,8 @@ def test_indexing():
     assert_equal(s[3], 4)
 
 
-def test_span_slice():
-    def compare(s: Span[Int], l: List[Int]) -> Bool:
+def test_span_slice() raises:
+    def compare(s: Span[Int], l: List[Int]) raises -> Bool:
         if len(s) != len(l):
             return False
         for i in range(len(s)):
@@ -137,7 +138,7 @@ def test_span_slice():
     assert_equal(res[2], 4)
 
 
-def test_copy_from():
+def test_copy_from() raises:
     var a = [0, 1, 2, 3]
     var b = [4, 5, 6, 7, 8, 9, 10]
     var s = Span(a)
@@ -148,14 +149,14 @@ def test_copy_from():
         assert_equal(s[i], s2[i])
 
 
-def test_bool():
+def test_bool() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var s = Span[String](l)
     assert_true(s)
     assert_true(not s[0:0])
 
 
-def test_contains():
+def test_contains() raises:
     items: List[Byte] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     span = Span(items)
     assert_true(0 not in span)
@@ -164,7 +165,7 @@ def test_contains():
         assert_true(item in span)
 
 
-def test_equality():
+def test_equality() raises:
     var l: InlineArray[String, 7] = ["a", "b", "c", "d", "e", "f", "g"]
     var l2 = [String("a"), "b", "c", "d", "e", "f", "g"]
     var sp = Span[String](l)
@@ -180,7 +181,7 @@ def test_equality():
     assert_true(sp[0:0] == sp3[0:0])
 
 
-def test_fill():
+def test_fill() raises:
     var a = [0, 1, 2, 3, 4, 5, 6, 7, 8]
     var s = Span(a)
 
@@ -191,13 +192,13 @@ def test_fill():
         assert_equal(s[i], 2)
 
 
-def test_ref():
+def test_ref() raises:
     var l: InlineArray[Int, 3] = [1, 2, 3]
     var s = Span[Int](array=l)
     assert_true(s.as_ref() == Pointer(to=l.unsafe_ptr()[]))
 
 
-def test_reversed():
+def test_reversed() raises:
     var forward: InlineArray[Int, 3] = [1, 2, 3]
     var backward: InlineArray[Int, 3] = [3, 2, 1]
     var s = Span[Int](forward)
@@ -209,7 +210,7 @@ def test_reversed():
 
 # We don't actually need to call this test
 # but we want to make sure it compiles
-def test_span_coerce():
+def test_span_coerce() raises:
     var l = [1, 2, 3]
     var a: InlineArray[Int, 3] = [1, 2, 3]
 
@@ -220,7 +221,7 @@ def test_span_coerce():
     takes_span(a)
 
 
-def test_swap_elements():
+def test_swap_elements() raises:
     var l = [1, 2, 3, 4, 5]
     var s = Span(l)
     s.swap_elements(1, 4)
@@ -237,7 +238,7 @@ def test_swap_elements():
         s2.swap_elements(0, 4)
 
 
-def test_merge():
+def test_merge() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
@@ -253,20 +254,8 @@ def test_merge():
     assert_equal(b, [0, 5, 10])
 
 
-def test_span_to_string():
-    var l = [1, 2, 3]
-    var s = Span(l)[:2]
-    assert_equal(s.__str__(), "[1, 2]")
-
-
-def test_span_repr():
-    var l = [1, 2, 3]
-    var s = Span(l)[:2]
-    assert_equal(s.__repr__(), "[1, 2]")
-
-
-def test_reverse():
-    def _test_dtype[D: DType]():
+def test_reverse() raises:
+    def _test_dtype[D: DType]() raises:
         var forward: InlineArray[Scalar[D], 11] = [
             1,
             2,
@@ -313,7 +302,7 @@ def test_reverse():
     _test_dtype[DType.float64]()
 
 
-def test_apply():
+def test_apply() raises:
     @parameter
     fn _twice[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[D, w]:
         return x * 2
@@ -322,7 +311,7 @@ def test_apply():
     fn _where[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
         return (x % 2).eq(0)
 
-    def _test[D: DType]():
+    def _test[D: DType]() raises:
         items: List[Scalar[D]] = [
             1,
             2,
@@ -373,18 +362,17 @@ def test_apply():
     _test[DType.float64]()
 
 
-def test_count_func():
-    @parameter
-    fn is_2[w: Int](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
+def test_count_func() raises:
+    fn is_2[w: Int](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
         return v.eq(2)
 
-    var data = Span[Byte]([0, 1, 2, 1, 2, 1, 2])
-    assert_equal(3, Int(data.count[func=is_2]()))
-    assert_equal(2, Int(data[:-1].count[func=is_2]()))
-    assert_equal(1, Int(data[:3].count[func=is_2]()))
+    var data = Span[Byte]([Byte(0), 1, 2, 1, 2, 1, 2])
+    assert_equal(3, Int(data.count(is_2)))
+    assert_equal(2, Int(data[:-1].count(is_2)))
+    assert_equal(1, Int(data[:3].count(is_2)))
 
 
-def test_unsafe_subspan():
+def test_unsafe_subspan() raises:
     var data = Span[Int]([0, 1, 2, 3, 4])
 
     var subspan1 = data.unsafe_subspan(offset=0, length=4)
@@ -394,8 +382,8 @@ def test_unsafe_subspan():
     assert_equal(List(subspan2), [1, 2, 3])
 
 
-def test_binary_search():
-    def _test[dtype: DType]():
+def test_binary_search() raises:
+    def _test[dtype: DType]() raises:
         comptime max_val = Int(Scalar[dtype].MAX)
         var data = List[Scalar[dtype]](unsafe_uninit_length=max_val + 1)
         iota(data)
@@ -428,7 +416,7 @@ def test_binary_search():
     _test[DType.int16]()
 
 
-def test_binary_sarch_by():
+def test_binary_sarch_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 
@@ -457,7 +445,7 @@ def test_binary_sarch_by():
     assert_equal(6, result4.value())
 
 
-def test_iter():
+def test_iter() raises:
     var data = [1, 2, 3, 4, 5]
     var span = Span(data)
     var it = iter(span)
@@ -470,7 +458,7 @@ def test_iter():
         _ = it.__next__()  # raises StopIteration
 
 
-def test_iter_empty():
+def test_iter_empty() raises:
     var data: List[Int] = []
     var span = Span(data)
     var it = iter(span)
@@ -478,7 +466,7 @@ def test_iter_empty():
         _ = it.__next__()  # raises StopIteration
 
 
-def test_mut_span_alias():
+def test_mut_span_alias() raises:
     var data = [1, 2, 3, 4, 5]
 
     fn fill_span(span: MutSpan[Int, _]):
@@ -489,8 +477,8 @@ def test_mut_span_alias():
         assert_equal(val, 42)
 
 
-def test_immut_span_alias():
-    var data = [1, 2, 3, 4, 5]
+def test_immut_span_alias() raises:
+    var data: List[Int] = [1, 2, 3, 4, 5]
 
     fn sum_span(span: ImmutSpan[Int, _]) -> Int:
         var total = 0
@@ -502,5 +490,44 @@ def test_immut_span_alias():
     assert_equal(sum_span(data), 15)
 
 
-def main():
+def test_span_write_to() raises:
+    check_write_to(Span([1, 2, 3]), expected="[1, 2, 3]", is_repr=False)
+    check_write_to(Span(List[Int]()), expected="[]", is_repr=False)
+    check_write_to(Span([42]), expected="[42]", is_repr=False)
+
+
+def test_span_write_repr_to() raises:
+    check_write_to(
+        Span([1, 2, 3]),
+        expected="Span[mut=False, Int]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
+    )
+    check_write_to(
+        Span(List[Int]()), expected="Span[mut=False, Int]([])", is_repr=True
+    )
+    check_write_to(
+        Span([42]), expected="Span[mut=False, Int]([Int(42)])", is_repr=True
+    )
+
+
+def test_span_with_move_only_type() raises:
+    var ptr = alloc[MoveOnly[Int]](1)
+    ptr.init_pointee_move(MoveOnly(42))
+    var span = Span(ptr=ptr, length=1)
+    assert_equal(span[0].data, 42)
+    ptr.destroy_pointee()
+    ptr.free()
+
+
+struct NonMovable:
+    var x: Int
+
+
+def test_span_with_non_movable_type() raises:
+    var ptr = alloc[NonMovable](1)
+    var _span = Span(ptr=ptr, length=0)
+    ptr.free()
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -13,13 +13,13 @@
 # RUN: %mojo %s 2>&1 1>/dev/null | FileCheck %s --check-prefix=CHECK-STDERR
 
 
-import sys
+import std.sys
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: test_print_stderr
-def test_print_stderr():
+def test_print_stderr() raises:
     # CHECK-STDERR: stderr
     print("stderr", file=sys.stderr)
     # CHECK-STDERR: a/b/c
@@ -32,5 +32,5 @@ def test_print_stderr():
     print("hello world", file=sys.stderr)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -50,10 +50,9 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout._coord import Coord, Idx, RuntimeInt
+from layout import Coord, Idx, RuntimeInt, TileTensor
 from layout._layout import row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     GMEMLayout1D,
 )
@@ -274,10 +273,9 @@ fn bench_grouped_matmul[
     var expert_ids = from_ndbuffer_row_major(expert_ids_dev)
 
     comptime if is_fp4e2m1:
-        constrained[
-            scaling_kind_str == "nvfp4",
-            "Only support nvfp4 scaling kind for float4-e2m1fn",
-        ]()
+        comptime assert (
+            scaling_kind_str == "nvfp4"
+        ), "Only support nvfp4 scaling kind for float4-e2m1fn"
 
         var a_scale_offsets_dev_buffer = ctx.enqueue_create_buffer[
             DType.uint32
@@ -468,10 +466,9 @@ fn bench_grouped_matmul[
         expert_scales_host_ptr.free()
 
     elif in_type == DType.float8_e4m3fn:
-        constrained[
-            scaling_kind_str == "1d2d",
-            "Only support 1d2d scaling kind for float8_e4m3fn",
-        ]()
+        comptime assert (
+            scaling_kind_str == "1d2d"
+        ), "Only support 1d2d scaling kind for float8_e4m3fn"
         comptime BLOCK_SCALE_K = 128
         comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
         var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
@@ -722,7 +719,7 @@ fn string_to_list(string: String) raises -> List[Int]:
     return list^
 
 
-def main():
+def main() raises:
     comptime in_type = env_get_dtype["in_type", DType.bfloat16]()
     comptime out_type = env_get_dtype["out_type", DType.bfloat16]()
     comptime scaling_kind_str = env_get_string["scaling_kind", "1d2d"]()

@@ -15,18 +15,18 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.string_slice import _unsafe_strlen
-from format._utils import FormatStruct
-from memory import (
+from std.collections.string.string_slice import _unsafe_strlen
+from std.format._utils import FormatStruct
+from std.memory import (
     ArcPointer,
     OwnedPointer,
     alloc,
     memcpy,
 )
-from ffi import external_call
-import format._utils as fmt
-from sys import is_gpu
-from sys.info import size_of, align_of
+from std.ffi import external_call
+import std.format._utils as fmt
+from std.sys import is_gpu
+from std.sys.info import size_of, align_of
 
 
 # ===-----------------------------------------------------------------------===#
@@ -34,7 +34,7 @@ from sys.info import size_of, align_of
 # ===-----------------------------------------------------------------------===#
 
 
-struct StackTrace(Copyable, Movable, Stringable, Writable):
+struct StackTrace(Copyable, Movable, Writable):
     """Holds a stack trace captured at a specific location.
 
     A `StackTrace` instance always contains a valid stack trace. Use the
@@ -121,6 +121,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
 
         return StackTrace(unsafe_from_raw_pointer=buffer)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the StackTrace to string representation.
 
@@ -155,8 +156,6 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
 
 struct Error(
     Copyable,
-    Representable,
-    Stringable,
     Writable,
 ):
     """This type represents an Error."""
@@ -232,6 +231,7 @@ struct Error(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Converts the Error to string representation.
@@ -261,6 +261,7 @@ struct Error(
         """
         fmt.FormatStruct(writer, "Error").fields(fmt.Repr(self._error))
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Converts the Error to printable representation.

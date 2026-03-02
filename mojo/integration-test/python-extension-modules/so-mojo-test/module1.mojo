@@ -31,5 +31,5 @@ fn PyInit_module1() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-def get_string() -> PythonObject:
+def get_string() raises -> PythonObject:
     return "module1.mojo"

@@ -27,11 +27,11 @@ from max.graph import (
     dtype_promotion,
     ops,
 )
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.layer import LayerList, Module, Shardable
-from max.nn.legacy.linear import MLP, Linear
-from max.nn.legacy.norm import RMSNorm
+from max.nn.comm import Allreduce
+from max.nn.float8_config import Float8Config
+from max.nn.layer import LayerList, Module, Shardable
+from max.nn.linear import MLP, Linear
+from max.nn.norm import RMSNorm
 
 from ..model_config import VisionConfig
 from .vision_attention import DistributedVisionWindowAttention

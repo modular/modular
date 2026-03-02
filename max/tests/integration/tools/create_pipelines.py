@@ -41,7 +41,11 @@ from max.pipelines import TextGenerationPipelineInterface
 from max.pipelines.architectures.flux1.pipeline_flux import FluxPipeline
 from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.core import PixelContext
-from max.pipelines.lib import PixelGenerationPipeline, PixelGenerationTokenizer
+from max.pipelines.lib import (
+    PipelineRuntimeConfig,
+    PixelGenerationPipeline,
+    PixelGenerationTokenizer,
+)
 from peft.peft_model import PeftModel
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
@@ -125,6 +129,9 @@ class PipelineOracle(ABC):
     necessary to run the model.
     """
 
+    model_path: str
+    """ID of the Hugging Face repository."""
+
     task: PipelineTask = PipelineTask.TEXT_GENERATION
     default_batch_size: int | list[int] | None = None
 
@@ -169,17 +176,10 @@ class PipelineOracle(ABC):
         device_specs: list[driver.DeviceSpec],
     ) -> VLLMPipeline:
         """Instantiate a vLLM pipeline config."""
-        path = getattr(self, "model_path", None)
-        # We shouldn't hit this; we only have it because using the string
-        # `model_path` is standard practice rather than enforced behavior.
-        if not path:
-            raise ValueError(
-                f"Cannot find `model_path` for {self.__class__.__name__}"
-            )
         # Use tensor parallelism across all GPU devices
         gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
         return VLLMPipeline(
-            model_path=path,
+            model_path=self.model_path,
             trust_remote_code=getattr(self, "trust_remote_code", False),
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
@@ -228,10 +228,6 @@ class _ModelConfigExtras(TypedDict):
     huggingface_weight_revision: NotRequired[str]
 
 
-class _PipelineConfigExtras(TypedDict):
-    enable_chunked_prefill: NotRequired[bool]
-
-
 def _create_vision_max_pipeline(
     model_path: str,
     encoding: pipelines.SupportedEncoding,
@@ -248,11 +244,10 @@ def _create_vision_max_pipeline(
     assert revision is not None
     if device_memory_utilization is not None:
         kv_cache = pipelines.KVCacheConfig(
-            cache_strategy="paged",
             device_memory_utilization=device_memory_utilization,
         )
     else:
-        kv_cache = pipelines.KVCacheConfig(cache_strategy="paged")
+        kv_cache = pipelines.KVCacheConfig()
     model = pipelines.MAXModelConfig(
         device_specs=device_specs,
         quantization_encoding=encoding,
@@ -267,14 +262,15 @@ def _create_vision_max_pipeline(
             else _ModelConfigExtras()
         ),
     )
+    if enable_chunked_prefill is not None:
+        runtime = PipelineRuntimeConfig(
+            max_num_steps=1, enable_chunked_prefill=enable_chunked_prefill
+        )
+    else:
+        runtime = PipelineRuntimeConfig(max_num_steps=1)
     config = pipelines.PipelineConfig(
         model=model,
-        max_num_steps=1,
-        **(
-            _PipelineConfigExtras(enable_chunked_prefill=enable_chunked_prefill)
-            if enable_chunked_prefill is not None
-            else _PipelineConfigExtras()
-        ),
+        runtime=runtime,
     )
     tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
     assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
@@ -283,9 +279,6 @@ def _create_vision_max_pipeline(
 
 class InternVLPipelineOracle(PipelineOracle):
     """Pipeline oracle for InternVL3 architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(self, model_path: str) -> None:
         super().__init__()
@@ -371,9 +364,6 @@ class InternVLPipelineOracle(PipelineOracle):
 class Idefics3PipelineOracle(PipelineOracle):
     """Pipeline oracle for Idefics3 architectures."""
 
-    model_path: str
-    """ID of the Hugging Face repository."""
-
     def __init__(self, model_path: str) -> None:
         super().__init__()
         self.model_path = model_path
@@ -456,9 +446,6 @@ class Idefics3PipelineOracle(PipelineOracle):
 
 class Qwen2_5VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen2.5VL architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(self, model_path: str) -> None:
         super().__init__()
@@ -547,9 +534,6 @@ class Qwen2_5VLPipelineOracle(PipelineOracle):
 
 class Qwen3VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen3VL architectures."""
-
-    model_path: str
-    """ID of the Hugging Face repository."""
 
     def __init__(
         self,
@@ -682,7 +666,7 @@ class PixtralPipelineOracle(PipelineOracle):
                 huggingface_model_revision=revision,
                 max_length=self.max_length,
             ),
-            max_num_steps=1,
+            runtime=PipelineRuntimeConfig(max_num_steps=1),
         )
         hf_repo_lock.apply_to_config(config)
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -767,28 +751,34 @@ class GenericOracle(PipelineOracle):
         model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         weight_path = self.weight_path(encoding) if encoding else None
 
-        # Determine weight revision: use weight repo's revision if different
-        weight_revision = model_revision
+        weight_filename: str | None = None
+        weight_repo_id: str | None = None
         if weight_path:
-            weight_repo_id, _, weight_revision = self._parse_weight_path(
+            weight_repo_id, weight_filename, _ = self._parse_weight_path(
                 weight_path
             )
-            if weight_repo_id == self.model_path:
-                weight_revision = model_revision
 
+        # Defer resolution so we can set _weights_repo_id before
+        # validation runs.  Without this, PipelineConfig.resolve() would
+        # look for weight files in the model repo (meta-llama) instead of
+        # the weights repo (bartowski).
         config = pipelines.PipelineConfig.model_validate(
             {
+                "defer_resolve": True,
                 "device_specs": device_specs if device_specs else None,
                 "quantization_encoding": encoding,
                 "model_path": self.model_path,
                 "huggingface_model_revision": model_revision,
-                "huggingface_weight_revision": weight_revision,
-                "weight_path": [] if weight_path is None else [weight_path],
+                "huggingface_weight_revision": model_revision,
+                "weight_path": [] if weight_path is None else [weight_filename],
                 "max_num_steps": 1,
                 **self.config_params,
             }
         )
+        if weight_repo_id and weight_repo_id != self.model_path:
+            config.model._weights_repo_id = weight_repo_id
         hf_repo_lock.apply_to_config(config)
+        config.resolve()
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
             config, task=self.task
         )
@@ -806,8 +796,10 @@ class GenericOracle(PipelineOracle):
         device: torch.device,
     ) -> TorchModelAndDataProcessor:
         trust_remote_code = self.config_params.get("trust_remote_code", False)
+        model_revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         processor = self.auto_processor_cls.from_pretrained(
             self.model_path,
+            revision=model_revision,
             trust_remote_code=trust_remote_code,
         )
         weight_path = self.weight_path(encoding) if encoding else None
@@ -972,7 +964,6 @@ class LoRAOracle(PipelineOracle):
                 "lora_paths": [lora_path],
                 "max_num_loras": 1,
                 "max_lora_rank": self.lora_rank,
-                "cache_strategy": "paged",
                 "enable_prefix_caching": False,  # LoRA requires prefix caching disabled
                 "trust_remote_code": True,
                 **self.config_params,
@@ -1036,9 +1027,6 @@ class LoRAOracle(PipelineOracle):
 class ImageGenerationOracle(PipelineOracle):
     """Pipeline oracle for FLUX image generation."""
 
-    model_path: str
-    """ID of the Hugging Face repository."""
-
     num_steps: int
     """Number of denoising steps."""
 
@@ -1079,7 +1067,7 @@ class ImageGenerationOracle(PipelineOracle):
                 model_path=self.model_path,
                 device_specs=device_specs,
             ),
-            use_legacy_module=False,
+            runtime=PipelineRuntimeConfig(prefer_module_v3=True),
         )
 
         # Step 2: Initialize the tokenizer
@@ -1362,7 +1350,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="allenai/Olmo-3-7B-Instruct",
         config_params={
             "max_length": 32768,
-            "use_legacy_module": False,
+            "prefer_module_v3": True,
         },
         device_encoding_map={
             "gpu": ["bfloat16"],
@@ -1458,7 +1446,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="HuggingFaceTB/SmolLM2-135M",
         config_params={
             "max_length": 512,
-            "cache_strategy": "paged",
         },
         prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
         device_encoding_map={

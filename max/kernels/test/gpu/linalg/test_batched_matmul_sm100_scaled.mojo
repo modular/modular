@@ -64,7 +64,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     n: ValOrDim,
     k: ValOrDim,
     batch_size: ValOrDim,
-):
+) raises:
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
@@ -330,7 +330,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     K: Int,
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
-](ctx: DeviceContext, m: Int,):
+](ctx: DeviceContext, m: Int,) raises:
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
@@ -549,7 +549,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     _ = b_scales_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_batched_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,

@@ -17,13 +17,13 @@ This method replaces division by constants with a sequence of shifts and
 multiplications, significantly optimizing division performance.
 """
 
-from bit import log2_ceil
-from builtin.dtype import _uint_type_of_width
-from gpu.intrinsics import mulhi
-from sys.info import bit_width_of
+from std.bit import log2_ceil
+from std.builtin.dtype import _uint_type_of_width
+from std.gpu.intrinsics import mulhi
+from std.sys.info import bit_width_of
 
 
-struct FastDiv[dtype: DType](Stringable, TrivialRegisterPassable, Writable):
+struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
     """Implements fast division for a given type.
 
     This struct provides optimized division by a constant divisor,
@@ -166,6 +166,7 @@ struct FastDiv[dtype: DType](Stringable, TrivialRegisterPassable, Writable):
         writer.write("is_pow2: ", self._is_pow2, "\n")
         writer.write("log2_shift: ", self._log2_shift, "\n")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the object as a string.

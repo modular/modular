@@ -56,6 +56,7 @@ from max.pipelines import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
 from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
 )
@@ -153,8 +154,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--num-warmups",
         type=int,
-        default=3,
-        help="Number of warmups to run before profiling.",
+        default=0,
+        help=(
+            "Number of warmup iterations to run before the timed execution. "
+            "Use >=1 to pre-compile JIT graphs and obtain steady-state timings."
+        ),
     )
     parser.add_argument(
         "--num-profile-iterations",
@@ -246,11 +250,13 @@ async def generate_image(args: argparse.Namespace) -> None:
             model_path=args.model,
             device_specs=[DeviceSpec.accelerator()],
         ),
-        use_legacy_module=False,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         config.model.huggingface_weight_repo,
-        use_legacy_module=config.use_legacy_module,
+        prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
     assert arch is not None, (
@@ -388,11 +394,12 @@ async def generate_image(args: argparse.Namespace) -> None:
         batch={context.request_id: context}
     )
 
-    # Step 6-1: Prepare warmup input
-    if args.profile_timings:
+    # Step 6-1: Warmup — run before profiling or timed execution so that JIT
+    # compilation completes and steady-state performance can be measured.
+    if args.num_warmups > 0:
         body_warmup = OpenResponsesRequestBody(
             model=args.model,
-            input="warmup",
+            input=args.prompt,
             seed=args.seed,
             provider_options=ProviderOptions(
                 image=ImageProviderOptions(
@@ -414,23 +421,21 @@ async def generate_image(args: argparse.Namespace) -> None:
         inputs_warmup = PixelGenerationInputs[PixelContext](
             batch={context_warmup.request_id: context_warmup}
         )
+        for i in range(args.num_warmups):
+            print(f"Running warmup {i + 1} of {args.num_warmups}")
+            pipeline.execute(inputs_warmup)
+        print("Warmup complete")
 
     # Step 7: Execute the pipeline
     print("Running diffusion model...")
     if args.profile_timings:
-        for i in range(args.num_warmups):
-            print(f"Running warmup {i + 1} of {args.num_warmups}")
-            pipeline.execute(inputs_warmup)
-        with profile_execute(
-            pipeline, patch_concat=True, patch_tensor_ops=True
-        ) as prof:
+        with profile_execute(pipeline) as prof:
             for i in range(args.num_profile_iterations):
                 print(
                     f"Running inference {i + 1} of {args.num_profile_iterations}"
                 )
                 outputs = pipeline.execute(inputs)
-        print(f"Method timings:\n{prof.report(unit='ms')}")
-        print(f"Module timings:\n{prof.report_modules(unit='ms')}")
+        prof.report(unit="ms")
     else:
         outputs = pipeline.execute(inputs)
 

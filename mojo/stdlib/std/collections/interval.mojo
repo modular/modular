@@ -49,7 +49,9 @@ query interval data, particularly for finding overlaps.
 """
 
 
-from builtin.string_literal import StaticString
+from std.builtin.string_literal import StaticString
+
+import std.format._utils as fmt
 
 from .deque import Deque
 
@@ -75,9 +77,7 @@ struct Interval[T: IntervalElement](
     Boolable,
     Equatable,
     ImplicitlyCopyable,
-    Representable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A half-open interval [start, end) that represents a range of values.
@@ -282,6 +282,7 @@ struct Interval[T: IntervalElement](
         """
         writer.write("(", self.start, ", ", self.end, ")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of this interval.
 
@@ -290,6 +291,7 @@ struct Interval[T: IntervalElement](
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a string representation of this interval suitable for
         debugging.
@@ -297,13 +299,13 @@ struct Interval[T: IntervalElement](
         Returns:
             A string in the format '(start, end)' representing this interval.
         """
-        return String("Interval", self, "")
+        return t"Interval{self}"
 
 
 struct _IntervalNode[
     T: IntervalElement,
     U: Copyable & Stringable & Comparable,
-](ImplicitlyCopyable, Stringable, Writable):
+](ImplicitlyCopyable, Writable):
     """A node containing an interval and associated data.
 
     Parameters:
@@ -419,6 +421,7 @@ struct _IntervalNode[
         writer.write(self.interval, "=", String(self.data))
         # writer.write(str(self.data))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of this interval node.
 
@@ -428,6 +431,7 @@ struct _IntervalNode[
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Returns a string representation of this interval node suitable for
         debugging.
@@ -436,7 +440,7 @@ struct _IntervalNode[
             A string in the format '(start, end): data' representing this
             interval node.
         """
-        return String("IntervalNode(", String.write(self), ")")
+        return t"IntervalNode({self})"
 
     fn depth(self) -> Int:
         """Returns the depth of this interval node.
@@ -774,6 +778,22 @@ struct IntervalTree[
             writer: The writer to write the interval tree to.
         """
         self._draw(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `IntervalTree` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._draw(w)
+
+        fmt.FormatStruct(writer, "IntervalTree").params(
+            fmt.TypeNames[Self.T, Self.U](),
+        ).fields[FieldsFn=write_fields]()
 
     @no_inline
     fn _draw[w: Writer](self, mut writer: w):

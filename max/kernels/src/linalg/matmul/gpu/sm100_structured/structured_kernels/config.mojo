@@ -14,6 +14,14 @@
 
 This module provides configuration structs for SM100 (Blackwell) GPU matmul
 operations, including standard matmul and block-scaled matmul variants.
+
+Two config types share 17 common fields (tile shapes, pipeline stages,
+swizzle modes, etc.) and the same `__init__` helpers (`_compute_block_tile_shape`,
+`_compute_output_tile_shape`, `_compute_swizzle_modes`, `_maximize_pipeline_stages`).
+BlockScaledMatmulConfig extends this with 3 scaling-specific fields
+(`scaling_kind`, `vec_sf_size`, `num_sf_k_tiles`). Each has its own heuristic
+(`choose_config` / `choose_block_scaled_config`) because the valid MMA shape
+ranges and alignment requirements differ between standard and scaled kernels.
 """
 
 from bit import next_power_of_two
@@ -24,7 +32,7 @@ from itertools.itertools import product
 from layout.tensor_core import get_mma_shape
 from utils.index import Index, IndexList
 from utils.numerics import get_accum_type
-from utils.math import align_down
+from math import align_down
 from ...tile_scheduler import RasterOrder
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -35,6 +43,38 @@ from linalg.fp4_utils import (
     MXFP8_SF_VECTOR_SIZE,
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+
+
+# ============================================================================
+# Output Pipeline Configuration
+# ============================================================================
+
+
+@fieldwise_init
+struct OutputPipelineConfig(Copyable, Equatable, TrivialRegisterPassable):
+    """Configuration for the MMA-to-Epilogue output pipeline.
+
+    Bundles the three parameters that jointly define TMEM accumulator
+    stage management for MMA/epilogue synchronization:
+    - num_stages: Number of accumulator pipeline stages (typically 1 or 2).
+    - stage_stride_cols: TMEM column stride between accumulator stages.
+    - cta_group: CTA group size (1 or 2).
+
+    **stage_stride_cols computation**: Two strategies are used depending on
+    the kernel family:
+    - Standard kernels (default, blockwise_fp8): `NUM_TMEM_COLS // num_stages`
+      (= 512 // stages). Divides all 512 TMEM columns evenly among stages.
+    - Block-scaled kernels (block_scaled, grouped, 1d1d variants): `MMA_N`.
+      Sizes each stage to match the MMA output width, which may be smaller
+      than half of TMEM when MMA_N < 256.
+
+    Constructed once per kernel struct and propagated to all pipeline
+    types (OutputTilePipeline, warp contexts, TileWriter, etc.).
+    """
+
+    var num_stages: Int
+    var stage_stride_cols: Int
+    var cta_group: Int
 
 
 # ============================================================================
@@ -78,14 +118,16 @@ fn _compute_output_tile_shape(
 fn _compute_swizzle_modes(
     output_tile_shape: IndexList[2],
     AB_swapped: Bool,
-    c_swizzle_for_AB_swapped: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    is_gmm: Bool = False,
 ) -> Tuple[TensorMapSwizzle, TensorMapSwizzle, TensorMapSwizzle]:
     """Compute A, B, C swizzle modes."""
     var a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     var c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
     if AB_swapped:
-        c_swizzle = c_swizzle_for_AB_swapped
+        c_swizzle = (
+            TensorMapSwizzle.SWIZZLE_32B if is_gmm else TensorMapSwizzle.SWIZZLE_128B
+        )
     else:
         # When not swapped, output_tile_shape[1] is the N dimension
         var tile_n = output_tile_shape[1]
@@ -211,9 +253,9 @@ struct MatmulConfig[
     var block_swizzle_size: Int
     var raster_order: RasterOrder
 
-    comptime accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
+    comptime accum_type = get_accum_type[Self.a_type]()
 
-    # Has default values or derivible from mandatory parameters
+    # Has default values or derivable from mandatory parameters
     var block_tile_shape: IndexList[3]
     var num_split_k: Int
     var num_pipeline_stages: Int
@@ -243,7 +285,7 @@ struct MatmulConfig[
         num_clc_pipeline_stages: Int = 2,
         extra_smem_per_stage: Int = 0,
     ):
-        constrained[Self.a_type == Self.b_type]()
+        comptime assert Self.a_type == Self.b_type
 
         self.cta_group = cta_group
         self.mma_shape = mma_shape
@@ -345,7 +387,7 @@ fn choose_config[
     c_type: DType,
     transpose_b: Bool = True,
 ](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
-    constrained[a_type == b_type, "a_type and b_type must be the same"]()
+    comptime assert a_type == b_type, "a_type and b_type must be the same"
 
     comptime num_SMs = B200.sm_count
     # Nvidia mma instruction process 32B in K.
@@ -513,11 +555,11 @@ struct BlockScaledMatmulConfig[
     var block_swizzle_size: Int
     var raster_order: RasterOrder
 
-    comptime accum_type = get_accum_type[Self.a_type]()  # TODO: factor b_type
+    comptime accum_type = get_accum_type[Self.a_type]()
 
     comptime sf_block_atom_size = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
 
-    # Has default values or derivible from mandatory parameters
+    # Has default values or derivable from mandatory parameters
     var block_tile_shape: IndexList[3]
     var num_split_k: Int
     var num_pipeline_stages: Int
@@ -548,9 +590,9 @@ struct BlockScaledMatmulConfig[
         num_pipeline_stages: Optional[Int] = None,
         num_accum_pipeline_stages: Int = 2,
         num_clc_pipeline_stages: Int = 2,
-        c_swizzle_for_AB_swapped: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+        is_gmm: Bool = False,
     ):
-        constrained[Self.a_type == Self.b_type]()
+        comptime assert Self.a_type == Self.b_type
 
         self.cta_group = cta_group
         self.mma_shape = mma_shape
@@ -587,7 +629,7 @@ struct BlockScaledMatmulConfig[
         self.num_split_k = num_split_k
 
         var swizzles = _compute_swizzle_modes(
-            self.output_tile_shape, AB_swapped, c_swizzle_for_AB_swapped
+            self.output_tile_shape, AB_swapped, is_gmm
         )
         self.a_swizzle = swizzles[0]
         self.b_swizzle = swizzles[1]

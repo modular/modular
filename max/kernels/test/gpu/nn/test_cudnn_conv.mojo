@@ -220,7 +220,7 @@ fn test_conv_cudnn[
     _ = output_ref_dev^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Test configurations for data types.
         comptime dtype_configs = (DType.float32, DType.float16, DType.bfloat16)

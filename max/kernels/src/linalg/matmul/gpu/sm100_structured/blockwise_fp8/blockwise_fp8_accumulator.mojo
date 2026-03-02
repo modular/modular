@@ -30,9 +30,8 @@ from gpu import warp_id as get_warp_id
 from gpu.memory import AddressSpace
 from gpu.primitives.cluster import block_rank_in_cluster
 from gpu.sync import syncwarp
-from layout._coord import Coord, Idx
+from layout import Coord, Idx, TileTensor, stack_allocation
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor, stack_allocation
 from utils.index import IndexList
 from utils.static_tuple import StaticTuple
 
@@ -41,6 +40,7 @@ from ..structured_kernels.tile_types import (
     static_row_major,
 )
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from ..structured_kernels.config import OutputPipelineConfig
 from ..structured_kernels.tile_pipeline import OutputStage, EpilogueKStage
 from ..structured_kernels.tmem import TmemAddress, TmemFragments
 
@@ -70,7 +70,7 @@ fn get_accumulator_dims[
     comptime num_m_mmas = BM // (mma_shape[0] // cta_group)
     comptime num_n_mmas = BN // (mma_shape[1] // cta_group)
 
-    constrained[num_m_mmas == 1 and num_n_mmas == 1]()
+    comptime assert num_m_mmas == 1 and num_n_mmas == 1
 
     comptime stageN = c_smem_dim1
     comptime cg2_num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
@@ -182,9 +182,7 @@ struct BlockwiseFP8Accumulator[
     fn promote[
         # Parameters derived from argument types (use _ for inference)
         num_pipeline_stages: Int,
-        num_accum_pipeline_stages: Int,
-        stage_stride_cols: Int,
-        cta_group: Int,
+        opc: OutputPipelineConfig,
         num_input_stages: Int,
         # Type parameters
         b_scales_dtype: DType,
@@ -202,9 +200,7 @@ struct BlockwiseFP8Accumulator[
             num_pipeline_stages,
         ],
         epi_stage: EpilogueKStage[
-            num_accum_pipeline_stages,
-            stage_stride_cols,
-            cta_group,
+            opc,
             num_input_stages,
         ],
         work_tile_coord: Tuple[UInt, UInt],
@@ -222,11 +218,10 @@ struct BlockwiseFP8Accumulator[
         # Type aliases for readability
         comptime a_scales_type = a_scales_dtype
 
-        constrained[
+        comptime assert (
             a_scales_dtype == b_scales_dtype
-            and Self.accum_type == DType.float32,
-            "Only support float32 for a_scales, b_scales, and accum_type",
-        ]()
+            and Self.accum_type == DType.float32
+        ), "Only support float32 for a_scales, b_scales, and accum_type"
 
         var M = problem_shape[0]
         var N = problem_shape[1]
@@ -244,11 +239,9 @@ struct BlockwiseFP8Accumulator[
         var b_scale_1: Scalar[Self.accum_type]
 
         comptime if Self.MMA_N != Self.BK:
-            constrained[
-                Self.stageN <= gcd(Self.MMA_N, Self.BK)
-                and (gcd(Self.MMA_N, Self.BK) % Self.stageN == 0),
-                "gcd(MMA_N, BK) must be divisible by stageN",
-            ]()
+            comptime assert Self.stageN <= gcd(Self.MMA_N, Self.BK) and (
+                gcd(Self.MMA_N, Self.BK) % Self.stageN == 0
+            ), "gcd(MMA_N, BK) must be divisible by stageN"
 
             var global_bn_start = bn * UInt(Self.MMA_N)
             var begin_n = min(
@@ -289,10 +282,12 @@ struct BlockwiseFP8Accumulator[
         var staged_c_row: UInt
         var staged_c_col: UInt
 
-        comptime if Self.MMA_M == 256 or (Self.MMA_M == 128 and cta_group == 1):
+        comptime if Self.MMA_M == 256 or (
+            Self.MMA_M == 128 and opc.cta_group == 1
+        ):
             staged_c_row = warp_id * UInt(WARP_SIZE)
             staged_c_col = UInt(0)
-        elif Self.MMA_M == 64 and cta_group == 1:
+        elif Self.MMA_M == 64 and opc.cta_group == 1:
             staged_c_row = warp_id * UInt(WARP_SIZE // 2)
             staged_c_col = UInt(0)
         else:

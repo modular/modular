@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
@@ -22,7 +22,7 @@ from nn.resize import (
 from testing import assert_almost_equal
 
 
-def main():
+def main() raises:
     fn test_upsample_sizes_nearest_1() raises:
         print("== test_upsample_sizes_nearest_1")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]

@@ -18,13 +18,13 @@ by comparing against numpy reference implementations.
 
 import numpy as np
 import pytest
-from max import _realization_context as rc
-from max import functional as F
-from max import random as max_random
-from max._realization_context import set_seed
 from max.driver import CPU
 from max.dtype import DType
-from max.tensor import Tensor, realization_context
+from max.experimental import functional as F
+from max.experimental import random as max_random
+from max.experimental import realization_context as rc
+from max.experimental.realization_context import set_seed
+from max.experimental.tensor import Tensor, realization_context
 
 # DTypes to test for elementwise operations
 # Note: bfloat16 is excluded since NumPy doesn't support it natively

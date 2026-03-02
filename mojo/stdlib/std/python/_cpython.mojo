@@ -17,13 +17,13 @@ Documentation for these functions can be found online at:
   <https://docs.python.org/3/c-api/stable.html#contents-of-limited-api>
 """
 
-from collections import InlineArray
-from memory import OpaquePointer, alloc
-from os import abort, getenv, setenv
-from os.path import dirname
-from pathlib import Path
-from sys.arg import argv
-from ffi import (
+from std.collections import InlineArray
+from std.memory import OpaquePointer, alloc
+from std.os import abort, getenv, setenv
+from std.os.path import dirname
+from std.pathlib import Path
+from std.sys.arg import argv
+from std.ffi import (
     external_call,
     _DLHandle,
     OwnedDLHandle,
@@ -37,7 +37,7 @@ from ffi import (
     c_ulong,
 )
 
-from utils import Variant
+from std.utils import Variant
 
 comptime Py_ssize_t = c_ssize_t
 comptime Py_hash_t = Py_ssize_t
@@ -127,7 +127,6 @@ struct PyObjectPtr(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -199,6 +198,7 @@ struct PyObjectPtr(
     fn __int__(self) -> Int:
         return Int(self._unsized_obj_ptr)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
@@ -482,8 +482,6 @@ struct PyType_Slot(TrivialRegisterPassable):
 struct PyObject(
     Defaultable,
     ImplicitlyCopyable,
-    Representable,
-    Stringable,
     Writable,
 ):
     """All object types are extensions of this type. This is a type which
@@ -504,6 +502,7 @@ struct PyObject(
         self.object_ref_count = 0
         self.object_type = {}
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the PyModuleDef_Base as a string.
@@ -514,6 +513,7 @@ struct PyObject(
 
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Get the `PyObject` as a string. Returns the same `String` as
@@ -542,9 +542,7 @@ struct PyObject(
 
 
 # Mojo doesn't have macros, so we define it here for ease.
-struct PyModuleDef_Base(
-    Defaultable, Movable, Representable, Stringable, Writable
-):
+struct PyModuleDef_Base(Defaultable, Movable, Writable):
     """PyModuleDef_Base.
 
     References:
@@ -581,6 +579,7 @@ struct PyModuleDef_Base(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the PyModuleDef_Base as a string.
@@ -591,6 +590,7 @@ struct PyModuleDef_Base(
 
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Get the PyMdouleDef_Base as a string. Returns the same `String` as
@@ -632,7 +632,7 @@ struct PyModuleDef_Slot:
     var value: OpaquePointer[MutAnyOrigin]
 
 
-struct PyModuleDef(Movable, Representable, Stringable, Writable):
+struct PyModuleDef(Movable, Writable):
     """The Python module definition structs that holds all of the information
     needed to create a module.
 
@@ -698,6 +698,7 @@ struct PyModuleDef(Movable, Representable, Stringable, Writable):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Get the PyModuleDefe as a string.
@@ -708,6 +709,7 @@ struct PyModuleDef(Movable, Representable, Stringable, Writable):
 
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Get the PyMdouleDef as a string. Returns the same `String` as
@@ -1443,7 +1445,7 @@ struct CPython(Defaultable, Movable):
             if file_dir == "" and not python_path:
                 file_dir = ":"
             if python_path:
-                _ = setenv("PYTHONPATH", String(file_dir, ":", python_path))
+                _ = setenv("PYTHONPATH", t"{file_dir}:{python_path}")
             else:
                 _ = setenv("PYTHONPATH", file_dir)
 
@@ -1473,7 +1475,7 @@ struct CPython(Defaultable, Movable):
                 # If the library is not present in the current process, try to load it from the environment variable.
                 self.lib = OwnedDLHandle(python_lib)
         except e:
-            abort(String("Failed to load libpython from", python_lib, ":\n", e))
+            abort(t"Failed to load libpython from {python_lib}:\n{e}")
 
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):

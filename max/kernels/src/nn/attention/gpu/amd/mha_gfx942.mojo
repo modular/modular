@@ -174,7 +174,7 @@ __extension Attention:
 
             var k_buffer = KBuffer[
                 tensor_core_mma = Self.get_tensor_core_mma_qk(),
-                swizzle=None,
+                swizzle = Swizzle(3, 0, 4),
                 BN = Int(Self.BN),
                 WN = Int(Self.WN),
                 BK = Int(Self.BK),

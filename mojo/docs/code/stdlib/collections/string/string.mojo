@@ -22,7 +22,7 @@ struct Person(Stringable):
 
 
 def string_summary():
-    from testing import assert_equal, assert_raises
+    from std.testing import assert_equal, assert_raises
 
     var person = Person("Alice", 30)
     print(String(person))  # => Alice (30)
@@ -68,5 +68,5 @@ def string_summary():
     # --------
 
 
-def main():
+def main() raises:
     string_summary()

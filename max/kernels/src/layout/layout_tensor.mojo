@@ -2019,15 +2019,16 @@ struct LayoutTensor[
         """
         comptime arg_count = args.__len__()
 
-        constrained[
-            Self.rank == arg_count or Self.num_strides == arg_count,
+        comptime assert (
+            Self.rank == arg_count or Self.num_strides == arg_count
+        ), (
             "Indexed with "
             + String(arg_count)
             + " dims, but Self.rank, Self.num_strides = "
             + String(Self.rank)
             + ", "
-            + String(self.num_strides),
-        ]()
+            + String(self.num_strides)
+        )
 
         var index_list = Self.idx_list_t[arg_count](fill=0)
 
@@ -5692,7 +5693,7 @@ struct LayoutTensor[
         ```mojo
         from layout import Layout, LayoutTensor
 
-        def main():
+        def main() raises:
             var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,
@@ -5770,7 +5771,7 @@ struct LayoutTensor[
         ```mojo
         from layout import Layout, LayoutTensor
 
-        def main():
+        def main() raises:
             var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,

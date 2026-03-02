@@ -45,11 +45,11 @@ fn _get_run_name[
         "->",
         out_dtype,
         ") : ",
-        shape_c_dim[0].__str__(),
+        shape_c_dim[0],
         ",",
-        shape_c_dim[1].__str__(),
+        shape_c_dim[1],
         ",",
-        shape_a_dim[1].__str__(),
+        shape_a_dim[1],
     )
 
 
@@ -326,7 +326,7 @@ fn get_dtype[output_type: String]() -> DType:
     return DType.bfloat16
 
 
-def main():
+def main() raises:
     var h = Bench()
 
     comptime input_type = DType.bfloat16

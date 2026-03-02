@@ -35,6 +35,7 @@ from gpu.compute.arch.tcgen05 import (
 )
 
 from linalg.structuring import SMemArray
+from .config import OutputPipelineConfig
 
 
 struct TmemAllocation[
@@ -752,19 +753,17 @@ struct BlockScaledTmem[
     @always_inline
     fn __init__(out self, base_addr: Int):
         """Create TMEM region view at the given base address."""
-        constrained[
-            Self.used_cols <= Self.total_cols,
-            "Block-scaled TMEM region exceeds capacity",
-        ]()
+        comptime assert (
+            Self.used_cols <= Self.total_cols
+        ), "Block-scaled TMEM region exceeds capacity"
         self.base_addr = base_addr
 
     @always_inline
     fn __init__(out self, addr: TmemAddress):
         """Create TMEM region view from a TmemAddress."""
-        constrained[
-            Self.used_cols <= Self.total_cols,
-            "Block-scaled TMEM region exceeds capacity",
-        ]()
+        comptime assert (
+            Self.used_cols <= Self.total_cols
+        ), "Block-scaled TMEM region exceeds capacity"
         self.base_addr = Int(addr.addr)
 
     @always_inline
@@ -772,10 +771,9 @@ struct BlockScaledTmem[
         cta: Int, max_cols: Int
     ](out self, alloc: TmemAllocation[cta, max_cols]):
         """Create TMEM region view from a TmemAllocation."""
-        constrained[
-            Self.used_cols <= Self.total_cols,
-            "Block-scaled TMEM region exceeds capacity",
-        ]()
+        comptime assert (
+            Self.used_cols <= Self.total_cols
+        ), "Block-scaled TMEM region exceeds capacity"
         self.base_addr = Int(alloc.addr)
 
     @always_inline
@@ -816,9 +814,7 @@ struct BlockScaledTmem[
 
 
 struct TmemStage[
-    num_stages: Int,
-    stage_stride: Int,
-    cta_group: Int,
+    opc: OutputPipelineConfig,
 ](TrivialRegisterPassable):
     """A pipeline stage within TMEM for accumulator buffering.
 
@@ -831,10 +827,12 @@ struct TmemStage[
       - tensor[layout](): Get typed TmemTensor view
 
     Parameters:
-        num_stages: Pipeline stages (typically 2-4).
-        stage_stride: Columns per stage (512 / num_stages).
-        cta_group: Cooperating CTAs (1 or 2).
+        opc: Output pipeline configuration (stages, stride, cta_group).
     """
+
+    comptime num_stages = Self.opc.num_stages
+    comptime stage_stride = Self.opc.stage_stride_cols
+    comptime cta_group = Self.opc.cta_group
 
     var base_addr: Int
     var index: Int

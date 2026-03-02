@@ -15,12 +15,12 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
-from max import functional as F
-from max import random
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental import random
+from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.nn import Conv2d, GroupNorm, Module, ModuleList
-from max.tensor import Tensor
+from max.nn.module_v3 import Conv2d, GroupNorm, Module, ModuleList
 
 from .layers import Downsample2D, ResnetBlock2D, Upsample2D, VAEAttention
 

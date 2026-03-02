@@ -29,9 +29,9 @@ markdown_meta_front_matter = True
 markdown_meta_wrapper_class = "sphinx-docs"
 markdown_field_definition_lists = True
 
-# Use the class summary for class description.
-# (The class summary must include the constructor parameters.)
-autoclass_content = "class"
+# Use both the class summary and the __init__ function for class description
+# This is to ensure that constructor args are documented via lint on __init__.
+autoclass_content = "both"
 # This ensures that all instances of CustomExtensionsType are not unfolded
 # (previously it was only sometimes unfolded, which was confusing/inconsistent)
 autodoc_type_aliases = {

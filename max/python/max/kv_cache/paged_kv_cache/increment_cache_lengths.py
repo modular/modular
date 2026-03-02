@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Builds computation graphs for incrementing cache lengths in ragged tensor operations."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -21,9 +23,9 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import KVCacheParams, RaggedKVCacheInputs
-from max.nn.legacy.kv_cache.data_parallelism_utils import (
+from max.nn.comm import Signals
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
 )
@@ -169,6 +171,11 @@ def _execute_ragged_increment_cache_lengths_graph(
     lookup_table = [
         kv_cache_inputs[i].lookup_table for i in range(len(devices))
     ]
+    kv_scales = [kv_cache_inputs[i].kv_scales for i in range(len(devices))]
+    mha_decode_dispatch_metadata = [
+        kv_cache_inputs[i].mha_decode_dispatch_metadata
+        for i in range(len(devices))
+    ]
     devices_per_replica = split_into_groups(
         devices, params.data_parallel_degree
     )
@@ -215,6 +222,17 @@ def _execute_ragged_increment_cache_lengths_graph(
         # Advance to the next step of the max_lengths tensor.
         updated_max_lengths = max_lengths[1:, :]
 
+        metadata = mha_decode_dispatch_metadata[start_idx]
+        if metadata is None:
+            raise ValueError(
+                "mha_decode_dispatch_metadata must be present in KV cache inputs"
+            )
+        metadata_np = metadata.to_numpy().copy()
+        if max_lengths.shape[0] > 0:
+            max_lengths_np = max_lengths.to_numpy()
+            metadata_np[3] = np.int64(max_lengths_np[0, 1])
+        updated_metadata = Buffer.from_numpy(metadata_np)
+
         # Return our updated batch.
         assert isinstance(kv_cache_inputs, list)
         for i in range(len(replica_devices)):
@@ -225,12 +243,16 @@ def _execute_ragged_increment_cache_lengths_graph(
                 cache_lengths=updated_cache_length,
                 lookup_table=lookup_table[start_idx + i],
                 max_lengths=updated_max_lengths,
+                kv_scales=kv_scales[start_idx + i],
+                mha_decode_dispatch_metadata=updated_metadata,
             )
         start_idx += len(replica_devices)
     return kv_cache_inputs
 
 
 class IncrementCacheLengthsProcessor:
+    """Processes KV cache length increments after each decoding step."""
+
     def __init__(
         self,
         session: InferenceSession,

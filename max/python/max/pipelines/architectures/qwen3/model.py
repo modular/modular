@@ -22,7 +22,7 @@ from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 
-from ..llama3_legacy.model import LlamaModelBase
+from ..llama3.model import LlamaModelBase
 from .model_config import Qwen3Config
 from .qwen3 import Qwen3
 

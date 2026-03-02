@@ -47,8 +47,8 @@ fn _validate_shard_and_stack[
         outputs: Output tensors, one per device/shard.
         inputs: Input tensors to be sharded, all with identical shapes.
     """
-    constrained[inputs.size > 0, "must have one or more inputs"]()
-    constrained[0 <= axis < inputs.rank, "axis must be in [0, inputs.rank)"]()
+    comptime assert inputs.size > 0, "must have one or more inputs"
+    comptime assert 0 <= axis < inputs.rank, "axis must be in [0, inputs.rank)"
 
     var input_shape = inputs[0].shape()
     var row_major_strides = _row_major_strides(input_shape)

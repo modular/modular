@@ -28,7 +28,6 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 
@@ -37,7 +36,7 @@ from utils import IndexList
 
 def flops(
     batch: Int, nheads: Int, seqlen_q: Int, seqlen_k: Int, headdim: Int
-) -> Int:
+) raises -> Int:
     var avg_seqlen = Float64(max(seqlen_k - seqlen_q, 0) + seqlen_k) / 2
     return Int(
         Float64(batch * nheads * 2 * seqlen_q)
@@ -99,7 +98,7 @@ def execute_kv_cache_ragged_flash_attention[
     cache_len: Int,
     use_random_cache_lengths: Bool,
     run_benchmark: Bool,
-):
+) raises:
     comptime num_layers = 1
     comptime layer_idx = 0
     var num_pages = batch_size * ceildiv(seq_len + cache_len, page_size) * 2
@@ -381,7 +380,6 @@ def execute_kv_cache_ragged_flash_attention[
                     k_cache_device,
                     v_cache_device,
                     CausalMask(),
-                    IdentityScoreMod(),
                     input_row_offsets_layout_tensor,
                     rsqrt(Float32(head_dim)),
                     ctx,
@@ -419,7 +417,6 @@ def execute_kv_cache_ragged_flash_attention[
             k_cache_device,
             v_cache_device,
             CausalMask(),
-            IdentityScoreMod(),
             input_row_offsets_layout_tensor,
             rsqrt(Float32(head_dim)),
             ctx,
@@ -442,7 +439,7 @@ def execute_kv_cache_ragged_flash_attention[
     _ = kv_block_paged_dev_buffer^
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     comptime head_dim = env_get_int["head_dim", 128]()

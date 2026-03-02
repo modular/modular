@@ -24,7 +24,7 @@ fn kernel(res: UnsafePointer[UInt32]):
 
 # Here the argument is a host pointer and not a device pointer, so we expect
 # an error about an illegal memory address.
-def test_function_error(ctx: DeviceContext):
+def test_function_error(ctx: DeviceContext) raises:
     # CHECK: test_function_error
     print("== test_function_error")
     try:
@@ -43,7 +43,7 @@ def test_function_error(ctx: DeviceContext):
         print(e)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK-NOT: To get more accurate error information, set MODULAR_DEVICE_CONTEXT_SYNC_MODE=true
         test_function_error(ctx)
