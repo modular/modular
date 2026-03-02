@@ -39,7 +39,7 @@ def mock_pipeline_config(
     ]
 
     # Pipeline config attributes
-    pipeline_config.pipeline_role = pipeline_role
+    pipeline_config.runtime.pipeline_role = pipeline_role
     pipeline_config.model.max_length = 1024 * 1024  # ~million tokens
     pipeline_config.runtime.max_batch_total_tokens = None
     pipeline_config.ep_size = NUM_RANKS

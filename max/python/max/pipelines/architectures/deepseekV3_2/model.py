@@ -101,9 +101,9 @@ class DeepseekV3_2Model(DeepseekV3Model):
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
-        if self.pipeline_config.pipeline_role == "prefill_only":
+        if self.pipeline_config.runtime.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif self.pipeline_config.pipeline_role == "decode_only":
+        elif self.pipeline_config.runtime.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"

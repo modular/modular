@@ -49,7 +49,6 @@ from pydantic import (
 )
 from typing_extensions import Self, override
 
-from .config_enums import PipelineRole
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig
@@ -76,14 +75,6 @@ class PipelineConfig(ConfigFileModel):
     # TODO: This should be removed though, but only after we've fully unrolled
     # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
     model_config = ConfigDict(extra="ignore")
-
-    pipeline_role: PipelineRole = Field(
-        default="prefill_and_decode",
-        description=(
-            "Whether the pipeline should serve both a prefill or decode role or "
-            "both."
-        ),
-    )
 
     max_batch_size: int | None = Field(
         default=None,
@@ -642,7 +633,7 @@ class PipelineConfig(ConfigFileModel):
                     "DeepseekV32ForCausalLM",
                     "DeepseekV3ForCausalLMNextN",
                 )
-                and self.pipeline_role == "prefill_and_decode"
+                and self.runtime.pipeline_role == "prefill_and_decode"
                 and not self.sampling.enable_structured_output
                 and not self.sampling.enable_variable_logits
                 and not self.speculative
@@ -658,11 +649,11 @@ class PipelineConfig(ConfigFileModel):
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.runtime.enable_overlap_scheduler:
-            if self.pipeline_role != "prefill_and_decode":
+            if self.runtime.pipeline_role != "prefill_and_decode":
                 raise ValueError(
                     "The Overlap scheduler does not support Disaggregated Inference yet. "
                     "It is only supported with the PrefillAndDecode pipeline role. "
-                    f"Found {self.pipeline_role}."
+                    f"Found {self.runtime.pipeline_role}."
                 )
             if self.sampling.enable_structured_output:
                 raise ValueError(

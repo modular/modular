@@ -138,7 +138,7 @@ def get_pipeline_for_task(
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
     elif pipeline_config.runtime.enable_overlap_scheduler:
-        role = pipeline_config.pipeline_role
+        role = pipeline_config.runtime.pipeline_role
         if (
             task == PipelineTask.TEXT_GENERATION
             and role == "prefill_and_decode"

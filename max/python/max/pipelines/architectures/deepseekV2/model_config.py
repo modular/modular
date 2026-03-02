@@ -166,9 +166,9 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             cache_dtype=cache_dtype,
         )
 
-        if pipeline_config.pipeline_role == "prefill_only":
+        if pipeline_config.runtime.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif pipeline_config.pipeline_role == "decode_only":
+        elif pipeline_config.runtime.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"

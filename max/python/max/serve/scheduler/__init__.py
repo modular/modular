@@ -178,7 +178,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             kv_cache=kv_cache,
         )
-    elif pipeline_config.pipeline_role == "prefill_and_decode":
+    elif pipeline_config.runtime.pipeline_role == "prefill_and_decode":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_text_generation_scheduler(
             text_pipeline,
@@ -192,7 +192,7 @@ def load_scheduler(
             ),
             cancel_queue=cancel_queue,
         )
-    elif pipeline_config.pipeline_role == "decode_only":
+    elif pipeline_config.runtime.pipeline_role == "decode_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_decode_scheduler(
             text_pipeline,
@@ -207,10 +207,10 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             settings=settings,
         )
-    elif pipeline_config.pipeline_role == "prefill_only":
+    elif pipeline_config.runtime.pipeline_role == "prefill_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
     else:
         raise ValueError(
-            f"No scheduler support for pipeline_role ({pipeline_config.pipeline_role})."
+            f"No scheduler support for pipeline_role ({pipeline_config.runtime.pipeline_role})."
         )
