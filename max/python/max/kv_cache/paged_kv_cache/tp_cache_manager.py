@@ -130,12 +130,6 @@ class _TPPagedKVCacheManager:
     connector: KVConnector
     """Connector for external cache tiers (host memory, LMCache, etc.)."""
 
-    enable_prefix_caching: bool
-    """Flag indicating if prefix caching (block reuse) is enabled."""
-
-    enable_kvcache_swapping_to_host: bool
-    """Flag indicating if swapping blocks to host memory is enabled."""
-
     @traced
     def __init__(
         self,
@@ -195,15 +189,7 @@ class _TPPagedKVCacheManager:
             )
         )
 
-        # Whether prefix caching is enabled.
-        self.enable_prefix_caching = self.params.enable_prefix_caching
-
-        # Whether kvcache swapping to host is enabled.
-        self.enable_kvcache_swapping_to_host = (
-            self.params.enable_kvcache_swapping_to_host
-        )
-
-        if total_num_host_pages > 0 and not self.enable_prefix_caching:
+        if total_num_host_pages > 0 and not params.enable_prefix_caching:
             raise ValueError(
                 "KVCache swapping to host is only supported when prefix caching is enabled"
             )

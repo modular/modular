@@ -116,15 +116,11 @@ class PagedKVCacheManager:
                 )
             )
 
-        first_replica = self._replica_managers[0]
-        self.page_size = first_replica.page_size
-        self.enable_prefix_caching = first_replica.enable_prefix_caching
+        self.page_size = params.page_size
+        self.enable_prefix_caching = params.enable_prefix_caching
         self.enable_kvcache_swapping_to_host = (
-            first_replica.enable_kvcache_swapping_to_host
+            params.enable_kvcache_swapping_to_host
         )
-
-        # Store session for model loading
-        self.session = session
 
         # Initialize the ragged increment cache lengths model
         self.increment_cache_lengths_processor = IncrementCacheLengthsProcessor(
