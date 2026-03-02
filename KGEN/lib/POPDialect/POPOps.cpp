@@ -766,17 +766,6 @@ LogicalResult FenceOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicSplatOp
-//===----------------------------------------------------------------------===//
-
-void VariadicSplatOp::build(OpBuilder &b, OperationState &state,
-                            Type resultType, Value element,
-                            size_t numElements) {
-  assert(isa<VariadicType>(resultType) && "invalid result type");
-  build(b, state, resultType, element, b.getIndexAttr(numElements));
-}
-
-//===----------------------------------------------------------------------===//
 // VariantBitcastOp
 //===----------------------------------------------------------------------===//
 

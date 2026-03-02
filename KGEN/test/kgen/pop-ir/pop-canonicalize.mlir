@@ -1379,29 +1379,6 @@ kgen.func @variadic_create() -> !kgen.variadic<index> {
   kgen.return %2 : !kgen.variadic<index>
 }
 
-
-// CHECK-LABEL: @variadic_create_to_splat(
-kgen.func @variadic_create_to_splat(%a: index) -> !kgen.variadic<index> {
-  // CHECK-NEXT: %0 = pop.variadic.splat 2, %arg0 : !kgen.variadic<index>
-  %2 = pop.variadic.create [%a, %a] : !kgen.variadic<index>
-  kgen.return %2 : !kgen.variadic<index>
-}
-
-// CHECK-LABEL: @variadic_splat_cst(
-kgen.func @variadic_splat_cst() -> !kgen.variadic<index> {
-  // CHECK-NEXT: %variadic = kgen.param.constant: variadic<index> = <[13, 13, 13, 13]>
-  %0 = index.constant 13
-  %1 = pop.variadic.splat 4, %0 : !kgen.variadic<index>
-  kgen.return %1 : !kgen.variadic<index>
-}
-
-// CHECK-LABEL: @variadic_splat_zero(
-kgen.func @variadic_splat_zero(%0: index) -> !kgen.variadic<index> {
-  // CHECK-NEXT: %variadic = kgen.param.constant: variadic<index> = <[]>
-  %1 = pop.variadic.splat 0, %0 : !kgen.variadic<index>
-  kgen.return %1 : !kgen.variadic<index>
-}
-
 // CHECK-LABEL: @variadic_get(
 kgen.func @variadic_get() -> i32 {
   // CHECK-NEXT: kgen.param.constant: i32 = <11>
@@ -1410,15 +1387,6 @@ kgen.func @variadic_get() -> i32 {
   %2 = pop.variadic.get %0[%1] : !kgen.variadic<i32>
   kgen.return %2 : i32
 }
-
-// CHECK-LABEL: @variadic_get_splat(
-kgen.func @variadic_get_splat(%arg0: i32, %idx: index) -> i32 {
-  // CHECK-NEXT: kgen.return %arg0 : i32
-  %1 = pop.variadic.splat 4, %arg0 : !kgen.variadic<i32>
-  %2 = pop.variadic.get %1[%idx] : !kgen.variadic<i32>
-  kgen.return %2 : i32
-}
-
 
 // CHECK-LABEL: @variadic_create_get(
 kgen.func @variadic_create_get(%arg0: i32, %arg1: i32) -> i32 {
@@ -1441,14 +1409,6 @@ kgen.func @variadic_size() -> index {
 kgen.func @variadic_create_size(%arg0: i32, %arg1: i32) -> index {
   // CHECK-NEXT: kgen.param.constant = <2>
   %0 = pop.variadic.create [%arg0, %arg1] : !kgen.variadic<i32>
-  %1 = pop.variadic.size %0 : !kgen.variadic<i32>
-  kgen.return %1 : index
-}
-
-// CHECK-LABEL: @variadic_splat_size(
-kgen.func @variadic_splat_size(%arg0: i32) -> index {
-  // CHECK-NEXT: kgen.param.constant = <4>
-  %0 = pop.variadic.splat 4, %arg0 : !kgen.variadic<i32>
   %1 = pop.variadic.size %0 : !kgen.variadic<i32>
   kgen.return %1 : index
 }

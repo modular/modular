@@ -2871,23 +2871,6 @@ OpFoldResult VariadicCreateOp::fold(FoldAdaptor adaptor) {
   return KGEN::VariadicAttr::get(values, getType());
 }
 
-/// Canonicalize `pop.variadic.create(x,x,x) -> `pop.variadic.splat(x)`. This
-/// notably turns all 1 element creates into a splat.
-LogicalResult VariadicCreateOp::canonicalize(VariadicCreateOp op,
-                                             PatternRewriter &b) {
-  // Canonicalize a 1+ operand create into a splat if we can.
-  if (size_t numElements = op.getNumOperands()) {
-    Value splatValue = op.getOperand(0);
-    if (llvm::all_of(op.getOperands().drop_front(),
-                     [&](Value operand) { return operand == splatValue; })) {
-      b.replaceOpWithNewOp<VariadicSplatOp>(op, op.getType(), splatValue,
-                                            numElements);
-      return success();
-    }
-  }
-  return failure();
-}
-
 ErrorTreeOrSuccess VariadicCreateOp::interpret(ArrayRef<Attribute> operands,
                                                InterpreterState &state) {
   return state.interpretOpWithFolder(this->getOperation(), operands);
@@ -2912,68 +2895,10 @@ VariadicCreateOp::parametric_interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// VariadicSplatOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult VariadicSplatOp::fold(FoldAdaptor adaptor) {
-  // We can poke at this only if the result #elts is a known constant.
-  auto numEltsCst = dyn_cast<IntegerAttr>(getNumElements());
-  if (!numEltsCst)
-    return {};
-
-  // If the input is constant, splat to a VariadicAttr.
-  if (Attribute cst = adaptor.getOperand()) {
-    SmallVector<TypedAttr> values(numEltsCst.getInt(), cast<TypedAttr>(cst));
-    return KGEN::VariadicAttr::get(values, getType());
-  }
-
-  // Fold a splat to zero values to a constant.
-  if (numEltsCst.getValue().isZero())
-    return KGEN::VariadicAttr::get(ArrayRef<TypedAttr>(), getType());
-
-  return {};
-}
-
-ErrorTreeOrSuccess VariadicSplatOp::interpret(ArrayRef<Attribute> operands,
-                                              InterpreterState &state) {
-  return state.interpretOpWithFolder(this->getOperation(), operands);
-}
-
-ErrorTreeOrSuccess
-VariadicSplatOp::parametric_interpret(ArrayRef<Attribute> operands,
-                                      ParametricInterpreterState &state) {
-  // We can poke at this only if the result #elts is a known constant.
-  auto numEltsCst =
-      dyn_cast<IntegerAttr>(state.getReboundAttribute(getNumElements()));
-  if (!numEltsCst)
-    return ErrorTree(getLoc(), "non-const input");
-
-  auto type = cast<VariadicType>(state.getReboundType(getType()));
-  // Fold a splat to zero values to a constant.
-  if (numEltsCst.getValue().isZero()) {
-    state.mapResults(VariadicAttr::get(ArrayRef<TypedAttr>(), type));
-    return success();
-  }
-
-  // If the input is constant, splat to a VariadicAttr.
-  if (Attribute cst = operands[0]) {
-    SmallVector<TypedAttr> values(numEltsCst.getInt(), cast<TypedAttr>(cst));
-    state.mapResults(VariadicAttr::get(values, type));
-    return success();
-  }
-
-  return ErrorTree(getLoc(), "non-const input");
-}
-
-//===----------------------------------------------------------------------===//
 // VariadicGetOp
 //===----------------------------------------------------------------------===//
 
 OpFoldResult VariadicGetOp::fold(FoldAdaptor adaptor) {
-  // Canonicalize `get(splat(x)) -> x`.
-  if (auto splat = getVariadic().getDefiningOp<VariadicSplatOp>())
-    return splat.getOperand();
-
   auto indexAttr = dyn_cast_or_null<IntegerAttr>(adaptor.getIndex());
   if (!indexAttr)
     return {};
@@ -3008,9 +2933,6 @@ OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
   if (auto create = getOperand().getDefiningOp<VariadicCreateOp>())
     return IntegerAttr::get(indexType, create.getOperands().size());
 
-  if (auto splat = getOperand().getDefiningOp<VariadicSplatOp>())
-    return splat.getNumElements();
-
   return {};
 }
 
@@ -3023,22 +2945,11 @@ ErrorTreeOrSuccess
 VariadicSizeOp::parametric_interpret(ArrayRef<Attribute> operands,
                                      ParametricInterpreterState &state) {
   auto indexType = IndexType::get(getContext());
-  if (auto variadic = dyn_cast_if_present<KGEN::VariadicAttr>(operands[0])) {
-    state.mapResults(IntegerAttr::get(indexType, variadic.getValues().size()));
-    return success();
-  }
-
-  if (auto create = getOperand().getDefiningOp<VariadicCreateOp>()) {
-    state.mapResults(IntegerAttr::get(indexType, create.getOperands().size()));
-    return success();
-  }
-
-  if (auto splat = getOperand().getDefiningOp<VariadicSplatOp>()) {
-    state.mapResults(state.getReboundAttribute(splat.getNumElements()));
-    return success();
-  }
-
-  return ErrorTree(getLoc(), "non-const input");
+  auto variadic = dyn_cast_if_present<KGEN::VariadicAttr>(operands[0]);
+  if (!variadic)
+    return ErrorTree(getLoc(), "non-const input");
+  state.mapResults(IntegerAttr::get(indexType, variadic.getValues().size()));
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

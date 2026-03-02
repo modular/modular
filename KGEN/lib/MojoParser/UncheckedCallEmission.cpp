@@ -414,24 +414,10 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   if (isPosVarArg) { // Positional homogenous varargs
     // Rebind the origin of the argument to the expected origin if needed.
     auto expectedVararg = cast<VariadicType>(expectedType);
-    if (auto refType = dyn_cast<RefType>(expectedVararg.getElementType())) {
-      auto origin = getCommonOrigin();
-      if (!origin) // No arguments, use empty origin with expected mutability.
-        origin = OriginUnionAttr::get(refType.getOrigin().getType());
-
-      refType = refType.getWithOrigin(getCommonOrigin());
-      expectedType = VariadicType::get(refType);
-    }
-
-    // Check for a splat.
-    if (!args.empty() &&
-        llvm::all_of(args, [&](Value operand) { return operand == args[0]; })) {
-      argVal = SRValue(POP::VariadicSplatOp::create(
-          *emitter.builder, loc, expectedType, args[0], args.size()));
-    } else {
-      argVal = SRValue(POP::VariadicCreateOp::create(*emitter.builder, loc,
-                                                     expectedType, args));
-    }
+    auto refType = cast<RefType>(expectedVararg.getElementType());
+    expectedType = VariadicType::get(refType.getWithOrigin(getCommonOrigin()));
+    argVal = SRValue(POP::VariadicCreateOp::create(*emitter.builder, loc,
+                                                   expectedType, args));
   } else {
     // Bundle them up into a VariadicPack instance.
     ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx);
@@ -1523,14 +1509,9 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
   // Handle positional/homogenous variadics.
   if (signature.isPosVarArg(argIdx)) {
     // There are two ways to form a pos vararg:
-    // VariadicSplatOp/VariadicCreateOp.  Unfurl these.
+    // VariadicCreateOp and ParamConstantOp.
     SmallVector<Value> unpackedArgs;
-    if (auto splat = argVal.getDefiningOp<POP::VariadicSplatOp>()) {
-      // We know these are only created by the parser, so will have a concrete
-      // element count.
-      auto numElements = cast<IntegerAttr>(splat.getNumElements()).getInt();
-      unpackedArgs.resize(numElements, splat.getOperand());
-    } else if (auto vararg = argVal.getDefiningOp<POP::VariadicCreateOp>()) {
+    if (auto vararg = argVal.getDefiningOp<POP::VariadicCreateOp>()) {
       assert(vararg && "only two ways to create a variadic list");
       unpackedArgs.append(vararg.getOperands().begin(),
                           vararg.getOperands().end());

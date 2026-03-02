@@ -343,14 +343,6 @@ static void getCallOpEffects(
 
   for (auto [idx, arg, convention] :
        llvm::enumerate(callArguments, conventions)) {
-    if (auto splat = arg.getDefiningOp<POP::VariadicSplatOp>()) {
-      ArgConvention elArgConvention = ArgConvention::ReadReg;
-      if (pogs.getVariadicKind(idx) == VariadicKind::PosVarArg)
-        elArgConvention = pogs.getOrigVariadicConvention();
-      addArgument(splat.getOperand(), elArgConvention);
-      continue;
-    }
-
     // As a special hack, we directly handle the effects and "see through" a
     // pop.variadic.create, so we can model the effects of the variadic.create
     // instead of seeing abstract uses of the origins.  This provides two
