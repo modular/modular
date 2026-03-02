@@ -98,7 +98,9 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
-        max_batch_total_tokens = self.pipeline_config.max_batch_total_tokens
+        max_batch_total_tokens = (
+            self.pipeline_config.runtime.max_batch_total_tokens
+        )
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
@@ -306,11 +308,11 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         if pipeline_config.pipeline_role != "decode_only":
             max_kv_length: int = 0
 
-            if pipeline_config.max_batch_total_tokens is None:
+            if pipeline_config.runtime.max_batch_total_tokens is None:
                 # If max_batch_total_tokens is not set, we use max_length.
                 max_kv_length = pipeline_config.model.max_length or 0
             else:
-                max_kv_length = pipeline_config.max_batch_total_tokens
+                max_kv_length = pipeline_config.runtime.max_batch_total_tokens
 
             mla_activation_memory += (
                 pipeline_config.model.data_parallel_degree

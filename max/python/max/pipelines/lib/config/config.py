@@ -112,15 +112,6 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    max_batch_total_tokens: int | None = Field(
-        default=None,
-        description=(
-            "Ensures the sum of page-aligned context lengths in a batch does "
-            "not exceed max_batch_total_tokens. Alignment uses the KV cache "
-            "page size. If None, the sum is not limited."
-        ),
-    )
-
     debug_verify_replay: bool = Field(
         default=False,
         description=(
@@ -994,13 +985,13 @@ class PipelineConfig(ConfigFileModel):
         # This needs to be done after max_length is resolved.
         if (
             arch.requires_max_batch_context_length
-            and self.max_batch_total_tokens is None
+            and self.runtime.max_batch_total_tokens is None
         ):
             logger.warning(
                 f"Architecture '{arch.name}' requires max-batch-total-tokens to be specified but found None. "
                 f"Defaulting to the max sequence length of the model: {self.model.max_length}"
             )
-            self.max_batch_total_tokens = self.model.max_length
+            self.runtime.max_batch_total_tokens = self.model.max_length
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #

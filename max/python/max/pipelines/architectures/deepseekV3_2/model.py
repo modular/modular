@@ -95,7 +95,9 @@ class DeepseekV3_2Model(DeepseekV3Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
-        max_batch_total_tokens = self.pipeline_config.max_batch_total_tokens
+        max_batch_total_tokens = (
+            self.pipeline_config.runtime.max_batch_total_tokens
+        )
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 

@@ -300,7 +300,7 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
 
         model_config = DeepseekV2Config.initialize(self.pipeline_config)
         model_config.max_batch_context_length = (
-            self.pipeline_config.max_batch_total_tokens
+            self.pipeline_config.runtime.max_batch_total_tokens
             or model_config.max_batch_context_length
         )
 
