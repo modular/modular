@@ -4913,6 +4913,11 @@ ParseResult DeclResolver::resolveBody(TraitType traitType, ASTDecl &traitDecl) {
         if (failed(resolveBody(*decl, traitDecl.getLoc())))
           return failure();
 
+        // resolveBody may have disabled this decl (e.g. when the child trait
+        // overrides a parent method with the same signature). Skip it.
+        if (decl->isDisabled())
+          continue;
+
         if (auto fn = dyn_cast_or_null<FnOp>(decl->getIfOperation())) {
           if (fn.getInheritedFrom())
             continue;
