@@ -584,7 +584,10 @@ class PipelineConfig(ConfigFileModel):
         if self.ep_size > 1 and model_config.data_parallel_degree == 1:
             model_config.data_parallel_degree = num_devices
 
-        if self.ep_size != old_ep or model_config.data_parallel_degree != old_dp:
+        if (
+            self.ep_size != old_ep
+            or model_config.data_parallel_degree != old_dp
+        ):
             logger.info(
                 "Auto-configured DeepSeek multi-GPU parallelism: "
                 "ep_size %s -> %s, data_parallel_degree %s -> %s",
