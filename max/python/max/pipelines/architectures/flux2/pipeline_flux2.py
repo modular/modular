@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -23,7 +23,7 @@ from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
-from max.pipelines.lib.interfaces import DiffusionPipeline, PixelModelInputs
+from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
 from PIL import Image
@@ -38,31 +38,70 @@ if TYPE_CHECKING:
 
 
 @dataclass(kw_only=True)
-class Flux2ModelInputs(PixelModelInputs):
-    """
-    Flux2-specific PixelModelInputs.
+class Flux2ModelInputs:
+    """Input container for Flux2 pipeline execution."""
 
-    Defaults:
-    - width: 1024
-    - height: 1024
-    - guidance_scale: 4.0
-    - num_inference_steps: 50
-    - num_images_per_prompt: 1
-    - input_image: None (optional input image for image-to-image generation)
+    tokens: TokenBuffer
+    """Primary encoder token buffer."""
 
-    """
+    latents: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Initial latent noise tensor."""
 
-    width: int = 1024
+    latent_image_ids: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Latent image positional identifiers."""
+
+    sigmas: npt.NDArray[np.float32] = field(
+        default_factory=lambda: np.array([], dtype=np.float32)
+    )
+    """Precomputed sigma schedule for denoising."""
+
     height: int = 1024
-    guidance_scale: float = 4.0
+    width: int = 1024
     num_inference_steps: int = 50
+    guidance_scale: float = 4.0
     num_images_per_prompt: int = 1
     input_image: Image.Image | None = None
-    """Optional input image for image-to-image generation (PIL.Image.Image).
+    """Optional input image for image-to-image generation (PIL.Image.Image)."""
 
-    This field is used for Flux2 image-to-image generation where an input image
-    is provided as a condition for the generation process.
-    """
+    def __post_init__(self) -> None:
+        if not isinstance(self.height, int) or self.height <= 0:
+            raise ValueError(
+                f"height must be a positive int. Got {self.height!r}"
+            )
+        if not isinstance(self.width, int) or self.width <= 0:
+            raise ValueError(
+                f"width must be a positive int. Got {self.width!r}"
+            )
+        if (
+            not isinstance(self.num_inference_steps, int)
+            or self.num_inference_steps <= 0
+        ):
+            raise ValueError(
+                f"num_inference_steps must be a positive int. Got {self.num_inference_steps!r}"
+            )
+        if (
+            not isinstance(self.num_images_per_prompt, int)
+            or self.num_images_per_prompt <= 0
+        ):
+            raise ValueError(
+                f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
+            )
+        missing = [
+            name
+            for name, arr in [
+                ("latents", self.latents),
+                ("sigmas", self.sigmas),
+            ]
+            if not isinstance(arr, np.ndarray) or arr.size == 0
+        ]
+        if missing:
+            raise ValueError(
+                f"Flux2ModelInputs requires non-empty numpy arrays for: {', '.join(missing)}"
+            )
 
 
 @dataclass
@@ -117,15 +156,33 @@ class Flux2Pipeline(DiffusionPipeline):
         self._cached_text_ids: dict[str, Tensor] = {}
         self._cached_sigmas: dict[str, Tensor] = {}
 
+    @traced
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
         """Convert a PixelContext into Flux2ModelInputs."""
-        if context.input_image is not None and isinstance(
-            context.input_image, np.ndarray
-        ):
-            context.input_image = Image.fromarray(  # type: ignore[assignment]
-                context.input_image.astype(np.uint8)
-            )
-        return Flux2ModelInputs.from_context(context)
+        raw_input = context.input_image
+        input_image: Image.Image | None = (
+            Image.fromarray(raw_input.astype(np.uint8))
+            if isinstance(raw_input, np.ndarray)
+            else raw_input
+        )
+        return Flux2ModelInputs(
+            tokens=context.tokens,
+            latents=context.latents,
+            latent_image_ids=context.latent_image_ids,
+            sigmas=context.sigmas,
+            height=context.height if context.height is not None else 1024,
+            width=context.width if context.width is not None else 1024,
+            num_inference_steps=context.num_inference_steps
+            if context.num_inference_steps is not None
+            else 50,
+            guidance_scale=context.guidance_scale
+            if context.guidance_scale is not None
+            else 4.0,
+            num_images_per_prompt=context.num_images_per_prompt
+            if context.num_images_per_prompt is not None
+            else 1,
+            input_image=input_image,
+        )
 
     def build_preprocess_latents(self) -> None:
         device = self.transformer.devices[0]
@@ -656,6 +713,7 @@ class Flux2Pipeline(DiffusionPipeline):
         all_timesteps = sigmas_curr.cast(self.transformer.config.dtype)
         return all_timesteps, all_dt
 
+    @traced
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2ModelInputs,
