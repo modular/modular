@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Types to interface with ML pipelines such as text/token/pixel generation."""
+"""Types to interface with ML pipelines such as text/token/visual generation."""
 
 from .architectures import register_all_models
 from .core import PixelContext, TextAndVisionContext, TextContext, TTSContext

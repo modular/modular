@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-"""Kimi 2.5 pipeline architecture."""
+"""Kimi K2.5 pipeline architecture."""
 
 from .arch import kimik2_5_arch
 

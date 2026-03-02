@@ -1037,11 +1037,17 @@ class LTX2Pipeline(DiffusionPipeline):
         )
         mel_spectrograms = self.audio_vae.decode(latents.cast(DType.bfloat16))
         _mel = np.from_dlpack(mel_spectrograms.cast(DType.float32).to(CPU()))
-        print(f"[AUDIO] mel: shape={_mel.shape}, mean={_mel.mean():.4f}, std={_mel.std():.4f}, min={_mel.min():.4f}, max={_mel.max():.4f}", flush=True)
+        print(
+            f"[AUDIO] mel: shape={_mel.shape}, mean={_mel.mean():.4f}, std={_mel.std():.4f}, min={_mel.min():.4f}, max={_mel.max():.4f}",
+            flush=True,
+        )
         # Vocoder compiled as float32 (cuDNN conv_transpose hardcodes CUDNN_DATA_FLOAT).
         result = self.vocoder(mel_spectrograms.cast(DType.float32))
         _wav = np.from_dlpack(result.cast(DType.float32).to(CPU()))
-        print(f"[AUDIO] wav: shape={_wav.shape}, mean={_wav.mean():.4f}, std={_wav.std():.4f}, min={_wav.min():.4f}, max={_wav.max():.4f}", flush=True)
+        print(
+            f"[AUDIO] wav: shape={_wav.shape}, mean={_wav.mean():.4f}, std={_wav.std():.4f}, min={_wav.min():.4f}, max={_wav.max():.4f}",
+            flush=True,
+        )
         return self._to_numpy(result)
 
     def _to_numpy(self, image: Tensor) -> np.ndarray:
