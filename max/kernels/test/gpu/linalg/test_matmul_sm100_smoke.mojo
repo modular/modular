@@ -72,7 +72,7 @@ def test_blackwell_matmul[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     num_split_k: Int = 1,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     """Generic test function for SM100 matmul kernel variants."""
     var M = m.value
     var N = n.value
@@ -225,7 +225,7 @@ def test_blackwell_matmul[
     _ = b_device
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("SM100 MATMUL SMOKE TEST")
     print("=" * 60)

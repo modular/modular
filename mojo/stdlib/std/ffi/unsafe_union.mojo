@@ -25,12 +25,12 @@ type results in undefined behavior, just like in C. Prefer `Variant` for safe,
 type-checked sum types.
 """
 
-from builtin.rebind import downcast
-from builtin.variadics import Variadic
-from format._utils import FormatStruct, Named, TypeNames
-from memory import UnsafePointer
-from sys import align_of, size_of
-from sys.intrinsics import _type_is_eq
+from std.builtin.rebind import downcast
+from std.builtin.variadics import Variadic
+from std.format._utils import FormatStruct, Named, TypeNames
+from std.memory import UnsafePointer
+from std.sys import align_of, size_of
+from std.sys.intrinsics import _type_is_eq
 
 
 # ===----------------------------------------------------------------------=== #
@@ -138,7 +138,7 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     Example:
 
     ```mojo
-    from ffi import UnsafeUnion
+    from std.ffi import UnsafeUnion
 
     # Define a union that can hold Int32 or Float32
     comptime IntOrFloat = UnsafeUnion[Int32, Float32]

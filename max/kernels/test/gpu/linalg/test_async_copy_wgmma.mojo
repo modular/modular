@@ -179,7 +179,7 @@ def test_cpasync_wgmma[
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -277,7 +277,7 @@ def test_cpasync_wgmma[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_cpasync_wgmma[
             DType.bfloat16,

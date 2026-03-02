@@ -176,7 +176,7 @@ fn reduce_add[
     return x + y
 
 
-def main():
+def main() raises:
     comptime dtype = DType._from_str(env_get_string["dtype", "DType.float16"]())
 
     comptime shape_in_list = env_get_shape["shape", "1x1x4096"]()

@@ -85,7 +85,7 @@ fn use_zipped_divide():
     print_layout(result)
 
 
-def main():
+def main() raises:
     use_layout_constructor()
     use_tile_to_shape()
     use_blocked_product()

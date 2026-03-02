@@ -74,7 +74,7 @@ fn kernel_copy_async_tma(descriptor: TMADescriptor):
 # CHECK-DAG: (1, 0) : 4 5 6 7; 12 13 14 15; 20 21 22 23; 28 29 30 31
 # CHECK-DAG: (0, 1) : 32 33 34 35; 40 41 42 43; 48 49 50 51; 56 57 58 59
 # CHECK-DAG: (1, 1) : 36 37 38 39; 44 45 46 47; 52 53 54 55; 60 61 62 63
-def test_tma_tile_copy(ctx: DeviceContext):
+def test_tma_tile_copy(ctx: DeviceContext) raises:
     print("== test_tma_tile_copy")
     var gmem_host = alloc[Float32](8 * 8)
     for i in range(64):
@@ -95,6 +95,6 @@ def test_tma_tile_copy(ctx: DeviceContext):
     gmem_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_tma_tile_copy(ctx)

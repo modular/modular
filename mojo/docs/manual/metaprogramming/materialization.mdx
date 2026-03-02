@@ -68,7 +68,7 @@ cannot materialize comptime value of type 'List[Int]' to runtime
 because it is not 'ImplicitlyCopyable'
 ```
 
-Just like Mojo forces you to explicitly `copy()` a value that's expensive to
+Just like Mojo forces you to explicitly copy a value that's expensive to
 copy, it forces you to explicitly materialize values that are expensive to
 materialize, by calling the
 [`materialize()`](/mojo/std/builtin/value/materialize/) function.
@@ -136,7 +136,7 @@ allocates a statically sized array of elements on the stack. The following code
 uses `global_constant()` to create a static lookup table.
 
 ```
-from builtin.globals import global_constant
+from std.builtin.globals import global_constant
 
 fn use_lookup(idx: Int) -> Int64:
     comptime numbers: InlineArray[Int64, 10] = [

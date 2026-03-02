@@ -15,16 +15,16 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.format import _FormatUtils
-from collections.string.string_slice import (
+from std.collections.string.format import _FormatUtils
+from std.collections.string.string_slice import (
     CodepointSliceIter,
     CodepointsIter,
     StaticString,
 )
-from os import PathLike
-from ffi import c_char, CStringSlice
+from std.os import PathLike
+from std.ffi import c_char, CStringSlice
 
-from python import ConvertibleToPython, PythonObject
+from std.python import ConvertibleToPython, PythonObject
 
 # ===-----------------------------------------------------------------------===#
 # StringLiteral

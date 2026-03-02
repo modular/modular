@@ -174,7 +174,10 @@ modular_py_test(
     srcs = [
         "test_engine_device_graph.py",
     ],
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tags = [
         "gpu",
     ],
@@ -221,6 +224,9 @@ modular_py_test(
         "//max/tests/integration/Inputs:pytest_inputs",
     ],
     env = {"MODULAR_PATH": "."},
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862
@@ -293,6 +299,9 @@ modular_py_test(
         "//max/tests/integration/Inputs:pytest_inputs",
     ],
     env = {"MODULAR_PATH": "."},
+    exec_properties = {
+        "test.resources:gpu-memory": "20",
+    },
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//:b200_gpu": ["@platforms//:incompatible"],  # FIXME: MODELS-862
@@ -415,5 +424,35 @@ modular_multi_py_version_test(
     srcs = ["test_load_library.py"],
     deps = [
         "//max/python/max:_core",
+    ],
+)
+
+modular_py_test(
+    name = "test_runtime_source_notes",
+    size = "large",
+    srcs = ["test_runtime_source_notes.py"],
+    data = [
+        "//max/tests/integration/Inputs/kernel_verification_ops",
+    ],
+    env = {
+        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],  # ROCm aborts on GPU trap
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
     ],
 )

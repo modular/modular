@@ -29,7 +29,7 @@ comptime rgb_layout = Layout.row_major(HEIGHT, WIDTH, NUM_CHANNELS)
 comptime gray_layout = Layout.row_major(HEIGHT, WIDTH)
 
 
-def main():
+def main() raises:
     comptime assert (
         has_accelerator()
     ), "This example requires a supported accelerator"
@@ -97,7 +97,7 @@ fn color_to_grayscale(
         gray_tensor[row, col] = gray.cast[int_dtype]()
 
 
-def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout]):
+def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout]) raises:
     """A helper function to print out the grayscale channel intensities."""
     for row in range(HEIGHT):
         for col in range(WIDTH):

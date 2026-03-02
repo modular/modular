@@ -27,10 +27,9 @@ from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
 from gpu.host import get_gpu_target
 from gpu.host.info import is_cpu
 from gpu.host.info import is_gpu as _is_gpu
-from layout import LayoutTensor
-from layout._coord import Coord, _DimsToCoordLike
+from layout import LayoutTensor, TileTensor
+from layout.coord import Coord, _DimsToCoordLike
 from layout._layout import Layout as TileLayout
-from layout._tile_tensor import TileTensor
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -1470,7 +1469,7 @@ struct VariadicTensors[
     size: Int,
     io_spec: IOSpec[mut, input],
     *,
-    static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
+    static_specs: InlineArray[StaticTensorSpec[dtype, rank], size],
 ](Sized, TrivialRegisterPassable):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""

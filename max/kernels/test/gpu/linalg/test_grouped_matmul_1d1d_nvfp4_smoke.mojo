@@ -27,9 +27,8 @@ from buffer.dimlist import DimList, Dim
 from gpu.host import DeviceContext
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from internal_utils._utils import InitializationType, init_vector_launch
-from layout._coord import Coord, Idx, RuntimeInt
+from layout import Coord, Idx, RuntimeInt, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -260,7 +259,7 @@ fn test_grouped_1d1d_nvfp4[
     _ = es_buf^
 
 
-def main():
+def main() raises:
     var ctx = DeviceContext()
     print("=== Grouped 1D1D NVFP4 Smoke Tests (TileTensor) ===")
     test_grouped_1d1d_nvfp4[4, 128, 256](ctx, 4, 64)

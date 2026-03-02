@@ -30,20 +30,20 @@ constants.
 
 To define a *parameterized function*, add parameters in square brackets ahead
 of the argument list. Each parameter is formatted just like an argument: a
-parameter name, followed by a colon and a type (which is required). In the
+parameter name, followed by a colon and a type. In the
 following example, the function has a single parameter, `count` of type `Int`.
 
 ```mojo
 fn repeat[count: Int](msg: String):
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         print(msg)
 ```
 
-The [`@parameter`](/mojo/manual/decorators/parameter) decorator shown here
-causes the `for` loop to be evaluated at compile time. The decorator only works
-if the loop limits are compile-time constants. Since `count` is a parameter,
-`range(count)` can be calculated at compile time.
+The [`comptime`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-for)
+keyword shown here
+causes the `for` loop to be fully unrolled at compile time. The `comptime for`
+requires the loop limits to be known at compile time. Since `count` is a
+parameter, `range(count)` can be calculated at compile time.
 
 Calling a parameterized function, you provide values for the parameters, just
 like function arguments:
@@ -100,7 +100,7 @@ def my_sort[
     values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: fn(Scalar[dtype], Scalar[dtype]) -> Int,
+    compare: fn(Scalar[dtype], Scalar[dtype]) raises -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,
@@ -144,12 +144,11 @@ conforms to the [`Writable`](/mojo/std/format/Writable) trait:
 
 ```mojo
 fn repeat[MsgType: Writable, //, count: Int](msg: MsgType):
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         print(msg)
 
 
-def main():
+def main() raises:
     # MsgType is always inferred, so first positional keyword `2` is
     # passed to `count`
     repeat[2](42)
@@ -170,9 +169,8 @@ argument is an `Int` and *infers* the type from the value.
 
 Mojo's support for generics is still early. You can write generic functions like
 this using traits and parameters. You can also write generic collections like
-`List` and `Dict`. If you're interested in learning how these types work, you
-can find the source code for the standard library collection types
-[on GitHub](https://github.com/modular/modular/blob/main/mojo/stdlib/std/collections/).
+`List` and `Dict`. For more information, see the section on
+[generics](/mojo/manual/generics/generics/).
 
 ## Parameterized structs
 
@@ -313,11 +311,11 @@ struct Container[ElementType: Movable & ImplicitlyDestructible]:
 
     def __str__[
         StrElementType: Writable & Movable, //
-    ](self: Container[StrElementType]) -> String:
+    ](self: Container[StrElementType]) raises -> String:
         return String(self.element)
 
 
-def main():
+def main() raises:
     float_container = Container(5.0)
     string_container = Container("Hello")
     print(float_container.__str__())
@@ -336,7 +334,7 @@ traits.
 
 ```mojo
 def __str__[StrElementType: Writable & Movable, //](
-        self: Container[StrElementType]) -> String:
+        self: Container[StrElementType]) raises -> String:
 ```
 
 The trait bound on `StrElementType` must include `ElementType`'s original trait
@@ -433,7 +431,7 @@ specifies the data type and `size` specifies the length of the SIMD vector (it
 must be a power of 2):
 
 ```mojo
-def main():
+def main() raises:
     # Make a vector of 4 floats.
     var small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 
@@ -474,12 +472,12 @@ values). For example, here's how to define a parametric algorithm with `Scalar`
 that is datatype agnostic:
 
 ```mojo
-from math import sqrt
+from std.math import sqrt
 
 fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
-def main():
+def main() raises:
     var v = Scalar[DType.float16](42)
     print(rsqrt(v))
 ```
@@ -500,12 +498,12 @@ to specify them. For example, you can call the `rsqrt()` function defined above
 without specifying the `dt` parameter:
 
 ```mojo
-from math import sqrt
+from std.math import sqrt
 
 fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
-def main():
+def main() raises:
     var v = Scalar[DType.float16](33)
     print(rsqrt(v))
 ```
@@ -554,7 +552,7 @@ struct One[Type: Writable & Copyable]:
         self.value = value.copy()
 
 
-def use_one():
+def use_one() raises:
     s1 = One(123)  # equivalent to One[Int](123)
     s2 = One("Hello")  # equivalent to One[String]("Hello")
 ```
@@ -579,7 +577,7 @@ struct Two[Type: Writable & Copyable]:
     fn fire(thing1: One[Self.Type], thing2: One[Self.Type]):
         print("🔥", String(thing1.value), String(thing2.value))
 
-def use_two():
+def use_two() raises:
     s3 = Two(One("infer"), One("me"))
     Two.fire(One(1), One(2))
     # Two.fire(One("mixed"), One(0)) # Error: parameter inferred to two
@@ -751,7 +749,7 @@ create an instance of `Span`. Binding the `mut` parameter by keyword lets you
 define a `Span` that requires a mutable origin.
 
 ```mojo
-def mutate_span(span: Span[mut=True, Byte]):
+def mutate_span(span: Span[mut=True, Byte]) raises:
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
             span.swap_elements(i, i + 1)
@@ -813,12 +811,10 @@ fn concat[
 ]:
     var result = SIMD[dtype, ls_size + rh_size]()
 
-    @parameter
-    for i in range(ls_size):
+    comptime for i in range(ls_size):
         result[i] = lhs[i]
 
-    @parameter
-    for j in range(rh_size):
+    comptime for j in range(rh_size):
         result[ls_size + j] = rhs[j]
     return result
 ```
@@ -849,8 +845,7 @@ fn slice[
 
 
 fn reduce_add(x: SIMD) -> Int:
-    @parameter
-    if x.size == 1:
+    comptime if x.size == 1:
         return Int(x[0])
     elif x.size == 2:
         return Int(x[0]) + Int(x[1])
@@ -862,7 +857,7 @@ fn reduce_add(x: SIMD) -> Int:
     return reduce_add(lhs + rhs)
 
 
-def main():
+def main() raises:
     var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))
@@ -873,11 +868,12 @@ def main():
 Elements sum: 10
 ```
 
-This makes use of the [`@parameter`](/mojo/manual/decorators/parameter) decorator to
-create a parametric if condition, which is an `if` statement that runs at compile-time.
-It requires that its condition be a valid parameter expression, and ensures that only
-the live branch of the `if` statement is compiled into the program. (This is similar to
-use of the `@parameter` decorator with a `for` loop shown earlier.)
+This makes use of the
+[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+statement, which is an `if` statement that runs at compile-time. It requires
+that its condition be a valid parameter expression, and ensures that only the
+live branch of the `if` statement is compiled into the program. This is similar
+to use of the `comptime for` loop shown earlier.
 
 ## `comptime`: named parameter expressions
 
@@ -1426,7 +1422,6 @@ fn nibble(f: Fudge[5]):
     print("Ate", String(f))
 
 nibble(Fudge[5, 4, 7]())
-
 ```
 
 ```output
@@ -1466,8 +1461,7 @@ fn take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
-    @parameter
-    if nelts == 8:
+    comptime if nelts == 8:
         take_simd8(x)
 ```
 
@@ -1491,7 +1485,6 @@ fn take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
-    @parameter
-    if nelts == 8:
+    comptime if nelts == 8:
         take_simd8(rebind[SIMD[DType.float32, 8]](x))
 ```

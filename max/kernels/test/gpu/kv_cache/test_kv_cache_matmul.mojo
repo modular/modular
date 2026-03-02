@@ -46,7 +46,7 @@ def execute_fused_qkv_matmul[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     comptime hidden_size = num_q_heads * Int(kv_params.head_size)
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
     comptime fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
@@ -273,7 +273,7 @@ def execute_fused_qkv_matmul[
                 )
 
 
-def execute_fused_matmul_suite(ctx: DeviceContext):
+def execute_fused_matmul_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.float32, DType.bfloat16)
 
     comptime for dtype_idx in range(2):
@@ -304,7 +304,7 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
             ](bs, 1, 1024, tg_cache_sizes, 4, 0, ctx)
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         execute_fused_matmul_suite(ctx)

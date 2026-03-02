@@ -191,7 +191,7 @@ fn create_matmul_test_case[
     ]((m.value, n.value), (m.value, k.value), (k.value, n.value), ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         create_matmul_test_case[DType.float32](
             ctx, dynamic(8), static[8](), static[4]()

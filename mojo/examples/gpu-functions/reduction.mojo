@@ -130,7 +130,7 @@ fn sum_kernel_benchmark(
     b.iter_custom[kernel_launch_sum](bench_ctx)
 
 
-def main():
+def main() raises:
     comptime assert has_accelerator(), "This example requires a supported GPU"
 
     with DeviceContext() as ctx:

@@ -326,7 +326,7 @@ fn get_dtype[output_type: String]() -> DType:
     return DType.bfloat16
 
 
-def main():
+def main() raises:
     var h = Bench()
 
     comptime input_type = DType.bfloat16

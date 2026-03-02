@@ -24,7 +24,7 @@ The iteration protocol consists of two key traits:
 Examples:
 
 ```mojo
-from iter import enumerate, zip, map
+from std.iter import enumerate, zip, map
 
 # Enumerate with index
 var items = ["a", "b", "c"]
@@ -46,7 +46,7 @@ for squared in map[square](values):
 ```
 """
 
-from builtin.constrained import _constrained_conforms_to
+from std.builtin.constrained import _constrained_conforms_to
 
 # ===-----------------------------------------------------------------------===#
 # Iterable

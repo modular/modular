@@ -16,7 +16,7 @@ from memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from nn.gather_scatter import scatter_nd_generator, ScatterOobIndexStrategy
 from testing import assert_equal
 
@@ -33,7 +33,7 @@ fn use_update[
     return update_val
 
 
-def main():
+def main() raises:
     fn test_scatternd() raises:
         print("== test_scatternd")
         # data: 4x4x4 = 64 elements

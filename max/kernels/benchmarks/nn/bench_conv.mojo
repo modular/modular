@@ -258,7 +258,7 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
         )
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig())
 
     comptime fp32_1d = ConvSpecStatic(

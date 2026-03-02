@@ -13,12 +13,12 @@
 #
 
 
-from reflection import (
+from std.reflection import (
     call_location,
     source_location,
     SourceLocation,
 )
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 fn check_source_loc(line: Int, col: Int, source_loc: SourceLocation) raises:
@@ -254,5 +254,5 @@ fn test_source_location_struct() raises:
     assert_equal(String(source_loc), "/path/to/some_file.mojo:50:60")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

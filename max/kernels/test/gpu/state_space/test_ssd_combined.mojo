@@ -697,5 +697,5 @@ fn test_ssd_combined_gpu_larger_shapes() raises:
     ](batch=4, dim=8, seqlen=16, n_groups=1, ctx=ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

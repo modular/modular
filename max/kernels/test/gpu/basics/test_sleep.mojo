@@ -50,7 +50,7 @@ fn sleep_kernel_zero(result_ptr: UnsafePointer[UInt64, MutExternalOrigin]):
     result_ptr[] = end - start
 
 
-def test_sleep_100ms(ctx: DeviceContext):
+def test_sleep_100ms(ctx: DeviceContext) raises:
     """Test 100ms sleep (requires loop since nanosleep max is 1ms)."""
     var result_host = ctx.enqueue_create_host_buffer[DType.uint64](1)
     var result_device = ctx.enqueue_create_buffer[DType.uint64](1)
@@ -73,7 +73,7 @@ def test_sleep_100ms(ctx: DeviceContext):
     )
 
 
-def test_sleep_500us(ctx: DeviceContext):
+def test_sleep_500us(ctx: DeviceContext) raises:
     """Test 500 microsecond sleep (sub-1ms, single nanosleep call)."""
     var result_host = ctx.enqueue_create_host_buffer[DType.uint64](1)
     var result_device = ctx.enqueue_create_buffer[DType.uint64](1)
@@ -95,7 +95,7 @@ def test_sleep_500us(ctx: DeviceContext):
     )
 
 
-def test_sleep_zero(ctx: DeviceContext):
+def test_sleep_zero(ctx: DeviceContext) raises:
     """Test zero duration sleep (should return immediately)."""
     var result_host = ctx.enqueue_create_host_buffer[DType.uint64](1)
     var result_device = ctx.enqueue_create_buffer[DType.uint64](1)
@@ -116,7 +116,7 @@ def test_sleep_zero(ctx: DeviceContext):
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_sleep_100ms(ctx)
         test_sleep_500us(ctx)

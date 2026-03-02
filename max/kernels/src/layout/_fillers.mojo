@@ -25,9 +25,9 @@ from itertools import product
 from random import random_float64
 from sys import is_nvidia_gpu
 
-from ._coord import Coord
+from .coord import Coord
 from ._layout import TensorLayout
-from ._tile_tensor import TileTensor
+from .tile_tensor import TileTensor
 
 from utils.numerics import max_finite
 

@@ -183,5 +183,5 @@ fn test_ptr_at_offset_view_tensor() raises:
     assert_equal(ptr[], Int32(expected_offset))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

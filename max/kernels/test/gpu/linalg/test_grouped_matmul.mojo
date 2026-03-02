@@ -533,7 +533,7 @@ fn test_negative_lora_id[
     _ = expert_ids_dev_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
         test[

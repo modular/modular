@@ -145,7 +145,7 @@ def test_load_and_mma_and_multiply_operands[
     shape: IndexList[3],
     transpose_b: Bool,
     k_group_size: Int = 1,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = shape[0]
     comptime N = shape[1]
     comptime K = shape[2] * k_group_size

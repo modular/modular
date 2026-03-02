@@ -217,7 +217,7 @@ fn test_simd_ue8m0_to_f32_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     test_simd_f32_to_ue8m0()
     test_simd_ue8m0_to_f32()
 

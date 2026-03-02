@@ -1221,7 +1221,7 @@ fn test_conv2d_problem_shape():
     print("  1x1 Conv: PASSED\n")
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("SM100 CONV2D TEST")
     print("=" * 60)

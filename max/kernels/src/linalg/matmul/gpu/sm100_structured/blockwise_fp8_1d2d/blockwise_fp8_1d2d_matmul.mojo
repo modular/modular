@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""CPU entrypoint for grouped 1D-1D blockwise FP8 SM100 matmul.
+"""CPU entrypoint for grouped 1D2D blockwise FP8 SM100 matmul.
 
-This module provides the public API for launching the grouped 1D-1D blockwise
+This module provides the public API for launching the grouped 1D2D blockwise
 FP8 matmul kernel for Mixture of Experts (MoE) layers.
 
 Usage:
@@ -37,8 +37,12 @@ from sys import size_of
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import B200
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout as LegacyLayout, LayoutTensor
-from layout._tile_tensor import TileTensor, flatten_leading
+from layout import (
+    Layout as LegacyLayout,
+    LayoutTensor,
+    TileTensor,
+    flatten_leading,
+)
 from ..structured_kernels.tile_types import create_tma_tile
 
 from utils.index import Index, IndexList

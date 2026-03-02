@@ -30,7 +30,7 @@ comptime n_layout = Layout.row_major(J, K)
 comptime p_layout = Layout.row_major(I, K)
 
 
-def main():
+def main() raises:
     comptime assert (
         has_accelerator()
     ), "This example requires a supported accelerator"

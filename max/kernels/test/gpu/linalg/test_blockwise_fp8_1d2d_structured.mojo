@@ -23,12 +23,19 @@ Uses DeepSeek V3-style MoE shapes:
 from sys import size_of
 
 from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._tile_tensor import TileTensor
 from layout._layout import row_major
-from layout._coord import Coord, RuntimeInt, Idx
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     GMEMLayout1D,
 )
@@ -54,7 +61,7 @@ def test_blockwise_fp8_1d2d_structured[
     num_tokens_by_expert: List[Int],
     expert_ids_list: List[Int],
     ctx: DeviceContext,
-):
+) raises:
     """Test structured blockwise FP8 1D2D kernel against naive reference.
 
     Args:
@@ -416,7 +423,7 @@ def test_blockwise_fp8_1d2d_structured[
     _ = expert_scales_device_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # ============================================================
         # DeepSeek V3 Down projection shapes: K=2048, N=7168

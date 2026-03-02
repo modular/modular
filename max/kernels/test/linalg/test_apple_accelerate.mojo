@@ -54,7 +54,7 @@ def test_matmul(
     m: Int,
     n: Int,
     k: Int,
-):
+) raises:
     var golden_ptr = UnsafePointer[Scalar[c.type]].alloc(
         m * n, alignment=alignment
     )
@@ -101,7 +101,7 @@ def test_matmul(
     golden_ptr.free()
 
 
-def test_matmul(m: Int, n: Int, k: Int):
+def test_matmul(m: Int, n: Int, k: Int) raises:
     var c_ptr = UnsafePointer[Scalar[c_type]].alloc(m * n, alignment=alignment)
     var a_ptr = UnsafePointer[Scalar[a_type]].alloc(m * k, alignment=alignment)
     var b_ptr = UnsafePointer[Scalar[b_type]].alloc(k * n, alignment=alignment)
@@ -117,7 +117,7 @@ def test_matmul(m: Int, n: Int, k: Int):
     a_ptr.free()
 
 
-def test_matmul():
+def test_matmul() raises:
     test_matmul(256, 1024, 4096)
     test_matmul(4, 5, 6)
     test_matmul(15, 16, 17)
@@ -154,7 +154,7 @@ def test_batched_matmul(
     m: Int,
     n: Int,
     k: Int,
-):
+) raises:
     var golden_ptr = UnsafePointer[Scalar[c.type]].alloc(
         batches * m * n, alignment=alignment
     )
@@ -213,7 +213,7 @@ def test_batched_matmul(
     golden_ptr.free()
 
 
-def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
+def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     var c_ptr = UnsafePointer[Scalar[c_type]].alloc(
         batch * m * n, alignment=alignment
     )
@@ -235,7 +235,7 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
     a_ptr.free()
 
 
-def test_batched_matmul():
+def test_batched_matmul() raises:
     for batch in [1, 2, 4, 9, 12]:
         test_batched_matmul(batch, 256, 1024, 4096)
         test_batched_matmul(batch, 4, 5, 6)
@@ -247,6 +247,6 @@ def test_batched_matmul():
         test_batched_matmul(batch, 2, 65, 1200)
 
 
-def main():
+def main() raises:
     test_matmul()
     test_batched_matmul()

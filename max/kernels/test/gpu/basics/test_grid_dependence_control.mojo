@@ -34,7 +34,7 @@ fn control_dep_grids_kernel():
 # CHECK: griddepcontrol.launch_dependents
 # CHECK: griddepcontrol.wait
 # CHECK: griddepcontrol.launch_dependents
-def test_grid_control_primitives():
+def test_grid_control_primitives() raises:
     print("== test_grid_control_primitives")
     assert_true(SUPPORT_PDL_LAUNCH)
     print(
@@ -61,7 +61,7 @@ fn control_dep_grids_kernel_context():
 # CHECK-LABEL: test_grid_control_primitives_context
 # CHECK: griddepcontrol.wait
 # CHECK: griddepcontrol.launch_dependents
-def test_grid_control_primitives_context():
+def test_grid_control_primitives_context() raises:
     print("== test_grid_control_primitives_context")
     print(
         _compile_code[
@@ -72,6 +72,6 @@ def test_grid_control_primitives_context():
     )
 
 
-def main():
+def main() raises:
     test_grid_control_primitives()
     test_grid_control_primitives_context()

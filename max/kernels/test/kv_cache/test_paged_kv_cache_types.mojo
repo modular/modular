@@ -28,7 +28,7 @@ comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 
 def do_test[
     page_size: Int, layout_block_size: Int, scale_dtype: DType = DType.invalid
-]():
+]() raises:
     comptime batch_size = 16
     comptime max_num_blocks = 100
     comptime shape = IndexList[6](
@@ -330,7 +330,7 @@ fn test_paged_kv_cache_quantization() raises:
     )
 
 
-def main():
+def main() raises:
     test_paged_kv_cache_stride_is_unknown()
     test_paged_kv_cache_offset_correctness()
     test_paged_kv_cache_quantization()

@@ -31,7 +31,7 @@ fn check_sm9x_or_newer() -> Bool:
     return v
 
 
-def main():
+def main() raises:
     comptime accelerator_arch = _accelerator_arch()
 
     # CHECK-NV80: ret i1 false

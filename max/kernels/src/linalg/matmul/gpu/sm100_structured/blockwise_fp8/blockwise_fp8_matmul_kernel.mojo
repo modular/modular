@@ -28,23 +28,17 @@ Key differences from standard/block-scaled kernels:
 - BlockwiseFP8TileWriter for final register → SMEM → GMEM flow
 """
 
-from collections import OptionalReg
-from math import ceildiv
 from memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from sys import size_of
 
-from gpu import WARP_SIZE, barrier
+from gpu import WARP_SIZE, thread_idx
 from gpu.primitives.cluster import (
-    block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
-    elect_one_sync_with_mask,
 )
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
 from gpu.memory import (
     AddressSpace,
     external_memory,
@@ -52,32 +46,36 @@ from gpu.memory import (
 )
 from gpu.compute.arch.mma_nvidia_sm100 import *
 from gpu.sync import (
-    mbarrier_arrive,
     named_barrier,
-    named_barrier_arrive,
     syncwarp,
-    umma_arrive_leader_cta,
 )
 from gpu.compute.arch.tcgen05 import *
 from layout._layout import TensorLayout
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from layout.tma_async import PipelineState, SharedMemBarrier, TMATensorTile
 
 from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import elementwise_compute_lambda_type
-from ..structured_kernels.config import MatmulConfig
+from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
 
 # Structured kernel imports
-from ..structured_kernels.kernel_common import WarpRole, KernelContext
+from ..structured_kernels.kernel_common import (
+    WarpRole,
+    KernelContext,
+    compute_tma_tile_dims,
+    compute_clc_barrier_counts,
+    compute_accum_barrier_counts,
+    compute_input_consumer_count,
+    init_core_barriers,
+    init_clc_barriers,
+)
 from .blockwise_fp8_smem import BlockwiseFP8Smem
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
@@ -85,12 +83,10 @@ from ..structured_kernels.tile_pipeline import (
     InputConsumerStage,
 )
 from ..structured_kernels.tile_types import (
-    BlockwiseFP8TilePayload,
-    GMEMTile,
     TMATile,
-    TmaOpType,
     static_row_major,
 )
+from ..structured_kernels.tile_pipeline import BlockwiseFP8TilePayload
 from ..structured_kernels.tile_scheduler import (
     TileScheduler as StructuredTileScheduler,
 )
@@ -185,20 +181,37 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages = Self.config.num_output_stages
 
-    # TMEM configuration
+    # TMEM configuration — divide all 512 columns evenly among accum stages.
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = Self.NUM_TMEM_COLS // Self.config.num_accum_pipeline_stages
 
+    # Output pipeline config (bundles accum stages, stride, and cta_group)
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Barrier Arrival Counts ==========
 
-    comptime clc_producer_arv_count = 1
-    comptime clc_consumer_arv_count = Self.SCHEDULER_THREADS + Self.CLUSTER_SIZE * (
-        Self.TMA_LOAD_THREADS + Self.MMA_THREADS + Self.EPILOGUE_THREADS
-    )
-    comptime clc_throttle_producer_arv_count = Self.TMA_LOAD_THREADS
-    comptime clc_throttle_consumer_arv_count = Self.SCHEDULER_THREADS
-    comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = Self.cta_group * Self.EPILOGUE_THREADS
+    comptime _clc_barrier_counts = compute_clc_barrier_counts[
+        Self.SCHEDULER_THREADS,
+        Self.TMA_LOAD_THREADS,
+        Self.MMA_THREADS,
+        Self.EPILOGUE_THREADS,
+        Self.CLUSTER_SIZE,
+        Self.cta_group,
+    ]()
+    comptime clc_producer_arv_count = Self._clc_barrier_counts[0]
+    comptime clc_consumer_arv_count = Self._clc_barrier_counts[1]
+    comptime clc_throttle_producer_arv_count = Self._clc_barrier_counts[2]
+    comptime clc_throttle_consumer_arv_count = Self._clc_barrier_counts[3]
+
+    comptime _accum_barrier_counts = compute_accum_barrier_counts[
+        Self.EPILOGUE_THREADS, Self.cta_group
+    ]()
+    comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
+    comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
     # ========== Shared Memory Layout Types ==========
 
@@ -235,8 +248,17 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     # ========== TMA Layouts (computed from config, new Layout types) ==========
 
-    comptime a_tile_dim0 = Self.BM // Self.CLUSTER_N
-    comptime b_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime _tma_tile_dims = compute_tma_tile_dims[
+        Self.BM,
+        Self.BN,
+        Self.MMA_M,
+        Self.OutputM,
+        Self.CLUSTER_M,
+        Self.CLUSTER_N,
+        Self.cta_group,
+    ]()
+    comptime a_tile_dim0 = Self._tma_tile_dims[0]
+    comptime b_tile_dim0 = Self._tma_tile_dims[1]
     comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
         Self.a_type
     ]()
@@ -248,9 +270,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ]()
 
     # C tile shape depends on MMA shape and cta_group
-    comptime c_tile_dim0 = Self.OutputM if (
-        Self.MMA_M == 256 or Self.cta_group == 1
-    ) else 64
+    comptime c_tile_dim0 = Self._tma_tile_dims[2]
 
     comptime ATileLayout = static_row_major[Self.a_tile_dim0, Self.BK]
     comptime ADescLayout = static_row_major[
@@ -336,20 +356,18 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.a_scales_type,
-        # A tile dimensions (BM x BK)
-        Self.SmemType.BM,
-        Self.SmemType.BK,
-        # B tile dimensions (BN x BK)
-        Self.SmemType.BN,
-        Self.SmemType.BK,
-        # A-scales dimensions (1 x BM)
-        1,
-        Self.SmemType.BM,
-        Self.SmemType.num_pipeline_stages,
+        IndexList[2](
+            Self.SmemType.Core.BM, Self.SmemType.Core.BK
+        ),  # A tile shape
+        IndexList[2](
+            Self.SmemType.Core.BN, Self.SmemType.Core.BK
+        ),  # B tile shape
+        IndexList[2](1, Self.SmemType.Core.BM),  # A-scales shape
+        Self.SmemType.Core.num_pipeline_stages,
     ]
     comptime InputTilePipeline = InputTilePipeline[
         Self.TilePayload,
-        Self.SmemType.num_group_pipeline_stages,
+        Self.SmemType.Core.num_group_pipeline_stages,
         Self.config.k_group_size,
     ]
 
@@ -364,8 +382,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime AScalesTmaOp = Self.AScalesTmaTile.InnerType
 
     # ========== TMEM Types ==========
-    comptime Tmem = TmemAllocation[Self.cta_group]
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # Layout-parameterized TMEM tensor for typed accumulator access
     comptime tmem_accum_layout = Layout.row_major(Self.MMA_M, Self.MMA_N)
@@ -374,42 +392,30 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     ]
 
     # ========== Output Pipeline Type ==========
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
     # ========== Warp Context Types ==========
     comptime MmaCtx = MmaWarpContext[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     # Linear type handles (flat code structure, compiler-enforced cleanup)
     comptime MmaHandle = MmaWarp[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
 
     comptime EpilogueHandle = EpilogueWarp[
-        Self.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         Self.MMA_THREADS,
         Self.EPILOGUE_THREADS,
     ]
@@ -487,7 +493,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         tiles: InputProducerStage[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -573,7 +579,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         tiles: InputConsumerStage[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         mma_op: Self.MmaOp,
@@ -623,6 +629,68 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             2,
         ), "Only support cta_group == 1 or 2"
         comptime assert Self.BK == 128, "Only support BK = 128"
+
+    # ========== Static Helper Methods ==========
+
+    @staticmethod
+    @always_inline
+    fn init_barriers(
+        ctx: Self.Context,
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_op: Self.CTmaOp,
+        a_scales_tma_op: Self.AScalesTmaOp,
+        input_barriers: Self.SmemType.Pipelines.InputBarriers,
+        accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
+        clc_throttle: Self.SmemType.Pipelines.ClcThrottleBarriers,
+        clc_full: Self.SmemType.Pipelines.ClcBarriers,
+        clc_empty: Self.SmemType.Pipelines.ClcBarriers,
+        tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
+    ):
+        """Initialize barriers and prefetch TMA descriptors."""
+        if ctx.elect_one_warp and ctx.elect_one_thread:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+            c_tma_op.prefetch_descriptor()
+            a_scales_tma_op.prefetch_descriptor()
+
+            # Epilogue warps also consume A-scales from input pipeline.
+            init_core_barriers[
+                Self.num_group_pipeline_stages,
+                Self.num_accum_pipeline_stages,
+            ](
+                input_barriers.ptr,
+                Int32(
+                    compute_input_consumer_count[
+                        Self.CLUSTER_M,
+                        Self.CLUSTER_N,
+                        Self.cta_group,
+                        CLUSTER_SIZE = Self.CLUSTER_SIZE,
+                        epilogue_threads = Self.EPILOGUE_THREADS,
+                    ]()
+                ),
+                accum_barriers.ptr,
+                Int32(Self.accum_pipeline_producer_arv_count),
+                Int32(Self.accum_pipeline_consumer_arv_count),
+                tmem_dealloc.ptr,
+                Int32(Self.EPILOGUE_THREADS * Self.cta_group),
+            )
+
+            Self.Scheduler.init_throttle_barriers(
+                clc_throttle.ptr,
+                Int32(Self.clc_throttle_producer_arv_count),
+                Int32(Self.clc_throttle_consumer_arv_count),
+            )
+
+            init_clc_barriers[Self.num_clc_pipeline_stages](
+                clc_full.ptr,
+                clc_empty.ptr,
+                Int32(Self.clc_producer_arv_count),
+                Int32(Self.clc_consumer_arv_count),
+            )
+
+        fence_mbarrier_init()
+        cluster_sync()
 
     # ========== Kernel Entry Point ==========
 
@@ -676,47 +744,19 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         var ctx = Self.Context(smem.pipelines.tmem_addr().ptr)
 
         # ===== Barrier Initialization =====
-        if ctx.elect_one_warp and ctx.elect_one_thread:
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-            c_tma_op.prefetch_descriptor()
-            a_scales_tma_op.prefetch_descriptor()
-
-            # Include epilogue warps in consumer count (they also consume A-scales)
-            Self.InputTilePipeline.init_barriers(
-                input_barriers.ptr,
-                Int32(1),
-                Int32(
-                    Self.config.cluster_shape[0] // Self.cta_group
-                    + Self.config.cluster_shape[1]
-                    - 1
-                    + Self.CLUSTER_SIZE * (Self.EPILOGUE_THREADS // 32)
-                ),
-            )
-
-            ProducerConsumerPipeline[Self.config.num_accum_pipeline_stages](
-                accum_barriers.ptr
-            ).init_mbars(
-                Self.accum_pipeline_producer_arv_count,
-                Int32(Self.accum_pipeline_consumer_arv_count),
-            )
-
-            Self.Scheduler.init_throttle_barriers(
-                clc_throttle.ptr,
-                Int32(Self.clc_throttle_producer_arv_count),
-                Int32(Self.clc_throttle_consumer_arv_count),
-            )
-
-            smem.pipelines.tmem_dealloc().ptr[].init(
-                Int32(Self.EPILOGUE_THREADS * Self.cta_group)
-            )
-
-            comptime for i in range(Self.num_clc_pipeline_stages):
-                clc_full.ptr[i].init(Self.clc_producer_arv_count)
-                clc_empty.ptr[i].init(Int32(Self.clc_consumer_arv_count))
-
-        fence_mbarrier_init()
-        cluster_sync()
+        Self.init_barriers(
+            ctx,
+            a_tma_op,
+            b_tma_op,
+            c_tma_op,
+            a_scales_tma_op,
+            input_barriers,
+            accum_barriers,
+            clc_throttle,
+            clc_full,
+            clc_empty,
+            smem.pipelines.tmem_dealloc(),
+        )
 
         var mma_op = Self.MmaOp()
 
@@ -760,7 +800,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
                     for i in range(num_iters):
                         # Acquire tiles (waits for consumer to free slot)
-                        var tiles = producer.acquire()
+                        var tiles = producer.acquire_stage()
                         Self.load_input_tiles(
                             a_loader,
                             b_loader,
@@ -771,7 +811,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                             i,
                             ctx.elect_one_cta,
                         )
-                        tiles.release()  # Advance producer stage
+                        tiles^.release()  # Advance producer stage
 
             producer.drain()  # Wait for consumer before CTA exits
 
@@ -795,7 +835,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             # Create linear handle - allocates TMEM, signals sync barrier
             var mma_handle = Self.MmaHandle.create(
                 smem.pipelines.tmem_addr(),
-                accum_barriers,
+                accum_barriers.ptr,
                 smem.pipelines.tmem_dealloc(),
                 UInt16(ctx.mma_complete_mask),
             )
@@ -811,13 +851,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                             )
 
                             # Acquire input tiles (waits for TMA)
-                            var input_tiles = (
-                                input_pipeline.acquire_consumer_linear()
-                            )
+                            var input_tiles = input_pipeline.acquire_consumer()
                             Self.mma(input_tiles, mma_op, accum)
 
                             # Release resources (compiler enforces these calls)
-                            input_tiles.release()
+                            input_tiles^.release()
                             mma_stage^.release()
 
             # Wait for epilogue and deallocate TMEM
@@ -831,7 +869,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             # Create linear handle - reads TMEM address from shared memory
             var epi_handle = Self.EpilogueHandle.create(
                 smem.pipelines.tmem_addr(),
-                accum_barriers,
+                accum_barriers.ptr,
                 smem.pipelines.tmem_dealloc(),
                 UInt16(ctx.mma_complete_mask),
             )

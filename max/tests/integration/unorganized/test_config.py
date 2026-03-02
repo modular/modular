@@ -21,6 +21,7 @@ import pytest
 from max.driver import DeviceSpec, accelerator_count
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from test_common.mocks import mock_estimate_memory_footprint
 from test_common.pipeline_model_dummy import (
     DUMMY_LLAMA_ARCH,
@@ -43,7 +44,9 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
             quantization_encoding="gptq",
             device_specs=[DeviceSpec.accelerator()],
         ),
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(
+            prefer_module_v3=True,
+        ),
     )
 
     # We expect this to fail.
@@ -54,7 +57,9 @@ def test_config__raises_with_unsupported_GPTQ_format() -> None:
                 quantization_encoding="gptq",
                 device_specs=[DeviceSpec.accelerator()],
             ),
-            prefer_module_v3=True,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=True,
+            ),
         )
 
 

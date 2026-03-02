@@ -72,7 +72,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     num_split_k: Int = 1,
     benchmark: Bool = False,
     swapAB: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -233,7 +233,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.bfloat16
 

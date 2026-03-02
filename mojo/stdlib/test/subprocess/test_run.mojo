@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from subprocess import run
+from std.subprocess import run
 
-from testing import *
+from std.testing import *
 
 
-def test_run():
+def test_run() raises:
     assert_not_equal(run("ls"), "")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -16,7 +16,7 @@ from linalg.utils_gpu import select_config
 
 
 # CHECK-LABEL: test_matmul_selection
-def test_matmul_selection():
+def test_matmul_selection() raises:
     print("=== test_matmul_selection")
     with DeviceContext() as ctx:
         var config0 = select_config[
@@ -64,5 +64,5 @@ def test_matmul_selection():
         print(config2.work_space_size(482, 4096))
 
 
-def main():
+def main() raises:
     test_matmul_selection()

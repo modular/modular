@@ -20,9 +20,8 @@ from gpu import WARP_SIZE
 from gpu.host import DeviceContext
 from internal_utils import arg_parse
 
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 
 from nn.topk import _top_k_cpu, _topk_gpu, _topk_topp_sampling_fi, topk_gpu
 from testing import assert_almost_equal, assert_equal
@@ -456,13 +455,16 @@ fn bench_topk_fi[
         temp_host_ptr[i] = temperature
     ctx.enqueue_copy(device_temp_buffer, temp_host_ptr)
 
-    # Create a 1-element seed buffer on device.
-    var seed_device_buffer = ctx.enqueue_create_buffer[DType.uint64](1)
-    var seed_host_ptr = alloc[UInt64](1)
-    seed_host_ptr[0] = UInt64(42)
+    # Create per-row seed buffer on device.
+    var seed_device_buffer = ctx.enqueue_create_buffer[DType.uint64](batch_size)
+    var seed_host_ptr = alloc[UInt64](batch_size)
+    for i in range(batch_size):
+        seed_host_ptr[i] = UInt64(42 + i)
     ctx.enqueue_copy(seed_device_buffer, seed_host_ptr)
     ctx.synchronize()
-    var seed_tt = TileTensor(seed_device_buffer.unsafe_ptr(), row_major(Idx(1)))
+    var seed_tt = TileTensor(
+        seed_device_buffer.unsafe_ptr(), row_major(Idx(batch_size))
+    )
 
     @parameter
     @always_inline
@@ -503,9 +505,11 @@ fn bench_topk_fi[
     # Cleanup.
     in_buffer_ptr.free()
     temp_host_ptr.free()
+    seed_host_ptr.free()
     _ = device_in_buffer^
     _ = device_out_idxs_buffer^
     _ = device_temp_buffer^
+    _ = seed_device_buffer^
 
 
 fn fill_random[
@@ -588,8 +592,7 @@ fn main() raises:
             num_blocks_per_input=num_blocks_per_input,
         )
 
-        @parameter
-        if use_fi:
+        comptime if use_fi:
             bench_topk_fi[dtype, out_idx_type](ctx, m, test_case, fill_fn_name)
         else:
             bench_topk_batched[dtype, out_idx_type, rank](

@@ -49,16 +49,18 @@ from linalg.fp4_utils import (
 from random import random_ui64, seed, rand
 from builtin.simd import _convert_f32_to_float8_scalar
 from layout import (
-    LayoutTensor,
+    Coord,
+    Idx,
+    IntTuple,
     Layout,
+    LayoutTensor,
+    RuntimeInt,
     RuntimeLayout,
     RuntimeTuple,
-    IntTuple,
+    TileTensor,
     UNKNOWN_VALUE,
 )
 from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from layout._tile_tensor import TileTensor
-from layout._coord import Coord, Idx, RuntimeInt
 from layout._layout import row_major
 
 
@@ -95,7 +97,7 @@ def _test_kernel_impl[
     num_tokens_by_expert: List[Int],
     expert_ids: List[Int],
     ctx: DeviceContext,
-):
+) raises:
     seed(1234)
     total_num_tokens = 0
     for i in range(len(num_tokens_by_expert)):
@@ -775,7 +777,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     num_tokens_by_expert: List[Int],
     expert_ids: List[Int],
     ctx: DeviceContext,
-):
+) raises:
     """Test old kernel - backward compatible wrapper."""
     _test_kernel_impl[
         "old",
@@ -801,7 +803,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     ](num_active_experts, num_tokens_by_expert, expert_ids, ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime dtype = DType.uint8  # TODO: (KERN-2238): Replace with float4-e2m1fn
         comptime out_dtype = DType.bfloat16
@@ -1047,8 +1049,7 @@ def main():
                 )
 
             # 2SM tests (new structured kernel only, swapAB=True required)
-            @parameter
-            if structured:
+            comptime if structured:
                 comptime umma_shape_2sm = Index(2 * bm, 2 * bn, MMA_K)
 
                 # 2SM: Large token counts

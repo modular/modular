@@ -35,10 +35,15 @@ from algorithm import (
     vectorize,
 )
 from gpu.host import DeviceContext
-from layout import UNKNOWN_VALUE
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+)
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv import _get_cudnn_meta, check_cudnn_error
@@ -376,11 +381,11 @@ fn get_partition(
 
 @fieldwise_init
 struct ConvTransposedPacked[
-    input_element_shape_types: Variadic.TypesOfTrait[CoordLike],
+    input_element_size: Int,
     input_linear_idx_type: DType,
-    filter_element_shape_types: Variadic.TypesOfTrait[CoordLike],
+    filter_element_size: Int,
     filter_linear_idx_type: DType,
-    output_element_shape_types: Variadic.TypesOfTrait[CoordLike],
+    output_element_size: Int,
     output_linear_idx_type: DType,
     InputLayoutType: TensorLayout,
     FilterLayoutType: TensorLayout,
@@ -400,21 +405,21 @@ struct ConvTransposedPacked[
         Self.output_type,
         Self.OutputLayoutType,
         Self.output_origin,
-        element_shape_types = Self.output_element_shape_types,
+        element_size = Self.output_element_size,
         linear_idx_type = Self.output_linear_idx_type,
     ]
     var input: TileTensor[
         Self.input_type,
         Self.InputLayoutType,
         Self.input_origin,
-        element_shape_types = Self.input_element_shape_types,
+        element_size = Self.input_element_size,
         linear_idx_type = Self.input_linear_idx_type,
     ]
     var filter: TileTensor[
         Self.filter_type,
         Self.FilterLayoutType,
         Self.filter_origin,
-        element_shape_types = Self.filter_element_shape_types,
+        element_size = Self.filter_element_size,
         linear_idx_type = Self.filter_linear_idx_type,
     ]
 
@@ -434,7 +439,7 @@ struct ConvTransposedPacked[
             Self.output_type,
             Self.OutputLayoutType,
             Self.output_origin,
-            element_shape_types = Self.output_element_shape_types,
+            element_size = Self.output_element_size,
             linear_idx_type = Self.output_linear_idx_type,
             address_space = AddressSpace.GENERIC,
             ...,
@@ -443,7 +448,7 @@ struct ConvTransposedPacked[
             Self.input_type,
             Self.InputLayoutType,
             Self.input_origin,
-            element_shape_types = Self.input_element_shape_types,
+            element_size = Self.input_element_size,
             linear_idx_type = Self.input_linear_idx_type,
             address_space = AddressSpace.GENERIC,
             ...,
@@ -452,7 +457,7 @@ struct ConvTransposedPacked[
             Self.filter_type,
             Self.FilterLayoutType,
             Self.filter_origin,
-            element_shape_types = Self.filter_element_shape_types,
+            element_size = Self.filter_element_size,
             linear_idx_type = Self.filter_linear_idx_type,
             address_space = AddressSpace.GENERIC,
             ...,
@@ -634,14 +639,15 @@ struct ConvTransposedPacked[
         # by simd_size. If F is not multiple of simd_size, the residual
         # is padded with 0 to fit a simd vector in the packed filter.
         tile[
-            VariadicList[Int](micro_kernel_f_size, simd_size),
+            [micro_kernel_f_size, simd_size],
             simd_size,
             f_tile_iteration,
         ](
             group_f_offset,
             group_f_end_align_simd,
-            VariadicList[Int](micro_kernel_f_size, simd_size),
+            micro_kernel_f_size,
             simd_size,
+            primary_cleanup_tile=simd_size,
         )
 
         # If this is the last partition in F and it's not a multiple of simd_size.
@@ -838,7 +844,7 @@ struct ConvTransposedPacked[
                 )
 
             tile_middle_unswitch_boundaries[
-                work_fn, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)
+                work_fn, [micro_kernel_height, 5, 4, 3, 2, 1]
             ](
                 0,
                 left_pad_impact_end,
@@ -927,7 +933,7 @@ struct ConvTransposedPacked[
 
                 tile_middle_unswitch_boundaries[
                     work_fn,
-                    VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),
+                    [micro_kernel_height, 5, 4, 3, 2, 1],
                 ](
                     0,
                     left_pad_impact_end,
@@ -1334,9 +1340,7 @@ fn pack_filter(
                     filter_ptr += 1
 
         # If F % simd_size != 0, the following won't touch the remainder.
-        tile[pack, VariadicList[Int](micro_kernel_f_size, simd_size)](
-            0, F_per_group
-        )
+        tile[pack, [micro_kernel_f_size, simd_size]](0, F_per_group)
 
     # Check the remainder if any
     var F_round_by_simd = align_down(F_per_group, simd_size)

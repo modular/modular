@@ -86,7 +86,7 @@ fn test_cluster_dims_attribute_with_param(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_cluster_dims_attribute(ctx)
         test_cluster_dims_attribute_with_param(ctx)

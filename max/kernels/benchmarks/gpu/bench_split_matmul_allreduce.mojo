@@ -249,7 +249,7 @@ fn bench_matmul_all_reduce[
     _ = C_reduced_list^
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 8192))

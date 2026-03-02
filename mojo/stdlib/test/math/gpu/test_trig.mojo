@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import cos, sin
+from std.math import cos, sin
 
-from gpu.host import DeviceContext
-from testing import assert_almost_equal, TestSuite
+from std.gpu.host import DeviceContext
+from std.testing import assert_almost_equal, TestSuite
 
 
 fn run_func[
@@ -46,7 +46,7 @@ fn run_func[
         )
 
 
-def test_trig():
+def test_trig() raises:
     @parameter
     fn cos_fn(val: Float16) -> Float16:
         return cos(val)
@@ -70,5 +70,5 @@ def test_trig():
         run_func[DType.float16, sin_fn]("sin", 10, -0.5439453125, ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

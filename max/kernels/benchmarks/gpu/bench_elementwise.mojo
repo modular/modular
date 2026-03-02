@@ -232,7 +232,7 @@ fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
     return t
 
 
-def main():
+def main() raises:
     var op = arg_parse("op", "sqrt")
     comptime dtype = DType._from_str(
         env_get_string["dtype", "DType.bfloat16"]()

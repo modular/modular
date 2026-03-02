@@ -50,7 +50,7 @@ def _initialize_ragged_inputs[
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
-) -> Tuple[
+) raises -> Tuple[
     DeviceBuffer[DType.uint32],
     DeviceBuffer[dtype],
     DeviceBuffer[dtype],
@@ -150,7 +150,7 @@ def execute_matmul_k_cache_ragged_scale[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     """Tests the scaled KV cache matmul for key projections.
 
     This test follows the same pattern as execute_matmul_k_cache_ragged but
@@ -414,7 +414,7 @@ def execute_matmul_k_cache_ragged_scale[
     _ = paged_lut^
 
 
-def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext):
+def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext) raises:
     """Test suite specifically for FP8 scaled matmul operations."""
     comptime dtype = DType.float8_e4m3fn
     comptime rtol = 1e-2
@@ -454,7 +454,7 @@ def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext):
         ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         execute_fused_matmul_suite_float8_e4m3fn(ctx)

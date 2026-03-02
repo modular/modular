@@ -14,9 +14,8 @@
 from random import random_ui64
 
 from gpu.host import DeviceContext, DeviceBuffer
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.index_tensor import _index_tensor_impl
 from testing import assert_equal, assert_true
 
@@ -37,7 +36,7 @@ def execute_index_tensor_test[
     ],
     expected_output_device_buffer: DeviceBuffer[data_type],
     ctx: DeviceContext,
-):
+) raises:
     # execute the kernel
     var actual_output_device = ctx.enqueue_create_buffer[
         expected_output_device.dtype
@@ -221,7 +220,7 @@ fn test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_index_tensor_DLRM(ctx)
         test_index_tensor_DLRM_batch(ctx)

@@ -92,7 +92,6 @@ from nn.mha_fa3_utils import (
 )
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
 from nn.mha_tile_scheduler import (
     MHASchedulerSynchronization,
     MHATileScheduler,
@@ -1253,14 +1252,12 @@ fn mha_sm100_dispatch[
     q_type: DType,
     KVType: MHAOperand,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     output_type: DType,
     MaxPromptLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
     //,
     config: MHAConfig,
     group: Int,
-    use_score_mod: Bool,
     ragged: Bool,
     sink: Bool,
     _is_cache_length_accurate: Bool,
@@ -1271,7 +1268,6 @@ fn mha_sm100_dispatch[
     v: KVType,
     num_rows_q: Int,
     mask: MaskType,
-    score_mod: ScoreModType,
     valid_length: DeviceBuffer[DType.uint32],
     max_prompt_len_arg: MaxPromptLenType,
     max_cache_valid_length_arg: Int,
@@ -1384,10 +1380,8 @@ fn mha_sm100_dispatch[
             MaxSeqLenType=MaxPromptLenType,
             PartitionType=PartitionType,
             MaskType=MaskType,
-            ScoreModType=ScoreModType,
             config=new_config,
             group=group,
-            use_score_mod=use_score_mod,
             ragged=ragged,
             SinkType=SinkType,
             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -1408,7 +1402,6 @@ fn mha_sm100_dispatch[
             sink_ptr,
             partition,
             mask,
-            score_mod,
             ctx,
         )
     else:
@@ -1421,10 +1414,8 @@ fn mha_sm100_dispatch[
             MaxSeqLenType=MaxPromptLenType,
             PartitionType=PartitionType,
             MaskType=MaskType,
-            ScoreModType=ScoreModType,
             config=new_config,
             group=group,
-            use_score_mod=use_score_mod,
             ragged=ragged,
             SinkType=SinkType,
             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -1445,7 +1436,6 @@ fn mha_sm100_dispatch[
             sink_ptr,
             partition,
             mask,
-            score_mod,
             ctx,
         )
 
@@ -1455,11 +1445,9 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     SchedulerType: MHATileScheduler,
     config: MHAConfig,
     group: Int,
-    use_score_mod: Bool,
     ragged: Bool,
     SinkType: OptionalPointer,
     _is_cache_length_accurate: Bool,
@@ -1503,7 +1491,6 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
     sink_weights: SinkType,
     partition: PartitionType,
     mask: MaskType,
-    score_mod: ScoreModType,
     ctx: DeviceContext,
 ) raises:
     comptime KVRowOffsetsNonNull = NonNullPointer[DType.uint32]
@@ -1519,10 +1506,8 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
             MaxSeqLenType=MaxSeqLenType,
             PartitionType=PartitionType,
             MaskType=MaskType,
-            ScoreModType=ScoreModType,
             config=config,
             group=group,
-            use_score_mod=use_score_mod,
             ragged=ragged,
             SinkType=SinkType,
             KVRowOffsetsType=KVRowOffsetsNonNull,
@@ -1544,7 +1529,6 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
             sink_weights,
             partition,
             mask,
-            score_mod,
             ctx,
         )
     else:
@@ -1556,10 +1540,8 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
             MaxSeqLenType=MaxSeqLenType,
             PartitionType=PartitionType,
             MaskType=MaskType,
-            ScoreModType=ScoreModType,
             config=config,
             group=group,
-            use_score_mod=use_score_mod,
             ragged=ragged,
             SinkType=SinkType,
             KVRowOffsetsType=KVRowOffsetsNull,
@@ -1581,7 +1563,6 @@ fn _mha_sm100_kv_input_row_offset_dispatch[
             sink_weights,
             partition,
             mask,
-            score_mod,
             ctx,
         )
 
@@ -1591,11 +1572,9 @@ fn _mha_sm100_valid_length_dispatch[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     SchedulerType: MHATileScheduler,
     config: MHAConfig,
     group: Int,
-    use_score_mod: Bool,
     ragged: Bool,
     SinkType: OptionalPointer,
     KVRowOffsetsType: OptionalPointer,
@@ -1636,7 +1615,6 @@ fn _mha_sm100_valid_length_dispatch[
     sink_weights: SinkType,
     partition: PartitionType,
     mask: MaskType,
-    score_mod: ScoreModType,
     ctx: DeviceContext,
 ) raises:
     comptime if ragged:
@@ -1649,10 +1627,8 @@ fn _mha_sm100_valid_length_dispatch[
             MaxSeqLenType=MaxSeqLenType,
             PartitionType=PartitionType,
             MaskType=MaskType,
-            ScoreModType=ScoreModType,
             config=config,
             group=group,
-            use_score_mod=use_score_mod,
             SinkType=SinkType,
             ValidLengthType=ValidLengthType,
             KVRowOffsetsType=KVRowOffsetsType,
@@ -1674,7 +1650,6 @@ fn _mha_sm100_valid_length_dispatch[
             sink_weights,
             partition,
             mask,
-            score_mod,
             ctx,
         )
     else:
@@ -1687,10 +1662,8 @@ fn _mha_sm100_valid_length_dispatch[
             MaxSeqLenType=MaxSeqLenType,
             PartitionType=PartitionType,
             MaskType=MaskType,
-            ScoreModType=ScoreModType,
             config=config,
             group=group,
-            use_score_mod=use_score_mod,
             SinkType=SinkType,
             ValidLengthType=ValidLengthType,
             KVRowOffsetsType=KVRowOffsetsType,
@@ -1712,7 +1685,6 @@ fn _mha_sm100_valid_length_dispatch[
             sink_weights,
             partition,
             mask,
-            score_mod,
             ctx,
         )
 
@@ -1722,11 +1694,9 @@ fn _mha_sm100_enqueue[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     SchedulerType: MHATileScheduler,
     config: MHAConfig,
     group: Int,
-    use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
     KVRowOffsetsType: OptionalPointer,
@@ -1767,7 +1737,6 @@ fn _mha_sm100_enqueue[
     sink_weights: SinkType,
     partition: PartitionType,
     mask: MaskType,
-    score_mod: ScoreModType,
     ctx: DeviceContext,
 ) raises:
     # the pack contains all possibly 0-sized objects
@@ -1775,11 +1744,9 @@ fn _mha_sm100_enqueue[
         KVLUTType,
         output_type,
         MaskType,
-        ScoreModType,
         SchedulerType,
         config,
         group,
-        use_score_mod,
         ValidLengthType,
         SinkType,
         KVRowOffsetsType,
@@ -1790,7 +1757,6 @@ fn _mha_sm100_enqueue[
     ]
     comptime PackType = Pack[
         MaskType,
-        ScoreModType,
         SchedulerType,
         ValidLengthType,
         SinkType,
@@ -1800,7 +1766,6 @@ fn _mha_sm100_enqueue[
     ]
     var pack: PackType = {
         mask,
-        score_mod,
         scheduler,
         valid_length,
         sink_weights,
@@ -1874,11 +1839,9 @@ fn _mha_sm100[
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     SchedulerType: MHATileScheduler,
     config: MHAConfig,
     group: Int,
-    use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
     KVRowOffsetsType: OptionalPointer,
@@ -1914,7 +1877,6 @@ fn _mha_sm100[
     num_keys_arg: UInt32,
     pack: Pack[
         MaskType,
-        ScoreModType,
         SchedulerType,
         ValidLengthType,
         SinkType,
@@ -2046,7 +2008,6 @@ fn _mha_sm100[
         transpose_b=False,
     ]
     mask = pack.mask
-    score_mod = pack.score_mod
     scheduler = pack.scheduler
     valid_length = pack.valid_length
     sink_weights = pack.sink_weights
@@ -2511,8 +2472,9 @@ fn _mha_sm100[
 
         mask_warp_row = warp_y * UInt32(WM)
         var scale_log2e: Scalar[accum_type] = (
-            scale.cast[accum_type]() if use_score_mod
-            or MaskType.apply_log2e_after_mask else scale.cast[accum_type]()
+            scale.cast[
+                accum_type
+            ]() if MaskType.apply_log2e_after_mask else scale.cast[accum_type]()
             * log2e
         )
 
@@ -2574,7 +2536,7 @@ fn _mha_sm100[
             var max_len: UInt32 = (
                 num_keys_arg if decoding else max_seq_len.as_uint32()
             )
-            _apply_mask[WM, MMA_N0, num_m_mmas, num_n_mmas, use_score_mod](
+            _apply_mask[WM, MMA_N0, num_m_mmas, num_n_mmas](
                 mask_warp_row,
                 position,
                 lane,
@@ -2583,7 +2545,6 @@ fn _mha_sm100[
                 kv_tile_start_row,
                 mask,
                 mask_status,
-                score_mod,
                 vectorize_p_reg_tile(),
             )
 

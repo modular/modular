@@ -37,7 +37,7 @@ from testing import TestSuite, assert_almost_equal
 from utils.index import Index, IndexList
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 

@@ -50,10 +50,9 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout._coord import Coord, Idx, RuntimeInt
+from layout import Coord, Idx, RuntimeInt, TileTensor
 from layout._layout import row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     GMEMLayout1D,
 )
@@ -720,7 +719,7 @@ fn string_to_list(string: String) raises -> List[Int]:
     return list^
 
 
-def main():
+def main() raises:
     comptime in_type = env_get_dtype["in_type", DType.bfloat16]()
     comptime out_type = env_get_dtype["out_type", DType.bfloat16]()
     comptime scaling_kind_str = env_get_string["scaling_kind", "1d2d"]()

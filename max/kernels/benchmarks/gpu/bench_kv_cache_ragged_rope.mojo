@@ -22,10 +22,16 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout._coord import Coord, Idx
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from layout._fillers import random
 from nn.fused_qk_rope import fused_qk_rope_ragged
 
@@ -62,7 +68,7 @@ def execute_kv_cache_ragged_rope[
     batch_size: Int,
     seq_len: Int,
     use_random_seq_lengths: Bool,
-):
+) raises:
     comptime max_seq_len = 2048
     var num_blocks = batch_size * 2
     var num_layers = 1
@@ -231,7 +237,7 @@ def execute_kv_cache_ragged_rope[
     )
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     comptime head_dim = env_get_int["head_dim", 128]()

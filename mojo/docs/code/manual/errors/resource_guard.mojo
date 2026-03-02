@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from reflection import *
+from std.reflection import *
 
 
 @fieldwise_init
@@ -41,8 +41,7 @@ struct ResourceGuard(ImplicitlyCopyable):
         print("Releasing:", self.name)
         print("  Error type:", type_name)
 
-        @parameter
-        if conforms_to(ErrType, Writable):
+        comptime if conforms_to(ErrType, Writable):
             print("  Message:", trait_downcast[Writable](err))
 
         return self.suppress_errors
@@ -52,7 +51,7 @@ fn use_connection() raises ConnectionError:
     raise ConnectionError("connection timed out")
 
 
-def main():
+def main() raises:
     # No error — calls __exit__(self)
     print("--- No error ---")
     with ResourceGuard("database"):

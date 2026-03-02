@@ -34,7 +34,12 @@ from sys import size_of
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout as LegacyLayout, UNKNOWN_VALUE
+from layout import (
+    Layout as LegacyLayout,
+    LayoutTensor,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.int_tuple import IntTuple
 from layout.tma_async import (
     SharedMemBarrier,
@@ -44,7 +49,7 @@ from layout.tma_async import (
 )
 from builtin.variadics import Variadic
 from buffer import Dim, DimList
-from layout._coord import (
+from layout.coord import (
     ComptimeInt,
     Coord,
     CoordLike,
@@ -53,7 +58,6 @@ from layout._coord import (
     _DimsToCoordLike,
 )
 from layout._layout import Layout, TensorLayout, row_major
-from layout._tile_tensor import TileTensor
 from linalg.structuring import SMemTileArray as LTSMemTileArray
 from memory import LegacyUnsafePointer, stack_allocation
 from utils.static_tuple import StaticTuple
@@ -231,8 +235,6 @@ Parameters:
 """
 
 from layout._layout import TensorLayout
-from layout import LayoutTensor, UNKNOWN_VALUE
-from layout import Layout as LegacyLayout
 
 
 @parameter
@@ -488,7 +490,7 @@ def create_tma_tile[
     tile_shape: IndexList[rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: LayoutTensor[...]) -> TmaOpType[
+](ctx: DeviceContext, tensor: LayoutTensor[...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
     """Create a TMATensorTile using new Layout types.
@@ -527,7 +529,7 @@ def create_tma_tile[
     tile_shape: IndexList[rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext, tensor: TileTensor[...]) -> TmaOpType[
+](ctx: DeviceContext, tensor: TileTensor[...]) raises -> TmaOpType[
     tensor.dtype, tma_tile_layout, tma_desc_layout
 ]:
     """TileTensor overload of create_tma_tile.
@@ -1343,115 +1345,3 @@ struct SMemTileArray2DRowMajor[
             address_space = AddressSpace.SHARED,
         ]()
         return Self(ptr)
-
-
-# ============================================================================
-# BlockwiseFP8TilePayload - TileTensor-based payload for blockwise FP8
-# ============================================================================
-
-# Import the TilePayload trait from tile_pipeline to ensure compatibility
-# with InputPipelineStorage which expects that specific trait
-from .tile_pipeline import TilePayload
-
-
-struct BlockwiseFP8TilePayload[
-    a_type: DType,
-    b_type: DType,
-    a_scales_type: DType,
-    # A tile dimensions
-    a_dim0: Int,
-    a_dim1: Int,
-    # B tile dimensions
-    b_dim0: Int,
-    b_dim1: Int,
-    # A-scales tile dimensions
-    a_scales_dim0: Int,
-    a_scales_dim1: Int,
-    # Pipeline stages
-    num_pipeline_stages: Int,
-](TilePayload, TrivialRegisterPassable):
-    """TileTensor-based tile payload for blockwise FP8 matmul.
-
-    Unlike BlockScaledTilePayload, this only stores A-scales in SMEM.
-    B-scales are read directly from global memory during the epilogue phase.
-
-    Parameters:
-        a_type: Data type for A matrix tiles.
-        b_type: Data type for B matrix tiles.
-        a_scales_type: Data type for A scale tiles.
-        a_dim0: First dimension for A tiles.
-        a_dim1: Second dimension for A tiles.
-        b_dim0: First dimension for B tiles.
-        b_dim1: Second dimension for B tiles.
-        a_scales_dim0: First dimension for A scale tiles.
-        a_scales_dim1: Second dimension for A scale tiles.
-        num_pipeline_stages: Number of input pipeline stages.
-    """
-
-    # A/B tiles use swizzled layouts for TMA/MMA
-    comptime ATileArray = SMemTileArray2D[
-        Self.a_type, Self.a_dim0, Self.a_dim1, Self.num_pipeline_stages, 128
-    ]
-    comptime BTileArray = SMemTileArray2D[
-        Self.b_type, Self.b_dim0, Self.b_dim1, Self.num_pipeline_stages, 128
-    ]
-    # A-scales are 1D vectors (1 x BM) - use row_major, NOT swizzled
-    comptime AScalesTileArray = SMemTileArray2DRowMajor[
-        Self.a_scales_type,
-        Self.a_scales_dim0,
-        Self.a_scales_dim1,
-        Self.num_pipeline_stages,
-    ]
-    comptime ATile = Self.ATileArray.Tile
-    comptime BTile = Self.BTileArray.Tile
-    comptime AScalesTile = Self.AScalesTileArray.Tile
-
-    var a_tiles: Self.ATileArray
-    var b_tiles: Self.BTileArray
-    var a_scales_tiles: Self.AScalesTileArray
-
-    @always_inline
-    fn __init__(
-        out self,
-        a_tiles: Self.ATileArray,
-        b_tiles: Self.BTileArray,
-        a_scales_tiles: Self.AScalesTileArray,
-    ):
-        self.a_tiles = a_tiles
-        self.b_tiles = b_tiles
-        self.a_scales_tiles = a_scales_tiles
-
-    @always_inline
-    fn get_tile[
-        k_group_size: Int
-    ](self, stage: UInt32, k_idx: Int) -> Tuple[
-        Self.ATile, Self.BTile, Self.AScalesTile
-    ]:
-        """Get A, B, A-scales tiles at the specified stage and k-group index."""
-        var idx = stage * UInt32(k_group_size) + UInt32(k_idx)
-        return (
-            self.a_tiles[idx],
-            self.b_tiles[idx],
-            self.a_scales_tiles[idx],
-        )
-
-    @always_inline
-    fn get_a_tile[
-        k_group_size: Int
-    ](self, stage: UInt32, k_idx: Int) -> Self.ATile:
-        """Get A tile at the specified stage and k-group index."""
-        return self.a_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
-
-    @always_inline
-    fn get_b_tile[
-        k_group_size: Int
-    ](self, stage: UInt32, k_idx: Int) -> Self.BTile:
-        """Get B tile at the specified stage and k-group index."""
-        return self.b_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]
-
-    @always_inline
-    fn get_a_scales_tile[
-        k_group_size: Int
-    ](self, stage: UInt32, k_idx: Int) -> Self.AScalesTile:
-        """Get A-scales tile at the specified stage and k-group index."""
-        return self.a_scales_tiles[stage * UInt32(k_group_size) + UInt32(k_idx)]

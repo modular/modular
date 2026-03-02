@@ -164,7 +164,7 @@ fn test_aligned_load_codegen_equivalence() raises:
         )
 
 
-def main():
+def main() raises:
     test_store_codegen_equivalence()
     test_load_codegen_equivalence()
     test_aligned_load_codegen_equivalence()

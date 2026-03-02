@@ -74,6 +74,6 @@ fn test_register_passable_trivial_type():
         item.say_hello()
 
 
-def main():
+def main() raises:
     test_register_passable_type()
     test_register_passable_trivial_type()

@@ -26,7 +26,6 @@ from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
@@ -49,7 +48,7 @@ def execute_ragged_flash_attention[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
@@ -295,7 +294,6 @@ def execute_ragged_flash_attention[
         k_cache_device,
         v_cache_device,
         CausalMask(),
-        IdentityScoreMod(),
         input_row_offsets_tensor,
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -308,7 +306,6 @@ def execute_ragged_flash_attention[
         k_cache_device,
         v_cache_device,
         CausalMask(),
-        IdentityScoreMod(),
         valid_lengths_tensor,
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -353,7 +350,7 @@ def execute_ragged_flash_attention[
                         raise e^
 
 
-def execute_flash_attention_suite(ctx: DeviceContext):
+def execute_flash_attention_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.float32, DType.bfloat16)
 
     for bs in [1, 16]:
@@ -387,7 +384,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     ](short_ce_seq_len, 1024, short_ce_cache_size, 2, 1, ctx)
 
 
-def test_flash_attention_with_sink_weights(ctx: DeviceContext):
+def test_flash_attention_with_sink_weights(ctx: DeviceContext) raises:
     var valid_lengths: List[Int] = [100, 200, 300]
     var max_seq_len_cache = 1024
     var cache_lengths: List[Int] = [100, 200, 300]
@@ -441,7 +438,7 @@ def test_flash_attention_with_sink_weights(ctx: DeviceContext):
     )
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         execute_flash_attention_suite(ctx)

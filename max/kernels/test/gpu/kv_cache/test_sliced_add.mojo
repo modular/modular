@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from gpu.host import DeviceContext
-from layout import Layout, RuntimeLayout
-from layout._coord import Coord
+from layout import Coord, Layout, RuntimeLayout, TileTensor
 from layout._layout import row_major
 from layout._utils import ManagedLayoutTensor
-from layout._tile_tensor import TileTensor
 from nn.slice import sliced_add
 
 from utils import IndexList
@@ -136,7 +134,7 @@ fn test_sliced_add_dtypes(ctx: DeviceContext) raises:
     test_sliced_add[DType.bfloat16, 16, 32, 8](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_sliced_add_boundary_cases(ctx)
         test_sliced_add_dtypes(ctx)

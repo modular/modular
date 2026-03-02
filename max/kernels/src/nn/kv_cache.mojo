@@ -23,10 +23,17 @@ from kv_cache.types import (
     KVCollectionT,
     PagedKVCacheCollection,
 )
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+)
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
@@ -35,10 +42,9 @@ from nn.flash_attention import (
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import MHAMask
-from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
 from nn.mha_utils import (
-    dispatch_mask_and_score_mod,
-    dispatch_materialized_mask_and_score_mod,
+    dispatch_mask,
+    dispatch_materialized_mask,
 )
 from nn.normalization import _rms_norm_impl
 from runtime.asyncrt import DeviceContextPtr
@@ -640,7 +646,6 @@ fn generic_flash_attention_kv_cache_padded[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
@@ -685,8 +690,6 @@ fn generic_flash_attention_kv_cache_padded[
         + collection_t.name_str
         + "."
         + mask_str
-        + "."
-        + score_mod_str
         + ".nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
@@ -697,7 +700,6 @@ fn generic_flash_attention_kv_cache_padded[
         return _flash_attention_dispatch[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -718,7 +720,6 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     //,
     *,
     target: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
     num_heads: Int = -1,
 ](
@@ -763,9 +764,7 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mha.padded.continuous_batching.tensor_mask."
-        + score_mod_str
-        + ".nhead_"
+        "mo.mha.padded.continuous_batching.tensor_mask.nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
@@ -773,7 +772,6 @@ fn generic_flash_attention_kv_cache_padded_materialized_mask[
     ):
         return _flash_attention_dispatch_materialized_mask[
             target=target,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -795,7 +793,6 @@ fn _flash_attention_dispatch[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[
@@ -820,32 +817,24 @@ fn _flash_attention_dispatch[
 
     @parameter
     @__copy_capture(k, v)
-    fn _dispatch_flash_attention[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q, k, v, mask, scale, output, sink_weights
             )
         else:
-            comptime use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-            gpu_flash_attention[use_score_mod=use_score_mod](
+            gpu_flash_attention[](
                 output,
                 q,
                 k,
                 v,
                 mask,
-                score_mod,
                 valid_lengths,
                 scale,
                 context.get_device_context(),
             )
 
-    return dispatch_mask_and_score_mod[
-        mask_str, score_mod_str, _dispatch_flash_attention
-    ]()
+    return dispatch_mask[mask_str, _dispatch_flash_attention]()
 
 
 fn _flash_attention_dispatch_materialized_mask[
@@ -854,7 +843,6 @@ fn _flash_attention_dispatch_materialized_mask[
     //,
     *,
     target: StaticString,
-    score_mod_str: String,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[
@@ -881,9 +869,7 @@ fn _flash_attention_dispatch_materialized_mask[
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
     @parameter
-    fn _dispatch_flash_attention[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         @always_inline
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
@@ -898,16 +884,12 @@ fn _flash_attention_dispatch_materialized_mask[
                     sink_weights,
                 )
             else:
-                comptime use_score_mod = not _type_is_eq[
-                    score_mod_t, IdentityScoreMod
-                ]()
-                gpu_flash_attention[use_score_mod=use_score_mod, sink=sink](
+                gpu_flash_attention[sink=sink](
                     output,
                     q,
                     k,
                     v,
                     mask,
-                    score_mod,
                     valid_lengths,
                     scale,
                     context.get_device_context(),
@@ -916,11 +898,7 @@ fn _flash_attention_dispatch_materialized_mask[
 
         unswitch[call_flash_attention](Bool(sink_weights))
 
-    return dispatch_materialized_mask_and_score_mod[
-        score_mod_str,
-        _dispatch_flash_attention,
-        Int(collection_t.kv_params.num_heads),
-    ](
+    return dispatch_materialized_mask[_dispatch_flash_attention](
         LayoutTensor[mask_nd.dtype, mask_nd.layout, MutAnyOrigin](
             mask_nd.ptr,
             RuntimeLayout[mask_nd.layout].row_major(
@@ -957,7 +935,7 @@ def rms_norm_kv_cache_ragged_paged[
     total_seq_len: UInt32,
     input_row_offsets: LayoutTensor[DType.uint32, ...],
     context: DeviceContextPtr,
-):
+) raises:
     """Performs RMSNorm in place on new entries in the key cache.
 
     This is done by first creating the ragged tensor weight_shape
@@ -1114,7 +1092,7 @@ def _print_cache[
     kv_collection: collection_t,
     valid_lengths: LayoutTensor[DType.uint32, ...],
     is_print_compact: Bool,
-) -> None:
+) raises -> None:
     """Prints a cache buffer, abbreviating output with ellipses."""
     comptime kv_params = collection_t.CacheType.kv_params
 
@@ -1156,7 +1134,7 @@ def print_kv_cache_cont_batch_generic_cpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
@@ -1188,7 +1166,7 @@ def print_kv_cache_paged_generic_cpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
 
@@ -1219,7 +1197,7 @@ def print_kv_cache_cont_batch_generic_gpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin
@@ -1326,7 +1304,7 @@ def print_kv_cache_paged_generic_gpu[
     layer_idx: UInt32,
     is_print_compact: Bool,
     context: DeviceContextPtr,
-):
+) raises:
     var blocks_ptr = alloc[Scalar[dtype]](kv_collection.blocks.size())
     var blocks_host_nd = LayoutTensor[
         type_of(kv_collection.blocks).dtype, Layout.row_major[6](), MutAnyOrigin

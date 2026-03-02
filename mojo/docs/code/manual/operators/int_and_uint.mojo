@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     var a_int: Int = -7
     var b_int: Int = 4
     sum_int = a_int + b_int  # Result is type Int

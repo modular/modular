@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import _Global
-from sys._io import stdout
+from std.ffi import _Global
+from std.sys._io import stdout
 
 
 fn _is_stdout_tty() -> Bool:

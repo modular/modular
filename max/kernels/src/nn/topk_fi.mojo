@@ -27,7 +27,7 @@ from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
-from layout._coord import (
+from layout.coord import (
     Coord,
     CoordLike,
     Idx,
@@ -36,7 +36,7 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import row_major, TensorLayout, Layout
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from math import ceildiv, gcd, exp
 from memory import stack_allocation
 from os import Atomic
@@ -927,6 +927,10 @@ fn TopKTopPSamplingFromProbKernel[
     var bx = Int(block_idx.x)
     var tx = Int(thread_idx.x)
 
+    var row_idx = bx
+    if indices:
+        row_idx = Int(indices.load(bx))
+
     var sampled_id_sram = stack_allocation[
         1, Int, address_space = AddressSpace.SHARED
     ]()
@@ -936,14 +940,14 @@ fn TopKTopPSamplingFromProbKernel[
 
     var seed_val = UInt64(0)
     if rng_seed:
-        seed_val = rng_seed[0]
+        seed_val = rng_seed[row_idx]
+
     var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
-    var k = top_k_val
-    if top_k_arr:
-        k = Int(top_k_arr.load(bx))
-    var row_idx = bx
-    if indices:
-        row_idx = Int(indices.load(bx))
+
+    var k = Int(top_k_arr.load(row_idx)) if top_k_arr else top_k_val
+    if k == -1:
+        k = top_k_val
+
     var p = top_p_val
     if top_p_arr:
         p = top_p_arr[row_idx]
@@ -1015,8 +1019,7 @@ fn TopKTopPSamplingFromProbKernel[
             var probs_gt_pivot_1_values = SIMD[DType.float32, vec_size]()
             var probs_gt_pivot_1_counts = SIMD[DType.int32, vec_size]()
 
-            @parameter
-            for j in range(vec_size):
+            comptime for j in range(vec_size):
                 var idx = (i * block_size + tx) * vec_size + j
                 var is_valid = idx < d
 
@@ -1210,8 +1213,7 @@ fn topk_topp_sampling_from_prob[
 
     @parameter
     fn dispatch_vec_size[deterministic: Bool]() raises:
-        @parameter
-        for param_vec_size in [16, 8, 4, 2, 1]:
+        comptime for param_vec_size in [16, 8, 4, 2, 1]:
             if vec_size == param_vec_size:
                 return launch_kernel[param_vec_size, deterministic]()
 

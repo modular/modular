@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from nn.gather_scatter import gather_elements
 from testing import assert_equal
 
 
-def main():
+def main() raises:
     fn test_gather_ax1() raises:
         print("== test_gather_ax1")
 

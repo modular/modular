@@ -98,13 +98,21 @@ from max.interfaces import (
 )
 from max.interfaces.tokens import TokenBuffer
 from max.kv_cache import PagedKVCacheManager
+from max.kv_cache.registry import load_multi_kv_managers
 from max.nn import kernels
-from max.nn.kv_cache import KVCacheInputsSequence, KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheInputsSequence,
+    KVCacheParams,
+    MultiKVCacheParams,
+)
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 
-from .text_generation import TextGenerationPipelineInterface, load_kv_manager
+from .text_generation import (
+    TextGenerationPipelineInterface,
+    load_kv_manager,
+)
 from .utils import (
     get_eos_tokens,
     get_weight_paths,
@@ -133,6 +141,8 @@ from ..sampling import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+_MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 
 
 @runtime_checkable
@@ -414,14 +424,27 @@ class OverlapTextGenerationPipeline(
 
         available_cache_memory = model_config.kv_cache._available_cache_memory
         kv_params = self._pipeline_model.kv_params
-        assert isinstance(kv_params, KVCacheParams)
-        self._kv_manager: PagedKVCacheManager = load_kv_manager(
-            params=kv_params,
-            max_batch_size=self._pipeline_config.max_batch_size,
-            max_seq_len=self._pipeline_model.max_seq_len,
-            session=session,
-            available_cache_memory=available_cache_memory,
-        )
+        if isinstance(kv_params, MultiKVCacheParams):
+            kv_managers = load_multi_kv_managers(
+                params=kv_params,
+                max_batch_size=self._pipeline_config.max_batch_size,
+                max_seq_len=self._pipeline_model.max_seq_len,
+                session=session,
+                available_cache_memory=available_cache_memory,
+            )
+            self._kv_manager = kv_managers[0]
+
+            # Temporary hack to pass extra cache managers to PipelineModel
+            self._pipeline_model.extra_kv_managers = kv_managers[1:]
+        else:
+            assert isinstance(kv_params, KVCacheParams)
+            self._kv_manager = load_kv_manager(
+                params=kv_params,
+                max_batch_size=self._pipeline_config.max_batch_size,
+                max_seq_len=self._pipeline_model.max_seq_len,
+                session=session,
+                available_cache_memory=available_cache_memory,
+            )
 
         # Load sampler.
         self._sampler: Model = session.load(
@@ -440,6 +463,8 @@ class OverlapTextGenerationPipeline(
         # Set previous asynchronously executing batch to None.
         self._prev_batch: AsyncBatch[TextGenerationContextType] | None = None
         self._graph_capture_runner: ServeGraphCaptureRunner | None = None
+        # set a default graph capture size, 128
+        self._max_graph_capture_batch_size: int = _MAX_GRAPH_CAPTURE_BATCH_SIZE
 
     @property
     def pipeline_config(self) -> PipelineConfig:
@@ -512,14 +537,28 @@ class OverlapTextGenerationPipeline(
                 "device_graph_capture requires max_batch_size to be resolved."
             )
 
+        max_capture_batch_size = min(
+            self._pipeline_config.max_batch_size,
+            _MAX_GRAPH_CAPTURE_BATCH_SIZE,
+        )
+        if max_capture_batch_size < self._pipeline_config.max_batch_size:
+            logger.warning(
+                "Capping graph capture batch size to %d "
+                "(max_batch_size=%d). Decode batches above %d will fall "
+                "back to eager execution.",
+                max_capture_batch_size,
+                self._pipeline_config.max_batch_size,
+                max_capture_batch_size,
+            )
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
             warmup_model_inputs=self._warmup_model_inputs,
             execute_model=self._pipeline_model.execute,
-            max_batch_size=self._pipeline_config.max_batch_size,
+            max_batch_size=max_capture_batch_size,
             decode_max_cache_length_upper_bound=self._pipeline_model.max_seq_len,
         )
         self._graph_capture_runner = graph_capture_runner
+        self._max_graph_capture_batch_size = max_capture_batch_size
         logger.info("Starting serve device graph capture warmup.")
         graph_capture_runner.warmup_pre_ready()
         logger.info("Completed serve device graph capture warmup.")
@@ -533,6 +572,7 @@ class OverlapTextGenerationPipeline(
             runner is not None
             and bool(inputs)
             and inputs.batch_type == BatchType.TG
+            and len(inputs.flat_batch) <= self._max_graph_capture_batch_size
         )
         debug_verify_replay_enabled = (
             use_graph_capture_replay
@@ -754,11 +794,14 @@ class OverlapTextGenerationPipeline(
     def release(self, request_id: RequestID) -> None:
         """Mark the context as complete, releasing the cache slot from the KV manager.
 
-        Note: KV cache lifecycle is now managed by the scheduler. This method
-        is kept for interface compatibility but is a no-op for regular pipelines.
+        Note: Primary KV cache lifecycle is managed by the scheduler. This method
+        handles extra KV caches managed by the pipeline model (e.g., indexer cache
+        for DeepSeekV3.2).
         """
-        # KV cache release is handled by the scheduler via batch_constructor
-        pass
+        # Primary KV cache release is handled by the scheduler via batch_constructor.
+        # Pipeline model may have extra KV caches to release.
+        if hasattr(self._pipeline_model, "release"):
+            self._pipeline_model.release(request_id)
 
     @property
     def kv_manager(self) -> PagedKVCacheManager:

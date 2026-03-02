@@ -92,7 +92,7 @@ from gpu.host._amdgpu_hip import HIP
 from gpu.host._nvidia_cuda import CUDA
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from runtime.tracing import Trace, TraceLevel
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from buffer import DimList, NDBuffer
 from utils import IndexList
 from utils.variant import Variant
@@ -464,8 +464,39 @@ fn matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
-    comptime if handle.resolved_backend is Backend.CUBLAS:
-        with Trace[TraceLevel.OP]("_cublas_matmul"):
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(
+            trace_arg(
+                "A",
+                IndexList[2](a_tensor.dim(0), a_tensor.dim(1)),
+                a_type,
+            ),
+            ";",
+            trace_arg(
+                "B",
+                IndexList[2](b_tensor.dim(0), b_tensor.dim(1)),
+                b_type,
+            ),
+            ";",
+            trace_arg(
+                "C",
+                IndexList[2](c_tensor.dim(0), c_tensor.dim(1)),
+                c_type,
+            ),
+            ";transpose_a=",
+            transpose_a,
+            ";transpose_b=",
+            transpose_b,
+        )
+
+    with Trace[TraceLevel.OP, target = StaticString("gpu")](
+        String(handle.resolved_backend, "_matmul"),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        comptime if handle.resolved_backend is Backend.CUBLAS:
             _cublas_matmul[use_tf32=use_tf32](
                 ctx,
                 handle._get_cublas(),
@@ -478,8 +509,7 @@ fn matmul[
                 alpha=alpha,
                 beta=beta,
             )
-    elif handle.resolved_backend is Backend.ROCBLAS:
-        with Trace[TraceLevel.OP]("_rocblas_matmul"):
+        elif handle.resolved_backend is Backend.ROCBLAS:
             _rocblas_matmul[use_tf32=use_tf32](
                 ctx,
                 handle._get_rocblas(),
@@ -492,8 +522,7 @@ fn matmul[
                 alpha=alpha,
                 beta=beta,
             )
-    elif handle.resolved_backend is Backend.CUBLASLT:
-        with Trace[TraceLevel.OP]("_cublasLt_matmul"):
+        elif handle.resolved_backend is Backend.CUBLASLT:
             _cublasLt_matmul(
                 ctx,
                 handle._get_cublas().bitcast[Context](),
@@ -508,8 +537,7 @@ fn matmul[
                 alpha=alpha,
                 beta=beta,
             )
-    elif handle.resolved_backend is Backend.HIPBLASLT:
-        with Trace[TraceLevel.OP]("_hipblasLt_matmul"):
+        elif handle.resolved_backend is Backend.HIPBLASLT:
             _hipblasLt_matmul(
                 ctx,
                 handle._get_hipblaslt(),
@@ -523,12 +551,12 @@ fn matmul[
                 beta=beta,
                 batch_size=batch_size,
             )
-    else:
-        raise Error(
-            "the backend '",
-            handle.backend,
-            "' is not currently supported",
-        )
+        else:
+            raise Error(
+                "the backend '",
+                handle.backend,
+                "' is not currently supported",
+            )
 
 
 fn matmul[

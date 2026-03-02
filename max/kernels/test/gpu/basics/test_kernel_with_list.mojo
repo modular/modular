@@ -47,6 +47,6 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
         print("Res=", res_host[0])
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_kernel_with_list(ctx)

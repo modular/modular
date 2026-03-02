@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._coord import Coord
+from layout import Coord, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.tile import tile
 from testing import assert_equal
 
@@ -900,7 +899,7 @@ fn test_tile_1d() raises:
         assert_equal(output[i], expected[i])
 
 
-def main():
+def main() raises:
     test_tile_1d()
     test_tile_eg1()
     test_tile_eg2()

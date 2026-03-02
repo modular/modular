@@ -18,9 +18,8 @@ from os import abort
 
 import benchmark
 from benchmark import Unit, keep
-from layout._coord import Coord
+from layout import Coord, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.pad import pad_constant, pad_reflect
 from python import Python
 from testing import assert_true
@@ -215,10 +214,10 @@ fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
 
 
 # CHECK-LABEL: test_pad_iterative
-def main():
+def main() raises:
     print("== test_pad_iterative")
 
-    def all[N: Int]():
+    def all[N: Int]() raises:
         bench[test_pad_constant_nd, 1, N, "test_pad_constant_1d"]()
         bench[test_pad_constant_nd, 2, N, "test_pad_constant_2d"]()
         bench[test_pad_constant_nd, 3, N, "test_pad_constant_3d"]()

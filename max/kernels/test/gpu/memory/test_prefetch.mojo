@@ -27,7 +27,7 @@ fn do_prefetch[
     prefetch(addr + offset)
 
 
-def test_prefetch_mi300x():
+def test_prefetch_mi300x() raises:
     assert_true(
         "llvm.prefetch "
         in _compile_code[
@@ -56,7 +56,7 @@ def test_prefetch_mi300x():
     )
 
 
-def test_prefetch_nvidia():
+def test_prefetch_nvidia() raises:
     assert_true(
         "prefetch.global.L2 "
         in _compile_code[
@@ -85,5 +85,5 @@ def test_prefetch_nvidia():
     )
 
 
-def main():
+def main() raises:
     test_prefetch_nvidia()

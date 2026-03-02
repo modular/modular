@@ -253,7 +253,7 @@ fn test[
     _ = c_device_ref_buffer^
 
 
-def main():
+def main() raises:
     var bench = Bench()
 
     with DeviceContext() as ctx:

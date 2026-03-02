@@ -17,9 +17,8 @@ from sys import env_get_dtype
 from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.normalization import layer_norm_gpu, rms_norm_gpu
 
 from utils.index import Index, IndexList
@@ -194,7 +193,7 @@ fn bench_rms_norm_gpu[
     gamma_h.free()
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
     comptime shape = int_list_to_tuple[env_get_shape["shape", "256x256"]()]()
 

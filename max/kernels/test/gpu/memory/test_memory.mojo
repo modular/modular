@@ -53,6 +53,6 @@ fn test_memset_async(ctx: DeviceContext) raises:
     test_memset[DType.int8](3)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_memset_async(ctx)

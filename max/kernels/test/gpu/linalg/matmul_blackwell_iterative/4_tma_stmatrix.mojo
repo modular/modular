@@ -385,8 +385,8 @@ fn kernel_4[
         c_tma_op.async_store(
             c_tma_tile,
             (
-                block_idx.x * UInt(BN) + thread_idx.x * UInt(TMA_BN),
-                block_idx.y * UInt(BM),
+                Int(block_idx.x) * BN + Int(thread_idx.x) * TMA_BN,
+                Int(block_idx.y) * BM,
             ),
         )
         c_tma_op.commit_group()
@@ -558,7 +558,7 @@ def test_blackwell_kernel_4[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     print(M, "x", N, "x", K)
 
     comptime a_layout = Layout.row_major(M, K)
@@ -689,7 +689,7 @@ def test_blackwell_kernel_4[
     b_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             # Run the benchmark

@@ -18,10 +18,17 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
-from layout._coord import Coord, Idx
+from layout import (
+    Coord,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import Layout as TileLayout, row_major
-from layout._tile_tensor import TileTensor
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import (
@@ -35,7 +42,7 @@ from testdata.fused_qk_rope_goldens import (
 from utils import IndexList
 
 
-def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
+def test_fused_qk_rope[rope_dim: Int, dtype: DType]() raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -267,7 +274,7 @@ def test_fused_qk_rope[rope_dim: Int, dtype: DType]() -> None:
     _ = kv_cache_block_buffer^
 
 
-def main() -> None:
+def main() raises -> None:
     # Full head RoPE
     test_fused_qk_rope[8, DType.float32]()
     # Partial RoPE (last 4 elements of each head)

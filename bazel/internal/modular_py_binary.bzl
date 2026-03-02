@@ -25,6 +25,7 @@ def modular_py_binary(
         tags = [],
         args = [],
         testonly = False,
+        target_compatible_with = [],
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -43,6 +44,7 @@ def modular_py_binary(
         tags: See upstream py_binary docs
         args: See upstream py_binary docs
         testonly: Only test targets can depend on this target
+        target_compatible_with: https://bazel.build/extending/platforms#skipping-incompatible-targets
         **kwargs: Extra arguments passed through to py_binary
     """
     if len(imports) > 1:
@@ -71,6 +73,7 @@ def modular_py_binary(
     collect_transitive_mojoinfo(
         name = transitive_mojo_deps,
         deps_to_scan = deps,
+        target_compatible_with = target_compatible_with,
         testonly = testonly,
     )
 
@@ -78,6 +81,7 @@ def modular_py_binary(
         name = mojo_test_env_name,
         data = mojo_deps + [transitive_mojo_deps],
         short_path = True,
+        target_compatible_with = target_compatible_with,
         testonly = testonly,
     )
 
@@ -95,6 +99,7 @@ def modular_py_binary(
         tags = tags,
         args = args,
         testonly = testonly,
+        target_compatible_with = target_compatible_with,
         **kwargs
     )
 

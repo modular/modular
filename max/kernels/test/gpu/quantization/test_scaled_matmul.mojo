@@ -251,7 +251,7 @@ fn test_matmul_dynamic_scaled_fp8[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_matmul_dynamic_scaled_fp8[
             in_dtype = DType.float8_e4m3fn,

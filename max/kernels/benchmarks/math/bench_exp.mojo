@@ -388,7 +388,7 @@ fn mlas_llvm_ldexp[
     return max(llvm_ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
 
 
-def accuracy_test():
+def accuracy_test() raises:
     comptime delta_min = -16
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
@@ -418,7 +418,7 @@ def accuracy_test():
         print("deltas", i + delta_min, deltas[i])
 
 
-def main():
+def main() raises:
     var args = argv()
     for arg in args:
         if arg == "-c":

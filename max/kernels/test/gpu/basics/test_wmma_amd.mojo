@@ -422,7 +422,7 @@ fn run_mma_fp32_bf16[
     assert_equal(errors, 0)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_mma_fp32_fp32(16, 16, 16, -100, 100, ctx)
         run_mma_fp32_fp32(1024, 1024, 1024, -100, 100, ctx)

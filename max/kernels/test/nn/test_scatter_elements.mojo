@@ -18,7 +18,7 @@ from testing import assert_equal
 from utils import IndexList
 
 
-def main():
+def main() raises:
     fn test_scatter_ax0() raises:
         print("== test_scatter_ax0")
 

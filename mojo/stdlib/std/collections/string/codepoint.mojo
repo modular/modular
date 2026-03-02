@@ -18,11 +18,12 @@ values in the ranges `0` to `0xD7FF` and `0xE000` to `0x10FFFF` inclusive.
 """
 
 
-from sys.intrinsics import likely
+from std.sys.intrinsics import likely
 
-from bit import count_leading_zeros
-from bit._mask import splat
-from os import abort
+from std.bit import count_leading_zeros
+from std.bit._mask import splat
+import std.format._utils as fmt
+from std.os import abort
 
 
 @always_inline
@@ -60,8 +61,8 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     Example:
 
     ```mojo
-    from collections.string import Codepoint
-    from testing import assert_true
+    from std.collections.string import Codepoint
+    from std.testing import assert_true
 
     # Create a codepoint from a character
     var c = Codepoint.ord('A')
@@ -316,6 +317,18 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
         w.write_string(result)
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Codepoint` to a writer.
+
+        Writes the codepoint in the format `Codepoint(N)` where N is the
+        Unicode scalar value.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Codepoint").fields(self._scalar_value)
+
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
@@ -410,7 +423,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         For example, check if a string contains only whitespace:
 
         ```mojo
-        from testing import assert_true, assert_false
+        from std.testing import assert_true, assert_false
 
         # ASCII space characters
         assert_true(Codepoint.ord(" ").is_python_space())

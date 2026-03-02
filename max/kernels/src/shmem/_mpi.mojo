@@ -86,13 +86,17 @@ comptime MPI_THREAD_MULTIPLE = 3
 # ===-----------------------------------------------------------------------===#
 
 
-fn MPI_Init(mut argc: Int, mut argv: VariadicList[StaticString]) raises:
+fn MPI_Init(
+    mut argc: Int, mut argv: Span[StaticString, StaticConstantOrigin]
+) raises:
     """Initialize MPI."""
     var result = _get_mpi_function[
         "MPI_Init",
         fn(
             UnsafePointer[Int, MutAnyOrigin],
-            UnsafePointer[VariadicList[StaticString], MutAnyOrigin],
+            UnsafePointer[
+                Span[StaticString, StaticConstantOrigin], MutAnyOrigin
+            ],
         ) -> c_int,
     ]()(UnsafePointer(to=argc), UnsafePointer(to=argv))
     if result != 0:
@@ -101,7 +105,7 @@ fn MPI_Init(mut argc: Int, mut argv: VariadicList[StaticString]) raises:
 
 fn MPI_Init_thread(
     mut argc: Int,
-    mut argv: VariadicList[StaticString],
+    mut argv: Span[StaticString, StaticConstantOrigin],
     required: c_int,
     provided: UnsafePointer[c_int, MutAnyOrigin],
 ) raises:
@@ -110,7 +114,9 @@ fn MPI_Init_thread(
         "MPI_Init_thread",
         fn(
             UnsafePointer[Int, MutAnyOrigin],
-            UnsafePointer[VariadicList[StaticString], MutAnyOrigin],
+            UnsafePointer[
+                Span[StaticString, StaticConstantOrigin], MutAnyOrigin
+            ],
             c_int,
             UnsafePointer[c_int, MutAnyOrigin],
         ) -> c_int,

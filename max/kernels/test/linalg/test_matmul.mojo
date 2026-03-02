@@ -63,7 +63,7 @@ def test_matmul[
     transpose_b: Bool,
     b_packed: Bool,
     saturated: Bool,
-](m: Int, n: Int, k: Int, kernel_type_m: Int):
+](m: Int, n: Int, k: Int, kernel_type_m: Int) raises:
     var a_ptr = UnsafePointer[Scalar[a_type],].alloc(m * k, alignment=alignment)
     var b_ptr = UnsafePointer[Scalar[b_type],].alloc(k * n, alignment=alignment)
     var b = NDBuffer[b_type, 2, _, b_shape](b_ptr, Index(k, n))
@@ -204,7 +204,7 @@ def test_matmul[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
-](m: Int, n: Int, k: Int):
+](m: Int, n: Int, k: Int) raises:
     comptime a_shape = DimList.create_unknown[2]()
     comptime b_shape = DimList.create_unknown[2]()
     comptime c_shape = DimList.create_unknown[2]()
@@ -228,7 +228,7 @@ def test_shapes[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
-]():
+]() raises:
     @parameter
     fn test_shapes_helper(m: Int, n: Int, k: Int) raises:
         test_matmul[
@@ -256,7 +256,7 @@ def test_shapes[
     test_shapes_helper(384, 768, 1)
 
 
-def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
+def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]() raises:
     comptime if b_packed and CompilationTarget.is_macos():
         return
 
@@ -285,7 +285,7 @@ def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
         ]()
 
 
-def main():
+def main() raises:
     test_types[b_packed=False, saturated=False, mixed_kernels=False]()
     test_types[b_packed=True, saturated=False, mixed_kernels=False]()
     test_types[b_packed=False, saturated=True, mixed_kernels=False]()

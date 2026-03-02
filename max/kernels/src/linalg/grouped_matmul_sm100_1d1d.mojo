@@ -390,8 +390,8 @@ fn copy_accum_to_gmem[
                         c_tma_op.async_store(
                             c_smem_warp_tile,
                             (
-                                UInt(coord_m + UInt32(i * swizzle_width)),
-                                UInt(coord_n),
+                                Int(coord_m + UInt32(i * swizzle_width)),
+                                Int(coord_n),
                             ),
                         )
                     c_tma_op.commit_group()
@@ -542,8 +542,8 @@ fn copy_accum_to_gmem[
                     c_tma_op.async_store(
                         c_smem_split,
                         (
-                            UInt(coord_n),
-                            UInt(coord_m),
+                            Int(coord_n),
+                            Int(coord_m),
                         ),
                     )
                     c_tma_op.commit_group()
@@ -859,18 +859,15 @@ fn load_AB[
 
     var stage = load_mma_pipeline.producer_stage()
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
-    var expert_offset_vec = UInt(expert_id) * UInt(scheduler.static_MN)
-    comptime assert expert_offset_vec.size == 1
-    var a_gmem_slice_coord = (
+    var expert_offset: Int = Int(expert_id) * scheduler.static_MN
+    var a_gmem_slice_coord = Int(
         peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
-    ) + (expert_offset_vec if config.AB_swapped else 0)
-    var b_gmem_slice_coord_vec = (
+    ) + (expert_offset if config.AB_swapped else 0)
+    var b_gmem_slice_coord: Int = Int(
         peer_cta_coord[1] * UInt(b_tma_rows)
         + peer_cta_coord[0] * UInt(BN)
         + work_tile_coord[1]
-    ) + (expert_offset_vec if not config.AB_swapped else 0)
-    comptime assert b_gmem_slice_coord_vec.size == 1
-    var b_gmem_slice_coord = b_gmem_slice_coord_vec[0]
+    ) + (expert_offset if not config.AB_swapped else 0)
 
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
@@ -896,14 +893,14 @@ fn load_AB[
             a_tma_op.async_multicast_load[cta_group](
                 a_smem_slice,
                 tma_mbar[0],
-                (UInt(iter_idx + j) * UInt(BK), a_gmem_slice_coord),
+                (Int(iter_idx + j) * BK, a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
             b_tma_op.async_multicast_load[cta_group](
                 b_smem_slice,
                 tma_mbar[0],
-                (UInt(iter_idx + j) * UInt(BK), UInt(b_gmem_slice_coord)),
+                (Int(iter_idx + j) * BK, b_gmem_slice_coord),
                 b_multicast_mask,
             )
 
@@ -912,13 +909,11 @@ fn load_AB[
             ]
             comptime assert group_scale_offset_vec.size == 1
             var group_scale_offset = group_scale_offset_vec[0]
-            comptime assert expert_offset_vec.size == 1
-            var expert_offset = expert_offset_vec[0]
             var a_m: Int
             var b_n: Int
             if config.AB_swapped:
                 a_m = ufloordiv(
-                    Int(work_tile_coord[0]) + Int(expert_offset),
+                    Int(work_tile_coord[0]) + expert_offset,
                     SF_MN_GROUP_SIZE,
                 )
                 b_n = ufloordiv(
@@ -929,7 +924,7 @@ fn load_AB[
                     Int(work_tile_coord[0]), SF_MN_GROUP_SIZE
                 ) + Int(group_scale_offset)
                 b_n = ufloordiv(
-                    Int(work_tile_coord[1]) + Int(expert_offset),
+                    Int(work_tile_coord[1]) + expert_offset,
                     SF_MN_GROUP_SIZE,
                 )
 

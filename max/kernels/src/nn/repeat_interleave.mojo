@@ -14,9 +14,8 @@
 from sys import simd_width_of
 
 from algorithm.functional import elementwise
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from tensor._indexing import _row_major_strides
 
 from utils import IndexList

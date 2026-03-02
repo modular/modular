@@ -1159,8 +1159,7 @@ struct PagedKVCache[
         """Returns the base pointer to the scales tensor, or null if scales
         are not set."""
 
-        @parameter
-        if Self.quantization_enabled:
+        comptime if Self.quantization_enabled:
             return self.scales.value().ptr
         return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]()
 

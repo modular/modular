@@ -28,7 +28,7 @@ from layout.runtime_tuple import (
 from testing import assert_equal
 
 
-def test_construct():
+def test_construct() raises:
     print("== test_construct")
     var t1 = RuntimeTuple[IntTuple(1, 44, IntTuple(1, 102))]()
     assert_equal(String(t1), "(1, 44, (1, 102))")
@@ -40,7 +40,7 @@ def test_construct():
     assert_equal(String(t3), "(-1, 1)")
 
 
-def test_concat():
+def test_concat() raises:
     print("== test_concat")
     var lhs = RuntimeTuple[
         IntTuple(1, UNKNOWN_VALUE, IntTuple(1, UNKNOWN_VALUE))
@@ -53,13 +53,13 @@ def test_concat():
     print(lhs.concat(rhs))
 
 
-def test_flatten():
+def test_flatten() raises:
     print("== test_flatten")
     var t1 = RuntimeTuple[IntTuple(1, 44, IntTuple(1, 102))]()
     assert_equal(String(t1.flatten()), "(1, 44, 1, 102)")
 
 
-def test_prefix_product():
+def test_prefix_product() raises:
     print("== test_prefix_product")
     var t1 = RuntimeTuple[IntTuple(UNKNOWN_VALUE, IntTuple(2, 4))](8, 2, 4)
     var t1_p = prefix_product(t1)
@@ -67,7 +67,7 @@ def test_prefix_product():
     assert_equal(String(t1_p.S), "(1, (-1, -1))")
 
 
-def test_idx2crd():
+def test_idx2crd() raises:
     print("== test_idx2crd")
 
     comptime tuple = IntTuple(2, IntTuple(2, 4))
@@ -81,7 +81,7 @@ def test_idx2crd():
         )
 
 
-def test_crd2idx():
+def test_crd2idx() raises:
     print("== test_crd2idx")
     comptime shape_t = IntTuple(4, 4)
     comptime stride_t = IntTuple(4, 1)
@@ -100,7 +100,7 @@ def test_crd2idx():
             assert_equal(rt_result, UInt64(expected))
 
 
-def test_shape_div():
+def test_shape_div() raises:
     print("== test_shape_div")
     comptime shape_a_1 = IntTuple(4, 4)
     comptime shape_b_1 = IntTuple(2, 1)
@@ -123,7 +123,7 @@ def test_shape_div():
     assert_equal(String(shape_div(shape_a_r_2, shape_b_r_2).S), "(-1, -1)")
 
 
-def test_product_flatten():
+def test_product_flatten() raises:
     print("== test_product_flatten")
     var t1 = RuntimeTuple[
         IntTuple(4, UNKNOWN_VALUE, IntTuple(7, UNKNOWN_VALUE))
@@ -154,7 +154,7 @@ def test_product_flatten():
     assert_equal(String(t4_p), "24")
 
 
-def main():
+def main() raises:
     test_construct()
     test_concat()
     test_flatten()

@@ -350,8 +350,8 @@ llama_arch = SupportedArchitecture(
     # Quantization support
     default_encoding="q4_k",
     supported_encodings={
-        "bfloat16": ["paged"],
-        "q4_k": ["paged"],
+        "bfloat16",
+        "q4_k",
     },
 
     # Implementation classes
@@ -395,7 +395,7 @@ Set the `default_encoding` to the quantization format you want to use by
 default. `supported_encodings` maps quantization formats to compatible KV cache
 strategies. For example, if you are using a model that supports `q4_k`
 quantization, you will set
-`supported_encodings={"q4_k": ["paged"]}`. For
+`supported_encodings={"q4_k"}`. For
 more information on quantization, see the
 [quantization guide](/max/graph/quantize).
 
@@ -544,7 +544,7 @@ my_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     pipeline_model=MyModel,
     tokenizer=TextTokenizer,

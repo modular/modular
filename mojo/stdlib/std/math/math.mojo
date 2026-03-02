@@ -15,11 +15,11 @@
 You can import these APIs from the `math` package. For example:
 
 ```mojo
-from math import floor
+from std.math import floor
 ```
 """
 
-from sys import (
+from std.sys import (
     CompilationTarget,
     bit_width_of,
     is_amd_gpu,
@@ -31,18 +31,18 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys._assembly import inlined_assembly
-from ffi import _external_call_const
-from sys.info import _is_sm_9x_or_newer, is_32bit
+from std.sys._assembly import inlined_assembly
+from std.ffi import _external_call_const
+from std.sys.info import _is_sm_9x_or_newer, is_32bit
 
-from algorithm import vectorize
-from bit import count_trailing_zeros
-from builtin.dtype import _integral_type_of
-from builtin.simd import _modf, _simd_apply
-from memory import Span
+from std.algorithm import vectorize
+from std.bit import count_trailing_zeros
+from std.builtin.dtype import _integral_type_of
+from std.builtin.simd import _modf, _simd_apply
+from std.memory import Span
 
-from utils.numerics import FPUtils, isnan, nan
-from utils.static_tuple import StaticTuple
+from std.utils.numerics import FPUtils, isnan, nan
+from std.utils.static_tuple import StaticTuple
 
 from .constants import log2e
 from .polynomial import polynomial_evaluate
@@ -3449,7 +3449,7 @@ trait Ceilable:
 
     For example:
     ```mojo
-    from math import Ceilable, ceil
+    from std.math import Ceilable, ceil
 
     @fieldwise_init
     struct Complex(Ceilable, ImplicitlyCopyable):
@@ -3486,7 +3486,7 @@ trait Floorable:
 
     For example:
     ```mojo
-    from math import Floorable, floor
+    from std.math import Floorable, floor
 
     @fieldwise_init
     struct Complex(Floorable, ImplicitlyCopyable):
@@ -3524,7 +3524,7 @@ trait CeilDivable:
 
     For example:
     ```mojo
-    from math import CeilDivable
+    from std.math import CeilDivable
 
     @fieldwise_init
     struct Foo(CeilDivable, ImplicitlyCopyable):
@@ -3557,7 +3557,7 @@ trait CeilDivableRaising:
 
     For example:
     ```mojo
-    from math import CeilDivableRaising
+    from std.math import CeilDivableRaising
 
     @fieldwise_init
     struct Foo(CeilDivableRaising, ImplicitlyCopyable):
@@ -3598,7 +3598,7 @@ trait Truncable:
 
     For example:
     ```mojo
-    from math import Truncable, trunc
+    from std.math import Truncable, trunc
 
     @fieldwise_init
     struct Complex(Truncable, ImplicitlyCopyable):

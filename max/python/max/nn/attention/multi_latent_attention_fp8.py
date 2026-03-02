@@ -75,6 +75,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         v_head_dim: int = 128,
         buffer_size: int = 16384,
         graph_mode: str | None = None,
+        norm_dtype: DType = DType.bfloat16,
     ) -> None:
         """Initializes the latent attention layer.
 
@@ -182,7 +183,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.q_a_layernorm = RMSNorm(
             dim=self.q_lora_rank,
-            dtype=DType.bfloat16,
+            dtype=norm_dtype,
             eps=1e-6,
             multiply_before_cast=False,
         )
@@ -211,7 +212,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.kv_a_proj_layernorm = Weight(
             name="kv_a_layernorm.weight",
-            dtype=DType.bfloat16,
+            dtype=norm_dtype,
             shape=(self.kv_lora_rank,),
             device=self.devices[0],
         )

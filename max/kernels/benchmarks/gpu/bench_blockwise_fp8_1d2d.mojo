@@ -36,16 +36,23 @@ from sys import env_get_int, size_of
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from layout._tile_tensor import TileTensor
 from layout._layout import row_major as new_row_major
-from layout._coord import Coord, RuntimeInt, Idx
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     GMEMLayout1D,
 )
@@ -421,7 +428,7 @@ fn bench_blockwise_fp8_1d2d[
     _ = expert_scales_dev_buf^
 
 
-def main():
+def main() raises:
     """Benchmark blockwise FP8 1D2D: legacy vs structured.
 
     Default shapes match DeepSeek V3 MoE dimensions.

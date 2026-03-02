@@ -14,9 +14,8 @@
 from random import random_float64
 
 from gpu.host import DeviceContext
-from layout._coord import Coord
+from layout import Coord, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from testing import assert_equal
@@ -171,7 +170,7 @@ fn test_argmaxmin_gpu_helper[
     _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=False](ctx)
 
 
-def main():
+def main() raises:
     @parameter
     fn fill_random[
         rank: Int, dtype: DType

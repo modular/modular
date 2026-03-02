@@ -13,9 +13,8 @@
 
 from gpu.host import DeviceContext, DeviceBuffer, HostBuffer
 from internal_utils import assert_almost_equal
-from layout._coord import Coord, Idx, coord
+from layout import Coord, Idx, TileTensor, coord
 from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
 from nn.rope import rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -28,7 +27,7 @@ from utils import IndexList
 
 def test_rope_ragged_gpu[
     rope_dim: Int, dtype: DType
-](ctx: DeviceContext) -> None:
+](ctx: DeviceContext) raises -> None:
     """Verifies rope_ragged GPU kernel against golden values computed with PyTorch.
     """
     comptime assert (
@@ -222,7 +221,7 @@ def test_rope_ragged_gpu[
                     )
 
 
-def execute_rope_ragged_gpu(ctx: DeviceContext) -> None:
+def execute_rope_ragged_gpu(ctx: DeviceContext) raises -> None:
     """Execute GPU RoPE tests with different rope dimensions."""
     # Full head RoPE
     test_rope_ragged_gpu[8, DType.float32](ctx)
@@ -231,6 +230,6 @@ def execute_rope_ragged_gpu(ctx: DeviceContext) -> None:
     test_rope_ragged_gpu[4, DType.float32](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         execute_rope_ragged_gpu(ctx)

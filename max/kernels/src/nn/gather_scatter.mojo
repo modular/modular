@@ -21,10 +21,8 @@ from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import tile
 from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from gpu.host.info import is_cpu, is_gpu
-from layout import UNKNOWN_VALUE
-from layout._coord import Coord, Idx, coord_to_index_list
+from layout import Coord, Idx, TileTensor, UNKNOWN_VALUE, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from memory import memcpy
 from runtime.asyncrt import DeviceContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -198,11 +196,16 @@ fn gather_reduce[
         )
 
         # For multi-hot embeddings reduction, k is the embedding dim and j is the multi-hot dim
-        comptime k_tile_sizes = VariadicList[Int](
-            2 * simd_width, 1
-        ) if CompilationTarget.has_neon() else VariadicList[Int](
-            8 * simd_width, 4 * simd_width, 2 * simd_width, simd_width, 1
-        )
+        comptime k_tile_sizes = [
+            2 * simd_width,
+            1,
+        ] if CompilationTarget.has_neon() else [
+            8 * simd_width,
+            4 * simd_width,
+            2 * simd_width,
+            simd_width,
+            1,
+        ]
         # unroll the j loop on neon because it benefits from vectorized
         # blend instructions and avoids conditional flag dependencies
         # does not appear to help on other archs

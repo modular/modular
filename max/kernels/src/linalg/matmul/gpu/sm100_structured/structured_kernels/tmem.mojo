@@ -35,6 +35,7 @@ from gpu.compute.arch.tcgen05 import (
 )
 
 from linalg.structuring import SMemArray
+from .config import OutputPipelineConfig
 
 
 struct TmemAllocation[
@@ -813,9 +814,7 @@ struct BlockScaledTmem[
 
 
 struct TmemStage[
-    num_stages: Int,
-    stage_stride: Int,
-    cta_group: Int,
+    opc: OutputPipelineConfig,
 ](TrivialRegisterPassable):
     """A pipeline stage within TMEM for accumulator buffering.
 
@@ -828,10 +827,12 @@ struct TmemStage[
       - tensor[layout](): Get typed TmemTensor view
 
     Parameters:
-        num_stages: Pipeline stages (typically 2-4).
-        stage_stride: Columns per stage (512 / num_stages).
-        cta_group: Cooperating CTAs (1 or 2).
+        opc: Output pipeline configuration (stages, stride, cta_group).
     """
+
+    comptime num_stages = Self.opc.num_stages
+    comptime stage_stride = Self.opc.stage_stride_cols
+    comptime cta_group = Self.opc.cta_group
 
     var base_addr: Int
     var index: Int

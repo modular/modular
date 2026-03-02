@@ -30,7 +30,7 @@ def matrix_band_part[
     num_lower: Int,
     num_upper: Int,
     exclude: Bool,
-):
+) raises:
     comptime int_type = DType.int
     comptime cond_type = DType.bool
 
@@ -75,7 +75,7 @@ def matrix_band_part[
     )
 
 
-def test_matrix_band_part():
+def test_matrix_band_part() raises:
     comptime layout = Layout.row_major(3, 3)
     comptime dtype = DType.float32
 
@@ -129,5 +129,5 @@ def test_matrix_band_part():
     assert_equal(output[2, 2], 0)
 
 
-def main():
+def main() raises:
     test_matrix_band_part()

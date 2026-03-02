@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import _to_string_list
-from pathlib import _dir_of_current_file
-from random import rand, random_float64, random_si64, random_ui64, seed
+from std.collections.string.string_slice import _to_string_list
+from std.pathlib import _dir_of_current_file
+from std.random import rand, random_float64, random_si64, random_ui64, seed
 
-from builtin.sort import (
+from std.builtin.sort import (
     _heap_sort,
     _insertion_sort,
     _quicksort,
@@ -23,7 +23,7 @@ from builtin.sort import (
     _stable_sort,
 )
 from test_utils import CopyCounter
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 fn random_numbers[
@@ -104,7 +104,7 @@ fn test_sort_small_5() raises:
         assert_equal(expected[i], list[i])
 
 
-def test_sort0():
+def test_sort0() raises:
     var list = List[Int]()
 
     sort(list)
@@ -504,7 +504,7 @@ fn test_sort_custom() raises:
         assert_false(list[i - 1].val > list[i].val)
 
 
-def test_sort_string_small_list():
+def test_sort_string_small_list() raises:
     var list = random_numbers[DType.int32](10)
     var string_list = List[String]()
     for n in list:
@@ -513,7 +513,7 @@ def test_sort_string_small_list():
     assert_sorted_string(string_list)
 
 
-def test_sort_string_big_list():
+def test_sort_string_big_list() raises:
     var list = random_numbers[DType.int32](1000)
     var string_list = List[String]()
     for n in list:
@@ -522,7 +522,7 @@ def test_sort_string_big_list():
     assert_sorted_string(string_list)
 
 
-def test_sort_strings():
+def test_sort_strings() raises:
     var text = (
         _dir_of_current_file() / "test_file_dummy_input.txt"
     ).read_text()
@@ -548,7 +548,7 @@ struct Person(Comparable, ImplicitlyCopyable):
     # Uses default reflection-based __eq__ from Equatable trait
 
 
-def test_sort_comparamble_elements_list():
+def test_sort_comparamble_elements_list() raises:
     var list = List[Person]()
 
     @parameter
@@ -585,7 +585,7 @@ struct IntPair(TrivialRegisterPassable):
     var idx: Int
 
 
-def test_stable_sort_stress():
+def test_stable_sort_stress() raises:
     var lens = [3, 100, 117, 223, 500, 1000, 1500, 2000, 3000]
     var random_seed = 0
     seed(random_seed)
@@ -634,7 +634,7 @@ fn test_sort_scalar() raises:
     assert_sorted(listf32)
 
 
-def test_ensure_no_copies():
+def test_ensure_no_copies() raises:
     fn get_list() -> List[CopyCounter[UInt64]]:
         seed(0)
         var list = List[CopyCounter[UInt64]](capacity=50)
@@ -642,7 +642,7 @@ def test_ensure_no_copies():
             list.append(CopyCounter[UInt64](random_ui64(min=0, max=UInt64.MAX)))
         return list^
 
-    def verify_list(list: List[CopyCounter[UInt64]]):
+    def verify_list(list: List[CopyCounter[UInt64]]) raises:
         for e in list:
             assert_true(e.copy_count == 0)
 
@@ -671,11 +671,11 @@ def test_ensure_no_copies():
     verify_list(list)
 
 
-def test_partition():
+def test_partition() raises:
     _test_partition_top_k(7, 5)
     _test_partition_top_k(11, 2)
     _test_partition_top_k(4, 1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

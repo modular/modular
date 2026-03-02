@@ -20,15 +20,15 @@ from algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from layout import (
-    UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
 )
 from layout.int_tuple import fill_like
 from layout.layout import is_row_major
-from layout._tile_tensor import TileTensor
 from memory import LegacyUnsafePointer, memcpy
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -1132,11 +1132,7 @@ fn _transpose_2d_serial_tiled[
         )
 
     comptime tile_size = simd_width if simd_width <= 16 else 1
-    tile[
-        process_tile,
-        VariadicList[Int](tile_size, 1),
-        VariadicList[Int](tile_size, 1),
-    ](0, 0, M, N)
+    tile[process_tile, [tile_size, 1], [tile_size, 1]](0, 0, M, N)
 
 
 @always_inline

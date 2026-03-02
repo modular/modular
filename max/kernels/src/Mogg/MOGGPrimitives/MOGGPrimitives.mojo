@@ -21,10 +21,16 @@ from compiler_internal import StaticTensorSpec
 from collections import InlineArray
 from gpu.host import DeviceBuffer
 from gpu.host.info import is_cpu, is_gpu
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout._coord import Coord, Idx
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from memory import memcpy
 
 from nn.concat import concat
@@ -1107,19 +1113,6 @@ fn build_static_tensor_specs[
     )
 
 
-# Build the tuple of StaticTensorSpecs for DPS kernels
-@register_internal("build_static_tensor_specs_tuple")
-fn build_static_tensor_specs_tuple[
-    dtype: DType,
-    rank: Int,
-    size: Int,
-](
-    array_of_specs: VariadicList[StaticTensorSpec[dtype, rank]],
-    out result: StaticTuple[StaticTensorSpec[dtype, rank], size],
-):
-    return {array_of_specs}
-
-
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
 @register_internal("to_managed_tensor_slice")
@@ -1599,9 +1592,22 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 
 @register_internal("mogg.async.error")
 @no_inline
-fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
-    """Indicates to the C++ runtime that the kernel has failed."""
+fn mogg_async_error(
+    async_ptr: AnyAsyncValueRefPtr,
+    err: Error,
+    source_notes: String = "",
+):
+    """Indicates to the C++ runtime that the kernel has failed.
+
+    When source_notes is non-empty it is prepended to the error message as a
+    Python stack trace so users can locate the failing op in their code.
+    See GEX-2678.
+    """
     var error_message = String(err)
+    if source_notes:
+        error_message = (
+            "\nSource Traceback:\n" + source_notes + "\n\n" + error_message
+        )
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
         error_message.as_c_string_slice().unsafe_ptr(),

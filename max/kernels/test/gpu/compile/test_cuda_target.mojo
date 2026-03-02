@@ -69,14 +69,14 @@ fn _verify_parameterized_on_cuda(asm: StringSlice) raises -> None:
     assert_true("42" in instruction_str)
 
 
-def test_parameterized_on_cuda_sm80():
+def test_parameterized_on_cuda_sm80() raises:
     var asm = _compile_code[
         parameterized_on_cuda, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_parameterized_on_cuda(asm)
 
 
-def test_parameterized_on_cuda_sm90():
+def test_parameterized_on_cuda_sm90() raises:
     var asm = _compile_code[
         parameterized_on_cuda, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -98,14 +98,14 @@ fn _verify_hello(asm: StringSlice) raises -> None:
     assert_true("vprintf" in asm)
 
 
-def test_hello_mojo_sm80():
+def test_hello_mojo_sm80() raises:
     var asm = _compile_code[
         hello_mojo, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_hello(asm)
 
 
-def test_hello_mojo_sm90():
+def test_hello_mojo_sm90() raises:
     var asm = _compile_code[
         hello_mojo, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -140,21 +140,21 @@ fn erf_elementwise(
     ](granularity, ctx)
 
 
-def _verify_erf_elementwise(asm: StringSlice):
+def _verify_erf_elementwise(asm: StringSlice) raises:
     assert_true("test_cuda_target_erf_elementwis" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.x" in asm)
     assert_true("ctaid.x" in asm)
 
 
-def test_erf_elementwise_sm80():
+def test_erf_elementwise_sm80() raises:
     var asm = _compile_code[
         erf_elementwise, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_erf_elementwise(asm)
 
 
-def test_erf_elementwise_sm90():
+def test_erf_elementwise_sm90() raises:
     var asm = _compile_code[
         erf_elementwise, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -183,14 +183,14 @@ fn _verify_erf_kernel(asm: StringSlice) raises -> None:
     assert_true("ctaid.y" in asm)
 
 
-def test_erf_kernel_sm80():
+def test_erf_kernel_sm80() raises:
     var asm = _compile_code[
         erf_kernel, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_erf_kernel(asm)
 
 
-def test_erf_kernel_sm90():
+def test_erf_kernel_sm90() raises:
     var asm = _compile_code[
         erf_kernel, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -216,14 +216,14 @@ fn _verify_shared_stack_allocation(asm: StringSlice) raises -> None:
     assert_true(".shared .align 8 .b8" in asm)
 
 
-def test_shared_stack_allocation_sm80():
+def test_shared_stack_allocation_sm80() raises:
     var asm = _compile_code[
         test_shared_stack_allocation, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_shared_stack_allocation(asm)
 
 
-def test_shared_stack_allocation_sm90():
+def test_shared_stack_allocation_sm90() raises:
     var asm = _compile_code[
         test_shared_stack_allocation, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -245,14 +245,14 @@ fn _verify_barrier(asm: StringSlice) raises -> None:
     assert_true("bar.sync 	0" in asm)
 
 
-def test_barrier_sm80():
+def test_barrier_sm80() raises:
     var asm = _compile_code[
         test_barrier, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_barrier(asm)
 
 
-def test_barrier_sm90():
+def test_barrier_sm90() raises:
     var asm = _compile_code[
         test_barrier, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -355,19 +355,19 @@ fn gemm(
             set_c(Int(row), Int(col + UInt(out_idx)), c_reg.load(out_idx))
 
 
-def _verify_gemm(asm: StringSlice):
+def _verify_gemm(asm: StringSlice) raises:
     assert_true("gemm" in asm)
     assert_true(".shared .align 4 .b8" in asm)
     assert_true("st.shared.b32" in asm)
     assert_true("ld.shared.b32" in asm)
 
 
-def test_gemm_sm80():
+def test_gemm_sm80() raises:
     var asm = _compile_code[gemm, target = get_gpu_target["sm_80"]()]().asm
     _verify_gemm(asm)
 
 
-def test_gemm_sm90():
+def test_gemm_sm90() raises:
     var asm = _compile_code[gemm, target = get_gpu_target["sm_90"]()]().asm
     _verify_gemm(asm)
 
@@ -393,14 +393,14 @@ fn _verify_warp_shuffle_up(asm: StringSlice) raises -> None:
     assert_true("shfl.sync.up.b32" in asm)
 
 
-def test_warp_shuffle_up_sm80():
+def test_warp_shuffle_up_sm80() raises:
     var asm = _compile_code[
         test_warp_shuffle_up, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_warp_shuffle_up(asm)
 
 
-def test_warp_shuffle_up_sm90():
+def test_warp_shuffle_up_sm90() raises:
     var asm = _compile_code[
         test_warp_shuffle_up, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -423,14 +423,14 @@ fn _verify_warp_shuffle_down(asm: StringSlice) raises -> None:
     assert_true("shfl.sync.down.b32" in asm)
 
 
-def test_warp_shuffle_down_sm80():
+def test_warp_shuffle_down_sm80() raises:
     var asm = _compile_code[
         test_warp_shuffle_down, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_warp_shuffle_down(asm)
 
 
-def test_warp_shuffle_down_sm90():
+def test_warp_shuffle_down_sm90() raises:
     var asm = _compile_code[
         test_warp_shuffle_down, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -458,14 +458,14 @@ fn _verify_warp_sum_reduce(asm: StringSlice) raises -> None:
     assert_true("shfl.sync.bfly.b32" in asm)
 
 
-def test_warp_sum_reduce_sm80():
+def test_warp_sum_reduce_sm80() raises:
     var asm = _compile_code[
         warp_sum_reduce, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_warp_sum_reduce(asm)
 
 
-def test_warp_sum_reduce_sm90():
+def test_warp_sum_reduce_sm90() raises:
     var asm = _compile_code[
         warp_sum_reduce, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -501,21 +501,21 @@ fn _verify_block_reduce(asm: StringSlice) raises -> None:
     assert_true("mov.u32" in asm)
 
 
-def test_block_reduce_sm80():
+def test_block_reduce_sm80() raises:
     var asm = _compile_code[
         block_reduce, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_block_reduce(asm)
 
 
-def test_block_reduce_sm90():
+def test_block_reduce_sm90() raises:
     var asm = _compile_code[
         block_reduce, target = get_gpu_target["sm_90"]()
     ]().asm
     _verify_block_reduce(asm)
 
 
-def main():
+def main() raises:
     test_parameterized_on_cuda_sm80()
     test_parameterized_on_cuda_sm90()
     test_hello_mojo_sm80()

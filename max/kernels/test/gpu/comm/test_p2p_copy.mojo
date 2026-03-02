@@ -14,6 +14,7 @@
 from math import ceildiv
 from sys import env_get_int
 
+from comm.sync import enable_p2p
 from gpu import block_dim, global_idx, grid_dim
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import LegacyUnsafePointer
@@ -54,7 +55,7 @@ fn launch_p2p_copy_kernel(
     ctx1.synchronize()
 
 
-def main():
+def main() raises:
     comptime log2_length = env_get_int["log2_length", 20]()
     comptime assert log2_length > 0
     var length = 1 << log2_length
@@ -62,6 +63,7 @@ def main():
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Create contexts for both devices
     var ctx1 = DeviceContext(device_id=0)

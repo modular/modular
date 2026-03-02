@@ -26,7 +26,6 @@ from layout._fillers import random
 from memory import memcpy, memset_zero
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal, assert_equal
 from sys import has_nvidia_gpu_accelerator
 
@@ -45,7 +44,7 @@ def execute_ragged_flash_attention[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     comptime page_size = 512
 
     var batch_size = len(valid_lengths)
@@ -333,7 +332,6 @@ def execute_ragged_flash_attention[
         kv_collection_continuous_device.get_key_cache(layer_idx),
         kv_collection_continuous_device.get_value_cache(layer_idx),
         CausalMask(),
-        IdentityScoreMod(),
         input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -346,7 +344,6 @@ def execute_ragged_flash_attention[
         kv_collection_paged_device.get_key_cache(layer_idx),
         kv_collection_paged_device.get_value_cache(layer_idx),
         CausalMask(),
-        IdentityScoreMod(),
         input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -388,7 +385,6 @@ def execute_ragged_flash_attention[
             kv_collection_paged_device.get_key_cache(layer_idx),
             kv_collection_paged_device.get_value_cache(layer_idx),
             CausalMask(),
-            IdentityScoreMod(),
             input_row_offsets.device_tensor(),
             rsqrt(Float32(kv_params.head_size)),
             ctx,
@@ -409,7 +405,7 @@ def execute_ragged_flash_attention[
                         ref_out[ragged_offset + s, h, Int(d)] = 123.4567
 
 
-def execute_flash_attention_suite(ctx: DeviceContext):
+def execute_flash_attention_suite(ctx: DeviceContext) raises:
     comptime types = (DType.float32, DType.bfloat16)
 
     for bs in [1, 4, 16]:
@@ -472,7 +468,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
     ](tg_seq_lens, tg_variable_cache_lens, 2, 0, ctx)
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         execute_flash_attention_suite(ctx)

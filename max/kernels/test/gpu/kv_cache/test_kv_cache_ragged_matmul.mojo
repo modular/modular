@@ -52,7 +52,7 @@ def _initialize_ragged_inputs[
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
-) -> Tuple[
+) raises -> Tuple[
     DeviceBuffer[DType.uint32],
     DeviceBuffer[dtype],
     DeviceBuffer[dtype],
@@ -155,7 +155,7 @@ def execute_matmul_kv_cache_ragged[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     """Tests the KV cache matmul.
 
     Note that here `prompt_lens` indicates the sequence length of the hidden
@@ -444,7 +444,7 @@ def execute_matmul_k_cache_ragged[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     comptime hidden_size = num_q_heads * Int(kv_params.head_size)
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
@@ -659,7 +659,7 @@ def generic_assert_output_equals[
     prompt_lens: List[Int],
     max_seq_length_batch: Int,
     ctx: DeviceContext,
-):
+) raises:
     comptime assert cache_t.dtype == dtype, "type mismatch"
     comptime kv_params = cache_t.kv_params
     comptime hidden_size = num_q_heads * Int(kv_params.head_size)
@@ -774,7 +774,7 @@ def generic_execute_fused_qkv_cache_ragged[
     k_cache: cache_t,
     v_cache: cache_t,
     ctx: DeviceContext,
-) -> Tuple[
+) raises -> Tuple[
     DeviceBuffer[dtype],
     IndexList[2],  # ref_output_shape
     DeviceBuffer[dtype],
@@ -937,7 +937,7 @@ def execute_paged_fused_qkv_matmul[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     comptime num_paged_blocks = 32
     comptime page_size = 512
     comptime CollectionType = PagedKVCacheCollection[
@@ -1055,7 +1055,7 @@ def execute_cont_batch_fused_qkv_matmul[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
@@ -1218,7 +1218,7 @@ def execute_cont_batch_fused_qkv_matmul[
 
 
 # TODO implement fused qkv matmul for paged
-def execute_fused_matmul_suite(ctx: DeviceContext):
+def execute_fused_matmul_suite(ctx: DeviceContext) raises:
     comptime dtypes_tolerances = ((DType.float32, 1e-3), (DType.bfloat16, 1e-2))
 
     comptime for dtype_idx in range(2):
@@ -1280,7 +1280,7 @@ def execute_fused_matmul_suite(ctx: DeviceContext):
             ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         execute_fused_matmul_suite(ctx)

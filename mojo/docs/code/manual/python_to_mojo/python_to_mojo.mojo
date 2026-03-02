@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import *
-from math import isclose, abs
+from std.testing import *
+from std.math import isclose, abs
 
 
 fn test_mut() raises:
@@ -27,11 +27,27 @@ fn test_math() raises:
     var a: Int = 7
     var b: Int = 2
 
-    # print(a / b)                       # 3 — integer floor division
-    # print(Float64(a) / Float64(b))     # 3.5 — explicit float division
-    assert_true(a / b == 3)
-    var value = Float64(a) / Float64(b)
-    assert_almost_equal(value, 3.5)
+    assert_true(
+        a / b == 3
+    )  # Integer division, result is truncated towards zero
+
+    var c = -7
+    var d = 2
+    assert_true(
+        c / d == -3
+    )  # -3, not -4, because division truncates towards zero
+    assert_true(c // d == -4)  # -4, biased towards negative infinity
+
+    var e: Float64 = 7.0
+    var f: Float64 = 2.0
+    assert_almost_equal(e / f, 3.5)  # Floating-point division, result is 3.5
+    assert_almost_equal(e // f, 3.0)  # biased towards negative infinity
+
+    var g: Float64 = -7.0
+    assert_almost_equal(
+        g / f, -3.5
+    )  # zero bias does not affect floating-point division
+    assert_almost_equal(g // f, -4.0)  # biased towards negative infinity
 
 
 fn test_collections() raises:
@@ -180,6 +196,53 @@ fn test_traitbound() raises:
     test_draw(c)  # Works because Circle implements Drawable
 
 
+fn another_raising_function() raises:
+    raise Error("Message")  # Error raised here
+
+
+fn raising_function() raises:
+    another_raising_function()  # Error continues to pass
+
+
+fn handles_errors() raises:  # Raises appears here for testing assertion
+    try:
+        raising_function()  # Error handled in this function
+    except e:
+        assert_true(String(e) == "Message")  # Error message is correct
+
+
+fn test_scoped() raises:
+    from std.utils import Variant
+
+    comptime StringOrInt = Variant[String, Int]
+    var a: StringOrInt = 1
+    if a.isa[Int]():
+        assert_true(a.unsafe_get[Int]() == 1)
+    a = "string"  # Not an error
+    if a.isa[String]():
+        assert_true(a.unsafe_get[String]() == "string")
+
+
+fn test_mixed_types() raises:
+    from std.utils import Variant
+
+    comptime MixedType = Variant[Int, Float64, String, Bool]
+    var mixed_list = List[MixedType]()
+    mixed_list.append(MixedType(42))
+    mixed_list.append(MixedType(3.14))
+    mixed_list.append(MixedType("hello"))
+    mixed_list.append(MixedType(True))
+    # for item in mixed_list:
+    #     print(item, end=" ")
+    # print()  # Output: 42 3.14 hello True
+    assert_true(
+        mixed_list[0].unsafe_get[Int]() == 42
+        and isclose(mixed_list[1].unsafe_get[Float64](), 3.14)
+        and mixed_list[2].unsafe_get[String]() == "hello"
+        and mixed_list[3].unsafe_get[Bool]() == True
+    )
+
+
 fn main() raises:
     test_mut()
     test_math()
@@ -192,3 +255,6 @@ fn main() raises:
     # Can't test conversion errors
     test_typebound()
     test_traitbound()
+    handles_errors()
+    test_scoped()
+    test_mixed_types()

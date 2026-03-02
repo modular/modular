@@ -302,8 +302,7 @@ fn tiled_matrix_multiplication[
         barrier()
 
         # Perform matrix multiplication on the tiles in shared memory
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             dst_reg += a_smem[row, k] * b_smem[k, col]
 
         # Synchronize threads before loading the next tiles
@@ -418,16 +417,14 @@ fn tiled_register_matrix_multiplication[
         barrier()
 
         # Iterate over the elements in the K dimension within the tiles.
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             # Get the corresponding tiles from shared memory.
             var a_tile = a_smem.tile[TM, 1](Int(row), k)
             var b_tile = b_smem.tile[1, BN](k, 0)
             var b_val = b_tile[0, col]
 
             # Multiply the elements and accumulate the partial results.
-            @parameter
-            for t in range(TM):
+            comptime for t in range(TM):
                 dst_reg[t] += a_tile[t, 0] * b_val
 
         # Synchronize all threads before loading the next tiles.
@@ -546,8 +543,7 @@ fn block_tiled_matrix_multiplication[
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
             a_reg.copy_from(a_tile)
@@ -688,8 +684,7 @@ fn block_tiled_vectorized_matrix_multiplication[
         barrier()
 
         # Iterate over the elements in the K dimension within the tiles.
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             # Load the corresponding tiles from shared memory into registers.
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
@@ -834,14 +829,9 @@ fn tensor_core_matrix_multiplication[
         B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
 
         # Iterate over the elements in the K dimension within the tiles
-        @parameter
-        for mma_k in range(BK // MMA_K):
-
-            @parameter
-            for mma_m in range(WM // MMA_M):
-
-                @parameter
-                for mma_n in range(WN // MMA_N):
+        comptime for mma_k in range(BK // MMA_K):
+            comptime for mma_m in range(WM // MMA_M):
+                comptime for mma_n in range(WN // MMA_N):
                     # Get the register tile for the current MMA operation
                     c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
 
@@ -864,11 +854,8 @@ fn tensor_core_matrix_multiplication[
                     c_reg_m_n.copy_from(d_reg_m_n)
 
     # Write the final accumulated results to the output matrix
-    @parameter
-    for mma_m in range(WM // MMA_M):
-
-        @parameter
-        for mma_n in range(WN // MMA_N):
+    comptime for mma_m in range(WM // MMA_M):
+        comptime for mma_n in range(WN // MMA_N):
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
             mma_op.store_d(C_mma_tile, c_reg_m_n)
@@ -901,8 +888,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
     ) raises:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
-        @parameter
-        if target == "gpu":
+        comptime if target == "gpu":
             a_layout = a.to_layout_tensor()
             b_layout = b.to_layout_tensor()
             out_layout = output.to_layout_tensor()
@@ -938,8 +924,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
             # - "tensor_core": Matrix multiplication using Tensor Cores.
             # In each case, the specific matrix multiplication function is
             # compiled and enqueued to run on the GPU.
-            @parameter
-            if Self.algorithm == "naive":
+            comptime if Self.algorithm == "naive":
                 comptime BM = 16
                 comptime BN = 16
                 comptime matmul_kernel = naive_matrix_multiplication[
@@ -1085,9 +1070,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     block_dim=(NUM_THREADS),
                 )
             elif Self.algorithm == "tensor_core":
-
-                @parameter
-                if has_accelerator():
+                comptime if has_accelerator():
                     comptime BM = 64
                     comptime BN = 64
                     comptime BK = OPTIMIZED_BLOCK_SIZE

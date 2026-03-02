@@ -59,7 +59,6 @@ modular_py_binary(
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/config",
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",

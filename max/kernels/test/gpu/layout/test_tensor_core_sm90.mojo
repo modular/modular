@@ -66,7 +66,7 @@ fn load_and_mma_16x8x32[
 # CHECK: 16838.0 17754.0 18610.0 19426.0 20392.0 21318.0 22172.0 23162.0
 # CHECK: 17295.0 18246.0 19149.0 19992.0 20971.0 21924.0 22837.0 23854.0
 # CHECK: 17864.0 18831.0 19768.0 20657.0 21678.0 22643.0 23582.0 24673.0
-def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
+def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_e4m3_e4m3_f32_16x8x32")
     comptime M = 16
     comptime N = 8
@@ -131,7 +131,7 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
 # 16778.0 17684.0 18554.0 19380.0 20158.0 20912.0 21986.0 22940.0
 # 17392.0 18314.0 19208.0 20066.0 20880.0 21646.0 22772.0 23834.0
 # 17964.0 18928.0 19836.0 20716.0 21560.0 22360.0 23496.0 24608.0
-def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
+def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_e5m2_e5m2_f32_16x8x32")
     comptime M = 16
     comptime N = 8
@@ -179,7 +179,7 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
     _ = mat_c^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx)
         test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx)

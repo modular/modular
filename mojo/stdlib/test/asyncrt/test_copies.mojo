@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import TestSuite, assert_equal
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
 fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
@@ -188,7 +188,7 @@ fn _run_cpu_ctx_memcpy_async(
         assert_equal(host_buf[i], Int64(2 * i))
 
 
-def test_copies():
+def test_copies() raises:
     var ctx = create_test_device_context()
 
     print("-------")
@@ -213,5 +213,5 @@ def test_copies():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

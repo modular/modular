@@ -18,15 +18,16 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId
 from gpu.host import DeviceContext
 from internal_utils import env_get_shape, int_list_to_tuple, CacheBustingBuffer
 from runtime.asyncrt import DeviceContextPtr
-from layout._coord import Coord, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from layout import (
-    UNKNOWN_VALUE,
+    Coord,
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
 )
+from layout._layout import row_major
 from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
 from buffer import NDBuffer
@@ -540,7 +541,7 @@ fn bench_rms_norm_fused_fp8[
     gamma_h.free()
 
 
-def main():
+def main() raises:
     comptime in_dtype = env_get_dtype["in_dtype", DType.bfloat16]()
     comptime out_dtype = env_get_dtype["out_dtype", DType.float8_e4m3fn]()
     comptime shape = int_list_to_tuple[

@@ -25,7 +25,7 @@ struct MyInt(Comparable):
     # `__ne__`, `__le__`, `__gt__`, and `__ge__` have default implementations.
 
 
-def main():
+def main() raises:
     m1 = MyInt(7)
     m2 = MyInt(5)
     print(m1 == m2)

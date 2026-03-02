@@ -29,10 +29,14 @@ from gpu import (
 from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from gpu.host import DeviceContext, get_gpu_target
 from gpu.host.info import B200, H100
-from layout import IntTuple, Layout, LayoutTensor
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    coord_to_index_list,
+)
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._coord import coord_to_index_list
-from layout._tile_tensor import TileTensor
 from logger import Logger
 from memory import LegacyUnsafePointer, bitcast
 
@@ -1235,22 +1239,22 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
         var b_expert_ptr = b.ptr + expert * N * K
         for k in range(K):
             var a_val = rebind[Scalar[a_type]](a_row_ptr[k]).cast[accum_type]()
-            var a_scale = rebind[Scalar[accum_type]](
+            var a_scale = rebind[Scalar[a_scales_type]](
                 a_scales[
                     k // Int(MAT_A_ROWS_SCALE_SIZE),
                     m_global // Int(MAT_A_COLS_SCALE_SIZE),
                 ]
-            )
+            ).cast[accum_type]()
             var b_val = rebind[Scalar[b_type]](b_expert_ptr[n * K + k]).cast[
                 accum_type
             ]()
-            var b_scale = rebind[Scalar[accum_type]](
+            var b_scale = rebind[Scalar[b_scales_type]](
                 b_scales[
                     UInt(expert),
                     n // Int(MAT_B_ROWS_SCALE_SIZE),
                     k // Int(MAT_B_COLS_SCALE_SIZE),
                 ]
-            )
+            ).cast[accum_type]()
             accum += a_val * b_val * a_scale * b_scale
 
     comptime if elementwise_lambda_fn:

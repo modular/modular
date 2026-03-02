@@ -14,10 +14,10 @@
 # RUN: not %mojo -D test=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
 # RUN: not %mojo -D test=2 %s 2>&1 | FileCheck --check-prefix CHECK_2 %s
 
-from sys import env_get_int
+from std.sys import env_get_int
 
 
-def main():
+def main() raises:
     comptime if env_get_int["test"]() == 1:
         # CHECK_1: note: constraint failed: Conversion flag "invalid" not recognized.
         _ = "{!invalid}".format(42)

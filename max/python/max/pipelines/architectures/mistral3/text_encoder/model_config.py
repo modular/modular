@@ -46,6 +46,7 @@ class Mistral3TextEncoderConfigBase(MAXModelConfigBase):
     rms_norm_eps: float = 1e-5
     dtype: DType = DType.bfloat16
     device: DeviceRef = Field(default_factory=DeviceRef.GPU)
+    hidden_state_layers: list[int] = Field(default_factory=lambda: [10, 20, 30])
 
     @property
     def attention_multiplier(self) -> float:

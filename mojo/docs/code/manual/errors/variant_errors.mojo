@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from utils import Variant
+from std.utils import Variant
 
 
 @fieldwise_init
@@ -55,7 +55,7 @@ fn handle_file_error(e: FileError):
         print("Access denied:", e[PermissionError])
 
 
-def main():
+def main() raises:
     try:
         print(open_file("/data"))
     except e:

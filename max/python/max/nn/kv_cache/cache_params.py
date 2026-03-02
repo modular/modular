@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import reduce
 from operator import mul
-from typing import Literal, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from max.driver import Buffer, DevicePinnedBuffer
 from max.dtype import DType
@@ -30,44 +30,13 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
     FlattenableInputSymbols,
+    MHADecodeDispatchMetadata,
     MultiKVCacheInputSymbols,
     PagedCacheInputSymbols,
     PagedCacheInputSymbolsByReplica,
 )
 
 logger = logging.getLogger("max.pipelines")
-
-
-KVCacheStrategy = Literal["model_default", "paged"]
-"""Supported KV cache strategies for attention mechanisms.
-
-This defines the different strategies for managing key-value caches
-in transformer models during inference.
-"""
-
-
-def kernel_substring(strategy: KVCacheStrategy) -> str:
-    """Returns the common substring included in the kernel name for this caching strategy.
-
-    Args:
-        strategy: The cache strategy.
-
-    Returns:
-        The string representation of the cache strategy value.
-    """
-    return strategy
-
-
-def uses_opaque(strategy: KVCacheStrategy) -> bool:
-    """Determines if this cache strategy uses opaque cache implementations.
-
-    Args:
-        strategy: The cache strategy to check.
-
-    Returns:
-        True if the strategy uses opaque caching, False otherwise.
-    """
-    return True
 
 
 @dataclass
@@ -174,10 +143,11 @@ class KVCacheQuantizationConfig:
 class KVCacheParamInterface(Protocol):
     """Interface for KV cache parameters."""
 
-    cache_strategy: KVCacheStrategy
     page_size: int
     data_parallel_degree: int
     n_devices: int
+    enable_kvcache_swapping_to_host: bool
+    host_kvcache_swap_space_gb: float | None
 
     @property
     def bytes_per_block(self) -> int:
@@ -194,7 +164,7 @@ class KVCacheParams(KVCacheParamInterface):
     """Configuration parameters for key-value cache management in transformer models.
 
     This class encapsulates all configuration options for managing KV caches during
-    inference, including parallelism settings, memory management, and cache strategy.
+    inference, including parallelism settings, and memory management.
     """
 
     dtype: DType
@@ -221,17 +191,13 @@ class KVCacheParams(KVCacheParamInterface):
     host_kvcache_swap_space_gb: float | None = None
     """Amount of host memory (in GB) to reserve for KV cache swapping. Required when swapping is enabled."""
 
-    cache_strategy: KVCacheStrategy = "paged"
-    """Strategy to use for managing the KV cache."""
-
     page_size: int = 128
-    """Number of tokens per page (block) when using the paged cache strategy.
+    """Number of tokens per page (block).
 
     This value is expressed in tokens, not bytes. The byte footprint of a page is
     derived from pipeline configuration.
 
     Current constraints: the page size must be a multiple of 128 and at least 128.
-    Required when ``cache_strategy`` is ``"paged"``.
     """
 
     is_mla: bool = False
@@ -264,7 +230,6 @@ class KVCacheParams(KVCacheParamInterface):
         This method:
         - Validates parallelism configuration (data parallel vs tensor parallel)
         - Computes n_kv_heads_per_device based on parallelism strategy
-        - Validates cache strategy compatibility with enabled features
 
         Raises:
             ValueError: If configuration parameters are invalid or incompatible.
@@ -293,17 +258,6 @@ class KVCacheParams(KVCacheParamInterface):
             )
 
         # Validate inputs
-        if self.enable_prefix_caching and self.cache_strategy != "paged":
-            raise ValueError(
-                "Prefix caching is only supported for paged cache strategy"
-            )
-        if (
-            self.enable_kvcache_swapping_to_host
-            and self.cache_strategy != "paged"
-        ):
-            raise ValueError(
-                "KVCache swapping to host is only supported for paged cache strategy"
-            )
         if (
             self.enable_kvcache_swapping_to_host
             and not self.enable_prefix_caching
@@ -318,8 +272,6 @@ class KVCacheParams(KVCacheParamInterface):
             raise ValueError(
                 "host_kvcache_swap_space_gb is required when kvcache_swapping_to_host is enabled"
             )
-        if self.page_size is None and self.cache_strategy == "paged":
-            raise ValueError("Page size is required for paged cache strategy")
 
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             # Validate FP8 KVCache quantization granularity.
@@ -434,29 +386,6 @@ class KVCacheParams(KVCacheParamInterface):
             base_bytes += scale_bytes
         return base_bytes
 
-    def compute_num_host_blocks(self) -> int:
-        """Computes the number of blocks that can be allocated to the host.
-
-        Returns:
-            The number of blocks that can be allocated to the host.
-        """
-        if not self.enable_kvcache_swapping_to_host:
-            return 0
-        assert self.host_kvcache_swap_space_gb is not None
-        GiB = 1024 * 1024 * 1024
-        host_gb_per_replica = self.host_kvcache_swap_space_gb
-        host_bytes_per_replica = host_gb_per_replica * GiB
-        num_host_blocks = int(host_bytes_per_replica // self.bytes_per_block)
-
-        if num_host_blocks == 0:
-            raise RuntimeError(
-                f"Insufficient cache memory to allocate even a single page.\n"
-                f"One page requires {to_human_readable_bytes(self.bytes_per_block)} but only "
-                f"{to_human_readable_bytes(host_gb_per_replica * GiB)} are available on host."
-            )
-
-        return num_host_blocks
-
     def copy_as_dp_1(self, replica_idx: int = 0) -> KVCacheParams:
         """Creates a copy of the KVCacheParams with data parallelism disabled.
 
@@ -488,7 +417,6 @@ class KVCacheParams(KVCacheParamInterface):
             enable_prefix_caching=self.enable_prefix_caching,
             enable_kvcache_swapping_to_host=self.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
-            cache_strategy=self.cache_strategy,
             page_size=self.page_size,
             devices=devices_per_replica[replica_idx],
             is_mla=self.is_mla,
@@ -552,6 +480,9 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if self.quantized_kv_cache
                 else None,
+                dispatch_metadata=MHADecodeDispatchMetadata(
+                    TensorType(DType.int64, shape=[4], device=DeviceRef.CPU())
+                ),
             )
             for device in devices
         ]
@@ -626,10 +557,11 @@ class MultiKVCacheParams(KVCacheParamInterface):
     params: Sequence[KVCacheParams]
     """List of KV cache parameter sets to aggregate."""
 
-    cache_strategy: KVCacheStrategy
     page_size: int
     data_parallel_degree: int
     n_devices: int
+    enable_kvcache_swapping_to_host: bool
+    host_kvcache_swap_space_gb: float | None
 
     @classmethod
     def from_params(cls, *params: KVCacheParams) -> MultiKVCacheParams:
@@ -637,23 +569,20 @@ class MultiKVCacheParams(KVCacheParamInterface):
             raise ValueError("MultiKVCacheParams requires at least one param.")
         return cls(
             params=params,
-            cache_strategy=params[0].cache_strategy,
             page_size=params[0].page_size,
             data_parallel_degree=params[0].data_parallel_degree,
             n_devices=params[0].n_devices,
+            enable_kvcache_swapping_to_host=params[
+                0
+            ].enable_kvcache_swapping_to_host,
+            host_kvcache_swap_space_gb=params[0].host_kvcache_swap_space_gb,
         )
 
     def __post_init__(self) -> None:
-        """Validates that all params have consistent cache strategy and page size."""
+        """Validates that all params have consistent page size."""
         if not self.params:
             raise ValueError(
                 "MultiKVCacheParams requires at least one param set."
-            )
-
-        strategies = {p.cache_strategy for p in self.params}
-        if len(strategies) > 1:
-            raise ValueError(
-                f"All params must use the same cache strategy, got: {strategies}"
             )
 
         page_sizes = {p.page_size for p in self.params}
@@ -672,6 +601,22 @@ class MultiKVCacheParams(KVCacheParamInterface):
         if len(n_devices) > 1:
             raise ValueError(
                 f"All params must use the same number of devices, got: {n_devices}"
+            )
+
+        enable_kvcache_swapping_to_host = {
+            p.enable_kvcache_swapping_to_host for p in self.params
+        }
+        if len(enable_kvcache_swapping_to_host) > 1:
+            raise ValueError(
+                f"All params must use the same enable_kvcache_swapping_to_host, got: {enable_kvcache_swapping_to_host}"
+            )
+
+        host_kvcache_swap_space_gb = {
+            p.host_kvcache_swap_space_gb for p in self.params
+        }
+        if len(host_kvcache_swap_space_gb) > 1:
+            raise ValueError(
+                f"All params must use the same host_kvcache_swap_space_gb, got: {host_kvcache_swap_space_gb}"
             )
 
     @property
@@ -827,3 +772,27 @@ def compute_max_seq_len_fitting_in_cache(
         max_seq_len=None,
     )
     return num_blocks * params.page_size
+
+
+def compute_num_host_blocks(params: KVCacheParamInterface) -> int:
+    """Computes the number of blocks that can be allocated on the host.
+
+    Returns:
+        The number of blocks that can be allocated on the host.
+    """
+    if not params.enable_kvcache_swapping_to_host:
+        return 0
+    assert params.host_kvcache_swap_space_gb is not None
+    GiB = 1024 * 1024 * 1024
+    host_gb_per_replica = params.host_kvcache_swap_space_gb
+    host_bytes_per_replica = host_gb_per_replica * GiB
+    num_host_blocks = int(host_bytes_per_replica // params.bytes_per_block)
+
+    if num_host_blocks == 0:
+        raise RuntimeError(
+            f"Insufficient cache memory to allocate even a single page.\n"
+            f"One page requires {to_human_readable_bytes(params.bytes_per_block)} but only "
+            f"{to_human_readable_bytes(host_gb_per_replica * GiB)} are available on host."
+        )
+
+    return num_host_blocks

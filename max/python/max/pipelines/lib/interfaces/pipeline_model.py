@@ -29,10 +29,16 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef
+from max.graph import DeviceRef, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.kv_cache import PagedKVCacheManager
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParamInterface,
+    PagedCacheValues,
+    unflatten_ragged_mha_decode_inputs,
+)
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 
@@ -82,6 +88,8 @@ class AlwaysSignalBuffersMixin:
         if is_virtual_device_mode():
             return []
 
+        # Enable P2P access between all GPUs before any collective operations.
+        # This must happen before the first allreduce/broadcast/etc. executes.
         if len(self.devices) > 1:
             try:
                 enable_all_peer_access()
@@ -484,6 +492,7 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     """A pipeline model that supports KV cache."""
 
     kv_params: KVCacheParamInterface
+    extra_kv_managers: list[PagedKVCacheManager]
 
     def __init__(
         self,
@@ -512,6 +521,14 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             devices=self.device_refs,
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
+        )
+        self.extra_kv_managers = []
+
+    def _unflatten_kv_inputs(
+        self, kv_inputs_flat: Sequence[Value[Any]]
+    ) -> list[PagedCacheValues]:
+        return unflatten_ragged_mha_decode_inputs(
+            kv_inputs_flat, n_devices=self.kv_params.n_devices
         )
 
     # TODO(AITLIB-265): Remove this altogether from all PipelineModels.

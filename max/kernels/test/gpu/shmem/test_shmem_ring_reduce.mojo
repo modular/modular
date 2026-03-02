@@ -120,7 +120,7 @@ fn ring_reduce(
         signal[0] = 0
 
 
-def bench_ring_reduce(ctx: SHMEMContext):
+def bench_ring_reduce(ctx: SHMEMContext) raises:
     var min_ints = min_size // size_of[DType.int32]()
     debug_assert(
         min_ints % num_blocks == 0, "min_size must be divisible by num_blocks"
@@ -168,7 +168,7 @@ def bench_ring_reduce(ctx: SHMEMContext):
         ctx.synchronize()
 
         @parameter
-        def benchmark():
+        def benchmark() raises:
             ctx.enqueue_function_collective_checked[ring_reduce, ring_reduce](
                 dst,
                 src,
@@ -223,5 +223,5 @@ def bench_ring_reduce(ctx: SHMEMContext):
         size *= step_factor
 
 
-def main():
+def main() raises:
     shmem_launch[bench_ring_reduce]()

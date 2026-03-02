@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm import elementwise
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.algorithm import elementwise
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -45,7 +45,7 @@ fn bench_elementwise[n: Int](mut b: Bencher) raises:
     _ = vector
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_elementwise[32]](BenchId("bench_elementwise_32"))
     m.bench_function[bench_elementwise[128]](BenchId("bench_elementwise_128"))

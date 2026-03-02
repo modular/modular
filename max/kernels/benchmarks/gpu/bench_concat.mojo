@@ -19,9 +19,8 @@ from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from builtin._closure import __ownership_keepalive
 from gpu.host import DeviceContext, HostBuffer
-from layout._coord import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
 from nn.concat import _concat_gpu_elementwise
 
 from utils import IndexList, StaticTuple
@@ -175,7 +174,7 @@ fn bench_concat[
     _ = output_device_buffer
 
 
-def main():
+def main() raises:
     comptime num_inputs = env_get_int["num_inputs", 2]()
     comptime axis = env_get_int["axis", 0]()
     comptime W0 = env_get_int["W0", 1]()

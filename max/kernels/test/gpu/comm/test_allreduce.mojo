@@ -18,6 +18,7 @@ from itertools import product
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm import Signal, MAX_GPUS, group_start, group_end
+from comm.sync import enable_p2p
 from comm.allreduce import (
     _allreduce_naive_single,
     allreduce,
@@ -287,7 +288,7 @@ fn _get_test_str[
     )
 
 
-def allreduce_naive_test() -> None:
+def allreduce_naive_test() raises -> None:
     """Explicit smoke test for the allreduce naive path."""
     print("====allreduce-naive-smoke-DType.float32-2-8Ki elements")
     comptime ngpus = 2
@@ -444,13 +445,15 @@ fn run_allreduce_sweep[use_multimem: Bool]() raises:
                 raise e^
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
 
     # First, explicitly exercise the naive allreduce path by calling it directly.
     allreduce_naive_test()
+
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Standard (non-multimem) sweep
     run_allreduce_sweep[use_multimem=False]()

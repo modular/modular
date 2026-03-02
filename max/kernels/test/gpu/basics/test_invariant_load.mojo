@@ -32,7 +32,7 @@ fn layout_kernel(
     b = a[0]
 
 
-def test_ldg_kernel[emission_kind: StaticString]() -> String:
+def test_ldg_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         ldg_kernel,
         emission_kind=emission_kind,
@@ -40,14 +40,14 @@ def test_ldg_kernel[emission_kind: StaticString]() -> String:
     ]().asm
 
 
-def test_ldg_kernel():
+def test_ldg_kernel() raises:
     var llvm = test_ldg_kernel["llvm"]()
     assert_true("!invariant.load !1" in llvm)
     var asm = test_ldg_kernel["asm"]()
     assert_true("ld.global.nc.b8" in asm)
 
 
-def test_layout_kernel[emission_kind: StaticString]() -> String:
+def test_layout_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         layout_kernel,
         emission_kind=emission_kind,
@@ -55,13 +55,13 @@ def test_layout_kernel[emission_kind: StaticString]() -> String:
     ]().asm
 
 
-def test_layout_kernel():
+def test_layout_kernel() raises:
     var llvm = test_layout_kernel["llvm"]()
     assert_true("!invariant.load !1" in llvm)
     var asm = test_layout_kernel["asm"]()
     assert_true("ld.global.nc.b8" in asm)
 
 
-def main():
+def main() raises:
     test_ldg_kernel()
     test_layout_kernel()

@@ -16,8 +16,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from complex import ComplexScalar, ComplexFloat32, ComplexSIMD
-from testing import assert_equal
+from std.complex import ComplexScalar, ComplexFloat32, ComplexSIMD
+from std.testing import assert_equal
 
 # NOTE: This is commented out because TestSuite is part of `test_utils` which
 # is not packaged with the stdlib.
@@ -49,7 +49,7 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     return iter
 
 
-def test_mandelbrot_iter():
+def test_mandelbrot_iter() raises:
     assert_equal(mandelbrot_iter(0, 0), 1)
     assert_equal(mandelbrot_iter(0, 1), 1)
     assert_equal(mandelbrot_iter(50, 50), 2)
@@ -59,7 +59,7 @@ def test_mandelbrot_iter():
     assert_equal(z.squared_norm(), 25)
 
 
-def main():
+def main() raises:
     test_mandelbrot_iter()
 
     # NOTE: We need to print this for the SDK self test.

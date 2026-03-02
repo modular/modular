@@ -38,7 +38,7 @@ fn load_value[
     ](ptr)
 
 
-def test_load():
+def test_load() raises:
     assert_true(
         "ld.global "
         in _compile_code[
@@ -98,5 +98,5 @@ def test_load():
     )
 
 
-def main():
+def main() raises:
     test_load()

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm._gpu.reduction import reduce_launch
-from gpu.host import DeviceContext
-from testing import assert_equal, TestSuite
+from std.algorithm._gpu.reduction import reduce_launch
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 comptime num_reductions = 2
 
@@ -230,7 +230,7 @@ fn reduce_inner_test[
     _ = res_device
 
 
-def test_reduce():
+def test_reduce() raises:
     @parameter
     fn reduce_add[
         dtype: DType,
@@ -427,5 +427,5 @@ def test_reduce():
         )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

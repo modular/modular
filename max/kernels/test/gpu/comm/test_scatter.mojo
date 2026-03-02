@@ -77,9 +77,9 @@ fn _test_pull[
 
     # Allocate input chunks on GPU 0.
     var input_devbufs = List[DeviceBuffer[dtype]]()
-    var input_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], dp_size](
-        fill={}
-    )
+    var input_bufs = InlineArray[
+        NDBuffer[dtype, rank, ImmutAnyOrigin], dp_size
+    ](fill={})
     var host_buf = alloc[Scalar[dtype]](max_chunk_size)
 
     for dp in range(dp_size):
@@ -89,7 +89,7 @@ fn _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        input_bufs[dp] = NDBuffer[dtype, rank, MutAnyOrigin](
+        input_bufs[dp] = NDBuffer[dtype, rank, ImmutAnyOrigin](
             dev_buf.unsafe_ptr(), DimList(n)
         )
         input_devbufs.append(dev_buf)
@@ -124,8 +124,7 @@ fn _test_pull[
         signal_bufs.append(sig_buf)
 
     # Launch scatter.
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         scatter[ngpus=ngpus, dp_size=dp_size](
             input_bufs, output_bufs[i], rank_sigs, ctxs[i]
         )
@@ -216,13 +215,11 @@ fn _test_dp4_large_chunks() raises:
     _test_pull[ngpus=8, dp_size=4](expected)
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
-    if not enable_p2p():
-        print("P2P not enabled, skipping test.")
-        return
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     _test_dp2()
     _test_dp2_fewer_elems_gpu0()

@@ -421,7 +421,7 @@ fn bench_grouped_block_scaled_gemm[
 # =============================================================================
 
 
-def main():
+def main() raises:
     # Compile-time parameters (from kbench YAML or defaults)
     comptime N = env_get_int["N", 0]()
     comptime K = env_get_int["K", 0]()

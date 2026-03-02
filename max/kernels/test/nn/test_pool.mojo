@@ -15,7 +15,7 @@ from sys import simd_width_of
 
 from layout._fillers import arange
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
 from testing import assert_almost_equal, assert_equal
 
@@ -487,7 +487,7 @@ fn test_max_pool_pad_dilation_2d() raises:
     assert_almost_equal(output_tensor[0, 0, 2, 0], 15.0000, atol=1e-4)
 
 
-def main():
+def main() raises:
     test_max_pool_2d()
     test_avg_pool_2d()
     test_avg_pool_2d_with_padding_true()

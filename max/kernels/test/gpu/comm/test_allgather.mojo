@@ -18,6 +18,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allgather import allgather
 from comm import MAX_GPUS, Signal
+from comm.sync import enable_p2p
 import comm.vendor.ccl as vendor_ccl
 from gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
@@ -28,7 +29,7 @@ from utils.index import IndexList
 
 def all_gather_test[
     dtype: DType, rank: Int, ngpus: Int
-](list_of_ctx: List[DeviceContext], lengths: List[Int]) -> None:
+](list_of_ctx: List[DeviceContext], lengths: List[Int]) raises -> None:
     """Test allgather with new variadic output semantics.
 
     Each device should receive individual copies of all inputs,
@@ -242,10 +243,11 @@ fn _verify_results[
                     raise e^
 
 
-def main() -> None:
+def main() raises -> None:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Test configurations.
     comptime test_lengths: List[List[Int]] = [

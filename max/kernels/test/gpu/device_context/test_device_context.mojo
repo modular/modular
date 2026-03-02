@@ -42,7 +42,7 @@ fn vec_func(
     output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
 
-def test_is_compatible(ctx: DeviceContext):
+def test_is_compatible(ctx: DeviceContext) raises:
     assert_equal(ctx.is_compatible(), True)
 
 
@@ -111,18 +111,18 @@ fn test_basic(ctx: DeviceContext) raises:
     out_host.free()
 
 
-def test_move(ctx: DeviceContext):
+def test_move(ctx: DeviceContext) raises:
     var b = ctx
     var c = b^
     c.synchronize()
 
 
-def test_id(ctx: DeviceContext):
+def test_id(ctx: DeviceContext) raises:
     # CPU always gets id 0 so test for that.
     assert_equal(ctx.id(), 0)
 
 
-def test_print(ctx: DeviceContext):
+def test_print(ctx: DeviceContext) raises:
     comptime size = 15
 
     var host_buffer = ctx.enqueue_create_host_buffer[DType.uint16](size)
@@ -180,7 +180,7 @@ struct ToUnsafePointer(Copyable, DevicePassable):
         return ""
 
 
-def test_kernel_pointer_conversions(ctx: DeviceContext):
+def test_kernel_pointer_conversions(ctx: DeviceContext) raises:
     fn kernel(
         legacy: LegacyUnsafePointer[mut=True, Float32],
         unsafe_pointer: UnsafePointerV2[Float32, MutAnyOrigin],
@@ -206,7 +206,7 @@ def test_kernel_pointer_conversions(ctx: DeviceContext):
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     # Create an instance of the DeviceContext
     with DeviceContext() as ctx:
         # Execute our test with the context

@@ -18,10 +18,15 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._coord import Idx
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
@@ -35,7 +40,7 @@ from testdata.fused_qk_rope_goldens import (
 from utils import IndexList
 
 
-def test_fused_qk_rope[dtype: DType]() -> None:
+def test_fused_qk_rope[dtype: DType]() raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -209,5 +214,5 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     _ = valid_lengths_buffer^
 
 
-def main() -> None:
+def main() raises -> None:
     test_fused_qk_rope[DType.float32]()

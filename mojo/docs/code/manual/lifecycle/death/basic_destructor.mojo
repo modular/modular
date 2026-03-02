@@ -36,7 +36,7 @@ struct Balloon(Writable):
         print("Destroyed", String(self))
 
 
-def main():
+def main() raises:
     var a = Balloon("red")
     var b = Balloon("blue")
     print(a)

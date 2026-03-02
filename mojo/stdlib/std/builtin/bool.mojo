@@ -15,19 +15,19 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import List, Set
-from hashlib.hasher import Hasher
+from std.collections import List, Set
+from std.hashlib.hasher import Hasher
 
-from python import (
+from std.python import (
     ConvertibleFromPython,
     ConvertibleToPython,
     Python,
     PythonObject,
 )
 
-from builtin.rebind import trait_downcast
-from utils._select import _select_register_value as select
-from utils._visualizers import lldb_formatter_wrapping_type
+from std.builtin.rebind import trait_downcast
+from std.utils._select import _select_register_value as select
+from std.utils._visualizers import lldb_formatter_wrapping_type
 
 # ===----------------------------------------------------------------------=== #
 #  Boolable

@@ -19,9 +19,8 @@ from random import random_float64
 
 from algorithm.functional import parallelize_over_rows
 from benchmark import Bench, Bencher, BenchId
-from layout._coord import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.toppminp import min_p_sampling, top_p_sampling
 from testing import assert_equal
 
@@ -299,7 +298,7 @@ fn test_all_types[
     test_all_out_idx_types[DType.float32, fill_fn]()
 
 
-def main():
+def main() raises:
     print("\n====== Testing Fill Iota ======\n")
     test_all_types[fill_iota]()
     print("\n====== Testing Fill Random ======\n")

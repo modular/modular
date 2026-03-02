@@ -1,8 +1,60 @@
-load("//bazel:api.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//bazel:api.bzl", "install_docs", "modular_py_binary", "pkg_filegroup", "pkg_files", "strip_prefix")
 
 # gazelle:default_visibility //oss/modular/docs:__subpackages__
 
 package(default_visibility = ["//oss/modular/docs:__subpackages__"])
+
+install_docs(
+    name = "install",
+    dest_subdir = "mojosite/docs",
+    tags = ["manual"],
+    target = ":mojodocs",
+)
+
+genrule(
+    name = "mojodocs",
+    srcs = [":mojosite"],
+    outs = ["mojodocs.tar"],
+    cmd = """
+  # Unpack inputs for processing
+  mkdir -p mojosite
+  tar -xf $(location :mojosite) -C mojosite
+
+  # Strip the mojo/ prefix (mojosite content lives at root, not under mojo/)
+  mv mojosite/mojo/* mojosite/
+  rm -rf mojosite/mojo
+
+  # post-process inputs
+  chmod -R +w mojosite
+  $(location :post-process-mojodocs) mojosite
+
+  # Generate final output
+  cd mojosite
+  tar -cf ../$@ *
+  """,
+    tags = ["manual"],
+    tools = [":post-process-mojodocs"],
+)
+
+pkg_tar(
+    name = "mojosite",
+    srcs = [
+        ":mojo",
+        ":mojo-std-public-docs",
+        ":mojosite-exclusives",
+    ],
+    allow_duplicates_with_different_content = False,
+    tags = ["manual"],
+)
+
+pkg_files(
+    name = "mojosite-exclusives",
+    srcs = ["index.mdx"],
+    prefix = "mojo",
+    strip_prefix = strip_prefix.from_pkg(""),
+    tags = ["manual"],
+)
 
 pkg_files(
     name = "docs",
@@ -14,6 +66,9 @@ pkg_files(
             "README.md",
             "BUILD.bazel",
             "code/**",
+            "post-process-mojodocs.py",
+            # Excluded from legacy docsite build only (see mojosite-exclusives)
+            "index.mdx",
         ],
     ),
     prefix = "mojo",
@@ -22,4 +77,49 @@ pkg_files(
         "changelog-released.md": "changelog.md",
     },
     strip_prefix = strip_prefix.from_pkg(""),
+)
+
+mojo_commands = [
+    "Build",
+    "Debug",
+    "Demangle",
+    "Doc",
+    "Format",
+    "Index",
+    "Package",
+    "REPL",
+    "Run",
+]
+
+pkg_files(
+    name = "mojo-cli",
+    srcs = ["//KGEN/tools/mojo:" + command + ".md_files" for command in mojo_commands],
+    prefix = "mojo/cli",
+    tags = ["manual"],
+)
+
+pkg_filegroup(
+    name = "mojo",
+    srcs = [
+        ":docs",
+        ":mojo-cli",
+    ],
+    tags = ["manual"],
+)
+
+pkg_filegroup(
+    name = "mojo-std-public-docs",
+    srcs = [
+        "//oss/modular/mojo/stdlib/std:docs",
+    ],
+    prefix = "mojo",
+    tags = ["manual"],
+)
+
+modular_py_binary(
+    name = "post-process-mojodocs",
+    srcs = [
+        ":post-process-mojodocs.py",
+    ],
+    tags = ["manual"],
 )

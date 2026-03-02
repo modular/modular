@@ -15,11 +15,11 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory import Pointer
+from std.memory import Pointer
 ```
 """
 
-from format._utils import FormatStruct, Named, TypeNames
+from std.format._utils import FormatStruct, Named, TypeNames
 
 # ===-----------------------------------------------------------------------===#
 # AddressSpace

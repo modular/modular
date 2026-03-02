@@ -585,7 +585,7 @@ fn get_dtype[micro_scaling_mode: StaticString]() -> DType:
         return DType.uint8
 
 
-def main():
+def main() raises:
     comptime micro_scaling_mode = env_get_string["scaling_mode", "nvfp4"]()
     comptime dtype = get_dtype[micro_scaling_mode]()
 

@@ -14,7 +14,9 @@ _MULTI_VERSION_TEST_SRCS = [
 # TODO(GEX-3155): Tests that timeout on macOS
 _MACOS_INCOMPATIBLE_TESTS = [
     "ops/test_argsort.py",
+    "ops/test_constant.py",
     "ops/test_layer_norm.py",
+    "ops/test_tile.py",
     "ops/elementwise/test_is_nan.py",
 ]
 

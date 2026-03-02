@@ -15,10 +15,8 @@
 from sys import size_of
 from math import ceildiv
 
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Idx, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensor
-from layout._tile_tensor import TileTensor
-from layout._coord import Idx
 from layout._layout import row_major
 
 from gpu import block_idx, thread_idx
@@ -29,8 +27,7 @@ from kv_cache.types import KVCacheT, KVCollectionT
 from nn.index_fp8 import fp8_index_kernel, IndexSmemStorage
 from nn.mha_mask import MHAMask, MaskName
 from nn.mha_operand import KVCacheMHAOperand, KVCacheScalesMHAOperand
-from nn.mha_score_mod import ScoreModTrait, IdentityScoreMod
-from nn.mha_utils import dispatch_mask_and_score_mod
+from nn.mha_utils import dispatch_mask
 from nn.topk import topk_gpu
 
 from utils.index import Index
@@ -143,8 +140,7 @@ fn fill_invalid_topk_kernel[
     # Compute num_keys based on mask type
     var num_keys: Int
 
-    @parameter
-    if use_causal_mask:
+    comptime if use_causal_mask:
         # Causal: only keys up to current position are valid
         num_keys = cache_len + local_seq_idx + 1
     else:
@@ -321,15 +317,12 @@ fn mla_indexer_ragged_float8_paged[
     )
 
     # Apply mask for prefill (seq_len > 1)
-    @parameter
-    if mask_str != MaskName.NULL.name:
+    comptime if mask_str != MaskName.NULL.name:
         if max_new_tokens > 1:
 
             @always_inline
             @parameter
-            fn apply_mask_dispatch[
-                mask_t: MHAMask, score_mod_t: ScoreModTrait
-            ](mask: mask_t, score_mod: score_mod_t) raises:
+            fn apply_mask_dispatch[mask_t: MHAMask](mask: mask_t) raises:
                 comptime mask_kernel = apply_mask_kernel[
                     scores_layout,
                     type_of(valid_length).layout,
@@ -349,11 +342,7 @@ fn mla_indexer_ragged_float8_paged[
                     block_dim=(16, 16, 1),
                 )
 
-            dispatch_mask_and_score_mod[
-                mask_str,
-                IdentityScoreMod.name_str,
-                apply_mask_dispatch,
-            ]()
+            dispatch_mask[mask_str, apply_mask_dispatch]()
 
     # Compute top-k indices from scores [total_seq_len, max_num_keys]
     var scores_tile = TileTensor(

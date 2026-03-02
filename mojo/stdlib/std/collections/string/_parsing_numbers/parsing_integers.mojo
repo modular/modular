@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import memcmp, memcpy
+from std.memory import memcmp, memcpy
 
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
 

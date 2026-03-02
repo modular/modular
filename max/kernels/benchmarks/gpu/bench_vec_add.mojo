@@ -95,7 +95,7 @@ fn bench_vec_add(
     out_host.free()
 
 
-def main():
+def main() raises:
     comptime block_dim = env_get_int["block_dim", 32]()
     var m = Bench()
     update_bench_config_args(m)

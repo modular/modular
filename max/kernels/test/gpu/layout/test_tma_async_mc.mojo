@@ -89,8 +89,8 @@ fn test_tma_mcast_load_kernel[
                 tile,
                 mbar[0],
                 (
-                    UInt(block_idx.x * UInt(tileN)),
-                    UInt(block_idx.y * UInt(tileM)),
+                    Int(block_idx.x) * tileN,
+                    Int(block_idx.y) * tileM,
                 ),
                 multicast_mask.cast[DType.uint16](),
             )
@@ -113,7 +113,7 @@ def test_tma_multicast_load_row_major[
     dst_layout: Layout,
     CLUSTER_M: Int,
     CLUSTER_N: Int,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime src_M = src_layout.shape[0].value()
     comptime src_N = src_layout.shape[1].value()
     comptime tileM = tile_layout.shape[0].value()
@@ -232,7 +232,7 @@ fn test_tma_sliced_multicast_load_kernel[
                 // CLUSTER_N
             ),
             mbar[0],
-            (UInt(0), UInt(slice_cord)),
+            (0, slice_cord),
             multicast_mask.cast[DType.uint16](),
         )
 
@@ -254,7 +254,7 @@ def test_tma_sliced_multicast_load_row_major[
     dst_layout: Layout,
     CLUSTER_M: Int,
     CLUSTER_N: Int,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime src_M = src_layout.shape[0].value()
     comptime src_N = src_layout.shape[1].value()
     comptime tileM = tile_layout.shape[0].value()
@@ -305,7 +305,7 @@ def test_tma_sliced_multicast_load_row_major[
     _ = dst^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_multicast_load_row_major")
         test_tma_multicast_load_row_major[

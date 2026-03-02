@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the low level concurrency library."""
 
-from os import abort
-from os.atomic import Atomic
-from ffi import external_call
+from std.os import abort
+from std.os.atomic import Atomic
+from std.ffi import external_call
 
-from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
-from gpu.host import DeviceContext
+from std.builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
+from std.gpu.host import DeviceContext
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext

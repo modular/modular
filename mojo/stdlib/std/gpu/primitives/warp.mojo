@@ -31,7 +31,7 @@ implementations of the core operations. It supports various data types including
 integers, floats, and half-precision floats, with SIMD vectorization.
 """
 
-from sys import (
+from std.sys import (
     CompilationTarget,
     bit_width_of,
     is_amd_gpu,
@@ -41,15 +41,15 @@ from sys import (
     size_of,
     _RegisterPackType,
 )
-from sys._assembly import inlined_assembly
-from sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
 
-from bit import log2_floor
-from math.math import max as _max, min as _min
-from gpu import lane_id
-from gpu.intrinsics import permlane_shuffle
-from gpu.globals import WARP_SIZE
-from memory import bitcast
+from std.bit import log2_floor
+from std.math.math import max as _max, min as _min
+from std.gpu import lane_id
+from std.gpu.intrinsics import permlane_shuffle
+from std.gpu.globals import WARP_SIZE
+from std.memory import bitcast
 
 from ..compute.tensor_ops import tc_reduce
 
@@ -436,7 +436,7 @@ fn shuffle_idx[
     Example:
 
         ```mojo
-            from gpu import shuffle_idx
+            from std.gpu import shuffle_idx
 
             val = SIMD[DType.float32, 16](1.0)
 
@@ -495,7 +495,7 @@ fn shuffle_idx[
     Example:
 
         ```mojo
-            from gpu import shuffle_idx
+            from std.gpu import shuffle_idx
 
             # Only broadcast to first 16 lanes
             var mask = 0xFFFF  # 16 ones
@@ -795,7 +795,7 @@ fn shuffle_xor[
     Example:
 
         ```mojo
-            from gpu import shuffle_xor
+            from std.gpu import shuffle_xor
 
             # Exchange values between even-numbered threads 4 lanes apart
             mask = 0xAAAAAAAA  # Even threads only
@@ -863,7 +863,7 @@ fn lane_group_reduce[
     Example:
 
         ```mojo
-            from gpu import lane_group_reduce, shuffle_down
+            from std.gpu import lane_group_reduce, shuffle_down
 
             # Compute sum across 16 threads using shuffle down
             @parameter
@@ -916,7 +916,7 @@ fn reduce[
     Example:
 
     ```mojo
-        from gpu import reduce, shuffle_down
+        from std.gpu import reduce, shuffle_down
 
         # Compute warp-wide sum using shuffle down
         @parameter

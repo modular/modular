@@ -35,7 +35,7 @@ comptime MAX_ITERATIONS = 100
 comptime layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
 
 
-def main():
+def main() raises:
     comptime assert (
         has_accelerator()
     ), "This example requires a supported accelerator"
@@ -100,7 +100,7 @@ fn mandelbrot(
     tensor[row, col] = iters
 
 
-def draw_mandelbrot(tensor: LayoutTensor[int_dtype, layout]):
+def draw_mandelbrot(tensor: LayoutTensor[int_dtype, layout]) raises:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
     for row in range(GRID_HEIGHT):

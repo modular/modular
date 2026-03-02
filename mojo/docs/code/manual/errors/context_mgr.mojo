@@ -33,7 +33,7 @@ struct Timer(ImplicitlyCopyable):
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
 
-def main():
+def main() raises:
     with Timer():
         print("Beginning execution")
         time.sleep(1.0)
