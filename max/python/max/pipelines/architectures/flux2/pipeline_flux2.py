@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from queue import Queue
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
@@ -437,23 +436,17 @@ class Flux2Pipeline(DiffusionPipeline):
         latents: Tensor,
         height: int,
         width: int,
-        output_type: Literal["np", "latent"] = "np",
-    ) -> np.ndarray | Tensor:
-        """Decode Flux2 packed latents into an image array (or return latents).
+    ) -> np.ndarray:
+        """Decode Flux2 packed latents into an image array.
 
         Args:
             latents: Packed latents, shaped (B, S, C).
             height: Output image height in pixels.
             width: Output image width in pixels.
-            output_type: "latent" to return latents, otherwise decode to NumPy.
 
         Returns:
-            If output_type == "latent", returns latents (first element if B > 1).
-            Otherwise returns a float32 HWC NumPy array.
+            A float32 HWC NumPy array.
         """
-        if output_type == "latent":
-            return latents[0] if int(latents.shape[0]) > 1 else latents
-
         h_latent = height // (self.vae_scale_factor * 2)
         w_latent = width // (self.vae_scale_factor * 2)
 
@@ -666,15 +659,11 @@ class Flux2Pipeline(DiffusionPipeline):
     def execute(  # type: ignore[override]
         self,
         model_inputs: Flux2ModelInputs,
-        callback_queue: Queue[np.ndarray] | None = None,
-        output_type: Literal["np", "latent"] = "np",
     ) -> Flux2PipelineOutput:
         """Run the Flux2 denoising loop and decode outputs.
 
         Args:
             model_inputs: Inputs containing tokens, latents, timesteps, sigmas, and IDs.
-            callback_queue: Optional queue for streaming intermediate decoded outputs.
-            output_type: Output mode ("np", "latent")
 
         Returns:
             Flux2PipelineOutput containing one output per batch element.
@@ -776,21 +765,6 @@ class Flux2Pipeline(DiffusionPipeline):
                             latents, noise_pred, dt, num_noise_tokens
                         )
 
-                    if callback_queue is not None:
-                        if hasattr(device, "synchronize"):
-                            device.synchronize()
-                        callback_queue.put_nowait(
-                            cast(
-                                np.ndarray,
-                                self.decode_latents(
-                                    latents,
-                                    model_inputs.height,
-                                    model_inputs.width,
-                                    output_type=output_type,
-                                ),
-                            )
-                        )
-
         # 5) Decode final outputs per batch element.
         image_list = []
         with Tracer("decode_outputs"):
@@ -802,7 +776,6 @@ class Flux2Pipeline(DiffusionPipeline):
                         latents_b,
                         model_inputs.height,
                         model_inputs.width,
-                        output_type=output_type,
                     )
                 )
 
