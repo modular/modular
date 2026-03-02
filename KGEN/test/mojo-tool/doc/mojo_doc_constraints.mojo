@@ -188,6 +188,46 @@ fn fn_with_default_and_param_constraint[M: Int where is_even(M) = 4]():
 
 
 ##===----------------------------------------------------------------------===##
+# Binary operator sugar in constraints
+# Tests that binary dunder calls in where clauses are printed using their
+# operator syntax (via the existing binaryOpNames map in ASTPrinter.cpp).
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: "name": "fn_with_eq_constraint",
+# CHECK: "signature": "fn_with_eq_constraint[N: Int]() where (N == 0)"
+fn fn_with_eq_constraint[N: Int]() where N == 0:
+    """Function with an equality constraint.
+
+    Parameters:
+        N: An integer parameter constrained to be zero.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_ne_constraint",
+# CHECK: "signature": "fn_with_ne_constraint[N: Int]() where (N != 0)"
+fn fn_with_ne_constraint[N: Int]() where N != 0:
+    """Function with an inequality constraint.
+
+    Parameters:
+        N: An integer parameter constrained to be nonzero.
+    """
+    pass
+
+
+# CHECK-LABEL: "name": "fn_with_lt_constraint",
+# CHECK: "signature": "fn_with_lt_constraint[N: Int]() where (N < 10)"
+fn fn_with_lt_constraint[N: Int]() where N < 10:
+    """Function with a less-than constraint.
+
+    Parameters:
+        N: An integer parameter constrained to be less than 10.
+    """
+    pass
+
+
+##===----------------------------------------------------------------------===##
 # Combined function and parameter constraints
 ##===----------------------------------------------------------------------===##
 
