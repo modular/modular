@@ -308,11 +308,6 @@ from tensor import (
     OutputTensor,
     OutputVariadicTensors,
     VariadicTensors,
-    _input_fusion_hook_impl,
-    _mixed_precision_compute_output_fusion_hook_impl,
-    _mixed_precision_input_fusion_hook_impl,
-    _mixed_precision_output_fusion_hook_impl,
-    _output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_store_into_managed_tensor_slice,
@@ -417,11 +412,6 @@ fn _unsafe_str_to_coord[
 fn export():
     comptime _simd_load_from_managed_tensor_slice = simd_load_from_managed_tensor_slice
     comptime _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
-    comptime __input_fusion_hook_impl = _input_fusion_hook_impl
-    comptime __output_fusion_hook_impl = _output_fusion_hook_impl
-    comptime __mixed_precision_input_fusion_hook_impl = _mixed_precision_input_fusion_hook_impl
-    comptime __mixed_precision_output_fusion_hook_impl = _mixed_precision_output_fusion_hook_impl
-    comptime __mixed_precision_compute_output_fusion_hook_impl = _mixed_precision_compute_output_fusion_hook_impl
 
 
 # ===-----------------------------------------------------------------------===#
