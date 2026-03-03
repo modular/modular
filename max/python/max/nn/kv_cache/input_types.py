@@ -130,14 +130,22 @@ class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
 
 
 def unflatten_ragged_mha_decode_inputs(
-    kv_inputs_flat: Sequence[Value[Any]], *, n_devices: int
+    kv_inputs_flat: Sequence[Any], *, n_devices: int
 ) -> list[PagedCacheValues]:
     """Unmarshals flattened KV graph inputs into typed cache values.
 
     Args:
         kv_inputs_flat: Flattened graph values for all KV inputs.
+            Elements may be ``Value`` instances or ``Tensor``-like objects
+            with a ``_graph_value`` attribute.
         n_devices: Number of devices represented in ``kv_inputs_flat``.
     """
+    # Extract graph values from Tensor-like objects.
+    kv_inputs_flat = [
+        v._graph_value if hasattr(v, "_graph_value") else v
+        for v in kv_inputs_flat
+    ]
+
     if n_devices <= 0:
         raise ValueError(f"n_devices must be positive, got {n_devices}")
 
