@@ -1352,8 +1352,8 @@ struct List[T: Copyable](
         Examples:
 
         ```mojo
-        var list = List[Int](1, 2, 3, 2, 2, 1, 3)
-        print(list.count(2))  # 3
+        var list = List[Int64](1, 2, 3, 2, 2, 1, 3)
+        print(list.count(Int64(2)))  # 3
         ```
         """
         return Span(self).count(value)
