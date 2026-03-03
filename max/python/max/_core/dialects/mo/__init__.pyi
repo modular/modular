@@ -4906,23 +4906,18 @@ class DistributedReducescatterSumOp(max._core.Operation):
     """
     ReduceScatter takes in inputs each coming from a different device, and
     partitions the reduction such that each device receives a disjoint subset
-    of the result. This op instance executes on a specific device (specified by
-    the device attribute) and produces the output for that device.
-
-    Multiple instances of this op are created (one per device) to enable
-    multi-threaded execution.
+    of the result.
     """
 
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        output: TensorType,
+        outputs: Sequence[max._core.Type],
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
-        device: max._core.dialects.m.DeviceRefAttr,
         axis: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
@@ -4931,10 +4926,6 @@ class DistributedReducescatterSumOp(max._core.Operation):
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
-    @property
-    def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
-    @device.setter
-    def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
     @property
     def axis(self) -> int: ...
     @axis.setter

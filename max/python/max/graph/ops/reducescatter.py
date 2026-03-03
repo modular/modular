@@ -79,16 +79,11 @@ def sum(
             f"axis {axis} is out of bounds for tensor with rank {input_shape.rank}"
         )
 
-    # Per-device execution model:
-    # Create one reducescatter op per device, each threading the destination
-    # device's chain independently.
-    # Do not merge device chains.
-    results = []
     graph = Graph.current
-    for dev_idx, device in enumerate(devices):
-        in_chain = graph.device_chains[device]
 
-        # Compute output shape for this device's portion
+    # Compute output types for each device's portion.
+    output_types = []
+    for dev_idx, device in enumerate(devices):
         output_shape_list = list(input_shape)
         scatter_dim = input_shape[axis]
         if scatter_dim is not None:
@@ -98,29 +93,34 @@ def sum(
             )
         else:
             output_shape_list[axis] = None
-        output_type = TensorType(
-            dtype=input_dtype,
-            shape=output_shape_list,
-            device=device,
+        output_types.append(
+            TensorType(
+                dtype=input_dtype,
+                shape=output_shape_list,
+                device=device,
+            )
         )
 
-        # Each op takes all inputs but only produces output for its device.
-        axis_attr = IntegerAttr(IntegerType(64), axis)
-        result, out_chain = Graph.current._add_op_generated(
-            mo.DistributedReducescatterSumOp,
-            # Single output tensor type.
-            output_type,
-            # Output chain type.
-            _ChainType(),
-            inputs,
-            signal_buffers,
-            in_chain,
-            device,
-            axis_attr,
-        )
+    # Merge all device chains into one input chain.
+    in_chain = graph._merge_chains(
+        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+    )
 
-        results.append(result.tensor)
-        # Advance only this device's chain.
+    # Stage a single reducescatter op across all devices.
+    axis_attr = IntegerAttr(IntegerType(64), axis)
+    *results, out_chain = graph._add_op_generated(
+        mo.DistributedReducescatterSumOp,
+        output_types,
+        _ChainType(),
+        inputs,
+        signal_buffers,
+        in_chain,
+        axis_attr,
+    )
+
+    # Update all chains.
+    graph._update_chain(out_chain)
+    for device in devices:
         graph.device_chains[device] = out_chain
 
-    return results
+    return [res.tensor for res in results]

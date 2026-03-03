@@ -10025,29 +10025,20 @@ struct DistributedReduceScatterSum:
         _trace_name: StaticString,
         axis: Int = -1,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank],
+        outputs: FusedOutputVariadicTensors[dtype, rank, ...],
         inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype = DType.uint8, rank=1, ...
         ],
-        device_ctx: DeviceContextPtr,
+        dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
         """Distributed reduce-scatter operation implementation for sum reduction.
 
-        This executes on a single device specified by device_ctx.
-        The Python API creates multiple instances of this op (one per device) to
-        enable multi-threaded execution.
-
         Args:
-            output: Output tensor for this device to store reduced result.
+            outputs: Output tensors (one per GPU) to store scattered reduced results.
             inputs: Input tensors (one per GPU) containing values to reduce.
             signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
-            device_ctx: The device context for this specific op instance.
-
-        Implementation Notes:
-            1. Each op instance only launches kernels on its assigned device.
-            2. Still requires all inputs/signal_buffers for coordination.
-            3. The output is only for the assigned device.
+            dev_ctxs_input: Device contexts for participating GPUs.
 
         Limitations:
             - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo)
@@ -10059,11 +10050,9 @@ struct DistributedReduceScatterSum:
             signal_buffers.size == num_devices
         ), "expected 1 signal buffer per device"
 
-        # Reduce-scatter doesn't use scratch storage, so
-        # only need enough signal_buffer space for Signal struct
         _check_signal_buffer_size(signal_buffers[0].size(), 0)
 
-        # Marshal input tensors into TileTensors
+        # Marshal input tensors into TileTensors.
         comptime InputTileType = type_of(
             inputs[0].to_tile_tensor[DType.int64]().as_immut()
         )
@@ -10076,41 +10065,43 @@ struct DistributedReduceScatterSum:
                 inputs[i].to_tile_tensor[DType.int64]().as_immut()
             )
 
-        # Marshal output tensor into TileTensor
-        var out_buf = output.to_tile_tensor[DType.int64]()
-
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        comptime for i in range(signal_buffers.size):
+        comptime for i in range(num_devices):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
         @parameter
         fn output_lambda[
+            input_index: Int,
             _dtype: DType,
             _width: Int,
             *,
             _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, _width]) -> None where (
-            coords.flat_rank == out_buf.flat_rank
-        ):
-            output._lambda_store[width=_width, element_alignment=_alignment](
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
+            outputs[input_index]._lambda_store[
+                width=_width, element_alignment=_alignment
+            ](
                 rebind[IndexList[rank]](coord_to_index_list(coords)),
                 rebind[SIMD[dtype, _width]](val),
             )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            reducescatter[
-                ngpus=num_devices, output_lambda=output_lambda, axis=axis
-            ](
-                in_bufs,
-                out_buf.make_dynamic[DType.int64](),
-                rank_sigs,
-                device_ctx[],
-            )
+            comptime for i in range(num_devices):
+                var out_buf = outputs[i].to_tile_tensor[DType.int64]()
+                reducescatter[
+                    ngpus=num_devices,
+                    output_lambda = output_lambda[input_index=i],
+                    axis=axis,
+                ](
+                    in_bufs,
+                    out_buf.make_dynamic[DType.int64](),
+                    rank_sigs,
+                    dev_ctxs_input[i],
+                )
 
 
 @compiler.register("mo.distributed.allgather")
