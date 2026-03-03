@@ -173,9 +173,11 @@ class DecodeScheduler(Scheduler):
         )
 
         # Set dst_idx to -1 to denote pages which the decode already has due to
-        # prefix caching.
+        # prefix caching. processed_length is in tokens; divide by page_size to
+        # convert to blocks before accounting for data-parallel degree.
         for i in range(
             data.tokens.processed_length
+            // self.kv_cache.params.page_size
             // self.scheduler_config.data_parallel_degree
         ):
             dst_idxs[i] = -1
