@@ -56,6 +56,11 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK-NEXT: kgen.param.constant: scalar<f32> = <"0">
     %15 = kgen.param.constant: !pop.scalar<f32> = <#pop.cast<#pop<simd 9007199254740992> : !pop.scalar<index>> : !pop.scalar<f32>>
 
+    // CHECK-NEXT: kgen.param.constant: scalar<si128> = <0>
+    %16 = kgen.param.constant : !pop.scalar<si128> = <#pop.cast<#pop<simd -9223372036854775808> : !pop.scalar<index>> : !pop.scalar<si128>>
+    // CHECK-NEXT: kgen.param.constant: scalar<si128> = <-2147483648>
+    %17 = kgen.param.constant : !pop.scalar<si128> = <#pop.cast<#pop<simd -2147483648> : !pop.scalar<index>> : !pop.scalar<si128>>
+
     kgen.return
   }
 }
