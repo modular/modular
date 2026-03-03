@@ -613,6 +613,119 @@ def print_input_prompts(samples: Samples) -> None:
         print(elide_data_uris_in_string(str(prompt_info)))
 
 
+def _format_distribution_table(
+    values: Sequence[float | int], label: str
+) -> str:
+    """Format distribution statistics as a mini-table with header and value rows."""
+    _STAT_COLUMNS = (
+        "min",
+        "max",
+        "mean",
+        "std",
+        "p5",
+        "p25",
+        "p50",
+        "p75",
+        "p95",
+        "p99",
+    )
+    _COL_WIDTH = 10
+
+    arr = np.array(values, dtype=float)
+    p5, p25, p50, p75, p95, p99 = np.percentile(arr, [5, 25, 50, 75, 95, 99])
+    stat_values = (
+        np.min(arr),
+        np.max(arr),
+        np.mean(arr),
+        np.std(arr),
+        p5,
+        p25,
+        p50,
+        p75,
+        p95,
+        p99,
+    )
+    header = "    " + "".join(f"{name:<{_COL_WIDTH}}" for name in _STAT_COLUMNS)
+    row = "    " + "".join(f"{v:<{_COL_WIDTH}.2f}" for v in stat_values)
+    return f"  {label}:\n{header}\n{row}"
+
+
+def print_workload_stats(samples: Samples) -> None:
+    """Print workload distribution statistics and exit.
+
+    For single-turn workloads, prints input/output length stats.
+    For multi-turn workloads, additionally prints num_turns and
+    delay_until_next_message stats.
+    """
+    print_section(title=" Workload Statistics ", char="=")
+
+    if isinstance(samples, RequestSamples):
+        input_lens = [r.prompt_len for r in samples.requests]
+        output_lens = [
+            r.output_len for r in samples.requests if r.output_len is not None
+        ]
+
+        print(f"  {'Total requests:':<30} {len(samples.requests)}")
+        print()
+        print(_format_distribution_table(input_lens, "Input length"))
+        if output_lens:
+            print()
+            print(_format_distribution_table(output_lens, "Output length"))
+        else:
+            print()
+            print("  Output length:  not specified (server-determined)")
+
+    elif isinstance(samples, ChatSamples):
+        sessions = samples.chat_sessions
+        num_turns_list = [len(s.messages) // 2 for s in sessions]
+
+        all_input_lens: list[int] = []
+        all_output_lens: list[int] = []
+        all_delays: list[float] = []
+
+        for session in sessions:
+            current_context_length = 0
+            for msg in session.messages:
+                current_context_length += msg.num_tokens
+                if msg.source == "user":
+                    all_input_lens.append(current_context_length)
+                else:
+                    all_output_lens.append(msg.num_tokens)
+                if msg.delay_until_next_message is not None:
+                    all_delays.append(msg.delay_until_next_message)
+
+        print(f"  {'Total sessions:':<30} {len(sessions)}")
+        print(f"  {'Total turns (across all):':<30} {sum(num_turns_list)}")
+        print()
+        print(
+            _format_distribution_table(
+                all_input_lens, "Input length (per turn)"
+            )
+        )
+        print()
+        print(
+            _format_distribution_table(
+                all_output_lens, "Output length (per turn)"
+            )
+        )
+        print()
+        print(
+            _format_distribution_table(num_turns_list, "Num turns per session")
+        )
+        if all_delays:
+            print()
+            print(
+                _format_distribution_table(
+                    all_delays, "Delay between chat turns (ms)"
+                )
+            )
+        else:
+            print()
+            print("  Delay until next msg:  none configured")
+
+    print("=" * 50)
+
+
 def _warn_on_request_failures(
     outputs: Sequence[RequestFuncOutput],
     completed: int,
@@ -1952,6 +2065,9 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
     else:
         raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
+
+    if args.print_workload_stats:
+        print_workload_stats(samples)
 
     if args.print_inputs_and_outputs:
         print_input_prompts(samples)

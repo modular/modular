@@ -514,6 +514,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Enable server stats collection for serving benchmarks."""
 
+    print_workload_stats: bool = field(
+        default=False, metadata={"group": "Control Flags"}
+    )
+    """Print workload distribution statistics (input/output lengths, num turns, delays)."""
+
     trace: bool = field(default=False, metadata={"group": "Control Flags"})
     """Enable nsys tracing of the benchmark run. Requires the server to be run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs."""
 
@@ -622,6 +627,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "collect_cpu_stats": "Enable CPU stats collection for serving benchmarks.",
             "collect_server_stats": "Enable server stats collection for serving benchmarks.",
+            "print_workload_stats": "Print workload distribution statistics (input/output lengths, num turns, delays).",
             "trace": "Enable nsys tracing. Requires server run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs.",
             "trace_file": "Path to save nsys trace. Default: $MODULAR_PATH/profile.nsys-rep or ./profile.nsys-rep.",
             "trace_session": "Optional session name to trace. If not specified, nsys traces the default session.",
