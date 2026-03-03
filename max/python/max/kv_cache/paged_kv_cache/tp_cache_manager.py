@@ -401,7 +401,6 @@ class _TPPagedKVCacheManager:
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0
         max_cached_len = 0
-        max_cache_valid_length = 0
         for batch_idx, ctx in enumerate(batch):
             # Get the blocks for this request.
             blocks = self.block_manager.get_req_blocks(ctx.request_id)
@@ -426,7 +425,6 @@ class _TPPagedKVCacheManager:
             prompt_tokens = ctx.tokens.active_length
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
-            max_cache_valid_length = max(max_cache_valid_length, cache_length)
 
         # Initiate any pending async saves to external cache tiers.
         self.connector.flush()
@@ -438,8 +436,12 @@ class _TPPagedKVCacheManager:
         max_lengths_host = build_max_lengths_tensor(
             num_steps, max_prompt_len, max_cached_len
         )
+        # Keep metadata aligned with kernel-side dispatch inputs.
+        # `k.max_context_length()` in flash attention corresponds to the
+        # max cached context length for this step (including active prompt
+        # tokens), i.e. `max_cached_len` here.
         resolved_metadata = self._decode_num_partitions_resolver(
-            batch_size, max_cache_valid_length
+            batch_size, max_cached_len
         )
 
         # TODO(SERVOPT-967): don't assume `q_max_seq_len == 1 `.

@@ -228,9 +228,10 @@ def _execute_ragged_increment_cache_lengths_graph(
                 "mha_decode_dispatch_metadata must be present in KV cache inputs"
             )
         metadata_np = metadata.to_numpy().copy()
-        if max_lengths.shape[0] > 0:
-            max_lengths_np = max_lengths.to_numpy()
-            metadata_np[3] = np.int64(max_lengths_np[0, 1])
+        if updated_max_lengths.shape[0] > 0:
+            # Update MHA dispatch metadata with new max_cache_valid_length.
+            updated_max_lengths_np = updated_max_lengths.to_numpy()
+            metadata_np[3] = np.int64(updated_max_lengths_np[0, 1])
         updated_metadata = Buffer.from_numpy(metadata_np)
 
         # Return our updated batch.

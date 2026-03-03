@@ -732,13 +732,30 @@ fn flash_attention_dispatch[
             )
             comptime num_blocks_y = num_heads // group
 
-            # TODO(SERVOPT-1010): Re-enable decode_dispatch_metadata-driven
-            # dispatch once serving perf is validated under IFB + graph capture.
-            var max_cache_valid_length_value = max_cache_valid_length
+            var dispatch_metadata: MHADecodeDispatchMetadata
+            if decode_dispatch_metadata:
+                dispatch_metadata = decode_dispatch_metadata.value()
+            else:
+                dispatch_metadata = (
+                    MHADecodeDispatchMetadata.from_runtime_values[
+                        Int(num_heads),
+                        Int(group),
+                    ](
+                        batch_size,
+                        max_prompt_len,
+                        max_cache_valid_length,
+                        ctx,
+                    )
+                )
+            var max_cache_valid_length_value = (
+                dispatch_metadata.max_cache_valid_length
+            )
 
             var num_partitions_value: Int
             if num_partitions:
                 num_partitions_value = num_partitions.value()
+            elif dispatch_metadata.num_partitions > 0:
+                num_partitions_value = dispatch_metadata.num_partitions
             else:
                 num_partitions_value = get_mha_decoding_num_partitions[
                     Int(num_heads),
