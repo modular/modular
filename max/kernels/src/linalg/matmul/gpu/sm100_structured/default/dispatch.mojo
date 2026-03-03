@@ -1493,6 +1493,16 @@ fn matmul_dispatch_sm100_bf16[
         Index(4096, 1536),
     ]
 
+    comptime FLUX2_NK = [
+        Index(6144, 24576),
+        # Index(55296, 6144),
+        # Index(6144, 6144),
+        # Index(36864, 6144),
+        # Index(6144, 18432),
+        # Index(1024, 5120),
+        # Index(32768, 5120),
+    ]
+
     comptime static_NK = Index(static_N, static_K)
 
     comptime if static_NK in DeepSeek_NK:
@@ -1504,6 +1514,14 @@ fn matmul_dispatch_sm100_bf16[
         ](c, a, b, ctx)
 
     comptime if static_NK in miscellaneous_NK:
+        return heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
+    comptime if static_NK in FLUX2_NK:
         return heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
