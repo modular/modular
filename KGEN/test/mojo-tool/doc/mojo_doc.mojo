@@ -22,6 +22,7 @@ from layout.int_tuple import *
 from std.sys.info import is_nvidia_gpu
 from buffer.dimlist import Dim
 from buffer import NDBuffer
+from std.builtin.simd import Float4_e2m1fn, Float8_e4m3fn
 
 
 # CHECK:  "aliases": [
@@ -725,6 +726,21 @@ fn optional_default_arg_13(input: Optional[Int64] = Int64(13)):
 # CHECK-LABEL: "name": "simd_scalar_alias"
 # CHECK: "signature": "simd_scalar_alias[dt: DType](input: Scalar[dt])"
 fn simd_scalar_alias[dt: DType](input: Scalar[dt]):
+    pass
+
+
+# CHECK-LABEL: "name": "simd_scalar_sugar"
+# CHECK: "signature": "simd_scalar_sugar(b: UInt, c: Int8, d: UInt8, e: BFloat16, f: Float64, g: Float4_e2m1fn, h: Float8_e4m3fn)"
+# Int & Bool are not SIMD scalars (yet). Once they are, they'll be added here.
+fn simd_scalar_sugar(
+    b: UInt,
+    c: Int8,
+    d: UInt8,
+    e: BFloat16,
+    f: Float64,
+    g: Float4_e2m1fn,
+    h: Float8_e4m3fn,
+):
     pass
 
 
