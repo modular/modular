@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import numpy.typing as npt
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental import functional as F
@@ -24,7 +25,6 @@ from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
-from PIL import Image
 from tqdm import tqdm
 
 from ..autoencoders import AutoencoderKLFlux2Model
@@ -75,8 +75,8 @@ class Flux2ModelInputs:
     num_images_per_prompt: int
     """Number of images to generate per prompt."""
 
-    input_image: Image.Image | None
-    """Optional input image for image-to-image generation."""
+    input_image: npt.NDArray[np.uint8] | None
+    """Optional input image for image-to-image generation (HWC uint8)."""
 
     def __post_init__(self) -> None:
         if not isinstance(self.height, int) or self.height <= 0:
@@ -171,13 +171,6 @@ class Flux2Pipeline(DiffusionPipeline):
                 "Flux2Pipeline requires non-empty sigmas in PixelContext"
             )
 
-        raw_input = context.input_image
-        input_image: Image.Image | None = (
-            Image.fromarray(raw_input.astype(np.uint8))
-            if isinstance(raw_input, np.ndarray)
-            else raw_input
-        )
-
         device = self.transformer.devices[0]
 
         # Retrieve cached sigmas, if possible.
@@ -229,7 +222,7 @@ class Flux2Pipeline(DiffusionPipeline):
             width=context.width,
             num_inference_steps=context.num_inference_steps,
             num_images_per_prompt=context.num_images_per_prompt,
-            input_image=input_image,
+            input_image=context.input_image,
         )
 
     def build_preprocess_latents(self) -> None:
@@ -673,21 +666,19 @@ class Flux2Pipeline(DiffusionPipeline):
 
         return latents
 
-    def _pil_image_to_tensor(
+    def _numpy_image_to_tensor(
         self,
-        image: Image.Image,
+        image: npt.NDArray[np.uint8],
     ) -> Tensor:
-        img_array = (np.array(image, dtype=np.float32) / 127.5) - 1.0
+        img_array = (image.astype(np.float32) / 127.5) - 1.0
         img_array = np.transpose(img_array, (2, 0, 1))
         img_array = np.expand_dims(img_array, axis=0)
         img_array = np.ascontiguousarray(img_array)
-        img_tensor = (
+        return (
             Tensor.from_dlpack(img_array)
             .to(self.vae.devices[0])
             .cast(self.vae.config.dtype)
         )
-
-        return img_tensor
 
     def scheduler_step(
         self,
@@ -754,7 +745,7 @@ class Flux2Pipeline(DiffusionPipeline):
         image_latents = None
         image_latent_ids = None
         if model_inputs.input_image is not None:
-            image_tensor = self._pil_image_to_tensor(model_inputs.input_image)
+            image_tensor = self._numpy_image_to_tensor(model_inputs.input_image)
             image_latents, image_latent_ids = self.prepare_image_latents(
                 images=[image_tensor],
                 batch_size=batch_size,
