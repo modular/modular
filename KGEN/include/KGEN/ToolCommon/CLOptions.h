@@ -288,6 +288,11 @@ public:
       : RuntimeCLOptions(opts), options(opts) {}
   KGENCommonOptions &options;
 
+  /// Whether --target-features was explicitly provided on the command line.
+  bool targetFeaturesWasSet() const {
+    return targetFeatures.getNumOccurrences() > 0;
+  }
+
 private:
   llvm::cl::OptionCategory KGENOptionsCategory{"KGEN common options"};
 

@@ -391,6 +391,14 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
           clOptions.targetFeatures = "";
       }
 
+      // When --target-cpu differs from the host but --target-features was not
+      // explicitly provided, clear the default host features so they are
+      // re-derived from the specified CPU. Without this, the host's feature
+      // set (e.g. avx512) leaks into cross-CPU compilations (e.g. x86-64-v3).
+      if (clOptions.targetCpu != llvm::sys::getHostCPUName() &&
+          !clOptions.parser.targetFeaturesWasSet())
+        clOptions.targetFeatures = "";
+
       ErrorOr<std::vector<std::string>> featuresOr =
           M::getFeatures(clOptions.targetTriple, clOptions.targetCpu);
       if (featuresOr)
