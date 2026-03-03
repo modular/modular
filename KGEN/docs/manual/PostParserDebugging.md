@@ -298,7 +298,7 @@ passed. That means that Metal compiler finds generated AIR file as good, but
 something still goes wrong at reflection time.
 
 The best option so far is to use combination of steps from
-[Invalid bitcode](#Invalid-bitcode) and [Incorrect output](#Incorrect-output)
+[Invalid bitcode](#invalid-bitcode) and [Incorrect output](#incorrect-output)
 sections with more complicated script for `llvm-reduce`.
 
 ***NOTE*** Since it's required to run a program, some tests may have infinite
