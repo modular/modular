@@ -148,7 +148,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             device=self.target_devices[0],
         )
 
-        graph_inputs = [
+        graph_inputs: list[Buffer] = [
             target_outputs.logits,
             prev_tokens,
             top_k,
@@ -159,6 +159,16 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             seed,
             prev_logits,
         ]
+
+        penalty_inputs = self._create_penalty_inputs(
+            context_batch, self.target_devices[0]
+        )
+        if penalty_inputs is not None:
+            freq_data, freq_pen, pres_pen, rep_pen = penalty_inputs
+            for fd in freq_data:
+                graph_inputs.extend([fd.data, fd.offsets])
+            graph_inputs.extend([freq_pen, pres_pen, rep_pen])
+
         sampled_tokens, _, _ = self._target_sampler(*graph_inputs)[:3]
         assert isinstance(sampled_tokens, Buffer)
 
@@ -536,6 +546,20 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             self._create_sampling_parameters(batch, self.draft_devices[0])
         )
 
+        # Build penalty inputs once for the entire draft generation loop
+        penalty_inputs = self._create_penalty_inputs(
+            batch, self.draft_devices[0], num_steps=num_steps
+        )
+        penalty_kwargs: dict[str, Any] = {}
+        if penalty_inputs is not None:
+            freq_data, freq_pen, pres_pen, rep_pen = penalty_inputs
+            penalty_kwargs = {
+                "frequency_data": freq_data,
+                "frequency_penalty": freq_pen,
+                "presence_penalty": pres_pen,
+                "repetition_penalty": rep_pen,
+            }
+
         generated_tokens = Buffer.zeros(
             (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
         )
@@ -571,6 +595,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     top_p,
                     min_top_p,
                     seed,
+                    **penalty_kwargs,
                 )
             )
 

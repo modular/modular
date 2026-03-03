@@ -54,6 +54,11 @@ from ..sampling import (
     rejection_sampler_with_residuals,
     token_sampler,
 )
+from ..sampling.sampling_logits_processor import (
+    FrequencyData,
+    _build_token_frequency_csr,
+    _check_need_penalties,
+)
 from ..utils import upper_bounded_default
 from .ragged_token_merger import ragged_token_merger
 
@@ -548,6 +553,67 @@ class SpeculativeDecodingPipelineBase(
 
         return (top_k, max_k, temperature, top_p, min_top_p, seed)
 
+    def _create_penalty_inputs(
+        self,
+        batch: list[TextContext],
+        device: Device,
+        num_steps: int = 1,
+    ) -> tuple[list[FrequencyData], Buffer, Buffer, Buffer] | None:
+        """Create penalty input tensors from context batch.
+
+        Args:
+            batch: List of context objects containing sampling parameters.
+            device: Device to place the tensors on.
+            num_steps: Number of generation steps for frequency CSR padding.
+
+        Returns:
+            Tuple of (frequency_data, frequency_penalty, presence_penalty,
+            repetition_penalty) or None if penalties are disabled and not
+            needed.
+        """
+        if not self.pipeline_config.sampling.enable_penalties:
+            _check_need_penalties(batch)
+            return None
+
+        frequency_data = [
+            _build_token_frequency_csr(batch, num_steps, device),
+            _build_token_frequency_csr(
+                batch, num_steps, device, include_prompt=True
+            ),
+        ]
+
+        frequency_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.frequency_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+        presence_penalty = Buffer.from_numpy(
+            np.array(
+                [context.sampling_params.presence_penalty for context in batch],
+                dtype=np.float32,
+            )
+        ).to(device)
+        repetition_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.repetition_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+
+        return (
+            frequency_data,
+            frequency_penalty,
+            presence_penalty,
+            repetition_penalty,
+        )
+
     @traced
     def sample_draft_logits(
         self,
@@ -560,9 +626,13 @@ class SpeculativeDecodingPipelineBase(
         top_p: Buffer,
         min_top_p: Buffer,
         seed: Buffer,
+        frequency_data: list[FrequencyData] | None = None,
+        frequency_penalty: Buffer | None = None,
+        presence_penalty: Buffer | None = None,
+        repetition_penalty: Buffer | None = None,
     ) -> tuple[Buffer, Buffer, Buffer]:
         """Samples draft tokens from the draft model logits."""
-        graph_inputs = [
+        graph_inputs: list[Buffer] = [
             model_outputs.logits,
             prev_tokens,
             top_k,
@@ -573,6 +643,15 @@ class SpeculativeDecodingPipelineBase(
             seed,
             prev_logits,
         ]
+        if frequency_data is not None:
+            assert frequency_penalty is not None
+            assert presence_penalty is not None
+            assert repetition_penalty is not None
+            for freq_data in frequency_data:
+                graph_inputs.extend([freq_data.data, freq_data.offsets])
+            graph_inputs.extend(
+                [frequency_penalty, presence_penalty, repetition_penalty]
+            )
         a, b, c = self._draft_sampler(*graph_inputs)[:3]
         assert isinstance(a, Buffer)
         assert isinstance(b, Buffer)
