@@ -31,7 +31,7 @@ from max._core.engine import Model as Model
 from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
-from max.driver import Buffer, Device, DLPackArray
+from max.driver import CPU, Buffer, Device, DLPackArray
 from max.graph import Graph
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
@@ -343,8 +343,8 @@ class InferenceSession:
         Args:
             num_threads: Number of threads to use for the inference session.
               This defaults to the number of physical cores on your machine.
-            devices: A list of devices on which to run inference. Default is
-              the host CPU only.
+            devices: A list of devices on which to run inference. The host CPU
+              is always included automatically.
             custom_extensions: The extensions to load for the model.
               Supports paths to a `.mojopkg` custom ops library or a `.mojo`
               source file.
@@ -358,7 +358,10 @@ class InferenceSession:
             if device not in seen_devices:
                 final_devices.append(device)
                 seen_devices.add(device)
-        # If the user provided an empty iterable, final_devices remains empty.
+        host_cpu = CPU()
+        if host_cpu not in seen_devices:
+            final_devices.append(host_cpu)
+            seen_devices.add(host_cpu)
 
         custom_extensions_final = []
 
