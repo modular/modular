@@ -46,6 +46,7 @@ def test_mla_prefill_plan() -> None:
         num_layers=1,
         page_size=page_size,
         is_mla=True,
+        num_q_heads=8,
         devices=[DeviceRef.GPU()],
     )
     prompt_lens = [160, 200]
@@ -153,6 +154,7 @@ def test_mla_decompress_k_cache() -> None:
         num_layers=1,
         page_size=page_size,
         is_mla=True,
+        num_q_heads=128,
         devices=[DeviceRef.GPU()],
     )
     prompt_lens = [10, 30]

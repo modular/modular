@@ -103,22 +103,26 @@ def _create_model_inputs_with_dispatch_metadata(
 ) -> ModelInputs:
     """Returns a copy of *model_inputs* with capture dispatch metadata."""
     max_cache_u32 = np.uint32(dispatch_metadata.max_cache_valid_length)
-    metadata_buf = dispatch_metadata.to_buffer()
+    # MLA: the resolver produced the buffer on the primary GPU.
+    # Each TP shard needs metadata on its own device.
+    # MHA: a single CPU buffer is shared across all shards.
+    gpu_buf = dispatch_metadata.device_buffer
+    cpu_buf = None if gpu_buf is not None else dispatch_metadata.to_buffer()
     capture_ragged: list[RaggedKVCacheInputs] = []
     for kv in source_ragged:
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
-        attention_dispatch_metadata = metadata_buf
-        if (
-            kv.attention_dispatch_metadata is not None
-            and not kv.attention_dispatch_metadata.device.is_host
-        ):
-            attention_dispatch_metadata = kv.attention_dispatch_metadata
+        if gpu_buf is not None:
+            # Place metadata on the same device as this shard's KV blocks.
+            metadata = gpu_buf.to(kv.blocks.device)
+        else:
+            assert cpu_buf is not None
+            metadata = cpu_buf
         capture_ragged.append(
             replace(
                 kv,
                 max_lengths=Buffer.from_numpy(ml),
-                attention_dispatch_metadata=attention_dispatch_metadata,
+                attention_dispatch_metadata=metadata,
             )
         )
     result = copy.copy(model_inputs)

@@ -81,6 +81,7 @@ def generate_latent_attention_max_outputs_dp(
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
     dp_attention = DataParallelLatentAttentionWithRope(

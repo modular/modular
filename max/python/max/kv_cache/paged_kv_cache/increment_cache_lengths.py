@@ -229,23 +229,29 @@ def _execute_ragged_increment_cache_lengths_graph(
             )
         metadata_np = metadata.to_numpy().copy()
         if updated_max_lengths.shape[0] > 0:
-            # Update MHA dispatch metadata with new max_cache_valid_length.
+            # Update dispatch metadata with new max_cache_valid_length.
             updated_max_lengths_np = updated_max_lengths.to_numpy()
             metadata_np[3] = np.int64(updated_max_lengths_np[0, 1])
-        updated_metadata = Buffer.from_numpy(metadata_np)
+        updated_metadata_cpu = Buffer.from_numpy(metadata_np)
 
         # Return our updated batch.
         assert isinstance(kv_cache_inputs, list)
         for i in range(len(replica_devices)):
             updated_cache_length = updated_cache_lengths[start_idx + i]
             assert isinstance(updated_cache_length, Buffer)
+            # Preserve the original device (GPU for MLA, CPU for MHA).
+            orig = attention_dispatch_metadata[start_idx + i]
+            if orig is not None and not orig.device.is_host:
+                dev_metadata = updated_metadata_cpu.to(orig.device)
+            else:
+                dev_metadata = updated_metadata_cpu
             kv_cache_inputs[start_idx + i] = RaggedKVCacheInputs(
                 blocks=blocks[start_idx + i],
                 cache_lengths=updated_cache_length,
                 lookup_table=lookup_table[start_idx + i],
                 max_lengths=updated_max_lengths,
                 kv_scales=kv_scales[start_idx + i],
-                attention_dispatch_metadata=updated_metadata,
+                attention_dispatch_metadata=dev_metadata,
             )
         start_idx += len(replica_devices)
     return kv_cache_inputs

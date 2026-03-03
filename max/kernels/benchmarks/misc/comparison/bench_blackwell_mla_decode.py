@@ -388,6 +388,7 @@ def bench_max(
         page_size=page_size,
         devices=[DeviceRef.GPU()],
         is_mla=True,
+        num_q_heads=num_q_heads,
     )
 
     num_blocks_per_seq = (cache_len + page_size - 1) // page_size

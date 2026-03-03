@@ -83,6 +83,7 @@ def _single_gpu_baseline(
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
     attn = DataParallelLatentAttentionWithRope(
@@ -228,6 +229,7 @@ def _build_kv_params(config: DeepseekV2Config, dp_degree: int) -> KVCacheParams:
         page_size=128,
         data_parallel_degree=dp_degree,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
 

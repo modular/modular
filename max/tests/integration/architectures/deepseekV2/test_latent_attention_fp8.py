@@ -238,6 +238,7 @@ def generate_max_outputs_fp8(
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
     # Create FP8 configuration with block-wise dynamic scaling [128, 128]

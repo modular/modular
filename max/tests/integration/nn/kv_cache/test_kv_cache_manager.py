@@ -272,3 +272,41 @@ async def test_runtime_inputs_lookup_table_uses_explicit_max_cache_length() -> (
         num_steps=1,
     )[0]
     assert tuple(explicit_inputs.lookup_table.shape) == (1, total_num_pages)
+
+
+@pytest.mark.asyncio
+async def test_mla_runtime_inputs_handles_empty_replica_batch() -> None:
+    """MLA runtime inputs should handle empty per-replica batches.
+
+    This exercises data-parallel serving where one replica has work and another
+    replica is idle in the same scheduler iteration.
+    """
+
+    device = CPU()
+    params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=1,
+        head_dim=16,
+        num_layers=10,
+        page_size=128,
+        devices=[DeviceRef.CPU(), DeviceRef.CPU()],
+        data_parallel_degree=2,
+        is_mla=True,
+        num_q_heads=8,
+    )
+
+    kv_manager = PagedKVCacheManager(
+        params=params,
+        session=InferenceSession(devices=[device]),
+        total_num_pages=8,
+        max_batch_size=128,
+    )
+
+    context = create_text_context(np.zeros(1, dtype=np.int64))
+    kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager.alloc(context, replica_idx=0, num_steps=1)
+
+    runtime_inputs = kv_manager.runtime_inputs([[context], []], num_steps=1)
+    assert len(runtime_inputs) == 2
+    assert runtime_inputs[0].attention_dispatch_metadata is not None
+    assert runtime_inputs[1].attention_dispatch_metadata is not None

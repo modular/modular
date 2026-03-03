@@ -127,6 +127,8 @@ class KVCacheConfig(ConfigFileModel):
         devices: Sequence[DeviceRef],
         data_parallel_degree: int = 1,
         is_mla: bool = False,
+        num_q_heads: int | None = None,
+        q_max_seq_len: int = 1,
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
     ) -> KVCacheParams:
         """Return KVCacheParams built from this config.
@@ -139,6 +141,10 @@ class KVCacheConfig(ConfigFileModel):
             devices: Devices that host the KV cache.
             data_parallel_degree: Degree of data parallelism.
             is_mla: Whether the model uses Multi-Latent Attention.
+            num_q_heads: Number of query attention heads. Required when
+                ``is_mla`` is True.
+            q_max_seq_len: Query tokens per sequence during decode (1 for
+                standard decode, >1 for MTP).
             kvcache_quant_config: KV cache quantization configuration.
 
         Returns:
@@ -155,6 +161,8 @@ class KVCacheConfig(ConfigFileModel):
             host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
             devices=devices,
             is_mla=is_mla,
+            num_q_heads=num_q_heads,
+            q_max_seq_len=q_max_seq_len,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
             disk_offload_dir=self.disk_offload_dir,

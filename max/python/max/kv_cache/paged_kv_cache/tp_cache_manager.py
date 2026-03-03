@@ -446,13 +446,22 @@ class _TPPagedKVCacheManager:
             batch_size, max_cached_len
         )
 
-        # TODO(SERVOPT-967): don't assume `q_max_seq_len == 1 `.
-        # Scalar args for MHA decode dispatch:
-        # [0] batch_size
-        # [1] q_max_seq_len (always 1 for decode)
-        # [2] num_partitions
-        # [3] max_cache_valid_length
-        resolved_metadata_buffer = resolved_metadata.to_buffer()
+        # MLA: the resolver usually produces the buffer on GPU (devices[0]).
+        # For empty batches, it may return host-only scalars; synthesize a
+        # device buffer in that case so MLA decode paths keep using GPU
+        # dispatch metadata.
+        # Shard 0 reuses it directly; other shards get a device copy.
+        # MHA: pack scalars into a single CPU buffer shared by all shards.
+        gpu_metadata: Buffer | None = None
+        cpu_metadata: Buffer | None = None
+        if self.params.is_mla:
+            gpu_metadata = resolved_metadata.device_buffer
+            if gpu_metadata is None:
+                gpu_metadata = resolved_metadata.to_buffer().to(
+                    self._devices[0]
+                )
+        else:
+            cpu_metadata = resolved_metadata.to_buffer()
 
         ret_list: list[RaggedKVCacheInputs] = []
         for tp_shard in range(self.params.n_devices):
@@ -460,6 +469,17 @@ class _TPPagedKVCacheManager:
             lookup_table_device = lut_table_by_device[tp_shard]
             cache_lengths_device.inplace_copy_from(cache_lengths_host)
             lookup_table_device.inplace_copy_from(lut_table_host)
+
+            if self.params.is_mla:
+                assert gpu_metadata is not None
+                metadata = (
+                    gpu_metadata
+                    if tp_shard == 0
+                    else gpu_metadata.to(self._devices[tp_shard])
+                )
+            else:
+                assert cpu_metadata is not None
+                metadata = cpu_metadata
 
             ret_list.append(
                 RaggedKVCacheInputs(
@@ -470,7 +490,7 @@ class _TPPagedKVCacheManager:
                     kv_scales=self.device_buffer.scales[tp_shard]
                     if self.device_buffer.scales is not None
                     else None,
-                    attention_dispatch_metadata=resolved_metadata_buffer,
+                    attention_dispatch_metadata=metadata,
                 )
             )
 

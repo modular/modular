@@ -274,7 +274,7 @@ class DeepseekV3DecoderLayer(Module):
         freqs_cis: list[TensorValue],
         mla_prefill_metadata_flat: list[TensorValue],
         input_row_offsets: list[TensorValue],
-        scalar_args: list[TensorValue] | None = None,
+        mla_decode_scalar_args: list[TensorValue] | None = None,
         ep_inputs: list[Value[Any]] | None = None,
     ) -> list[TensorValue]:
         # We have to unpack our PagedCacheValues into constituent parts so
@@ -304,13 +304,11 @@ class DeepseekV3DecoderLayer(Module):
                     )
                 )
 
-        # Re-pack flat MLA decode inputs into MLADecodeMetadata
+        # Wrap already-GPU scalar args into MLADecodeMetadata.
         mla_decode_metadata: list[MLADecodeMetadata] | None = None
-        if scalar_args is not None:
+        if mla_decode_scalar_args is not None:
             mla_decode_metadata = [
-                MLADecodeMetadata(
-                    scalar_args=scalar_args[i],
-                )
+                MLADecodeMetadata(scalar_args=mla_decode_scalar_args[i])
                 for i in range(num_devices)
             ]
 
@@ -457,7 +455,6 @@ class DeepseekV3(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
-        mla_decode_scalar_args: list[TensorValue] | None = None,
     ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
@@ -521,14 +518,14 @@ class DeepseekV3(Module):
             _unpack_kv_collections(kv_collections)
         )
 
-        # Re-pack MLA decode scalar args
-        mla_decode_metadata: list[MLADecodeMetadata] | None = None
-        if mla_decode_scalar_args is not None:
-            mla_decode_metadata = [
-                MLADecodeMetadata(
-                    scalar_args=mla_decode_scalar_args[i],
-                )
-                for i in range(len(devices))
+        # Extract dispatch metadata from KV collections (already on GPU
+        # for MLA, on CPU for MHA — placed by the KV cache manager).
+        mla_decode_scalar_args: list[TensorValue] | None = None
+        if kv_collections[0].dispatch_metadata is not None:
+            mla_decode_scalar_args = [
+                kv.dispatch_metadata.tensor
+                for kv in kv_collections
+                if kv.dispatch_metadata is not None
             ]
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
@@ -544,9 +541,9 @@ class DeepseekV3(Module):
             [offset.type for offset in input_row_offsets_],
         ]
 
-        if mla_decode_metadata is not None:
+        if mla_decode_scalar_args is not None:
             subgraph_input_types.append(
-                [m.scalar_args.type for m in mla_decode_metadata]
+                [m.type for m in mla_decode_scalar_args]
             )
 
         if self.ep_manager is not None:
@@ -569,11 +566,6 @@ class DeepseekV3(Module):
                 )
             )
 
-        # Flatten metadata into lists for subgraph calls.
-        scalar_args_flat: list[TensorValue] = []
-        if mla_decode_metadata is not None:
-            scalar_args_flat = [m.scalar_args for m in mla_decode_metadata]
-
         for idx, layer in enumerate(self.layers):
             has_subgraph = False
             for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
@@ -595,7 +587,11 @@ class DeepseekV3(Module):
                             *freqs_cis,
                             *mla_prefill_metadata_flat,
                             *input_row_offsets_,
-                            *scalar_args_flat,
+                            *(
+                                mla_decode_scalar_args
+                                if mla_decode_scalar_args is not None
+                                else ()
+                            ),
                             *(ep_inputs if ep_inputs is not None else ()),
                             prefix=f"layers.{idx}.",
                         )
@@ -613,7 +609,7 @@ class DeepseekV3(Module):
                     freqs_cis=freqs_cis,
                     mla_prefill_metadata_flat=mla_prefill_metadata_flat,
                     input_row_offsets=input_row_offsets_,
-                    scalar_args=scalar_args_flat or None,
+                    mla_decode_scalar_args=mla_decode_scalar_args,
                     ep_inputs=ep_inputs,
                 )
                 assert isinstance(h, list)
@@ -816,12 +812,6 @@ class DeepseekV3(Module):
         all_input_types.extend(
             [batch_context_length_type for _ in range(len(self.config.devices))]
         )
-
-        # Add MLA decode scalar args (GPU per device).
-        for dev in self.config.devices:
-            all_input_types.append(
-                TensorType(DType.int64, shape=[4], device=dev)
-            )
 
         if self.ep_manager is not None:
             all_input_types.extend(self.ep_manager.input_types())

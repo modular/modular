@@ -132,6 +132,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             num_layers=DeepseekV2Config.get_num_layers(huggingface_config),
             devices=devices,
             is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 

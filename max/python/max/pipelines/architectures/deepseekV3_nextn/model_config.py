@@ -73,6 +73,7 @@ class DeepseekV3NextNConfig(DeepseekV3Config):
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
         )
 
     @staticmethod
