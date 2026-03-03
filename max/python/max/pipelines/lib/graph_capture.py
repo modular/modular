@@ -175,7 +175,14 @@ class ServeGraphCaptureRunner:
                 "max-cache length upper bound."
             )
         self._max_cache_length_upper_bound = max_cache_length_upper_bound
-        self._resolver = AttentionDispatchResolver(session, kv_params)
+        self._resolver = AttentionDispatchResolver(
+            session=session,
+            device=kv_params.devices[0],
+            is_mla=kv_params.is_mla,
+            n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
+            q_max_seq_len=kv_params.q_max_seq_len,
+            num_q_heads=kv_params.num_q_heads,
+        )
         if max_batch_size < 1:
             raise ValueError(
                 "Device graph capture requires a positive decode capture "

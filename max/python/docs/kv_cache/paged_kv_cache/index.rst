@@ -18,7 +18,6 @@ Modules
 =======
 
 * :code_link:`/max/api/python/kv_cache/paged_kv_cache/cache_manager|cache_manager`: Core paged KV cache manager implementation.
-* :code_link:`/max/api/python/kv_cache/paged_kv_cache/tp_cache_manager|tp_cache_manager`: Tensor parallelism cache manager and input symbols.
 * :code_link:`/max/api/python/kv_cache/paged_kv_cache/transfer_engine|transfer_engine`: KV cache transfer engine for distributed inference.
 
 Classes
@@ -33,5 +32,4 @@ Classes
    :hidden:
 
    cache_manager
-   tp_cache_manager
    transfer_engine

@@ -100,11 +100,11 @@ async def test_claim_and_release() -> None:
         total_num_pages=8,
         max_batch_size=128,
     )
-    # This test requires PagedKVCacheManager to access internal _replica_managers
+    # This test requires PagedKVCacheManager to access internal _replica
     assert isinstance(kv_manager, PagedKVCacheManager), (
         "test_claim_and_release requires PagedKVCacheManager"
     )
-    replica_manager = kv_manager._replica_managers[0]
+    replica = kv_manager._replica[0]
 
     contexts = []
     prompt_lens = [2, 3, 4, 5, 6]
@@ -115,7 +115,7 @@ async def test_claim_and_release() -> None:
 
     # Claim 5 ids
     assert len(contexts) == 5
-    assert len(replica_manager._claimed_requests) == 5
+    assert len(replica.claimed_requests) == 5
 
     # Claim another 3 ids
     contexts_2 = []
@@ -125,7 +125,7 @@ async def test_claim_and_release() -> None:
         kv_manager.claim(context.request_id, replica_idx=0)
         contexts_2.append(context)
 
-    assert len(replica_manager._claimed_requests) == 5 + 3
+    assert len(replica.claimed_requests) == 5 + 3
 
     # Release id that has not been claimed
     with pytest.raises(ValueError):
@@ -134,7 +134,7 @@ async def test_claim_and_release() -> None:
     # Release all ids
     for i, context in enumerate(contexts + contexts_2):
         kv_manager.release(context.request_id, replica_idx=0)
-        assert len(replica_manager._claimed_requests) == 5 + 3 - i - 1
+        assert len(replica.claimed_requests) == 5 + 3 - i - 1
 
 
 @pytest.mark.asyncio

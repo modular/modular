@@ -24,10 +24,7 @@ from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn import Signals
-from max.nn.kv_cache import (
-    KVCacheParams,
-    RaggedKVCacheInputs,
-)
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from test_common.context_utils import create_text_context
 
 
@@ -58,17 +55,6 @@ def _create_kv_manager(
     )
     assert isinstance(manager, PagedKVCacheManager)
     return manager
-
-
-def test_init() -> None:
-    data_parallel_degree = 2
-    num_devices = 2
-
-    kv_manager = _create_kv_manager(data_parallel_degree, num_devices)
-    devices = list(kv_manager.params.devices)
-    for i, single_device_manager in enumerate(kv_manager._replica_managers):
-        assert list(single_device_manager.params.devices) == [devices[i]]
-        assert single_device_manager.params.num_layers == 10
 
 
 def test_claim() -> None:

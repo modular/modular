@@ -20,8 +20,6 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 
-from .cache_params import KVCacheParams
-
 
 class AttentionDispatchResolver:
     """Resolves attention decode partition counts via kernel custom ops.
@@ -40,22 +38,27 @@ class AttentionDispatchResolver:
     """
 
     def __init__(
-        self, session: InferenceSession, kv_params: KVCacheParams
+        self,
+        session: InferenceSession,
+        device: DeviceRef,
+        is_mla: bool,
+        n_kv_heads_per_device: int,
+        q_max_seq_len: int,
+        num_q_heads: int | None = None,
     ) -> None:
         self._model: Model | None = None
-        self._is_mla = kv_params.is_mla
-        self._q_max_seq_len = kv_params.q_max_seq_len if self._is_mla else 1
-        if kv_params.devices[0].is_cpu():
+        self._is_mla = is_mla
+        self._q_max_seq_len = q_max_seq_len if self._is_mla else 1
+
+        if device.is_cpu():
             return
 
         if self._is_mla:
-            assert kv_params.num_q_heads is not None
-            self._model = self._build_mla_model(
-                session, kv_params.devices[0], kv_params.num_q_heads
-            )
+            assert num_q_heads is not None
+            self._model = self._build_mla_model(session, device, num_q_heads)
         else:
             self._model = self._build_mha_model(
-                session, kv_params.devices[0], kv_params.n_kv_heads_per_device
+                session, device, n_kv_heads_per_device
             )
 
     @staticmethod
