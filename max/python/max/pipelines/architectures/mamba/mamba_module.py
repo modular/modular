@@ -132,8 +132,17 @@ class MambaSSMModule(Module[[Tensor], Tensor]):
         x_val = typing_cast(Tensor, x_val_raw)
         z_val = typing_cast(Tensor, z_val_raw)
 
-        # Save conv state: last conv_width values of pre-conv input
-        conv_state = typing_cast(Tensor, x_val[:, :, -self._conv_width :])
+        # Save conv state: last conv_width values of pre-conv input.
+        # Zero-pad on the left so that when seqlen < conv_width, the state
+        # matches the rolling-buffer convention used by causal_conv1d_update.
+        # We permute the sequence dim to axis 0, pad cw zeros on the left,
+        # then slice the last cw rows and permute back.
+        cw = self._conv_width
+        x_t = x_val.permute([2, 0, 1])  # (seqlen, 1, d)
+        x_t = F.pad(x_t, [cw, 0, 0, 0, 0, 0])  # (seqlen+cw, 1, d)
+        conv_state = typing_cast(
+            Tensor, x_t[-cw:].permute([1, 2, 0])  # (1, d, cw)
+        )
 
         # Causal conv1d: (1, d, seqlen) -> (1, d, seqlen)
         x_conv = causal_conv1d(
