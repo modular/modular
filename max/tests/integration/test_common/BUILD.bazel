@@ -369,3 +369,19 @@ modular_py_library(
         requirement("pillow"),
     ],
 )
+
+modular_py_library(
+    name = "build_graph_helpers",
+    testonly = True,
+    srcs = ["build_graph_helpers.py"],
+    imports = [".."],
+    deps = [
+        ":mocks",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
