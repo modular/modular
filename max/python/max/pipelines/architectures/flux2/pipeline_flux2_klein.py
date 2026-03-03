@@ -14,12 +14,11 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from queue import Queue
 from typing import Any, Literal, cast
 
 import numpy as np
-import numpy.typing as npt
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
@@ -44,9 +43,6 @@ class Flux2KleinModelInputs(PixelModelInputs):
     guidance_scale: float = 4.0
     num_inference_steps: int = 50
     num_images_per_prompt: int = 1
-    mask: npt.NDArray[np.bool_] = field(
-        default_factory=lambda: np.array([], dtype=np.bool_)
-    )
     input_image: Image.Image | None = None
 
     @property
@@ -92,7 +88,6 @@ class Flux2KleinPipeline(Flux2Pipeline):
         tokens: TokenBuffer,
         num_images_per_prompt: int = 1,
         hidden_states_layers: list[int] | None = None,
-        mask: npt.NDArray[np.bool_] | None = None,
     ) -> tuple[Tensor, Tensor]:
         layers = hidden_states_layers or list(
             self.prompt_embedding_hidden_states_layers
@@ -103,11 +98,6 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 f"Flux2Klein expects 1D tokens, got shape {token_ids.shape}."
             )
         target_seq_len = int(token_ids.shape[0])
-        if mask is not None and mask.shape[0] != target_seq_len:
-            raise ValueError(
-                "Prompt mask length must match token length. "
-                f"Got mask={mask.shape[0]}, tokens={target_seq_len}."
-            )
 
         text_input_ids = Tensor.constant(
             token_ids,
@@ -115,29 +105,39 @@ class Flux2KleinPipeline(Flux2Pipeline):
             device=self.text_encoder.devices[0],
         )
         hidden_states_all = self.text_encoder(text_input_ids)
-        hidden_states_selected = []
+
+        hidden_states_raw: list[Tensor] = []
+        all_match_target_seq_len = True
         for i in layers:
             hs = hidden_states_all[i - 1]
             if hs.rank == 3:
                 hs = hs[0]
+            hidden_states_raw.append(hs)
+            if all_match_target_seq_len and int(hs.shape[0]) != target_seq_len:
+                all_match_target_seq_len = False
 
-            seq_len = int(hs.shape[0])
-            hidden_dim = int(hs.shape[1])
-            if seq_len < target_seq_len:
-                hs = F.concat(
-                    [
-                        hs,
-                        Tensor.zeros(
-                            [target_seq_len - seq_len, hidden_dim],
-                            dtype=hs.dtype,
-                            device=hs.device,
-                        ),
-                    ],
-                    axis=0,
-                )
-            elif seq_len > target_seq_len:
-                hs = hs[:target_seq_len]
-            hidden_states_selected.append(hs)
+        if all_match_target_seq_len:
+            hidden_states_selected = hidden_states_raw
+        else:
+            hidden_states_selected = []
+            for hs in hidden_states_raw:
+                seq_len = int(hs.shape[0])
+                hidden_dim = int(hs.shape[1])
+                if seq_len < target_seq_len:
+                    hs = F.concat(
+                        [
+                            hs,
+                            Tensor.zeros(
+                                [target_seq_len - seq_len, hidden_dim],
+                                dtype=hs.dtype,
+                                device=hs.device,
+                            ),
+                        ],
+                        axis=0,
+                    )
+                elif seq_len > target_seq_len:
+                    hs = hs[:target_seq_len]
+                hidden_states_selected.append(hs)
 
         prompt_embeds = self._prepare_prompt_embeddings(*hidden_states_selected)
         batch_size = int(prompt_embeds.shape[0])
@@ -171,7 +171,6 @@ class Flux2KleinPipeline(Flux2Pipeline):
         prompt_embeds, text_ids = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
             num_images_per_prompt=model_inputs.num_images_per_prompt,
-            mask=model_inputs.mask,
         )
 
         diff_cfg = self.pipeline_config.model.diffusers_config or {}
@@ -186,18 +185,10 @@ class Flux2KleinPipeline(Flux2Pipeline):
         negative_text_ids: Tensor | None = None
         do_cfg = model_inputs.do_classifier_free_guidance and not is_distilled
         if do_cfg and model_inputs.negative_tokens is not None:
-            neg_token_ids = np.asarray(model_inputs.negative_tokens.array)
-            neg_seq_len = (
-                int(neg_token_ids.shape[0])
-                if neg_token_ids.ndim == 1
-                else int(neg_token_ids.shape[-1])
-            )
-            negative_mask = np.ones(neg_seq_len, dtype=np.bool_)
             negative_prompt_embeds, negative_text_ids = (
                 self.prepare_prompt_embeddings(
                     tokens=model_inputs.negative_tokens,
                     num_images_per_prompt=model_inputs.num_images_per_prompt,
-                    mask=negative_mask,
                 )
             )
         elif do_cfg:
@@ -301,10 +292,9 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 latents, noise_pred, dt, num_noise_tokens
             )
 
-            if hasattr(device, "synchronize"):
-                device.synchronize()
-
             if callback_queue is not None:
+                if hasattr(device, "synchronize"):
+                    device.synchronize()
                 callback_queue.put_nowait(
                     cast(
                         np.ndarray,
@@ -321,10 +311,11 @@ class Flux2KleinPipeline(Flux2Pipeline):
         image_list = []
         for b in range(batch_size):
             latents_b = latents[b : b + 1]
+            latent_image_ids_b = latent_image_ids[b : b + 1]
             image_list.append(
                 self.decode_latents(
                     latents_b,
-                    latent_image_ids,
+                    latent_image_ids_b,
                     model_inputs.height,
                     model_inputs.width,
                     output_type=output_type,

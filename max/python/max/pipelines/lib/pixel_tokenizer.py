@@ -520,41 +520,71 @@ class PixelGenerationTokenizer(
         # Add a standard (non-async) lock in the executor thread if needed.
         tokenizer_output = await run_with_default_executor(_encode_fn, prompt)
 
-        # Extract input_ids and attention_mask
+        # Extract input_ids and attention_mask.
         if isinstance(tokenizer_output, dict):
-            # apply_chat_template returns a dict
             input_ids = tokenizer_output["input_ids"]
             attention_mask = tokenizer_output.get("attention_mask", None)
-            if attention_mask is None:
-                attention_mask = [1] * len(input_ids)
-
-            # Extract real tokens only (using attention mask) for Flux2 variants
-            if self._pipeline_class_name in (
-                PipelineClassName.FLUX2,
-                PipelineClassName.FLUX2_KLEIN,
-            ):
-                # Filter to keep only real tokens (where mask == 1)
-                real_token_ids = [
-                    token_id
-                    for token_id, mask in zip(
-                        input_ids[0], attention_mask[0], strict=False
-                    )
-                    if mask == 1
-                ]
-                input_ids = [real_token_ids]
-                attention_mask = [[1] * len(real_token_ids)]
         else:
-            # Standard tokenizer output
             input_ids = tokenizer_output.input_ids
             attention_mask = tokenizer_output.attention_mask
 
-        if max_sequence_length and len(input_ids) > max_sequence_length:
+        input_ids_array = np.asarray(input_ids, dtype=np.int64)
+        if attention_mask is None:
+            attention_mask_array = np.ones_like(input_ids_array, dtype=np.bool_)
+        else:
+            attention_mask_array = np.asarray(attention_mask, dtype=np.bool_)
+
+        # Tokenizers can return a batch dimension for a single prompt.
+        if input_ids_array.ndim == 2:
+            if input_ids_array.shape[0] != 1:
+                raise ValueError(
+                    "Expected one prompt during tokenization, got "
+                    f"batch size {input_ids_array.shape[0]}."
+                )
+            input_ids_array = input_ids_array[0]
+        elif input_ids_array.ndim != 1:
             raise ValueError(
-                f"Input string is larger than tokenizer's max length ({len(input_ids)} > {max_sequence_length})."
+                "Expected rank-1 or rank-2 input_ids, got "
+                f"shape {input_ids_array.shape}."
             )
 
-        encoded_prompt = np.array(input_ids)
-        attention_mask_array = np.array(attention_mask).astype(np.bool_)
+        if attention_mask_array.ndim == 2:
+            if attention_mask_array.shape[0] != 1:
+                raise ValueError(
+                    "Expected one prompt attention_mask, got "
+                    f"batch size {attention_mask_array.shape[0]}."
+                )
+            attention_mask_array = attention_mask_array[0]
+        elif attention_mask_array.ndim != 1:
+            raise ValueError(
+                "Expected rank-1 or rank-2 attention_mask, got "
+                f"shape {attention_mask_array.shape}."
+            )
+
+        if attention_mask_array.shape[0] != input_ids_array.shape[0]:
+            raise ValueError(
+                "input_ids and attention_mask must have the same sequence "
+                f"length ({input_ids_array.shape[0]} != {attention_mask_array.shape[0]})."
+            )
+
+        # FLUX.2 uses compact token IDs; FLUX.2-Klein keeps full tokenizer output.
+        if self._pipeline_class_name == PipelineClassName.FLUX2:
+            input_ids_array = input_ids_array[attention_mask_array]
+            attention_mask_array = np.ones(
+                input_ids_array.shape[0], dtype=np.bool_
+            )
+
+        if (
+            max_sequence_length
+            and input_ids_array.shape[0] > max_sequence_length
+        ):
+            raise ValueError(
+                "Input string is larger than tokenizer's max length "
+                f"({input_ids_array.shape[0]} > {max_sequence_length})."
+            )
+
+        encoded_prompt = input_ids_array.astype(np.int64, copy=False)
+        attention_mask_array = attention_mask_array.astype(np.bool_, copy=False)
 
         return encoded_prompt, attention_mask_array
 
