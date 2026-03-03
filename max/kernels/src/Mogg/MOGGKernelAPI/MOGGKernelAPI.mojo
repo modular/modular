@@ -210,6 +210,7 @@ from nn.mha import (
     MHADecodeDispatchMetadata,
     flash_attention,
     flash_attention_ragged,
+    get_mha_decoding_num_partitions,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
@@ -7051,6 +7052,47 @@ fn _unmarshal_mha_decode_dispatch_metadata(
         Int(mha_decode_dispatch_metadata.unsafe_ptr()[2]),
         Int(mha_decode_dispatch_metadata.unsafe_ptr()[3]),
     )
+
+
+@compiler.register("mo.mha.decode.get_num_partitions")
+struct Struct_get_mha_decode_num_partitions:
+    @always_inline
+    @staticmethod
+    fn execute[
+        *, n_kv_heads: Int
+    ](
+        num_partitions: OutputTensor[dtype = DType.int64, rank=1],
+        decode_num_partitions_request: InputTensor[dtype = DType.int64, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        if decode_num_partitions_request.dim_size[0]() != 2:
+            raise Error(
+                "Expected decode_num_partitions_request to have shape [2]."
+            )
+
+        var request_ptr = decode_num_partitions_request.unsafe_ptr()
+        var batch_size = Int(request_ptr[0])
+        var max_cache_valid_length = Int(request_ptr[1])
+
+        if batch_size < 1:
+            raise Error(
+                "decode_num_partitions_request[0] (batch size) must be "
+                "positive."
+            )
+
+        if max_cache_valid_length < 0:
+            raise Error(
+                "decode_num_partitions_request[1] (max cache length) must be "
+                "non-negative."
+            )
+
+        num_partitions[0] = Int64(
+            get_mha_decoding_num_partitions[n_kv_heads, 1](
+                batch_size,
+                max_cache_valid_length,
+                context.get_device_context(),
+            )
+        )
 
 
 @always_inline

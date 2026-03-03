@@ -24,7 +24,11 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache import (
+    DecodeNumPartitionsResolver,
+    KVCacheParams,
+    RaggedKVCacheInputs,
+)
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import build_max_lengths_tensor
 from max.profiler import traced
@@ -160,6 +164,9 @@ class _TPPagedKVCacheManager:
         self._total_num_host_pages = total_num_host_pages
         self._page_size = params.page_size
         self._devices = devices
+        self._decode_num_partitions_resolver = DecodeNumPartitionsResolver(
+            session, params
+        )
 
         # Validate devices aligns with the n_devices in params
         if len(devices) != params.n_devices:
@@ -431,15 +438,17 @@ class _TPPagedKVCacheManager:
         max_lengths_host = build_max_lengths_tensor(
             num_steps, max_prompt_len, max_cached_len
         )
+        resolved_metadata = self._decode_num_partitions_resolver(
+            batch_size, max_cache_valid_length
+        )
+
         # TODO(SERVOPT-967): don't assume `q_max_seq_len == 1 `.
         # Scalar args for MHA decode dispatch:
         # [0] batch_size
         # [1] q_max_seq_len (always 1 for decode)
-        # [2] num_partitions (filled by Mojo when needed)
+        # [2] num_partitions
         # [3] max_cache_valid_length
-        mha_decode_dispatch_metadata_host = Buffer.from_numpy(
-            np.array([batch_size, 1, 0, max_cache_valid_length], dtype=np.int64)
-        )
+        resolved_metadata_buffer = resolved_metadata.to_buffer()
 
         ret_list: list[RaggedKVCacheInputs] = []
         for tp_shard in range(self.params.n_devices):
@@ -457,7 +466,7 @@ class _TPPagedKVCacheManager:
                     kv_scales=self.device_buffer.scales[tp_shard]
                     if self.device_buffer.scales is not None
                     else None,
-                    mha_decode_dispatch_metadata=mha_decode_dispatch_metadata_host,
+                    mha_decode_dispatch_metadata=resolved_metadata_buffer,
                 )
             )
 

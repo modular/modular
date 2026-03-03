@@ -68,7 +68,7 @@ class PixelGenerationPipeline(
         self._devices = load_devices(pipeline_config.model.device_specs)
 
         # Initialize Session.
-        session = InferenceSession(devices=self._devices)
+        session = InferenceSession(devices=[*self._devices])
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)

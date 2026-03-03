@@ -34,9 +34,14 @@ from .input_types import (
     unflatten_ragged_mha_decode_inputs,
 )
 from .metrics import KVCacheMetrics
-from .utils import build_max_lengths_tensor
+from .utils import (
+    DecodeNumPartitionsResolver,
+    MHADecodeDispatchMetadataScalars,
+    build_max_lengths_tensor,
+)
 
 __all__ = [
+    "DecodeNumPartitionsResolver",
     "KVCacheBuffer",
     "KVCacheInputs",
     "KVCacheInputsSequence",
@@ -45,6 +50,7 @@ __all__ = [
     "KVCacheParams",
     "KVCacheQuantizationConfig",
     "MHADecodeDispatchMetadata",
+    "MHADecodeDispatchMetadataScalars",
     "MultiKVCacheParams",
     "NestedIterableDataclass",
     "PagedCacheValues",

@@ -126,7 +126,7 @@ class CustomOpLibrary:
             self._kernel_library = KernelLibrary()
             self._kernel_library.load_paths([kernel_library])
 
-        self._session = InferenceSession(devices=devices)
+        self._session = InferenceSession(devices=[*devices])
         self._ops = {}
         self._ops_lock = threading.Lock()
 

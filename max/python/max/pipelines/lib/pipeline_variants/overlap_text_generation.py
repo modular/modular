@@ -75,7 +75,12 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, DeviceEvent, DevicePinnedBuffer, load_devices
+from max.driver import (
+    Buffer,
+    DeviceEvent,
+    DevicePinnedBuffer,
+    load_devices,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType, ops
@@ -393,7 +398,7 @@ class OverlapTextGenerationPipeline(
 
         self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
-        session = InferenceSession(devices=self._devices)
+        session = InferenceSession(devices=[*self._devices])
         self.session = session
 
         # Configure session with pipeline settings.
@@ -552,10 +557,12 @@ class OverlapTextGenerationPipeline(
             )
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
-            warmup_model_inputs=self._warmup_model_inputs,
             execute_model=self._pipeline_model.execute,
+            session=self.session,
+            kv_params=self._kv_manager.params,
+            warmup_model_inputs=self._warmup_model_inputs,
+            max_cache_length_upper_bound=self._pipeline_model.max_seq_len,
             max_batch_size=max_capture_batch_size,
-            decode_max_cache_length_upper_bound=self._pipeline_model.max_seq_len,
         )
         self._graph_capture_runner = graph_capture_runner
         self._max_graph_capture_batch_size = max_capture_batch_size
