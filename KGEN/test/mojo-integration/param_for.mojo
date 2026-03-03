@@ -4,16 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo --loop-unrolling-warn-threshold=27  %s --verify-diagnostics
-
-
-fn test_unroll_warn_threshold():
-    var cnt = 0
-
-    # expected-warning @+1 {{comptime for unrolling loop more than 27 times may cause long compilation time and large code size}}
-    comptime for i in range(28):
-        cnt += 1
-    debug_assert(cnt == 28)
+# RUN: %mojo %s
 
 
 fn test_for_list():
@@ -83,7 +74,6 @@ fn test_tuple_unpack():
 
 
 fn main():
-    test_unroll_warn_threshold()
     test_for_list()
     test_critical_edge()
     test_else_block()

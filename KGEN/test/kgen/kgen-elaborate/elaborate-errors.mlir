@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -elaborate-generators="max-depth=128 use-parametric-interpret=false" -verify-diagnostics -split-input-file -allow-unregistered-dialect
+// RUN: kgen-opt %s -elaborate-generators="max-depth=128 use-parametric-interpret=false loop-unrolling-warn-threshold=27" -verify-diagnostics -split-input-file -allow-unregistered-dialect
 
 // Recursive expansions.
 
@@ -425,4 +425,41 @@ kgen.generator export @main() {
 // expected-note @below {{struct alignment exceeds maximum alignment (2^29), got 1073741824}}
 kgen.generator @test_excessive_struct_alignment(%arg0: !kgen.pointer<!kgen.struct<(index) align(1073741824)>>) {
   kgen.return
+}
+
+// -----
+
+kgen.generator @sum_from_zero<upper>() -> index {
+  %idx0 = index.constant 0
+  // expected-warning @below {{comptime for unrolling loop more than 27 times may cause long compilation time and large code size. (use '--loop-unrolling-warn-threshold' to increase the threshold or set to `0` to disable this warning}}
+  %0 = kgen.param.for i in upper
+    has_next :(index) -> i1 @count_to_zero_has_next
+    get_next_iter :(!kgen.pointer<index> read_mem, !kgen.pointer<index> byref_result) -> !kgen.none @count_to_zero
+    (%arg0 = %idx0 : index) -> index {
+    kgen.unreachable
+  } else {
+    kgen.unreachable
+  }
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func export @param_for
+kgen.generator export @param_for(%arg0: i1, %arg1: index) {
+  kgen.call @sum_from_zero<33>() : () -> index
+  kgen.return
+}
+
+kgen.generator @count_to_zero(%arg0: !kgen.pointer<index> read_mem, %arg1: !kgen.pointer<index> byref_result) -> !kgen.none {
+  %i0 = pop.load %arg0 : !kgen.pointer<index>
+  %idx1 = index.constant 1
+  %1 = index.sub %i0, %idx1
+  pop.store %1, %arg1 : !kgen.pointer<index>
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+kgen.generator @count_to_zero_has_next(%arg0: index) -> i1 {
+  %idx0 = index.constant 0
+  %0 = index.cmp ne(%idx0, %arg0)
+  kgen.return %0 : i1
 }
