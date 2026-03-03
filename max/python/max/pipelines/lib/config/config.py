@@ -60,11 +60,10 @@ logger = logging.getLogger("max.pipelines")
 class PipelineConfig(ConfigFileModel):
     """Configuration for a pipeline.
 
-    WIP - Once a PipelineConfig is fully initialized, it should be as immutable
-    as possible (frozen=True). All underlying dataclass fields should have been
-    initialized to their default values, be it user specified via some CLI
-    flag, config file, environment variable, or internally set to a reasonable
-    default.
+    Contains settings for model selection, batch sizing, sampling, profiling,
+    LoRA adapters, and speculative decoding. Once initialized, all fields are
+    resolved to their final values from CLI flags, config files, environment
+    variables, or internal defaults.
     """
 
     # PipelineConfig intentionally accepts kwargs that belong to sub-configs
@@ -82,35 +81,43 @@ class PipelineConfig(ConfigFileModel):
             "verification before replay. Intended for debugging only."
         ),
     )
+    """Whether to run eager verification before device graph replay."""
 
     model: MAXModelConfig = Field(
         default_factory=MAXModelConfig, description="The model config."
     )
+    """The model configuration."""
 
     draft_model: MAXModelConfig | None = Field(
         default=None, description="The draft model config."
     )
+    """The draft model configuration for speculative decoding."""
 
     sampling: SamplingConfig = Field(
         default_factory=SamplingConfig, description="The sampling config."
     )
+    """The sampling configuration."""
 
     profiling: ProfilingConfig = Field(
         default_factory=ProfilingConfig, description="The profiling config."
     )
+    """The profiling configuration."""
 
     lora: LoRAConfig | None = Field(
         default=None, description="The LoRA config."
     )
+    """The LoRA configuration."""
 
     speculative: SpeculativeConfig | None = Field(
         default=None, description="The SpeculativeConfig."
     )
+    """The speculative decoding configuration."""
 
     runtime: PipelineRuntimeConfig = Field(
         default_factory=PipelineRuntimeConfig,
         description="Model-agnostic runtime settings for pipeline execution.",
     )
+    """The model-agnostic runtime settings for pipeline execution."""
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
@@ -122,7 +129,7 @@ class PipelineConfig(ConfigFileModel):
     This is used to pass unmatched kwargs from the before validator to the after validator."""
 
     def configure_session(self, session: InferenceSession) -> None:
-        """Configure an InferenceSession with standard pipeline settings."""
+        """Configures a :class:`~max.engine.InferenceSession` with standard pipeline settings."""
         session.gpu_profiling(self.profiling.gpu_profiling)
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
@@ -140,7 +147,7 @@ class PipelineConfig(ConfigFileModel):
         Args:
             kwargs: Source kwargs dictionary (modified in place)
             config_class: The ConfigFileModel dataclass to match fields against
-            key_prefix: Optional prefix to filter keys (e.g., "draft_")
+            key_prefix: Optional prefix to filter keys (for example, ``"draft_"``)
             strip_prefix: Whether to strip the prefix from extracted keys
 
         Returns:
@@ -298,7 +305,7 @@ class PipelineConfig(ConfigFileModel):
         """Creates and sets a config object with special handling for config types.
 
         Args:
-            config_name: Name of the config attribute (e.g., "model")
+            config_name: Name of the config attribute (for example, ``"model"``)
             config_class: The config class to instantiate
             matched_kwargs: kwargs that matched the config class fields
             kv_cache_kwargs: kwargs for KVCache config (model config only)
@@ -1085,7 +1092,7 @@ class PipelineConfig(ConfigFileModel):
     def log_basic_config(self) -> None:
         """Log minimal pipeline configuration information.
 
-        Logs basic PipelineConfig options including model name, pipeline task,
+        Logs basic :class:`~max.pipelines.lib.config.PipelineConfig` options including model name, pipeline task,
         weight path, max_batch_size, max_seq_len, and reserved memory.
         """
         # Retrieve architecture - this should always exist after config resolution
@@ -1260,15 +1267,19 @@ PrometheusMetricsMode = Literal[
 
 
 class AudioGenerationConfig(PipelineConfig):
+    """Configuration for an audio generation pipeline."""
+
     # TODO: Make these flags more discoverable.
     audio_decoder: str = Field(
         default="",
         description="The name of the audio decoder model architecture.",
     )
+    """The name of the audio decoder model architecture."""
 
     audio_decoder_weights: str = Field(
         default="", description="The path to the audio decoder weights file."
     )
+    """The path to the audio decoder weights file."""
 
     chunk_size: list[int] | None = Field(
         default=None,
@@ -1278,6 +1289,7 @@ class AudioGenerationConfig(PipelineConfig):
             "chunk sizes are used."
         ),
     )
+    """The chunk sizes to use for streaming."""
 
     buffer: int = Field(
         default=0,
@@ -1286,6 +1298,7 @@ class AudioGenerationConfig(PipelineConfig):
             "on each generation step."
         ),
     )
+    """The number of previous speech tokens to pass to the audio decoder on each generation step."""
 
     block_causal: bool = Field(
         default=False,
@@ -1294,6 +1307,7 @@ class AudioGenerationConfig(PipelineConfig):
             "current block. Has no effect if buffer is not set."
         ),
     )
+    """Whether prior buffered tokens attend to tokens in the current block."""
 
     prepend_prompt_speech_tokens: PrependPromptSpeechTokens = Field(
         default="once",
@@ -1302,6 +1316,7 @@ class AudioGenerationConfig(PipelineConfig):
             "decoder. Options: never, once, rolling."
         ),
     )
+    """Whether the prompt speech tokens are forwarded to the audio decoder."""
 
     prepend_prompt_speech_tokens_causal: bool = Field(
         default=False,
@@ -1311,16 +1326,19 @@ class AudioGenerationConfig(PipelineConfig):
             "prepend_prompt_speech_tokens is never."
         ),
     )
+    """Whether the prompt speech tokens attend to tokens in the current audio block."""
 
     audio_decoder_config: dict[str, Any] = Field(
         default_factory=dict,
         description="Parameters to pass to the audio decoder model.",
     )
+    """Parameters to pass to the audio decoder model."""
 
     prometheus_metrics_mode: PrometheusMetricsMode = Field(
         default="instrument_only",
         description="The mode to use for Prometheus metrics.",
     )
+    """The mode to use for Prometheus metrics."""
 
     _run_model_test_mode: bool = PrivateAttr(default=False)
     """Test-only flag that indicates that test parameters have been passed to
@@ -1366,7 +1384,7 @@ class AudioGenerationConfig(PipelineConfig):
     def from_flags(
         cls, audio_flags: dict[str, str], **config_flags: Any
     ) -> AudioGenerationConfig:
-        """Builds an AudioGenerationConfig from audio CLI flags and config kwargs."""
+        """Builds an :class:`~max.pipelines.lib.config.AudioGenerationConfig` from audio CLI flags and config kwargs."""
         audio_decoder = audio_flags.pop("audio_decoder", "")
         if not audio_decoder:
             raise ValueError(

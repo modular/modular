@@ -35,10 +35,12 @@ class SpeculativeConfig(ConfigFileModel):
     speculative_method: SpeculativeMethod | None = Field(
         default=None, description="The speculative decoding method to use."
     )
+    """The speculative decoding method to use."""
 
     num_speculative_tokens: int = Field(
         default=5, description="The number of speculative tokens."
     )
+    """The number of speculative tokens to generate per step."""
 
     rejection_sampling_strategy: RejectionSamplingStrategy = Field(
         default="residual",

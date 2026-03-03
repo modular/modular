@@ -25,15 +25,19 @@ from pydantic import Field, PrivateAttr
 
 
 class KVCacheConfig(ConfigFileModel):
+    """Configuration for the paged KV cache."""
+
     kv_cache_page_size: int = Field(
         default=128,
         description="The number of tokens in a single page in the paged KVCache.",
     )
+    """The number of tokens in a single page in the paged KV cache."""
 
     enable_prefix_caching: bool = Field(
         default=True,
         description="Whether to enable prefix caching for the paged KVCache.",
     )
+    """Whether to enable prefix caching for the paged KV cache."""
 
     enable_kvcache_swapping_to_host: bool = Field(
         default=False,
@@ -42,6 +46,7 @@ class KVCacheConfig(ConfigFileModel):
             "blocks are evicted."
         ),
     )
+    """Whether to swap paged KV cache blocks to host memory when device blocks are evicted."""
 
     device_memory_utilization: float = Field(
         default=0.9,
@@ -52,6 +57,7 @@ class KVCacheConfig(ConfigFileModel):
             "- model_weights_size."
         ),
     )
+    """The fraction of available device memory the process should consume."""
 
     host_kvcache_swap_space_gb: float = Field(
         default=50.0,
@@ -61,6 +67,7 @@ class KVCacheConfig(ConfigFileModel):
             "enabled."
         ),
     )
+    """The amount of host memory to use for the host KV cache, in GiB."""
 
     _cache_dtype: DType = PrivateAttr(default=DType.float32)
     "The data type of the KV cache. The cache dtype is determined by the model's quantization encoding, and can be overridden from CLI by the kv_cache_format parameter."
@@ -72,6 +79,7 @@ class KVCacheConfig(ConfigFileModel):
             "Supported values: float32, bfloat16, float8_e4m3fn."
         ),
     )
+    """An override for the default data type of the KV cache."""
 
     disk_offload_dir: str | None = Field(
         default=None,
@@ -81,11 +89,13 @@ class KVCacheConfig(ConfigFileModel):
             "CPU to disk for persistence across restarts."
         ),
     )
+    """The directory for disk-based KV cache offloading."""
 
     disk_offload_max_gb: float = Field(
         default=50.0,
         description="Maximum disk space (GB) for KV cache offloading.",
     )
+    """The maximum disk space in GB for KV cache offloading."""
 
     disk_offload_direct_io: bool = Field(
         default=False,
@@ -95,6 +105,7 @@ class KVCacheConfig(ConfigFileModel):
             "Falls back to buffered I/O if alignment is not met."
         ),
     )
+    """Whether to use ``O_DIRECT`` for disk I/O, bypassing the OS page cache."""
 
     lmcache_config_file: str | None = Field(
         default=None,
@@ -103,6 +114,7 @@ class KVCacheConfig(ConfigFileModel):
             "LMCache-based external KV cache tiering (CPU, disk, remote)."
         ),
     )
+    """The path to an LMCache YAML configuration file."""
 
     # Need to use `Optional` here to support `click` with 3.9.
     _available_cache_memory: int | None = PrivateAttr(default=None)
@@ -131,7 +143,7 @@ class KVCacheConfig(ConfigFileModel):
         q_max_seq_len: int = 1,
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
     ) -> KVCacheParams:
-        """Return KVCacheParams built from this config.
+        """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
         Args:
             dtype: Data type for KV cache storage.
