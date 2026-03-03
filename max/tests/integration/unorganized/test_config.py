@@ -109,7 +109,7 @@ def test_config__update_weight_paths(
                 quantization_encoding="float32",
                 max_length=512,
             ),
-            max_batch_size=1,
+            runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
 
         assert len(config.model.weight_path) == 1
@@ -124,7 +124,7 @@ def test_config__update_weight_paths(
                 quantization_encoding="float32",
                 max_length=512,
             ),
-            max_batch_size=1,
+            runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
 
         assert len(config.model.weight_path) == 1
@@ -153,7 +153,7 @@ def test_config__update_weight_paths(
                 device_specs=[DeviceSpec.accelerator()],
                 max_length=512,
             ),
-            max_batch_size=1,
+            runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
 
         assert len(config.model.weight_path) == 1
@@ -167,7 +167,7 @@ def test_config__update_weight_paths(
                     quantization_encoding="q4_k",
                     max_length=512,
                 ),
-                max_batch_size=1,
+                runtime=PipelineRuntimeConfig(max_batch_size=1),
             )
 
         # This example should now raise an error since HuggingFace fallback is removed
@@ -181,7 +181,7 @@ def test_config__update_weight_paths(
                     quantization_encoding="q4_k",
                     max_length=512,
                 ),
-                max_batch_size=1,
+                runtime=PipelineRuntimeConfig(max_batch_size=1),
             )
 
         # Test a partially complete huggingface_repo
@@ -189,7 +189,7 @@ def test_config__update_weight_paths(
             model=MAXModelConfig(
                 model_path="neubla/tiny-random-LlamaForCausalLM", max_length=1
             ),
-            max_batch_size=1,
+            runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
         assert config.model.quantization_encoding == "float32"
         assert config.model.weight_path == [Path("model.safetensors")]

@@ -224,11 +224,14 @@ class Qwen3VLModel(
         """
         # TODO: Pre-allocation Seems like a common pattern. Implement in a base class?
         # Pre-allocation for multi-step execution
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         input_row_offsets_prealloc_host = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         )
         self._input_row_offsets_prealloc = [
             input_row_offsets_prealloc_host.to(dev) for dev in self.devices

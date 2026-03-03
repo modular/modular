@@ -414,7 +414,7 @@ class SpeculativeDecodingPipelineBase(
         assert isinstance(target_kv_params, KVCacheParams)
         self._target_kv_manager: PagedKVCacheManager = load_kv_manager(
             params=target_kv_params,
-            max_batch_size=pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
             max_seq_len=self._target_model.max_seq_len,
             session=self._target_session,
             available_cache_memory=self._target_model.kv_cache_config._available_cache_memory,
@@ -423,7 +423,7 @@ class SpeculativeDecodingPipelineBase(
         assert isinstance(draft_kv_params, KVCacheParams)
         self._draft_kv_manager: PagedKVCacheManager = load_kv_manager(
             params=draft_kv_params,
-            max_batch_size=pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
             max_seq_len=self._draft_model.max_seq_len,
             session=self._draft_session,
             available_cache_memory=self._draft_model.kv_cache_config._available_cache_memory,

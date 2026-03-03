@@ -182,7 +182,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Load the model with the given weights."""
 
-        max_batch_size = self.pipeline_config.max_batch_size
+        max_batch_size = self.pipeline_config.runtime.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         # `_host_input_row_offsets_prealloc` tensor needs to reserve space for

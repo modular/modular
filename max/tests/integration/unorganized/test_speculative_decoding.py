@@ -73,8 +73,9 @@ def setup_speculative_decoding_pipeline(num_steps: int = 1):  # noqa: ANN201
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
-        runtime=PipelineRuntimeConfig(max_num_steps=num_steps),
+        runtime=PipelineRuntimeConfig(
+            max_num_steps=num_steps, max_batch_size=4
+        ),
     )
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
@@ -237,8 +238,7 @@ def test_draft_model_encoding_selection() -> None:
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
-        runtime=PipelineRuntimeConfig(max_num_steps=1),
+        runtime=PipelineRuntimeConfig(max_num_steps=1, max_batch_size=4),
     )
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
@@ -267,8 +267,7 @@ def test_draft_model_encoding_selection() -> None:
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
-        runtime=PipelineRuntimeConfig(max_num_steps=1),
+        runtime=PipelineRuntimeConfig(max_num_steps=1, max_batch_size=4),
     )
     pipeline_config2.model.kv_cache.kv_cache_page_size = 128
     pipeline_config2.model.kv_cache.device_memory_utilization = 0.3
@@ -307,8 +306,7 @@ def test_kv_cache_claiming_protocol() -> None:
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
-        runtime=PipelineRuntimeConfig(max_num_steps=1),
+        runtime=PipelineRuntimeConfig(max_num_steps=1, max_batch_size=4),
     )
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3

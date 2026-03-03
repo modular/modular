@@ -437,7 +437,7 @@ class OverlapTextGenerationPipeline(
         if isinstance(kv_params, MultiKVCacheParams):
             kv_managers = load_multi_kv_managers(
                 params=kv_params,
-                max_batch_size=self._pipeline_config.max_batch_size,
+                max_batch_size=self._pipeline_config.runtime.max_batch_size,
                 max_seq_len=self._pipeline_model.max_seq_len,
                 session=session,
                 available_cache_memory=available_cache_memory,
@@ -450,7 +450,7 @@ class OverlapTextGenerationPipeline(
             assert isinstance(kv_params, KVCacheParams)
             self._kv_manager = load_kv_manager(
                 params=kv_params,
-                max_batch_size=self._pipeline_config.max_batch_size,
+                max_batch_size=self._pipeline_config.runtime.max_batch_size,
                 max_seq_len=self._pipeline_model.max_seq_len,
                 session=session,
                 available_cache_memory=available_cache_memory,
@@ -542,22 +542,25 @@ class OverlapTextGenerationPipeline(
                 "Device graph capture is enabled but pipeline model does not "
                 "expose a compiled model for capture/replay."
             )
-        if self._pipeline_config.max_batch_size is None:
+        if self._pipeline_config.runtime.max_batch_size is None:
             raise RuntimeError(
                 "device_graph_capture requires max_batch_size to be resolved."
             )
 
         max_capture_batch_size = min(
-            self._pipeline_config.max_batch_size,
+            self._pipeline_config.runtime.max_batch_size,
             _MAX_GRAPH_CAPTURE_BATCH_SIZE,
         )
-        if max_capture_batch_size < self._pipeline_config.max_batch_size:
+        if (
+            max_capture_batch_size
+            < self._pipeline_config.runtime.max_batch_size
+        ):
             logger.warning(
                 "Capping graph capture batch size to %d "
                 "(max_batch_size=%d). Decode batches above %d will fall "
                 "back to eager execution.",
                 max_capture_batch_size,
-                self._pipeline_config.max_batch_size,
+                self._pipeline_config.runtime.max_batch_size,
                 max_capture_batch_size,
             )
         prepare_fn: Callable[[int], None] | None = None

@@ -84,9 +84,9 @@ class DummyPipelineConfig(PipelineConfig):
         # validation / resolution.
         runtime = PipelineRuntimeConfig.model_construct(
             pdl_level=pdl_level,
+            max_batch_size=max_batch_size,
         )
         base = PipelineConfig.model_construct(
-            max_batch_size=max_batch_size,
             runtime=runtime,
         )
         self.__dict__.update(base.__dict__)

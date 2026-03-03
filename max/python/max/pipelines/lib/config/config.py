@@ -75,17 +75,6 @@ class PipelineConfig(ConfigFileModel):
     # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
     model_config = ConfigDict(extra="ignore")
 
-    max_batch_size: int | None = Field(
-        default=None,
-        description=(
-            "Maximum batch size to execute with the model. When not specified "
-            "(None), this value is determined dynamically. For server launches, "
-            "set this higher based on server capacity. When "
-            "device_graph_capture is enabled, overlap pre-captures decode "
-            "graph entries for batch sizes [1..max_batch_size]."
-        ),
-    )
-
     debug_verify_replay: bool = Field(
         default=False,
         description=(
@@ -667,7 +656,7 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.device_graph_capture:
             return
 
-        if self.max_batch_size is None:
+        if self.runtime.max_batch_size is None:
             raise ValueError(
                 "device_graph_capture requires max_batch_size to be set."
             )
@@ -1058,7 +1047,7 @@ class PipelineConfig(ConfigFileModel):
 
         pipeline_entries: list[tuple[str, Any]] = [
             ("max_seq_len", self.model.max_length),
-            ("max_batch_size", self.max_batch_size),
+            ("max_batch_size", self.runtime.max_batch_size),
             ("chunked_prefill", self.runtime.enable_chunked_prefill),
             ("max_batch_input_tokens", self.runtime.max_batch_input_tokens),
             (
@@ -1145,7 +1134,7 @@ class PipelineConfig(ConfigFileModel):
                 ("architecture", arch.name),
                 ("pipeline", pipeline_class.__name__),
                 ("devices", devices_str),
-                ("max_batch_size", self.max_batch_size),
+                ("max_batch_size", self.runtime.max_batch_size),
                 ("max_seq_len", self.model.max_length),
             ]
             + [("cache_memory", memory_str)]

@@ -272,7 +272,7 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
     def _build_graph(self) -> Graph:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
-        max_batch_size = self.pipeline_config.max_batch_size
+        max_batch_size = self.pipeline_config.runtime.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         self._input_row_offsets_prealloc = Buffer.from_numpy(

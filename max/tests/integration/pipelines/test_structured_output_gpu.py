@@ -32,6 +32,7 @@ from max.pipelines import (
 )
 from max.pipelines.core import TextContext
 from max.pipelines.lib import MAXModelConfig, SamplingConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PipelineRegistry
 
 pytest_plugins = "test_common.registry"
@@ -53,7 +54,7 @@ def test_smollm_with_structured_output_gpu(
             max_length=8192,
         ),
         sampling=SamplingConfig(enable_structured_output=True),
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(

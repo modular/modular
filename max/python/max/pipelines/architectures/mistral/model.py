@@ -364,11 +364,14 @@ class MistralModel(PipelineModelWithKVCache[TextContext]):
 
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         ).to(self.devices[0])
 
         if not isinstance(self.weights, SafetensorWeights):

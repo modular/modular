@@ -145,7 +145,7 @@ class KimiK2_5Model(
     ) -> tuple[Model, Model, Model]:
         """Load the compiled models into the MAX Engine session."""
 
-        max_batch_size = self.pipeline_config.max_batch_size
+        max_batch_size = self.pipeline_config.runtime.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         # `_host_input_row_offsets_prealloc` tensor needs to reserve space for

@@ -111,7 +111,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             hidden_dim=hidden_dim,
             dtype=DType.bfloat16,
             devices=self.target_devices,
-            max_batch_size=self.pipeline_config.max_batch_size or 128,
+            max_batch_size=self.pipeline_config.runtime.max_batch_size or 128,
             num_draft_steps=self._num_draft_steps,
             session=self._target_session,
         )

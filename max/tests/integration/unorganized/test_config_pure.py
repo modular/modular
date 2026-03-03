@@ -385,7 +385,7 @@ class TestPipelineConfigUtilityMethods:
         config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
 
         # Should have created all configs correctly
-        assert config.max_batch_size == 4
+        assert config.runtime.max_batch_size == 4
 
         # LoRA config
         assert config.lora is not None
@@ -563,8 +563,8 @@ def test_config__test_incompatible_quantization_encoding(
                 ],
                 max_length=1,
             ),
-            max_batch_size=1,
             runtime=PipelineRuntimeConfig(
+                max_batch_size=1,
                 prefer_module_v3=True,
             ),
         )
@@ -582,8 +582,8 @@ def test_config__test_incompatible_quantization_encoding(
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
-        max_batch_size=1,
         runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
             prefer_module_v3=True,
         ),
     )
@@ -609,8 +609,8 @@ def test_config__test_quantization_encoding_with_dtype_casting(
                 quantization_encoding="float32",
                 max_length=1,
             ),
-            max_batch_size=1,
             runtime=PipelineRuntimeConfig(
+                max_batch_size=1,
                 prefer_module_v3=True,
             ),
         )
@@ -635,8 +635,8 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
-        max_batch_size=1,
         runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
             prefer_module_v3=True,
         ),
     )
@@ -662,8 +662,8 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
-        max_batch_size=1,
         runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
             prefer_module_v3=True,
         ),
     )
@@ -710,8 +710,8 @@ def test_config__test_retrieve_factory_with_known_architecture(
             quantization_encoding="bfloat16",
             max_length=1,
         ),
-        max_batch_size=1,
         runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
             prefer_module_v3=True,
         ),
     )
@@ -734,8 +734,8 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
             model=MAXModelConfig(
                 model_path=gemma_3_1b_it_local_path, max_length=1
             ),
-            max_batch_size=1,
             runtime=PipelineRuntimeConfig(
+                max_batch_size=1,
                 prefer_module_v3=True,
             ),
         )

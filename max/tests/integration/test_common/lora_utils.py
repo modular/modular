@@ -28,6 +28,7 @@ from max.pipelines import (
     TextTokenizer,
 )
 from max.pipelines.lib import KVCacheConfig, LoRAConfig, MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from safetensors.torch import save_file
 from transformers import AutoConfig
 
@@ -238,7 +239,7 @@ def create_pipeline_config_with_lora(
             lora_paths=lora_paths,
             max_lora_rank=max_lora_rank,
         ),
-        max_batch_size=4,
+        runtime=PipelineRuntimeConfig(max_batch_size=4),
     )
 
 
@@ -260,7 +261,7 @@ def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
             kv_cache=KVCacheConfig(),
             max_length=512,
         ),
-        max_batch_size=4,
+        runtime=PipelineRuntimeConfig(max_batch_size=4),
     )
 
 
