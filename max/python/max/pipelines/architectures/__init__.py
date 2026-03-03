@@ -51,6 +51,7 @@ def register_all_models() -> None:
     from .granite_modulev3 import granite_modulev3_arch
     from .idefics3 import idefics3_arch
     from .internvl import internvl_arch
+    from .kimik2_5 import kimik2_5_arch
     from .llama3 import llama_arch
     from .llama3_modulev3 import llama_modulev3_arch
     from .llama4 import llama4_arch
@@ -88,6 +89,7 @@ def register_all_models() -> None:
         gpt_oss_modulev3_arch,
         internvl_arch,
         idefics3_arch,
+        kimik2_5_arch,
         llama_arch,
         llama_modulev3_arch,
         llama4_arch,
