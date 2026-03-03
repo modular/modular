@@ -294,7 +294,8 @@ static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, KGENDType dtype,
 /// functions for each possible operand dtype given a result dtype.
 template <IndexFold indexFoldType, typename... OpFns>
 SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, KGENDType inputDType,
-                    KGENDType resultDType, OpFns &&...ops) {
+                    KGENDType resultDType, std::optional<int64_t> indexBitWidth,
+                    OpFns &&...ops) {
   if (inputDType.isInt())
     return Detail::foldSIMDOpDType<APSInt>(
         [](const DTypeValue &val) { return val.getIntVal(); }, operands,
@@ -309,9 +310,23 @@ SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, KGENDType inputDType,
     return Detail::foldSIMDOpDType<bool>(
         [](const DTypeValue &val) { return val.getBoolVal(); }, operands,
         resultDType, std::forward<OpFns>(ops)...);
-  if (inputDType.isIndex() || inputDType.isUIndex() || inputDType.isAddress())
+  if (inputDType.isIndex() || inputDType.isUIndex() || inputDType.isAddress()) {
+    // If we know the index type's bit width, treat it as if it were an integer
+    // type of that same bit width. This avoids the complexities of dealing with
+    // index types.
+    if (indexBitWidth) {
+      int64_t bitWidth = *indexBitWidth;
+      bool isUnsigned = !inputDType.isIndex();
+      return Detail::foldSIMDOpDType<APSInt>(
+          [bitWidth, isUnsigned](const DTypeValue &val) {
+            auto indexAPInt = APInt(64, val.getIndexVal());
+            return APSInt(indexAPInt, isUnsigned).extOrTrunc(bitWidth);
+          },
+          operands, resultDType, std::forward<OpFns>(ops)...);
+    }
     return Detail::foldSIMDOpIndex<indexFoldType>(operands, resultDType,
                                                   std::forward<OpFns>(ops)...);
+  }
   llvm_unreachable("unhandled dtype");
 }
 
@@ -339,6 +354,7 @@ SIMDAttr foldBitwiseSIMDReduceOp(Attribute operand, KGENDType inputDType,
 /// functions for each possible operand dtype given a result dtype.
 template <IndexFold indexFoldType, typename... OpFns>
 SIMDAttr foldSIMDOpResult(ArrayRef<Attribute> operands, KGENDType resultDType,
+                          std::optional<int64_t> indexBitWidth,
                           OpFns &&...ops) {
   if (llvm::any_of(operands, [](Attribute operand) {
         return !isa_and_nonnull<SIMDAttr>(operand);
@@ -346,7 +362,37 @@ SIMDAttr foldSIMDOpResult(ArrayRef<Attribute> operands, KGENDType resultDType,
     return {};
   return Detail::foldSIMDOp<indexFoldType>(
       operands, *cast<SIMDAttr>(operands.front()).getType().getResolvedDType(),
-      resultDType, std::forward<OpFns>(ops)...);
+      resultDType, indexBitWidth, std::forward<OpFns>(ops)...);
+}
+
+/// Try to fold an n-ary SIMD vector operation using one of the provided
+/// functions for each possible operand dtype given a result dtype.
+template <IndexFold indexFoldType, typename... OpFns>
+SIMDAttr foldSIMDOpResult(ArrayRef<Attribute> operands, KGENDType resultDType,
+                          OpFns &&...ops) {
+  if (llvm::any_of(operands, [](Attribute operand) {
+        return !isa_and_nonnull<SIMDAttr>(operand);
+      }))
+    return {};
+  return Detail::foldSIMDOp<indexFoldType>(
+      operands, *cast<SIMDAttr>(operands.front()).getType().getResolvedDType(),
+      resultDType, /*indexBitWidth=*/std::nullopt, std::forward<OpFns>(ops)...);
+}
+
+/// Try to fold an n-ary SIMD vector operation using one of the provided
+/// functions for each possible operand dtype, assuming the result dtype is the
+/// same as the operands' dtypes.
+template <typename... OpFns>
+SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands,
+                    std::optional<int64_t> indexBitWidth, OpFns &&...ops) {
+  if (llvm::any_of(operands, [](Attribute operand) {
+        return !isa_and_nonnull<SIMDAttr>(operand);
+      }))
+    return {};
+  KGENDType dtype =
+      *cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
+  return Detail::foldSIMDOp<kIndexResult>(operands, dtype, dtype, indexBitWidth,
+                                          std::forward<OpFns>(ops)...);
 }
 
 /// Try to fold an n-ary SIMD vector operation using one of the provided
@@ -361,6 +407,7 @@ SIMDAttr foldSIMDOp(ArrayRef<Attribute> operands, OpFns &&...ops) {
   KGENDType dtype =
       *cast<SIMDAttr>(operands.front()).getType().getResolvedDType();
   return Detail::foldSIMDOp<kIndexResult>(operands, dtype, dtype,
+                                          /*indexBitWidth=*/std::nullopt,
                                           std::forward<OpFns>(ops)...);
 }
 
