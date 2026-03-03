@@ -733,6 +733,15 @@ class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
     )
     """Number of iterations to run per configuration."""
 
+    # Whether or not to flush prefix cache between iterations
+    flush_prefix_cache: bool = field(
+        default=True,
+        metadata={
+            "group": "Sweep Configuration",
+        },
+    )
+    """Flush the prefix cache between iterations"""
+
     @classmethod
     def get_default_required_fields(cls) -> set[str]:
         """Get required fields for the sweep benchmark config."""
