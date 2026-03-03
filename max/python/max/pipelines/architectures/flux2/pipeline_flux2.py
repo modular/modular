@@ -230,7 +230,7 @@ class Flux2Pipeline(DiffusionPipeline):
         input_types = [
             TensorType(
                 DType.float32,
-                shape=["batch", "channels", "height", 2, "width", 2],
+                shape=["batch", "channels", "height", "width"],
                 device=device,
             ),
         ]
@@ -642,11 +642,6 @@ class Flux2Pipeline(DiffusionPipeline):
 
     @traced
     def preprocess_latents(self, latents: Tensor) -> Tensor:
-        batch = latents.shape[0]
-        c = latents.shape[1]
-        h = latents.shape[2]
-        w = latents.shape[3]
-        latents = F.reshape(latents, (batch, c, h // 2, 2, w // 2, 2))
         return self._patchify_and_pack(latents)
 
     def _patchify_and_pack(self, latents: Tensor) -> Tensor:
@@ -654,6 +649,10 @@ class Flux2Pipeline(DiffusionPipeline):
         latents = latents.cast(self.transformer.config.dtype)
         batch = latents.shape[0]
         c = latents.shape[1]
+        h = latents.shape[2]
+        w = latents.shape[3]
+        latents = F.rebind(latents, [batch, c, (h // 2) * 2, (w // 2) * 2])
+        latents = F.reshape(latents, (batch, c, h // 2, 2, w // 2, 2))
         h2 = latents.shape[2]
         w2 = latents.shape[4]
 
