@@ -10050,6 +10050,8 @@ struct DistributedReduceScatterSum:
             signal_buffers.size == num_devices
         ), "expected 1 signal buffer per device"
 
+        # Reduce-scatter doesn't use scratch storage, so
+        # only need enough signal_buffer space for Signal struct
         _check_signal_buffer_size(signal_buffers[0].size(), 0)
 
         # Marshal input tensors into TileTensors.
@@ -10074,34 +10076,46 @@ struct DistributedReduceScatterSum:
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
-        @parameter
-        fn output_lambda[
-            input_index: Int,
-            _dtype: DType,
-            _width: Int,
-            *,
-            _alignment: Int,
-        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
-            outputs[input_index]._lambda_store[
-                width=_width, element_alignment=_alignment
+        fn launch_reducescatter[
+            index: Int
+        ]() raises unified {
+            read in_bufs,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            @always_inline
+            @parameter
+            fn output_lambda[
+                output_index: Int,
+                _dtype: DType,
+                _width: Int,
+                *,
+                _alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
+                outputs[output_index]._lambda_store[
+                    width=_width, element_alignment=_alignment
+                ](
+                    rebind[IndexList[rank]](coord_to_index_list(coords)),
+                    rebind[SIMD[dtype, _width]](val),
+                )
+
+            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
+            reducescatter[
+                ngpus=num_devices,
+                output_lambda = output_lambda[output_index=index],
+                axis=axis,
             ](
-                rebind[IndexList[rank]](coord_to_index_list(coords)),
-                rebind[SIMD[dtype, _width]](val),
+                in_bufs,
+                out_buf.make_dynamic[DType.int64](),
+                rank_sigs,
+                dev_ctxs_input[index],
             )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            comptime for i in range(num_devices):
-                var out_buf = outputs[i].to_tile_tensor[DType.int64]()
-                reducescatter[
-                    ngpus=num_devices,
-                    output_lambda = output_lambda[input_index=i],
-                    axis=axis,
-                ](
-                    in_bufs,
-                    out_buf.make_dynamic[DType.int64](),
-                    rank_sigs,
-                    dev_ctxs_input[i],
-                )
+            _launch_device_collective[num_devices](
+                launch_reducescatter, dev_ctxs_input
+            )
 
 
 @compiler.register("mo.distributed.allgather")
