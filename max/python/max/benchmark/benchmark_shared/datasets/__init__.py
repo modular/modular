@@ -15,7 +15,12 @@ from .arxiv_summarization import ArxivSummarizationBenchmarkDataset
 from .axolotl import AxolotlBenchmarkDataset
 from .batch_job import BatchJobBenchmarkDataset
 from .code_debug import CodeDebugBenchmarkDataset
-from .distribution import BaseDistribution
+from .distribution import (
+    BaseDistribution,
+    ContinuousDistribution,
+    DiscreteDistribution,
+    DistributionParameter,
+)
 from .huggingface import HuggingFaceBenchmarkDataset
 from .interface import BenchmarkDataset
 from .local import LocalBenchmarkDataset
@@ -44,8 +49,11 @@ __all__ = [
     "BenchmarkDataset",
     "ChatSession",
     "CodeDebugBenchmarkDataset",
+    "ContinuousDistribution",
     "DatasetMode",
     "DatasetRegistryEntry",
+    "DiscreteDistribution",
+    "DistributionParameter",
     "HuggingFaceBenchmarkDataset",
     "LocalBenchmarkDataset",
     "ObfuscatedConversationsBenchmarkDataset",
