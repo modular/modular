@@ -22,7 +22,7 @@ import sys
 from typing import Any, Literal, cast, get_type_hints
 
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec, load_devices
+from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.pipelines.lib.hf_utils import is_diffusion_pipeline
@@ -55,6 +55,16 @@ from .profiling_config import ProfilingConfig
 from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
+
+_AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
+    "LlamaForCausalLM",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV3ForCausalLM",
+    "DeepseekV32ForCausalLM",
+    "DeepseekV3ForCausalLMNextN",
+)
+
+_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = ("LlamaForCausalLM",)
 
 
 class PipelineConfig(ConfigFileModel):
@@ -591,6 +601,29 @@ class PipelineConfig(ConfigFileModel):
         self._validate_and_resolve_overlap_scheduler()
 
     def _validate_and_resolve_overlap_scheduler(self) -> None:
+        arch: SupportedArchitecture | None = None
+        if not self.runtime.force:
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                huggingface_repo=self.model.huggingface_model_repo,
+                prefer_module_v3=self.runtime.prefer_module_v3,
+            )
+            max_batch_size = self.runtime.max_batch_size
+            if (
+                not self.runtime.device_graph_capture
+                and arch is not None
+                and arch.name in _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
+                and max_batch_size is not None
+                and accelerator_api() == "cuda"
+                and self._is_eligible_for_overlap_serve_optimizations()
+            ):
+                self.runtime.device_graph_capture = True
+                logger.info(
+                    "Automatically enabling device graph capture for %s with max_batch_size=%d. "
+                    "You can manually disable this by setting --no-device-graph-capture --force.",
+                    arch.name,
+                    max_batch_size,
+                )
+
         self._validate_and_resolve_device_graph_capture()
 
         if self.runtime.force:
@@ -598,26 +631,10 @@ class PipelineConfig(ConfigFileModel):
 
         # Automatically enable overlap scheduling for select architectures.
         if not self.runtime.enable_overlap_scheduler:
-            arch = PIPELINE_REGISTRY.retrieve_architecture(
-                huggingface_repo=self.model.huggingface_model_repo,
-                prefer_module_v3=self.runtime.prefer_module_v3,
-            )
             if (
                 arch is not None
-                and arch.name
-                in (
-                    "LlamaForCausalLM",
-                    "DeepseekV2ForCausalLM",
-                    "DeepseekV3ForCausalLM",
-                    "DeepseekV32ForCausalLM",
-                    "DeepseekV3ForCausalLMNextN",
-                )
-                and self.runtime.pipeline_role == "prefill_and_decode"
-                and not self.sampling.enable_structured_output
-                and not self.sampling.enable_variable_logits
-                and not self.speculative
-                and not self.lora
-                and self.model.device_specs[0].device_type != "cpu"
+                and arch.name in _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES
+                and self._is_eligible_for_overlap_serve_optimizations()
             ):
                 self.runtime.enable_overlap_scheduler = True
                 self.runtime.max_num_steps = 1
@@ -658,6 +675,16 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "Overlap scheduler is not supported with CPU models."
                 )
+
+    def _is_eligible_for_overlap_serve_optimizations(self) -> bool:
+        return (
+            self.runtime.pipeline_role == "prefill_and_decode"
+            and not self.sampling.enable_structured_output
+            and not self.sampling.enable_variable_logits
+            and not self.speculative
+            and not self.lora
+            and self.model.device_specs[0].device_type != "cpu"
+        )
 
     def _validate_and_resolve_device_graph_capture(self) -> None:
         if not self.runtime.device_graph_capture:
