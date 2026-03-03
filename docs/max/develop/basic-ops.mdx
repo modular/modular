@@ -457,8 +457,8 @@ TensorType(dtype=float32, shape=[Dim(3), Dim(3)], device=cpu:0): [-0.52, 1.18, -
 
 The random module provides specialized weight initialization functions
 following common neural network initialization schemes.
-[`random.xavier_uniform()`](/max/api/python/experimental/random#max.experimental.random.xavier_uniform)
-and [`random.kaiming_uniform()`](/max/api/python/experimental/random#max.experimental.random.kaiming_uniform)
+`random.xavier_uniform()`
+and `random.kaiming_uniform()`
 generate weights with distributions designed to maintain stable gradients during
 training. Xavier initialization works well with sigmoid and tanh activations,
 while Kaiming initialization is optimized for ReLU activations:
@@ -496,7 +496,7 @@ uses the `@` operator for matrix multiplication and the `+` operator for bias
 addition, while the activation step uses
 [`F.relu()`](/max/api/python/experimental/functional#max.experimental.functional.relu) from the
 functional API. Pre-built layers like
-[`nn.Linear`](/max/api/python/nn#max.nn.Linear) work this way internally.
+[`nn.Linear`](/max/api/python/nn/linear#max.nn.linear.Linear) work this way internally.
 Understanding operations lets you build custom layers when you need behavior
 beyond what standard layers provide:
 
