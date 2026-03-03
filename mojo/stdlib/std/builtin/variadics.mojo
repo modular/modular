@@ -1438,28 +1438,6 @@ comptime _WrapVariadicValuesIdxToTypeMapperToReducer[
     Idx: Int,
 ] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
 
-
-comptime _MapValuesAndIdxToType[
-    From: AnyType,
-    //,
-    *,
-    To: type_of(AnyType),
-    VariadicType: Variadic.ValuesOfType[From],
-    Mapper: _VariadicValuesIdxToTypeGeneratorTypeGenerator[From, To],
-] = _ReduceValueAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[To],  # reduce from a empty variadic
-    VariadicType=VariadicType,
-    Reducer = _WrapVariadicValuesIdxToTypeMapperToReducer[From, To, Mapper],
-]
-"""Construct a new variadic of types using a type-to-type mapper.
-Parameters:
-    From: The common type bound for the input variadic values.
-    To: A common trait bound for the mapped type.
-    VariadicType: The variadic to be mapped.
-    Mapper: A `[Ts: *From, idx: index] -> To` that does the transform.
-"""
-
-
 comptime _ReversedVariadic[
     T: type_of(AnyType),
     element_types: Variadic.TypesOfTrait[T],

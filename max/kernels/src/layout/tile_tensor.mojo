@@ -20,7 +20,6 @@ from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable
 from std.builtin.variadics import (
     Variadic,
-    _MapValuesAndIdxToType,
     _MapVariadicAndIdxToType,
 )
 from std.builtin.dtype import _unsigned_integral_type_of
