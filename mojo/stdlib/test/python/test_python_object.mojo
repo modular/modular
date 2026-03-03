@@ -601,16 +601,13 @@ def test_contains_dunder() raises:
 
 
 @fieldwise_init
-struct Person(Defaultable, Movable, Representable):
+struct Person(Defaultable, Movable, Writable):
     var name: String
     var age: Int
 
     fn __init__(out self):
         self.name = ""
         self.age = 0
-
-    fn __repr__(self) -> String:
-        return String("Person(", self.name, ", ", self.age, ")")
 
 
 def test_python_mojo_object_operations() raises:

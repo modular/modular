@@ -32,23 +32,17 @@ struct IntLike(Intable):
 
 
 @fieldwise_init
-struct Dog(Copyable, Representable, Stringable, Writable):
+struct Dog(Copyable, Writable):
     var name: String
     var age: Int
 
     # Allows the type to be written into any `Writer`
     fn write_to(self, mut writer: Some[Writer]):
-        writer.write("Dog(", self.name, ", ", self.age, ")")
-
-    # Construct and return a `String` using the previous method
-    fn __str__(self) -> String:
-        return String.write(self)
+        t"Dog({self.name}, {self.age})".write_to(writer)
 
     # Alternative full representation when calling `repr`
-    fn __repr__(self) -> String:
-        return String(
-            "Dog(name=", repr(self.name), ", age=", repr(self.age), ")"
-        )
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"Dog(name={repr(self.name)}, age={repr(self.age)})".write_to(writer)
 
 
 def main() raises:

@@ -73,7 +73,7 @@ def test_exp_libm() raises:
 
 
 @fieldwise_init
-struct Float32Expable(Equatable, Stringable, _Expable):
+struct Float32Expable(Equatable, Writable, _Expable):
     """This is a test struct that implements the Expable trait for Float32."""
 
     var x: Float32
@@ -92,7 +92,7 @@ struct Float32Expable(Equatable, Stringable, _Expable):
 
 
 @fieldwise_init
-struct FakeExpable(Equatable, Stringable, _Expable):
+struct FakeExpable(Equatable, Writable, _Expable):
     """Test struct using default reflection-based __eq__."""
 
     var x: Int

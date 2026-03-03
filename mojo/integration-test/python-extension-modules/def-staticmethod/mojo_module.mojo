@@ -61,10 +61,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct Dummy(Defaultable, Movable, Representable):
-    fn __repr__(self) -> String:
-        return "Dummy()"
-
+struct Dummy(Defaultable, Movable, Writable):
     @staticmethod
     fn takes_zero_raises_returns() raises -> PythonObject:
         var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")

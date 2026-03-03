@@ -17,7 +17,7 @@ from std.collections import Optional
 from std.memory import memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](Copyable, Stringable):
+struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -71,17 +71,15 @@ struct Grid[rows: Int, cols: Int](Copyable, Stringable):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __str__(self) -> String:
-        str = String()
+    fn write_to(self, mut writer: Some[Writer]):
         for row in range(Self.rows):
             for col in range(Self.cols):
                 if self[row, col] == 1:
-                    str += "*"
+                    writer.write_string("*")
                 else:
-                    str += " "
+                    writer.write_string(" ")
             if row != Self.rows - 1:
-                str += "\n"
-        return str
+                writer.write_string("\n")
 
     # ===-------------------------------------------------------------------===#
     # Methods

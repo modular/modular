@@ -18,17 +18,13 @@ from std.testing import assert_equal, TestSuite
 
 
 @fieldwise_init
-struct Point(Stringable, Writable):
+struct Point(Writable):
     var x: Int
     var y: Int
 
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("Point(", self.x, ", ", self.y, ")")
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
 
 def test_writer_of_string() raises:

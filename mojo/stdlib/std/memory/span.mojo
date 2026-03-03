@@ -378,7 +378,7 @@ struct Span[
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__[U: Representable, //](self: Span[U]) -> String:
+    fn __str__[U: Writable, //](self: Span[U]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -456,12 +456,12 @@ struct Span[
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__[U: Representable, //](self: Span[U]) -> String:
+    fn __repr__[U: Writable, //](self: Span[U]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
             U: The type of the elements in the span. Must implement the
-              trait `Representable`.
+              trait `Writable`.
 
         Returns:
             A string representation of the span.

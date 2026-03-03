@@ -68,7 +68,7 @@ def test_case_create_mojo_type_instance() -> None:
 
     assert person.name() == "John Smith"
 
-    assert repr(person) == "Person('John Smith', Int(123))"
+    assert repr(person) == "Person(name='John Smith', age=Int(123))"
 
     with pytest.raises(Exception) as cm:
         person.change_name("John Modular")

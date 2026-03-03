@@ -20,6 +20,7 @@ These are Mojo built-ins, so you don't need to import them.
 # ===----------------------------------------------------------------------=== #
 
 
+@deprecated("Stringable is being deprecated in favor of Writable")
 trait Stringable:
     """
     The `Stringable` trait describes a type that can be converted to a

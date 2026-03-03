@@ -18,6 +18,7 @@ The functions and traits provided here are built-ins, so you don't need to impor
 from std.collections import Deque, LinkedList, Set
 
 
+@deprecated("Representable is being deprecated in favor of Writable")
 trait Representable(ImplicitlyDestructible):
     """A trait that describes a type that has a String representation.
 
@@ -65,22 +66,7 @@ trait Representable(ImplicitlyDestructible):
         ...
 
 
-fn repr[T: Representable](value: T) -> String:
-    """Returns the string representation of the given value.
-
-    Args:
-        value: The value to get the string representation of.
-
-    Parameters:
-        T: The type of `value`. Must implement the `Representable` trait.
-
-    Returns:
-        The string representation of the given value.
-    """
-    return value.__repr__()
-
-
-fn repr[T: Writable, __disambiguate: NoneType = None](value: T) -> String:
+fn repr[T: Writable](value: T) -> String:
     """Returns the string representation of the given value.
 
     Args:
@@ -88,8 +74,6 @@ fn repr[T: Writable, __disambiguate: NoneType = None](value: T) -> String:
 
     Parameters:
         T: The type of `value`. Must implement the `Writable` trait.
-        __disambiguate: A temporary dummy parameter to disambiguate the function
-            from the other `repr(Representable)` function.
 
     Returns:
         The string representation of the given value.

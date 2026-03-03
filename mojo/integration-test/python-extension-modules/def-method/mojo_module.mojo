@@ -59,22 +59,13 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct Person(Defaultable, ImplicitlyCopyable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Writable):
     var name: String
     var age: Int
 
     fn __init__(out self):
         self.name = "John Smith"
         self.age = 123
-
-    fn __repr__(self) -> String:
-        return String(
-            "Person(",
-            repr(self.name),
-            ", ",
-            repr(self.age),
-            ")",
-        )
 
     @staticmethod
     fn _get_self_ptr(

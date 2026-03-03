@@ -260,6 +260,13 @@ what we publish.
   behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly
   convert a `Bool` to an index.
 
+- The `Stringable` and `Representable` traits are now deprecated. Use `Writable`
+  instead to make your types formattable as strings.
+  `Writable` provides a default implementation, so in many cases simply adding
+  `Writable` conformance is enough without manually implementing `write_to()`
+  or `write_repr_to()`, however, you can manually implement these to get custom
+  output.
+
 - `TString.write_to()` now uses a compact encoding for format strings. The
   format string is flattened at compile time into NUL-terminated literal
   segments, producing considerably smaller static data and faster runtime than

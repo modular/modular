@@ -20,12 +20,9 @@ from std.python.bindings import PythonModuleBuilder
 
 
 @fieldwise_init
-struct Person(Movable, Representable):
+struct Person(Movable, Writable):
     var name: String
     var age: Int
-
-    fn __repr__(self) -> String:
-        return String("Person(", self.name, ", ", self.age, ")")
 
     @staticmethod
     fn py_init(

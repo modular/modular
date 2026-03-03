@@ -304,7 +304,7 @@ struct Interval[T: IntervalElement](
 
 struct _IntervalNode[
     T: IntervalElement,
-    U: Copyable & Stringable & Comparable,
+    U: Copyable & Comparable & Writable,
 ](ImplicitlyCopyable, Writable):
     """A node containing an interval and associated data.
 
@@ -418,8 +418,7 @@ struct _IntervalNode[
         Args:
             writer: The writer to write the interval node to.
         """
-        writer.write(self.interval, "=", String(self.data))
-        # writer.write(str(self.data))
+        writer.write(self.interval, "=", self.data)
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
@@ -480,7 +479,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement,
-    U: Copyable & Stringable & Comparable,
+    U: Copyable & Comparable & Writable,
 ](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 
