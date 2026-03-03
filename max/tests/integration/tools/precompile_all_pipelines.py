@@ -42,7 +42,10 @@ from verify_pipelines import (
 
 logger = logging.getLogger(__name__)
 
-SKIP_MODELS: set[str] = set()
+SKIP_MODELS: set[str] = {
+    # TODO(GEX-3314): VirtualDeviceContext::memAlloc crash on B200 precompile
+    "huggingfacetb/smollm2-360m-instruct",
+}
 
 
 @dataclass
