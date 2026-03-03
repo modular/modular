@@ -52,7 +52,7 @@ from std.gpu.memory import (
     external_memory,
 )
 from kv_cache.types import KVCacheT
-from layout import Layout
+from layout import Layout, TileTensor
 from layout.int_tuple import IntTuple, UNKNOWN_VALUE
 from layout.layout import *
 from layout.layout_tensor import (
@@ -5521,9 +5521,10 @@ fn _naive_attention[
         score_lt.runtime_layout.shape.value.canonicalize()
     )
 
+    var score_tt = TileTensor(score)
     softmax[dtype, simd_size, 4](
-        score_lt,
-        score_lt,
+        score_tt,
+        score_tt,
         axis=3,
     )
 

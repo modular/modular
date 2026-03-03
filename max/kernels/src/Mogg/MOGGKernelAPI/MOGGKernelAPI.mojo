@@ -4391,7 +4391,7 @@ struct Softmax:
             target,
         ](
             output.shape(),
-            output.to_layout_tensor(),
+            output.to_tile_tensor[DType.int64](),
             Int(axis),
             context=ctx,
         )
@@ -4426,7 +4426,7 @@ struct LogSoftmax:
             target,
         ](
             output.shape(),
-            output.to_layout_tensor(),
+            output.to_tile_tensor[DType.int64](),
             Int(axis),
             context=ctx,
         )

@@ -304,24 +304,8 @@ fn test_case_sampling[
         in_logits_cpu_test.data[i] = in_logits.data[i] / temperature
 
     softmax[simd_width=1, rank=rank](
-        LayoutTensor[
-            in_logits_cpu_test.type,
-            Layout.row_major[dims = in_logits_cpu_test.shape](),
-        ](
-            in_logits_cpu_test.data,
-            RuntimeLayout[
-                Layout.row_major[dims = in_logits_cpu_test.shape](),
-            ].row_major(in_logits_cpu_test.get_shape().canonicalize()),
-        ),
-        LayoutTensor[
-            probs_cpu_test.type,
-            Layout.row_major[dims = probs_cpu_test.shape](),
-        ](
-            probs_cpu_test.data,
-            RuntimeLayout[
-                Layout.row_major[dims = probs_cpu_test.shape](),
-            ].row_major(probs_cpu_test.get_shape().canonicalize()),
-        ),
+        TileTensor(in_logits_cpu_test),
+        TileTensor(probs_cpu_test),
         axis=1,
     )
     in_logits_cpu_test_ptr.free()
