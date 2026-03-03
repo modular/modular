@@ -148,6 +148,10 @@ follow_imports = "skip"
 module = "max.*"
 disallow_any_generics = true
 
+[[tool.mypy.overrides]]
+module = "utils.benchmarking.results_publication.*"
+disallow_any_generics = true
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true
