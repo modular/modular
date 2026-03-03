@@ -2225,9 +2225,7 @@ def _unsafe_strlen(
     return _unsafe_strlen_impl(ptr, max)
 
 
-fn _unsafe_strlen_impl(
-    ptr: UnsafePointer[mut=False, Byte], max: UInt
-) -> UInt:
+fn _unsafe_strlen_impl(ptr: UnsafePointer[mut=False, Byte], max: UInt) -> UInt:
     """SIMD-accelerated helper for `_unsafe_strlen`.
 
     Scans for a null byte using SIMD-width blocks, then a scalar tail for any
