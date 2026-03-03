@@ -753,8 +753,9 @@ MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            ArrayRef<std::string> includeDirs)
     : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
-      isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)),
-      isQuiescent(runtime.getReadyChain().copy()) {
+      // At construction, the document is in a ready state - no tasks are
+      // currently enqueued.
+      currentTaskChain(runtime.getReadyChain().copy()) {
   // Add the parent directory of the main uri as an available include directory.
   std::string parentDir =
       std::filesystem::path(uris[0].file().str()).parent_path().string();
@@ -764,13 +765,16 @@ MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
   getSourceMgr().setIncludeDirs(allIncludeDirs);
 }
 
-void MojoDocument::startDocumentParse(AsyncRT::AnyAsyncValueRef chain,
-                                      LSPTelemetryContext &telemetryCtx,
+void MojoDocument::startDocumentParse(LSPTelemetryContext &telemetryCtx,
                                       ProgressManager &progressMgr) {
-  chain.andThenAsync(
-      [doc = MojoDocumentRef::copy(this), &telemetryCtx, &progressMgr] {
-        doc->parseDocument(telemetryCtx, progressMgr);
-      });
+  {
+    std::lock_guard<std::mutex> guard(currentTaskMutex);
+    assert(chainIndex == 0 && "first task must be the parse task");
+  }
+
+  startTask([&telemetryCtx, &progressMgr](MojoDocument &doc) {
+    doc.parseDocument(telemetryCtx, progressMgr);
+  });
 }
 
 void MojoDocument::parseDocument(LSPTelemetryContext &ctx,
@@ -782,7 +786,7 @@ void MojoDocument::parseDocument(LSPTelemetryContext &ctx,
 
         // If we've already been invalidated, bail out early.
         if (isInvalidated)
-          return markDocumentParsed();
+          return;
 
         // Build a wrapper diagnostic handler for the source manager to capture
         // diagnostics emitted when parsing the mojo file.
@@ -829,7 +833,7 @@ void MojoDocument::parseDocument(LSPTelemetryContext &ctx,
 
         // If we've already been invalidated, bail out early.
         if (isInvalidated)
-          return markDocumentParsed();
+          return;
 
         // Process the collected diagnostics.
         llvm::StringMap<std::optional<lsp::PublishDiagnosticsParams>>
@@ -869,9 +873,6 @@ void MojoDocument::parseDocument(LSPTelemetryContext &ctx,
 
         // Sort any inlay hints computed during parsing.
         llvm::stable_sort(inlayHints);
-
-        // Mark the document as fully parsed now that we're done.
-        markDocumentParsed();
       },
       "Parsing document", getURIs().front().file().str());
 }
@@ -888,35 +889,25 @@ void MojoDocument::invalidate() {
   if (isInvalidated)
     return;
   isInvalidated = true;
-
-  // Mark the document as parsed to unblock chained events, and let them
-  // invalidate themselves.
-  markDocumentParsed();
 }
 
-void MojoDocument::markDocumentParsed() {
-  std::lock_guard<std::mutex> lock(isDocumentParsedMutex);
-  if (!isDocumentParsed.isReady())
-    isDocumentParsed.copy().emplace();
-}
+std::pair<AsyncValueRef<Chain>, AsyncValueRef<Chain>>
+MojoDocument::enqueueNewTask() {
+  std::lock_guard<std::mutex> lock(currentTaskMutex);
 
-AsyncValueRef<Chain> MojoDocument::newTaskChain() {
-  std::lock_guard<std::mutex> lock(isDocumentParsedMutex);
-  // Join these two tasks into one chain.
-  AsyncValueRef<Chain> n =
-      AsyncValueRef<Chain>::allocate(isQuiescent.getRuntime());
-  AsyncValueRef<Chain> rval =
-      AsyncValueRef<Chain>::allocate(isQuiescent.getRuntime());
-  llvm::SmallVector<AnyAsyncValueRef> refs;
-  refs.emplace_back(std::move(isQuiescent));
-  refs.emplace_back(rval.copy());
-  AsyncRT::andThenSyncCopying(
-      llvm::ArrayRef<AnyAsyncValueRef>(refs),
-      [n = n.copy()](llvm::ArrayRef<AnyAsyncValueRef> elems) mutable {
-        std::move(n).emplace();
-      });
-  isQuiescent = std::move(n);
-  return rval;
+  chainIndex++;
+
+  // This is the chain that needs to be readied for the new task to signal
+  // completion.
+  AsyncValueRef<Chain> current =
+      AsyncValueRef<Chain>::allocate(currentTaskChain.getRuntime());
+
+  // This is the old task chain that the new task has to wait on.
+  AsyncValueRef<Chain> previous = currentTaskChain.copy();
+
+  currentTaskChain = current.copy();
+
+  return std::make_pair(std::move(previous), std::move(current));
 }
 
 void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
@@ -948,7 +939,7 @@ void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
 }
 
 void MojoDocument::dumpParsedIR() {
-  startTaskAfterParsing([](MojoDocument &doc) {
+  startTask([](MojoDocument &doc) {
     std::string message;
     auto out = mlir::openOutputFile("lsp-parsed.mlir", &message);
     if (!out) {
@@ -1087,8 +1078,8 @@ void MojoDocument::getCodeActions(
     const lsp::URIForFile &uri, const lsp::Range &pos,
     const lsp::CodeActionContext &context,
     LSPResponder<std::vector<lsp::CodeAction>> responder) {
-  startTaskAfterParsing([uri, pos, context, responder = std::move(responder)](
-                            MojoDocument &doc) mutable {
+  startTask([uri, pos, context,
+             responder = std::move(responder)](MojoDocument &doc) mutable {
     if (doc.isInvalidated)
       return responder.replyOutdatedRequest();
     responder.reply(
@@ -1127,8 +1118,8 @@ MojoDocument::getCodeActionsSync(SMRange range,
 void MojoDocument::onCodeCompletion(
     const lsp::URIForFile &uri, const lsp::Position &completePos,
     LSPResponder<lsp::CompletionList> responder) {
-  startTaskAfterParsing([uri, completePos, responder = std::move(responder)](
-                            MojoDocument &doc) mutable {
+  startTask([uri, completePos,
+             responder = std::move(responder)](MojoDocument &doc) mutable {
     if (doc.isInvalidated)
       return responder.replyOutdatedRequest();
     SMLoc completeLoc = doc.getLocFromPos(uri, completePos);
@@ -1228,7 +1219,7 @@ lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
 void MojoDocument::onDefinition(
     const lsp::URIForFile &uri, const lsp::Position &pos,
     LSPResponder<std::vector<lsp::Location>> responder) {
-  startTaskAfterParsing(
+  startTask(
       [uri, pos, responder = std::move(responder)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
           return responder.replyOutdatedRequest();
@@ -1340,12 +1331,11 @@ void MojoDocument::getDocumentSymbols(
 void MojoDocument::onDocumentSymbol(
     const lsp::URIForFile &uri,
     LSPResponder<std::vector<lsp::DocumentSymbol>> responder) {
-  startTaskAfterParsing(
-      [uri, responder = std::move(responder)](MojoDocument &doc) mutable {
-        if (doc.isInvalidated)
-          return responder.replyOutdatedRequest();
-        responder.reply(doc.onDocumentSymbolSync(uri));
-      });
+  startTask([uri, responder = std::move(responder)](MojoDocument &doc) mutable {
+    if (doc.isInvalidated)
+      return responder.replyOutdatedRequest();
+    responder.reply(doc.onDocumentSymbolSync(uri));
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -1355,12 +1345,11 @@ void MojoDocument::onDocumentSymbol(
 void MojoDocument::onFoldingRange(
     const lsp::URIForFile &uri,
     LSPResponder<std::vector<lsp::FoldingRange>> responder) {
-  startTaskAfterParsing(
-      [uri, responder = std::move(responder)](MojoDocument &doc) mutable {
-        if (doc.isInvalidated)
-          return responder.replyOutdatedRequest();
-        responder.reply(doc.onFoldingRangeSync(uri));
-      });
+  startTask([uri, responder = std::move(responder)](MojoDocument &doc) mutable {
+    if (doc.isInvalidated)
+      return responder.replyOutdatedRequest();
+    responder.reply(doc.onFoldingRangeSync(uri));
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -1411,7 +1400,7 @@ void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
 void MojoDocument::onHover(
     const lsp::URIForFile &uri, const lsp::Position &pos,
     LSPResponder<std::optional<llvm::lsp::Hover>> responder) {
-  startTaskAfterParsing(
+  startTask(
       [uri, pos, responder = std::move(responder)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
           return responder.replyOutdatedRequest();
@@ -1440,8 +1429,8 @@ std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) {
 void MojoDocument::onInlayHint(
     const lsp::URIForFile &uri, const lsp::Range &range,
     LSPResponder<std::vector<lsp::InlayHint>> responder) {
-  startTaskAfterParsing([uri, range, responder = std::move(responder)](
-                            MojoDocument &doc) mutable {
+  startTask([uri, range,
+             responder = std::move(responder)](MojoDocument &doc) mutable {
     if (doc.isInvalidated)
       return responder.replyOutdatedRequest();
     SMRange smRange = doc.getLocFromPos(uri, range);
@@ -1473,16 +1462,15 @@ void MojoDocument::onReferences(
     const lsp::URIForFile &uri, const lsp::Position &position,
     bool includeDeclaration,
     LSPResponder<std::vector<lsp::Location>> responder) {
-  startTaskAfterParsing(
-      [uri, position, includeDeclaration,
-       responder = std::move(responder)](MojoDocument &doc) mutable {
-        if (doc.isInvalidated)
-          return responder.replyOutdatedRequest();
-        SMLoc smLoc = doc.getLocFromPos(uri, position);
-        if (!smLoc.isValid())
-          return responder.replyInvalidRequest();
-        responder.reply(doc.onReferencesSync(smLoc, includeDeclaration));
-      });
+  startTask([uri, position, includeDeclaration,
+             responder = std::move(responder)](MojoDocument &doc) mutable {
+    if (doc.isInvalidated)
+      return responder.replyOutdatedRequest();
+    SMLoc smLoc = doc.getLocFromPos(uri, position);
+    if (!smLoc.isValid())
+      return responder.replyInvalidRequest();
+    responder.reply(doc.onReferencesSync(smLoc, includeDeclaration));
+  });
 }
 
 std::vector<lsp::Location>
@@ -1513,8 +1501,8 @@ void MojoDocument::onSemanticTokens(
     const lsp::URIForFile &uri,
     OnSemanticTokensResultFn<std::optional<std::vector<SemanticToken>>>
         onSemanticTokens) {
-  startTaskAfterParsing([uri, onSemanticTokens = std::move(onSemanticTokens)](
-                            MojoDocument &doc) mutable {
+  startTask([uri, onSemanticTokens =
+                      std::move(onSemanticTokens)](MojoDocument &doc) mutable {
     if (doc.isInvalidated)
       return onSemanticTokens({}, /*outdated=*/true, /*invalid=*/false);
     // Get a document range for the given uri.
@@ -1620,7 +1608,7 @@ MojoDocument::onSemanticTokensSync(SMRange range) {
 void MojoDocument::onSignatureHelp(
     const lsp::URIForFile &uri, const lsp::Position &pos,
     LSPResponder<lsp::SignatureHelp2> responder) {
-  startTaskAfterParsing(
+  startTask(
       [uri, pos, responder = std::move(responder)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
           return responder.replyOutdatedRequest();
@@ -1679,9 +1667,8 @@ void MojoDocument::onRename(const lsp::URIForFile &uri,
                             LSPResponder<lsp::WorkspaceEdit> responder) {
   // Convert newName to a string now, because the string ref may be invalidated
   // by the time we process this request.
-  startTaskAfterParsing([uri, pos, newName = newName.str(),
-                         responder =
-                             std::move(responder)](MojoDocument &doc) mutable {
+  startTask([uri, pos, newName = newName.str(),
+             responder = std::move(responder)](MojoDocument &doc) mutable {
     if (doc.isInvalidated)
       return responder.replyOutdatedRequest();
 
@@ -2287,21 +2274,15 @@ struct MojoServer::Impl {
         filesToProcess.push_back(file.copy());
     }
 
-    // Invalidate all of the current documents if we aren't waiting for
-    // shutdown, otherwise wait for them to parse and resolve actions. The
-    // document ready chain is set and all related notifications are fired
-    // synchronously.
+    // Invalidate all the current documents and wait for their task chains to
+    // complete.
     for (auto &file : filesToProcess) {
-      if (waitOnShutdown)
-        AsyncRT::await(file->getDocumentReadyChain());
-      else
+      // If we're waiting for tasks to complete on shutdown, we don't want to
+      // invalidate these files and have the tasks early-out.
+      if (!waitOnShutdown)
         file->invalidate();
+      AsyncRT::await(file->getTaskChain());
     }
-
-    // We always need to block on outstanding tasks, they may simple have been
-    // cancelled above and we can expect them to finish quickly.
-    for (auto &file : filesToProcess)
-      AsyncRT::await(file->getQuiescentChain());
 
     {
       std::lock_guard<std::mutex> lock(filesMutex);
@@ -2363,12 +2344,8 @@ struct MojoServer::Impl {
 
     // If a document already exists, invalidate that version.
     AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
-    AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(runtime);
     if (it->second) {
       it->second->invalidate();
-
-      // Chain the new document to the old one.
-      chain = it->second->getDocumentReadyChain();
     }
 
     // Create a new document.
@@ -2379,7 +2356,7 @@ struct MojoServer::Impl {
     // Clear pending contents since they're now being parsed.
     pendingDocContents.erase(uri.file());
 
-    it->second->startDocumentParse(std::move(chain), telemetryCtx, progressMgr);
+    it->second->startDocumentParse(telemetryCtx, progressMgr);
   }
 
   /// The global context.
@@ -2701,12 +2678,8 @@ void MojoServer::addNotebookDocument(
 
   // If a document already exists, invalidate that version.
   AsyncRT::Runtime &runtime = *impl->ctx->get<AsyncRT::Runtime>();
-  AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(runtime);
   if (file) {
     file->invalidate();
-
-    // Chain the new document to the old one.
-    chain = file->getDocumentReadyChain();
   }
 
   // Build the list of URIs for the document and cells.
@@ -2721,8 +2694,7 @@ void MojoServer::addNotebookDocument(
   for (const lsp::TextDocumentItem &cell : cellDocuments)
     impl->notebookCellToFile[cell.uri.file()] = file.copy();
 
-  file->startDocumentParse(std::move(chain), getLSPTelemetryContext(),
-                           impl->progressMgr);
+  file->startDocumentParse(getLSPTelemetryContext(), impl->progressMgr);
 }
 
 void MojoServer::removeNotebookDocument(

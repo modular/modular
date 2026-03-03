@@ -112,15 +112,11 @@ public:
   /// Invalidate this document.
   void invalidate();
 
-  /// Return a chain that will be ready when the document is parsed.
-  AnyAsyncValueRef getDocumentReadyChain() const {
-    return isDocumentParsed.copy();
-  }
-
-  /// Return a chain that will be ready when currently scheduled tasks are done.
-  AnyAsyncValueRef getQuiescentChain() {
-    std::lock_guard<std::mutex> lk(isDocumentParsedMutex);
-    return isQuiescent.copy();
+  /// Returns the current task chain of the document. When this value is readied
+  /// all currently outstanding tasks have been completed.
+  AnyAsyncValueRef getTaskChain() {
+    std::lock_guard<std::mutex> guard(currentTaskMutex);
+    return currentTaskChain.copy();
   }
 
   //===--------------------------------------------------------------------===//
@@ -210,8 +206,10 @@ public:
   /// errors are reported to the source manager.
   void checkModuleSemantics(MojoASTDeclRef decl);
 
-  void startDocumentParse(AnyAsyncValueRef chain,
-                          LSPTelemetryContext &telemetryCtx,
+  /// Starts the document parse task. This must be invoked _after_ construction,
+  /// because there is setup code that runs after the constructor that has to be
+  /// finished before the parse task can complete successfully.
+  void startDocumentParse(LSPTelemetryContext &telemetryCtx,
                           ProgressManager &progressMgr);
 
   //===--------------------------------------------------------------------===//
@@ -321,22 +319,21 @@ private:
   void parseDocument(LSPTelemetryContext &telemetryCtx,
                      ProgressManager &progressMgr);
 
-  /// Mark the current document as being finished parsing.
-  void markDocumentParsed();
+  /// Enqueue a new sequential task. Returns the previous task's chain (to wait
+  /// on) and a chain for the new task to mark as finished.
+  std::pair<AsyncValueRef<Chain>, AsyncValueRef<Chain>> enqueueNewTask();
 
-  /// Get a new chain for a new task to mark when finished.
-  AsyncValueRef<Chain> newTaskChain();
-
-  /// Start a task that depends on the document being parsed.
+  /// Start a task to be run sequentially, with exclusive access to the
+  /// document's parse state.
   template <typename FnT>
-  void startTaskAfterParsing(FnT &&fn) {
-    AsyncValueRef<Chain> done = newTaskChain();
+  void startTask(FnT &&fn) {
+    auto [previous, current] = enqueueNewTask();
 
-    isDocumentParsed.andThenAsync([doc = RCRef<MojoDocument>::copy(this),
-                                   fn = std::forward<FnT>(fn),
-                                   done = std::move(done)]() mutable {
+    previous.andThenAsync([doc = RCRef<MojoDocument>::copy(this),
+                           fn = std::forward<FnT>(fn),
+                           current = std::move(current)]() mutable {
       fn(*doc);
-      std::move(done).emplace();
+      std::move(current).emplace();
     });
   }
 
@@ -415,14 +412,19 @@ private:
   //===--------------------------------------------------------------------===//
   // Parsed Fields
 
-  /// The following fields are only available after the document has been
-  /// parsed, when `isDocumentParsed` is ready.
+  /// An async value readied when the document has finished executing all
+  /// currently-enqueued tasks.
+  AsyncValueRef<Chain> currentTaskChain;
 
-  /// An async value readied when the document is parsed, and one that is
-  /// signaled when all asynchronous jobs are completed.
-  AsyncValueRef<Chain> isDocumentParsed;
-  AsyncValueRef<Chain> isQuiescent;
-  std::mutex isDocumentParsedMutex;
+  /// Incremented once when a new chain is enqueued. Used to ensure that the
+  /// first task queued is the parse task.
+  size_t chainIndex = 0;
+
+  /// Guards access to currentTaskChain and chainIndex.
+  std::mutex currentTaskMutex;
+
+  /// The following fields are only available after the document has been
+  /// parsed. To access these fields safely, use the startTask method.
 
   /// A set of fixits for diagnostics emitted for the current version of the
   /// file.
