@@ -530,8 +530,8 @@ class Flux2Pipeline(DiffusionPipeline):
         latents: Tensor,
         latent_h: int,
         latent_w: int,
-    ) -> np.ndarray:
-        """Decode Flux2 packed latents into an image array.
+    ) -> list[np.ndarray]:
+        """Decode Flux2 packed latents into image arrays for all batch elements.
 
         Args:
             latents: Packed latents, shaped (B, S, C).
@@ -539,7 +539,7 @@ class Flux2Pipeline(DiffusionPipeline):
             latent_w: Latent width after packing (latent_w // 2).
 
         Returns:
-            A float32 HWC NumPy array.
+            List of float32 HWC NumPy arrays, one per batch element.
         """
         # Unpack: (B, S, C) -> (B, H, W, C)
         batch = int(latents.shape[0])
@@ -552,9 +552,10 @@ class Flux2Pipeline(DiffusionPipeline):
             latents_bhwc, bn_mean, bn_var
         )
 
-        # Decode with the VAE and normalize layout to HWC.
+        # Decode the full batch with the VAE in a single call, then split.
         decoded = self.vae.decode(latents_decoded)
-        return self._image_to_flat_hwc(self._to_numpy(decoded))
+        numpy_decoded = self._to_numpy(decoded)  # (B, 3, H, W)
+        return [self._image_to_flat_hwc(numpy_decoded[b]) for b in range(batch)]
 
     def _postprocess_latents(
         self,
@@ -812,18 +813,12 @@ class Flux2Pipeline(DiffusionPipeline):
                             latents, noise_pred, dt, num_noise_tokens
                         )
 
-        # 5) Decode final outputs per batch element.
-        image_list = []
+        # 5) Decode final outputs for all batch elements in a single pass.
         with Tracer("decode_outputs"):
-            for b in range(batch_size):
-                with Tracer("slice_batch"):
-                    latents_b = latents[b : b + 1]
-                image_list.append(
-                    self.decode_latents(
-                        latents_b,
-                        model_inputs.latent_h // 2,
-                        model_inputs.latent_w // 2,
-                    )
-                )
+            image_list = self.decode_latents(
+                latents,
+                model_inputs.latent_h // 2,
+                model_inputs.latent_w // 2,
+            )
 
         return Flux2PipelineOutput(images=image_list)  # type: ignore[arg-type]
