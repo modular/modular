@@ -79,7 +79,6 @@ def test_mamba_model_inputs_defaults() -> None:
     """MambaModelInputs defaults: is_prefill=True, layer_states=[]."""
     import numpy as np
     from max.driver import Buffer
-
     from max.pipelines.architectures.mamba.model import (
         MambaModelInputs,
     )
@@ -97,7 +96,6 @@ def test_mamba_model_inputs_with_states() -> None:
     """MambaModelInputs stores is_prefill=False and layer_states."""
     import numpy as np
     from max.driver import Buffer
-
     from max.pipelines.architectures.mamba.model import (
         MambaModelInputs,
     )
