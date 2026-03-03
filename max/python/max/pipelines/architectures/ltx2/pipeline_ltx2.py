@@ -23,13 +23,14 @@ from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.interfaces import TokenBuffer
 from max.pipelines import PixelContext
 from max.pipelines.lib.interfaces import (
     DiffusionPipeline,
     PixelModelInputs,
 )
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
-from max.profiler import Tracer
+from max.profiler import Tracer, traced
 from tqdm import tqdm
 from transformers import Gemma3ForConditionalGeneration
 
@@ -131,22 +132,22 @@ class LTX2Pipeline(DiffusionPipeline):
             self._vae_latents_mean = None
             self._vae_latents_std = None
 
-        audio_mean = getattr(self.audio_vae, "latents_mean", None)
-        audio_std = getattr(self.audio_vae, "latents_std", None)
-        if audio_mean is not None and audio_std is not None:
-            self._audio_latents_mean: Tensor | None = Tensor.constant(
-                np.array(audio_mean, dtype=np.float32),
+        audio_vae_mean = getattr(self.audio_vae, "latents_mean", None)
+        audio_vae_std = getattr(self.audio_vae, "latents_std", None)
+        if audio_vae_mean is not None and audio_vae_std is not None:
+            self._audio_vae_latents_mean: Tensor | None = Tensor.constant(
+                np.array(audio_vae_mean, dtype=np.float32),
                 dtype=stats_dtype,
                 device=device,
             )
-            self._audio_latents_std: Tensor | None = Tensor.constant(
-                np.array(audio_std, dtype=np.float32),
+            self._audio_vae_latents_std: Tensor | None = Tensor.constant(
+                np.array(audio_vae_std, dtype=np.float32),
                 dtype=stats_dtype,
                 device=device,
             )
         else:
-            self._audio_latents_mean = None
-            self._audio_latents_std = None
+            self._audio_vae_latents_mean = None
+            self._audio_vae_latents_std = None
 
         self.build_pack_latents()
         self.build_pack_audio_latents()
@@ -315,14 +316,17 @@ class LTX2Pipeline(DiffusionPipeline):
 
         Mirrors Flux2's build_decode_latents -> _postprocess_latents pattern.
         """
-        if self._audio_latents_mean is None or self._audio_latents_std is None:
+        if (
+            self._audio_vae_latents_mean is None
+            or self._audio_vae_latents_std is None
+        ):
             return
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
         # latents_mean has shape [C*M = base_channels = 128], matching the packed
         # audio tensor last dim [B, L, C*M].  Denormalization happens on the packed
         # tensor before unpack — same order as diffusers.
-        num_channels = int(self._audio_latents_mean.shape[0])  # 128 = C*M
+        num_channels = int(self._audio_vae_latents_mean.shape[0])  # 128 = C*M
         _audio_num_frames = 126  # round((121/24)*25.0)=126
         input_types = [
             TensorType(
@@ -903,6 +907,77 @@ class LTX2Pipeline(DiffusionPipeline):
             latents.dtype
         )
 
+    @traced
+    def prepare_prompt_embeddings(
+        self,
+        tokens: TokenBuffer,
+        attn_mask: TokenBuffer,
+        negative_tokens: TokenBuffer | None = None,
+        negative_attn_mask: TokenBuffer | None = None,
+        num_visuals_per_prompt: int = 1,
+    ) -> tuple[Tensor, Tensor]:
+        """Create prompt embeddings and text position IDs for the transformer.
+
+        The text encoder returns fused prompt embeddings directly, with hidden
+        states from the configured layers already stacked and merged across the
+        layer/hidden dimensions.
+
+        Args:
+            tokens: TokenBuffer produced by tokenization / chat templating.
+            num_visuals_per_prompt: Number of image generations per prompt.
+
+        Returns:
+            A tuple of:
+                - prompt_embeds: Tensor of shape (B', S, L*D)
+                - text_ids: Tensor[int64] of shape (B', S, 4)
+        """
+        seq_len = int(tokens.array.shape[0])
+        batch_size = 1  # text encoder always outputs a single batch
+
+        with Tracer("text_encoder"):
+            text_input_ids = Tensor.constant(
+                tokens.array,
+                dtype=DType.int64,
+                device=self.text_encoder.devices[0],
+            )
+            prompt_embeds = self.text_encoder(text_input_ids)
+
+            if negative_tokens is not None:
+                negative_input_ids = Tensor.constant(
+                    negative_tokens.array,
+                    dtype=DType.int64,
+                    device=self.text_encoder.devices[0],
+                )
+                negative_embeds = self.text_encoder(negative_input_ids)
+                # Concatenate along batch dimension: [1, S, L*D] -> [2, S, L*D]
+                prompt_embeds = F.concat(
+                    [prompt_embeds, negative_embeds], axis=0
+                )
+
+        with Tracer("post_process"):
+            if num_visuals_per_prompt != 1:
+                prompt_embeds = F.tile(
+                    prompt_embeds, (1, num_visuals_per_prompt, 1)
+                )
+                prompt_embeds = F.reshape(
+                    prompt_embeds,
+                    [batch_size * num_visuals_per_prompt, seq_len, -1],
+                )
+
+            batch_size_final = batch_size * num_visuals_per_prompt
+            text_ids_key = f"{batch_size_final}_{seq_len}"
+            if text_ids_key in self._cached_text_ids:
+                text_ids = self._cached_text_ids[text_ids_key]
+            else:
+                text_ids = self._prepare_text_ids(
+                    batch_size=batch_size_final,
+                    seq_len=seq_len,
+                    device=self.text_encoder.devices[0],
+                )
+                self._cached_text_ids[text_ids_key] = text_ids
+
+        return prompt_embeds, text_ids
+
     def decode_video_latents(
         self,
         latents: Tensor,
@@ -974,11 +1049,13 @@ class LTX2Pipeline(DiffusionPipeline):
         #   _denormalize_audio_latents(packed) -> _unpack_audio_latents
         # stats [C*M=128] broadcast against last dim of [B,L,128] directly.
         if (
-            self._audio_latents_mean is not None
-            and self._audio_latents_std is not None
+            self._audio_vae_latents_mean is not None
+            and self._audio_vae_latents_std is not None
         ):
             latents = self._postprocess_audio_latents(
-                latents, self._audio_latents_mean, self._audio_latents_std
+                latents,
+                self._audio_vae_latents_mean,
+                self._audio_vae_latents_std,
             )
         # Shape-dependent unpack: [B,L,C*M] -> [B,C,L,M]  (not compiled).
         latents = self._unpack_audio_latents(
@@ -1020,11 +1097,20 @@ class LTX2Pipeline(DiffusionPipeline):
         Returns:
             LTX2PipelineOutput containing one output per batch element.
         """
+        # 1) Encode prompts.
+        prompt_embeds, _text_ids = self.prepare_prompt_embeddings(
+            tokens=model_inputs.tokens,
+            negative_tokens=model_inputs.negative_tokens,
+            num_visuals_per_prompt=model_inputs.num_visuals_per_prompt,
+        )
+        batch_size = int(prompt_embeds.shape[0])
+        dtype = prompt_embeds.dtype
+
         num_inference_steps = model_inputs.num_inference_steps
         guidance_scale = model_inputs.guidance_scale
         device = self.devices[0]
 
-        extra_params = model_inputs.extra_params or {}
+        extra_params = model_inputs.extra_params
         video_latents_np: np.ndarray = model_inputs.latents
         audio_latents_np: np.ndarray | None = extra_params.get("audio_latents")
         video_coords_np: np.ndarray | None = extra_params.get("video_coords")

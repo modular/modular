@@ -150,10 +150,11 @@ class PixelGenerationTokenizer(
                 subfolder=subfolder,
             )
 
-            # Gemma expects left padding for chat-style prompts
-            self.delegate.padding_side = "left"
-            if self.delegate.pad_token is None:
-                self.delegate.pad_token = self.delegate.eos_token
+            if "gemma" in type(self.delegate).__name__.lower():
+                # Gemma expects left padding for chat-style prompts
+                self.delegate.padding_side = "left"
+                if self.delegate.pad_token is None:
+                    self.delegate.pad_token = self.delegate.eos_token
 
             if subfolder_2 is not None:
                 self.delegate_2 = AutoTokenizer.from_pretrained(
@@ -208,7 +209,7 @@ class PixelGenerationTokenizer(
 
         # Compute static VAE scale factor
         block_out_channels = vae_config.get("block_out_channels", None)
-        self._vae_scale_factor = (
+        self._vae_spatial_compression_ratio = (
             2 ** (len(block_out_channels) - 1) if block_out_channels else 8
         )
 
@@ -216,43 +217,29 @@ class PixelGenerationTokenizer(
         self._default_sample_size = 128
         self._num_channels_latents = transformer_config["in_channels"] // 4
 
-        # Store guidance embeds flag
-        self._use_guidance_embeds = transformer_config.get(
-            "guidance_embeds", False
-        )
-
-        # LTX2-specific constants (video+audio) used when _pipeline_class_name == "LTX2Pipeline".
-        # These match the current MAX LTX2 pipeline implementation.
-        self._is_ltx2 = self._pipeline_class_name == "LTX2Pipeline"
-        if self._is_ltx2:
+        if self._pipeline_class_name == PipelineClassName.LTX2:
+            self._num_channels_latents = transformer_config["in_channels"]
             self._causal_offset = 1
-            self._vae_temporal_compression_ratio = vae_config.get(
+            self._vae_temporal_compression_ratio = vae_config[
                 "temporal_compression_ratio"
-            )
+            ]
             # LTX-2 uses CausalVideoAutoencoder with no standard block_out_channels;
             # read spatial/temporal compression ratios directly from the VAE config.
-            self._vae_spatial_compression_ratio = vae_config.get(
+            self._vae_spatial_compression_ratio = vae_config[
                 "spatial_compression_ratio"
-            )
-            self._patch_size = vae_config.get("patch_size")
-            self._patch_size_t = vae_config.get("patch_size_t")
-            # LTX-2 uses patch_size=1 (no spatial packing), so VAE latent
-            # channels == transformer in_channels (128), not in_channels // 4.
-            self._num_channels_latents = transformer_config["in_channels"]
-            # VAE temporal downsample factor (frames per latent frame).
-            # Audio configuration: read from audio_vae config with safe fallbacks.
-            audio_vae_config = components.get("audio_vae", {}).get(
-                "config_dict", {}
-            )
+            ]
+            self._patch_size = transformer_config["patch_size"]
+            self._patch_size_t = transformer_config["patch_size_t"]
             self._audio_sampling_rate = transformer_config[
                 "audio_sampling_rate"
             ]
             self._audio_hop_length = transformer_config["audio_hop_length"]
-            self._ltx2_num_mel_bins = audio_vae_config.get("mel_bins", 64)
-            # Mel compression = 2^(num_downsampling_stages); ch_mult has one entry per
-            # resolution level, so num_downsampling_stages = len(ch_mult) - 1.
-            ch_mult = audio_vae_config.get("ch_mult", [1, 2, 4])
-            self._ltx2_audio_mel_compression_ratio = 2 ** (len(ch_mult) - 1)
+            audio_vae_config = components.get("audio_vae", {}).get(
+                "config_dict", {}
+            )
+            self._mel_bins = audio_vae_config["mel_bins"]
+            # LATENT_DOWNSAMPLE_FACTOR = 4
+            self._mel_compression_ratio = 4
 
         # Create scheduler
         scheduler_class_name = components.get("scheduler", {}).get(
@@ -275,7 +262,7 @@ class PixelGenerationTokenizer(
         ):
             self._max_pixel_size = 1024 * 1024
 
-    def _prepare_ltx2_video_coords(
+    def _prepare_video_coords(
         self,
         batch_size: int,
         num_frames: int,
@@ -283,12 +270,6 @@ class PixelGenerationTokenizer(
         width: int,
         fps: float,
     ) -> npt.NDArray[np.float32]:
-        """Pure-numpy equivalent of LTX2AudioVideoRotaryPosEmbed.prepare_video_coords.
-
-        Returns float32 array of shape [batch_size, 3, num_patches, 2] containing
-        per-patch pixel-space [start, end) boundaries for the (frame, height, width)
-        dimensions, scaled to seconds on the temporal axis.
-        """
         # 1. 1-D grids for each spatial/temporal dimension.
         grid_f = np.arange(0, num_frames, self._patch_size_t, dtype=np.float32)
         grid_h = np.arange(0, height, self._patch_size, dtype=np.float32)
@@ -341,17 +322,12 @@ class PixelGenerationTokenizer(
 
         return pixel_coords
 
-    def _prepare_ltx2_audio_coords(
+    def _prepare_audio_coords(
         self,
         batch_size: int,
         num_frames: int,
         shift: int = 0,
     ) -> npt.NDArray[np.float32]:
-        """Pure-numpy equivalent of LTX2AudioVideoRotaryPosEmbed.prepare_audio_coords.
-
-        Returns float32 array of shape [batch_size, 1, num_patches, 2] containing
-        per-patch [start, end) timestamps in seconds for the temporal dimension.
-        """
         # 1. Generate coordinates in the frame (time) dimension.
         # Always compute rope in fp32
         grid_f = np.arange(
@@ -493,7 +469,7 @@ class PixelGenerationTokenizer(
             image = image.convert("RGB")
 
         image_width, image_height = image.size
-        multiple_of = self._vae_scale_factor * 2
+        multiple_of = self._vae_spatial_compression_ratio * 2
 
         if self._max_pixel_size is not None:
             if image_width * image_height > self._max_pixel_size:
@@ -1004,7 +980,7 @@ class PixelGenerationTokenizer(
             visual_options.negative_prompt,
             visual_options.secondary_negative_prompt,
             do_true_cfg,
-            images=images_for_tokenization,
+            images_for_tokenization,
         )
 
         token_buffer = TokenBuffer(
@@ -1027,7 +1003,7 @@ class PixelGenerationTokenizer(
             )
 
         default_sample_size = self._default_sample_size
-        vae_scale_factor = self._vae_scale_factor
+        vae_spatial_compression_ratio = self._vae_spatial_compression_ratio
 
         # 2. Preprocess input image if provided
         preprocessed_image_array = None
@@ -1047,17 +1023,20 @@ class PixelGenerationTokenizer(
             )
 
         # 3. Resolve image dimensions using cached static values
-        latent_height = int(height) // self._vae_spatial_compression_ratio
-        latent_width = int(width) // self._vae_spatial_compression_ratio
-        num_latent_frames = (
-            visual_options.num_frames - 1
-        ) // self._vae_temporal_compression_ratio + 1
+        latent_height = 2 * (
+            int(height) // (self._vae_spatial_compression_ratio * 2)
+        )
+        latent_width = 2 * (
+            int(width) // (self._vae_spatial_compression_ratio * 2)
+        )
         visual_seq_len = (
-            latent_height
-            * latent_width
+            (latent_height // 2)
+            * (latent_width // 2)
             * (
-                num_latent_frames
-                if visual_options.num_frames is not None
+                (visual_options.num_frames - 1)
+                // self._vae_temporal_compression_ratio
+                + 1
+                if getattr(visual_options, "num_frames", None) is not None
                 else 1
             )
         )
@@ -1070,35 +1049,26 @@ class PixelGenerationTokenizer(
             len(timesteps) - visual_options.steps * self._scheduler.order, 0
         )
 
-        num_frames = getattr(visual_options, "num_frames", None)
         latents, latent_image_ids = self._prepare_latents(
             visual_options.num_visuals,
             self._num_channels_latents,
             latent_height,
             latent_width,
             request.body.seed,
-            num_frames,
+            getattr(visual_options, "num_frames", None),
         )
 
         extra_params: dict[str, npt.NDArray[Any]] = {}
-        if self._is_ltx2:
-            frame_rate = visual_options.num_visuals.frames_per_second
+        if self._pipeline_class_name == PipelineClassName.LTX2:
+            frame_rate = getattr(visual_options, "frames_per_second", 24.0)
+            num_frames = getattr(visual_options, "num_frames", 1)
 
-            if num_frames is None or num_frames <= 0:
-                num_frames = 1
-            if frame_rate is None or frame_rate <= 0:
-                frame_rate = 24
-
-            # Audio latents: [B, 8, L, M]. Match the MAX LTX2 pipeline's defaults.
-            num_mel_bins = self._ltx2_num_mel_bins
-            latent_mel_bins = (
-                num_mel_bins // self._ltx2_audio_mel_compression_ratio
-            )
+            latent_mel_bins = self._mel_bins // self._mel_compression_ratio
             duration_s = float(num_frames) / float(frame_rate)
             audio_latents_per_second = (
                 self._audio_sampling_rate
                 / float(self._audio_hop_length)
-                / float(self._ltx2_audio_mel_compression_ratio)
+                / float(self._mel_compression_ratio)
             )
             audio_num_frames = round(duration_s * audio_latents_per_second)
             if audio_num_frames <= 0:
@@ -1134,9 +1104,7 @@ class PixelGenerationTokenizer(
             extra_params["ltx2_audio_num_frames"] = np.array(
                 audio_num_frames, dtype=np.int64
             )
-            extra_params["ltx2_latent_mel_bins"] = np.array(
-                latent_mel_bins, dtype=np.int64
-            )
+            extra_params["mel_bins"] = np.array(latent_mel_bins, dtype=np.int64)
 
             # Pre-compute positional embedding coordinates on CPU so the
             # pipeline doesn't need to run tensor ops at inference time.
@@ -1176,7 +1144,7 @@ class PixelGenerationTokenizer(
             )
 
             if do_true_cfg:
-                extra_params["attn_mask_neg"] = attn_mask_neg
+                extra_params["mask_neg"] = attn_mask_neg
                 valid_length_neg_np = np.atleast_2d(
                     np.array(attn_mask_neg.sum(axis=-1), dtype=np.uint32)
                 )
