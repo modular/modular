@@ -292,6 +292,7 @@ struct BlackwellMatmulSM100Kernel[
     # Cluster shape (must match config, needed for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional features
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -624,6 +625,7 @@ struct BlackwellMatmulSM100Kernel[
         c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.SmemType.num_output_stages,
         num_output_warps = Self.num_output_warps,
+        elementwise_lambda_fn = Self.elementwise_lambda_fn,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
         batched=True,
@@ -642,6 +644,7 @@ struct BlackwellMatmulSM100Kernel[
         c_smem_dim1 = Self.SmemType.OutputN,
         num_output_stages = Self.SmemType.num_output_stages,
         num_output_warps = Self.num_output_warps,
+        elementwise_lambda_fn = Self.elementwise_lambda_fn,
         elementwise_compute_lambda_fn = Self.elementwise_compute_lambda_fn,
         register_based_epilogue = Self.register_based_epilogue,
         batched=False,
