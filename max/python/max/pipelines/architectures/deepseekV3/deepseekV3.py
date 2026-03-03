@@ -109,12 +109,10 @@ class DeepseekV3DecoderLayer(Module):
         config: DeepseekV3Config,
         layer_idx: int,
         ep_manager: EPBatchManager | None = None,
-        is_nextn: bool = False,
     ) -> None:
         super().__init__()
         self.config = config
         self.ep_manager = ep_manager
-        self.is_nextn = is_nextn
         num_devices = len(config.devices)
 
         # Create Multi-head Latent Attention layer.
@@ -348,12 +346,7 @@ class DeepseekV3DecoderLayer(Module):
             # Single-GPU non-EP path
             mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
-        if self.is_nextn:
-            # NextN/MTP decoder: skip the second residual connection.
-            # The MoE output is used directly as hidden_states.
-            hs = mlp_outs
-        else:
-            hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
+        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
