@@ -10332,25 +10332,7 @@ struct DistributedScatter:
             read out_bufs,
             read rank_sigs,
             read dev_ctxs_input,
-            read outputs,
         }:
-            @always_inline
-            @parameter
-            fn output_lambda[
-                output_index: Int,
-                _dtype: DType,
-                _rank: Int,
-                _width: Int,
-                *,
-                _alignment: Int,
-            ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-                outputs[output_index]._lambda_store[
-                    width=_width, element_alignment=_alignment
-                ](
-                    rebind[IndexList[rank]](coords),
-                    rebind[SIMD[dtype, _width]](val),
-                )
-
             scatter[ngpus=ngpus, dp_size=ngpus](
                 in_bufs,
                 out_bufs[index].make_dims_unknown(),
