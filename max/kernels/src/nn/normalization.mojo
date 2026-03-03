@@ -1326,7 +1326,9 @@ fn rms_norm_cpu[
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()
-            var gamma_val = gamma.load[width=simd_width](Coord(Idx(col)))
+            var gamma_val = gamma.load[width=simd_width, alignment=1](
+                Coord(Idx(col))
+            )
             var norm_val: SIMD[dtype, simd_width]
 
             if multiply_before_cast:
