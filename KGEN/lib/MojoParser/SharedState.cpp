@@ -1084,21 +1084,31 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
     // We current bundle all of the standard library packages into one mega
     // package, but still want to expose them separately.
     if (impl->stdPackageState && name != "std") {
+      auto warnDeprecatedUnqualifiedImport = [this](llvm::SMLoc loc) {
+        auto diag =
+            emitWarning(loc, "Implicit standard library imports are deprecated "
+                             "and will be removed in a future release; "
+                             "fully qualify with 'std.' instead");
+        if (loc.isValid())
+          diag << FixIt::insertBeforeToken(loc, "std.");
+      };
       // Check for an existing module for this name. If we find one, insert it
       // into the parent state and return it.
       auto it = impl->stdPackageState->nestedModules.find(declName);
       if (it != impl->stdPackageState->nestedModules.end()) {
+        warnDeprecatedUnqualifiedImport(loc);
         parentState->nestedModules.insert({declName, it->second});
         return *it->second;
       }
 
       // Otherwise, if the standard library is a source package, check to see if
-      // we can resolve a path from it.
+      // we can resolve a path from it. This is deprecated behaviour.
       if (impl->stdPackageState->sourcePath) {
         modulePath = ::resolveModulePath(*this, loc, name,
                                          *impl->stdPackageState->sourcePath,
                                          disablePrebuiltPackages);
         if (modulePath) {
+          warnDeprecatedUnqualifiedImport(loc);
           ModuleState &moduleState =
               importModuleState(("std." + name).str(), impl->topLevelDecl, loc);
           parentState->nestedModules.insert({declName, &moduleState});
