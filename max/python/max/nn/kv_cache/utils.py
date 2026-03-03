@@ -23,8 +23,8 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from .cache_params import KVCacheParams
 
 
-class DecodeNumPartitionsResolver:
-    """Resolves MHA decode partition counts via the kernel-side custom op.
+class AttentionDispatchResolver:
+    """Resolves attention decode partition counts via kernel custom ops.
 
     Encapsulates the ``mo.mha.decode.get_num_partitions`` graph so that
     callers can query partition counts with a simple
@@ -62,10 +62,10 @@ class DecodeNumPartitionsResolver:
 
     def __call__(
         self, batch_size: int, max_cache_valid_length: int
-    ) -> MHADecodeDispatchMetadataScalars:
+    ) -> AttentionDispatchMetadataScalars:
         """Returns decode dispatch metadata for the given shape."""
         if self._model is None or batch_size <= 0:
-            return MHADecodeDispatchMetadataScalars(
+            return AttentionDispatchMetadataScalars(
                 batch_size=batch_size,
                 q_max_seq_len=1,
                 num_partitions=1,
@@ -76,7 +76,7 @@ class DecodeNumPartitionsResolver:
             np.array([batch_size, max_cache_valid_length], dtype=np.int64)
         )
         (output,) = self._model(request)
-        return MHADecodeDispatchMetadataScalars(
+        return AttentionDispatchMetadataScalars(
             batch_size=batch_size,
             q_max_seq_len=1,
             num_partitions=int(output.to_numpy()[0]),
@@ -85,8 +85,8 @@ class DecodeNumPartitionsResolver:
 
 
 @dataclass(frozen=True)
-class MHADecodeDispatchMetadataScalars:
-    """Scalar MHA decode dispatch metadata used by ragged decode kernels."""
+class AttentionDispatchMetadataScalars:
+    """Scalar attention dispatch metadata used by ragged decode kernels."""
 
     batch_size: int
     q_max_seq_len: int

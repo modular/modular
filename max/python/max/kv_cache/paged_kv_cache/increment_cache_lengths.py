@@ -172,8 +172,8 @@ def _execute_ragged_increment_cache_lengths_graph(
         kv_cache_inputs[i].lookup_table for i in range(len(devices))
     ]
     kv_scales = [kv_cache_inputs[i].kv_scales for i in range(len(devices))]
-    mha_decode_dispatch_metadata = [
-        kv_cache_inputs[i].mha_decode_dispatch_metadata
+    attention_dispatch_metadata = [
+        kv_cache_inputs[i].attention_dispatch_metadata
         for i in range(len(devices))
     ]
     devices_per_replica = split_into_groups(
@@ -222,10 +222,10 @@ def _execute_ragged_increment_cache_lengths_graph(
         # Advance to the next step of the max_lengths tensor.
         updated_max_lengths = max_lengths[1:, :]
 
-        metadata = mha_decode_dispatch_metadata[start_idx]
+        metadata = attention_dispatch_metadata[start_idx]
         if metadata is None:
             raise ValueError(
-                "mha_decode_dispatch_metadata must be present in KV cache inputs"
+                "attention_dispatch_metadata must be present in KV cache inputs"
             )
         metadata_np = metadata.to_numpy().copy()
         if updated_max_lengths.shape[0] > 0:
@@ -245,7 +245,7 @@ def _execute_ragged_increment_cache_lengths_graph(
                 lookup_table=lookup_table[start_idx + i],
                 max_lengths=updated_max_lengths,
                 kv_scales=kv_scales[start_idx + i],
-                mha_decode_dispatch_metadata=updated_metadata,
+                attention_dispatch_metadata=updated_metadata,
             )
         start_idx += len(replica_devices)
     return kv_cache_inputs

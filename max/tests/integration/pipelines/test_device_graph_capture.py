@@ -84,7 +84,7 @@ def _make_runner(
 @pytest.fixture(autouse=True)
 def _mock_graph_key() -> Any:
     with patch(
-        "max.pipelines.lib.graph_capture.mha_graph_key_from_inputs",
+        "max.pipelines.lib.graph_capture.attention_graph_key_from_inputs",
         side_effect=lambda mi: (int(mi.buffers[0].shape[0]), 1),
     ):
         yield

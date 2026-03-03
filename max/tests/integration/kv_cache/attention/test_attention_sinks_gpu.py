@@ -26,8 +26,8 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
     KVCacheParams,
-    MHADecodeDispatchMetadata,
     PagedCacheValues,
 )
 from test_common.context_utils import create_text_context
@@ -138,7 +138,7 @@ def max_flash_attention_with_sinks(
                 cache_lengths=inputs[4].tensor,
                 lookup_table=inputs[5].tensor,
                 max_lengths=inputs[6].tensor,
-                dispatch_metadata=MHADecodeDispatchMetadata(inputs[7].tensor),
+                dispatch_metadata=AttentionDispatchMetadata(inputs[7].tensor),
             )
 
             # Layer index

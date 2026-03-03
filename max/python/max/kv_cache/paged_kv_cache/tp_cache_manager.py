@@ -25,12 +25,14 @@ from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.kv_connector import KVConnector
 from max.nn.kv_cache import (
-    DecodeNumPartitionsResolver,
     KVCacheParams,
     RaggedKVCacheInputs,
 )
 from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import build_max_lengths_tensor
+from max.nn.kv_cache.utils import (
+    AttentionDispatchResolver,
+    build_max_lengths_tensor,
+)
 from max.profiler import traced
 from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
     MemoryTier,
@@ -164,7 +166,7 @@ class _TPPagedKVCacheManager:
         self._total_num_host_pages = total_num_host_pages
         self._page_size = params.page_size
         self._devices = devices
-        self._decode_num_partitions_resolver = DecodeNumPartitionsResolver(
+        self._attention_dispatch_resolver = AttentionDispatchResolver(
             session, params
         )
 
@@ -440,7 +442,7 @@ class _TPPagedKVCacheManager:
         # `k.max_context_length()` in flash attention corresponds to the
         # max cached context length for this step (including active prompt
         # tokens), i.e. `max_cached_len` here.
-        resolved_metadata = self._decode_num_partitions_resolver(
+        resolved_metadata = self._attention_dispatch_resolver(
             batch_size, max_cached_len
         )
 
@@ -468,7 +470,7 @@ class _TPPagedKVCacheManager:
                     kv_scales=self.device_buffer.scales[tp_shard]
                     if self.device_buffer.scales is not None
                     else None,
-                    mha_decode_dispatch_metadata=resolved_metadata_buffer,
+                    attention_dispatch_metadata=resolved_metadata_buffer,
                 )
             )
 

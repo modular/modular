@@ -35,7 +35,7 @@ from max.nn.float8_config import (
 from max.nn.kernels import compute_mla_dispatch_args_scalar
 from max.nn.kv_cache import (
     KVCacheParams,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -305,7 +305,7 @@ def generate_max_outputs_fp8(
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = unflatten_ragged_mha_decode_inputs(
+            kv_collection = unflatten_ragged_attention_inputs(
                 graph.inputs[2:], n_devices=1
             )[0]
 

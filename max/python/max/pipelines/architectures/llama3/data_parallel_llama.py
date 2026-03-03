@@ -30,7 +30,7 @@ from max.graph import (
 from max.nn.data_parallelism import split_batch
 from max.nn.kv_cache import (
     KVCacheParamInterface,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
 from max.nn.layer import Module
 from max.pipelines.lib.lora import LoRAManager
@@ -148,7 +148,7 @@ class DataParallelLlama(Module):
 
         all_model_args = []
 
-        kv_collections = unflatten_ragged_mha_decode_inputs(
+        kv_collections = unflatten_ragged_attention_inputs(
             all_kv_cache_inputs, n_devices=len(self.config.devices)
         )
 

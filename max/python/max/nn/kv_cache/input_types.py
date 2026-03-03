@@ -22,6 +22,7 @@ from typing import (
     Protocol,
     TypeAlias,
     TypeGuard,
+    cast,
     overload,
     runtime_checkable,
 )
@@ -81,7 +82,7 @@ _DispatchMetadataT = TypeVar("_DispatchMetadataT", TensorType, TensorValue)
 
 
 @dataclass
-class MHADecodeDispatchMetadata(
+class AttentionDispatchMetadata(
     NestedIterableDataclass[_DispatchMetadataT],
     Generic[_DispatchMetadataT],
 ):
@@ -90,12 +91,12 @@ class MHADecodeDispatchMetadata(
     def __post_init__(self) -> None:
         if self.tensor.dtype != DType.int64:
             raise ValueError(
-                "expected mha_decode_dispatch_metadata dtype int64, got "
+                "expected attention_dispatch_metadata dtype int64, got "
                 f"{self.tensor.dtype}"
             )
         if self.tensor.rank != 1:
             raise ValueError(
-                "expected mha_decode_dispatch_metadata rank 1, got "
+                "expected attention_dispatch_metadata rank 1, got "
                 f"{self.tensor.rank}"
             )
 
@@ -107,7 +108,7 @@ class PagedCacheInputSymbols(IterableInputSymbols):
     lookup_table: TensorType
     max_lengths: TensorType
     kv_scales: BufferType | None = None  # KV scales for FP8 quantization
-    dispatch_metadata: MHADecodeDispatchMetadata[TensorType] | None = None
+    dispatch_metadata: AttentionDispatchMetadata[TensorType] | None = None
 
 
 @dataclass
@@ -117,7 +118,7 @@ class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
     lookup_table: TensorValue
     max_lengths: TensorValue
     kv_scales: BufferValue | None = None  # KV scales for FP8 quantization
-    dispatch_metadata: MHADecodeDispatchMetadata[TensorValue] | None = None
+    dispatch_metadata: AttentionDispatchMetadata[TensorValue] | None = None
 
     def __iter__(self) -> Iterator[BufferValue | TensorValue]:
         # Canonical paged KV ABI order.
@@ -129,7 +130,7 @@ class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
             yield self.kv_scales
 
 
-def unflatten_ragged_mha_decode_inputs(
+def unflatten_ragged_attention_inputs(
     kv_inputs_flat: Sequence[Any], *, n_devices: int
 ) -> list[PagedCacheValues]:
     """Unmarshals flattened KV graph inputs into typed cache values.
@@ -174,7 +175,9 @@ def unflatten_ragged_mha_decode_inputs(
             kv_scales = kv_inputs_flat[next_idx].buffer
             next_idx += 1
 
-        metadata = MHADecodeDispatchMetadata(kv_inputs_flat[next_idx].tensor)
+        metadata = AttentionDispatchMetadata(
+            cast(TensorValue, kv_inputs_flat[next_idx].tensor)
+        )
 
         kv_caches_per_dev.append(
             PagedCacheValues(
@@ -190,27 +193,27 @@ def unflatten_ragged_mha_decode_inputs(
     return kv_caches_per_dev
 
 
-def mha_decode_dispatch_metadata(
+def attention_dispatch_metadata(
     kv_collection: PagedCacheValues,
     *,
     device_idx: int | None = None,
-) -> MHADecodeDispatchMetadata[TensorValue]:
+) -> AttentionDispatchMetadata[TensorValue]:
     dispatch_metadata = kv_collection.dispatch_metadata
     if dispatch_metadata is not None:
         return dispatch_metadata
 
     location = "" if device_idx is None else f" for device {device_idx}"
     raise ValueError(
-        "Expected MHADecodeDispatchMetadata in kv_collection.dispatch_metadata"
+        "Expected AttentionDispatchMetadata in kv_collection.dispatch_metadata"
         f"{location}."
     )
 
 
-def mha_decode_dispatch_metadata_list(
+def attention_dispatch_metadata_list(
     kv_collections: Sequence[PagedCacheValues],
-) -> list[MHADecodeDispatchMetadata[TensorValue]]:
+) -> list[AttentionDispatchMetadata[TensorValue]]:
     return [
-        mha_decode_dispatch_metadata(kv_collection, device_idx=i)
+        attention_dispatch_metadata(kv_collection, device_idx=i)
         for i, kv_collection in enumerate(kv_collections)
     ]
 
@@ -347,7 +350,7 @@ class RaggedKVCacheInputs(KVCacheInputs):
     lookup_table: Buffer
     max_lengths: Buffer
     kv_scales: Buffer | None = None  # Scale tensor for FP8 quantization
-    mha_decode_dispatch_metadata: Buffer | None = None
+    attention_dispatch_metadata: Buffer | None = None
 
 
 @dataclass

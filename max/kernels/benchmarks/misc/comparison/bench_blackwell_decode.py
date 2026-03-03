@@ -43,8 +43,8 @@ from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
 from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
     KVCacheParams,
-    MHADecodeDispatchMetadata,
     PagedCacheValues,
 )
 
@@ -297,7 +297,7 @@ def bench_max(
     max_lengths_max = Buffer.from_dlpack(
         max_lengths_torch
     )  # Tensor for max_lengths
-    mha_decode_dispatch_metadata_max = Buffer.from_dlpack(
+    attention_dispatch_metadata_max = Buffer.from_dlpack(
         torch.tensor([batch_size, 1, 0, cache_len], dtype=torch.int64)
     )
 
@@ -338,7 +338,7 @@ def bench_max(
         shape=[1, 2],
         device=DeviceRef.CPU(),
     )
-    mha_decode_dispatch_metadata_type = TensorType(
+    attention_dispatch_metadata_type = TensorType(
         DType.int64, shape=[4], device=DeviceRef.CPU()
     )
 
@@ -352,7 +352,7 @@ def bench_max(
             cache_lengths_type,
             lookup_table_type,
             max_lengths_type,
-            mha_decode_dispatch_metadata_type,
+            attention_dispatch_metadata_type,
         ],
     ) as graph:
         (
@@ -362,7 +362,7 @@ def bench_max(
             cache_lengths,
             lookup_table,
             max_lengths,
-            mha_decode_dispatch_metadata,
+            attention_dispatch_metadata,
         ) = graph.inputs
 
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -372,8 +372,8 @@ def bench_max(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
-            dispatch_metadata=MHADecodeDispatchMetadata(
-                mha_decode_dispatch_metadata.tensor
+            dispatch_metadata=AttentionDispatchMetadata(
+                attention_dispatch_metadata.tensor
             ),
         )
 
@@ -411,7 +411,7 @@ def bench_max(
             cache_lengths_max,
             lut_max,
             max_lengths_max,
-            mha_decode_dispatch_metadata_max,
+            attention_dispatch_metadata_max,
         )[0]
         return output
 

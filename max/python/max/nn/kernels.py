@@ -46,7 +46,7 @@ from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
 from .kv_cache import (
     KVCacheParams,
     PagedCacheValues,
-    mha_decode_dispatch_metadata,
+    attention_dispatch_metadata,
 )
 from .no_opaque_kernels import PagedKVCacheTensorsNoOpaque
 
@@ -1829,7 +1829,7 @@ def flash_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    dispatch_metadata = mha_decode_dispatch_metadata(kv_collection)
+    dispatch_metadata = attention_dispatch_metadata(kv_collection)
 
     if sink_weights is not None:
         if sink_weights.rank != 1:

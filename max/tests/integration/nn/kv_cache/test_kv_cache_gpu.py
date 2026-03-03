@@ -52,4 +52,4 @@ async def _test_kv_cache_gpu() -> None:
     assert isinstance(kv_tuple, KVCacheInputs)
     assert len(kv_tuple) == 6
     assert isinstance(kv_tuple, RaggedKVCacheInputs)
-    assert kv_tuple.mha_decode_dispatch_metadata is not None
+    assert kv_tuple.attention_dispatch_metadata is not None

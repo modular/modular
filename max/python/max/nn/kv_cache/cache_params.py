@@ -29,8 +29,8 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
+    AttentionDispatchMetadata,
     FlattenableInputSymbols,
-    MHADecodeDispatchMetadata,
     MultiKVCacheInputSymbols,
     PagedCacheInputSymbols,
     PagedCacheInputSymbolsByReplica,
@@ -480,7 +480,7 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if self.quantized_kv_cache
                 else None,
-                dispatch_metadata=MHADecodeDispatchMetadata(
+                dispatch_metadata=AttentionDispatchMetadata(
                     TensorType(DType.int64, shape=[4], device=DeviceRef.CPU())
                 ),
             )

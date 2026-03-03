@@ -31,7 +31,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -265,7 +265,7 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
-        return unflatten_ragged_mha_decode_inputs(
+        return unflatten_ragged_attention_inputs(
             kv_inputs_flat, n_devices=kv_params.n_devices
         )
 

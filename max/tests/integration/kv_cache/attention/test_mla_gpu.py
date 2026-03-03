@@ -26,7 +26,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import (
     KVCacheParams,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
@@ -75,7 +75,7 @@ def test_mla_prefill_plan() -> None:
             input_row_offsets = g.inputs[0].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = unflatten_ragged_mha_decode_inputs(
+            kv_collection = unflatten_ragged_attention_inputs(
                 g.inputs[1:], n_devices=1
             )[0]
 
@@ -188,7 +188,7 @@ def test_mla_decompress_k_cache() -> None:
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = unflatten_ragged_mha_decode_inputs(
+            kv_collection = unflatten_ragged_attention_inputs(
                 g.inputs[2:], n_devices=1
             )[0]
 
@@ -243,7 +243,7 @@ def test_mla_decompress_k_cache() -> None:
     input_row_offsets[batch_size] = running_sum
 
     kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
-    assert kv_runtime_inputs.mha_decode_dispatch_metadata is not None
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     new_blocks = torch.randn(
         size=kv_runtime_inputs.blocks.shape, dtype=torch.float32
@@ -322,7 +322,7 @@ def test_mla_decompress_k_cache_only_k() -> None:
             weight = g.inputs[1].tensor
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
 
-            kv_collection = unflatten_ragged_mha_decode_inputs(
+            kv_collection = unflatten_ragged_attention_inputs(
                 g.inputs[2:], n_devices=1
             )[0]
 
