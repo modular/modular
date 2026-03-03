@@ -131,9 +131,9 @@ fn _get_run_name[
     micro_scaling_mode: StaticString = "",
 ](M: Int, N: Int, K: Int,) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
-    var type_str = String("(", micro_scaling_mode, "_", String(dtype), ") : ")
+    var type_str = String(t"({micro_scaling_mode}_{dtype}) : ")
     # M
-    var m_str = String(M, "_dynamic")
+    var m_str = String(t"{M}_dynamic")
     # N
     var n_str = String(
         N,

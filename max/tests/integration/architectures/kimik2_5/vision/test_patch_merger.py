@@ -22,7 +22,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.pipelines.architectures.kimik2_5.layers.patch_merger import (
+from max.pipelines.architectures.kimik2_5.layers.vision.patch_merger import (
     PatchMergerMLP,
 )
 

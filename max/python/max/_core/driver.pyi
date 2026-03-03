@@ -13,6 +13,12 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""
+MAX Driver Python bindings.
+
+Provides low-level access to hardware devices and memory management.
+"""
+
 import os
 import types
 from collections.abc import Generator, Mapping, Sequence

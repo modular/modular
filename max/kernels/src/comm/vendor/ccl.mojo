@@ -252,7 +252,7 @@ fn _check_ccl_ok(status: ncclResult_t) raises:
 
 
 fn _get_global_comms(ngpus: Int) raises -> Communicators:
-    var NAME = String("COMM_VENDOR_CCL_", ngpus)
+    var NAME = String(t"COMM_VENDOR_CCL_{ngpus}")
     if global_ptr := _get_global_or_null(NAME).bitcast[Communicators]():
         return global_ptr[]
 

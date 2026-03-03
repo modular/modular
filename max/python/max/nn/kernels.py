@@ -2275,6 +2275,7 @@ def mla_prefill_graph(
     epsilon: float,
     v_head_dim: int,
     *,
+    kv: TensorValue | None = None,
     w_k_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     float8_config: Float8Config | None = None,
@@ -2314,6 +2315,9 @@ def mla_prefill_graph(
         scale: Scale for the attention calculation.
         epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
+        kv: KV latent tensor from the first projection. Shape:
+            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
+            qk_rope_head_dim. Required when float8_config is None.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         float8_config: Optional FP8 config. When set, FP8 scales are required.
@@ -2332,7 +2336,6 @@ def mla_prefill_graph(
     parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
-        q,
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -2346,8 +2349,13 @@ def mla_prefill_graph(
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-
     op_name = "mo.mla.graph.prefill.paged"
+
+    if kv is not None:
+        input_values[0:0] = [q, kv]
+    else:
+        input_values[0:0] = [q]
+
     if float8_config is not None:
         assert w_k_scale is not None and w_uv_scale is not None
         assert float8_config.input_scale.block_size is not None
@@ -2390,6 +2398,7 @@ def mla_decode_graph(
     epsilon: float,
     v_head_dim: int,
     *,
+    kv: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     float8_config: Float8Config | None = None,
@@ -2426,6 +2435,9 @@ def mla_decode_graph(
         scale: Scale for the attention calculation.
         epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
+        kv: KV latent tensor from the first projection. Shape:
+            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
+            qk_rope_head_dim. Required when float8_config is None.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         float8_config: Optional FP8 config. When set, FP8 scales are required.
@@ -2444,7 +2456,6 @@ def mla_decode_graph(
     parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
-        q,
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -2455,8 +2466,13 @@ def mla_decode_graph(
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
-
     op_name = "mo.mla.graph.decode.paged"
+
+    if kv is not None:
+        input_values[0:0] = [q, kv]
+    else:
+        input_values[0:0] = [q]
+
     if float8_config is not None:
         assert w_uk_scale is not None and w_uv_scale is not None
         assert float8_config.input_scale.block_size is not None
@@ -2499,6 +2515,7 @@ def mla_prefill_decode_graph(
     epsilon: float,
     v_head_dim: int,
     *,
+    kv: TensorValue | None = None,
     w_k_scale: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
@@ -2528,6 +2545,9 @@ def mla_prefill_decode_graph(
         scale: Attention scale.
         epsilon: RMSNorm epsilon.
         v_head_dim: Value head dimension for output tensor shape.
+        kv: KV latent tensor from the first projection. Shape:
+            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
+            qk_rope_head_dim. Required when float8_config is None.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
@@ -2547,7 +2567,6 @@ def mla_prefill_decode_graph(
     parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
-        q,
         input_row_offsets,
         freqs_cis,
         kv_norm_gamma,
@@ -2563,6 +2582,12 @@ def mla_prefill_decode_graph(
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     op_name = "mo.mla.graph.prefill.decode.paged"
+
+    if kv is not None:
+        input_values[0:0] = [q, kv]
+    else:
+        input_values[0:0] = [q]
+
     if float8_config is not None:
         assert (
             w_k_scale is not None

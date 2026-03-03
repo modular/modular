@@ -10,7 +10,7 @@ They represent multi-dimensional arrays of numbers used for model inputs,
 outputs, and parameters.
 
 If you're coming from NumPy, think of a MAX
-[`Tensor`](/max/api/python/tensor#max.experimental.tensor.Tensor) like
+[`Tensor`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor) like
 a NumPy [`ndarray`](https://numpy.org/devdocs/reference/arrays.ndarray.html#arrays-ndarray).
 
 A tensor is a multi-dimensional array of numbers. You can think of tensors as:
@@ -32,7 +32,7 @@ by default.
 
 ## Create a tensor
 
-You can create a tensor from a Python list using the [`Tensor.constant()`](/max/api/python/tensor#max.experimental.tensor.Tensor.constant) function:
+You can create a tensor from a Python list using the [`Tensor.constant()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.constant) function:
 
 {/* @sync: _examples/tensors/create_first_tensor.py */}
 ```python
@@ -44,7 +44,7 @@ x = Tensor.constant([1, 2, 3, 4, 5])
 print(x)
 ```
 
-This imports the [`Tensor`](/max/api/python/tensor#max.experimental.tensor.Tensor) class and
+This imports the [`Tensor`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor) class and
 creates a 1-D tensor (a vector) with the values `[1, 2, 3, 4, 5]`. The
 `constant()` function creates a tensor from a tensor-like object; meaning, it
 can be a list, a NumPy array, or a PyTorch tensor.
@@ -105,8 +105,8 @@ TensorType(dtype=float32, shape=[Dim(2), Dim(2), Dim(2)], device=cpu:0): [1.0, 2
 ```
 
 MAX provides convenient functions for creating tensors with specific patterns,
-such as [`ones()`](/max/api/python/tensor#max.experimental.tensor.Tensor.ones)
-and [`zeros()`](/max/api/python/tensor#max.experimental.tensor.Tensor.zeros):
+such as [`ones()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.ones)
+and [`zeros()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.zeros):
 
 {/* @sync: _examples/tensors/create_factory.py */}
 ```python
@@ -130,8 +130,8 @@ TensorType(dtype=float32, shape=[Dim(3), Dim(4)], device=cpu:0): [1.0, 1.0, 1.0,
 TensorType(dtype=float32, shape=[Dim(2), Dim(3)], device=cpu:0): [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 ```
 
-For random data, you can use one of several functions from the [`random`](/max/api/python/random) module,
-such as [`random.normal()`](/max/api/python/random#max.experimental.random.normal):
+For random data, you can use one of several functions from the [`random`](/max/api/python/experimental/random) module,
+such as [`random.normal()`](/max/api/python/experimental/random#max.experimental.random.normal):
 
 {/* @sync: _examples/tensors/create_random.py */}
 ```python
@@ -203,7 +203,7 @@ The expected output is:
 [Dim(2), Dim(2), Dim(2)]
 ```
 
-In this example, the [`shape`](/max/api/python/tensor#max.experimental.tensor.Tensor.shape)
+In this example, the [`shape`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.shape)
 property returns a list of `Dim` objects representing the size of each dimension.
 
 ### Rank
@@ -282,7 +282,7 @@ In this example, the expected output is:
 6
 ```
 
-The [`num_elements()`](/max/api/python/tensor#max.experimental.tensor.Tensor.num_elements) function returns the total number of elements in the
+The [`num_elements()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.num_elements) function returns the total number of elements in the
 tensor, which is the product of the dimensions.
 
 ## Next steps

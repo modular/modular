@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from gridv2 import Grid
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 comptime data4x4: List[List[Int8]] = [
     [0, 1, 1, 0],

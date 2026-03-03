@@ -64,32 +64,29 @@ def sum(
             f"tensors. Got: {devices=}"
         )
 
-    # Per-device execution model:
-    # Create one allreduce op per device, each threading the destination
-    # device's chain independently.
-    # Do not merge device chains.
-    results = []
     graph = Graph.current
-    for input_tensor, device in zip(inputs, devices, strict=True):
-        in_chain = graph.device_chains[device]
-        # Each op takes all inputs but only produces output for its device.
-        result, out_chain = Graph.current._add_op_generated(
-            mo.DistributedAllreduceSumOp,
-            # Single output tensor type.
-            input_tensor.type,
-            # Output chain type.
-            _ChainType(),
-            inputs,
-            signal_buffers,
-            in_chain,
-            device,
-        )
 
-        results.append(result.tensor)
-        # Advance only this device's chain.
+    # Merge all device chains into one input chain.
+    in_chain = graph._merge_chains(
+        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+    )
+
+    # Stage a single allreduce op across all devices.
+    *results, out_chain = graph._add_op_generated(
+        mo.DistributedAllreduceSumOp,
+        [inp.type for inp in inputs],
+        _ChainType(),
+        inputs,
+        signal_buffers,
+        in_chain,
+    )
+
+    # Update all chains.
+    graph._update_chain(out_chain)
+    for device in devices:
         graph.device_chains[device] = out_chain
 
-    return results
+    return [res.tensor for res in results]
 
 
 def matmul_allreduce(

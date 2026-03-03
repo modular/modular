@@ -1153,26 +1153,9 @@ def test_blackwell_kernel_8[
 ](ctx: DeviceContext) raises:
     if not benchmark:
         print(
-            String(
-                "in/out dtypes=(",
-                a_type,
-                ", ",
-                b_type,
-                ", ",
-                c_type,
-                ") ",
-                " problem shape=(",
-                M,
-                ", ",
-                N,
-                ", ",
-                K,
-                ") ",
-                "mma_shape=",
-                mma_shape,
-                " block_tile_shape=",
-                block_tile_shape,
-            )
+            t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
+            t" {N}, {K})"
+            t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
         )
 
     comptime a_layout = Layout.row_major(M, K)
@@ -1272,7 +1255,7 @@ def test_blackwell_kernel_8[
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 2)
         print(
-            String(a_type, "x", M, "x", N, "x", K),
+            t"{a_type}x{M}x{N}x{K}",
             sectime * 1000,
             tflops_rounded,
         )

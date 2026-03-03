@@ -25,22 +25,31 @@ from std.utils.index import Index
 
 
 @fieldwise_init
-struct AttentionSpec(ImplicitlyCopyable, Stringable):
+struct AttentionSpec(ImplicitlyCopyable, Writable):
     var batch_size: Int
     var seq_len: Int
     var kv_seq_len: Int
     var depth_dim: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
-        # fmt: off
-        return String(
+        return String.write(self)
+
+    # fmt: off
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the attention spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "batch_size=", self.batch_size,
             ",seq_len=", self.seq_len,
             ",kv_seq_len=", self.kv_seq_len,
             ",depth_dim=", self.depth_dim,
         )
-        # fmt: on
+    # fmt: on
 
 
 def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:

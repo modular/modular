@@ -76,9 +76,7 @@ fn as_dynamic_row_major_1d[
     )
 
 
-struct FlashAttentionAlgorithm(
-    Defaultable, Stringable, TrivialRegisterPassable, Writable
-):
+struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     var _value: Int32
 
     comptime NAIVE = Self(0)
@@ -105,6 +103,7 @@ struct FlashAttentionAlgorithm(
         return self._value != other._value
 
     @always_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 

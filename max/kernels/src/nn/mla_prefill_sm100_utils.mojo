@@ -59,11 +59,14 @@ from std.gpu.host.info import B200
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import thread_idx
+from std.gpu import thread_idx, block_idx
 from std.gpu.compute.arch.tcgen05 import *
-from std.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
+from std.gpu.compute.arch.mma_nvidia_sm100 import (
+    MMASmemDescriptorPair,
+    UMMAKind,
+)
 from std.gpu.primitives.warp import _vote_nvidia_helper
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
@@ -108,7 +111,6 @@ struct MLAConfig(TrivialRegisterPassable):
     var k_rope_swizzle_mode: TensorMapSwizzle
     var output_swizzle_mode: TensorMapSwizzle
 
-    comptime MMA_K = 16
     comptime sm100_smem_carveout = B200.shared_memory_per_multiprocessor - 1024
     comptime sm100_tmem_cols = 512
     comptime mbar_size = size_of[DType.int64]()
@@ -598,10 +600,13 @@ struct SM100MLA[
 
     comptime num_m_mmas = 2
     comptime MMA_M = Self.config.BM // Self.num_m_mmas
-    comptime qo_elements = Self.padded_depth * Self.MMA_M
     comptime qkv_dt_size = size_of[Self.qkv_type]()
 
     comptime num_qk_stages = Self.config.num_qk_stages
+
+    comptime mma_kind = (
+        UMMAKind.KIND_F16 if Self.qkv_type.is_half_float() else UMMAKind.KIND_F8F6F4
+    )
 
     # First MMA is Q@K' (can be staged by num_qk_stages)
     # (BM x depth) @ (BN x depth)' -> (BM x BN)
@@ -611,6 +616,7 @@ struct SM100MLA[
         MMA_M = Self.MMA_M,  # generally 128
         MMA_N = Self.BN,
         BK = Self.depth,  # BK in memory depth
+        mma_kind = Self.mma_kind,
         swizzle_a = Self.config.qkv_swizzle_mode,
         swizzle_b = Self.config.qkv_swizzle_mode,
         transpose_b=True,
@@ -624,21 +630,11 @@ struct SM100MLA[
         MMA_M = Self.MMA_M,
         MMA_N = Self.kv_depth,  # 128
         BK = Self.BN,
+        mma_kind = Self.mma_kind,
         swizzle_b = Self.config.qkv_swizzle_mode,
         transpose_b=False,
         num_stages = Self.num_qk_stages,
     ]
-
-    comptime swizzle_granularity = Self.config.qkv_swizzle_mode.bytes() // Self.qkv_dt_size
-    comptime k_elements: UInt32 = UInt32(
-        Self.swizzle_granularity * Self.config.BN
-    )
-    comptime qo_bytes: UInt32 = UInt32(Self.qkv_dt_size * Self.qo_elements)
-    comptime k_bytes: UInt32 = UInt32(Self.qkv_dt_size) * Self.k_elements
-    comptime MMA_K = 16
-    comptime v_bytes_per_mma: UInt32 = UInt32(
-        Self.qkv_dt_size * Self.MMA_K * Self.config.padded_depth
-    )
 
     comptime KVPipelineType = KVPipeline[
         Self.config.num_kv_stages, Self.config.num_qk_stages
@@ -1080,7 +1076,11 @@ struct SM100MLA[
             + warp_group_idx * UInt32(Self.padded_depth)
         )
         # wait on the o_pipeline producer
-        comptime assert size_of[Self.output_type]() == size_of[Self.qkv_type]()
+        comptime assert size_of[Self.output_type]() == size_of[
+            Self.qkv_type
+        ]() if Self.qkv_type.is_half_float() else (
+            size_of[Self.output_type]() == size_of[Self.qkv_type]() * 2
+        )
         if num_output_rows > 0:
             o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1

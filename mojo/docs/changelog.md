@@ -247,12 +247,25 @@ what we publish.
 - A statically False `comptime assert` now ends a scope. Any code following it
   in the same scope is now a warning, and can be removed.
 
-- Re-exported functions from a package's `__init__.mojo` are no longer shadowed
+- Re-exported symbols from a package's `__init__.mojo` are no longer shadowed
   by a submodule of the same name. For example, if `pkg/foo.mojo` defines
   `fn foo` and `pkg/__init__.mojo` does `from .foo import foo`, then
-  `from pkg import foo` now correctly resolves to the function.
+  `from pkg import foo` and `from pkg import *` now correctly resolve to the
+  function rather than the module.
 
 ### Library changes
+
+- `Bool` no longer conforms to the `Indexer` trait. Previously, `Bool` could be
+  used to index into collections (e.g., `nums[True]`), which is not desirable
+  behavior for a strongly-typed language. Use `Int(my_bool)` to explicitly
+  convert a `Bool` to an index.
+
+- The `Stringable` and `Representable` traits are now deprecated. Use `Writable`
+  instead to make your types formattable as strings.
+  `Writable` provides a default implementation, so in many cases simply adding
+  `Writable` conformance is enough without manually implementing `write_to()`
+  or `write_repr_to()`, however, you can manually implement these to get custom
+  output.
 
 - `TString.write_to()` now uses a compact encoding for format strings. The
   format string is flattened at compile time into NUL-terminated literal

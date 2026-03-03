@@ -31,7 +31,7 @@ from std.builtin.device_passable import DevicePassable
 # ===-----------------------------------------------------------------------===#
 
 
-struct MaskName(Stringable):
+struct MaskName(Writable):
     """A tile's masking status."""
 
     var name: String
@@ -46,8 +46,17 @@ struct MaskName(Stringable):
     fn __init__(out self, name: String):
         self.name = name
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return self.name
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the mask name.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write_string(self.name)
 
     fn __eq__(self, rhs: Self) -> Bool:
         return self.name == rhs.name
@@ -68,7 +77,6 @@ struct MaskName(Stringable):
 struct TileMaskStatus(
     Equatable,
     Identifiable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -99,6 +107,7 @@ struct TileMaskStatus(
     fn __is__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 

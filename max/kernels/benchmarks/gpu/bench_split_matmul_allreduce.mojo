@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import random
+import std.random
 from std.sys import env_get_bool, env_get_dtype, env_get_int, size_of
 
 from std.benchmark import (
@@ -39,23 +39,24 @@ fn _get_run_name[
     overlap_with_dpl: Bool,
 ](m: ValOrDim, n: ValOrDim, k: ValOrDim,) -> String:
     var vendor_str = "matmul_allreduce"
-    var type_str = String("(", dtype, ") : ")
-    var m_str = String(m.value, "_dynamic") if m.dim.is_dynamic() else String(
+    var type_str = String(t"({dtype}) : ")
+    var m_str = String(t"{m.value}_dynamic") if m.dim.is_dynamic() else String(
         m.dim
     )
-    var n_str = String(n.value, "_dynamic") if n.dim.is_dynamic() else String(
+    var n_str = String(t"{n.value}_dynamic") if n.dim.is_dynamic() else String(
         n.dim
     )
-    var k_str = String(k.value, "_dynamic") if k.dim.is_dynamic() else String(
+    var k_str = String(t"{k.value}_dynamic") if k.dim.is_dynamic() else String(
         k.dim
     )
 
-    var ngpus_str = String("/ngpus=", ngpus)
+    var ngpus_str = String(t"/ngpus={ngpus}")
     var num_partitions_str = (
-        String("/num_partitions=", num_partitions) if num_partitions > 1 else ""
+        String(t"/num_partitions={num_partitions}") if num_partitions
+        > 1 else ""
     )
     var partition_dim_str = (
-        String("/partition_dim=", partition_dim) if num_partitions > 1 else ""
+        String(t"/partition_dim={partition_dim}") if num_partitions > 1 else ""
     )
     var overlap_str = "/overlap" if overlap_with_dpl else ""
     return String(

@@ -557,6 +557,7 @@ struct SM100TensorAccumulatorSS[
     MMA_N: Int,
     BK: Int,
     *,
+    mma_kind: UMMAKind = UMMAKind.KIND_F16,
     swizzle_a: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     swizzle_b: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
@@ -573,7 +574,7 @@ struct SM100TensorAccumulatorSS[
     comptime operand_t = Self.operand_type
     comptime operand_size = size_of[Self.operand_t]()
     comptime accum_t = Self.accum_type
-    comptime MMA_K = 16
+    comptime MMA_K = 16 if Self.operand_type.is_half_float() else 32
     comptime num_k_mmas = ceildiv(Self.BK, Self.MMA_K)
     comptime swizzle_granularity = max(
         Self.swizzle_a.bytes(), Self.swizzle_b.bytes()
@@ -591,7 +592,7 @@ struct SM100TensorAccumulatorSS[
         Self.operand_t, Self.MMA_N, Self.padded_BK, Self.swizzle_b
     ]()
 
-    comptime idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
@@ -621,6 +622,7 @@ struct SM100TensorAccumulatorSS[
                 Self.a_layout,
                 Self.b_layout,
                 num_k_mmas = Self.num_k_mmas,
+                mma_k = Self.MMA_K,
                 operand_size = Self.operand_size,
             ](Self.idesc, a, b, c, c_scale, elect)
         else:
@@ -646,6 +648,7 @@ struct SM100TensorAccumulatorSS[
                 Self.a_layout,
                 Self.b_layout,
                 num_k_mmas = k_batch_end - k_batch_start,
+                mma_k = Self.MMA_K,
                 operand_size = Self.operand_size,
             ](
                 Self.idesc,
@@ -665,6 +668,7 @@ struct SM100TensorAccumulatorTS[
     BK: Int,
     swizzle_b: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     *,
+    mma_kind: UMMAKind = UMMAKind.KIND_F16,
     transpose_b: Bool = True,
     cta_group: Int = 1,
     num_stages: Int = 1,
@@ -682,7 +686,7 @@ struct SM100TensorAccumulatorTS[
         Self.operand_t, Self.MMA_N, Self.BK, Self.swizzle_b
     ]()
 
-    comptime MMA_K = 16
+    comptime MMA_K = 16 if Self.operand_type.is_half_float() else 32
     comptime num_k_mmas = Self.BK // Self.MMA_K
     comptime num_k_blocks = Self.padded_BK // Self.MMA_K
     comptime use_3_then_1_split: Bool = Self.num_stages == 2 and Self.num_k_blocks % 4 == 0
@@ -696,7 +700,7 @@ struct SM100TensorAccumulatorTS[
 
     # B's descriptor contains stride info, so we should be
     # able to use `BN` here instead of `BN_padded`
-    comptime idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
+    comptime idesc = UMMAInsDescriptor[Self.mma_kind].create[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
@@ -718,6 +722,7 @@ struct SM100TensorAccumulatorTS[
             # Original single-stage behavior
             bulk_mma[
                 Self.b_layout,
+                mma_k = Self.MMA_K,
                 num_k_mmas = Self.num_k_mmas,
                 operand_size = Self.operand_size,
             ](Self.idesc, a, b, c, c_scale, elect)
@@ -745,6 +750,7 @@ struct SM100TensorAccumulatorTS[
                 scale = 1
             bulk_mma[
                 Self.b_layout,
+                mma_k = Self.MMA_K,
                 num_k_mmas = k_batch_end - k_batch_start,
                 operand_size = Self.operand_size,
             ](
@@ -763,6 +769,7 @@ fn build_mma_ss(
     layout_b: Layout,
     *,
     operand_size: Int,
+    mma_k: Int,
     num_k_mmas: Int,
 ) -> String:
     # Our code tries to extensively re-use registers so that the upper half
@@ -788,9 +795,9 @@ setp.eq.s32 %pj, $6, 0;
             mma += "setp.ne.b32 %ps, $3, 0;\n"
         else:
             # define rda and rdb
-            a_offset = (layout_a(IntTuple(0, 16 * k)) * operand_size) >> 4
+            a_offset = (layout_a(IntTuple(0, mma_k * k)) * operand_size) >> 4
             mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
-            b_offset = (layout_b(IntTuple(0, 16 * k)) * operand_size) >> 4
+            b_offset = (layout_b(IntTuple(0, mma_k * k)) * operand_size) >> 4
             mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
             mma += "mov.b64 %rda, {%ra, $8};\n"
             mma += "mov.b64 %rdb, {%rb, $5};\n"
@@ -807,6 +814,7 @@ fn build_mma_ts(
     layout_b: Layout,
     *,
     operand_size: Int,
+    mma_k: Int,
     num_k_mmas: Int,
 ) -> String:
     # Our code tries to extensively re-use registers so that the upper half
@@ -831,7 +839,7 @@ setp.eq.s32 %pj, $6, 0;
             mma += "setp.ne.b32 %ps, $3, 0;\n"
         else:
             # define rda and rdb
-            b_offset = (layout_b(IntTuple(0, 16 * k)) * operand_size) >> 4
+            b_offset = (layout_b(IntTuple(0, mma_k * k)) * operand_size) >> 4
             mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
             mma += "mov.b64 %rdb, {%rb, $5};\n"
             if k == 1:  # set predicate to 1
@@ -855,6 +863,7 @@ fn bulk_mma[
     layout_b: Layout,
     *,
     num_k_mmas: Int,
+    mma_k: Int,
     operand_size: Int,
 ](
     idesc: UMMAInsDescriptor[kind],
@@ -869,6 +878,7 @@ fn bulk_mma[
         layout_a,
         layout_b,
         operand_size=operand_size,
+        mma_k=mma_k,
         num_k_mmas=num_k_mmas,
     )
 
@@ -883,6 +893,7 @@ fn bulk_mma[
     //,
     layout_b: Layout,
     *,
+    mma_k: Int,
     num_k_mmas: Int,
     operand_size: Int,
 ](
@@ -898,11 +909,12 @@ fn bulk_mma[
         String(kind),
         layout_b,
         operand_size=operand_size,
+        mma_k=mma_k,
         num_k_mmas=num_k_mmas,
     )
 
     comptime constraints = "r,r,r,r,r,r,r" + ",r" * num_k_mmas
-    comptime x = UInt32(4 * operand_size)
+    comptime x = UInt32(mma_k * operand_size // 4)
     # fmt: off
     comptime if num_k_mmas == 1:
         inlined_assembly[mma_string, NoneType, constraints=constraints](

@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib import default_comp_time_hasher
-from os import abort
-from sys import size_of
+from std.hashlib import default_comp_time_hasher
+from std.os import abort
+from std.sys import size_of
 
-from python import Python, PythonObject
-from python._cpython import PyObjectPtr
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python._cpython import PyObjectPtr
+from std.python.bindings import PythonModuleBuilder
 
 
 @export

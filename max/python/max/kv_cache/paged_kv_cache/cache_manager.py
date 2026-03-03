@@ -91,46 +91,34 @@ class PagedKVCacheManager:
             raise ValueError("max_batch_size must be positive")
 
         self.params = params
-        self.devices = [d.to_device() for d in params.devices]
+        devices = [d.to_device() for d in params.devices]
 
-        self.num_replicas = params.data_parallel_degree
-        assert len(self.devices) % self.num_replicas == 0, (
+        num_replicas = params.data_parallel_degree
+        assert len(devices) % num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
-        self.devices_per_replica = split_into_groups(
-            self.devices, self.num_replicas
-        )
+        devices_per_replica = split_into_groups(devices, num_replicas)
 
         self._replica_managers: list[_TPPagedKVCacheManager] = []
-        for replica_idx, devices in enumerate(self.devices_per_replica):
+        for replica_idx, replica_devices in enumerate(devices_per_replica):
             replica_params = params.copy_as_dp_1(replica_idx=replica_idx)
             self._replica_managers.append(
                 _TPPagedKVCacheManager(
                     params=replica_params,
                     total_num_pages=total_num_pages,
                     total_num_host_pages=total_num_host_pages,
-                    devices=devices,
+                    devices=replica_devices,
                     session=session,
                     max_batch_size=max_batch_size,
                     enable_runtime_checks=enable_runtime_checks,
                 )
             )
 
-        first_replica = self._replica_managers[0]
-        self.page_size = first_replica.page_size
-        self.enable_prefix_caching = first_replica.enable_prefix_caching
-        self.enable_kvcache_swapping_to_host = (
-            first_replica.enable_kvcache_swapping_to_host
-        )
-
-        # Store session for model loading
-        self.session = session
-
         # Initialize the ragged increment cache lengths model
         self.increment_cache_lengths_processor = IncrementCacheLengthsProcessor(
             session=session,
             params=self.params,
-            devices=self.devices,
+            devices=devices,
         )
 
     def get_pct_used_blocks_after_allocation(
@@ -203,6 +191,17 @@ class PagedKVCacheManager:
             )
         return ret_list
 
+    def alloc_dummy(
+        self,
+        request_id: RequestID,
+        replica_idx: int,
+        sentinel_request_id: RequestID,
+    ) -> None:
+        """Claims a dummy request and shares the sentinel's block on a replica."""
+        self._replica_managers[replica_idx].alloc_dummy(
+            request_id, sentinel_request_id
+        )
+
     def release(self, request_id: RequestID, replica_idx: int) -> None:
         """Releases blocks for the request on the given replica."""
         self._replica_managers[replica_idx].release(request_id)
@@ -214,35 +213,41 @@ class PagedKVCacheManager:
     @contextmanager
     def reserve(
         self,
-        contexts: Sequence[TextGenerationContext],
+        replica_batches: Sequence[Sequence[TextGenerationContext]],
         *,
-        replica_idx: int,
         num_steps: int = 1,
     ) -> Iterator[None]:
         """Claims, allocates, and releases contexts within a scope.
 
         This helper is for ephemeral flows (for example, warmup capture) where
         request IDs should be released when leaving the scope.
+
+        Args:
+            replica_batches: Per-replica lists of contexts to reserve.
+            num_steps: Number of steps to allocate for each context.
         """
-        claimed_request_ids: list[RequestID] = []
+        claimed: list[tuple[RequestID, int]] = []
         try:
-            for context in contexts:
-                if self.contains(context.request_id, replica_idx=replica_idx):
-                    raise ValueError(
-                        "reserve() requires unclaimed request IDs, but "
-                        f"{context.request_id!r} is already claimed on "
-                        f"replica {replica_idx}."
+            for replica_idx, contexts in enumerate(replica_batches):
+                for context in contexts:
+                    if self.contains(
+                        context.request_id, replica_idx=replica_idx
+                    ):
+                        raise ValueError(
+                            "reserve() requires unclaimed request IDs, but "
+                            f"{context.request_id!r} is already claimed on "
+                            f"replica {replica_idx}."
+                        )
+                    self.claim(context.request_id, replica_idx=replica_idx)
+                    claimed.append((context.request_id, replica_idx))
+                    self.alloc(
+                        context,
+                        replica_idx=replica_idx,
+                        num_steps=num_steps,
                     )
-                self.claim(context.request_id, replica_idx=replica_idx)
-                claimed_request_ids.append(context.request_id)
-                self.alloc(
-                    context,
-                    replica_idx=replica_idx,
-                    num_steps=num_steps,
-                )
             yield
         finally:
-            for request_id in claimed_request_ids:
+            for request_id, replica_idx in claimed:
                 self.release(request_id, replica_idx=replica_idx)
 
     def step(self, batches: Sequence[Sequence[TextGenerationContext]]) -> None:

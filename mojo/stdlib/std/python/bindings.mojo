@@ -221,13 +221,10 @@ fn _tp_repr_wrapper[
     if self.is_initialized:
         comptime if conforms_to(T, Writable):
             trait_downcast[Writable](self.mojo_value).write_repr_to(repr_str)
-        elif conforms_to(T, Representable):
-            repr_str = trait_downcast[Representable](self.mojo_value).__repr__()
         else:
-            comptime assert False, (
-                "_tp_repr_wrapper requires conformance to either Writable or"
-                " Representable"
-            )
+            comptime assert (
+                False
+            ), "_tp_repr_wrapper requires conformance to Writable."
     else:
         repr_str = t"<uninitialized {get_type_name[T]()}>"
 

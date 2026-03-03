@@ -27,16 +27,16 @@ from max.nn.kv_cache import (
     unflatten_ragged_mha_decode_inputs,
 )
 from max.nn.module_v3 import Module
-from max.nn.module_v3.embedding import Embedding
-from max.nn.module_v3.linear import Linear
-from max.nn.module_v3.sequential import ModuleList
-
-from ..common_layers.mlp import MLP
-from ..common_layers.rotary_embedding import (
+from max.nn.module_v3.common_layers.mlp import MLP
+from max.nn.module_v3.common_layers.rotary_embedding import (
     RotaryEmbedding,
     YarnRotaryEmbedding,
     YarnScalingParams,
 )
+from max.nn.module_v3.embedding import Embedding
+from max.nn.module_v3.linear import Linear
+from max.nn.module_v3.sequential import ModuleList
+
 from .layers.attention import Olmo3Attention
 from .layers.rms_norm import Olmo3RMSNorm
 from .layers.transformer_block import Olmo3TransformerBlock
@@ -224,8 +224,9 @@ class Olmo3(Module[[Tensor, Tensor, Tensor], tuple[Tensor]]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> tuple[Tensor]:
+        kv_values = [arg._graph_value for arg in variadic_args]
         kv_collections = unflatten_ragged_mha_decode_inputs(
-            variadic_args, n_devices=self.kv_params.n_devices
+            kv_values, n_devices=self.kv_params.n_devices
         )
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets

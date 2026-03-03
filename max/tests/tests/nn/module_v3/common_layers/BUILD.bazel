@@ -12,6 +12,6 @@ modular_py_test(
     srcs = glob(["test_*.py"]),
     deps = [
         "//max/python/max:tensor",
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/nn",
     ],
 )

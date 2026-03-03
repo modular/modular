@@ -30,7 +30,7 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return m.finalize()
     except e:
-        abort(String("failed to create Python module: ", e))
+        abort(t"failed to create Python module: {e}")
 
 
 fn plus_one(arg: PythonObject) raises -> PythonObject:

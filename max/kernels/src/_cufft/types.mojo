@@ -39,9 +39,7 @@ struct LibraryProperty(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Status(
-    Equatable, Identifiable, Stringable, TrivialRegisterPassable, Writable
-):
+struct Status(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     var _value: Int8
     comptime CUFFT_INVALID_PLAN = Self(1)
     comptime CUFFT_SUCCESS = Self(0)
@@ -106,10 +104,12 @@ struct Status(
         abort("invalid cufftResult_t entry")
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
     @no_inline
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         return "cufftResult_t(" + String(self) + ")"
 
@@ -121,9 +121,7 @@ struct Status(
 
 
 @fieldwise_init
-struct Type(
-    Equatable, Identifiable, Stringable, TrivialRegisterPassable, Writable
-):
+struct Type(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     var _value: Int8
     comptime CUFFT_R2C = Self(0x2A)
     comptime CUFFT_C2R = Self(0x2C)
@@ -154,13 +152,15 @@ struct Type(
             return writer.write("CUFFT_Z2Z")
         abort("invalid cufftType_t entry")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
-        return "cufftType_t(" + String(self) + ")"
+        return t"cufftType_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -168,7 +168,7 @@ struct Type(
 
 @fieldwise_init
 struct Compatibility(
-    Equatable, Identifiable, Stringable, TrivialRegisterPassable, Writable
+    Equatable, Identifiable, TrivialRegisterPassable, Writable
 ):
     var _value: Int8
     comptime CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
@@ -185,22 +185,22 @@ struct Compatibility(
             return writer.write("CUFFT_COMPATIBILITY_FFTW_PADDING")
         abort("invalid cufftCompatibility_t entry")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
-        return "cufftCompatibility_t(" + String(self) + ")"
+        return t"cufftCompatibility_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
 
 
 @fieldwise_init
-struct Property(
-    Equatable, Identifiable, Stringable, TrivialRegisterPassable, Writable
-):
+struct Property(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     var _value: Int8
     comptime NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT = Self(0)
     comptime NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)
@@ -221,13 +221,15 @@ struct Property(
             )
         abort("invalid cufftProperty_t entry")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
-        return "cufftProperty_t(" + String(self) + ")"
+        return t"cufftProperty_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)

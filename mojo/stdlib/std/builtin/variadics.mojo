@@ -17,6 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
+from std.format._utils import FormatStruct, TypeNames
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 
@@ -438,7 +439,7 @@ struct _VariadicParamListIter[type: TrivialRegisterPassable](
 
 
 struct VariadicParamList[type: TrivialRegisterPassable](
-    Iterable, Sized, TrivialRegisterPassable
+    Iterable, Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
 
@@ -551,6 +552,56 @@ struct VariadicParamList[type: TrivialRegisterPassable](
         """
         return __mlir_op.`pop.variadic.get`(self.value, index(idx)._mlir_value)
 
+    fn _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
+        _constrained_conforms_to[
+            conforms_to(Self.type, Writable),
+            Parent=Self,
+            Element = Self.type,
+            ParentConformsTo="Writable",
+            ElementConformsTo="Writable",
+        ]()
+        writer.write_string("(")
+        for i in range(len(self)):
+            if i > 0:
+                writer.write_string(", ")
+
+            comptime if is_repr:
+                trait_downcast[Writable](self[i]).write_repr_to(writer)
+            else:
+                trait_downcast[Writable](self[i]).write_to(writer)
+        writer.write_string(")")
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the elements of this variadic list to a writer.
+
+        Constraints:
+            `type` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        self._write_elements(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this variadic list to a writer.
+
+        Constraints:
+            `type` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_elements[is_repr=True](w)
+
+        FormatStruct(writer, "VariadicParamList").params(
+            TypeNames[Self.type](),
+        ).fields[FieldsFn=write_fields]()
+
     @always_inline
     fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the list.
@@ -627,10 +678,10 @@ struct VariadicList[
     //,
     element_type: AnyType,
     is_owned: Bool,
-](Movable, Sized):
-    """A utility class to access homogenous variadic function arguments.
-    It exposes references to the elements in a way that can be enumerated.  Each
-    element may be accessed with `elt[]`.
+](Movable, Sized, Writable):
+    """A utility class to access variadic function arguments of memory-only
+    types that may have ownership. It exposes references to the elements in a
+    way that can be enumerated.  Each element may be accessed with `elt[]`.
 
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
@@ -754,6 +805,56 @@ struct VariadicList[
         return __get_litref_as_mvalue(
             __mlir_op.`pop.variadic.get`(self.value, idx._mlir_value)
         )
+
+    fn _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
+        _constrained_conforms_to[
+            conforms_to(Self.element_type, Writable),
+            Parent=Self,
+            Element = Self.element_type,
+            ParentConformsTo="Writable",
+            ElementConformsTo="Writable",
+        ]()
+        writer.write_string("(")
+        for i in range(len(self)):
+            if i > 0:
+                writer.write_string(", ")
+
+            comptime if is_repr:
+                trait_downcast[Writable](self[i]).write_repr_to(writer)
+            else:
+                trait_downcast[Writable](self[i]).write_to(writer)
+        writer.write_string(")")
+
+    @no_inline
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the elements of this variadic list to a writer.
+
+        Constraints:
+            `element_type` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        self._write_elements(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this variadic list to a writer.
+
+        Constraints:
+            `element_type` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_elements[is_repr=True](w)
+
+        FormatStruct(writer, "VariadicList").params(
+            TypeNames[Self.element_type](),
+        ).fields[FieldsFn=write_fields]()
 
     fn __iter__(
         self,
@@ -1067,6 +1168,34 @@ struct VariadicPack[
                 self[i].write_to(writer)
         writer.write_string(end)
 
+    @no_inline
+    fn write_to(self: VariadicPack[_, Writable, ...], mut writer: Some[Writer]):
+        """Writes the elements of this pack to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        self._write_to(
+            writer,
+            start=StaticString("("),
+            end=StaticString(")"),
+        )
+
+    @no_inline
+    fn write_repr_to(
+        self: VariadicPack[_, Writable, ...], mut writer: Some[Writer]
+    ):
+        """Writes the repr of the elements of this pack to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        self._write_to[is_repr=True](
+            writer,
+            start=StaticString("("),
+            end=StaticString(")"),
+        )
+
 
 # ===-----------------------------------------------------------------------===#
 # VariadicReduce
@@ -1308,28 +1437,6 @@ comptime _WrapVariadicValuesIdxToTypeMapperToReducer[
     From: Variadic.ValuesOfType[F],
     Idx: Int,
 ] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
-
-
-comptime _MapValuesAndIdxToType[
-    From: AnyType,
-    //,
-    *,
-    To: type_of(AnyType),
-    VariadicType: Variadic.ValuesOfType[From],
-    Mapper: _VariadicValuesIdxToTypeGeneratorTypeGenerator[From, To],
-] = _ReduceValueAndIdxToVariadic[
-    BaseVal = Variadic.empty_of_trait[To],  # reduce from a empty variadic
-    VariadicType=VariadicType,
-    Reducer = _WrapVariadicValuesIdxToTypeMapperToReducer[From, To, Mapper],
-]
-"""Construct a new variadic of types using a type-to-type mapper.
-Parameters:
-    From: The common type bound for the input variadic values.
-    To: A common trait bound for the mapped type.
-    VariadicType: The variadic to be mapped.
-    Mapper: A `[Ts: *From, idx: index] -> To` that does the transform.
-"""
-
 
 comptime _ReversedVariadic[
     T: type_of(AnyType),

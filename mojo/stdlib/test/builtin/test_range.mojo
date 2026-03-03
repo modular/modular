@@ -291,7 +291,6 @@ def test_range_reversed() raises:
 
 def test_indexing() raises:
     var r = range(10)
-    assert_equal(r[True], 1)
     assert_equal(r[Int(4)], 4)
     assert_equal(r[3], 3)
 

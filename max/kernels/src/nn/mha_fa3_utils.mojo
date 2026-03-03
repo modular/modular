@@ -20,7 +20,7 @@ from std.memory import (
 
 from std.sys import size_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm.functional import unswitch
 from std.gpu import block_idx, thread_idx
 from std.gpu.globals import WARPGROUP_SIZE
@@ -975,7 +975,6 @@ fn _apply_mask[
 fn q_coord[
     *,
     depth: Int,
-    swizzle_granularity: Int,
     decoding: Bool,
 ](
     row: UInt32,
@@ -1004,7 +1003,7 @@ fn q_coord[
 
 @always_inline
 fn kv_coord[
-    *, depth: Int, swizzle_granularity: Int
+    *, depth: Int
 ](row: UInt32, head_idx: UInt32) -> StaticTuple[UInt32, 3]:
     return {0, head_idx, row}
 
@@ -1165,9 +1164,7 @@ fn produce[
         k_tma_op.async_copy(
             k_sub,
             p_mbar,
-            kv_coord[depth=depth, swizzle_granularity=swizzle_granularity](
-                row, kv_head_idx
-            ),
+            kv_coord[depth=depth](row, kv_head_idx),
         )
         state.step()
 
@@ -1191,9 +1188,7 @@ fn produce[
         v_tma_op.async_copy(
             v_sub,
             p_mbar,
-            kv_coord[depth=depth, swizzle_granularity=swizzle_granularity](
-                row, kv_head_idx
-            ),
+            kv_coord[depth=depth](row, kv_head_idx),
         )
         state.step()
 
@@ -1259,7 +1254,6 @@ fn produce[
             produced_mbar_kv[0],
             q_coord[
                 depth=depth,
-                swizzle_granularity=swizzle_granularity,
                 decoding=decoding,
             ](position.q_row, position.head_idx),
         )
@@ -1330,7 +1324,6 @@ fn produce[
                         pq_mbar,
                         q_coord[
                             depth=depth,
-                            swizzle_granularity=swizzle_granularity,
                             decoding=decoding,
                         ](position.q_row, position.head_idx),
                     )

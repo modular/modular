@@ -291,7 +291,7 @@ def navit_patchify(
 
 
 # ---------------------------------------------------------------------------
-# KimiK25VisionProcessor
+# KimiK2_5VisionProcessor
 # ---------------------------------------------------------------------------
 
 
@@ -527,11 +527,11 @@ class KimiK2_5VisionProcessor:
         return self.preprocess(medias)
 
     def __repr__(self) -> str:
-        return f"KimiK25VisionProcessor(cfg={self.cfg})"
+        return f"{self.__class__.__name__}(cfg={self.cfg})"
 
 
 # ---------------------------------------------------------------------------
-# KimiK25Processor  (orchestrator analogous to the HF processor)
+# KimiK2_5Processor  (orchestrator analogous to the HF processor)
 # ---------------------------------------------------------------------------
 
 
@@ -614,4 +614,4 @@ class KimiK2_5Processor:
         return preprocessed, text
 
     def __repr__(self) -> str:
-        return f"KimiK25Processor(vision_processor={self.vision_processor!r})"
+        return f"{self.__class__.__name__}(vision_processor={self.vision_processor!r})"

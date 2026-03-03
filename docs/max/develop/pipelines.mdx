@@ -58,19 +58,19 @@ The `max.nn` package includes common components like:
 
 These components are core to building model architectures.
 
-:::note Legacy modules
+:::note Graph API modules
 
-For legacy layer-based components like attention mechanisms and transformers,
+For graph-based components like attention mechanisms and transformers,
 use `max.nn`:
 
 ```python
-from max.nn import Module, Layer, Linear
+from max.nn import Module, Linear
 from max.nn.attention import AttentionWithRope
 ```
 
 :::
 
-The [`Module`](/max/api/python/nn#max.nn.Module) base class standardizes how
+The [`Module`](/max/api/python/nn/module_v3/module#max.nn.module_v3.module.Module) base class standardizes how
 layers manage weights and devices. Here's an example of building a simple
 multi-layer perceptron:
 

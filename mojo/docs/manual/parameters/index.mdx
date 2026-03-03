@@ -159,7 +159,7 @@ def main() raises:
 42
 ```
 
-This updated function takes any `Stringable` type, so you can pass it an `Int`,
+This updated function takes any `Writable` type, so you can pass it an `Int`,
 `String`, or `Bool` value.
 
 Note that there's a double-slash (`//`) in the parameter list after `MsgType`,
@@ -292,7 +292,7 @@ that holds instances of a type that conforms to the
 [`Copyable`](/mojo/std/builtin/value/Copyable) trait. This imposes a lot
 of limitations: you can't implement a `sort()` method because you can't
 guarantee that the stored type supports the comparison operators; you can't
-write a useful `__str__()` or `__repr__()` dunder method because you can't
+write a useful `write_to()` or `write_repr_to()` method because you can't
 guarantee that the stored type supports conversion to a string.
 
 The answer to these issues is *conditional conformance*, which lets you define a
@@ -301,7 +301,7 @@ value that has a more specific bound on one or more of its parameters.
 
 For example, the following code defines a `Container` type that holds an
 instance of a type conforming to `Movable`. It also defines a
-`__str__()` method that can only be called if the stored `ElementType` conforms
+`write_to()` method that can only be called if the stored `ElementType` conforms
 to `Writable` as well as `Movable`:
 
 ```mojo
@@ -309,17 +309,23 @@ to `Writable` as well as `Movable`:
 struct Container[ElementType: Movable & ImplicitlyDestructible]:
     var element: Self.ElementType
 
-    def __str__[
+    def write_to[
         StrElementType: Writable & Movable, //
-    ](self: Container[StrElementType]) raises -> String:
-        return String(self.element)
+    ](self: Container[StrElementType], mut writer: Some[Writer]):
+      self.element.write_to(writer)
 
 
 def main() raises:
     float_container = Container(5.0)
     string_container = Container("Hello")
-    print(float_container.__str__())
-    print(string_container.__str__())
+
+    var string = String()
+    float_container.write_to(string)
+    print(string)
+
+    string = {}
+    string_container.write_to(string)
+    print(string)
 ```
 
 ```output
@@ -327,14 +333,14 @@ def main() raises:
 Hello
 ```
 
-Note the signature of the `__str__()` method, which declares the `self` argument
+Note the signature of the `write_to()` method, which declares the `self` argument
 with a more specific type. Specifically, it declares that it takes a `Container`
 with an `ElementType` that conforms to the `Writable` and `Movable`
 traits.
 
 ```mojo
-def __str__[StrElementType: Writable & Movable, //](
-        self: Container[StrElementType]) raises -> String:
+def write_to[StrElementType: Writable & Movable, //](
+        self: Container[StrElementType], mut writer: Some[Writer]):
 ```
 
 The trait bound on `StrElementType` must include `ElementType`'s original trait
@@ -342,11 +348,11 @@ The trait bound on `StrElementType` must include `ElementType`'s original trait
 composition `Writable & Movable` includes the original trait. You could also use
 a trait that inherits from `Movable`.
 
-Note that the `main()` function calls the `__str__()` method directly,
+Note that the `main()` function calls the `write_to()` method directly,
 rather than calling `String(float_container)`. One current limitation of
 conditional conformance is that Mojo can't recognize the struct
-`Container[Int]` as conforming to `Stringable`, even though the `__str__()`
-method is implemented for any `ElementType` that's also `Stringable`.
+`Container[Int]` as conforming to `Writable`, even though the `write_to()`
+method is implemented for any `ElementType` that's also `Writable`.
 
 ### Case study: the SIMD type
 
@@ -1322,11 +1328,9 @@ For example, suppose we have a `Fudge` struct with three parameters:
 
 ```mojo
 @fieldwise_init
-struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
-    fn __str__(self) -> String:
-        return String.write(
-            "Fudge (", Self.sugar, ",", Self.cream, ",", Self.chocolate, ")"
-        )
+struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Writable):
+    fn write_to(self, mut writer: Some[Writer]):
+      t"Fudge ({Self.sugar},{Self.cream},{Self.chocolate})".write_to(writer)
 ```
 
 We can write a function that takes a `Fudge` argument with just one bound

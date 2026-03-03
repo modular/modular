@@ -41,7 +41,7 @@ from std.utils.index import Index, IndexList
 
 
 @fieldwise_init
-struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
+struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
     """Work tile information for 1D-1D grouped matmul.
 
     Contains the coordinates and metadata for a single work tile:
@@ -78,6 +78,7 @@ struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
         """Returns True if the scheduler has no more work."""
         return self.terminate
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

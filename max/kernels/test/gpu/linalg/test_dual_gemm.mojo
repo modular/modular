@@ -17,7 +17,7 @@ from std.os import abort
 from std.random import rand, randn
 from std.sys import align_of, argv, simd_width_of
 
-import benchmark
+import std.benchmark
 from std.algorithm.functional import elementwise
 from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout

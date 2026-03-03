@@ -440,7 +440,7 @@ def test_gemv_tma[
         var tflops = TFlop / sectime
         var tflops_rounded = round(tflops, 3)
         print(
-            String(M, "x", N, "x", K, ": DTYPE=", dtype),
+            t"{M}x{N}x{K}: DTYPE={dtype}",
             sectime * 1000,
             tflops_rounded,
         )

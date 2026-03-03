@@ -15,7 +15,7 @@ from std.math import ceildiv, exp2, recip
 from std.math.constants import log2e
 from std.sys import align_of, env_get_int, simd_width_of, size_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.collections import OptionalReg
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

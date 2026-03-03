@@ -19,7 +19,7 @@ from std.os import abort
 from std.python import PythonObject
 
 
-struct TestStruct(Defaultable, Movable, Representable):
+struct TestStruct(Defaultable, Movable, Writable):
     var a: Int
     var b: Int
 
@@ -33,9 +33,6 @@ struct TestStruct(Defaultable, Movable, Representable):
 
     fn print(self) -> None:
         print(self.a, self.b)
-
-    fn __repr__(self: TestStruct) -> String:
-        return String("TestStruct(", self.a, ", ", self.b, ")")
 
     @staticmethod
     fn set_a(py_self: PythonObject, a: PythonObject):

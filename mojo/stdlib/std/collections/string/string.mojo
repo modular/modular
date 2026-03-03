@@ -439,17 +439,6 @@ struct String(
             raise Error("Cannot construct a String from invalid UTF-8 data")
         self = String(unsafe_from_utf8=from_utf8)
 
-    fn __init__[T: Stringable](out self, value: T):
-        """Initialize from a type conforming to `Stringable`.
-
-        Parameters:
-            T: The type conforming to Stringable.
-
-        Args:
-            value: The object to get the string representation of.
-        """
-        self = value.__str__()
-
     # ===------------------------------------------------------------------=== #
     # Writables
     # ===------------------------------------------------------------------=== #

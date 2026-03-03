@@ -199,3 +199,22 @@ modular_py_test(
         "//max/python/max/entrypoints",
     ],
 )
+
+modular_py_test(
+    name = "test_max_serve_e2e",
+    srcs = [
+        "test_max_serve_e2e.py",
+    ],
+    tags = [
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:config",
+        requirement("httpx"),
+        requirement("pytest-asyncio"),
+    ],
+)

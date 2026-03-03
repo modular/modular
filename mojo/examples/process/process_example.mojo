@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, Optional
-from os import Process
-from sys._libc import SignalCodes
-from time import sleep
+from std.collections import List, Optional
+from std.os import Process
+from std.sys._libc import SignalCodes
+from std.time import sleep
 
 
 fn test_long_running_process_wait() raises:

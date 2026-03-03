@@ -808,8 +808,8 @@ def test_session_device_initialization() -> None:
 
     # Case: Empty list specified.
     session3 = InferenceSession(devices=[])
-    assert not set(session3.devices), (
-        "Devices with empty list should give the empty set"
+    assert set(session3.devices) == {cpu}, (
+        "Devices with empty list should include host CPU"
     )
 
     if accelerator_count() == 0:
@@ -818,8 +818,8 @@ def test_session_device_initialization() -> None:
     gpu = Accelerator()
     # Case: Only GPU specified.
     session4 = InferenceSession(devices=[gpu])
-    assert set(session4.devices) == {gpu}, (
-        "Devices with only GPU should result in GPU"
+    assert set(session4.devices) == {gpu, cpu}, (
+        "Devices with only GPU should include host CPU"
     )
 
     # Case: GPU and CPU specified.
@@ -830,8 +830,8 @@ def test_session_device_initialization() -> None:
 
     # Case: Duplicate GPU specified.
     session6 = InferenceSession(devices=[gpu, gpu])
-    assert set(session6.devices) == {gpu}, (
-        "Devices with duplicate GPU should be unique"
+    assert set(session6.devices) == {gpu, cpu}, (
+        "Devices with duplicate GPU should still include host CPU"
     )
 
 
