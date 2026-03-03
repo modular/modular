@@ -14,9 +14,7 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
@@ -42,84 +40,10 @@ from max.pipelines.lib.log_probabilities import (
 from max.profiler import traced
 from transformers import AutoConfig
 
+from .functional_ops import _get_state_space_paths
 from .model_config import MambaConfig
 
 logger = logging.getLogger("max.pipelines")
-
-# Environment variable name for Mojo import paths set by the build system
-
-_MODULAR_MOJO_MAX_IMPORT_PATH = "MODULAR_MOJO_MAX_IMPORT_PATH"
-
-
-def _get_kernel_library_paths() -> list[Path]:
-    """Returns kernel library paths from the build environment.
-
-    Reads the ``MODULAR_MOJO_MAX_IMPORT_PATH`` environment variable set by the
-    Bazel build system and extracts paths to ``.mojopkg`` kernel libraries.
-    This is required for Mamba models because they use custom kernels
-    (causal_conv1d, selective_scan_fwd) that must be explicitly loaded.
-
-    The function looks for the state_space package which contains the
-    mamba-specific kernels.
-
-    Returns:
-        A list of Path objects pointing to ``.mojopkg`` kernel libraries.
-        Returns an empty list if the environment variable is not set.
-    """
-    import_path_env = os.environ.get(_MODULAR_MOJO_MAX_IMPORT_PATH, "")
-    if not import_path_env:
-        logger.warning(
-            "MODULAR_MOJO_MAX_IMPORT_PATH not set, no custom kernels will be loaded"
-        )
-        return []
-
-    paths: list[Path] = []
-
-    for entry in import_path_env.split(","):
-        if not entry.strip():
-            continue
-
-        entry_path = Path(entry.strip())
-
-        # Handle relative paths - try to resolve them relative to current working directory
-        if not entry_path.is_absolute():
-            # Try resolving relative to current directory first
-            resolved = Path.cwd() / entry_path
-            if not resolved.exists():
-                # If that doesn't work, try as-is (might be relative to runfiles root)
-                resolved = entry_path
-            entry_path = resolved
-
-        if not entry_path.exists():
-            continue
-
-        # If it's already a .mojopkg file, check if it's state_space
-        if entry_path.suffix == ".mojopkg":
-            if "state_space" in entry_path.name:
-                resolved_path = entry_path.resolve()
-                logger.info(f"Loading kernel library: {resolved_path}")
-                paths.append(resolved_path)
-            continue
-
-        # If it's a directory, search recursively for state_space.mojopkg files
-        if entry_path.is_dir():
-            for mojopkg in entry_path.rglob("*.mojopkg"):
-                if "state_space" in mojopkg.name and (
-                    mojopkg.is_file() or mojopkg.is_symlink()
-                ):
-                    resolved_path = mojopkg.resolve()
-                    logger.info(f"Loading kernel library: {resolved_path}")
-                    paths.append(resolved_path)
-
-    if not paths:
-        logger.warning(
-            f"No state_space.mojopkg found in MODULAR_MOJO_MAX_IMPORT_PATH: {import_path_env}"
-        )
-    else:
-        logger.info(
-            f"Found {len(paths)} state_space.mojopkg file(s): {[str(p) for p in paths]}"
-        )
-    return paths
 
 
 class MambaModelInputs(ModelInputs):
@@ -173,6 +97,7 @@ class MambaModel(PipelineModel[TextContext]):
             adapter,
             return_logits,
         )
+        self._layer_states: list[Buffer] = []
         self._prefill_model, self._step_model = self._load_models()
         self.logprobs_device = devices[0]
         self.logprobs_model = self._load_logprobs_model(session)
@@ -323,7 +248,7 @@ class MambaModel(PipelineModel[TextContext]):
         conv_width = model_config.conv_kernel
 
         # Get kernel library paths for custom extensions
-        kernel_paths = _get_kernel_library_paths()
+        kernel_paths = list(_get_state_space_paths())
 
         # --- Compile prefill model ---
         timer = CompilationTimer("prefill")
@@ -428,33 +353,30 @@ class MambaModel(PipelineModel[TextContext]):
         )
         tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
+        tokens_buf = Buffer.from_numpy(tokens).to(self.devices[0])
+        offsets_buf = Buffer.from_numpy(input_row_offsets).to(
+            self.devices[0]
+        )
+        n_logits_buf = Buffer.from_numpy(
+            np.array([return_n_logits], dtype=np.int64)
+        )
+
         # If SSM states are already cached from a previous batch, continue
         # in step mode rather than re-running prefill. The pipeline scheduler
         # calls prepare_initial_token_inputs at the start of each batch,
         # but for Mamba the SSM state is not reconstructable from tokens
         # alone — it must be carried forward from the previous step.
-        if hasattr(self, "_layer_states") and self._layer_states:
+        if self._layer_states:
             return MambaModelInputs(
-                tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-                input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
-                    self.devices[0]
-                ),
-                return_n_logits=Buffer.from_numpy(
-                    np.array([return_n_logits], dtype=np.int64)
-                ),
+                tokens_buf,
+                offsets_buf,
+                n_logits_buf,
                 is_prefill=False,
                 layer_states=self._layer_states,
             )
 
         return MambaModelInputs(
-            tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
-            input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
-                self.devices[0]
-            ),
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            is_prefill=True,
+            tokens_buf, offsets_buf, n_logits_buf, is_prefill=True
         )
 
     def prepare_next_token_inputs(

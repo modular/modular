@@ -297,6 +297,41 @@ class MambaBase(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
         self._num_layers = config.num_hidden_layers
         self._residual_in_fp32 = config.residual_in_fp32
 
+    def _apply_layer_norm(
+        self,
+        h: Tensor,
+        residual: Tensor,
+        norm_weight: Tensor,
+        eps: float,
+        layer_idx: int,
+    ) -> tuple[Tensor, Tensor]:
+        """Apply layer norm with fused residual for layers after the first."""
+        if layer_idx == 0:
+            return rms_norm(
+                h,
+                norm_weight,
+                eps,
+                multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
+            ), h
+        if self._residual_in_fp32:
+            h_fp32 = h.cast(DType.float32)
+            res_fp32 = residual.cast(DType.float32)
+            h_normed, residual = rms_norm_fused_residual(
+                h_fp32,
+                res_fp32,
+                norm_weight,
+                eps,
+                multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
+            )
+            return h_normed.cast(h.dtype), residual.cast(h.dtype)
+        return rms_norm_fused_residual(
+            h,
+            residual,
+            norm_weight,
+            eps,
+            multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
+        )
+
 
 class MambaPrefill(MambaBase):
     """Prefill: processes full prompt, extracts per-layer states."""
@@ -308,39 +343,12 @@ class MambaPrefill(MambaBase):
 
         all_states: list[Tensor] = []
 
+        residual = h  # placeholder; overwritten by _apply_layer_norm
         for i in range(self._num_layers):
             layer = self.layers[i]
-            if i == 0:
-                residual = h
-                h_normed = rms_norm(
-                    h,
-                    layer.norm.weight,
-                    layer.norm.eps,
-                    multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
-                )
-            else:
-                # Match legacy: cast to fp32 for fused add+norm,
-                # then cast back to model dtype.
-                if self._residual_in_fp32:
-                    h_fp32 = h.cast(DType.float32)
-                    res_fp32 = residual.cast(DType.float32)
-                    h_normed, residual = rms_norm_fused_residual(
-                        h_fp32,
-                        res_fp32,
-                        layer.norm.weight,
-                        layer.norm.eps,
-                        multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
-                    )
-                    h_normed = h_normed.cast(h.dtype)
-                    residual = residual.cast(h.dtype)
-                else:
-                    h_normed, residual = rms_norm_fused_residual(
-                        h,
-                        residual,
-                        layer.norm.weight,
-                        layer.norm.eps,
-                        multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
-                    )
+            h_normed, residual = self._apply_layer_norm(
+                h, residual, layer.norm.weight, layer.norm.eps, i
+            )
             h, conv_s, ssm_s = layer.mixer.prefill(h_normed)
             all_states.append(conv_s)
             all_states.append(ssm_s)
@@ -373,38 +381,13 @@ class MambaStep(MambaBase):
         h = self.embedding(tokens)
 
         updated: list[Tensor] = []
+        residual = h  # placeholder; overwritten by _apply_layer_norm
 
         for i in range(num_layers):
             layer = self.layers[i]
-            if i == 0:
-                residual = h
-                h_normed = rms_norm(
-                    h,
-                    layer.norm.weight,
-                    layer.norm.eps,
-                    multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
-                )
-            else:
-                if self._residual_in_fp32:
-                    h_fp32 = h.cast(DType.float32)
-                    res_fp32 = residual.cast(DType.float32)
-                    h_normed, residual = rms_norm_fused_residual(
-                        h_fp32,
-                        res_fp32,
-                        layer.norm.weight,
-                        layer.norm.eps,
-                        multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
-                    )
-                    h_normed = h_normed.cast(h.dtype)
-                    residual = residual.cast(h.dtype)
-                else:
-                    h_normed, residual = rms_norm_fused_residual(
-                        h,
-                        residual,
-                        layer.norm.weight,
-                        layer.norm.eps,
-                        multiply_before_cast=_LAYER_NORM_MULTIPLY_BEFORE_CAST,
-                    )
+            h_normed, residual = self._apply_layer_norm(
+                h, residual, layer.norm.weight, layer.norm.eps, i
+            )
             h, conv_s, ssm_s = layer.mixer.step(
                 h_normed, conv_states[i], ssm_states[i]
             )

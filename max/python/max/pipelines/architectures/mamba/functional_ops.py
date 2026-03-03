@@ -76,6 +76,14 @@ def _get_state_space_paths() -> tuple[Path, ...]:
     return tuple(paths)
 
 
+def _normalize_activation(activation: str) -> str:
+    """Normalize activation name for conv1d kernels."""
+    act = activation.lower() if activation else "none"
+    if act == "swish":
+        act = "silu"
+    return act if act in ("none", "silu") else "none"
+
+
 # ---------------------------------------------------------------------------
 # Causal Conv1D ops
 # ---------------------------------------------------------------------------
@@ -103,11 +111,7 @@ def causal_conv1d(
     if custom_extensions is None:
         custom_extensions = _get_state_space_paths()
 
-    activation_param = activation.lower() if activation else "none"
-    if activation_param == "swish":
-        activation_param = "silu"
-    if activation_param not in ("none", "silu"):
-        activation_param = "none"
+    activation_param = _normalize_activation(activation)
 
     weight_cast = weight.cast(x.dtype)
 
@@ -158,11 +162,7 @@ def causal_conv1d_update(
     if custom_extensions is None:
         custom_extensions = _get_state_space_paths()
 
-    activation_param = activation.lower() if activation else "none"
-    if activation_param == "swish":
-        activation_param = "silu"
-    if activation_param not in ("none", "silu"):
-        activation_param = "none"
+    activation_param = _normalize_activation(activation)
 
     weight_cast = weight.cast(x.dtype)
     conv_state_cast = conv_state.cast(x.dtype)
