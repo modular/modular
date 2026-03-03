@@ -21,7 +21,6 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.interfaces import TokenBuffer
 from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
@@ -41,18 +40,14 @@ if TYPE_CHECKING:
 class Flux2ModelInputs:
     """Input container for Flux2 pipeline execution."""
 
-    tokens: TokenBuffer
-    """Primary encoder token buffer."""
+    tokens: Tensor
+    """Primary encoder token IDs on device."""
 
-    latents: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """Initial latent noise tensor."""
+    latents: Tensor
+    """Initial latent noise tensor on device."""
 
-    latent_image_ids: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """Latent image positional identifiers."""
+    latent_image_ids: Tensor
+    """Latent image positional identifiers on device."""
 
     sigmas: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.array([], dtype=np.float32)
@@ -90,17 +85,9 @@ class Flux2ModelInputs:
             raise ValueError(
                 f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
             )
-        missing = [
-            name
-            for name, arr in [
-                ("latents", self.latents),
-                ("sigmas", self.sigmas),
-            ]
-            if not isinstance(arr, np.ndarray) or arr.size == 0
-        ]
-        if missing:
+        if not isinstance(self.sigmas, np.ndarray) or self.sigmas.size == 0:
             raise ValueError(
-                f"Flux2ModelInputs requires non-empty numpy arrays for: {', '.join(missing)}"
+                "Flux2ModelInputs requires a non-empty numpy array for: sigmas"
             )
 
 
@@ -159,6 +146,14 @@ class Flux2Pipeline(DiffusionPipeline):
     @traced
     def prepare_inputs(self, context: PixelContext) -> Flux2ModelInputs:  # type: ignore[override]
         """Convert a PixelContext into Flux2ModelInputs."""
+        if context.latents.size == 0:
+            raise ValueError(
+                "Flux2Pipeline requires non-empty latents in PixelContext"
+            )
+        if context.latent_image_ids.size == 0:
+            raise ValueError(
+                "Flux2Pipeline requires non-empty latent_image_ids in PixelContext"
+            )
         raw_input = context.input_image
         input_image: Image.Image | None = (
             Image.fromarray(raw_input.astype(np.uint8))
@@ -166,21 +161,27 @@ class Flux2Pipeline(DiffusionPipeline):
             else raw_input
         )
         return Flux2ModelInputs(
-            tokens=context.tokens,
-            latents=context.latents,
-            latent_image_ids=context.latent_image_ids,
+            tokens=Tensor(
+                storage=Buffer.from_dlpack(context.tokens.array).to(
+                    self.text_encoder.devices[0]
+                )
+            ),
+            latents=Tensor(
+                storage=Buffer.from_dlpack(context.latents).to(
+                    self.transformer.devices[0]
+                )
+            ),
+            latent_image_ids=Tensor(
+                storage=Buffer.from_dlpack(context.latent_image_ids).to(
+                    self.transformer.devices[0]
+                )
+            ),
             sigmas=context.sigmas,
-            height=context.height if context.height is not None else 1024,
-            width=context.width if context.width is not None else 1024,
-            num_inference_steps=context.num_inference_steps
-            if context.num_inference_steps is not None
-            else 50,
-            guidance_scale=context.guidance_scale
-            if context.guidance_scale is not None
-            else 4.0,
-            num_images_per_prompt=context.num_images_per_prompt
-            if context.num_images_per_prompt is not None
-            else 1,
+            height=context.height,
+            width=context.width,
+            num_inference_steps=context.num_inference_steps,
+            guidance_scale=context.guidance_scale,
+            num_images_per_prompt=context.num_images_per_prompt,
             input_image=input_image,
         )
 
@@ -434,7 +435,7 @@ class Flux2Pipeline(DiffusionPipeline):
     @traced
     def prepare_prompt_embeddings(
         self,
-        tokens: TokenBuffer,
+        tokens: Tensor,
         num_images_per_prompt: int = 1,
     ) -> tuple[Tensor, Tensor]:
         """Create prompt embeddings and text position IDs for the transformer.
@@ -444,7 +445,7 @@ class Flux2Pipeline(DiffusionPipeline):
         layer/hidden dimensions.
 
         Args:
-            tokens: TokenBuffer produced by tokenization / chat templating.
+            tokens: Token ID tensor of shape (S,) on the text encoder device.
             num_images_per_prompt: Number of image generations per prompt.
 
         Returns:
@@ -452,16 +453,12 @@ class Flux2Pipeline(DiffusionPipeline):
                 - prompt_embeds: Tensor of shape (B', S, L*D)
                 - text_ids: Tensor[int64] of shape (B', S, 4)
         """
-        seq_len = int(tokens.array.shape[0])
+        # Shape metadata is host-side; this does not trigger a GPU sync.
+        seq_len = int(tokens.shape[0])
         batch_size = 1  # text encoder always outputs a single batch
 
         with Tracer("text_encoder"):
-            text_input_ids = Tensor(
-                storage=Buffer.from_dlpack(tokens.array).to(
-                    self.text_encoder.devices[0]
-                )
-            )
-            prompt_embeds = self.text_encoder(text_input_ids)
+            prompt_embeds = self.text_encoder(tokens)
 
         with Tracer("post_process"):
             if num_images_per_prompt != 1:
@@ -606,36 +603,13 @@ class Flux2Pipeline(DiffusionPipeline):
         )
 
     @traced
-    def preprocess_latents(
-        self,
-        latents: npt.NDArray[np.float32],
-        latent_image_ids: npt.NDArray[np.float32],
-    ) -> tuple[Tensor, Tensor]:
-        with Tracer("host_to_device_latents"):
-            latents_tensor = Tensor(
-                storage=Buffer.from_dlpack(latents).to(
-                    self.transformer.devices[0]
-                )
-            )
-
-        with Tracer("patchify_and_pack"):
-            batch = latents_tensor.shape[0]
-            c = latents_tensor.shape[1]
-            h = latents_tensor.shape[2]
-            w = latents_tensor.shape[3]
-            latents_tensor = F.reshape(
-                latents_tensor, (batch, c, h // 2, 2, w // 2, 2)
-            )
-            latents_tensor = self._patchify_and_pack(latents_tensor)
-
-        with Tracer("host_to_device_ids"):
-            latent_image_ids_tensor = Tensor(
-                storage=Buffer.from_dlpack(
-                    np.ascontiguousarray(latent_image_ids.astype(np.int64))
-                ).to(self.transformer.devices[0])
-            )
-
-        return latents_tensor, latent_image_ids_tensor
+    def preprocess_latents(self, latents: Tensor) -> Tensor:
+        batch = latents.shape[0]
+        c = latents.shape[1]
+        h = latents.shape[2]
+        w = latents.shape[3]
+        latents = F.reshape(latents, (batch, c, h // 2, 2, w // 2, 2))
+        return self._patchify_and_pack(latents)
 
     def _patchify_and_pack(self, latents: Tensor) -> Tensor:
         """Patchify (B,C,H,W)->(B,C*4,H//2,W//2) then pack to (B,H//2*W//2,C*4)."""
@@ -746,9 +720,8 @@ class Flux2Pipeline(DiffusionPipeline):
             )
 
         # 2) Prepare latents and conditioning tensors.
-        latents, latent_image_ids = self.preprocess_latents(
-            model_inputs.latents, model_inputs.latent_image_ids
-        )
+        latents = self.preprocess_latents(model_inputs.latents)
+        latent_image_ids = model_inputs.latent_image_ids
 
         # 3) Prepare scheduler tensors.
         with Tracer("prepare_scheduler"):
