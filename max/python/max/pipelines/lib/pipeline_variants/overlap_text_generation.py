@@ -61,7 +61,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import (
@@ -157,11 +157,6 @@ class _HasRaggedTokens(Protocol):
 @runtime_checkable
 class _SupportsModelCapture(Protocol):
     model: Model
-
-
-@runtime_checkable
-class _SupportsCapturePreparation(Protocol):
-    def prepare_for_capture(self, max_cache_length: int) -> None: ...
 
 
 @dataclass
@@ -563,9 +558,6 @@ class OverlapTextGenerationPipeline(
                 self._pipeline_config.runtime.max_batch_size,
                 max_capture_batch_size,
             )
-        prepare_fn: Callable[[int], None] | None = None
-        if isinstance(self._pipeline_model, _SupportsCapturePreparation):
-            prepare_fn = self._pipeline_model.prepare_for_capture
 
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
@@ -575,7 +567,6 @@ class OverlapTextGenerationPipeline(
             warmup_model_inputs=self._warmup_model_inputs,
             max_cache_length_upper_bound=self._pipeline_model.max_seq_len,
             max_batch_size=max_capture_batch_size,
-            prepare_for_capture=prepare_fn,
         )
         self._graph_capture_runner = graph_capture_runner
         self._max_graph_capture_batch_size = max_capture_batch_size
