@@ -13,7 +13,7 @@
 
 from std.math import copysign
 from std.utils.numerics import isfinite, isinf, isnan
-from testing import *
+from std.testing import *
 
 
 def main() raises:
