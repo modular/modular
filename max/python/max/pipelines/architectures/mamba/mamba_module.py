@@ -141,7 +141,8 @@ class MambaSSMModule(Module[[Tensor], Tensor]):
         x_t = x_val.permute([2, 0, 1])  # (seqlen, 1, d)
         x_t = F.pad(x_t, [cw, 0, 0, 0, 0, 0])  # (seqlen+cw, 1, d)
         conv_state = typing_cast(
-            Tensor, x_t[-cw:].permute([1, 2, 0])  # (1, d, cw)
+            Tensor,
+            x_t[-cw:].permute([1, 2, 0]),  # (1, d, cw)
         )
 
         # Causal conv1d: (1, d, seqlen) -> (1, d, seqlen)

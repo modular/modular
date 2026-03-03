@@ -354,9 +354,7 @@ class MambaModel(PipelineModel[TextContext]):
         tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
         tokens_buf = Buffer.from_numpy(tokens).to(self.devices[0])
-        offsets_buf = Buffer.from_numpy(input_row_offsets).to(
-            self.devices[0]
-        )
+        offsets_buf = Buffer.from_numpy(input_row_offsets).to(self.devices[0])
         n_logits_buf = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
         )
