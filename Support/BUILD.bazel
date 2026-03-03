@@ -38,6 +38,13 @@ modular_cc_library(
     hdrs = ["include/Support/ADT/ConcurrentAppendingVector.h"],
 )
 
+# TODO: Remove `maybe-unused` once tl-expected is used
+modular_cc_library(
+    name = "Expected",
+    tags = ["maybe-unused"],
+    deps = ["@tl_expected"],
+)
+
 modular_cc_library(
     name = "Base",
     srcs = [
