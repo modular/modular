@@ -25,7 +25,7 @@ fn memcpy(
         pass
 
 
-struct Data(ImplicitlyCopyable, Stringable):
+struct Data(ImplicitlyCopyable, Writable):
     var _data: UnsafePointer[Int, MutExternalOrigin]
     var _size: Int
 
@@ -48,11 +48,9 @@ struct Data(ImplicitlyCopyable, Stringable):
         for i in range(self._size):
             self._data[i] = copy._data[i]
 
-    fn __str__(self) -> String:
-        var str: String = ""
+    fn write_to(self, mut writer: Some[Writer]):
         for i in range(self._size):
-            str += "data[" + String(i) + "] = " + String(self._data[i]) + "\n"
-        return str
+            t"data[{i}] = {self._data[i]}\n".write_to(writer)
 
     fn __add__(self, rhs: Self) -> Self:
         var size = self._size + rhs._size
