@@ -35,15 +35,13 @@ from max.profiler import traced
 def _build_ragged_increment_cache_lengths_graph(
     params: KVCacheParams,
     devices: list[Device],
-    use_broadcast: bool,
+    use_comm_kernel: bool,
 ) -> Graph:
     input_symbols = params.get_symbolic_inputs()
     cache_lengths_types = [
         input_symbols[i].cache_lengths for i in range(len(devices))
     ]
     dp = params.data_parallel_degree
-
-    devices_per_replica = split_into_groups(devices, dp)
 
     device0 = devices[0]
     device0_ref = DeviceRef.from_device(device0)
@@ -66,73 +64,59 @@ def _build_ragged_increment_cache_lengths_graph(
         *cache_lengths_types,
     ]
 
-    # Add signal buffer types when using broadcast
-    signal_buffer_types: list[BufferType] = []
-    if use_broadcast:
+    # Add signal buffer types for comm kernels (broadcast or scatter).
+    if use_comm_kernel:
         device_refs = [DeviceRef(d.label, d.id) for d in devices]
         signals = Signals(devices=device_refs)
-        signal_buffer_types = signals.input_types()
-        input_types.extend(signal_buffer_types)
+        input_types.extend(signals.input_types())
 
     with Graph(
         "update_cache_lengths",
         input_types=input_types,
     ) as graph:
-        # Unpack inputs
-        # row_offsets + splits + cache_lengths
+        # Unpack inputs: row_offsets + splits + cache_lengths
         num_fixed_inputs = 2 + len(devices)
         inp_row_offset, data_parallel_splits, *cache_lengths = [
             inp.tensor for inp in graph.inputs[:num_fixed_inputs]
         ]
-
-        # Unpack signal buffers if using broadcast
-        signal_buffers = None
-        if use_broadcast:
-            signal_buffers = [
-                inp.buffer for inp in graph.inputs[num_fixed_inputs:]
-            ]
 
         split_offsets = split_input_row_offsets(
             dp,
             inp_row_offset,
             data_parallel_splits,
         )
-        outputs = []
-        start_idx = 0
-        for replica_idx, replica_devices in enumerate(devices_per_replica):
-            # Use broadcast to transfer row_offset to all devices in parallel.
-            # Currently only enabled for DP=1 (single replica with all devices).
-            if use_broadcast:
-                assert signal_buffers is not None
-                row_offsets_per_device = ops.distributed_broadcast(
-                    split_offsets[replica_idx], signal_buffers
+
+        if use_comm_kernel:
+            signal_buffers = [
+                inp.buffer for inp in graph.inputs[num_fixed_inputs:]
+            ]
+            # Use comm kernels for parallel row_offset transfer.
+            if dp == 1:
+                # DP=1: broadcast same data to all GPUs.
+                row_offsets_all = ops.distributed_broadcast(
+                    split_offsets[0], signal_buffers
                 )
-                for i in range(len(replica_devices)):
-                    row_offset = row_offsets_per_device[i]
-                    cache_length = cache_lengths[start_idx + i]
-                    assert isinstance(cache_length, TensorValue)
-                    right_slice = row_offset[1:].rebind(cache_length.shape)
-                    left_slice = row_offset[: row_offset.shape[0] - 1].rebind(
-                        cache_length.shape
-                    )
-                    increment_amount = right_slice - left_slice
-                    outputs.append(cache_length + increment_amount)
             else:
-                # Fall back to sequential .to(device) transfers for DP>1.
-                # TODO(SERVOPT-970): Replace with scatter+broadcast for DP>1.
-                for i, device in enumerate(replica_devices):
-                    row_offset = split_offsets[replica_idx].to(
-                        DeviceRef.from_device(device)
-                    )
-                    cache_length = cache_lengths[start_idx + i]
-                    assert isinstance(cache_length, TensorValue)
-                    right_slice = row_offset[1:].rebind(cache_length.shape)
-                    left_slice = row_offset[: row_offset.shape[0] - 1].rebind(
-                        cache_length.shape
-                    )
-                    increment_amount = right_slice - left_slice
-                    outputs.append(cache_length + increment_amount)
-            start_idx += len(replica_devices)
+                # DP>1: scatter different chunks to different replica groups.
+                row_offsets_all = ops.distributed_scatter(
+                    split_offsets, signal_buffers
+                )
+        else:
+            # Single device: use split_offsets directly.
+            row_offsets_all = split_offsets
+
+        outputs = []
+        for gpu_idx in range(len(devices)):
+            row_offset = row_offsets_all[gpu_idx]
+            cache_length = cache_lengths[gpu_idx]
+            assert isinstance(cache_length, TensorValue)
+            right_slice = row_offset[1:].rebind(cache_length.shape)
+            left_slice = row_offset[: row_offset.shape[0] - 1].rebind(
+                cache_length.shape
+            )
+            increment_amount = right_slice - left_slice
+            outputs.append(cache_length + increment_amount)
+
         graph.output(*outputs)
 
     return graph
@@ -143,7 +127,7 @@ def _execute_ragged_increment_cache_lengths_graph(
     model: Model,
     params: KVCacheParams,
     devices: list[Device],
-    use_broadcast: bool,
+    use_comm_kernel: bool,
     kv_cache_inputs: Sequence[RaggedKVCacheInputs],
     prev_model_inputs: Any,
 ) -> Sequence[RaggedKVCacheInputs]:
@@ -157,7 +141,8 @@ def _execute_ragged_increment_cache_lengths_graph(
         model: Loaded model executing the increment cache lengths graph.
         params: KVCache parameters (e.g. data parallel degree).
         devices: Devices to run on (one per replica).
-        use_broadcast: Whether to use broadcast for row-offset transfers.
+        use_comm_kernel: Whether to use comm kernels (broadcast/scatter) for
+            row-offset transfers.
         kv_cache_inputs: Current cache state tuples (blocks, lengths, lookup, max_lengths).
         prev_model_inputs: Previous model inputs including row offsets.
 
@@ -198,17 +183,17 @@ def _execute_ragged_increment_cache_lengths_graph(
         row_offsets = prev_model_inputs.input_row_offsets
     row_offsets = row_offsets.to(devices[0])
 
-    # Build execution args, including signal buffers when using broadcast
+    # Build execution args, including signal buffers for comm kernels.
     exec_args: list[Buffer] = [
         row_offsets,
         data_parallel_splits,
         *cache_lengths,
     ]
-    if use_broadcast:
+    if use_comm_kernel:
         if not hasattr(prev_model_inputs, "signal_buffers"):
             raise ValueError(
-                "signal_buffers required in model inputs when broadcast is "
-                "enabled (data_parallel_degree=1 with multiple devices)"
+                "signal_buffers required in model inputs when using "
+                "comm kernels (broadcast/scatter) with multiple devices"
             )
         exec_args.extend(prev_model_inputs.signal_buffers)
 
@@ -216,7 +201,7 @@ def _execute_ragged_increment_cache_lengths_graph(
 
     start_idx = 0
     for replica_devices in devices_per_replica:
-        # max_lengths is ho st allocated and the same across each replica.
+        # max_lengths is host allocated and the same across each replica.
         max_lengths = kv_cache_inputs[start_idx].max_lengths
 
         # Advance to the next step of the max_lengths tensor.
@@ -266,18 +251,13 @@ class IncrementCacheLengthsProcessor:
         params: KVCacheParams,
         devices: list[Device],
     ) -> None:
-        # Enable broadcast for row_offset transfers when DP=1 with multiple devices.
-        # - DP=1 check: DP>1 requires scatter semantics (different data per replica),
-        #   not yet supported. See SERVOPT-970 for DP>1 broadcast support.
-        # - len(devices)>1 check: single-device models don't provide signal_buffers
-        #   in their ModelInputs. The broadcast kernel is a no-op for single device,
-        #   but we need signal_buffers as graph inputs to call it.
-        self._use_broadcast = (
-            params.data_parallel_degree == 1 and len(devices) > 1
-        )
+        # Use comm kernels (broadcast for DP=1, scatter for DP>1) when there
+        # are multiple GPU devices. CPU-only or single-device models don't
+        # provide signal_buffers in their ModelInputs.
+        self._use_comm_kernel = len(devices) > 1 and devices[0].label == "gpu"
 
         graph = _build_ragged_increment_cache_lengths_graph(
-            params, devices, self._use_broadcast
+            params, devices, self._use_comm_kernel
         )
         self._model = session.load(graph)
         self._params = params
@@ -293,7 +273,7 @@ class IncrementCacheLengthsProcessor:
             self._model,
             self._params,
             self._devices,
-            self._use_broadcast,
+            self._use_comm_kernel,
             kv_cache_inputs,
             prev_model_inputs,
         )

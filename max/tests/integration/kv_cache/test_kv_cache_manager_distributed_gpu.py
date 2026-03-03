@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pytest
@@ -23,7 +23,11 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn import Signals
+from max.nn.kv_cache import (
+    KVCacheParams,
+    RaggedKVCacheInputs,
+)
 from test_common.context_utils import create_text_context
 
 
@@ -43,7 +47,6 @@ def _create_kv_manager(
         n_kv_heads=8,
         head_dim=32,
         num_layers=10,
-        page_size=32,
         devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         data_parallel_degree=data_parallel_degree,
     )
@@ -62,7 +65,9 @@ def test_init() -> None:
     num_devices = 2
 
     kv_manager = _create_kv_manager(data_parallel_degree, num_devices)
-    for single_device_manager in kv_manager._replica_managers:
+    devices = list(kv_manager.params.devices)
+    for i, single_device_manager in enumerate(kv_manager._replica_managers):
+        assert list(single_device_manager.params.devices) == [devices[i]]
         assert single_device_manager.params.num_layers == 10
 
 
@@ -150,6 +155,7 @@ def test_runtime_inputs_requires_per_replica_batches() -> None:
 class PrevModelInputs:
     input_row_offsets: Buffer
     data_parallel_splits: Buffer
+    signal_buffers: list[Buffer] = field(default_factory=list)
 
 
 def test_increment_cache_lengths() -> None:
@@ -187,6 +193,8 @@ def test_increment_cache_lengths() -> None:
 
     # Create correct prev_model_inputs based on the prompt lengths and assigned
     # replicas.
+    device_refs = [DeviceRef.GPU(i) for i in range(num_devices)]
+    signal_buffers = Signals(device_refs).buffers()
     prev_model_inputs = PrevModelInputs(
         input_row_offsets=Buffer.from_numpy(
             np.array([0, 3, 7, 14], dtype=np.uint32)
@@ -194,6 +202,7 @@ def test_increment_cache_lengths() -> None:
         data_parallel_splits=Buffer.from_numpy(
             np.array([0, 2, 3], dtype=np.int64)
         ),
+        signal_buffers=signal_buffers,
     )
 
     new_kv_cache_inputs = kv_manager.increment_cache_lengths(

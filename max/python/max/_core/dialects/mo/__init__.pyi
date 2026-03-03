@@ -2786,6 +2786,36 @@ class DebugTensorPrintOp(max._core.Operation):
     @label.setter
     def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
 
+class DistributedScatterOp(max._core.Operation):
+    """
+    Scatter takes in ngpus input tensors (one per GPU, padded from dp_size
+    distinct chunks) all residing on the root device, and distributes each
+    to the corresponding GPU's output. The root attribute identifies which
+    device holds the source data.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        outputs: Sequence[max._core.Type],
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+        root: max._core.dialects.builtin.IntegerAttr,
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def root(self) -> int: ...
+    @root.setter
+    def root(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+
 class DivOp(max._core.Operation):
     """
     Returns `x / y`, where `x` and `y` are input tensors.

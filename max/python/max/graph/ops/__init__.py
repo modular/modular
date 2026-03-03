@@ -51,6 +51,7 @@ from .conv_transpose import conv2d_transpose
 from .cumsum import cumsum
 from .custom import custom, inplace_custom
 from .debug import print
+from .distributed_scatter import distributed_scatter
 from .elementwise import *
 from .elementwise import max as _elementwise_max
 from .elementwise import min as _elementwise_min

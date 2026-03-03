@@ -60,6 +60,7 @@ from comm.allreduce import allreduce
 from nn.allreduce_residual_rmsnorm_fp8 import allreduce_residual_rmsnorm_fp8
 from comm.reducescatter import reducescatter
 from comm.broadcast import broadcast
+from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
@@ -10259,6 +10260,106 @@ struct DistributedBroadcast:
                 device_ctx[],
                 root,
             )
+
+
+@compiler.register("mo.distributed.scatter")
+struct DistributedScatter:
+    """Distributed scatter: send different chunks to different device groups.
+
+    Each DP replica group receives a different input chunk from the root GPU.
+    All TP devices within the same replica get the same chunk via P2P pull.
+
+    This op receives ngpus input tensors (one per GPU, padded from dp_size
+    distinct chunks) plus ngpus signal buffers for synchronization. All GPUs
+    see all chunks so they compute the same grid size (avoiding barrier
+    deadlocks).
+    """
+
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        rank: Int,
+        root: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs: FusedOutputVariadicTensors[dtype, rank, ...],
+        inputs: InputVariadicTensors[dtype, rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, ...
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) capturing raises:
+        comptime ngpus = signal_buffers.size
+        comptime assert (
+            root >= 0 and root < ngpus
+        ), "root GPU index must be in range [0, ngpus)"
+        comptime assert inputs.size == ngpus, (
+            "expected scatter inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        # Scatter uses signal buffers for barriers only (no payload staging),
+        # so payload_size=0. This still validates the buffer holds a Signal.
+        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+
+        # Marshal input tensors into the expected format.
+        var in_bufs = InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], ngpus](
+            fill={}
+        )
+        var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
+            fill={}
+        )
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        comptime for i in range(ngpus):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs[i]
+            ).make_dims_unknown()
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        @parameter
+        fn launch_scatter[
+            index: Int
+        ]() raises unified {
+            read in_bufs,
+            read out_bufs,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            @always_inline
+            @parameter
+            fn output_lambda[
+                output_index: Int,
+                _dtype: DType,
+                _rank: Int,
+                _width: Int,
+                *,
+                _alignment: Int,
+            ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+                outputs[output_index]._lambda_store[
+                    width=_width, element_alignment=_alignment
+                ](
+                    rebind[IndexList[rank]](coords),
+                    rebind[SIMD[dtype, _width]](val),
+                )
+
+            scatter[ngpus=ngpus, dp_size=ngpus](
+                in_bufs,
+                out_bufs[index].make_dims_unknown(),
+                rank_sigs,
+                dev_ctxs_input[index],
+            )
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
 
 
 @compiler.register("mo.distributed.matmul_allreduce")
