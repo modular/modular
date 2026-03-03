@@ -15,8 +15,8 @@
 
 Supports parsing distribution specifications from strings like "N(mean, std)"
 for normal distributions, "U(lower, upper)" for uniform distributions,
-"G(shape, scale)" for gamma distributions, as well as plain float values
-for constant returns.
+"G(shape, scale)" for gamma distributions, "LN(mean, std)" for log-normal
+distributions, as well as plain float values for constant returns.
 """
 
 from __future__ import annotations
@@ -50,8 +50,8 @@ class BaseDistribution(ABC):
         """Parse a distribution parameter into a concrete distribution instance.
 
         Args:
-            param: A float (constant value), a string like "N(mean,std), "
-                "U(lower,upper)", "G(shape,scale)", or None.
+            param: A float (constant value), a string like "N(mean,std)",
+                "U(lower,upper)", "G(shape,scale)", "LN(mean,std)", or None.
 
         Returns:
             A BaseDistribution instance, or None if param is None.
@@ -74,17 +74,21 @@ class BaseDistribution(ABC):
             except ValueError:
                 pass
 
-            if stripped.startswith("N(") or stripped.startswith("n("):
+            upper = stripped.upper()
+            if upper.startswith("LN("):
+                return LogNormalDistribution.parse_from_str_schema(stripped)
+            elif upper.startswith("N("):
                 return NormalDistribution.parse_from_str_schema(stripped)
-            elif stripped.startswith("U(") or stripped.startswith("u("):
+            elif upper.startswith("U("):
                 return UniformDistribution.parse_from_str_schema(stripped)
-            elif stripped.startswith("G(") or stripped.startswith("g("):
+            elif upper.startswith("G("):
                 return GammaDistribution.parse_from_str_schema(stripped)
             else:
                 raise ValueError(
                     f"Unrecognized distribution format: '{param}'. "
                     "Expected a float, 'N(mean,std)', "
-                    "'U(lower,upper)', or 'G(shape,scale)'."
+                    "'U(lower,upper)', 'G(shape,scale)', "
+                    "or 'LN(mean,std)'."
                 )
 
         else:
@@ -238,3 +242,53 @@ class GammaDistribution(BaseDistribution):
                 f"Cannot parse numeric values from '{schema}': {e}"
             ) from e
         return cls(shape=shape, scale=scale)
+
+
+@dataclass
+class LogNormalDistribution(BaseDistribution):
+    """A log-normal distribution parameterized by the mean and std of the
+    underlying normal distribution.
+
+    Samples are drawn from exp(N(mean, std)), so the resulting values are
+    always positive.
+    """
+
+    mean: float
+    std: float
+
+    def __post_init__(self) -> None:
+        if self.std < 0:
+            raise ValueError(
+                f"Standard deviation must be non-negative, got {self.std}"
+            )
+
+    def sample_value(self) -> float:
+        return float(np.random.lognormal(mean=self.mean, sigma=self.std))
+
+    @classmethod
+    def parse_from_str_schema(cls, schema: str) -> LogNormalDistribution:
+        """Parse a string like "LN(mean, std)" into a LogNormalDistribution.
+
+        Args:
+            schema: A string in the format "LN(mean, std)" (case-insensitive prefix).
+
+        Returns:
+            A LogNormalDistribution instance.
+
+        Raises:
+            ValueError: If the string cannot be parsed.
+        """
+        match = re.match(r"[Ll][Nn]\(\s*([^,]+)\s*,\s*([^)]+)\s*\)", schema)
+        if not match:
+            raise ValueError(
+                f"Cannot parse log-normal distribution from '{schema}'. "
+                "Expected format: 'LN(mean, std)'."
+            )
+        try:
+            mean = float(match.group(1))
+            std = float(match.group(2))
+        except ValueError as e:
+            raise ValueError(
+                f"Cannot parse numeric values from '{schema}': {e}"
+            ) from e
+        return cls(mean=mean, std=std)
