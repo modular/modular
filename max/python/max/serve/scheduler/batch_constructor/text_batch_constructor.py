@@ -564,7 +564,9 @@ class TextBatchConstructor:
         """Releases dummy KV and pipeline entries from the previous batch's DP padding."""
         if self._prev_dp_padding is not None:
             for req_id, replica_idx in self._prev_dp_padding.dummies:
-                if self.kv_cache.contains(req_id, replica_idx=replica_idx):
+                if self.kv_cache is not None and self.kv_cache.contains(
+                    req_id, replica_idx=replica_idx
+                ):
                     self.kv_cache.release(req_id, replica_idx=replica_idx)
                 self.pipeline.release(req_id)
         self._prev_dp_padding = self._current_dp_padding

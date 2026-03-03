@@ -247,6 +247,9 @@ def load_text_generation_scheduler(
         scheduler_config.data_parallel_degree > 1
         and pipeline_config.runtime.device_graph_capture
     ):
+        assert kv_manager is not None, (
+            "DP batch padding requires a KV cache manager"
+        )
         dp_padder = DPBatchPadder(
             dp_size=scheduler_config.data_parallel_degree,
             kv_manager=kv_manager,
