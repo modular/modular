@@ -54,6 +54,11 @@ from nn.normalization import _rms_norm_warp_tiling_subkernel
 
 
 # ===-----------------------------------------------------------------------===#
+# Maximum sequence length that routes through the decode branch instead of
+# prefill. This covers MTP verification where a small number of draft tokens
+# (> 1) should still use the decode kernel.
+comptime MLA_DECODE_MAX_SEQ_LEN = 4
+
 # Manually fused MLA RoPE and RMSNorm kernel
 # ===-----------------------------------------------------------------------===#
 
@@ -1377,7 +1382,8 @@ fn mla_prefill_decode_graph_fp8[
         collection_t.dtype == dtype
     ), "This KVCache DType is not supported."
 
-    if max_seq_len == 1:
+    # When running verification with MTP we want to use the decode branch.
+    if max_seq_len <= MLA_DECODE_MAX_SEQ_LEN:
         mla_decode_branch_fp8[
             m_scale_granularity=m_scale_granularity,
             n_scale_granularity=n_scale_granularity,
@@ -1862,8 +1868,8 @@ fn mla_prefill_decode_graph_bf16[
     if seq_len == 0:
         return
 
-    # TODO(SERVOPT-967): generalize to number of draft tokens.
-    if max_seq_len == 1:
+    # When running verification with MTP we want to use the decode branch.
+    if max_seq_len <= MLA_DECODE_MAX_SEQ_LEN:
         mla_decode_branch_bf16[
             mask_str=mask_str,
             target=target,
