@@ -11,18 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import random
-from sys import env_get_bool, env_get_dtype, env_get_int, size_of
+import std.random
+from std.sys import env_get_bool, env_get_dtype, env_get_int, size_of
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import DimList, NDBuffer
 from comm import MAX_GPUS, Signal
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 fn _get_run_name[
@@ -33,23 +39,24 @@ fn _get_run_name[
     overlap_with_dpl: Bool,
 ](m: ValOrDim, n: ValOrDim, k: ValOrDim,) -> String:
     var vendor_str = "matmul_allreduce"
-    var type_str = String("(", dtype, ") : ")
-    var m_str = String(m.value, "_dynamic") if m.dim.is_dynamic() else String(
+    var type_str = String(t"({dtype}) : ")
+    var m_str = String(t"{m.value}_dynamic") if m.dim.is_dynamic() else String(
         m.dim
     )
-    var n_str = String(n.value, "_dynamic") if n.dim.is_dynamic() else String(
+    var n_str = String(t"{n.value}_dynamic") if n.dim.is_dynamic() else String(
         n.dim
     )
-    var k_str = String(k.value, "_dynamic") if k.dim.is_dynamic() else String(
+    var k_str = String(t"{k.value}_dynamic") if k.dim.is_dynamic() else String(
         k.dim
     )
 
-    var ngpus_str = String("/ngpus=", ngpus)
+    var ngpus_str = String(t"/ngpus={ngpus}")
     var num_partitions_str = (
-        String("/num_partitions=", num_partitions) if num_partitions > 1 else ""
+        String(t"/num_partitions={num_partitions}") if num_partitions
+        > 1 else ""
     )
     var partition_dim_str = (
-        String("/partition_dim=", partition_dim) if num_partitions > 1 else ""
+        String(t"/partition_dim={partition_dim}") if num_partitions > 1 else ""
     )
     var overlap_str = "/overlap" if overlap_with_dpl else ""
     return String(
@@ -160,16 +167,16 @@ fn bench_matmul_all_reduce[
     # Setup the kernel NDBuffers
     comptime for i in range(ngpus):
         As[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape](
-            A_list[i].unsafe_ptr(), DimList(m.value, k.value)
+            A_list[i].unsafe_ptr(), IndexList[2](m.value, k.value)
         )
         Bs[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape](
-            B_list[i].unsafe_ptr(), DimList(n.value, k.value)
+            B_list[i].unsafe_ptr(), IndexList[2](n.value, k.value)
         )
         Cs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
         out_bufs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Copy-capture in registers since the lambda will be used on GPU.
@@ -179,7 +186,7 @@ fn bench_matmul_all_reduce[
 
     comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, 2](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Prepare the output lambda
@@ -249,7 +256,7 @@ fn bench_matmul_all_reduce[
     _ = C_reduced_list^
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 8192))

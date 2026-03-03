@@ -49,7 +49,9 @@ query interval data, particularly for finding overlaps.
 """
 
 
-from builtin.string_literal import StaticString
+from std.builtin.string_literal import StaticString
+
+import std.format._utils as fmt
 
 from .deque import Deque
 
@@ -297,12 +299,12 @@ struct Interval[T: IntervalElement](
         Returns:
             A string in the format '(start, end)' representing this interval.
         """
-        return String("Interval", self, "")
+        return t"Interval{self}"
 
 
 struct _IntervalNode[
     T: IntervalElement,
-    U: Copyable & Stringable & Comparable,
+    U: Copyable & Comparable & Writable,
 ](ImplicitlyCopyable, Writable):
     """A node containing an interval and associated data.
 
@@ -416,8 +418,7 @@ struct _IntervalNode[
         Args:
             writer: The writer to write the interval node to.
         """
-        writer.write(self.interval, "=", String(self.data))
-        # writer.write(str(self.data))
+        writer.write(self.interval, "=", self.data)
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
@@ -438,7 +439,7 @@ struct _IntervalNode[
             A string in the format '(start, end): data' representing this
             interval node.
         """
-        return String("IntervalNode(", String.write(self), ")")
+        return t"IntervalNode({self})"
 
     fn depth(self) -> Int:
         """Returns the depth of this interval node.
@@ -478,7 +479,7 @@ struct _IntervalNode[
 
 struct IntervalTree[
     T: IntervalElement,
-    U: Copyable & Stringable & Comparable,
+    U: Copyable & Comparable & Writable,
 ](Defaultable, Writable):
     """An interval tree data structure for efficient range queries.
 
@@ -776,6 +777,22 @@ struct IntervalTree[
             writer: The writer to write the interval tree to.
         """
         self._draw(writer)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `IntervalTree` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._draw(w)
+
+        fmt.FormatStruct(writer, "IntervalTree").params(
+            fmt.TypeNames[Self.T, Self.U](),
+        ).fields[FieldsFn=write_fields]()
 
     @no_inline
     fn _draw[w: Writer](self, mut writer: w):

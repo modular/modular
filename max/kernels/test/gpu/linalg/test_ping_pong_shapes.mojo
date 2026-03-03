@@ -18,11 +18,11 @@ Documents known limitations:
 """
 
 from layout import Layout, LayoutTensor
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from testing import assert_equal
+from std.testing import assert_equal
 from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn test_shape[
@@ -91,10 +91,10 @@ fn test_shape[
                         host_c_ref[i],
                     )
 
-        assert_true(errors == 0, msg=String("Test failed:", errors, "errors"))
+        assert_true(errors == 0, msg=t"Test failed:{errors} errors")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("Testing Ping-Pong Kernel Shape Compatibility")
         print("=" * 60)

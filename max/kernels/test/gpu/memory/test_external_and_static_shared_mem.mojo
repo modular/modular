@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import align_of
+from std.sys.info import align_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu import thread_idx
-from gpu.memory import external_memory
-from gpu.sync import barrier
-from memory import LegacyUnsafePointer, stack_allocation
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu import thread_idx
+from std.gpu.memory import external_memory
+from std.gpu.sync import barrier
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-def test_external_shared_mem(ctx: DeviceContext):
+def test_external_shared_mem(ctx: DeviceContext) raises:
     fn dynamic_smem_kernel(data: UnsafePointer[Float32]):
         var sram = stack_allocation[
             16,
@@ -66,6 +66,6 @@ def test_external_shared_mem(ctx: DeviceContext):
     res_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_external_shared_mem(ctx)

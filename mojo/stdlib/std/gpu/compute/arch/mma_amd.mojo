@@ -18,9 +18,9 @@ center GPUs using the MFMA (Matrix Fused Multiply-Add) instructions.
 Reference: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
-from sys import llvm_intrinsic
-from sys.info import _cdna_4_or_newer, _is_amd_rdna
-from memory import bitcast
+from std.sys import llvm_intrinsic
+from std.sys.info import _cdna_4_or_newer, _is_amd_rdna
+from std.memory import bitcast
 
 # Import helper functions from parent module
 from ..mma import (

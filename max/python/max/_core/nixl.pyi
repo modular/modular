@@ -13,6 +13,10 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""
+nanobind NIXL plugin: Implements NIXL descriptors and lists, as well as bindings of NIXL CPP APIs
+"""
+
 import enum
 from collections.abc import Mapping, Sequence
 from typing import overload

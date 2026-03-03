@@ -19,11 +19,11 @@ You can import these APIs from the `buffer` package. For example:
 from buffer import Dim
 ```
 """
-from math import CeilDivable, ceildiv
+from std.math import CeilDivable, ceildiv
 
-from builtin.variadics import Variadic
+from std.builtin.variadics import Variadic
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Dim
@@ -37,7 +37,6 @@ struct Dim(
     Equatable,
     Indexer,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -241,6 +240,7 @@ struct Dim(
             return self.get() == rhs.get()
         return (not self) == (not rhs)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Converts the Dim to a String. If the value is unknown, then the
@@ -285,14 +285,20 @@ struct Dim(
 # ===-----------------------------------------------------------------------===#
 
 
-struct DimList(
-    Representable, Sized, Stringable, TrivialRegisterPassable, Writable
-):
+struct DimList(ImplicitlyCopyable, Sized, Writable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
-    var value: VariadicList[Dim]
+    var value: VariadicParamList[Dim]
     """The underlying storage for the list of dimensions."""
+
+    fn __init__(out self, *, copy: Self):
+        """Creates a dimension list from the given list of values.
+
+        Args:
+            copy: The list to copy.
+        """
+        self.value = copy.value.copy()
 
     @always_inline("nodebug")
     @implicit
@@ -305,61 +311,10 @@ struct DimList(
         Args:
             value: The initial dim values list.
         """
-        self.value = VariadicList[Dim](index(value))
+        self = Self(Dim(value), _dim_version=())
 
     @always_inline("nodebug")
-    fn __init__[I: Indexer & Copyable](out self, values: Tuple[I]):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I: A type that can be used as an index.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = VariadicList[Dim](index(values[0]))
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer & Copyable,
-        I1: Indexer & Copyable,
-    ](out self, values: Tuple[I0, I1]):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I0: A type that can be used as an Index.
-            I1: A type that can be used as an Index.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = VariadicList[Dim](index(values[0]), index(values[1]))
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer & Copyable,
-        I1: Indexer & Copyable,
-        I2: Indexer & Copyable,
-    ](out self, values: Tuple[I0, I1, I2]):
-        """Creates a dimension list from the given list of values.
-
-        Parameters:
-            I0: A type that can be used as an Index.
-            I1: A type that can be used as an Index.
-            I2: A type that can be used as an Index.
-
-        Args:
-            values: The initial dim values list.
-        """
-        self.value = VariadicList[Dim](
-            index(values[0]), index(values[1]), index(values[2])
-        )
-
-    @always_inline("nodebug")
-    fn __init__[
-        I0: Indexer & Copyable,
-        I1: Indexer & Copyable,
-    ](out self, val0: I0, val1: I1):
+    fn __init__[I0: Indexer, I1: Indexer](out self, val0: I0, val1: I1):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -370,7 +325,7 @@ struct DimList(
             val0: The initial dim value.
             val1: The initial dim value.
         """
-        self.value = VariadicList[Dim](index(val0), index(val1))
+        self = Self(Dim(val0), Dim(val1), _dim_version=())
 
     @always_inline("nodebug")
     fn __init__[
@@ -388,7 +343,7 @@ struct DimList(
             val1: The initial dim value.
             val2: The initial dim value.
         """
-        self.value = VariadicList[Dim](index(val0), index(val1), index(val2))
+        self = Self(Dim(val0), Dim(val1), Dim(val2), _dim_version=())
 
     @always_inline("nodebug")
     fn __init__[
@@ -408,14 +363,10 @@ struct DimList(
             val2: The initial dim value.
             val3: The initial dim value.
         """
-        self = Self(
-            VariadicList[Dim](
-                index(val0), index(val1), index(val2), index(val3)
-            )
-        )
+        self = Self(Dim(val0), Dim(val1), Dim(val2), Dim(val3), _dim_version=())
 
     @always_inline("nodebug")
-    fn __init__(out self, values: VariadicList[Dim]):
+    fn __init__(out self, values: VariadicParamList[Dim]):
         """Creates a dimension list from the given list of values.
 
         Args:
@@ -424,13 +375,14 @@ struct DimList(
         self.value = values
 
     @always_inline("nodebug")
-    fn __init__(out self, *values: Dim):
+    fn __init__(out self, *values: Dim, _dim_version: () = ()):
         """Creates a dimension list from the given Dim values.
 
         Args:
             values: The initial dim values.
+            _dim_version: Used to help overload resolution.
         """
-        self.value = values
+        self.value = VariadicParamList[Dim](values, comptime_only=())
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
@@ -600,8 +552,8 @@ struct DimList(
         ```mojo
         from buffer import DimList
 
-        var dim_list = DimList(2, 4)
-        var index_list = dim_list.into_index_list[rank=2]()
+        comptime dim_list = DimList(2, 4)
+        var index_list = comptime(dim_list.into_index_list[rank=2]())
         ```
         """
         var num_elements = len(self)
@@ -628,16 +580,9 @@ struct DimList(
             A list of all dynamic dimension values.
         """
         comptime assert length > 0, "length must be positive"
+        return Self(Variadic.splat_value[Dim(), length])
 
-        return Self(
-            VariadicList[Dim](
-                __mlir_op.`pop.variadic.splat`[
-                    numElements = length._mlir_value,
-                    _type = Variadic.ValuesOfType[Dim],
-                ](Dim())
-            )
-        )
-
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the DimList to a String. The String is a comma separated
         list of the string representation of Dim.
@@ -647,13 +592,16 @@ struct DimList(
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Converts the DimList to a readable String representation.
 
         Returns:
             The string representation of the type.
         """
-        return String("DimList(", self, ")")
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: DimList) -> Bool:
@@ -678,41 +626,28 @@ struct DimList(
         return True
 
     fn write_to(self, mut writer: Some[Writer]):
-        """
-        Formats this DimList to the provided Writer.
+        """Write this DimList to the provided Writer.
 
         Args:
             writer: The object to write to.
         """
 
-        writer.write("[")
+        writer.write_string("[")
 
         for i in range(len(self)):
             if i:
-                writer.write(", ")
+                writer.write_string(", ")
             writer.write(self.value[i])
 
-        writer.write("]")
+        writer.write_string("]")
 
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write this DimList to the provided Writer.
 
-@always_inline
-fn _make_tuple[
-    size: Int, *, element_type: DType = DType.int64
-](values: DimList, out result: IndexList[size, element_type=element_type]):
-    """Creates a tuple constant using the specified values.
-
-    Args:
-        values: The list of values.
-
-    Returns:
-        A tuple with the values filled in.
-    """
-    var tup = StaticTuple[result._int_type, size](fill=result._int_type(0))
-
-    comptime for idx in range(size):
-        tup = tup._replace[idx](result._int_type(values.at[idx]().get()))
-
-    return {tup}
+        Args:
+            writer: The object to write to.
+        """
+        t"DimList({self})".write_to(writer)
 
 
 @always_inline

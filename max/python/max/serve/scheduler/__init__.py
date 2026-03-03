@@ -151,11 +151,11 @@ def load_scheduler(
 
         token_gen_config = AudioGenerationSchedulerConfig(
             max_batch_size=pipeline_config.max_batch_size,
-            max_forward_steps_tg=pipeline_config.max_num_steps
-            if pipeline_config.max_num_steps != -1
+            max_forward_steps_tg=pipeline_config.runtime.max_num_steps
+            if pipeline_config.runtime.max_num_steps != -1
             else 1,
             max_seq_len=pipeline_config.model.max_length,
-            target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,
+            target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
             enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
             max_queue_size_tg=pipeline_config.runtime.max_queue_size_tg,
@@ -178,7 +178,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             kv_cache=kv_cache,
         )
-    elif pipeline_config.pipeline_role == "prefill_and_decode":
+    elif pipeline_config.runtime.pipeline_role == "prefill_and_decode":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_text_generation_scheduler(
             text_pipeline,
@@ -192,7 +192,7 @@ def load_scheduler(
             ),
             cancel_queue=cancel_queue,
         )
-    elif pipeline_config.pipeline_role == "decode_only":
+    elif pipeline_config.runtime.pipeline_role == "decode_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_decode_scheduler(
             text_pipeline,
@@ -207,10 +207,10 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             settings=settings,
         )
-    elif pipeline_config.pipeline_role == "prefill_only":
+    elif pipeline_config.runtime.pipeline_role == "prefill_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
         return load_prefill_scheduler(text_pipeline, pipeline_config, settings)
     else:
         raise ValueError(
-            f"No scheduler support for pipeline_role ({pipeline_config.pipeline_role})."
+            f"No scheduler support for pipeline_role ({pipeline_config.runtime.pipeline_role})."
         )

@@ -24,14 +24,13 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.nn.module_v3 import Linear
-from max.nn.module_v3.module import Module
-from max.nn.module_v3.sequential import ModuleList
-
-from ...common_layers.functional_kernels import (
+from max.nn.module_v3.common_layers.functional_kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
 )
-from ...common_layers.mlp import MLP
+from max.nn.module_v3.common_layers.mlp import MLP
+from max.nn.module_v3.module import Module
+from max.nn.module_v3.sequential import ModuleList
 
 
 class MoEGate(Module[[Tensor], tuple[Tensor, Tensor]]):

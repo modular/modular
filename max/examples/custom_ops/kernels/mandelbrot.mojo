@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
+from std.math import iota
 
 import compiler
-from complex import ComplexSIMD
-from runtime.asyncrt import DeviceContextPtr
+from std.complex import ComplexSIMD
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import OutputTensor, foreach
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 comptime float_dtype = DType.float32
 

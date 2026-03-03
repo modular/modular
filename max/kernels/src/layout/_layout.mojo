@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Mixed layout implementation that unifies compile-time and runtime indices."""
 
-from os import abort
-from sys.intrinsics import _type_is_eq
+from std.os import abort
+from std.sys.intrinsics import _type_is_eq
 
-from builtin.variadics import (
+from std.builtin.variadics import (
     Variadic,
     VariadicPack,
     _MapVariadicAndIdxToType,
     _ReduceVariadicAndIdxToVariadic,
 )
 
-from ._coord import (
+from .coord import (
     ComptimeInt,
     Idx,
     Coord,
@@ -286,6 +286,23 @@ struct Layout[
             coord_to_int_tuple(self._shape),
             coord_to_int_tuple(self._stride),
         )
+
+    @always_inline("nodebug")
+    fn reverse(
+        self,
+    ) -> Layout[
+        Variadic.reverse[*Self.shape_types],
+        Variadic.reverse[*Self.stride_types],
+    ]:
+        """Reverse the order of dimensions in the layout.
+
+        Turns row-major into column-major ordering where the stride-1
+        dimension comes first, enabling coalesced scalar iteration.
+
+        Returns:
+            A new Layout with shape and stride Coords reversed.
+        """
+        return Layout(self._shape.reverse(), self._stride.reverse())
 
     @always_inline("nodebug")
     fn make_dynamic[

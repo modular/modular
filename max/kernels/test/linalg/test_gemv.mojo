@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
-from random import rand
-from sys import simd_width_of, size_of
+from std.math import isclose
+from std.random import rand
+from std.sys import simd_width_of, size_of
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_false
+from std.testing import assert_false
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime alignment = 64
 
@@ -37,7 +37,7 @@ fn bench_run[
     return benchmark.run[func](2, 1_000_000, 1, 3)
 
 
-def test_gemv():
+def test_gemv() raises:
     print("== test_gemv")
     comptime type = DType.float32
     comptime absolute_tolerance = 1e-08
@@ -183,5 +183,5 @@ def test_gemv():
     ref_out_storage.free()
 
 
-def main():
+def main() raises:
     test_gemv()

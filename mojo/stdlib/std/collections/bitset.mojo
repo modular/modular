@@ -19,7 +19,7 @@ is called (not implemented yet).
 
 Example:
 ```mojo
-from collections import BitSet
+from std.collections import BitSet
 
 var bs = BitSet[128]()  # 128-bit set, all clear
 bs.set(42)              # Mark value 42 as present.
@@ -32,13 +32,13 @@ print(len(bs))          # Prints 0.
 # ---------------------------------------------------------------------------
 
 
-from math import ceildiv
-from sys import simd_width_of, bit_width_of
+from std.math import ceildiv
+from std.sys import simd_width_of, bit_width_of
 
-from algorithm import vectorize
-from bit import log2_floor, pop_count
-from format._utils import FormatStruct
-from memory import pack_bits
+from std.algorithm import vectorize
+from std.bit import log2_floor, pop_count
+from std.format._utils import FormatStruct
+from std.memory import pack_bits
 
 from .inline_array import InlineArray
 

@@ -18,9 +18,9 @@ from __future__ import annotations
 from max.experimental.tensor import Tensor
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.module_v3 import Module
+from max.nn.module_v3.common_layers.mlp import MLP
 from max.nn.module_v3.norm import RMSNorm
 
-from ...common_layers.mlp import MLP
 from .attention import Olmo3Attention
 
 

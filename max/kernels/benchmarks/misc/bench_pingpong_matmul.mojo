@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import (
+from std.collections import Optional
+from std.sys import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
@@ -21,11 +21,17 @@ from sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils._utils import (
@@ -36,7 +42,7 @@ from internal_utils._utils import (
 )
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
-from utils import IndexList
+from std.utils import IndexList
 from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 
@@ -56,9 +62,9 @@ fn _get_run_name[
     shape_b_dim: IndexList[2],
 ) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
-    var type_str = String("(", dtype, ") : ")
+    var type_str = String(t"({dtype}) : ")
     # M
-    var m_str = String(shape_c_dim[0], "_dynamic")
+    var m_str = String(t"{shape_c_dim[0]}_dynamic")
     # N
     var n_str = String(
         shape_c_dim[1],
@@ -268,7 +274,7 @@ fn create_matmul_bench[
     )
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 1))

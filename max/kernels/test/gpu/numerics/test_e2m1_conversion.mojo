@@ -17,9 +17,9 @@ from linalg.fp4_utils import (
     cast_fp_to_fp4e2m1,
     cast_f4e2m1x2_to_fp16x2,
 )
-from gpu.host import DeviceContext
-from math import nan, inf
-from sys import bit_width_of
+from std.gpu.host import DeviceContext
+from std.math import nan, inf
+from std.sys import bit_width_of
 
 
 # CHECK-LABEL: test_simd_f32_to_e2m1

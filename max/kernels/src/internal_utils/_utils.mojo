@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from collections import Optional
-from math import ceildiv, floor
-from sys import argv, env_get_string
-from builtin.device_passable import DevicePassable
+import std.time
+from std.collections import Optional
+from std.math import ceildiv, floor
+from std.sys import argv, env_get_string
+from std.builtin.device_passable import DevicePassable
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -25,15 +25,14 @@ from benchmark import (
     clobber_memory,
     keep,
 )
-from buffer import Dim, DimList
-from buffer.dimlist import _make_tuple
-from compile import compile_info
-from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext
-from random import Random
+from buffer import Dim
+from std.compile import compile_info
+from std.gpu import *
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.random import Random
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
 from tensor import DynamicTensor
-from utils import IndexList
+from std.utils import IndexList
 
 
 # ===----------------------------------------------------------------------=== #
@@ -70,6 +69,7 @@ struct ValOrDim[dim: Dim = Dim()](Defaultable):
         ), "Can't construct a dynamic dim with no runtime value"
         self.value = Self.dim.get()
 
+    @implicit
     fn __init__(out self, v: Int):
         self.value = v
 
@@ -278,7 +278,7 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
 
 
 @fieldwise_init
-struct Mode(Stringable, TrivialRegisterPassable):
+struct Mode(TrivialRegisterPassable, Writable):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")
@@ -301,7 +301,16 @@ struct Mode(Stringable, TrivialRegisterPassable):
     fn append(mut self, other: Self):
         self._value |= other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the mode as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
         s = List[String]()
         if Self.RUN == self:
             s.append(Self.RUN.handle)
@@ -311,7 +320,7 @@ struct Mode(Stringable, TrivialRegisterPassable):
             s.append(Self.VERIFY.handle)
         if Self.NONE == self:
             s.append(Self.NONE.handle)
-        return StaticString(Self.SEP).join(s)
+        writer.write(StaticString(Self.SEP).join(s))
 
     fn __eq__(self, mode: Self) -> Bool:
         if mode._value == self._value == Self.NONE._value:

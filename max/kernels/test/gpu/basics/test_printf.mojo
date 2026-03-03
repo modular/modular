@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.io import _printf
+from std.io.io import _printf
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: == test_gpu_printf
@@ -41,5 +41,5 @@ fn test_gpu_printf() raises:
         ctx.synchronize()
 
 
-def main():
+def main() raises:
     test_gpu_printf()

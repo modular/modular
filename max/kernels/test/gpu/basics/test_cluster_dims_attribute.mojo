@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu import block_idx, cluster_dim, cluster_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, cluster_dim, cluster_idx
 
-from utils.static_tuple import StaticTuple
+from std.utils.static_tuple import StaticTuple
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_dims)
@@ -86,7 +86,7 @@ fn test_cluster_dims_attribute_with_param(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_cluster_dims_attribute(ctx)
         test_cluster_dims_attribute_with_param(ctx)

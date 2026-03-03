@@ -15,7 +15,7 @@
 from my_complex import Complex
 
 
-def main():
+def main() raises:
     # Examples of creating Complex instances
     c1 = Complex(-1.2, 6.5)
     print("c1 =", repr(c1))

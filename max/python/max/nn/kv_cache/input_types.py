@@ -27,7 +27,8 @@ from typing import (
 )
 
 from max.driver import Buffer
-from max.graph import BufferType, BufferValue, TensorType, TensorValue
+from max.dtype import DType
+from max.graph import BufferType, BufferValue, TensorType, TensorValue, Value
 from typing_extensions import TypeVar
 
 logger = logging.getLogger("max.pipelines")
@@ -76,6 +77,29 @@ IterableInputSymbols: TypeAlias = NestedIterableDataclass[
 ]
 
 
+_DispatchMetadataT = TypeVar("_DispatchMetadataT", TensorType, TensorValue)
+
+
+@dataclass
+class MHADecodeDispatchMetadata(
+    NestedIterableDataclass[_DispatchMetadataT],
+    Generic[_DispatchMetadataT],
+):
+    tensor: _DispatchMetadataT
+
+    def __post_init__(self) -> None:
+        if self.tensor.dtype != DType.int64:
+            raise ValueError(
+                "expected mha_decode_dispatch_metadata dtype int64, got "
+                f"{self.tensor.dtype}"
+            )
+        if self.tensor.rank != 1:
+            raise ValueError(
+                "expected mha_decode_dispatch_metadata rank 1, got "
+                f"{self.tensor.rank}"
+            )
+
+
 @dataclass
 class PagedCacheInputSymbols(IterableInputSymbols):
     kv_blocks: BufferType
@@ -83,6 +107,7 @@ class PagedCacheInputSymbols(IterableInputSymbols):
     lookup_table: TensorType
     max_lengths: TensorType
     kv_scales: BufferType | None = None  # KV scales for FP8 quantization
+    dispatch_metadata: MHADecodeDispatchMetadata[TensorType] | None = None
 
 
 @dataclass
@@ -92,6 +117,94 @@ class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
     lookup_table: TensorValue
     max_lengths: TensorValue
     kv_scales: BufferValue | None = None  # KV scales for FP8 quantization
+    dispatch_metadata: MHADecodeDispatchMetadata[TensorValue] | None = None
+
+    def __iter__(self) -> Iterator[BufferValue | TensorValue]:
+        # Canonical paged KV ABI order.
+        yield self.kv_blocks
+        yield self.cache_lengths
+        yield self.lookup_table
+        yield self.max_lengths
+        if self.kv_scales is not None:
+            yield self.kv_scales
+
+
+def unflatten_ragged_mha_decode_inputs(
+    kv_inputs_flat: Sequence[Value[Any]], *, n_devices: int
+) -> list[PagedCacheValues]:
+    """Unmarshals flattened KV graph inputs into typed cache values.
+
+    Args:
+        kv_inputs_flat: Flattened graph values for all KV inputs.
+        n_devices: Number of devices represented in ``kv_inputs_flat``.
+    """
+    if n_devices <= 0:
+        raise ValueError(f"n_devices must be positive, got {n_devices}")
+
+    if len(kv_inputs_flat) % n_devices != 0:
+        raise ValueError(
+            "unexpected flattened KV input length: expected a multiple of "
+            f"{n_devices}, got {len(kv_inputs_flat)}"
+        )
+
+    if any(not isinstance(value, Value) for value in kv_inputs_flat):
+        raise TypeError("kv_inputs_flat must contain max.graph.Value instances")
+
+    fields_per_device = len(kv_inputs_flat) // n_devices
+    if fields_per_device not in (5, 6):
+        raise ValueError(
+            f"fields_per_device must be 5 or 6, got {fields_per_device}"
+        )
+
+    has_kv_scales = fields_per_device == 6
+    kv_caches_per_dev: list[PagedCacheValues] = []
+    for i in range(n_devices):
+        start_idx = i * fields_per_device
+        next_idx = start_idx + 4
+        kv_scales = None
+        if has_kv_scales:
+            kv_scales = kv_inputs_flat[next_idx].buffer
+            next_idx += 1
+
+        metadata = MHADecodeDispatchMetadata(kv_inputs_flat[next_idx].tensor)
+
+        kv_caches_per_dev.append(
+            PagedCacheValues(
+                kv_blocks=kv_inputs_flat[start_idx].buffer,
+                cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                kv_scales=kv_scales,
+                dispatch_metadata=metadata,
+            )
+        )
+
+    return kv_caches_per_dev
+
+
+def mha_decode_dispatch_metadata(
+    kv_collection: PagedCacheValues,
+    *,
+    device_idx: int | None = None,
+) -> MHADecodeDispatchMetadata[TensorValue]:
+    dispatch_metadata = kv_collection.dispatch_metadata
+    if dispatch_metadata is not None:
+        return dispatch_metadata
+
+    location = "" if device_idx is None else f" for device {device_idx}"
+    raise ValueError(
+        "Expected MHADecodeDispatchMetadata in kv_collection.dispatch_metadata"
+        f"{location}."
+    )
+
+
+def mha_decode_dispatch_metadata_list(
+    kv_collections: Sequence[PagedCacheValues],
+) -> list[MHADecodeDispatchMetadata[TensorValue]]:
+    return [
+        mha_decode_dispatch_metadata(kv_collection, device_idx=i)
+        for i, kv_collection in enumerate(kv_collections)
+    ]
 
 
 @runtime_checkable
@@ -106,16 +219,16 @@ class FlattenableInputSymbols(Protocol):
 
 @dataclass
 class PagedCacheInputSymbolsByReplica(
-    Sequence[PagedCacheInputSymbols], FlattenableInputSymbols
+    Sequence[IterableInputSymbols], FlattenableInputSymbols
 ):
     """A class that holds the symbolic inputs for the paged ache for all replicas.
 
     This is separate from `MultiKVCacheInputSymbols` for more convenient typing.
     """
 
-    values: list[PagedCacheInputSymbols]
+    values: Sequence[IterableInputSymbols]
 
-    def __iter__(self) -> Iterator[PagedCacheInputSymbols]:
+    def __iter__(self) -> Iterator[IterableInputSymbols]:
         return iter(self.values)
 
     def __getitem__(self, index: int | slice) -> Any:
@@ -226,6 +339,7 @@ class RaggedKVCacheInputs(KVCacheInputs):
     lookup_table: Buffer
     max_lengths: Buffer
     kv_scales: Buffer | None = None  # Scale tensor for FP8 quantization
+    mha_decode_dispatch_metadata: Buffer | None = None
 
 
 @dataclass

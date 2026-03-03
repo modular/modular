@@ -37,7 +37,6 @@ async def test_kv_cache_multi_gpu() -> None:
             head_dim=128,
             dtype=DType.bfloat16,
             num_layers=32,
-            cache_strategy="paged",
             page_size=128,
             devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         )
@@ -55,7 +54,8 @@ async def test_kv_cache_multi_gpu() -> None:
         list_of_kv_tuples = kv_manager.runtime_inputs([batch])
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
-            assert len(kv_tuple) == 5
+            assert len(kv_tuple) == 6
+            assert kv_tuple.mha_decode_dispatch_metadata is not None
 
 
 def create_kv_cache(
@@ -75,7 +75,6 @@ def create_kv_cache(
         n_kv_heads=4,
         head_dim=1,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
         enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
 import compiler_internal as compiler
 from buffer.dimlist import DimList
 from register import register_internal
 from tensor import ManagedTensorSlice, InputTensor, OutputTensor
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 struct Counter[stride: Int](Movable):

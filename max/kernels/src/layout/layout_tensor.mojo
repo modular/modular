@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the `LayoutTensor` type for representing multidimensional data.
 """
-from builtin.variadics import Variadic
-from math import align_up, ceildiv, exp
-from math.math import _Expable
-from sys import (
+from std.builtin.variadics import Variadic
+from std.math import align_up, ceildiv, exp
+from std.math.math import _Expable
+from std.sys import (
     align_of,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -23,31 +23,31 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.intrinsics import PrefetchOptions, readfirstlane
+from std.sys.intrinsics import PrefetchOptions, readfirstlane
 
-import gpu.memory as gpu_memory
-from algorithm import vectorize
-from bit import log2_floor
-from builtin.device_passable import DevicePassable
-from builtin.dtype import _unsigned_integral_type_of
-from gpu.host import DeviceBuffer, HostBuffer, DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_dim, block_idx, lane_id, thread_idx
-from gpu.intrinsics import AMDBufferResource
-from gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
+import std.gpu.memory as gpu_memory
+from std.algorithm import vectorize
+from std.bit import log2_floor
+from std.builtin.device_passable import DevicePassable
+from std.builtin.dtype import _unsigned_integral_type_of
+from std.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_dim, block_idx, lane_id, thread_idx
+from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
 from layout.tma_async import _tma_desc_tile_layout
-from memory import stack_allocation, LegacyUnsafePointer
+from std.memory import stack_allocation, LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 """Legacy OpaquePointer migration helper."""
 comptime OpaquePointer = UnsafePointer[NoneType, origin=MutAnyOrigin]
 """Legacy OpaquePointer migration helper."""
 
-from utils import IndexList, StaticTuple
-from utils.index import Index
+from std.utils import IndexList, StaticTuple
+from std.utils.index import Index
 
 from .int_tuple import (
     _get_index_type,
@@ -67,7 +67,7 @@ from .runtime_layout import make_layout as make_runtime_layout
 from .runtime_tuple import RuntimeTuple
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
-from builtin.debug_assert import ASSERT_MODE
+from std.builtin.debug_assert import ASSERT_MODE
 
 
 fn _compute_distribute_layout[
@@ -266,7 +266,6 @@ struct LayoutTensor[
     alignment: Int = align_of[dtype](),
 ](
     DevicePassable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
     _Expable,
@@ -643,7 +642,7 @@ struct LayoutTensor[
         to construct a `LayoutTensor` that you can use on the GPU.
 
         ```mojo
-        from gpu.host import DeviceContext, DeviceBuffer
+        from std.gpu.host import DeviceContext, DeviceBuffer
         from layout import Layout, LayoutTensor
 
         comptime dtype = DType.float32
@@ -689,7 +688,7 @@ struct LayoutTensor[
         The resulting tensor's data can only be accessed on the CPU.
 
         ```mojo
-        from gpu.host import DeviceContext, HostBuffer
+        from std.gpu.host import DeviceContext, HostBuffer
         from layout import Layout, LayoutTensor
 
         comptime dtype = DType.float32
@@ -5467,8 +5466,8 @@ struct LayoutTensor[
 
         ```mojo
         from layout import LayoutTensor, Layout
-        from gpu import thread_idx, block_idx, block_dim
-        from gpu.memory import async_copy_wait_all
+        from std.gpu import thread_idx, block_idx, block_dim
+        from std.gpu.memory import async_copy_wait_all
 
         comptime dtype = DType.float32
         comptime in_size = 128
@@ -5693,7 +5692,7 @@ struct LayoutTensor[
         ```mojo
         from layout import Layout, LayoutTensor
 
-        def main():
+        def main() raises:
             var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,
@@ -5742,6 +5741,7 @@ struct LayoutTensor[
         return self
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Convert the tensor to a string representation.
 
@@ -5771,7 +5771,7 @@ struct LayoutTensor[
         ```mojo
         from layout import Layout, LayoutTensor
 
-        def main():
+        def main() raises:
             var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
             var tensor = LayoutTensor[
                 DType.float32,

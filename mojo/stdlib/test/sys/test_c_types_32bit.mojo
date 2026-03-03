@@ -23,13 +23,13 @@
 # Before this fix, compiling for 32-bit targets would fail with:
 #   constraint failed: size of C `long` is unknown on this target
 
-from ffi import c_long, c_long_long, c_ulong, c_ulong_long
-from sys.info import size_of
+from std.ffi import c_long, c_long_long, c_ulong, c_ulong_long
+from std.sys.info import size_of
 
 # CHECK: target datalayout = "e-m:e-p:32:32
 
 
-def main():
+def main() raises:
     # Compile-time assertions to verify correct sizes on 32-bit target
     # ILP32: long is 32-bit (4 bytes), long long is 64-bit (8 bytes)
     comptime assert size_of[c_long]() == 4, "c_long should be 4 bytes on 32-bit"

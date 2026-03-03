@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from sys import (
+from std.os import abort
+from std.sys import (
     CompilationTarget,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
     size_of,
 )
-from ffi import external_call
+from std.ffi import external_call
 
-from gpu.host import DeviceContext, HostBuffer
-from gpu.host.device_context import _checked, _DeviceContextPtr
+from std.gpu.host import DeviceContext, HostBuffer
+from std.gpu.host.device_context import _checked, _DeviceContextPtr
 
 from .shmem_api import shmem_free, shmem_malloc
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 
 struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
@@ -41,7 +41,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
 
     @staticmethod
     fn get_type_name() -> String:
-        return String("SHMEMBuffer[", String(Self.dtype), "]")
+        return t"SHMEMBuffer[{Self.dtype}]"
 
     @doc_private
     @always_inline

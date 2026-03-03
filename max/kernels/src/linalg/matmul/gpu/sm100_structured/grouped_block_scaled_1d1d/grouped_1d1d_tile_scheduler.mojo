@@ -23,17 +23,16 @@ Key characteristics:
 - 3-warp specialization (no scheduler warp)
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, grid_dim, thread_idx
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout._tile_tensor import TileTensor
+from std.gpu import block_idx, grid_dim, thread_idx
+from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor
 
 from ..structured_kernels.tile_types import GMEMLayout1D
-from memory import UnsafePointer
+from std.memory import UnsafePointer
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
 
 
 # ===----------------------------------------------------------------------=== #
@@ -42,7 +41,7 @@ from utils.index import Index, IndexList
 
 
 @fieldwise_init
-struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
+struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
     """Work tile information for 1D-1D grouped matmul.
 
     Contains the coordinates and metadata for a single work tile:
@@ -79,6 +78,7 @@ struct GroupedWorkInfo1D1D(Stringable, TrivialRegisterPassable, Writable):
         """Returns True if the scheduler has no more work."""
         return self.terminate
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

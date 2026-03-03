@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.primitives.grid_controls import (
+from std.gpu.primitives.grid_controls import (
     _SUPPORT_PDL_LAUNCH as SUPPORT_PDL_LAUNCH,
 )
-from gpu.primitives.grid_controls import (
+from std.gpu.primitives.grid_controls import (
     PDL,
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from testing import assert_true
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import assert_true
 
 
 fn control_dep_grids_kernel():
@@ -34,7 +34,7 @@ fn control_dep_grids_kernel():
 # CHECK: griddepcontrol.launch_dependents
 # CHECK: griddepcontrol.wait
 # CHECK: griddepcontrol.launch_dependents
-def test_grid_control_primitives():
+def test_grid_control_primitives() raises:
     print("== test_grid_control_primitives")
     assert_true(SUPPORT_PDL_LAUNCH)
     print(
@@ -61,7 +61,7 @@ fn control_dep_grids_kernel_context():
 # CHECK-LABEL: test_grid_control_primitives_context
 # CHECK: griddepcontrol.wait
 # CHECK: griddepcontrol.launch_dependents
-def test_grid_control_primitives_context():
+def test_grid_control_primitives_context() raises:
     print("== test_grid_control_primitives_context")
     print(
         _compile_code[
@@ -72,6 +72,6 @@ def test_grid_control_primitives_context():
     )
 
 
-def main():
+def main() raises:
     test_grid_control_primitives()
     test_grid_control_primitives_context()

@@ -24,24 +24,29 @@ The SM100 epilogue pipeline flows as:
     TMEM (accumulators) → Registers → SMEM → GMEM (via TMA)
 """
 
-from sys import align_of, simd_width_of
+from std.sys import align_of, simd_width_of
 
-from gpu import WARP_SIZE, lane_id, warp_id
-from gpu.memory import fence_async_view_proxy
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import WARP_SIZE, lane_id, warp_id
+from std.gpu.memory import fence_async_view_proxy
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from .barriers import WarpGroupBarrier
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE, RuntimeTuple
+from layout import (
+    Layout,
+    RuntimeLayout,
+    RuntimeTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.int_tuple import IntTuple
 from layout._layout import Layout as InternalLayout, TensorLayout, row_major
 from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
-from layout._tile_tensor import TileTensor
 from layout.tma_async import TMATensorTile
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.utils import elementwise_compute_lambda_type
-from utils.fast_div import FastDiv
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.static_tuple import StaticTuple
 
 # TileTensor-based types - use TileSMemTile to avoid name collision with old SMemTile
 from .tile_types import (
@@ -114,11 +119,11 @@ struct AccumBarrier[cta_group: Int](TrivialRegisterPassable):
         """Signal accumulator arrival on pipeline barrier."""
 
         comptime if Self.cta_group == 1:
-            from gpu.sync import mbarrier_arrive
+            from std.gpu.sync import mbarrier_arrive
 
             _ = mbarrier_arrive(pipeline.consumer_mbar(stage))
         else:
-            from gpu.sync import umma_arrive_leader_cta
+            from std.gpu.sync import umma_arrive_leader_cta
 
             umma_arrive_leader_cta(pipeline.consumer_mbar(stage))
 
@@ -140,8 +145,8 @@ fn store_fragment_to_smem[
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](vec: SIMD, dst: SMemTile, warp_offset: UInt32 = 0):
     """Store fragment to SMEM via st.matrix instruction."""
-    from gpu.compute.mma import st_matrix
-    from memory import bitcast
+    from std.gpu.compute.mma import st_matrix
+    from std.memory import bitcast
 
     comptime c_type = dst.dtype
     comptime stsmx_row_size = 32 // size_of[
@@ -164,7 +169,7 @@ fn store_fragment_to_smem[
     comptime if transpose_c:
         # Use new Layout directly instead of RuntimeLayout wrapper
         from layout._layout import Layout as NewLayout
-        from layout._coord import Coord, Idx
+        from layout import Coord, Idx
 
         comptime trans_layout = NewLayout(
             Coord(Idx[8](), Idx[2](), Idx[2]()),
@@ -217,9 +222,9 @@ fn store_fragment_to_smem[
     warp_offset: UInt32 = 0,
 ):
     """Store fragment to SMEM via st.matrix."""
-    from gpu.compute.mma import st_matrix
-    from memory import bitcast
-    from layout._coord import Coord, Idx
+    from std.gpu.compute.mma import st_matrix
+    from std.memory import bitcast
+    from layout import Coord, Idx
 
     comptime c_type = dst.dtype
     comptime stsmx_row_size = 32 // size_of[
@@ -285,27 +290,64 @@ fn store_fragment_to_smem[
 # =============================================================================
 
 
-struct EpilogueConfig[
-    MMA_M: Int,
-    MMA_N: Int,
-    stageN: Int,
-    cta_group: Int,
-    transpose_c: Bool,
-](TrivialRegisterPassable):
-    """Computed epilogue parameters based on MMA and CTA configuration."""
+@fieldwise_init
+struct EpilogueConfig(Copyable, Equatable, TrivialRegisterPassable):
+    """Computed epilogue parameters based on MMA and CTA configuration.
 
-    # Lower fragment needed except for cta_group=1, MMA_M=64
-    comptime is_lower_frag_required = not (
-        Self.cta_group == 1 and Self.MMA_M == 64
-    )
+    Bundles the 7 input parameters shared by all epilogue component structs
+    (TMAStoreCoords, TMAStoreExecutor, TMEMToSMemWriter, SMemEpilogueWriter)
+    plus 3 derived fields (is_lower_frag_required, num_stages, fragment_size).
 
-    comptime cg2_num_stages = Self.MMA_N // Self.stageN if Self.MMA_M == 256 else Self.MMA_N // Self.stageN // 2
-    comptime cg1_num_stages = Self.MMA_N // Self.stageN
-    comptime num_stages = Self.cg2_num_stages if Self.cta_group == 2 else Self.cg1_num_stages
+    Constructed once per TileWriter/BlockwiseFP8TileWriter and propagated to
+    all epilogue component types.
+    """
 
-    comptime data_paths = 16
-    comptime bits = 256
-    comptime fragment_size = (Self.data_paths * (Self.bits // 32)) // 32
+    # Input parameters
+    var MMA_M: Int
+    var MMA_N: Int
+    var stageN: Int
+    var cta_group: Int
+    var transpose_c: Bool
+    var BM: Int
+    var BN: Int
+
+    # Computed fields (set by caller via create() factory)
+    var is_lower_frag_required: Bool
+    var num_stages: Int
+    var fragment_size: Int
+
+    @staticmethod
+    fn create(
+        *,
+        MMA_M: Int,
+        MMA_N: Int,
+        stageN: Int,
+        cta_group: Int,
+        transpose_c: Bool,
+        BM: Int,
+        BN: Int,
+    ) -> EpilogueConfig:
+        """Construct EpilogueConfig with derived fields computed automatically.
+        """
+        var is_lower = not (cta_group == 1 and BM == 64)
+        var cg2_ns = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
+        var cg1_ns = MMA_N // stageN
+        var ns = cg2_ns if cta_group == 2 else cg1_ns
+        # fragment_size = (data_paths * (bits // 32)) // WARP_SIZE
+        # = (16 * 8) // 32 = 4
+        var frag_size = (16 * (256 // 32)) // 32
+        return EpilogueConfig(
+            MMA_M,
+            MMA_N,
+            stageN,
+            cta_group,
+            transpose_c,
+            BM,
+            BN,
+            is_lower,
+            ns,
+            frag_size,
+        )
 
 
 # =============================================================================
@@ -314,12 +356,7 @@ struct EpilogueConfig[
 
 
 struct TMAStoreCoords[
-    BM: Int,
-    BN: Int,
-    MMA_M: Int,
-    MMA_N: Int,
-    stageN: Int,
-    cta_group: Int,
+    epc: EpilogueConfig,
     c_smem_shape0: Int,
     stage: Int,
     batched: Bool = False,
@@ -328,6 +365,14 @@ struct TMAStoreCoords[
 
     When batched=True, includes a batch coordinate for 3D TMA stores.
     """
+
+    # Local aliases from EpilogueConfig
+    comptime BM = Self.epc.BM
+    comptime BN = Self.epc.BN
+    comptime MMA_M = Self.epc.MMA_M
+    comptime MMA_N = Self.epc.MMA_N
+    comptime stageN = Self.epc.stageN
+    comptime cta_group = Self.epc.cta_group
 
     comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.MMA_M == 256 else Self.BM
     comptime CG1_TMA_BM = Self.c_smem_shape0
@@ -412,18 +457,11 @@ struct TMAStoreCoords[
 
 struct TMAStoreExecutor[
     c_type: DType,
-    c_smem_dim0: Int,  # Replaces c_smem_layout.shape[0]
-    c_smem_dim1: Int,  # Replaces c_smem_layout.shape[1]
-    BM: Int,
-    BN: Int,
-    MMA_M: Int,
-    MMA_N: Int,
-    stageN: Int,
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
+    epc: EpilogueConfig,
     stage_contiguous_size: Int,
-    cta_group: Int,
     c_swizzle: TensorMapSwizzle,
-    transpose_c: Bool,
-    is_lower_frag_required: Bool,
     batched: Bool = False,
 ](TrivialRegisterPassable):
     """Execute TMA store from SMEM to GMEM with proper tiling.
@@ -431,6 +469,16 @@ struct TMAStoreExecutor[
     Handles 3 paths: transpose+cta_group2+MMA128, transpose+other, non-transpose.
     When batched=True, uses 3D coordinates (M, N, Batch) for TMA stores.
     """
+
+    # Local aliases from EpilogueConfig
+    comptime BM = Self.epc.BM
+    comptime BN = Self.epc.BN
+    comptime MMA_M = Self.epc.MMA_M
+    comptime MMA_N = Self.epc.MMA_N
+    comptime stageN = Self.epc.stageN
+    comptime cta_group = Self.epc.cta_group
+    comptime transpose_c = Self.epc.transpose_c
+    comptime is_lower_frag_required = Self.epc.is_lower_frag_required
 
     # Create layout from dimensions (eliminates old Layout from interface)
     comptime c_smem_layout = Layout.row_major(
@@ -441,7 +489,7 @@ struct TMAStoreExecutor[
     comptime num_c_smem_tiles = 128 // Self.swizzle_width // (
         1 if Self.is_lower_frag_required else 2
     )
-    comptime c_smem_shape0 = Self.c_smem_dim0  # Now direct access
+    comptime c_smem_shape0 = Self.c_smem_dim0
     comptime CG2_TMA_BM = Self.c_smem_shape0 if Self.MMA_M == 256 else Self.BM
     comptime CG1_TMA_BM = Self.c_smem_shape0
     comptime TMA_BM = Self.CG2_TMA_BM if Self.cta_group == 2 else Self.CG1_TMA_BM
@@ -454,12 +502,7 @@ struct TMAStoreExecutor[
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
-            Self.cta_group,
+            Self.epc,
             Self.c_smem_shape0,
             _,
             Self.batched,
@@ -489,12 +532,7 @@ struct TMAStoreExecutor[
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
-            Self.cta_group,
+            Self.epc,
             Self.c_smem_shape0,
             _,
             Self.batched,
@@ -528,7 +566,7 @@ struct TMAStoreExecutor[
             else:
                 c_tma_op.async_store(
                     c_smem_split,
-                    (store_coords.coord_m, store_coords.coord_n),
+                    (Int(store_coords.coord_m), Int(store_coords.coord_n)),
                 )
         else:
             # Path B: Other transpose cases - loop over swizzle tiles
@@ -558,8 +596,8 @@ struct TMAStoreExecutor[
                     c_tma_op.async_store(
                         c_smem_warp_tile,
                         (
-                            store_coords.coord_m + UInt(i * Self.swizzle_width),
-                            store_coords.coord_n,
+                            Int(store_coords.coord_m) + i * Self.swizzle_width,
+                            Int(store_coords.coord_n),
                         ),
                     )
 
@@ -572,12 +610,7 @@ struct TMAStoreExecutor[
     ](
         c_smem_tile: SMemTile[Self.c_type, Self.c_smem_layout, alignment=128],
         store_coords: TMAStoreCoords[
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
-            Self.cta_group,
+            Self.epc,
             Self.c_smem_shape0,
             _,
             Self.batched,
@@ -603,7 +636,7 @@ struct TMAStoreExecutor[
         else:
             c_tma_op.async_store(
                 c_smem_split,
-                (store_coords.coord_n, store_coords.coord_m),
+                (Int(store_coords.coord_n), Int(store_coords.coord_m)),
             )
 
     @staticmethod
@@ -614,12 +647,7 @@ struct TMAStoreExecutor[
     ](
         c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
         store_coords: TMAStoreCoords[
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
-            Self.cta_group,
+            Self.epc,
             Self.c_smem_shape0,
             _,
             Self.batched,
@@ -638,7 +666,7 @@ struct TMAStoreExecutor[
                 )
             else:
                 # Non-transpose: wrap as SMemTile for _store_non_transpose
-                from memory import LegacyUnsafePointer
+                from std.memory import LegacyUnsafePointer
 
                 comptime SMemPtrType = LegacyUnsafePointer[
                     Scalar[Self.c_type],
@@ -660,12 +688,7 @@ struct TMAStoreExecutor[
     ](
         c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
         store_coords: TMAStoreCoords[
-            Self.BM,
-            Self.BN,
-            Self.MMA_M,
-            Self.MMA_N,
-            Self.stageN,
-            Self.cta_group,
+            Self.epc,
             Self.c_smem_shape0,
             _,
             Self.batched,
@@ -674,10 +697,10 @@ struct TMAStoreExecutor[
         warp_id: UInt32,
     ):
         """Transpose TMA store using reshape."""
-        from layout._coord import Coord, Idx
+        from layout import Coord, Idx
 
         # Convert to LayoutTensor at TMA async_store boundary
-        from memory import LegacyUnsafePointer
+        from std.memory import LegacyUnsafePointer
 
         comptime if Self.cta_group == 2 and Self.MMA_M == 128:
             # Path A: reshape to (2*stageN, sc_size//2), tile by warp
@@ -714,7 +737,7 @@ struct TMAStoreExecutor[
             else:
                 c_tma_op.async_store(
                     c_split_lt,
-                    (store_coords.coord_m, store_coords.coord_n),
+                    (Int(store_coords.coord_m), Int(store_coords.coord_n)),
                 )
         else:
             # Path B: loop over swizzle tiles
@@ -759,8 +782,8 @@ struct TMAStoreExecutor[
                     c_tma_op.async_store(
                         c_warp_lt,
                         (
-                            store_coords.coord_m + UInt(i * Self.swizzle_width),
-                            store_coords.coord_n,
+                            Int(store_coords.coord_m) + i * Self.swizzle_width,
+                            Int(store_coords.coord_n),
                         ),
                     )
 
@@ -978,7 +1001,7 @@ struct EpilogueApplier[
             src_ptr: Pointer to source C SMEM tile (same TMA swizzle as output).
             beta: Residual scale factor.
         """
-        from gpu.memory import AddressSpace
+        from std.gpu.memory import AddressSpace
 
         var top = self.coords.top_upper if is_upper else self.coords.top_lower
         var bot = (
@@ -1073,31 +1096,30 @@ struct EpilogueApplier[
 struct TMEMToSMemWriter[
     c_type: DType,
     accum_type: DType,
-    c_smem_dim0: Int,  # Replaces c_smem_layout.shape[0]
-    c_smem_dim1: Int,  # Replaces c_smem_layout.shape[1]
-    BM: Int,
-    BN: Int,
-    MMA_M: Int,
-    MMA_N: Int,
-    stageN: Int,
-    cta_group: Int,
+    c_smem_dim0: Int,
+    c_smem_dim1: Int,
+    epc: EpilogueConfig,
     num_output_warps: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    transpose_c: Bool = False,
 ](TrivialRegisterPassable):
     """Write TMEM accumulators to SMEM via st.matrix (SM100-specific)."""
+
+    # Local aliases from EpilogueConfig
+    comptime BM = Self.epc.BM
+    comptime stageN = Self.epc.stageN
+    comptime cta_group = Self.epc.cta_group
+    comptime transpose_c = Self.epc.transpose_c
 
     # Create internal layout from dimensions
     comptime c_smem_layout = Layout.row_major(
         Self.c_smem_dim0, Self.c_smem_dim1
     )
 
-    comptime Config = EpilogueConfig[
-        Self.MMA_M, Self.MMA_N, Self.stageN, Self.cta_group, Self.transpose_c
-    ]
+    # Alias for fragment_size access (used by callers via SMEMWriter.Config)
+    comptime Config = Self.epc
 
     comptime swizzle_width = Self.c_swizzle.bytes() // size_of[Self.c_type]()
-    comptime stage_contiguous_size = Self.c_smem_dim1  # Now direct access
+    comptime stage_contiguous_size = Self.c_smem_dim1
     comptime data_paths = 16
     comptime swizzle = _make_swizzle[Self.c_type, Self.c_swizzle]()
 
@@ -1322,7 +1344,7 @@ struct TMEMToSMemWriter[
         - Small swizzle (SWIZZLE_32B): each warp fragment fits within its own
           swizzle block, using simple tiles_per_frag tiling.
         """
-        from layout._coord import Coord, Idx
+        from layout import Coord, Idx
 
         # SWIZZLE_128B: swizzle_width=64 > data_paths=16 → True
         # SWIZZLE_32B:  swizzle_width=16 == data_paths=16 → False
@@ -1439,7 +1461,7 @@ struct TMEMToSMemWriter[
         c_smem_tile: TileTensor[address_space = AddressSpace.SHARED, ...],
     ):
         """Non-transposed output."""
-        from layout._coord import Coord, Idx
+        from layout import Coord, Idx
 
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
         var c_smem_warp_tile = c_smem_tile.tile[c_smem_tile_m, Self.stageN](
@@ -1465,8 +1487,8 @@ struct TMEMToSMemWriter[
 # =============================================================================
 # Imports for IndexList
 # =============================================================================
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 from layout.layout import coalesce, flatten
 
 
@@ -1484,22 +1506,25 @@ struct SMemEpilogueWriter[
     c_smem_dim0: Int,
     c_smem_dim1: Int,
     epilogue_dtype: DType,
-    BM: Int,
-    BN: Int,
-    MMA_M: Int,
-    MMA_N: Int,
-    cta_group: Int,
+    epc: EpilogueConfig,
     num_output_warps: Int,
     c_swizzle: TensorMapSwizzle,
-    transpose_c: Bool,
-    is_lower_frag_required: Bool,
-    num_stages: Int,
     simd_size: Int,
     stage: Int,
     rep_frag_size: Int,
     compute_lambda_fn: elementwise_compute_lambda_type,
 ](TrivialRegisterPassable):
     """SMEM-based epilogue: write accumulators and apply lambda in SMEM."""
+
+    # Local aliases from EpilogueConfig
+    comptime BM = Self.epc.BM
+    comptime BN = Self.epc.BN
+    comptime MMA_M = Self.epc.MMA_M
+    comptime MMA_N = Self.epc.MMA_N
+    comptime cta_group = Self.epc.cta_group
+    comptime transpose_c = Self.epc.transpose_c
+    comptime is_lower_frag_required = Self.epc.is_lower_frag_required
+    comptime num_stages = Self.epc.num_stages
 
     # Create layout from dimensions
     comptime c_smem_layout = Layout.row_major(

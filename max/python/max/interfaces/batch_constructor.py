@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines protocols and type variables for constructing batches of pipeline inputs."""
+
 from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 from max.interfaces import PipelineInputs
@@ -20,8 +22,8 @@ BatchConstructorType = TypeVar(
 )
 """Type variable for batch constructor input types.
 
-This covariant TypeVar is bound to PipelineInputs, ensuring that any type used 
-with this variable must be a subtype of PipelineInputs. The covariant nature 
+This covariant TypeVar is bound to PipelineInputs, ensuring that any type used
+with this variable must be a subtype of PipelineInputs. The covariant nature
 allows for safe substitution of more specific batch types in contexts where
 more general types are expected.
 
@@ -29,8 +31,8 @@ Bounds:
     PipelineInputs: All types must be subtypes of the PipelineInputs base class
 
 Variance:
-    Covariant: Allows BatchConstructor[SpecificInputs] to be used where 
-    BatchConstructor[PipelineInputs] is expected, provided SpecificInputs 
+    Covariant: Allows BatchConstructor[SpecificInputs] to be used where
+    BatchConstructor[PipelineInputs] is expected, provided SpecificInputs
     is a subtype of PipelineInputs.
 """
 

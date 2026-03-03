@@ -17,12 +17,14 @@ import functools
 import logging
 import multiprocessing
 import queue
+import signal
 import threading
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
+from typing import Any
 
 import prometheus_client
 from max.serve.config import MetricLevel, MetricRecordingMethod, Settings
@@ -194,8 +196,20 @@ def process_telemetry(
     commit_fn: TelemetryFn,
 ) -> None:
     """Long running function to read from a queue & process each element"""
+    should_exit = False
+
+    def signal_handler(*_args: Any) -> None:
+        nonlocal should_exit
+        should_exit = True
+
+    # Maybe shocking, but SIGINT / SIGTERM do NOT interrupt queue.get()
+    # So we need our own signal handler to avoid deadlock bugs on shutdown
+    # Eventually, want to pivot to asyncio queue apis and drop these hacks
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
     try:
-        while True:
+        while not should_exit:
             alive.set()
 
             try:

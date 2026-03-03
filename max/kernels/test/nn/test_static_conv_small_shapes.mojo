@@ -13,8 +13,8 @@
 
 # Use `kgen --emit=asm %s -o %t.asm` to exam the assembly code.
 
-from math import ceildiv
-from sys.info import simd_width_of
+from std.math import ceildiv
+from std.sys.info import simd_width_of
 
 from layout import IntTuple, LayoutTensor, Layout, RuntimeLayout
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
@@ -24,7 +24,7 @@ from nn.conv_utils import (
     get_micro_kernel_shape,
 )
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime N = 1
 comptime H = 14
@@ -113,7 +113,7 @@ fn static_conv(
 
 
 # CHECK-LABEL: test_static_conv
-def test_static_conv():
+def test_static_conv() raises:
     print("== test_static_conv")
 
     var output_stack = InlineArray[Scalar[value_type], N * HO * WO * F](
@@ -142,5 +142,5 @@ def test_static_conv():
     print(output[0, 0, 0, 0])
 
 
-def main():
+def main() raises:
     test_static_conv()

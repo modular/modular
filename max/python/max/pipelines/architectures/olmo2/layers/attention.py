@@ -30,7 +30,6 @@ from max.nn.kernels import (
 from max.nn.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
-    uses_opaque,
 )
 from max.nn.layer import Module
 from max.nn.linear import Linear
@@ -93,12 +92,6 @@ class Olmo2Attention(Module):
         )
 
         self.qk_norm_eps = rms_norm_eps
-
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
 
         # OLMo2: RMSNorm on full projection dimension
         self.q_norm = RMSNorm(

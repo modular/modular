@@ -16,6 +16,7 @@ import copy
 import csv
 import functools
 import glob
+import json
 import logging
 import math
 import os
@@ -1256,6 +1257,8 @@ class Scheduler:
         num_invalid_specs = len(invalid_specs)
         num_valid_specs = len(valid_specs)
 
+        # Build structured failure records for all invalid specs
+        failure_records = []
         if num_invalid_specs:
             output_lines += [utils.LINE]
             output_lines += [
@@ -1265,6 +1268,21 @@ class Scheduler:
             for idx in invalid_specs:
                 s = bi_list[idx].spec_instance
                 build_output = bi_list[idx].build_output
+                # Determine failure type
+                if (
+                    build_output.return_code != os.EX_OK
+                    and not bi_list[idx].bin_path
+                ):
+                    failure_type = "build"
+                else:
+                    failure_type = "execution"
+                failure_records.append(
+                    {
+                        "mesh_idx": idx,
+                        "params": s.to_obj(),
+                        "failure_type": failure_type,
+                    }
+                )
                 # check build failure
                 if build_output.stdout or build_output.stderr:
                     output_lines += [utils.LINE]
@@ -1340,6 +1358,22 @@ class Scheduler:
 
             with open(txt_path, "w") as f:
                 f.write(output_str + "\n")
+
+            # Write structured failure data for downstream reporting
+            failures_json_path = output_path.with_suffix(
+                output_suffix + ".failures.json"
+            )
+            failures_data = {
+                "spec_name": spec.name,
+                "spec_file": str(spec.file),
+                "num_valid": num_valid_specs,
+                "num_total": len(spec),
+                "failures": failure_records,
+            }
+            with open(failures_json_path, "w") as f:
+                json.dump(failures_data, f, indent=2, default=str)
+
             logging.info(f"wrote results to [{txt_path}]")
             logging.info(f"wrote results to [{csv_path}]")
             logging.info(f"wrote results to [{pkl_path}]")
+            logging.info(f"wrote results to [{failures_json_path}]")

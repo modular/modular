@@ -21,7 +21,7 @@ struct ValidationError(Copyable, Writable):
         writer.write("ValidationError(", self.field, "): ", self.reason)
 
 
-def validate_with_error(value: Int) -> Int:
+def validate_with_error(value: Int) raises -> Int:
     if value < 0:
         raise "value cannot be negative"
     return value
@@ -46,7 +46,7 @@ fn validate_bare_raises(value: Int) raises -> Int:
     return validate_typed(value)
 
 
-def main():
+def main() raises:
     # Pattern 1: Wrapping Error into typed errors
     print("--- Wrapping Error into typed errors ---")
     try:

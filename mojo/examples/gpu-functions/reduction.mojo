@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os.atomic import Atomic
-from random import randint
-from sys import has_accelerator, size_of
+from std.math import ceildiv
+from std.os.atomic import Atomic
+from std.random import randint
+from std.sys import has_accelerator, size_of
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -24,14 +24,14 @@ from benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from bit import log2_floor
-from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
-from gpu.primitives import warp
-from gpu.globals import WARP_SIZE
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.memory import AddressSpace
-from memory import stack_allocation
-from testing import assert_equal
+from std.bit import log2_floor
+from std.gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
+from std.gpu.primitives import warp
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
+from std.testing import assert_equal
 
 # Initialize parameters
 # To achieve high bandwidth increase SIZE to large value
@@ -130,7 +130,7 @@ fn sum_kernel_benchmark(
     b.iter_custom[kernel_launch_sum](bench_ctx)
 
 
-def main():
+def main() raises:
     comptime assert has_accelerator(), "This example requires a supported GPU"
 
     with DeviceContext() as ctx:

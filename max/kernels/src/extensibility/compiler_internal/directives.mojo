@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from sys import align_of
+from std.collections import OptionalReg
+from std.sys import align_of
 
 from buffer.dimlist import DimList
 from layout import IntTuple, Layout
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn __mogg_intrinsic_attr(intrin: StaticString):
@@ -55,7 +55,7 @@ fn _row_major_strides[rank: Int](shape: DimList) -> DimList:
 struct StaticTensorSpec[
     dtype: DType,
     rank: Int,
-](TrivialRegisterPassable):
+](ImplicitlyCopyable):
     # Represents the DimList type (not accessible from KGEN tests).
     comptime in_lambda_t = fn[simd_width: Int, element_alignment: Int = 1](
         IndexList[Self.rank]

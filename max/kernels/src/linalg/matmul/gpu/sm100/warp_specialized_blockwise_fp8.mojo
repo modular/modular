@@ -11,40 +11,40 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import align_up, ceildiv, gcd
-from sys import size_of
+from std.collections import OptionalReg
+from std.math import align_up, ceildiv, gcd
+from std.sys import size_of
 
-from bit import next_power_of_two, prev_power_of_two
+from std.bit import next_power_of_two, prev_power_of_two
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import (
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from gpu.compute.mma import st_matrix
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.sync import (
+from std.gpu.compute.mma import st_matrix
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -70,9 +70,9 @@ from layout.tma_async import (
     create_tma_tile,
 )
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_epilogue_type
@@ -200,13 +200,13 @@ fn load_AB[
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
 
-    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-        a_tma_rows
-    ) + work_tile_coord[0] * UInt(BM)
+    var a_gmem_slice_coord = (
+        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+    )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1] * UInt(MMA_N)
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1]) * MMA_N
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -228,14 +228,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), a_gmem_slice_coord),
+            (Int(iter_idx) * BK, a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), b_gmem_slice_coord),
+            (Int(iter_idx) * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -368,8 +368,8 @@ fn multi_stage_reg_epilogue[
 
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
         var cg1_coord_n = coord_n_mma_m256
-        var coord_n = cg2_coord_n if cta_group == 2 else cg1_coord_n
-        var coord_m = c_coord[0] * UInt(BM)
+        var coord_n = Int(cg2_coord_n if cta_group == 2 else cg1_coord_n)
+        var coord_m = Int(c_coord[0] * UInt(BM))
 
         var cg2_c_smem_coord_m = 0 if MMA_M == 256 else (warp_id // 2)
         var cg1_c_smem_coord_m = UInt(0)

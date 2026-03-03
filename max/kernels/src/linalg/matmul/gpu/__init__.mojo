@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_down, ceildiv
-from sys import (
+from std.math import align_down, ceildiv
+from std.sys import (
     align_of,
     env_get_bool,
     env_get_int,
@@ -23,23 +23,23 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
-from algorithm.functional import elementwise, tile_and_unswitch
+from std.algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host.info import A100, B200, H100, MI355X, GPUInfo
+from std.gpu import barrier, block_dim, global_idx, thread_idx
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import LayoutTensor, RuntimeLayout
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
-from logger import Logger
-from memory import bitcast, stack_allocation
-from utils import Index, IndexList
-from utils.numerics import get_accum_type
+from std.logger import Logger
+from std.memory import bitcast, stack_allocation
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 from ...gemv import gemv_gpu
 from ...utils import (
@@ -61,7 +61,6 @@ from ._multistage_gemm_gpu import (
 )
 from .amd import gemm_kernel_amd
 from .amd_rdna import gemm_kernel_rdna
-from .amd.pingpong_kernel import AMDPingPongMatmul, KernelConfig
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
 from .sm100_structured.default.dispatch import matmul_dispatch_sm100
@@ -170,9 +169,7 @@ fn matmul_kernel[
 
         barrier()
 
-    tile_and_unswitch[update_tile](
-        0, k, VariadicList[Int](tile_size, K_remainder)
-    )
+    tile_and_unswitch[update_tile](0, k, tile_size, K_remainder)
 
     if row < UInt(m) and col < UInt(n):
         comptime if elementwise_lambda_fn:
@@ -904,93 +901,32 @@ fn multistage_gemm[
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):
+        logger.info("Executing: AMD standard GEMM (no split-K)")
+        comptime gemm_kernel_type = gemm_kernel_amd[
+            c_type,
+            tensor_c.layout,
+            a_type,
+            tensor_a.layout,
+            b_type,
+            tensor_b.layout,
+            transpose_b,
+            tensor_c.layout_int_type,
+            tensor_a.layout_int_type,
+            tensor_b.layout_int_type,
+            tensor_c.linear_idx_type,
+            tensor_a.linear_idx_type,
+            tensor_b.linear_idx_type,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ]
 
-        @parameter
-        if a_type.is_float8():
-            comptime pingpong_config = KernelConfig(
-                block_shape=Index(256, 256, 128),
-                warp_shape=Index(128, 64, 128),
-                mma_shape=Index(16, 16, 128),
-            )
-            comptime pingpong_kernel = AMDPingPongMatmul[
-                a_type,
-                b_type,
-                c_type,
-                tensor_a.layout,
-                tensor_b.layout,
-                tensor_c.layout,
-                pingpong_config,
-                enable_swizzle=True,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong
-
-            comptime standard_kernel = gemm_kernel_amd[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                transpose_b,
-                tensor_c.layout_int_type,
-                tensor_a.layout_int_type,
-                tensor_b.layout_int_type,
-                tensor_c.linear_idx_type,
-                tensor_a.linear_idx_type,
-                tensor_b.linear_idx_type,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-
-            # TODO: Improve the performance of the ping-pong kernel for small M values
-            if M < 512:
-                logger.info("Executing: AMD standard GEMM (no split-K)")
-                ctx.enqueue_function[standard_kernel, standard_kernel](
-                    tensor_c,
-                    tensor_a,
-                    tensor_b,
-                    grid_dim=config.grid_dim(UInt(M), UInt(N)),
-                    block_dim=config.block_dim(),
-                )
-            else:
-                logger.info("Executing: AMD ping-pong matmul (no split-K)")
-                ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
-                    tensor_a,
-                    tensor_b,
-                    tensor_c,
-                    grid_dim=(
-                        ceildiv(N, pingpong_config.block_shape[1]),
-                        ceildiv(M, pingpong_config.block_shape[0]),
-                    ),
-                    block_dim=pingpong_config.num_threads(),
-                )
-        else:
-            logger.info("Executing: AMD standard GEMM (no split-K)")
-            comptime gemm_kernel_type = gemm_kernel_amd[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                transpose_b,
-                tensor_c.layout_int_type,
-                tensor_a.layout_int_type,
-                tensor_b.layout_int_type,
-                tensor_c.linear_idx_type,
-                tensor_a.linear_idx_type,
-                tensor_b.linear_idx_type,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-
-            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
-                tensor_c,
-                tensor_a,
-                tensor_b,
-                grid_dim=config.grid_dim(UInt(M), UInt(N)),
-                block_dim=config.block_dim(),
-            )
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+            tensor_c,
+            tensor_a,
+            tensor_b,
+            grid_dim=config.grid_dim(UInt(M), UInt(N)),
+            block_dim=config.block_dim(),
+        )
 
     else:
         logger.info("Executing: standard GEMM (no split-K)")
@@ -1128,92 +1064,31 @@ fn multistage_gemm[
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):
-
-        @parameter
-        if a_type.is_float8():
-            comptime pingpong_config = KernelConfig(
-                block_shape=Index(256, 256, 128),
-                warp_shape=Index(128, 64, 128),
-                mma_shape=Index(16, 16, 128),
-            )
-            comptime pingpong_kernel = AMDPingPongMatmul[
-                a_type,
-                b_type,
-                c_type,
-                tensor_a.layout,
-                tensor_b.layout,
-                tensor_c.layout,
-                pingpong_config,
-                enable_swizzle=True,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong
-
-            comptime standard_kernel = gemm_kernel_amd[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                transpose_b,
-                tensor_c.layout_int_type,
-                tensor_a.layout_int_type,
-                tensor_b.layout_int_type,
-                tensor_c.linear_idx_type,
-                tensor_a.linear_idx_type,
-                tensor_b.linear_idx_type,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-
-            # TODO: Improve the performance of the ping-pong kernel for small M values
-            if M < 512:
-                logger.info("Executing: AMD standard GEMM (no split-K)")
-                ctx.enqueue_function[standard_kernel, standard_kernel](
-                    tensor_c,
-                    tensor_a,
-                    tensor_b,
-                    grid_dim=config.grid_dim(UInt(M), UInt(N)),
-                    block_dim=config.block_dim(),
-                )
-            else:
-                logger.info("Executing: AMD ping-pong matmul (no split-K)")
-                ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
-                    tensor_a,
-                    tensor_b,
-                    tensor_c,
-                    grid_dim=(
-                        ceildiv(N, pingpong_config.block_shape[1]),
-                        ceildiv(M, pingpong_config.block_shape[0]),
-                    ),
-                    block_dim=pingpong_config.num_threads(),
-                )
-        else:
-            logger.info("Executing: AMD standard GEMM (no split-K)")
-            comptime gemm_kernel_type = gemm_kernel_amd[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                transpose_b,
-                tensor_c.layout_int_type,
-                tensor_a.layout_int_type,
-                tensor_b.layout_int_type,
-                tensor_c.linear_idx_type,
-                tensor_a.linear_idx_type,
-                tensor_b.linear_idx_type,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
-                tensor_c,
-                tensor_a,
-                tensor_b,
-                grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
-                block_dim=runtime_config.block_dim(),
-            )
+        logger.info("Executing: AMD standard GEMM (no split-K)")
+        comptime gemm_kernel_type = gemm_kernel_amd[
+            c_type,
+            tensor_c.layout,
+            a_type,
+            tensor_a.layout,
+            b_type,
+            tensor_b.layout,
+            transpose_b,
+            tensor_c.layout_int_type,
+            tensor_a.layout_int_type,
+            tensor_b.layout_int_type,
+            tensor_c.linear_idx_type,
+            tensor_a.linear_idx_type,
+            tensor_b.linear_idx_type,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ]
+        ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+            tensor_c,
+            tensor_a,
+            tensor_b,
+            grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
+            block_dim=runtime_config.block_dim(),
+        )
 
     else:
         logger.info("Executing: standard GEMM (no split-K)")

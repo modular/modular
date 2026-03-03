@@ -30,20 +30,20 @@ constants.
 
 To define a *parameterized function*, add parameters in square brackets ahead
 of the argument list. Each parameter is formatted just like an argument: a
-parameter name, followed by a colon and a type (which is required). In the
+parameter name, followed by a colon and a type. In the
 following example, the function has a single parameter, `count` of type `Int`.
 
 ```mojo
 fn repeat[count: Int](msg: String):
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         print(msg)
 ```
 
-The [`@parameter`](/mojo/manual/decorators/parameter) decorator shown here
-causes the `for` loop to be evaluated at compile time. The decorator only works
-if the loop limits are compile-time constants. Since `count` is a parameter,
-`range(count)` can be calculated at compile time.
+The [`comptime`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-for)
+keyword shown here
+causes the `for` loop to be fully unrolled at compile time. The `comptime for`
+requires the loop limits to be known at compile time. Since `count` is a
+parameter, `range(count)` can be calculated at compile time.
 
 Calling a parameterized function, you provide values for the parameters, just
 like function arguments:
@@ -100,7 +100,7 @@ def my_sort[
     values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: fn(Scalar[dtype], Scalar[dtype]) -> Int,
+    compare: fn(Scalar[dtype], Scalar[dtype]) raises -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,
@@ -144,12 +144,11 @@ conforms to the [`Writable`](/mojo/std/format/Writable) trait:
 
 ```mojo
 fn repeat[MsgType: Writable, //, count: Int](msg: MsgType):
-    @parameter
-    for i in range(count):
+    comptime for i in range(count):
         print(msg)
 
 
-def main():
+def main() raises:
     # MsgType is always inferred, so first positional keyword `2` is
     # passed to `count`
     repeat[2](42)
@@ -160,7 +159,7 @@ def main():
 42
 ```
 
-This updated function takes any `Stringable` type, so you can pass it an `Int`,
+This updated function takes any `Writable` type, so you can pass it an `Int`,
 `String`, or `Bool` value.
 
 Note that there's a double-slash (`//`) in the parameter list after `MsgType`,
@@ -170,9 +169,8 @@ argument is an `Int` and *infers* the type from the value.
 
 Mojo's support for generics is still early. You can write generic functions like
 this using traits and parameters. You can also write generic collections like
-`List` and `Dict`. If you're interested in learning how these types work, you
-can find the source code for the standard library collection types
-[on GitHub](https://github.com/modular/modular/blob/main/mojo/stdlib/std/collections/).
+`List` and `Dict`. For more information, see the section on
+[generics](/mojo/manual/generics/generics/).
 
 ## Parameterized structs
 
@@ -294,7 +292,7 @@ that holds instances of a type that conforms to the
 [`Copyable`](/mojo/std/builtin/value/Copyable) trait. This imposes a lot
 of limitations: you can't implement a `sort()` method because you can't
 guarantee that the stored type supports the comparison operators; you can't
-write a useful `__str__()` or `__repr__()` dunder method because you can't
+write a useful `write_to()` or `write_repr_to()` method because you can't
 guarantee that the stored type supports conversion to a string.
 
 The answer to these issues is *conditional conformance*, which lets you define a
@@ -303,7 +301,7 @@ value that has a more specific bound on one or more of its parameters.
 
 For example, the following code defines a `Container` type that holds an
 instance of a type conforming to `Movable`. It also defines a
-`__str__()` method that can only be called if the stored `ElementType` conforms
+`write_to()` method that can only be called if the stored `ElementType` conforms
 to `Writable` as well as `Movable`:
 
 ```mojo
@@ -311,17 +309,23 @@ to `Writable` as well as `Movable`:
 struct Container[ElementType: Movable & ImplicitlyDestructible]:
     var element: Self.ElementType
 
-    def __str__[
+    def write_to[
         StrElementType: Writable & Movable, //
-    ](self: Container[StrElementType]) -> String:
-        return String(self.element)
+    ](self: Container[StrElementType], mut writer: Some[Writer]):
+      self.element.write_to(writer)
 
 
-def main():
+def main() raises:
     float_container = Container(5.0)
     string_container = Container("Hello")
-    print(float_container.__str__())
-    print(string_container.__str__())
+
+    var string = String()
+    float_container.write_to(string)
+    print(string)
+
+    string = {}
+    string_container.write_to(string)
+    print(string)
 ```
 
 ```output
@@ -329,14 +333,14 @@ def main():
 Hello
 ```
 
-Note the signature of the `__str__()` method, which declares the `self` argument
+Note the signature of the `write_to()` method, which declares the `self` argument
 with a more specific type. Specifically, it declares that it takes a `Container`
 with an `ElementType` that conforms to the `Writable` and `Movable`
 traits.
 
 ```mojo
-def __str__[StrElementType: Writable & Movable, //](
-        self: Container[StrElementType]) -> String:
+def write_to[StrElementType: Writable & Movable, //](
+        self: Container[StrElementType], mut writer: Some[Writer]):
 ```
 
 The trait bound on `StrElementType` must include `ElementType`'s original trait
@@ -344,18 +348,19 @@ The trait bound on `StrElementType` must include `ElementType`'s original trait
 composition `Writable & Movable` includes the original trait. You could also use
 a trait that inherits from `Movable`.
 
-Note that the `main()` function calls the `__str__()` method directly,
+Note that the `main()` function calls the `write_to()` method directly,
 rather than calling `String(float_container)`. One current limitation of
 conditional conformance is that Mojo can't recognize the struct
-`Container[Int]` as conforming to `Stringable`, even though the `__str__()`
-method is implemented for any `ElementType` that's also `Stringable`.
+`Container[Int]` as conforming to `Writable`, even though the `write_to()`
+method is implemented for any `ElementType` that's also `Writable`.
 
 ### Case study: the SIMD type
 
 For a real-world example of a parameterized type, let's look at the
 [`SIMD`](/mojo/std/builtin/simd/SIMD) type from Mojo's standard library.
 
-[Single instruction, multiple data (SIMD)](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) is a parallel processing technology built into many modern CPUs,
+[Single instruction, multiple data (SIMD)](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data)
+is a parallel processing technology built into many modern CPUs,
 GPUs, and custom accelerators. SIMD allows you to perform a single operation on
 multiple pieces of data at once. For example, if you want to take the square
 root of each element in an array, you can use SIMD to parallelize the work.
@@ -433,7 +438,7 @@ specifies the data type and `size` specifies the length of the SIMD vector (it
 must be a power of 2):
 
 ```mojo
-def main():
+def main() raises:
     # Make a vector of 4 floats.
     var small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 
@@ -474,12 +479,12 @@ values). For example, here's how to define a parametric algorithm with `Scalar`
 that is datatype agnostic:
 
 ```mojo
-from math import sqrt
+from std.math import sqrt
 
 fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
-def main():
+def main() raises:
     var v = Scalar[DType.float16](42)
     print(rsqrt(v))
 ```
@@ -500,12 +505,12 @@ to specify them. For example, you can call the `rsqrt()` function defined above
 without specifying the `dt` parameter:
 
 ```mojo
-from math import sqrt
+from std.math import sqrt
 
 fn rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
-def main():
+def main() raises:
     var v = Scalar[DType.float16](33)
     print(rsqrt(v))
 ```
@@ -554,7 +559,7 @@ struct One[Type: Writable & Copyable]:
         self.value = value.copy()
 
 
-def use_one():
+def use_one() raises:
     s1 = One(123)  # equivalent to One[Int](123)
     s2 = One("Hello")  # equivalent to One[String]("Hello")
 ```
@@ -579,7 +584,7 @@ struct Two[Type: Writable & Copyable]:
     fn fire(thing1: One[Self.Type], thing2: One[Self.Type]):
         print("🔥", String(thing1.value), String(thing2.value))
 
-def use_two():
+def use_two() raises:
     s3 = Two(One("infer"), One("me"))
     Two.fire(One(1), One(2))
     # Two.fire(One("mixed"), One(0)) # Error: parameter inferred to two
@@ -709,9 +714,10 @@ you can't leave it out of the parameter list and let Mojo infer it from `value`:
 dependent_type[Float64(2.2)]() # Error!
 ```
 
-Infer-only parameters are a special class of parameters that are **always** either
-inferred from context or specified by keyword. Infer-only parameters are placed at the
-**beginning** of the parameter list, set off from other parameters by the `//` sigil:
+Infer-only parameters are a special class of parameters that are **always**
+either inferred from context or specified by keyword. Infer-only parameters are
+placed at the **beginning** of the parameter list, set off from other parameters
+by the `//` sigil:
 
 ```mojo
 fn example[type: Copyable, //, list: List[type]]()
@@ -751,7 +757,7 @@ create an instance of `Span`. Binding the `mut` parameter by keyword lets you
 define a `Span` that requires a mutable origin.
 
 ```mojo
-def mutate_span(span: Span[mut=True, Byte]):
+def mutate_span(span: Span[mut=True, Byte]) raises:
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
             span.swap_elements(i, i + 1)
@@ -770,19 +776,20 @@ struct MyTensor[*dimensions: Int]:
     pass
 ```
 
-Variadic parameters currently have some limitations that variadic arguments don't have:
+Variadic parameters currently have some limitations that variadic arguments
+don't have:
 
 - Variadic parameters must be homogeneous—that is, all the values must be the
   same type.
 
 - The parameter type must be register-passable.
 
-- The parameter values aren't automatically projected into a `VariadicList`, so you
-  need to construct the list explicitly:
+- The parameter values aren't automatically projected into a
+  `VariadicParamList`, so you need to construct the list explicitly:
 
 ```mojo
 fn sum_params[*values: Int]() -> Int:
-    comptime list = VariadicList(values)
+    comptime list = VariadicParamList(values)
     var sum = 0
     for v in list:
         sum += v
@@ -813,12 +820,10 @@ fn concat[
 ]:
     var result = SIMD[dtype, ls_size + rh_size]()
 
-    @parameter
-    for i in range(ls_size):
+    comptime for i in range(ls_size):
         result[i] = lhs[i]
 
-    @parameter
-    for j in range(rh_size):
+    comptime for j in range(rh_size):
         result[ls_size + j] = rhs[j]
     return result
 ```
@@ -849,8 +854,7 @@ fn slice[
 
 
 fn reduce_add(x: SIMD) -> Int:
-    @parameter
-    if x.size == 1:
+    comptime if x.size == 1:
         return Int(x[0])
     elif x.size == 2:
         return Int(x[0]) + Int(x[1])
@@ -862,7 +866,7 @@ fn reduce_add(x: SIMD) -> Int:
     return reduce_add(lhs + rhs)
 
 
-def main():
+def main() raises:
     var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))
@@ -873,11 +877,12 @@ def main():
 Elements sum: 10
 ```
 
-This makes use of the [`@parameter`](/mojo/manual/decorators/parameter) decorator to
-create a parametric if condition, which is an `if` statement that runs at compile-time.
-It requires that its condition be a valid parameter expression, and ensures that only
-the live branch of the `if` statement is compiled into the program. (This is similar to
-use of the `@parameter` decorator with a `for` loop shown earlier.)
+This makes use of the
+[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+statement, which is an `if` statement that runs at compile-time. It requires
+that its condition be a valid parameter expression, and ensures that only the
+live branch of the `if` statement is compiled into the program. This is similar
+to use of the `comptime for` loop shown earlier.
 
 ## `comptime`: named parameter expressions
 
@@ -980,7 +985,7 @@ on.
 You can also define `comptime` values as members of a `struct` or `trait`
 declaration:
 
-```
+```mojo
 struct Circle[radius: Float64]:
     comptime pi = 3.14159265359
     comptime circumference = 2 * Self.pi * Self.radius
@@ -1323,11 +1328,9 @@ For example, suppose we have a `Fudge` struct with three parameters:
 
 ```mojo
 @fieldwise_init
-struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
-    fn __str__(self) -> String:
-        return String.write(
-            "Fudge (", Self.sugar, ",", Self.cream, ",", Self.chocolate, ")"
-        )
+struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Writable):
+    fn write_to(self, mut writer: Some[Writer]):
+      t"Fudge ({Self.sugar},{Self.cream},{Self.chocolate})".write_to(writer)
 ```
 
 We can write a function that takes a `Fudge` argument with just one bound
@@ -1426,7 +1429,6 @@ fn nibble(f: Fudge[5]):
     print("Ate", String(f))
 
 nibble(Fudge[5, 4, 7]())
-
 ```
 
 ```output
@@ -1466,8 +1468,7 @@ fn take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
-    @parameter
-    if nelts == 8:
+    comptime if nelts == 8:
         take_simd8(x)
 ```
 
@@ -1491,7 +1492,6 @@ fn take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
-    @parameter
-    if nelts == 8:
+    comptime if nelts == 8:
         take_simd8(rebind[SIMD[DType.float32, 8]](x))
 ```

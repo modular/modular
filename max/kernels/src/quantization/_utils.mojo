@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.info import CompilationTarget, simd_width_of
-from sys.intrinsics import llvm_intrinsic
+from std.sys.info import CompilationTarget, simd_width_of
+from std.sys.intrinsics import llvm_intrinsic
 
 
 @always_inline

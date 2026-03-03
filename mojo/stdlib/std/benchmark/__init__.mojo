@@ -20,8 +20,8 @@ and total time statistics across multiple runs.
 You can import these APIs from the `benchmark` package. For example:
 
 ```mojo
-import benchmark
-from time import sleep
+import std.benchmark
+from std.time import sleep
 ```
 
 You can pass any `fn` as a parameter into `benchmark.run[...]()`, it will return
@@ -99,7 +99,7 @@ If you want to use a different time unit you can bring in the Unit and pass
 it in as an argument:
 
 ```mojo
-from benchmark import Unit
+from std.benchmark import Unit
 
 report.print(Unit.ms)
 ```

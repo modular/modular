@@ -22,9 +22,9 @@ from layout.layout import (
 )
 from layout.layout_tensor import _compute_distribute_layout
 from layout.swizzle import Swizzle, make_swizzle
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
 fn print_swizzle(thread_layout: Layout, swizzle: Swizzle):
@@ -286,6 +286,6 @@ fn test_swizzle_gemm_store() raises:
     assert_equal(wfs_swizzle_smem_to_gmem_bf16.excess_wavefronts(), 0)
 
 
-def main():
+def main() raises:
     test_swizzle_basic()
     test_swizzle_gemm_store()

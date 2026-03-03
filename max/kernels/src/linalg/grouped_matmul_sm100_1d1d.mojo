@@ -11,46 +11,46 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from memory import LegacyUnsafePointer as UnsafePointer
-from sys import align_of, simd_width_of, size_of
+from std.math import align_up, ceildiv
+from std.memory import LegacyUnsafePointer as UnsafePointer
+from std.sys import align_of, simd_width_of, size_of
 
-from gpu import WARP_SIZE
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu import block_id_in_cluster, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import (
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu import block_id_in_cluster, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from gpu.primitives.grid_controls import (
+from std.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
     PDLLevel,
     wait_on_dependent_grids,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import (
+from std.gpu.compute.arch.mma_nvidia_sm100 import (
     mma_arrive,
     mma_arrive_multicast,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -76,8 +76,8 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.utils import elementwise_compute_lambda_type
@@ -104,7 +104,7 @@ from linalg.matmul.gpu.sm100.matmul import (
     register_epilogue,
     accum_arrive,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 from internal_utils import ufloordiv
 
@@ -390,8 +390,8 @@ fn copy_accum_to_gmem[
                         c_tma_op.async_store(
                             c_smem_warp_tile,
                             (
-                                UInt(coord_m + UInt32(i * swizzle_width)),
-                                UInt(coord_n),
+                                Int(coord_m + UInt32(i * swizzle_width)),
+                                Int(coord_n),
                             ),
                         )
                     c_tma_op.commit_group()
@@ -542,8 +542,8 @@ fn copy_accum_to_gmem[
                     c_tma_op.async_store(
                         c_smem_split,
                         (
-                            UInt(coord_n),
-                            UInt(coord_m),
+                            Int(coord_n),
+                            Int(coord_m),
                         ),
                     )
                     c_tma_op.commit_group()
@@ -859,18 +859,15 @@ fn load_AB[
 
     var stage = load_mma_pipeline.producer_stage()
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
-    var expert_offset_vec = UInt(expert_id) * UInt(scheduler.static_MN)
-    comptime assert expert_offset_vec.size == 1
-    var a_gmem_slice_coord = (
+    var expert_offset: Int = Int(expert_id) * scheduler.static_MN
+    var a_gmem_slice_coord = Int(
         peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
-    ) + (expert_offset_vec if config.AB_swapped else 0)
-    var b_gmem_slice_coord_vec = (
+    ) + (expert_offset if config.AB_swapped else 0)
+    var b_gmem_slice_coord: Int = Int(
         peer_cta_coord[1] * UInt(b_tma_rows)
         + peer_cta_coord[0] * UInt(BN)
         + work_tile_coord[1]
-    ) + (expert_offset_vec if not config.AB_swapped else 0)
-    comptime assert b_gmem_slice_coord_vec.size == 1
-    var b_gmem_slice_coord = b_gmem_slice_coord_vec[0]
+    ) + (expert_offset if not config.AB_swapped else 0)
 
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
@@ -896,14 +893,14 @@ fn load_AB[
             a_tma_op.async_multicast_load[cta_group](
                 a_smem_slice,
                 tma_mbar[0],
-                (UInt(iter_idx + j) * UInt(BK), a_gmem_slice_coord),
+                (Int(iter_idx + j) * BK, a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
             b_tma_op.async_multicast_load[cta_group](
                 b_smem_slice,
                 tma_mbar[0],
-                (UInt(iter_idx + j) * UInt(BK), UInt(b_gmem_slice_coord)),
+                (Int(iter_idx + j) * BK, b_gmem_slice_coord),
                 b_multicast_mask,
             )
 
@@ -912,13 +909,11 @@ fn load_AB[
             ]
             comptime assert group_scale_offset_vec.size == 1
             var group_scale_offset = group_scale_offset_vec[0]
-            comptime assert expert_offset_vec.size == 1
-            var expert_offset = expert_offset_vec[0]
             var a_m: Int
             var b_n: Int
             if config.AB_swapped:
                 a_m = ufloordiv(
-                    Int(work_tile_coord[0]) + Int(expert_offset),
+                    Int(work_tile_coord[0]) + expert_offset,
                     SF_MN_GROUP_SIZE,
                 )
                 b_n = ufloordiv(
@@ -929,7 +924,7 @@ fn load_AB[
                     Int(work_tile_coord[0]), SF_MN_GROUP_SIZE
                 ) + Int(group_scale_offset)
                 b_n = ufloordiv(
-                    Int(work_tile_coord[1]) + Int(expert_offset),
+                    Int(work_tile_coord[1]) + expert_offset,
                     SF_MN_GROUP_SIZE,
                 )
 

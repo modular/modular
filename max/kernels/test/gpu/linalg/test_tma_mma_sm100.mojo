@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
-from memory import LegacyUnsafePointer, bitcast
+from std.math import sqrt
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import size_of
+from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import WARP_SIZE, barrier
-from gpu import lane_id as get_lane_id
-from gpu.primitives.cluster import block_rank_in_cluster
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
-from gpu.memory import external_memory
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.arch.tcgen05 import *
+from std.gpu import WARP_SIZE, barrier
+from std.gpu import lane_id as get_lane_id
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
+from std.gpu.memory import external_memory
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
@@ -42,11 +42,11 @@ from layout.tma_async import (
     create_tensor_tile,
     create_tma_tile,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, max_finite, min_finite
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type, max_finite, min_finite
+from std.utils.static_tuple import StaticTuple
 
 
 fn cpu_matmul_naive[
@@ -642,7 +642,7 @@ def test_tma_umma[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
     cta_group: Int = 1,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -854,7 +854,7 @@ def test_tma_umma[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
             comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:

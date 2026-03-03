@@ -11,27 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import simd_width_of, size_of
+from std.math import ceildiv
+from std.sys import simd_width_of, size_of
 
-from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import lane_id
-from gpu.memory import fence_async_view_proxy
-from gpu.compute.mma import st_matrix
-from gpu.sync import named_barrier
+from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import lane_id
+from std.gpu.memory import fence_async_view_proxy
+from std.gpu.compute.mma import st_matrix
+from std.gpu.sync import named_barrier
 from layout import IntTuple, Layout, LayoutTensor
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout, RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle
 from layout.tensor_core_async import st_matrix_n_layout
 from layout.tma_async import TMATensorTile
-from memory import bitcast
+from std.memory import bitcast
 from std.bit import log2_floor
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
-from collections import OptionalReg
+from std.collections import OptionalReg
 from ....structuring import (
     SMemTile,
     RegTile,
@@ -44,7 +44,7 @@ from .tile_writer import (
     TileCoordinates,
     RegTileWriter,
 )
-import itertools
+import std.itertools
 
 
 struct MatmulTileWriter[

@@ -52,20 +52,20 @@ leading to the final output.
 """
 
 
-from math import exp
+from std.math import exp
 
 from compiler import register
-from gpu.host import DeviceContext
-from gpu import block_idx
-from gpu.memory import AddressSpace
-from gpu.sync import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx
+from std.gpu.memory import AddressSpace
+from std.gpu.sync import barrier
 from layout import Layout, LayoutTensor
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
-from utils import Index
+from std.utils import Index
 
 
 @register("modular_ops::fused_attention_custom")
@@ -358,7 +358,7 @@ def fused_attention_gpu[
     K: LayoutTensor,
     V: LayoutTensor,
     mut O: LayoutTensor,
-):
+) raises:
     comptime kernel_func = fused_attention_kernel[
         Q.dtype,
         Q.layout,

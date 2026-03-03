@@ -13,11 +13,9 @@
 
 
 @fieldwise_init
-struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
-    fn __str__(self) -> String:
-        return String.write(
-            "Fudge (", Self.sugar, ",", Self.cream, ",", Self.chocolate, ")"
-        )
+struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Writable):
+    fn write_to(self, mut writer: Some[Writer]):
+        t"Fudge ({Self.sugar}, {Self.cream}, {Self.chocolate})".write_to(writer)
 
 
 fn eat(f: Fudge[5, ...]):
@@ -36,7 +34,7 @@ fn nibble(f: Fudge[5]):
     print("Ate", String(f))
 
 
-def main():
+def main() raises:
     eat(Fudge[5, 5, 7]())
     eat(Fudge[5, 8, 9]())
     # eat(Fudge[12, 5, 7]()) # invalid call to 'eat': failed to infer implicit

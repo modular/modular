@@ -33,8 +33,8 @@ qwen3_embedding_arch = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": [],
-        "bfloat16": [],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=Qwen3EmbeddingModel,
     tokenizer=TextTokenizer,

@@ -31,7 +31,6 @@ from max.pipelines.lib.memory_estimation import (
     to_human_readable_bytes,
 )
 from max.pipelines.lib.pipeline_runtime_config import (
-    DEFAULT_MAX_BATCH_INPUT_TOKENS,
     PipelineRuntimeConfig,
 )
 from max.pipelines.lib.registry import (
@@ -49,7 +48,6 @@ from pydantic import (
 )
 from typing_extensions import Self, override
 
-from .config_enums import PipelineRole
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig
@@ -77,14 +75,6 @@ class PipelineConfig(ConfigFileModel):
     # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
     model_config = ConfigDict(extra="ignore")
 
-    pipeline_role: PipelineRole = Field(
-        default="prefill_and_decode",
-        description=(
-            "Whether the pipeline should serve both a prefill or decode role or "
-            "both."
-        ),
-    )
-
     max_batch_size: int | None = Field(
         default=None,
         description=(
@@ -96,65 +86,11 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
 
-    ep_size: int = Field(
-        default=1,
-        description=(
-            "The expert parallelism size. Needs to be 1 (no expert parallelism) "
-            "or the total number of GPUs across nodes."
-        ),
-    )
-
-    max_num_steps: int = Field(
-        default=-1,
-        description=(
-            "The number of steps to run for multi-step scheduling. -1 specifies "
-            "a default value based on configuration and platform. Ignored for "
-            "models which are not auto-regressive (e.g. embedding models)."
-        ),
-    )
-
-    max_batch_input_tokens: int = Field(
-        default=DEFAULT_MAX_BATCH_INPUT_TOKENS,
-        description=(
-            "The target number of un-encoded tokens to include in each batch. "
-            "This value is used for chunked prefill and memory estimation."
-        ),
-    )
-
-    max_batch_total_tokens: int | None = Field(
-        default=None,
-        description=(
-            "Ensures the sum of page-aligned context lengths in a batch does "
-            "not exceed max_batch_total_tokens. Alignment uses the KV cache "
-            "page size. If None, the sum is not limited."
-        ),
-    )
-
     debug_verify_replay: bool = Field(
         default=False,
         description=(
             "When device_graph_capture is enabled, execute eager launch-trace "
             "verification before replay. Intended for debugging only."
-        ),
-    )
-
-    enable_overlap_scheduler: bool = Field(
-        default=False,
-        description=(
-            "Whether to enable the overlap scheduler. This feature allows the scheduler "
-            "to run alongside GPU execution. This helps improve GPU utilization. "
-            "This is an experimental feature which may crash and burn. "
-            "This feature will be enabled by default for some selected architectures. "
-            "You can forcibly disable this by setting --no-enable-overlap-scheduler --force."
-        ),
-    )
-
-    prefer_module_v3: bool = Field(
-        default=False,
-        description=(
-            "Whether to prefer the ModuleV3 architecture (default=False for backward "
-            "compatibility). When False, tries the ModuleV2 architecture first and falls back "
-            "to ModuleV3. When True, tries ModuleV3 first and falls back to ModuleV2."
         ),
     )
 
@@ -665,10 +601,10 @@ class PipelineConfig(ConfigFileModel):
             return
 
         # Automatically enable overlap scheduling for select architectures.
-        if not self.enable_overlap_scheduler:
+        if not self.runtime.enable_overlap_scheduler:
             arch = PIPELINE_REGISTRY.retrieve_architecture(
                 huggingface_repo=self.model.huggingface_model_repo,
-                prefer_module_v3=self.prefer_module_v3,
+                prefer_module_v3=self.runtime.prefer_module_v3,
             )
             if (
                 arch is not None
@@ -677,30 +613,30 @@ class PipelineConfig(ConfigFileModel):
                     "LlamaForCausalLM",
                     "DeepseekV2ForCausalLM",
                     "DeepseekV3ForCausalLM",
-                    "DeepseekV3_2ForCausalLM",
+                    "DeepseekV32ForCausalLM",
                     "DeepseekV3ForCausalLMNextN",
                 )
-                and self.pipeline_role == "prefill_and_decode"
+                and self.runtime.pipeline_role == "prefill_and_decode"
                 and not self.sampling.enable_structured_output
                 and not self.sampling.enable_variable_logits
                 and not self.speculative
                 and not self.lora
                 and self.model.device_specs[0].device_type != "cpu"
             ):
-                self.enable_overlap_scheduler = True
-                self.max_num_steps = 1
+                self.runtime.enable_overlap_scheduler = True
+                self.runtime.max_num_steps = 1
                 logger.info(
                     f"Automatically enabling overlap scheduling for {arch.name} with max-num-steps=1. "
                     "You can manually disable this by setting --no-enable-overlap-scheduler --force."
                 )
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
-        if self.enable_overlap_scheduler:
-            if self.pipeline_role != "prefill_and_decode":
+        if self.runtime.enable_overlap_scheduler:
+            if self.runtime.pipeline_role != "prefill_and_decode":
                 raise ValueError(
                     "The Overlap scheduler does not support Disaggregated Inference yet. "
                     "It is only supported with the PrefillAndDecode pipeline role. "
-                    f"Found {self.pipeline_role}."
+                    f"Found {self.runtime.pipeline_role}."
                 )
             if self.sampling.enable_structured_output:
                 raise ValueError(
@@ -718,7 +654,7 @@ class PipelineConfig(ConfigFileModel):
                 raise ValueError(
                     "LoRA is not supported with the Overlap scheduler."
                 )
-            if self.max_num_steps > 1:
+            if self.runtime.max_num_steps > 1:
                 raise ValueError(
                     "Max num steps > 1 is not supported with the Overlap scheduler."
                 )
@@ -731,42 +667,35 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.device_graph_capture:
             return
 
-        # TODO(GENAI-363): Support device graph capture warmup with data
-        # parallelism by capturing per-replica inputs.
-        if self.model.data_parallel_degree > 1:
-            raise ValueError(
-                "device_graph_capture currently requires "
-                "data_parallel_degree=1."
-            )
         if self.max_batch_size is None:
             raise ValueError(
                 "device_graph_capture requires max_batch_size to be set."
             )
-        if not self.enable_overlap_scheduler:
+        if not self.runtime.enable_overlap_scheduler:
             logger.info("Enabling overlap scheduling for device graph capture.")
-        self.enable_overlap_scheduler = True
-        if self.max_num_steps != 1:
+        self.runtime.enable_overlap_scheduler = True
+        if self.runtime.max_num_steps != 1:
             logger.info(
                 "Setting max-num-steps=1 for device graph capture with overlap scheduling."
             )
-        self.max_num_steps = 1
+        self.runtime.max_num_steps = 1
 
     def _validate_and_resolve_max_num_steps(self) -> None:
         """Validates and resolves the max_num_steps field (platform-specific)."""
-        if self.draft_model is not None and self.max_num_steps > 1:
+        if self.draft_model is not None and self.runtime.max_num_steps > 1:
             raise ValueError(
                 f"max_num_steps must be 1 when speculative decoding is enabled, "
-                f"got {self.max_num_steps}."
+                f"got {self.runtime.max_num_steps}."
             )
-        if self.max_num_steps < 0:
+        if self.runtime.max_num_steps < 0:
             if self.model.default_device_spec == DeviceSpec.cpu():
-                self.max_num_steps = 1
+                self.runtime.max_num_steps = 1
             elif self.draft_model is not None:
                 # Speculative decoding pipelines manage multi-step KV
                 # allocation internally.
-                self.max_num_steps = 1
+                self.runtime.max_num_steps = 1
             else:
-                self.max_num_steps = 10
+                self.runtime.max_num_steps = 10
 
     def _validate_pipeline_config_for_speculative_decoding(self) -> None:
         """Validates pipeline config when used in speculative decoding mode."""
@@ -777,12 +706,12 @@ class PipelineConfig(ConfigFileModel):
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.draft_model.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if not draft_arch:
-            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
-            if not self.prefer_module_v3:
+            # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
+            if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.draft_model.huggingface_model_repo,
                     prefer_module_v3=True,
@@ -799,11 +728,11 @@ class PipelineConfig(ConfigFileModel):
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
         if not target_arch:
-            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
-            if not self.prefer_module_v3:
+            # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
+            if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.model.huggingface_model_repo,
                     prefer_module_v3=True,
@@ -884,13 +813,13 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=model_config.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         # If nothing is provided, we should not update any more params.
         if not arch:
-            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
-            if not self.prefer_module_v3:
+            # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
+            if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=model_config.huggingface_model_repo,
                     prefer_module_v3=True,
@@ -1023,13 +952,13 @@ class PipelineConfig(ConfigFileModel):
         # This needs to be done after max_length is resolved.
         if (
             arch.requires_max_batch_context_length
-            and self.max_batch_total_tokens is None
+            and self.runtime.max_batch_total_tokens is None
         ):
             logger.warning(
                 f"Architecture '{arch.name}' requires max-batch-total-tokens to be specified but found None. "
                 f"Defaulting to the max sequence length of the model: {self.model.max_length}"
             )
-            self.max_batch_total_tokens = self.model.max_length
+            self.runtime.max_batch_total_tokens = self.model.max_length
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
@@ -1060,7 +989,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:
@@ -1131,7 +1060,7 @@ class PipelineConfig(ConfigFileModel):
             ("max_seq_len", self.model.max_length),
             ("max_batch_size", self.max_batch_size),
             ("chunked_prefill", self.runtime.enable_chunked_prefill),
-            ("max_batch_input_tokens", self.max_batch_input_tokens),
+            ("max_batch_input_tokens", self.runtime.max_batch_input_tokens),
             (
                 "in_flight_batching",
                 self.runtime.enable_in_flight_batching,
@@ -1173,7 +1102,7 @@ class PipelineConfig(ConfigFileModel):
         # Retrieve architecture - this should always exist after config resolution
         arch = PIPELINE_REGISTRY.retrieve_architecture(
             huggingface_repo=self.model.huggingface_model_repo,
-            prefer_module_v3=self.prefer_module_v3,
+            prefer_module_v3=self.runtime.prefer_module_v3,
         )
 
         if arch is None:
@@ -1266,7 +1195,6 @@ def _log_kvcache_entries(config: KVCacheConfig, indent: str = "    ") -> None:
         indent: Prefix string for each line.
     """
     entries: list[tuple[str, Any]] = [
-        ("cache_strategy", config.cache_strategy),
         ("page_size", f"{config.kv_cache_page_size} tokens"),
         ("prefix_caching", config.enable_prefix_caching),
         ("host_swapping", config.enable_kvcache_swapping_to_host),
@@ -1513,7 +1441,7 @@ class AudioGenerationConfig(PipelineConfig):
         if self.runtime.force:
             return
 
-        if self.enable_overlap_scheduler:
+        if self.runtime.enable_overlap_scheduler:
             raise ValueError(
                 "The Overlap scheduler does not support Audio Generation. "
                 "Detected AudioGenerationConfig."

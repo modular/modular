@@ -31,11 +31,7 @@ from max.nn.kernels import (
     quantize_dynamic_scaled_float8,
     rms_norm_key_cache,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-    uses_opaque,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
@@ -111,12 +107,6 @@ class Qwen3Attention(Module, Shardable):
         )
         self.qk_norm_eps = qk_norm_eps
         self._sharding_strategy: ShardingStrategy | None = None
-
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
 
         # Per-head RMSNorm for Q and K (Qwen3-specific)
         self.q_norm = RMSNorm(

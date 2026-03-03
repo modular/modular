@@ -33,7 +33,7 @@ pixtral_arch = SupportedArchitecture(
     example_repo_ids=["mistral-community/pixtral-12b"],
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     pipeline_model=PixtralModel,
     tokenizer=TextAndVisionTokenizer,

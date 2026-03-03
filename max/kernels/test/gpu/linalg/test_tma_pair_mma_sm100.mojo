@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import size_of
+from std.math import align_up
+from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, warp_id
-from gpu.memory import external_memory
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, warp_id
+from std.gpu.memory import external_memory
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
@@ -41,11 +41,11 @@ from layout.tma_async import (
     create_tensor_tile,
     create_tma_tile,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, max_finite, min_finite
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type, max_finite, min_finite
+from std.utils.static_tuple import StaticTuple
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
@@ -237,18 +237,18 @@ fn tma_umma_kernel_pair_cta[
         b_mma_mask | b_mma_mask << 1
     )
 
-    for i in range(num_iters):
+    for i in range(Int(num_iters)):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-                a_tma_rows
-            ) + block_idx.x * UInt(BM)
+            var a_gmem_slice_coord = (
+                Int(peer_cta_coord[2]) * a_tma_rows + Int(block_idx.x) * BM
+            )
             var b_gmem_slice_coord = (
-                peer_cta_coord[1] * UInt(b_tma_rows)
-                + peer_cta_coord[0] * UInt(BN)
-                + block_idx.y * UInt(MMA_N)
+                Int(peer_cta_coord[1]) * b_tma_rows
+                + Int(peer_cta_coord[0]) * BN
+                + Int(block_idx.y) * MMA_N
             )
 
             var a_smem_reshape = a_smem_tile.reshape[Layout.row_major(BM, BK)]()
@@ -257,7 +257,7 @@ fn tma_umma_kernel_pair_cta[
             a_tma_op.async_multicast_load[cta_group](
                 a_smem_reshape.split[CLUSTER_N]()[peer_cta_coord[2]],
                 tma_mbar[0],
-                (i * UInt(BK), a_gmem_slice_coord),
+                (i * BK, a_gmem_slice_coord),
                 a_multicast_mask,
             )
 
@@ -266,7 +266,7 @@ fn tma_umma_kernel_pair_cta[
                     peer_cta_coord[1]
                 ],
                 tma_mbar[0],
-                (i * UInt(BK), b_gmem_slice_coord),
+                (i * BK, b_gmem_slice_coord),
                 b_multicast_mask,
             )
 
@@ -360,7 +360,7 @@ def test_tma_umma_pair_cta[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -528,7 +528,7 @@ def test_tma_umma_pair_cta[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
             comptime MMA_K = 32 if dtype == DType.float8_e4m3fn else 16

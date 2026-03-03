@@ -11,16 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import align_of
+from std.math import ceildiv
+from std.sys import align_of
 
 # AMD Helper functions and structs for Tensor Core MMA operations
-from sys.info import simd_width_of
+from std.sys.info import simd_width_of
 
-from gpu import barrier, block_dim, block_idx, global_idx, lane_id, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import AddressSpace
-from gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
+from std.gpu import (
+    barrier,
+    block_dim,
+    block_idx,
+    global_idx,
+    lane_id,
+    thread_idx,
+)
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.memory import AddressSpace
+from std.gpu.sync import AMDScheduleBarrierMask, schedule_group_barrier
 from layout import Layout
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element
@@ -32,9 +39,9 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import Pointer, LegacyUnsafePointer
+from std.memory import Pointer, LegacyUnsafePointer
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # Function to handle AMD-specific scheduling

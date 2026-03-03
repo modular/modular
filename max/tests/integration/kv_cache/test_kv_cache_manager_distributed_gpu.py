@@ -23,10 +23,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import (
-    KVCacheParams,
-    RaggedKVCacheInputs,
-)
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from test_common.context_utils import create_text_context
 
 
@@ -46,7 +43,6 @@ def _create_kv_manager(
         n_kv_heads=8,
         head_dim=32,
         num_layers=10,
-        cache_strategy="paged",
         page_size=32,
         devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         data_parallel_degree=data_parallel_degree,
@@ -66,9 +62,7 @@ def test_init() -> None:
     num_devices = 2
 
     kv_manager = _create_kv_manager(data_parallel_degree, num_devices)
-    devices = kv_manager.devices
-    for i, single_device_manager in enumerate(kv_manager._replica_managers):
-        assert single_device_manager.devices == [devices[i]]
+    for single_device_manager in kv_manager._replica_managers:
         assert single_device_manager.params.num_layers == 10
 
 
@@ -109,7 +103,7 @@ def test_step() -> None:
     prompt_lens = [3, 4, 7]
     batch = []
     batches_by_replica: list[list[TextGenerationContext]] = [
-        [] for _ in range(kv_manager.num_replicas)
+        [] for _ in range(data_parallel_degree)
     ]
     for i, prompt_len in enumerate(prompt_lens):
         context = create_text_context(np.empty(prompt_len))
@@ -169,7 +163,7 @@ def test_increment_cache_lengths() -> None:
     replica_idxs = [0, 0, 1]
     batch = []
     batches_by_replica: list[list[TextGenerationContext]] = [
-        [] for _ in range(kv_manager.num_replicas)
+        [] for _ in range(data_parallel_degree)
     ]
     for prompt_len, replica_idx in zip(prompt_lens, replica_idxs, strict=True):
         context = create_text_context(np.empty(prompt_len))
@@ -184,20 +178,19 @@ def test_increment_cache_lengths() -> None:
     assert len(kv_cache_inputs) == 2
 
     # For testing, assign the cache lengths to some arbitrary values.
-    device_0 = kv_manager.devices[0]
     kv_cache_inputs[0].cache_lengths = Buffer.from_numpy(
         np.array([10, 25], dtype=np.uint32)
-    ).to(device_0)
+    ).to(Accelerator(0))
     kv_cache_inputs[1].cache_lengths = Buffer.from_numpy(
         np.array([32], dtype=np.uint32)
-    ).to(kv_manager.devices[1])
+    ).to(Accelerator(1))
 
     # Create correct prev_model_inputs based on the prompt lengths and assigned
     # replicas.
     prev_model_inputs = PrevModelInputs(
         input_row_offsets=Buffer.from_numpy(
             np.array([0, 3, 7, 14], dtype=np.uint32)
-        ).to(device_0),
+        ).to(Accelerator(0)),
         data_parallel_splits=Buffer.from_numpy(
             np.array([0, 2, 3], dtype=np.int64)
         ),

@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv
+from std.math import align_down, ceildiv
 
-from algorithm.functional import tile_and_unswitch
+from std.algorithm.functional import tile_and_unswitch
 from buffer import DimList, NDBuffer
-from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.host import DeviceContext
-from memory import stack_allocation
-from testing import assert_false
+from std.gpu import barrier, block_dim, global_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.memory import stack_allocation
+from std.testing import assert_false
 
-from utils.index import Index
+from std.utils.index import Index
 
 # Tile size for tiling in shared memory.
 # Thread block would have shape (tile_size, tile_size, 1)
@@ -121,9 +121,7 @@ fn matmul_sram(
 
         barrier()
 
-    tile_and_unswitch[update_tile](
-        0, K, VariadicList[Int](tile_size, K_remainder)
-    )
+    tile_and_unswitch[update_tile](0, K, tile_size, K_remainder)
 
     if row < UInt(M) and col < UInt(N):
         c[Index(row, col)] = result
@@ -206,6 +204,6 @@ fn run_matmul(ctx: DeviceContext) raises:
     _ = c_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_matmul(ctx)

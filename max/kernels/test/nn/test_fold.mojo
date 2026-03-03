@@ -15,10 +15,10 @@
 Script to generate random inputs and expected output values:
 
 ```python
-import math
+import std.math
 import torch
 
-def run_fold(output_size, kernel_size, stride=1, dilation=1, padding=0, batch=1, channel=1):
+def run_fold(output_size, kernel_size, stride=1, dilation=1, padding=0, batch=1, channel=1) raises:
     # Compute dimension of input tensor.
     L = 1
     dilation = dilation if isinstance(dilation, tuple) else (dilation, dilation)
@@ -51,13 +51,12 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 ```
 """
 
-from layout._coord import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.fold import fold
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_fold
@@ -158,7 +157,7 @@ fn _copy_values_to_tile_tensor[
         tensor.ptr[i] = values[i]
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
     # fmt: off
     test[

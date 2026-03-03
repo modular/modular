@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from builtin.simd import SIMD
+from std.builtin.simd import SIMD
 from compiler import register
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, foreach
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @register("grayscale")

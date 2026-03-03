@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import parallelize
-from collections.optional import OptionalReg
-from os import abort, getenv, setenv
-from builtin.variadics import Variadic
-from builtin.device_passable import DevicePassable
-from sys import (
+from std.algorithm import parallelize
+from std.collections.optional import OptionalReg
+from std.os import abort, getenv, setenv
+from std.builtin.variadics import Variadic
+from std.builtin.device_passable import DevicePassable
+from std.sys import (
     CompilationTarget,
     argv,
     has_amd_gpu_accelerator,
@@ -25,9 +25,9 @@ from sys import (
     is_nvidia_gpu,
     size_of,
 )
-from ffi import c_int, c_size_t, external_call
+from std.ffi import c_int, c_size_t, external_call
 
-from gpu.host import (
+from std.gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
     DeviceContext,
@@ -39,13 +39,16 @@ from gpu.host import (
     HostBuffer,
     LaunchAttribute,
 )
-from gpu.host.device_context import (
+from std.gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
     _DeviceContextPtr,
     _DumpPath,
 )
-from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+from std.gpu.host.launch_attribute import (
+    LaunchAttributeID,
+    LaunchAttributeValue,
+)
 
 from ._mpi import (
     MPI_Comm_rank,
@@ -94,7 +97,7 @@ fn shmem_launch[func: fn(ctx: SHMEMContext) raises]() raises:
         print("PE:", mype, "received message:", msg)
         assert_equal(msg, (mype + 1) % shmem_n_pes())
 
-    def main():
+    def main() raises:
         shmem_launch[simple_shift]()
     ```
 
@@ -519,7 +522,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         fn kernel():
             print("hello from the GPU")

@@ -29,15 +29,27 @@ Usage:
     mojo -D store_width=8 -D direction=0 bench_p2p_copy.mojo   # custom width
 """
 
-from math import ceildiv
-from sys import env_get_int, env_get_dtype, is_amd_gpu, size_of, simd_width_of
+from std.math import ceildiv
+from std.sys import (
+    env_get_int,
+    env_get_dtype,
+    is_amd_gpu,
+    size_of,
+    simd_width_of,
+)
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from comm.sync import enable_p2p
-from gpu import global_idx, grid_dim, MAX_THREADS_PER_BLOCK_METADATA
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu import global_idx, grid_dim, MAX_THREADS_PER_BLOCK_METADATA
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 comptime BLOCK_SIZE = 256
 comptime store_width = env_get_int["store_width", 0]()

@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections.string.string_slice import get_static_string
-from os import abort, getenv
-from pathlib import Path
-from sys import argv, size_of
-from ffi import (
+from std.collections.string.string_slice import get_static_string
+from std.os import abort, getenv
+from std.pathlib import Path
+from std.sys import argv, size_of
+from std.ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
@@ -25,10 +25,10 @@ from ffi import (
     external_call,
     RTLD,
 )
-from sys.info import CompilationTarget, is_nvidia_gpu
+from std.sys.info import CompilationTarget, is_nvidia_gpu
 
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUmodule, CUstream
+from std.gpu.host import DeviceContext
+from std.gpu.host._nvidia_cuda import CUmodule, CUstream
 
 from ._mpi import MPI_Comm_rank, MPI_Init, MPIComm, get_mpi_comm_world
 
@@ -63,7 +63,7 @@ fn _init_nvshmem_dylib() -> OwnedDLHandle:
     try:
         return OwnedDLHandle(path=lib)
     except e:
-        abort(String("failed to load NVSHMEM library: ", e))
+        abort(t"failed to load NVSHMEM library: {e}")
 
 
 @always_inline

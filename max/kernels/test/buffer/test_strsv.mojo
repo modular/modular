@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from testing import TestSuite
-from utils import IndexList
+from std.testing import TestSuite
+from std.utils import IndexList
 
 comptime simd_width = 8
 
@@ -99,7 +99,7 @@ fn naive_strsv[
 
 
 # CHECK-LABEL: test_strsv
-def test_strsv():
+def test_strsv() raises:
     print("== test_strsv")
 
     comptime size: Int = 64
@@ -124,5 +124,5 @@ def test_strsv():
     print(err)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def update_simd(var t: SIMD[DType.int32, 4]):
+def update_simd(var t: SIMD[DType.int32, 4]) raises:
     t[0] = 9
     print("t:", t)
 
 
-def main():
+def main() raises:
     var v = SIMD[DType.int32, 4](1, 2, 3, 4)
     update_simd(v)
     print("v:", v)

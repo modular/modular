@@ -28,16 +28,16 @@ hardware capabilities:
    - Simple but functional approach for systems without P2P support.
 """
 
-from collections import InlineArray
-from math import ceildiv
-from sys import simd_width_of
+from std.collections import InlineArray
+from std.math import ceildiv
+from std.sys import simd_width_of
 
 from buffer import NDBuffer
-from memory import UnsafePointer
-from gpu import WARP_SIZE, global_idx, grid_dim
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.memory import UnsafePointer
+from std.gpu import WARP_SIZE, global_idx, grid_dim
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 from .sync import MAX_GPUS, Signal, _multi_gpu_barrier, is_p2p_enabled
 

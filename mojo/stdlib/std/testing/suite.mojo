@@ -18,15 +18,16 @@ formatted reporting. It includes support for colored output, timing statistics,
 and flexible test selection via CLI arguments.
 """
 
-from math import ceil, floor
-from os import sep
-from time import perf_counter_ns
-from utils._ansi import Color, Text
-from collections import Set
+from std.math import ceil, floor
+from std.os import sep
+from std.time import perf_counter_ns
+from std.utils._ansi import Color, Text
+from std.collections import Set
+import std.format._utils as fmt
 
-from reflection import get_function_name, call_location, SourceLocation
-from sys.intrinsics import _type_is_eq
-from sys import argv
+from std.reflection import get_function_name, call_location, SourceLocation
+from std.sys.intrinsics import _type_is_eq
+from std.sys import argv
 
 
 struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
@@ -119,6 +120,21 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
             writer.write(Text[Color.RED]("FAIL"))
         elif self == Self.SKIP:
             writer.write(Text[Color.YELLOW]("SKIP"))
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this test result to a writer.
+
+        Args:
+            writer: The writer to output to.
+        """
+        writer.write_string("TestResult.")
+        if self == Self.PASS:
+            writer.write_string("PASS")
+        elif self == Self.FAIL:
+            writer.write_string("FAIL")
+        elif self == Self.SKIP:
+            writer.write_string("SKIP")
 
 
 struct TestReport(Copyable, Writable):
@@ -226,6 +242,19 @@ struct TestReport(Copyable, Writable):
                 ),
             )
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this test report to a writer.
+
+        Args:
+            writer: The writer to output to.
+        """
+        fmt.FormatStruct(writer, "TestReport").fields(
+            fmt.Named("name", fmt.Repr(self.name)),
+            fmt.Named("result", fmt.Repr(self.result)),
+            fmt.Named("duration_ns", self.duration_ns),
+        )
+
 
 struct TestSuiteReport(Copyable, Writable):
     """A report for an entire test suite."""
@@ -320,6 +349,20 @@ struct TestSuiteReport(Copyable, Writable):
                 sep=" ",
             )
 
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this test suite report to a writer.
+
+        Args:
+            writer: The writer to output to.
+        """
+        fmt.FormatStruct(writer, "TestSuiteReport").fields(
+            fmt.Named("passed", self.passed),
+            fmt.Named("failed", self.failures),
+            fmt.Named("skipped", self.skipped),
+            fmt.Named("total_duration_ns", self.total_duration_ns),
+        )
+
 
 @fieldwise_init
 struct _Test(Copyable):
@@ -341,27 +384,27 @@ struct TestSuite(Movable):
     Example:
 
     ```mojo
-    from testing import assert_equal, TestSuite
+    from std.testing import assert_equal, TestSuite
 
-    def test_something():
+    def test_something() raises:
         assert_equal(1 + 1, 2)
 
-    def test_some_other_thing():
+    def test_some_other_thing() raises:
         assert_equal(2 + 2, 4)
 
-    def main():
+    def main() raises:
         TestSuite.discover_tests[__functions_in_module()]().run()
     ```
 
     Alternatively, you can manually register tests by calling the `test` method.
 
     ```mojo
-    from testing import assert_equal, TestSuite
+    from std.testing import assert_equal, TestSuite
 
-    def some_test():
+    def some_test() raises:
         assert_equal(1 + 1, 2)
 
-    def main():
+    def main() raises:
         var suite = TestSuite()
         suite.test[some_test]()
         suite^.run()

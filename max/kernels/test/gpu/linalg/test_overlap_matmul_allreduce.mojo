@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 comptime overlap_with_dpl = True
 
@@ -150,16 +150,16 @@ fn overlap_matmul_allreduce_test[
     # Setup the kernel NDBuffers
     comptime for i in range(ngpus):
         As[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape](
-            A_list[i].unsafe_ptr(), DimList(m.value, k.value)
+            A_list[i].unsafe_ptr(), IndexList[2](m.value, k.value)
         )
         Bs[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape](
-            B_list[i].unsafe_ptr(), DimList(n.value, k.value)
+            B_list[i].unsafe_ptr(), IndexList[2](n.value, k.value)
         )
         Cs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
         out_bufs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Copy-capture in registers since the lambda will be used on GPU.
@@ -169,7 +169,7 @@ fn overlap_matmul_allreduce_test[
 
     comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, 2](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Prepare the output lambda
@@ -246,7 +246,7 @@ fn overlap_matmul_allreduce_test[
     _ = C_reduced_list^
 
 
-def main():
+def main() raises:
     # Test hyperparameters.
     comptime test_dtypes = (DType.bfloat16,)
     comptime test_gpu_counts = (4, 8)

@@ -17,8 +17,8 @@ from nn.mha_mask import (
     MHAMask,
     TileMaskStatus,
 )
-from utils.index import Index
-from testing import assert_equal, assert_true
+from std.utils.index import Index
+from std.testing import assert_equal, assert_true
 
 
 fn compute_total_iters0[

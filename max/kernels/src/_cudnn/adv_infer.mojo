@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 
-from os import abort
-from pathlib import Path
-from ffi import _find_dylib
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import _find_dylib
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle
 
 from .infer import (
     cudnnContext,
@@ -250,7 +250,7 @@ struct cudnnForwardMode_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("cudnnForwardMode_t(", self, ")")
+        return t"cudnnForwardMode_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -811,7 +811,7 @@ struct cudnnSeqDataAxis_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("cudnnSeqDataAxis_t(", self, ")")
+        return t"cudnnSeqDataAxis_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)

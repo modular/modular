@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simd_width_of
+from std.sys.info import simd_width_of
 
-from gpu.host.compile import _compile_code, get_gpu_target
-from gpu.host.info import GPUInfo
-from memory import LegacyUnsafePointer
+from std.gpu.host.compile import _compile_code, get_gpu_target
+from std.gpu.host.info import GPUInfo
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
 comptime _TargetType = __mlir_type.`!kgen.target`
 
@@ -38,7 +38,7 @@ fn test_kernel_load_16B_width[target: _TargetType]() raises:
     assert_true(("v2.b64" in asm) or ("v4.b32" in asm))
 
 
-def main():
+def main() raises:
     test_kernel_load_16B_width[get_gpu_target["sm_80"]()]()
     test_kernel_load_16B_width[get_gpu_target["sm_90a"]()]()
     test_kernel_load_32B_width[get_gpu_target["sm_100a"]()]()

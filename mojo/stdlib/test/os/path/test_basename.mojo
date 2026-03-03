@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import basename
-from pathlib import Path
+from std.os.path import basename
+from std.pathlib import Path
 
-from reflection import source_location
-from testing import TestSuite, assert_equal
+from std.reflection import source_location
+from std.testing import TestSuite, assert_equal
 
 
-def test_basename():
+def test_basename() raises:
     # Root directories
     assert_equal("", basename("/"))
 
@@ -84,5 +84,5 @@ def test_basename():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

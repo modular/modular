@@ -10,38 +10,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from sys import size_of
+from std.math import ceildiv
+from std.sys import size_of
 
 from buffer.buffer import NDBuffer
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
-from gpu.primitives.cluster import (
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier
+from std.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
-from gpu.globals import WARP_SIZE, WARPGROUP_SIZE
-from gpu.primitives.grid_controls import (
+from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
+from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.device_context import DeviceBuffer
-from gpu import (
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.device_context import DeviceBuffer
+from std.gpu import (
     block_id_in_cluster,
     block_idx,
     grid_dim,
     thread_idx,
 )
-from gpu import warp_id
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import (
+from std.gpu import warp_id
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_mbarrier_init,
 )
-from layout import IntTuple, Layout, LayoutTensor
+from layout import Coord, Idx, IntTuple, Layout, LayoutTensor
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
@@ -52,12 +52,12 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
 from ....utils_gpu import block_swizzle
@@ -77,7 +77,6 @@ from ..sm100_structured.structured_kernels.tile_types import (
     SMemTileArray2DRowMajor,
 )
 from layout._layout import Layout as _Layout, row_major
-from layout._coord import Coord, Idx
 from ..sm100_structured.structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )

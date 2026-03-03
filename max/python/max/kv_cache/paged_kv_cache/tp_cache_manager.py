@@ -24,7 +24,11 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache import (
+    DecodeNumPartitionsResolver,
+    KVCacheParams,
+    RaggedKVCacheInputs,
+)
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import build_max_lengths_tensor
 from max.profiler import traced
@@ -130,12 +134,6 @@ class _TPPagedKVCacheManager:
     connector: KVConnector
     """Connector for external cache tiers (host memory, LMCache, etc.)."""
 
-    enable_prefix_caching: bool
-    """Flag indicating if prefix caching (block reuse) is enabled."""
-
-    enable_kvcache_swapping_to_host: bool
-    """Flag indicating if swapping blocks to host memory is enabled."""
-
     @traced
     def __init__(
         self,
@@ -162,11 +160,13 @@ class _TPPagedKVCacheManager:
             enable_runtime_checks: Whether to enable runtime correctness checks.
         """
         self.params = params
-        self.total_num_pages = total_num_pages
-        self.total_num_host_pages = total_num_host_pages
-        self.page_size = params.page_size
-        self.devices = devices
-        self.session = session
+        self._total_num_pages = total_num_pages
+        self._total_num_host_pages = total_num_host_pages
+        self._page_size = params.page_size
+        self._devices = devices
+        self._decode_num_partitions_resolver = DecodeNumPartitionsResolver(
+            session, params
+        )
 
         # Validate devices aligns with the n_devices in params
         if len(devices) != params.n_devices:
@@ -185,25 +185,17 @@ class _TPPagedKVCacheManager:
         if self._max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
 
-        max_total_num_pages = self.total_num_pages
+        max_total_num_pages = self._total_num_pages
 
         self._persistent_kv_device_input_buffers = (
             _PersistentKVDeviceInputBuffers(
                 max_batch_size=self._max_batch_size,
                 max_total_num_pages=max_total_num_pages,
-                devices=self.devices,
+                devices=self._devices,
             )
         )
 
-        # Whether prefix caching is enabled.
-        self.enable_prefix_caching = self.params.enable_prefix_caching
-
-        # Whether kvcache swapping to host is enabled.
-        self.enable_kvcache_swapping_to_host = (
-            self.params.enable_kvcache_swapping_to_host
-        )
-
-        if total_num_host_pages > 0 and not self.enable_prefix_caching:
+        if total_num_host_pages > 0 and not params.enable_prefix_caching:
             raise ValueError(
                 "KVCache swapping to host is only supported when prefix caching is enabled"
             )
@@ -224,7 +216,7 @@ class _TPPagedKVCacheManager:
             devices=devices,
             device_buffer=self.device_buffer,
             total_num_host_blocks=total_num_host_pages,
-            total_num_blocks=self.total_num_pages,
+            total_num_blocks=self._total_num_pages,
             session=session,
         )
 
@@ -237,8 +229,8 @@ class _TPPagedKVCacheManager:
         )
         self.block_manager = BlockManager(
             device_memory_tier=device_memory_tier,
-            total_num_blocks=self.total_num_pages,
-            block_size=self.page_size,
+            total_num_blocks=self._total_num_pages,
+            block_size=self._page_size,
             connector=self.connector,
             enable_prefix_caching=self.params.enable_prefix_caching,
             enable_runtime_checks=enable_runtime_checks,
@@ -251,7 +243,7 @@ class _TPPagedKVCacheManager:
         """Determines if a request needs additional blocks."""
         seq_len = len(ctx.tokens) + num_steps - 1
         num_blocks = len(self.block_manager.req_to_blocks[ctx.request_id])
-        return seq_len > num_blocks * self.page_size
+        return seq_len > num_blocks * self._page_size
 
     @traced
     def get_pct_used_blocks_after_allocation(
@@ -324,13 +316,13 @@ class _TPPagedKVCacheManager:
             seq_len = len(ctx.tokens) + num_steps - 1
             max_seq_len = max(max_seq_len, seq_len)
 
-        required_num_pages = ceildiv(max_seq_len, self.page_size)
+        required_num_pages = ceildiv(max_seq_len, self._page_size)
         if max_cache_length is None:
             lut_num_pages = required_num_pages
         else:
             if max_cache_length < 1:
                 raise ValueError("max_cache_length must be positive")
-            lut_num_pages = ceildiv(max_cache_length, self.page_size)
+            lut_num_pages = ceildiv(max_cache_length, self._page_size)
             if lut_num_pages < required_num_pages:
                 raise ValueError(
                     "capture max_cache_length cannot be smaller than the "
@@ -344,15 +336,15 @@ class _TPPagedKVCacheManager:
                 "Runtime batch size exceeds preallocated KV runtime "
                 f"buffer capacity: {batch_size} > {self._max_batch_size}."
             )
-        if lut_num_pages > self.total_num_pages:
+        if lut_num_pages > self._total_num_pages:
             raise ValueError(
                 "Runtime LUT view exceeds allocated page capacity: "
-                f"{lut_num_pages} > {self.total_num_pages}."
+                f"{lut_num_pages} > {self._total_num_pages}."
             )
 
         # Allocate pinned host staging each invocation so async H2D submissions
         # do not race with subsequent host writes to reused staging buffers.
-        device0 = self.devices[0]
+        device0 = self._devices[0]
 
         # Runtime lookup-table shape is [batch_size, lut_num_pages]:
         # rows map to request slots in the current batch and columns map to
@@ -402,20 +394,21 @@ class _TPPagedKVCacheManager:
         assert all(buffer.is_contiguous for buffer in lut_table_by_device)
 
         lut_table_np = lut_table_host.to_numpy()
-        lut_table_np.fill(self.total_num_pages)
+        lut_table_np.fill(self._total_num_pages)
         cache_lengths_np = cache_lengths_host.to_numpy()
         cache_lengths_np.fill(0)
 
         # Update cache_lengths and max_lengths.
         max_prompt_len = 0
         max_cached_len = 0
+        max_cache_valid_length = 0
         for batch_idx, ctx in enumerate(batch):
             # Get the blocks for this request.
             blocks = self.block_manager.get_req_blocks(ctx.request_id)
 
             # Sanity check that we have enough blocks.
             seq_len = len(ctx.tokens) + num_steps - 1
-            num_required_blocks = ceildiv(seq_len, self.page_size)
+            num_required_blocks = ceildiv(seq_len, self._page_size)
             assert len(blocks) >= num_required_blocks
             if len(blocks) > num_required_blocks:
                 blocks = blocks[:num_required_blocks]
@@ -433,6 +426,7 @@ class _TPPagedKVCacheManager:
             prompt_tokens = ctx.tokens.active_length
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
+            max_cache_valid_length = max(max_cache_valid_length, cache_length)
 
         # Initiate any pending async saves to external cache tiers.
         self.connector.flush()
@@ -444,6 +438,17 @@ class _TPPagedKVCacheManager:
         max_lengths_host = build_max_lengths_tensor(
             num_steps, max_prompt_len, max_cached_len
         )
+        resolved_metadata = self._decode_num_partitions_resolver(
+            batch_size, max_cache_valid_length
+        )
+
+        # TODO(SERVOPT-967): don't assume `q_max_seq_len == 1 `.
+        # Scalar args for MHA decode dispatch:
+        # [0] batch_size
+        # [1] q_max_seq_len (always 1 for decode)
+        # [2] num_partitions
+        # [3] max_cache_valid_length
+        resolved_metadata_buffer = resolved_metadata.to_buffer()
 
         ret_list: list[RaggedKVCacheInputs] = []
         for tp_shard in range(self.params.n_devices):
@@ -461,10 +466,20 @@ class _TPPagedKVCacheManager:
                     kv_scales=self.device_buffer.scales[tp_shard]
                     if self.device_buffer.scales is not None
                     else None,
+                    mha_decode_dispatch_metadata=resolved_metadata_buffer,
                 )
             )
 
         return ret_list
+
+    def alloc_dummy(
+        self, request_id: RequestID, sentinel_request_id: RequestID
+    ) -> None:
+        """Claims a dummy request and shares the sentinel's block."""
+        self.claim(request_id)
+        self.block_manager.register_dummy_request(
+            request_id, sentinel_request_id
+        )
 
     def release(self, request_id: RequestID) -> None:
         """Releases the sequence associated with :obj:`request_id`, marking it complete.
@@ -499,13 +514,13 @@ class _TPPagedKVCacheManager:
 
     @property
     def num_pages(self) -> int:
-        return self.total_num_pages
+        return self._total_num_pages
 
     @property
     def num_used_pages(self) -> int:
         """Get the set of used blocks."""
         free_blocks = self.block_manager.device_block_pool.free_blocks
-        return self.total_num_pages - len(free_blocks)
+        return self._total_num_pages - len(free_blocks)
 
     @property
     def num_host_pages(self) -> int:

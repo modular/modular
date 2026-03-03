@@ -12,21 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 """GPU tests for RMSNorm with fused residual connection."""
 
-from math import sqrt
-from memory import LegacyUnsafePointer
+from std.math import sqrt
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from random import rand, Random
+from std.random import rand, Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_gpu
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 

@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
+from std.math import sqrt
 
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._fillers import arange, random
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensorIter
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import IndexList
+from std.utils import IndexList
 
 
 #  CHECK-LABEL: test_fill_and_print
-def test_fill_and_print():
+def test_fill_and_print() raises:
     print("== test_fill_and_print")
 
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -57,7 +57,7 @@ def test_fill_and_print():
 
 
 #  CHECK-LABEL: test_set_and_get_items
-def test_set_and_get_items():
+def test_set_and_get_items() raises:
     print("== test_set_and_get_items")
 
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -92,7 +92,7 @@ def test_set_and_get_items():
 
 
 #  CHECK-LABEL: test_tile
-def test_tile():
+def test_tile() raises:
     print("== test_tile")
 
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
@@ -844,7 +844,7 @@ fn test_split():
     ptr.free()
 
 
-def main():
+def main() raises:
     test_fill_and_print()
     test_set_and_get_items()
     test_tile()

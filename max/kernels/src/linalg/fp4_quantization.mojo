@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from gpu import (
+from std.math import align_up, ceildiv
+from std.gpu import (
     block_idx,
     thread_idx,
     grid_dim,
@@ -21,11 +21,11 @@ from gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     lane_id,
 )
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import Layout, LayoutTensor
-from logger import Logger
-from gpu.primitives.warp import shuffle_xor
-from math import recip
+from std.logger import Logger
+from std.gpu.primitives.warp import shuffle_xor
+from std.math import recip
 from .fp4_utils import (
     cast_fp32_to_fp4e2m1,
     E2M1_TO_FLOAT32,
@@ -40,42 +40,44 @@ from .fp4_utils import (
     set_scale_factor,
     get_scale_factor,
 )
-from gpu.host.info import B200
-from utils import StaticTuple
-from collections import Optional
+from std.gpu.host.info import B200
+from std.utils import StaticTuple
+from std.collections import Optional
 from linalg.utils import (
     elementwise_epilogue_type,
     elementwise_compute_lambda_type,
 )
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from buffer import Dim, NDBuffer
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from memory import bitcast
-from gpu.sync import named_barrier
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import bitcast
+from std.gpu.sync import named_barrier
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from layout.layout_tensor import LayoutTensorIter
-from gpu.memory import external_memory, fence_async_view_proxy
-from gpu import barrier
-from sys import size_of, align_of, simd_width_of
+from std.gpu.memory import external_memory, fence_async_view_proxy
+from std.gpu import barrier
+from std.sys import size_of, align_of, simd_width_of
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 from layout.swizzle import make_swizzle
-from algorithm import elementwise
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from sys import env_get_bool
+from std.algorithm import elementwise
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.sys import env_get_bool
 from linalg.matmul.gpu.sm100.block_scaled_dispatch import (
     heuristic_and_outliers_dispatch,
 )
-from gpu.primitives.grid_controls import PDLLevel
+from std.gpu.primitives.grid_controls import PDLLevel
 from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     DISPATCH_HIT,
     DISPATCH_MISS,
 )
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
+from std.collections.string.string_slice import get_static_string
+from std.collections import OptionalReg
 
 ########################################################
 # Dynamic scaled NVFP4 quantization
@@ -97,6 +99,7 @@ fn quantize_dynamic_scaled_fp4fp8[
     *,
     SF_VECTOR_SIZE: Int = 16,
     num_max_threads: Int = 512,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     ctx: DeviceContext,
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
@@ -174,7 +177,7 @@ fn quantize_dynamic_scaled_fp4fp8[
         tensor_sf,
         block_dim=block_dim,
         grid_dim=grid_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -674,6 +677,7 @@ fn quantize_dynamic_block_scaled[
     *,
     SF_VECTOR_SIZE: Int,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     output_device: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin, _],
     scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
@@ -732,7 +736,9 @@ fn quantize_dynamic_block_scaled[
         )
 
     comptime if is_fp4 and static_N % 32 == 0:
-        quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+        quantize_dynamic_scaled_fp4_async[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE, pdl_level=pdl_level
+        ](
             ctx,
             output_tensor,
             scales_tensor,
@@ -747,6 +753,7 @@ fn quantize_dynamic_block_scaled[
         quantize_dynamic_scaled_fp4fp8[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             num_max_threads=512,
+            pdl_level=pdl_level,
         ](
             ctx,
             output_tensor,
@@ -1055,6 +1062,7 @@ fn quantize_dynamic_scaled_fp4_async[
     scales_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     ctx: DeviceContext,
     output_tensor: LayoutTensor[output_dtype, output_layout, MutAnyOrigin],
@@ -1191,7 +1199,7 @@ fn quantize_dynamic_scaled_fp4_async[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -1209,9 +1217,11 @@ fn block_scaled_matmul[
     *,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
-    target: StaticString = "cpu",
+    transpose_a: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
+    _trace_description: StaticString = "",
+    target: StaticString = "cpu",
 ](
     c_device: NDBuffer[mut=True, c_type, 2, MutAnyOrigin, _],
     a_device: NDBuffer[a_type, 2, ImmutAnyOrigin, _],
@@ -1291,27 +1301,6 @@ fn block_scaled_matmul[
     comptime static_K = a.layout.shape[1].value()
     comptime static_NK = Index(static_N, static_K)
 
-    comptime DeepSeek_NK = [
-        Index(7168, 16384),
-        # Index(4096, 7168),
-        # Index(7168, 2048),
-    ]
-
-    comptime if static_NK in DeepSeek_NK:
-        if m == 1:
-            var status = heuristic_and_outliers_dispatch[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                pdl_level = PDLLevel(1),
-            ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
-
-            if status == DISPATCH_HIT:
-                logger.info("Executing SM100 Block Scaled matmul kernel")
-                return
-            else:
-                raise Error("Heuristic and outliers dispatch failed")
-
     comptime if env_get_bool[
         "ENABLE_EXPERIMENTAL_SM100_BLOCK_SCALED_MATMUL", False
     ]():
@@ -1328,20 +1317,69 @@ fn block_scaled_matmul[
         else:
             raise Error("Heuristic and outliers dispatch failed")
 
-    logger.info("Executing CUBLAS SM100 Block Scaled matmul kernel")
+    comptime DeepSeek_NK = [
+        Index(7168, 16384),
+        # Index(4096, 7168),
+        # Index(7168, 2048),
+    ]
 
-    block_scaled_matmul_with_epilogue[
-        SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-        transpose_b=transpose_b,
-    ](
-        c,
-        a,
-        b,
-        a_scales,
-        b_scales,
-        tensor_sf,
-        ctx,
-    )
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        # fmt: off
+        return String(
+            "(",
+            target,
+            ";", trace_arg("A", IndexList[2](m, k), a_type),
+            ";", trace_arg("B", IndexList[2](k, n), b_type),
+            ";", trace_arg("C", IndexList[2](m, n), c_type),
+            ";transpose_a=", True,
+            ";transpose_b=", transpose_b,
+            ")"
+        )
+        # fmt: on
+
+    with Trace[TraceLevel.OP, target=target](
+        # Create a string literal so that the event label works with the
+        # AsyncRT profiler, whose event labels must be `StaticString`s.
+        get_static_string[
+            "block_scaled_matmul_",
+            String("nvfp4_" if a_type == DType.uint8 else "mxfp8_"),
+            String(SF_VECTOR_SIZE) + String("_sfvs"),
+            _trace_description if _trace_description else "",
+        ](),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=OptionalReg(Int(ctx.id())),
+    ):
+        comptime if static_NK in DeepSeek_NK:
+            if m == 1:
+                var status = heuristic_and_outliers_dispatch[
+                    SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+                    transpose_b=transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
+
+                if status == DISPATCH_HIT:
+                    logger.info(
+                        "Executing Mojo SM100 Block Scaled matmul kernel"
+                    )
+                    return
+
+        logger.info("Executing CUBLAS SM100 Block Scaled matmul kernel")
+
+        block_scaled_matmul_with_epilogue[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=transpose_b,
+        ](
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            tensor_sf,
+            ctx,
+        )
 
 
 ########################################################

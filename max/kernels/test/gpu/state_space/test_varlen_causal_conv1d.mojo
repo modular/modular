@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp
-from sys.info import simd_width_of
+from std.math import ceildiv, exp
+from std.sys.info import simd_width_of
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -22,8 +22,8 @@ from layout import (
     RuntimeTuple,
     RuntimeLayout,
 )
-from random import rand
-from memory import alloc
+from std.random import rand
+from std.memory import alloc
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_update_cpu,
@@ -32,9 +32,9 @@ from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_update_gpu,
     causal_conv1d_varlen_states_gpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # Constants
@@ -1289,5 +1289,5 @@ fn test_varlen_causal_conv1d_update_gpu_various_widths() raises:
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

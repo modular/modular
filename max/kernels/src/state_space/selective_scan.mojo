@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
-from utils.index import IndexList
-from memory import UnsafePointer
-from algorithm import sync_parallelize
-import math
-from math import ceildiv, exp, exp2, rsqrt
+from std.utils.index import IndexList
+from std.memory import UnsafePointer
+from std.algorithm import sync_parallelize
+import std.math
+from std.math import ceildiv, exp, exp2, rsqrt
 from state_space.causal_conv1d import silu
 
 # ===----------------------------------------------------------------------=== #

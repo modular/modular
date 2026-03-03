@@ -95,12 +95,12 @@ class TokenGenerationSchedulerConfig:
 
         return cls(
             max_batch_size=pipeline_config.max_batch_size,
-            max_forward_steps_tg=pipeline_config.max_num_steps
-            if pipeline_config.max_num_steps != -1
+            max_forward_steps_tg=pipeline_config.runtime.max_num_steps
+            if pipeline_config.runtime.max_num_steps != -1
             else 1,
-            target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,
+            target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
             max_seq_len=pipeline_config.model.max_length,
-            max_batch_total_tokens=pipeline_config.max_batch_total_tokens,
+            max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
             enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
             enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,

@@ -30,20 +30,20 @@ It supports:
 Example:
 
 ```mojo
-from random.philox import Random
+from std.random.philox import Random
     rng = Random(seed=42)
     uniform_values = rng.step_uniform()  # Returns 4 random floats in [0,1)
     raw_values = rng.step()  # Returns 4 raw 32-bit integers
 ```
 """
 
-from sys import is_little_endian
+from std.sys import is_little_endian
 
-from math import cos, log, sin, sqrt
+from std.math import cos, log, sin, sqrt
 
-from memory import bitcast
+from std.memory import bitcast
 
-from gpu.intrinsics import mulwide
+from std.gpu.intrinsics import mulwide
 
 
 fn _mulhilow(a: UInt32, b: UInt32) -> SIMD[DType.uint32, 2]:

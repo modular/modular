@@ -11,25 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from random import random_ui64, seed
-from sys import env_get_dtype, env_get_int
+from std.collections import Set
+from std.random import random_ui64, seed
+from std.sys import env_get_dtype, env_get_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout._coord import Coord, Idx
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from layout._fillers import random
 from nn.fused_qk_rope import fused_qk_rope_ragged
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn _get_run_name[
@@ -62,7 +74,7 @@ def execute_kv_cache_ragged_rope[
     batch_size: Int,
     seq_len: Int,
     use_random_seq_lengths: Bool,
-):
+) raises:
     comptime max_seq_len = 2048
     var num_blocks = batch_size * 2
     var num_layers = 1
@@ -231,7 +243,7 @@ def execute_kv_cache_ragged_rope[
     )
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     comptime head_dim = env_get_int["head_dim", 128]()

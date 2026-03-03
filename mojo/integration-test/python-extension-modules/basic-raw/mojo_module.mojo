@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from python import Python, PythonObject
-from python._cpython import PyObjectPtr
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python._cpython import PyObjectPtr
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
@@ -92,14 +92,11 @@ fn mojo_count_args_with_kwargs(
     return cpy.PyLong_FromSsize_t(count)
 
 
-struct TestCounter(Defaultable, ImplicitlyCopyable, Representable):
+struct TestCounter(Defaultable, ImplicitlyCopyable, Writable):
     var value: Int
 
     fn __init__(out self):
         self.value = 0
-
-    fn __repr__(self) -> String:
-        return String("TestCounter(value=") + String(self.value) + ")"
 
 
 @export

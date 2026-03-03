@@ -68,6 +68,24 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
     data_parallel_splits: Buffer = field(kw_only=True)
     """Tensor containing the data parallel splits for the MLA layer."""
 
+    ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
+    """EP communication buffers injected at prepare time."""
+
+    @property
+    def buffers(self) -> tuple[Buffer, ...]:
+        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
+        return (
+            self.tokens,
+            self.input_row_offsets,
+            self.host_input_row_offsets,
+            self.return_n_logits,
+            self.data_parallel_splits,
+            *self.signal_buffers,
+            *kv_cache_inputs,
+            *self.batch_context_lengths,
+            *self.ep_inputs,
+        )
+
 
 class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     """A DeepseekV3 model."""
@@ -98,13 +116,15 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
-        max_batch_total_tokens = self.pipeline_config.max_batch_total_tokens
+        max_batch_total_tokens = (
+            self.pipeline_config.runtime.max_batch_total_tokens
+        )
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
-        if self.pipeline_config.pipeline_role == "prefill_only":
+        if self.pipeline_config.runtime.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif self.pipeline_config.pipeline_role == "decode_only":
+        elif self.pipeline_config.runtime.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"
@@ -116,22 +136,22 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             float8_config = None
 
         # Check if EP should be configured
-        if self.pipeline_config.ep_size == 1:
+        if self.pipeline_config.runtime.ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.ep_size % len(self.devices) != 0:
+            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.ep_size // len(self.devices)
+            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.max_batch_input_tokens,
+                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_fp8_config=None,
@@ -263,7 +283,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # The shared experts are duplicated on each device.
         total_size += shared_experts_size * n_gpus_per_node
 
-        ep_size = max(pipeline_config.ep_size, 1)
+        ep_size = max(pipeline_config.runtime.ep_size, 1)
         if ep_size == 1:
             total_size += routing_experts_size
         else:
@@ -303,14 +323,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # During the prefill, we need to up-project all the KV cache for
         # current requests. The total context length of requests in a batch
         # should be limited by max_batch_total_tokens.
-        if pipeline_config.pipeline_role != "decode_only":
+        if pipeline_config.runtime.pipeline_role != "decode_only":
             max_kv_length: int = 0
 
-            if pipeline_config.max_batch_total_tokens is None:
+            if pipeline_config.runtime.max_batch_total_tokens is None:
                 # If max_batch_total_tokens is not set, we use max_length.
                 max_kv_length = pipeline_config.model.max_length or 0
             else:
-                max_kv_length = pipeline_config.max_batch_total_tokens
+                max_kv_length = pipeline_config.runtime.max_batch_total_tokens
 
             mla_activation_memory += (
                 pipeline_config.model.data_parallel_degree
@@ -322,9 +342,11 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             )
 
         # Estimate activation memory during Expert Parallel MoE.
-        if pipeline_config.ep_size > 1:
+        if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
-            max_input_len_per_rank = pipeline_config.max_batch_input_tokens
+            max_input_len_per_rank = (
+                pipeline_config.runtime.max_batch_input_tokens
+            )
 
             # Calculate the maximum number of tokens a rank may receive during all-to-all routing.
             max_recv_tokens_per_rank = (
@@ -360,14 +382,14 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # model init, not freed between layers), so add on top of the
         # per-layer activation peak.
         ep_buffer_memory = 0
-        if pipeline_config.ep_size > 1:
+        if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
 
             per_device_ep_memory = estimate_ep_memory_usage(
                 hidden_size=huggingface_config.hidden_size,
                 dispatch_dtype=supported_encoding_dtype(encoding),
                 combine_dtype=DType.bfloat16,
-                max_tokens_per_rank=pipeline_config.max_batch_input_tokens,
+                max_tokens_per_rank=pipeline_config.runtime.max_batch_input_tokens,
                 n_experts=huggingface_config.n_routed_experts,
                 top_k=huggingface_config.num_experts_per_tok,
             )
@@ -429,7 +451,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         config = self._create_model_config(state_dict)
 
         n_devices = len(self.devices)
-        if n_devices > 1 and self.pipeline_config.ep_size != n_devices:
+        if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
             raise ValueError("Only the EP strategy is supported.")
 
         self.ep_comm_initializer: EPCommInitializer | None = None
@@ -510,24 +532,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
         assert isinstance(model_inputs, DeepseekV3Inputs)
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-        ep_inputs = (
-            ()
-            if self.ep_comm_initializer is None
-            else self.ep_comm_initializer.model_inputs()
-        )
 
-        model_outputs = self.model.execute(
-            model_inputs.tokens,
-            model_inputs.input_row_offsets,
-            model_inputs.host_input_row_offsets,
-            model_inputs.return_n_logits,
-            model_inputs.data_parallel_splits,
-            *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
-            *model_inputs.batch_context_lengths,
-            *ep_inputs,
-        )
+        model_outputs = self.model.execute(*model_inputs.buffers)
 
         num_hidden_state_outputs = len(self.devices)
         num_outputs = len(model_outputs)
@@ -604,7 +610,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         # If we are not in decode only mode, we need to create a list of
         # tensors containing the context length of each batch. Need by MLA
         # prefill.
-        if self.pipeline_config.pipeline_role != "decode_only":
+        if self.pipeline_config.runtime.pipeline_role != "decode_only":
 
             def align_length(length: int) -> int:
                 page_size = self.kv_cache_config.kv_cache_page_size
@@ -704,6 +710,12 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             compute_data_parallel_splits(replica_batches)
         )
 
+        ep_inputs = (
+            ()
+            if self.ep_comm_initializer is None
+            else tuple(self.ep_comm_initializer.model_inputs())
+        )
+
         return DeepseekV3Inputs(
             tokens=tokens,
             input_row_offsets=device_input_row_offsets,
@@ -715,6 +727,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 np.array([return_n_logits], dtype=np.int64)
             ),
             data_parallel_splits=data_parallel_splits,
+            ep_inputs=ep_inputs,
         )
 
     def prepare_next_token_inputs(
@@ -739,4 +752,5 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
             data_parallel_splits=prev_model_inputs.data_parallel_splits,
+            ep_inputs=prev_model_inputs.ep_inputs,
         )

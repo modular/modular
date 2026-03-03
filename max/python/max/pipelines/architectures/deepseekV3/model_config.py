@@ -136,7 +136,6 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-
         kvcache_quant_config = None
         if kv_cache_config.cache_dtype in (
             DType.float8_e4m3fn,

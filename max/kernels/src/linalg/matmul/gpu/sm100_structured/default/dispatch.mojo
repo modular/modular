@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from sys import (
+from std.math import ceildiv
+from std.sys import (
     align_of,
     env_get_bool,
     env_get_int,
@@ -20,19 +20,20 @@ from sys import (
     has_nvidia_gpu_accelerator,
 )
 
-from algorithm import elementwise
+from std.algorithm import elementwise
 from buffer.buffer import NDBuffer
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout.tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     lt_to_tt,
 )
-from logger import Logger
+from std.logger import Logger
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .....utils import (
     GemmShape,
@@ -50,6 +51,7 @@ from ....vendor.matmul import matmul as matmul_vendor
 from ...tile_scheduler import RasterOrder
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
+    blackwell_batched_matmul_tma_umma_warp_specialized,
     matmul_sm100_fallback,
 )
 from internal_utils import Table
@@ -1402,6 +1404,9 @@ fn heuristic_and_outliers_dispatch[
                 k_group_size=Int(tuning_config.k_group_size),
                 num_split_k=tuning_config.num_split_k,
             )
+
+            logger.info("dispatching to outlier config: ", matmul_config)
+
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=matmul_config,
@@ -1421,6 +1426,8 @@ fn heuristic_and_outliers_dispatch[
 
     comptime for config in configs:
         if config_runtime == config:
+            logger.info("dispatching to config: ", config)
+
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
@@ -1474,6 +1481,11 @@ fn matmul_dispatch_sm100_bf16[
 
     comptime DeepSeek_NK = [
         Index(16384, 512),
+        Index(256, 7168),
+        Index(1536, 7168),
+        Index(576, 7168),
+        Index(2112, 7168),
+        Index(24576, 1536),
     ]
 
     comptime miscellaneous_NK = [
@@ -1488,7 +1500,7 @@ fn matmul_dispatch_sm100_bf16[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level = PDLLevel(1),
+            pdl_level=pdl_level,
         ](c, a, b, ctx)
 
     comptime if static_NK in miscellaneous_NK:
@@ -1496,7 +1508,7 @@ fn matmul_dispatch_sm100_bf16[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level = PDLLevel(1),
+            pdl_level=pdl_level,
         ](c, a, b, ctx)
 
     comptime if Index(static_N, static_K) in llama3_8b_NK:
@@ -2164,3 +2176,40 @@ fn _matmul_dispatch_sm100[
         ](c_tmp, a, b, ctx)
 
         _ = tmp_device_buffer^
+
+
+@always_inline
+fn batched_matmul_dispatch_sm100_bf16[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    transpose_b: Bool,
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Dispatch batched BF16 matmul to SM100 kernel with a default config.
+
+    Uses a reasonable default config (256x256x16 MMA, 2x1x1 cluster, cta_group=2)
+    which works well for a variety of batched matmul shapes.
+    """
+    comptime MMA_K = 16
+    comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+
+    comptime block_tile_shape = Index(128, 128, BK)
+    comptime umma_shape = Index(
+        block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+    )
+    comptime cluster_shape = Index(2, 1, 1)
+    comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        mma_shape=umma_shape,
+        cluster_shape=cluster_shape,
+        block_swizzle_size=0,
+    )
+
+    blackwell_batched_matmul_tma_umma_warp_specialized[
+        transpose_b=transpose_b,
+        config=config,
+    ](c, a, b, ctx)

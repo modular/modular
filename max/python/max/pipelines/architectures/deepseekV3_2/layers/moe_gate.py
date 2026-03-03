@@ -35,7 +35,6 @@ class FloatCastingLinear(Linear):
 
 class DeepseekV3_2TopKRouter(DeepseekV3TopKRouter):
     def __init__(self, *args, **kwargs):
-        kwargs.pop("linear_cls")
         kwargs["linear_cls"] = FloatCastingLinear
         super().__init__(*args, **kwargs)
 

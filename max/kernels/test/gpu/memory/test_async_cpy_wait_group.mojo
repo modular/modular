@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from gpu.memory import (
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.memory import (
     AddressSpace,
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn copy_via_shared(
@@ -245,7 +245,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_copy_via_shared(ctx)
         test_copy_with_src_size(ctx)

@@ -13,6 +13,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""Modular framework Python bindings."""
+
 import enum
 import inspect
 import os

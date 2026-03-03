@@ -24,10 +24,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import ImageMetadata, RequestID, TokenBuffer
 from max.kv_cache import InsufficientBlocksError, PagedKVCacheManager
-from max.nn.kv_cache import (
-    KVCacheParams,
-    RaggedKVCacheInputs,
-)
+from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.support.image import hash_image
 from test_common.context_utils import create_text_context
@@ -72,7 +69,6 @@ def create_kv_cache(
         num_layers=1,
         n_kv_heads=1,
         head_dim=1,
-        cache_strategy="paged",
         enable_prefix_caching=True,
         page_size=page_size,
         devices=[DeviceRef.CPU()],
@@ -186,20 +182,20 @@ async def test_prefix_caching_reset_prefix_cache() -> None:
     context_3 = create_text_context(prompt)
 
     # Get cache hit of 0 tokens since the prefix cache is empty
-    with kv_manager.reserve([context_1], replica_idx=0, num_steps=1):
+    with kv_manager.reserve([[context_1]], num_steps=1):
         kv_manager.runtime_inputs([[context_1]])
         context_1.update(15)
         kv_manager.step([[context_1]])
     assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 0
 
     # Get cache hit of 4 tokens
-    with kv_manager.reserve([context_2], replica_idx=0, num_steps=1):
+    with kv_manager.reserve([[context_2]], num_steps=1):
         pass
     assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 4
 
     # Get cache hit of 0 tokens since we reset the prefix cache
     kv_manager.reset_prefix_cache()
-    with kv_manager.reserve([context_3], replica_idx=0, num_steps=1):
+    with kv_manager.reserve([[context_3]], num_steps=1):
         pass
     assert kv_manager.get_metrics(replica_idx=0).cache_tokens == 4
 
@@ -216,7 +212,7 @@ async def test_prefix_caching_with_repeating_prompt() -> None:
         prompt = np.array([100, 101, 102, 103, 104], dtype=np.int64)
         batch = [create_text_context(prompt)]
         context = batch[0]
-        with kv_manager.reserve([context], replica_idx=0, num_steps=1):
+        with kv_manager.reserve([[context]], num_steps=1):
             _ = kv_manager.runtime_inputs([batch])
 
             if i == 0:
@@ -480,7 +476,7 @@ class FakeModel:
     """Create a fake model that can be used to test prefix caching."""
 
     def __init__(self, kv_manager: PagedKVCacheManager) -> None:
-        self.page_size = kv_manager.page_size
+        self.page_size = kv_manager.params.page_size
         self.total_num_pages = kv_manager.get_num_pages(replica_idx=0)
         # block_projections maps from bid -> offset -> prefix tokens
         self.block_projections: dict[int, dict[int, np.ndarray]] = defaultdict(

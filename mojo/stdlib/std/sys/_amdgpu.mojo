@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from os import Atomic
-from sys.intrinsics import (
+from std.collections import InlineArray
+from std.os import Atomic
+from std.sys.intrinsics import (
     ballot,
     implicitarg_ptr,
     llvm_intrinsic,
@@ -21,8 +21,8 @@ from sys.intrinsics import (
     sendmsg,
 )
 
-from gpu.primitives.id import lane_id
-from memory import Span
+from std.gpu.primitives.id import lane_id
+from std.memory import Span
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.

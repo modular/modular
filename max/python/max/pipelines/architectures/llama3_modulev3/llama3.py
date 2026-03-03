@@ -16,22 +16,26 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.graph import BufferValue, TensorValue, ops
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.graph import TensorValue, ops
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    PagedCacheValues,
+    unflatten_ragged_mha_decode_inputs,
+)
 from max.nn.module_v3 import Module
+from max.nn.module_v3.common_layers.attention import AttentionWithRope
+from max.nn.module_v3.common_layers.mlp import MLP
 from max.nn.module_v3.embedding import Embedding
 from max.nn.module_v3.linear import Linear
 from max.nn.module_v3.norm import LayerNorm, RMSNorm
 from max.nn.module_v3.sequential import ModuleList
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 
-from ..common_layers.attention import AttentionWithRope
-from ..common_layers.mlp import MLP
 from .layers.mlp import LlamaStackedMLP
 from .layers.rotary_embedding import (
     Llama3RotaryEmbedding,
@@ -268,38 +272,10 @@ class Llama3(Module[..., tuple[Tensor, ...]]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
-        kv_collection = _unflatten_kv_inputs(
-            self.config, self.kv_params, variadic_args
+        kv_values = [arg._graph_value for arg in variadic_args]
+        kv_collections = unflatten_ragged_mha_decode_inputs(
+            kv_values, n_devices=self.kv_params.n_devices
         )
         return self.language_model(
-            tokens, kv_collection[0], return_n_logits, input_row_offsets
+            tokens, kv_collections[0], return_n_logits, input_row_offsets
         )
-
-
-def _unflatten_kv_inputs(
-    config: Llama3Config,
-    kv_params: KVCacheParamInterface,
-    kv_inputs_flat: Sequence[Tensor],
-) -> list[PagedCacheValues]:
-    kv_params = config.kv_params
-    n_devices = kv_params.n_devices
-    fetch_types = kv_params.get_symbolic_inputs()[0]
-    len_of_kv_tuple_per_dev = len(list(fetch_types))
-    kv_caches_per_dev: list[PagedCacheValues] = []
-    for i in range(n_devices):
-        start_idx = i * len_of_kv_tuple_per_dev
-
-        kv_block = kv_inputs_flat[start_idx]
-        cache_lengths = kv_inputs_flat[start_idx + 1]
-        lookup_table = kv_inputs_flat[start_idx + 2]
-        max_lengths = kv_inputs_flat[start_idx + 3]
-
-        kv_caches_per_dev.append(
-            PagedCacheValues(
-                kv_blocks=BufferValue(kv_block),
-                cache_lengths=TensorValue(cache_lengths),
-                lookup_table=TensorValue(lookup_table),
-                max_lengths=TensorValue(max_lengths),
-            )
-        )
-    return kv_caches_per_dev

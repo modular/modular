@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+from std.collections import Optional
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from gpu.host.info import B200
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import B200
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
-import itertools
+from std.utils import IndexList
+from std.utils.index import Index
+import std.itertools
 
 
 @always_inline
@@ -119,6 +119,9 @@ fn test[
     comptime static_b_shape = DimList(
         num_experts, 3 * N if qkv_perm_dim else N, K
     )
+    var dynamic_b_shape = IndexList[3](
+        num_experts, 3 * N if qkv_perm_dim else N, K
+    )
     var b_size = num_experts * (3 * N if qkv_perm_dim else N) * K
     comptime b_layout = Layout.row_major(
         num_experts, 3 * N if qkv_perm_dim else N, K
@@ -161,27 +164,27 @@ fn test[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, actual_N),
+        IndexList[2](total_num_tokens, actual_N),
     )
     var c_ref_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_ref_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, actual_N),
+        IndexList[2](total_num_tokens, actual_N),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_experts + 1,
+        IndexList[1](num_experts + 1),
     )
     var expert_ids_dev = NDBuffer[DType.int32, 1](
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_experts,
+        IndexList[1](num_experts),
     )
 
     # Move inputs to device
@@ -277,17 +280,9 @@ fn test[
             assert_almost_equal(
                 actual,
                 expect,
-                msg=String(
-                    "qkv_idx: ",
-                    qkv_idx,
-                    " m: ",
-                    m,
-                    " n: ",
-                    n,
-                    " ref: ",
-                    expect,
-                    " actual: ",
-                    actual,
+                msg=(
+                    t"qkv_idx: {qkv_idx} m: {m} n: {n} ref: {expect} actual:"
+                    t" {actual}"
                 ),
                 rtol=rtol,
             )
@@ -301,9 +296,7 @@ fn test[
                 expect = c_ref_host[m, n][0]
 
             var actual = c_host[m, n][0]
-            assert_almost_equal(
-                actual, expect, msg=String("m: ", m, " n: ", n), rtol=rtol
-            )
+            assert_almost_equal(actual, expect, msg=t"m: {m} n: {n}", rtol=rtol)
 
     # Cleanup
     a_host_ptr.free()
@@ -388,6 +381,7 @@ fn test_negative_lora_id[
 
     # Create host B buffers
     comptime static_b_shape = DimList(num_experts, N, K)
+    comptime dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
     comptime b_layout = Layout.row_major(num_experts, N, K)
     var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
@@ -425,23 +419,23 @@ fn test_negative_lora_id[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_active_experts + 1,
+        IndexList[1](num_active_experts + 1),
     )
     var expert_ids_dev = NDBuffer[DType.int32, 1](
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_active_experts,
+        IndexList[1](num_active_experts),
     )
 
     # Move inputs to device
@@ -533,7 +527,7 @@ fn test_negative_lora_id[
     _ = expert_ids_dev_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
         test[

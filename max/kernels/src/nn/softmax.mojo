@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv, exp, exp2, log
-from collections import Optional, OptionalReg
+from std.math import align_down, ceildiv, exp, exp2, log
+from std.collections import Optional, OptionalReg
 
-from sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
+from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
-import gpu.primitives.warp as warp
-from algorithm import sync_parallelize, vectorize
-from algorithm._gpu.reduction import block_reduce, row_reduce
-from algorithm.reduction import (
+import std.gpu.primitives.warp as warp
+from std.algorithm import sync_parallelize, vectorize
+from std.algorithm._gpu.reduction import block_reduce, row_reduce
+from std.algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
-from bit import log2_floor
-from gpu import (
+from std.bit import log2_floor
+from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx,
@@ -33,28 +33,28 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceAttribute, DeviceContext
-from gpu.host.info import is_cpu, is_gpu
+from std.gpu.host import DeviceAttribute, DeviceContext
+from std.gpu.host.info import is_cpu, is_gpu
 from layout._utils import idx2crd
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from layout._coord import RuntimeInt, coord_to_index_list
+from layout import RuntimeInt, coord_to_index_list
 from layout._layout import RowMajorLayout, row_major
-from layout._tile_tensor import (
+from layout.tile_tensor import (
     TileTensor,
     TensorLayout,
     stack_allocation as tt_stack_allocation,
 )
 from layout.tensor_core import get_fragment_size
-from memory import stack_allocation
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.memory import stack_allocation
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils import IndexList, StaticTuple
-from utils.index import product
-from utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils import IndexList, StaticTuple
+from std.utils.index import product
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 # ===-----------------------------------------------------------------------===#
 # Utilities

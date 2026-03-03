@@ -33,7 +33,7 @@ gpt_oss_modulev3_arch = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
+        "bfloat16",
     },
     pipeline_model=GptOssModel,
     task=PipelineTask.TEXT_GENERATION,

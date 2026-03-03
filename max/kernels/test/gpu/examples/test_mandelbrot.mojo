@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
-from sys.info import simd_width_of
+from std.math import ceildiv, iota
+from std.sys.info import simd_width_of
 
-from algorithm import vectorize
+from std.algorithm import vectorize
 from buffer import NDBuffer
-from complex import ComplexSIMD
-from gpu import *
-from gpu.host import DeviceContext
-from testing import assert_equal
+from std.complex import ComplexSIMD
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
-from utils.index import Index
-from sys import has_apple_gpu_accelerator
+from std.utils.index import Index
+from std.sys import has_apple_gpu_accelerator
 
 comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime int_type = DType.int
@@ -129,6 +129,6 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     _ = out_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_mandelbrot(ctx)

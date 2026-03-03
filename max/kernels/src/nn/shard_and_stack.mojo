@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import parallelize, sync_parallelize
-from gpu.host import DeviceBuffer
-from memory import memcpy
-from runtime.asyncrt import DeviceContextPtrList
+from std.algorithm import parallelize, sync_parallelize
+from std.gpu.host import DeviceBuffer
+from std.memory import memcpy
+from std.runtime.asyncrt import DeviceContextPtrList
 from tensor import InputVariadicTensors, OutputVariadicTensors
-from utils import IndexList, product
+from std.utils import IndexList, product
 
 
 fn _row_major_strides[rank: Int](shape: IndexList[rank]) -> IndexList[rank]:

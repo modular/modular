@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os.path import expanduser, split
-from pathlib import Path
+import std.os
+from std.os.path import expanduser, split
+from std.pathlib import Path
 
-from reflection import source_location
-from testing import TestSuite, assert_equal
+from std.reflection import source_location
+from std.testing import TestSuite, assert_equal
 
 
-def test_split():
+def test_split() raises:
     # Normal case
     head, tail = split(os.path.join("a", "b", "c.txt"))
     assert_equal(head, os.path.join("a", "b"))
@@ -66,5 +66,5 @@ def test_split():
     assert_equal(head + os.sep + tail, source_location)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

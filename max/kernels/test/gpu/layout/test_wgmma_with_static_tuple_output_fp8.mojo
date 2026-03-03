@@ -13,19 +13,19 @@
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import DimList, NDBuffer
-from gpu import barrier, warp_id, lane_id
-from gpu.host import DeviceContext
+from std.gpu import barrier, warp_id, lane_id
+from std.gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
-from gpu import thread_idx
-from gpu.compute.mma import (
+from std.gpu import thread_idx
+from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
 from internal_utils import assert_equal
-from random import rand
+from std.random import rand
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tensor_core_async import (
@@ -33,11 +33,11 @@ from layout.tensor_core_async import (
     _rhs_descriptor,
     tile_layout_k_major,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
 fn wgmma_kernel_ss[
@@ -278,7 +278,7 @@ fn wgmma_e4m3_e4m3_f32[
     _ = c_device_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for n in range(8, 32, 8):
             wgmma_e4m3_e4m3_f32[

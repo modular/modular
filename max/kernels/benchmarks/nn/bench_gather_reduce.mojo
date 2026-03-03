@@ -11,19 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import random_si64
-from sys import simd_width_of, size_of
+from std.random import random_si64
+from std.sys import simd_width_of, size_of
 
-from benchmark import Bench, Bencher, BenchId
+from std.benchmark import Bench, Bencher, BenchId
 from layout._layout import row_major
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
+from layout import Coord, Idx, TileTensor
 from nn.gather_scatter import gather_reduce
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
@@ -80,7 +79,7 @@ fn bench_gather_reduce(mut b: Bencher):
     indices.ptr.free()
 
 
-def main():
+def main() raises:
     var m = Bench()
     m.bench_function[bench_gather_reduce](
         BenchId("gather_reduce_dlrm1_multihot")

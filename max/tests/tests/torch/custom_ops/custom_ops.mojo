@@ -30,8 +30,8 @@ from tensor import (
     OutputTensor,
     foreach,
 )
-from runtime.asyncrt import DeviceContextPtr
-from utils.index import IndexList
+from std.runtime.asyncrt import DeviceContextPtr
+from std.utils.index import IndexList
 
 
 @register("grayscale")

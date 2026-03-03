@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from random import rand
+from std.os import abort
+from std.random import rand
 
-from benchmark import *
-from benchmark import keep
+from std.benchmark import *
+from std.benchmark import keep
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
@@ -149,16 +149,23 @@ struct MatmulSpecStatic(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct MatmulSpec[static_info: MatmulSpecStatic](
-    ImplicitlyCopyable, Stringable
-):
+struct MatmulSpec[static_info: MatmulSpecStatic](ImplicitlyCopyable, Writable):
     var m: Int
     var n: Int
     var k: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
-        return String(
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the matmul spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "m=",
             self.m,
             ";n=",
@@ -179,7 +186,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](
         return 2 * self.m * self.n * self.k
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
 
     comptime packed_float32 = MatmulSpecStatic(

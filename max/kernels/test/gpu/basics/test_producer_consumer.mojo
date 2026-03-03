@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.host import DeviceContext
-from gpu.memory import async_copy
-from gpu.sync import async_copy_arrive
+from std.gpu import barrier, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.host import DeviceContext
+from std.gpu.memory import async_copy
+from std.gpu.sync import async_copy_arrive
 from layout.tma_async import PipelineState, SharedMemBarrier
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import stack_allocation
-from testing import assert_equal
-from utils import IndexList
+from std.memory import stack_allocation
+from std.testing import assert_equal
+from std.utils import IndexList
 
 
 fn producer_consumer_kernel[NUM_THREADS: Int]():
@@ -51,7 +51,7 @@ fn producer_consumer_kernel[NUM_THREADS: Int]():
             print("Consumer thread_idx:", thread_idx.x, "warp_idx: ", warp_id)
 
 
-def test_producer_consumer_kernel(ctx: DeviceContext):
+def test_producer_consumer_kernel(ctx: DeviceContext) raises:
     comptime kernel = producer_consumer_kernel[64]
     ctx.enqueue_function_experimental[kernel](
         grid_dim=(1),
@@ -123,7 +123,7 @@ fn producer_consumer_pipeline_kernel[Q_SIZE: Int](num_iters: Int):
         k_tile_iters -= 1
 
 
-def test_producer_consumer_pipeline_kernel(ctx: DeviceContext):
+def test_producer_consumer_pipeline_kernel(ctx: DeviceContext) raises:
     comptime kernel = producer_consumer_pipeline_kernel[4]
     ctx.enqueue_function_experimental[kernel](
         4,
@@ -231,7 +231,7 @@ fn cpaysnc_producer_consumer_pipeline_kernel[
 
 def test_cpasync_producer_consumer_pipeline[
     num_stages: Int
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime size_per_stage = 128 * (16 // size_of[DType.float32]())
     comptime size = num_stages * size_per_stage
     comptime shape1d = IndexList[1](size)
@@ -283,7 +283,7 @@ def test_cpasync_producer_consumer_pipeline[
                     assert_equal(src[idx] + Float32(i), dst[idx])
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_producer_consumer_kernel(ctx)
         test_producer_consumer_pipeline_kernel(ctx)

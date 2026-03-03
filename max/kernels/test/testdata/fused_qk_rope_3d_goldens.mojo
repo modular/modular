@@ -17,7 +17,7 @@ https://gist.github.com/k-w-w/effc0feb35cf57aa1e87cbd11be8a86f
 """
 
 
-def q_input[dtype: DType]() -> List[Scalar[dtype]]:
+def q_input[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -122,7 +122,7 @@ def q_input[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def k_cache_input[dtype: DType]() -> List[Scalar[dtype]]:
+def k_cache_input[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -227,7 +227,7 @@ def k_cache_input[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def q_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
+def q_out_golden[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -332,7 +332,7 @@ def q_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def k_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
+def k_out_golden[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -437,7 +437,7 @@ def k_out_golden[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def position_ids_input[dtype: DType]() -> List[Scalar[dtype]]:
+def position_ids_input[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off
@@ -448,7 +448,7 @@ def position_ids_input[dtype: DType]() -> List[Scalar[dtype]]:
     ).copy()
 
 
-def freqs_cis_table_input[dtype: DType]() -> List[Scalar[dtype]]:
+def freqs_cis_table_input[dtype: DType]() raises -> List[Scalar[dtype]]:
     return rebind[List[Scalar[dtype]]](
         [
             # fmt: off

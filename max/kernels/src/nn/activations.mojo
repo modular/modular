@@ -13,9 +13,9 @@
 
 """The module contains implementations of activation functions."""
 
-import math
+import std.math
 
-from utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type
 
 # ===----------------------------------------------------------------------=== #
 # sign

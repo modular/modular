@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import has_accelerator
+from std.math import ceildiv
+from std.sys import has_accelerator
 
-from complex import ComplexSIMD, ComplexScalar
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.complex import ComplexSIMD, ComplexScalar
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 
 comptime GRID_WIDTH = 60
@@ -35,7 +35,7 @@ comptime MAX_ITERATIONS = 100
 comptime layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
 
 
-def main():
+def main() raises:
     comptime assert (
         has_accelerator()
     ), "This example requires a supported accelerator"
@@ -100,7 +100,7 @@ fn mandelbrot(
     tensor[row, col] = iters
 
 
-def draw_mandelbrot(tensor: LayoutTensor[int_dtype, layout]):
+def draw_mandelbrot(tensor: LayoutTensor[int_dtype, layout]) raises:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
     for row in range(GRID_HEIGHT):

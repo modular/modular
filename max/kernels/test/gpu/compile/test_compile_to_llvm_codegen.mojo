@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import thread_idx
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.memory import external_memory
-from memory import LegacyUnsafePointer
+from std.gpu import thread_idx
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.memory import external_memory
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

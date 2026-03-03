@@ -13,7 +13,7 @@
 """Step-by-step tests for lt_to_tt via _DimsToCoordLike (the working path)."""
 
 from buffer import Dim, DimList
-from layout._coord import (
+from layout.coord import (
     _DimsToCoordLike,
     Coord,
     CoordLike,
@@ -21,7 +21,7 @@ from layout._coord import (
     RuntimeInt,
 )
 from layout._layout import Layout as InternalLayout
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 
 
 # ============================================================
@@ -113,7 +113,7 @@ fn test_dimlist_from_dynamic_layout_shape() raises:
     from layout import Layout, UNKNOWN_VALUE
 
     # Public layout with one dynamic dim
-    comptime lt_layout = Layout.row_major[2](DimList(Dim(), Dim(8)))
+    comptime lt_layout = Layout.row_major[dims = DimList(Dim(), Dim(8))]()
 
     comptime shape_dim0 = lt_layout.shape[0].value()
     comptime shape_dim1 = lt_layout.shape[1].value()
@@ -138,7 +138,7 @@ fn test_tiletensor_type_from_public_layout() raises:
     print("--- test_tiletensor_type_from_public_layout ---")
     from layout import Layout, UNKNOWN_VALUE
 
-    comptime lt_layout = Layout.row_major[2](DimList(Dim(), Dim(8)))
+    comptime lt_layout = Layout.row_major[dims = DimList(Dim(), Dim(8))]()
 
     # Helper: convert IntTuple element to Dim
     @parameter
@@ -179,8 +179,8 @@ fn test_tiletensor_type_from_public_layout() raises:
 fn test_lt_to_tt_function() raises:
     print("--- test_lt_to_tt_function ---")
     from layout import Layout, LayoutTensor, UNKNOWN_VALUE, RuntimeLayout
-    from memory import UnsafePointer
-    from utils.index import Index
+    from std.memory import UnsafePointer
+    from std.utils.index import Index
 
     @parameter
     fn _int_to_dim(value: Int) -> Dim:
@@ -257,7 +257,7 @@ fn test_lt_to_tt_function() raises:
     print("  static: rank =", tt1.rank)
 
     # Test with dynamic layout
-    comptime dynamic_layout = Layout.row_major[2](DimList(Dim(), Dim(8)))
+    comptime dynamic_layout = Layout.row_major[dims = DimList(Dim(), Dim(8))]()
     var array2 = InlineArray[Float32, 32](fill=2.0)
     var lt2 = LayoutTensor[DType.float32, dynamic_layout](
         array2.unsafe_ptr(),
@@ -269,7 +269,7 @@ fn test_lt_to_tt_function() raises:
     print("  PASSED")
 
 
-def main():
+def main() raises:
     test_dims_to_coord_like_static()
     test_dims_to_coord_like_dynamic()
     test_tiletensor_type_from_dims()

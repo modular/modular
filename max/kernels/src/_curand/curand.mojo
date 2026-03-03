@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from pathlib import Path
-from ffi import _find_dylib
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import _find_dylib
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle
 
-from gpu.host._nvidia_cuda import CUstream
-from utils import StaticTuple
+from std.gpu.host._nvidia_cuda import CUstream
+from std.utils import StaticTuple
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
@@ -262,7 +262,7 @@ struct curandRngType(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("curandRngType(", self, ")")
+        return t"curandRngType({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -613,7 +613,7 @@ struct curandMethod(Equatable, Identifiable, TrivialRegisterPassable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("curandMethod(", self, ")")
+        return t"curandMethod({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -769,7 +769,7 @@ struct curandStatus(Equatable, Identifiable, TrivialRegisterPassable, Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("curandStatus(", self, ")")
+        return t"curandStatus({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -816,7 +816,7 @@ struct curandDirectionVectorSet(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("curandDirectionVectorSet(", self, ")")
+        return t"curandDirectionVectorSet({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1286,7 +1286,7 @@ struct curandOrdering(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("curandOrdering(", self, ")")
+        return t"curandOrdering({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)

@@ -21,15 +21,15 @@ The module includes:
 - Random value generation (`random`)
 """
 
-from itertools import product
-from random import random_float64
-from sys import is_nvidia_gpu
+from std.itertools import product
+from std.random import random_float64
+from std.sys import is_nvidia_gpu
 
-from ._coord import Coord
+from .coord import Coord
 from ._layout import TensorLayout
-from ._tile_tensor import TileTensor
+from .tile_tensor import TileTensor
 
-from utils.numerics import max_finite
+from std.utils.numerics import max_finite
 
 # A batch size for filler functions loop bounds.
 comptime BATCH_SIZE = 2048

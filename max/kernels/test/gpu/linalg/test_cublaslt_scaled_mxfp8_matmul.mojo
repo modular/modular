@@ -11,23 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, align_up
-from random import random_ui64
+from std.math import ceildiv, align_up
+from std.random import random_ui64
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from linalg.matmul.vendor.blas import Backend, Handle, matmul
 from internal_utils._utils import ValOrDim, dynamic, static
 from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
-from collections import OptionalReg
-from layout import Layout, LayoutTensor, IntTuple
+from std.collections import OptionalReg
+from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from sys import argv
-from utils import Index
+from layout._utils import ManagedLayoutTensor
+from std.sys import argv
+from std.utils import Index, IndexList
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -38,7 +39,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 from linalg.fp4_quantization import naive_block_scaled_matmul
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 fn test_scaled_mxfp8_cublaslt[
@@ -66,59 +67,45 @@ fn test_scaled_mxfp8_cublaslt[
     comptime scales_type = MXFP8_SF_DTYPE
 
     print(
-        String(
-            "in/out dtypes=(",
-            input_type,
-            ", ",
-            output_type,
-            ", ",
-            scales_type,
-            ") ",
-            " problem shape=(",
-            M,
-            ", ",
-            N,
-            ", ",
-            K,
-            ") ",
-        )
+        t"in/out dtypes=({input_type}, {output_type}, {scales_type})  problem"
+        t" shape=({M}, {N}, {K}) "
     )
 
     comptime static_a_shape = DimList(m.dim, k.dim)
     comptime static_b_shape = DimList(n.dim, k.dim)
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value)
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](n.value, k.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     comptime static_a_scales_shape = DimList(
         ceildiv(m.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(n.dim, SF_MN_GROUP_SIZE),
         ceildiv(k.dim, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(m.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(n.value, SF_MN_GROUP_SIZE),
         ceildiv(k.value, MXFP8_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_scales_size = (
@@ -170,13 +157,23 @@ fn test_scaled_mxfp8_cublaslt[
     var b_host = NDBuffer[input_type, 2, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[output_type]].alloc(c_size)
-    var c_host = NDBuffer[output_type, 2, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
+    var c_host_managed = ManagedLayoutTensor[
+        output_type, Layout(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[output_type]].alloc(c_size)
+    var c_host = NDBuffer[output_type, 2, _, static_c_shape](
+        c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
+    )
+    var c_host_ref_managed = ManagedLayoutTensor[
+        output_type, Layout(UNKNOWN_VALUE)
+    ](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
     var c_host_ref = NDBuffer[output_type, 2, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
+        c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[input_type](a_size)
@@ -268,7 +265,7 @@ fn test_scaled_mxfp8_cublaslt[
         c_row_major=True,
     )
 
-    ctx.enqueue_copy(c_host_ptr, c_device)
+    ctx.enqueue_copy(c_host.data, c_device)
 
     var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
     naive_block_scaled_matmul[
@@ -284,7 +281,7 @@ fn test_scaled_mxfp8_cublaslt[
         ctx,
     )
 
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
 
     ctx.synchronize()
 
@@ -299,16 +296,8 @@ fn test_scaled_mxfp8_cublaslt[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
-    _ = a_scales_device^
-    _ = b_scales_device^
 
     _ = a_scales
     _ = b_scales

@@ -15,13 +15,13 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory import bitcast
+from std.memory import bitcast
 ```
 """
 
-from sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
+from std.sys import bit_width_of, is_amd_gpu, is_nvidia_gpu
 
-from builtin.dtype import _uint_type_of_width
+from std.builtin.dtype import _uint_type_of_width
 
 
 # ===-----------------------------------------------------------------------===#
@@ -49,7 +49,7 @@ fn bitcast[
     of four 8-bit integers:
 
     ```mojo
-    from memory import bitcast
+    from std.memory import bitcast
 
     u32 = UInt32(4631)
     u8x4 = bitcast[DType.uint8, 4](u32)
@@ -144,7 +144,7 @@ fn pack_bits[
     This example packs a vector of 8 `bool` values into a single 8-bit integer.
 
     ```mojo
-    from memory import pack_bits
+    from std.memory import pack_bits
 
     bits = SIMD[DType.bool, 8](1, 1, 0, 1, 0, 0, 0, 0)
     u8 = pack_bits[DType.uint8](bits)

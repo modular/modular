@@ -10,27 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from math import ceildiv
-from sys import align_of, simd_width_of, size_of
-from sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
+from std.collections import Optional
+from std.math import ceildiv
+from std.sys import align_of, simd_width_of, size_of
+from std.sys.info import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
 
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_relaxed,
     elect_one_sync,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200, H100
-from gpu import (
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200, H100
+from std.gpu import (
     block_dim,
     block_id_in_cluster,
     block_idx,
@@ -40,12 +40,12 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import external_memory, fence_mbarrier_init
-from gpu.primitives.grid_controls import PDLLevel
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import external_memory, fence_mbarrier_init
+from std.gpu.primitives.grid_controls import PDLLevel
 
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import IntTuple, Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.layout_tensor import LayoutTensorIter
@@ -58,10 +58,10 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from .arch.sm100 import MmaOpSM100_SS
 from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
@@ -77,7 +77,7 @@ from .matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
 )
 from .matmul.gpu.amd import gemm_kernel_amd
-from algorithm import vectorize
+from std.algorithm import vectorize
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1186,7 +1186,7 @@ fn grouped_matmul_vendor[
 
         var token_start = a_offsets[i]
         var token_end = a_offsets[i + 1]
-        var num_tokens = token_end - token_start
+        var num_tokens = Int(token_end - token_start)
 
         # Skip if no tokens for this expert
         if num_tokens <= 0:
@@ -1197,7 +1197,7 @@ fn grouped_matmul_vendor[
             # Create output slice and zero it out
             var c_slice = NDBuffer[c_type, 2, MutAnyOrigin](
                 c.data + token_start * UInt32(c.dim[1]()),
-                DimList(num_tokens, c.dim[1]()),
+                IndexList[2](num_tokens, Int(c.dim[1]())),
             )
             var buff = DeviceBuffer(
                 ctx, c_slice.data, c_slice.num_elements(), owning=False
@@ -1208,15 +1208,15 @@ fn grouped_matmul_vendor[
         # Create views into the tensors for this expert
         var a_slice = NDBuffer[a_type, 2, ImmutAnyOrigin](
             a.data + token_start * UInt32(a.dim[1]()),
-            DimList(num_tokens, a.dim[1]()),
+            IndexList[2](num_tokens, Int(a.dim[1]())),
         )
         var b_slice = NDBuffer[b_type, 2, ImmutAnyOrigin](
             b.data + expert_id * Int32(b.dim[1]()) * Int32(b.dim[2]()),
-            DimList(b.dim[1](), b.dim[2]()),
+            IndexList[2](Int(b.dim[1]()), Int(b.dim[2]())),
         )
         var c_slice = NDBuffer[c_type, 2, MutAnyOrigin](
             c.data + token_start * UInt32(c.dim[1]()),
-            DimList(num_tokens, c.dim[1]()),
+            IndexList[2](num_tokens, Int(c.dim[1]())),
         )
 
         vendor_matmul[use_tf32](

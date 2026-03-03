@@ -36,6 +36,8 @@ OpaqueParameter = bool | int | str | DType
 
 
 class FilterLayout(enum.Enum):
+    """The memory layout of a convolution filter tensor."""
+
     RSCF = "RSCF"
     QRSCF = "QRSCF"
     FCRS = "FCRS"
@@ -66,6 +68,8 @@ class FilterLayout(enum.Enum):
 
 
 class ConvInputLayout(enum.Enum):
+    """The memory layout of a convolution input tensor."""
+
     # TODO(GEX-2302): We need to differentiate between 2D - 3D layouts.
     # TODO(GEX-2302): Another Layout type should be used instead of StringAttr.
     # Simpler implementation to quickly support CUDNN input formats.

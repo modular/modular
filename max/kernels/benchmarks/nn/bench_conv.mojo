@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import align_up, ceildiv
-from random import rand
-from sys import simd_width_of, size_of
-from sys.param_env import env_get_int, env_get_string
+from std.math import align_up, ceildiv
+from std.random import rand
+from std.sys import simd_width_of, size_of
+from std.sys.param_env import env_get_int, env_get_string
 
-from benchmark import *
-from benchmark import keep
+from std.benchmark import *
+from std.benchmark import keep
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
@@ -29,8 +29,8 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
@@ -211,7 +211,7 @@ struct ConvSpecStatic(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
+struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Writable):
     var n: Int
     var input_dims: IndexList[Self.static_info.rank]
     var c: Int
@@ -222,10 +222,19 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
     var pad: IndexList[2 * Self.static_info.rank]
     var num_groups: Int
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
-        # fmt: off
-        return String(
+        return String.write(self)
+
+    # fmt: off
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the conv spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "n=", self.n,
             ";input=", self.input_dims,
             ";c=", self.c,
@@ -234,7 +243,7 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
             ";stride=", self.stride,
             ";padding=", self.pad,
         )
-        # fmt: on
+    # fmt: on
 
     fn flops(self) -> Int:
         var output_dims = IndexList[Self.static_info.rank](1)
@@ -258,7 +267,7 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
         )
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig())
 
     comptime fp32_1d = ConvSpecStatic(

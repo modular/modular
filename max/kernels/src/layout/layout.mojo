@@ -21,7 +21,6 @@ Understanding the relationship between tensor shapes, strides, and
 memory layout is essential for effective use.
 
 Key components:
-- `LayoutTrait`: Core trait defining the interface for all layout types
 - `Layout`: Primary struct implementing memory layout with shape and stride information
 - Layout algebra: Functions for composing, dividing, and transforming layouts
 - Tiling operations: Functions for hierarchical decomposition of layouts
@@ -55,13 +54,13 @@ var tiled = blocked_product(layout^, Layout([2, 2]))
 ```
 """
 
-import sys
-from collections.string.string import _calc_initial_buffer_size_int32
-from os import abort
+import std.sys
+from std.collections.string.string import _calc_initial_buffer_size_int32
+from std.os import abort
 
 from buffer.dimlist import DimList
 
-from utils import IndexList
+from std.utils import IndexList
 
 from .int_tuple import (
     UNKNOWN_VALUE,
@@ -85,71 +84,6 @@ from .int_tuple import (
     to_unknown,
     tuple_min,
 )
-
-# ===-----------------------------------------------------------------------===#
-# Layout Trait                                                                 #
-# ===-----------------------------------------------------------------------===#
-
-
-trait LayoutTrait(Copyable, ImplicitlyDestructible):
-    """Defines the interface for mapping between logical coordinates and memory indices.
-
-    The `LayoutTrait` provides a common interface for all layout types, including
-    basic layouts, swizzles, and composed layouts. It enables mapping from
-    multi-dimensional logical coordinates to linear memory indices, which is
-    essential for tensor operations.
-
-    Implementations of this trait must provide methods for:
-    1. Mapping coordinates to indices via the `__call__` method
-    2. Calculating the total size of the layout's domain
-    3. Calculating the size of the layout's codomain (memory footprint)
-    4. Indicating whether the layout has a valid shape
-
-    This trait serves as the foundation for the layout system, allowing
-    different layout implementations to be used interchangeably in algorithms.
-    """
-
-    comptime has_shape: Bool
-    """Indicates whether the layout has a valid shape.
-
-    Layouts and ComposedLayouts with at least one Layout have valid shapes
-    and can be used in layout algebra. Swizzles don't have shapes and
-    should be excluded from layout algebra.
-    """
-
-    fn __call__(self, index: IntTuple) -> Int:
-        """Maps a logical coordinate to a linear memory index.
-
-        Args:
-            index: An IntTuple representing the logical coordinates to map.
-
-        Returns:
-            The linear memory index corresponding to the given coordinates.
-        """
-        ...
-
-    fn size(self) -> Int:
-        """Returns the total number of elements in the layout's domain.
-
-        For a layout with shape (m, n), this returns m * n, representing
-        the total number of valid coordinates in the layout.
-
-        Returns:
-            The total number of elements in the layout.
-        """
-        ...
-
-    fn cosize(self) -> Int:
-        """Returns the size of the memory region spanned by the layout.
-
-        For a layout with shape `(m, n)` and stride `(r, s)`, this returns
-        `(m-1)*r + (n-1)*s + 1`, representing the memory footprint.
-
-        Returns:
-            The size of the memory region required by the layout.
-        """
-        ...
-
 
 # ===-----------------------------------------------------------------------===#
 # Layout                                                                       #
@@ -311,15 +245,12 @@ struct Layout(
     Defaultable,
     Equatable,
     Iterable,
-    LayoutTrait,
     Sized,
-    Stringable,
     Writable,
 ):
     """Represents a memory layout for multi-dimensional data.
 
-    The Layout struct is the primary implementation of the LayoutTrait,
-    providing a concrete representation of memory layouts using shape and
+    Layout provides a concrete representation of memory layouts using shape and
     stride information. It maps between logical coordinates and linear
     memory indices, enabling efficient access to multi-dimensional data.
 
@@ -478,7 +409,7 @@ struct Layout(
         return Layout(shape, prefix_product(shape))
 
     @staticmethod
-    fn col_major[rank: Int](dims: DimList) -> Layout:
+    fn col_major[*, dims: DimList]() -> Layout:
         """Creates a col-major layout from a DimList with compile-time rank.
 
         This method creates a col-major layout where the first dimension varies fastest in memory.
@@ -487,9 +418,6 @@ struct Layout(
         also be marked as unknown.
 
         Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
-        Args:
             dims: A DimList containing the dimensions of the layout.
 
         Returns:
@@ -502,14 +430,15 @@ struct Layout(
             from layout.layout import DimList
 
             # Create a col-major layout with compile-time rank
-            var dims = DimList(3, 4)
-            var layout = Layout.col_major[2](dims)
+            comptime dims = DimList(3, 4)
+            comptime layout = Layout.col_major[dims]()
             # Result: Layout with shape (3,4) and stride (1,3)
             ```
         """
         var c_stride = 1
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
+        comptime rank = len(dims)
 
         comptime for i in range(rank):
             var dim = dims.get[i]()
@@ -548,7 +477,7 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from utils import IndexList
+            from std.utils import IndexList
 
             # Create a row-major layout with compile-time rank
             var idx_list = IndexList[2](3, 4)
@@ -603,7 +532,7 @@ struct Layout(
         return Self.row_major(shape)
 
     @staticmethod
-    fn row_major[rank: Int](dims: DimList) -> Layout:
+    fn row_major[*, dims: DimList]() -> Layout:
         """Creates a row-major layout from a DimList with compile-time rank.
 
         This method creates a row-major layout where the last dimension varies fastest in memory.
@@ -612,9 +541,6 @@ struct Layout(
         also be marked as unknown.
 
         Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
-        Args:
             dims: A DimList containing the dimensions of the layout.
 
         Returns:
@@ -627,14 +553,15 @@ struct Layout(
             from layout.layout import DimList
 
             # Create a row-major layout with compile-time rank
-            var dims = DimList(3, 4)
-            var layout = Layout.row_major[2](dims)
+            comptime dims = DimList(3, 4)
+            comptime layout = Layout.row_major[2](dims)
             # Result: Layout with shape (3,4) and stride (4,1)
             ```
         """
         var c_stride = 1
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
+        comptime rank = len(dims)
 
         comptime for i in range(rank):
             var dim = dims.get[i]()
@@ -673,7 +600,7 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from utils import IndexList
+            from std.utils import IndexList
 
             # Create a row-major layout with compile-time rank
             var idx_list = IndexList[2](3, 4)
@@ -807,6 +734,7 @@ struct Layout(
     # ===------------------------------------------------------------------===#
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the layout to a string representation.
 

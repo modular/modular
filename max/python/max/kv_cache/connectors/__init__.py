@@ -83,37 +83,35 @@ def create_connector(
             session=session,
         )
 
-    if params.enable_kvcache_swapping_to_host and total_num_host_blocks > 0:
-        if params.disk_offload_dir is not None:
-            logger.info(
-                "Creating TieredConnector: "
-                f"host_blocks={total_num_host_blocks}, "
-                f"disk_dir={params.disk_offload_dir}, "
-                f"disk_max_gb={params.disk_offload_max_gb}"
-            )
-            return TieredConnector(
-                params=params,
-                devices=devices,
-                device_buffer=device_buffer,
-                total_num_host_blocks=total_num_host_blocks,
-                disk_cache_dir=params.disk_offload_dir,
-                max_disk_size_gb=params.disk_offload_max_gb,
-                use_direct_io=params.disk_offload_direct_io,
-            )
-        else:
-            logger.info(
-                f"Creating LocalConnector: host_blocks={total_num_host_blocks}"
-            )
-            return LocalConnector(
-                params=params,
-                device_buffer=device_buffer,
-                total_num_host_blocks=total_num_host_blocks,
-            )
+    if not params.enable_kvcache_swapping_to_host or total_num_host_blocks == 0:
+        logger.info(
+            "Creating NullConnector: external KV cache swapping disabled or no host blocks allocated"
+        )
+        return NullConnector()
 
-    logger.info(
-        "Creating NullConnector: external KV cache swapping disabled or no host blocks allocated"
+    if params.disk_offload_dir is not None:
+        logger.info(
+            "Creating TieredConnector: "
+            f"host_blocks={total_num_host_blocks}, "
+            f"disk_dir={params.disk_offload_dir}, "
+            f"disk_max_gb={params.disk_offload_max_gb}"
+        )
+        return TieredConnector(
+            params=params,
+            devices=devices,
+            device_buffer=device_buffer,
+            total_num_host_blocks=total_num_host_blocks,
+            disk_cache_dir=params.disk_offload_dir,
+            max_disk_size_gb=params.disk_offload_max_gb,
+            use_direct_io=params.disk_offload_direct_io,
+        )
+
+    logger.info(f"Creating LocalConnector: host_blocks={total_num_host_blocks}")
+    return LocalConnector(
+        params=params,
+        device_buffer=device_buffer,
+        total_num_host_blocks=total_num_host_blocks,
     )
-    return NullConnector()
 
 
 __all__ = [

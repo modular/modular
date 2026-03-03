@@ -13,15 +13,15 @@
 
 """Mojo kernel wrappers for layer_norm MO interpreter operations."""
 
-from os import abort
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from sys.info import has_accelerator
+from std.os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.sys.info import has_accelerator
 
-from algorithm.functional import IndexList
-from math import sqrt
-from memory import OpaquePointer
-from runtime.asyncrt import DeviceContextPtr
+from std.algorithm.functional import IndexList
+from std.math import sqrt
+from std.memory import OpaquePointer
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import ManagedTensorSlice
 from tensor.io_spec import Input
 from compiler_internal import StaticTensorSpec
@@ -47,7 +47,7 @@ fn PyInit_layer_norm_ops() -> PythonObject:
 
         return b.finalize()
     except e:
-        abort(String("failed to create layer_norm op bindings module: ", e))
+        abort(t"failed to create layer_norm op bindings module: {e}")
 
 
 # =============================================================================

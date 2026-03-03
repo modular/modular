@@ -13,13 +13,13 @@
 
 # Meant to be run on an AVX512 system
 
-from math import align_up
-from sys import align_of, simd_width_of
+from std.math import align_up
+from std.sys import align_of, simd_width_of
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
 from layout import *
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 

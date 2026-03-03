@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from itertools import islice
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from max.dtype import DType
 from max.graph import (
@@ -34,7 +34,9 @@ from max.nn.comm.allreduce import Allreduce
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import (
     KVCacheParams,
+    MHADecodeDispatchMetadata,
     PagedCacheValues,
+    mha_decode_dispatch_metadata_list,
 )
 from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear
@@ -272,6 +274,7 @@ class DistributedTransformerBlock(Module):
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
         kv_max_lengths: list[TensorValue],
+        kv_dispatch_metadata: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
@@ -283,12 +286,20 @@ class DistributedTransformerBlock(Module):
         # Re-pack those arguments into a nice structured type.
         kv_collections = [
             PagedCacheValues(
-                kv_blocks[i],
-                kv_cache_lengths[i],
-                kv_lookup_table[i],
-                kv_max_lengths[i],
+                kv_blocks=kv_block,
+                cache_lengths=cache_lengths,
+                lookup_table=lookup_table,
+                max_lengths=max_lengths,
+                dispatch_metadata=MHADecodeDispatchMetadata(dispatch_metadata),
             )
-            for i in range(len(kv_blocks))
+            for kv_block, cache_lengths, lookup_table, max_lengths, dispatch_metadata in zip(
+                kv_blocks,
+                kv_cache_lengths,
+                kv_lookup_table,
+                kv_max_lengths,
+                kv_dispatch_metadata,
+                strict=True,
+            )
         ]
 
         attn_outs = self.self_attn(
@@ -368,15 +379,34 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
 
         freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
-        input_row_offsets_ = ops.distributed_broadcast(
+        input_row_offsets_per_device = ops.distributed_broadcast(
             input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
+        dispatch_metadata_tensors = [
+            cast(TensorValue, metadata.tensor)
+            for metadata in mha_decode_dispatch_metadata_list(kv_collections)
+        ]
+
+        kv_blocks = [
+            kv_collection.kv_blocks for kv_collection in kv_collections
+        ]
+        kv_cache_lengths = [
+            kv_collection.cache_lengths for kv_collection in kv_collections
+        ]
+        kv_lookup_table = [
+            kv_collection.lookup_table for kv_collection in kv_collections
+        ]
+        kv_max_lengths = [
+            kv_collection.max_lengths for kv_collection in kv_collections
+        ]
+
         kv_cache_arguments = [
-            [kv_collection.kv_blocks for kv_collection in kv_collections],
-            [kv_collection.cache_lengths for kv_collection in kv_collections],
-            [kv_collection.lookup_table for kv_collection in kv_collections],
-            [kv_collection.max_lengths for kv_collection in kv_collections],
+            kv_blocks,
+            kv_cache_lengths,
+            kv_lookup_table,
+            kv_max_lengths,
+            dispatch_metadata_tensors,
         ]
 
         if self.use_subgraphs:
@@ -388,8 +418,9 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
                 [kv_collection[1].type for kv_collection in kv_collections],
                 [kv_collection[2].type for kv_collection in kv_collections],
                 [kv_collection[3].type for kv_collection in kv_collections],
+                [metadata.type for metadata in dispatch_metadata_tensors],
                 [freq.type for freq in freqs_cis],
-                [offset.type for offset in input_row_offsets_],
+                [offset.type for offset in input_row_offsets_per_device],
             ]
 
             # First, we need to build the subgraphs for each layer group.
@@ -427,24 +458,13 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
                                 ),
                                 *h,
                                 *signal_buffers,
-                                *[
-                                    kv_collection[0]
-                                    for kv_collection in kv_collections
-                                ],
-                                *[
-                                    kv_collection[1]
-                                    for kv_collection in kv_collections
-                                ],
-                                *[
-                                    kv_collection[2]
-                                    for kv_collection in kv_collections
-                                ],
-                                *[
-                                    kv_collection[3]
-                                    for kv_collection in kv_collections
-                                ],
+                                *kv_blocks,
+                                *kv_cache_lengths,
+                                *kv_lookup_table,
+                                *kv_max_lengths,
+                                *dispatch_metadata_tensors,
                                 *freqs_cis,
-                                *input_row_offsets_,
+                                *input_row_offsets_per_device,
                                 prefix=f"layers.{idx}.",
                             )
                         ]
@@ -457,7 +477,7 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
                         signal_buffers,
                         *kv_cache_arguments,
                         freqs_cis=freqs_cis,
-                        input_row_offsets=input_row_offsets_,
+                        input_row_offsets=input_row_offsets_per_device,
                     )
         else:
             for idx, layer in enumerate(self.layers):
@@ -467,8 +487,8 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
                     signal_buffers,
                     *kv_cache_arguments,
                     freqs_cis=freqs_cis,
-                    input_row_offsets=input_row_offsets_,
+                    input_row_offsets=input_row_offsets_per_device,
                 )
         return self._postprocess_logits(
-            h, input_row_offsets_, return_n_logits, signal_buffers
+            h, input_row_offsets_per_device, return_n_logits, signal_buffers
         )

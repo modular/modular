@@ -11,25 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from random import random_float64
+from std.math import ceildiv, isclose
+from std.random import random_float64
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.info import A100
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import A100
+from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
 from linalg.utils_gpu import MatmulConfig, MatmulKernels, select_config
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:
@@ -747,7 +746,7 @@ fn run_batched_matmul(
     _ = c_host_n
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime kernels = MatmulKernels[
             DType.bfloat16, DType.bfloat16, DType.bfloat16, False

@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
-from os import abort
-from pathlib import Path
-from ffi import _find_dylib
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import _find_dylib
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 from .infer import (
     cudnnContext,
@@ -484,7 +484,7 @@ struct cudnnFusedOpsConstParamLabel_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("cudnnFusedOpsConstParamLabel_t(", self, ")")
+        return t"cudnnFusedOpsConstParamLabel_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -533,7 +533,7 @@ struct cudnnReorderType_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("cudnnReorderType_t(", self, ")")
+        return t"cudnnReorderType_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -688,7 +688,7 @@ struct cudnnFusedOps_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("cudnnFusedOps_t(", self, ")")
+        return t"cudnnFusedOps_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -746,7 +746,7 @@ struct cudnnFusedOpsPointerPlaceHolder_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("cudnnFusedOpsPointerPlaceHolder_t(", self, ")")
+        return t"cudnnFusedOpsPointerPlaceHolder_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -928,7 +928,7 @@ struct cudnnFusedOpsVariantParamLabel_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("cudnnFusedOpsVariantParamLabel_t(", self, ")")
+        return t"cudnnFusedOpsVariantParamLabel_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)
@@ -1359,7 +1359,7 @@ struct cudnnConvolutionMode_t(
 
     @no_inline
     fn __repr__(self) -> String:
-        return String("cudnnConvolutionMode_t(", self, ")")
+        return t"cudnnConvolutionMode_t({self})"
 
     fn __int__(self) -> Int:
         return Int(self._value)

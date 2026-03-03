@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv
+from std.math import align_down, ceildiv
 
-from gpu import barrier, thread_idx
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.host.info import MI355X
-from gpu.intrinsics import AMDBufferResource
-from gpu.memory import CacheOperation
-from memory import LegacyUnsafePointer, stack_allocation
+from std.gpu import barrier, thread_idx
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.host.info import MI355X
+from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.memory import CacheOperation
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
 comptime size = 257
 comptime size_clip = size - 5
@@ -157,35 +157,35 @@ fn _verify_cache_bits_volatile(asm: StringSlice) raises -> None:
     assert_true(" nt" not in asm)  # Space prefix to avoid matching "int"
 
 
-def test_cache_policy_assembly_always():
+def test_cache_policy_assembly_always() raises:
     var asm = _compile_code[
         cache_policy_kernel_always, target = get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_always(asm)
 
 
-def test_cache_policy_assembly_streaming():
+def test_cache_policy_assembly_streaming() raises:
     var asm = _compile_code[
         cache_policy_kernel_streaming, target = get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_streaming(asm)
 
 
-def test_cache_policy_assembly_global():
+def test_cache_policy_assembly_global() raises:
     var asm = _compile_code[
         cache_policy_kernel_global, target = get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_global(asm)
 
 
-def test_cache_policy_assembly_volatile():
+def test_cache_policy_assembly_volatile() raises:
     var asm = _compile_code[
         cache_policy_kernel_volatile, target = get_gpu_target["mi300x"]()
     ]().asm
     _verify_cache_bits_volatile(asm)
 
 
-def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
+def test_buffer[dtype: DType, width: Int](ctx: DeviceContext) raises:
     a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
     a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
@@ -209,7 +209,7 @@ def test_buffer[dtype: DType, width: Int](ctx: DeviceContext):
     a_host_buf.free()
 
 
-def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext):
+def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext) raises:
     a_host_buf = UnsafePointer[Scalar[dtype]].alloc(size)
     a_device_buf = ctx.enqueue_create_buffer[dtype](size)
 
@@ -231,7 +231,7 @@ def test_buffer_lds[dtype: DType, width: Int](ctx: DeviceContext):
         assert_equal(a_host_buf[i], 0)
 
 
-def main():
+def main() raises:
     # Test assembly generation for cache policies (AMD GPU only)
     test_cache_policy_assembly_always()
     test_cache_policy_assembly_streaming()

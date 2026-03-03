@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_up, ceildiv
-from sys import align_of
-from sys._build import is_debug_build
-from sys.info import CompilationTarget, simd_width_of, size_of
+from std.math import align_down, align_up, ceildiv
+from std.sys import align_of
+from std.sys._build import is_debug_build
+from std.sys.info import CompilationTarget, simd_width_of, size_of
 
-from algorithm import vectorize
+from std.algorithm import vectorize
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime elementwise_epilogue_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1

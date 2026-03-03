@@ -20,7 +20,7 @@ from linalg.transpose import (
     transpose_inplace,
 )
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_transpose_4x4_ndbuffer
@@ -806,7 +806,7 @@ fn test_transpose_16x16():
                 print("Transpose 16x16 failed")
 
 
-def main():
+def main() raises:
     test_transpose_4x4_ndbuffer()
     test_transpose_8x8_ndbuffer()
     test_transpose_16x16_ndbuffer()

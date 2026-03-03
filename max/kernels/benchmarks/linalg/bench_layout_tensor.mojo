@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
-from collections.string import StaticString
-from random import rand
-from sys import align_of, simd_width_of
+import std.math
+from std.collections.string import StaticString
+from std.random import rand
+from std.sys import align_of, simd_width_of
 
-import benchmark
-from algorithm import Static2DTileUnitFunc as Tile2DFunc
-from algorithm import sync_parallelize, vectorize
+import std.benchmark
+from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
+from std.algorithm import sync_parallelize, vectorize
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer, memset_zero
+from std.memory import LegacyUnsafePointer, memset_zero
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from python import Python
+from std.python import Python
 
 comptime M = 512  # rows of A and C
 comptime N = 4096  # cols of B and C
@@ -377,7 +377,7 @@ fn test_all() raises:
     C.data.free()
 
 
-def main():
+def main() raises:
     test_all()
     print("CPU Results\n")
 

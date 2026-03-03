@@ -13,10 +13,10 @@
 """RMSNorm fused residual op registration for state space models."""
 
 import compiler_internal as compiler
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual
 

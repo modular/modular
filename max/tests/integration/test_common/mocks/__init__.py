@@ -63,7 +63,6 @@ def retrieve_mock_text_generation_pipeline(
         max_batch_size=None,
         device_specs=device_specs,
         quantization_encoding="float32",
-        kv_cache_strategy="paged",
         eos_prob=eos_prob,
         vocab_size=vocab_size,
         eos_token=eos_token,

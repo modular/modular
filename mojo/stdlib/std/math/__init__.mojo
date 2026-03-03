@@ -26,7 +26,7 @@ optimized approximations when absolute precision can be traded for performance.
 """
 
 # In Python, these are in the `math` package, so we also expose them here.
-from utils.numerics import inf, isfinite, isinf, isnan, nan, nextafter
+from std.utils.numerics import inf, isfinite, isinf, isnan, nan, nextafter
 
 from .constants import e, pi, tau
 

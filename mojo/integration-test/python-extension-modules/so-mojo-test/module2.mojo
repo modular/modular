@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OwnedKwargsDict
-from os import abort
+from std.collections import OwnedKwargsDict
+from std.os import abort
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
@@ -31,5 +31,5 @@ fn PyInit_module1() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-def get_string() -> PythonObject:
+def get_string() raises -> PythonObject:
     return "module2.mojo"

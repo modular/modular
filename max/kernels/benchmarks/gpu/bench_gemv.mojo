@@ -11,18 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import env_get_int, env_get_string
+from std.math import ceildiv
+from std.sys import env_get_int, env_get_string
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from linalg.matmul.gpu import _matmul_gpu, matmul_kernel_naive
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn _get_run_name[
@@ -326,7 +332,7 @@ fn get_dtype[output_type: String]() -> DType:
     return DType.bfloat16
 
 
-def main():
+def main() raises:
     var h = Bench()
 
     comptime input_type = DType.bfloat16

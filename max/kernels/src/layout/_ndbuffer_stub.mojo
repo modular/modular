@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of, size_of
+from std.sys import align_of, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import thread_idx, CacheEviction, async_copy
+from std.gpu import thread_idx, CacheEviction, async_copy
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth
 from layout.layout import make_layout
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 comptime _swizzle_signature = fn[dtype: DType](Scalar[dtype]) -> Scalar[dtype]
 
@@ -115,16 +115,6 @@ fn _tile_mask[
     return {shape, tile_offset}
 
 
-@always_inline("nodebug")
-fn _to_static_tuple[rank: Int](sizes: VariadicList[Int]) -> IndexList[rank]:
-    var res = IndexList[rank]()
-
-    comptime for i in range(rank):
-        res[i] = sizes[i]
-
-    return res
-
-
 # Computes the mask resulting vectorizing buffer with the `sizes`.
 #
 @always_inline("nodebug")
@@ -185,25 +175,20 @@ fn _distribute_mask[
 # Returns the shape of distribute `thread_layout` into `shape`.
 #
 @always_inline("nodebug")
-fn _distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
+fn _distribute_shape[thread_layout: Layout, shape: DimList]() -> DimList:
     comptime assert (
         thread_layout.rank() <= 3
     ), "_distribute_shape requires thread_layout <= 3"
 
-    var res = StaticTuple[Dim][thread_layout.rank()]()
-
-    comptime for i in range(thread_layout.rank()):
-        if shape.at[i]().is_dynamic():
-            res[i] = Dim()
-        else:
-            res[i] = shape.at[i]() // Int(thread_layout.shape[i])
-
-    if comptime (thread_layout.rank() == 1):
-        return DimList(res[0])
-    elif comptime (thread_layout.rank() == 2):
-        return DimList(res[0], res[1])
-    elif comptime (thread_layout.rank() == 3):
-        return DimList(res[0], res[1], res[2])
+    comptime shape_at[i: Int]: Dim = shape.at[i]() // Int(
+        thread_layout.shape[i]
+    )
+    comptime if thread_layout.rank() == 1:
+        return DimList(shape_at[0])
+    elif thread_layout.rank() == 2:
+        return DimList(shape_at[0], shape_at[1])
+    elif thread_layout.rank() == 3:
+        return DimList(shape_at[0], shape_at[1], shape_at[2])
     return DimList()
 
 
@@ -215,11 +200,10 @@ fn distribute[
     rank: Int,
     shape: DimList,
     thread_layout: Layout,
-    _result_shape: DimList = _distribute_shape[thread_layout](shape),
     swizzle: Optional[_swizzle_signature] = None,
     element_size: Int = 1,
 ](buff: NDBuffer[dtype, rank, _, shape], thread_id: Int) -> NDBuffer[
-    dtype, rank, buff.origin, _result_shape
+    dtype, rank, buff.origin, _distribute_shape[thread_layout, shape]()
 ]:
     comptime assert (
         depth(thread_layout.shape) == 1
@@ -247,36 +231,25 @@ fn distribute[
             thread_offset // Int32(element_size)
         ) * Int32(element_size)
 
-    var res = NDBuffer[dtype, rank, buff.origin, _result_shape](
+    return {
         buff.data + Int(thread_offset),
-        dynamic_shape=res_shape,
-        dynamic_stride=res_strides,
-    )
-    return res
+        dynamic_shape = res_shape,
+        dynamic_stride = res_strides,
+    }
 
 
 @always_inline("nodebug")
-fn _vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
+fn _vectorize_shape[*sizes: Int, shape: DimList]() -> DimList:
+    comptime shape_at[i: Int]: Dim = shape.at[i]() // sizes[i]
+
     comptime rank = std.builtin.Variadic.size(sizes)
-
     comptime assert rank <= 3, "_vectorize_shape vector sizes <= 3"
-
-    var res = StaticTuple[Dim, rank]()
-
-    comptime for i in range(rank):
-        comptime size_i = sizes[i]
-
-        if shape.at[i]().is_dynamic():
-            res[i] = Dim()
-        else:
-            res[i] = shape.at[i]() // size_i
-
     comptime if rank == 1:
-        return DimList(res[0])
+        return DimList(shape_at[0])
     elif rank == 2:
-        return DimList(res[0], res[1])
+        return DimList(shape_at[0], shape_at[1])
     elif rank == 3:
-        return DimList(res[0], res[1], res[2])
+        return DimList(shape_at[0], shape_at[1], shape_at[2])
     return DimList()
 
 
@@ -293,7 +266,7 @@ fn _to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 # Stores the layout of the vectorized buffer element.
 #
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
-    Defaultable, ImplicitlyCopyable, Stringable, Writable
+    Defaultable, ImplicitlyCopyable, Writable
 ):
     var stride: IndexList[Self.rank]
 
@@ -301,6 +274,7 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
         self.stride = IndexList[Self.rank]()
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -386,13 +360,12 @@ fn vectorize[
     rank: Int,
     shape: DimList,
     origin: MutOrigin,
-    _res_shape: DimList = _vectorize_shape[*sizes](shape),
 ](buff: NDBuffer[dtype, rank, origin, shape, _]) -> Tuple[
     NDBuffer[
         dtype,
         rank,
         origin,
-        shape=_res_shape,
+        shape = _vectorize_shape[*sizes, shape=shape](),
         strides = DimList.create_unknown[rank](),
         address_space = buff.address_space,
     ],
@@ -410,17 +383,10 @@ fn vectorize[
         buff_shape[i] = buff.dim[i]() // sizes[i]
         buff_stride[i] = buff.stride[i]() * sizes[i]
 
-    return Tuple(
-        NDBuffer[
-            dtype,
-            rank,
-            origin,
-            shape=_res_shape,
-            strides = DimList.create_unknown[rank](),
-            address_space = buff.address_space,
-        ](buff.data, dynamic_shape=buff_shape, dynamic_stride=buff_stride),
+    return {
+        {buff.data, dynamic_shape = buff_shape, dynamic_stride = buff_stride},
         element_layout,
-    )
+    }
 
 
 @always_inline("nodebug")
@@ -1229,7 +1195,7 @@ fn from_ndbuffer_row_major(
     buffer: NDBuffer,
     out result: LayoutTensor[
         buffer.type,
-        Layout.row_major[buffer.rank](buffer.shape),
+        Layout.row_major[dims = buffer.shape](),
         buffer.origin,
         address_space = buffer.address_space,
     ],

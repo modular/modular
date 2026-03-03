@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from tensor import InputTensor, OutputTensor, StaticTensorSpec
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime WIDTH = 5
 comptime HEIGHT = 10
@@ -53,7 +53,7 @@ fn color_to_grayscale(
         gray_tensor[row, col] = gray.cast[int_dtype]()
 
 
-def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
+def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]) raises:
     """A helper function to print out the grayscale channel intensities."""
     for row in range(HEIGHT):
         for col in range(WIDTH):
@@ -66,7 +66,7 @@ def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]):
         print("")
 
 
-def test_color_to_grayscale():
+def test_color_to_grayscale() raises:
     with DeviceContext() as ctx:
         var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](
             comptime (rgb_layout_orig.size())
@@ -127,7 +127,7 @@ def test_color_to_grayscale():
         _ = gray_buffer
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

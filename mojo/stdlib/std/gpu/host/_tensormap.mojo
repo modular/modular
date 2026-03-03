@@ -11,11 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import external_call
-from sys import size_of
-from gpu.host import DeviceBuffer
-from gpu.host.device_context import _checked, _ConstCharPtr, _DeviceBufferPtr
-from utils import IndexList, StaticTuple
+from std.ffi import external_call
+from std.sys import size_of
+from std.gpu.host import DeviceBuffer
+from std.gpu.host.device_context import (
+    _checked,
+    _ConstCharPtr,
+    _DeviceBufferPtr,
+)
+from std.utils import IndexList, StaticTuple
 
 
 @fieldwise_init("implicit")
@@ -90,7 +94,6 @@ struct SwizzleMode(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -154,6 +157,7 @@ struct SwizzleMode(
         """
         return Int((2**self._value) * 16)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert SwizzleMode to string representation.

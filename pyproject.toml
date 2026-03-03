@@ -47,7 +47,6 @@ ignore = [
   "B008", # Do not perform function call in argument defaults
   "B017", # Do not assert blind exception: `Exception`
   "B028", # No explicit `stacklevel` keyword argument found
-  "D100", # TODO: Enable missing docstrings in public modules
   "D101", # TODO: Enable missing docstrings in public classes
   "D105", # undocumented-magic-method
   "D107", # Missing docstring in __init__ (constructor args go in class docstring)

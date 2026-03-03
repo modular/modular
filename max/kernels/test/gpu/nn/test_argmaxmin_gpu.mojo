@@ -11,16 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_float64
+from std.random import random_float64
 
-from gpu.host import DeviceContext
-from layout._coord import Coord
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
-from testing import assert_equal
-from utils.index import IndexList
+from std.testing import assert_equal
+from std.utils.index import IndexList
 
 
 fn test_argmaxmin_gpu[
@@ -171,7 +170,7 @@ fn test_argmaxmin_gpu_helper[
     _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=False](ctx)
 
 
-def main():
+def main() raises:
     @parameter
     fn fill_random[
         rank: Int, dtype: DType

@@ -13,24 +13,24 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from random import random_si64
+from std.random import random_si64
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from gpu.host.info import MI355X
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import MI355X
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.matmul.gpu import (
     _amdgpu_matmul_config_from_block_shape,
     _matmul_gpu,
 )
 from linalg.utils_gpu import MatmulConfig
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 comptime to_dim[value: Optional[Int]] = value.value() if value else Dim()
 
@@ -81,19 +81,19 @@ fn test[
 
     var a_device = NDBuffer[a_type, 2, _, static_a_shape](
         a_device_buffer.unsafe_ptr(),
-        DimList(m, k),
+        IndexList[2](m, k),
     )
     var b_device = NDBuffer[b_type, 2, _, static_b_shape](
         b_device_buffer.unsafe_ptr(),
-        DimList(n, k) if transpose_b else DimList(k, n),
+        IndexList[2](n, k) if transpose_b else IndexList[2](k, n),
     )
     var c_device = NDBuffer[c_type, 2, _, static_c_shape](
         c_device_buffer.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
     var c_device_ref = NDBuffer[c_type, 2, _, static_c_shape](
         c_device_ref_buffer.unsafe_ptr(),
-        DimList(m, n),
+        IndexList[2](m, n),
     )
 
     comptime rand_min = -100
@@ -180,7 +180,7 @@ fn test[
     )
 
 
-def test_bf16(ctx: DeviceContext):
+def test_bf16(ctx: DeviceContext) raises:
     print("=== test_bf16")
 
     test[
@@ -250,7 +250,7 @@ def test_bf16(ctx: DeviceContext):
     ](ctx, 256, 284, 256)
 
 
-def test_float8[in_type: DType](ctx: DeviceContext):
+def test_float8[in_type: DType](ctx: DeviceContext) raises:
     print("=== test_float8", in_type)
 
     test[
@@ -262,7 +262,7 @@ def test_float8[in_type: DType](ctx: DeviceContext):
     ](ctx, 480, 512, 640)
 
 
-def test_block_k(ctx: DeviceContext):
+def test_block_k(ctx: DeviceContext) raises:
     print("=== test_block_k")
 
     @parameter
@@ -272,7 +272,7 @@ def test_block_k(ctx: DeviceContext):
         block_k: Int,
         N: Int,
         K: Int,
-    ](m: Int, n: Int, k: Int):
+    ](m: Int, n: Int, k: Int) raises:
         comptime config = MatmulConfig[in_type, in_type, out_type, True](
             block_tile_shape=Index(64, 64, block_k),
             warp_tile_shape=Index(32, 32, block_k),
@@ -287,7 +287,7 @@ def test_block_k(ctx: DeviceContext):
         )
 
 
-def test_warp_k_partitions(ctx: DeviceContext):
+def test_warp_k_partitions(ctx: DeviceContext) raises:
     print("=== test_warp_k_partitions")
 
     @parameter
@@ -296,7 +296,7 @@ def test_warp_k_partitions(ctx: DeviceContext):
         out_type: DType,
         N: Int,
         K: Int,
-    ](m: Int, n: Int, k: Int):
+    ](m: Int, n: Int, k: Int) raises:
         comptime config_type = MatmulConfig[in_type, in_type, out_type, True]
         comptime configs: List[config_type] = [
             # TEST: num_warps=(1, 4, 1).
@@ -331,7 +331,7 @@ def test_warp_k_partitions(ctx: DeviceContext):
     )
 
 
-def test_matmul_config_from_block_shape(ctx: DeviceContext):
+def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
     # This test takes too long to execute for CI, but is maintained here as a useful
     # unit test for verifying changes to parts of the matmul dispatcher.
     print("=== test_matmul_config_from_block_shape")
@@ -350,7 +350,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
         comptime for block_n in block_sizes:
 
             @parameter
-            def test_block_shape[block_m: Int, block_n: Int, k: Int]():
+            def test_block_shape[block_m: Int, block_n: Int, k: Int]() raises:
                 comptime config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k
                 ](Index(block_m, block_n))
@@ -377,7 +377,7 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext):
                     test_block_shape[block_m, block_n, k]()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_bf16(ctx)
 

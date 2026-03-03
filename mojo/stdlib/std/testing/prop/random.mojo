@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_ui64, seed
+from std.random import random_ui64, seed
 
 
 struct Rng(Movable):

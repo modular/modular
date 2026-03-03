@@ -30,7 +30,8 @@ benchmark_config:
   base_url: null  # Server or API base url if not using host/port
   host: "localhost"
   port: 8000
-  endpoint: "/v1/chat/completions"  # /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream
+  endpoint: "/v1/chat/completions"  # /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream
+  benchmark_task: "text-generation"  # choices: text-generation, text-to-image
 
   num_prompts: 1000  # Number of prompts to process (serving-specific)
 

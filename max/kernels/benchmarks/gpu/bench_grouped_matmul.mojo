@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from math import ceildiv, align_up
-from sys import (
+from std.os import abort
+from std.math import ceildiv, align_up
+from std.sys import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
@@ -24,10 +24,16 @@ from sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
@@ -43,24 +49,23 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from memory import LegacyUnsafePointer
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout._coord import Coord, Idx, RuntimeInt
+from layout import Coord, Idx, RuntimeInt, TileTensor
 from layout._layout import row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     GMEMLayout1D,
 )
 from linalg.utils import elementwise_epilogue_type
 
-from utils import Index, IndexList
-from collections import Optional
+from std.utils import Index, IndexList
+from std.collections import Optional
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -80,7 +85,7 @@ fn _get_run_name[
     has_epilogue: Bool = False,
 ](num_active_experts: Int, total_num_tokens: Int, N: Int, K: Int) -> String:
     var vendor_str = "vendor_gmm" if use_vendor_blas else "gmm"
-    var type_str = String("(", in_type, " -> ", out_type, ") : ")
+    var type_str = String(t"({in_type} -> {out_type}) : ")
     # num_active_experts
     var num_active_experts_str = String(num_active_experts)
     # total_num_tokens
@@ -140,6 +145,7 @@ fn bench_grouped_matmul[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     AB_swapped: Bool = False,
+    cta_group: Int = 1,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -174,6 +180,7 @@ fn bench_grouped_matmul[
     comptime static_c_shape = DimList(Dim(), N)
     var c_size = total_num_tokens * N
     comptime static_b_shape = DimList(num_experts, N, packed_K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, packed_K)
     var b_size = num_experts * N * packed_K
 
     # Host allocations
@@ -225,15 +232,15 @@ fn bench_grouped_matmul[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, packed_K),
+        IndexList[2](total_num_tokens, packed_K),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
@@ -400,7 +407,9 @@ fn bench_grouped_matmul[
                     pass
 
                 else:
-                    comptime umma_shape = Index(128, 128, 32)
+                    comptime umma_shape = Index(
+                        128 * cta_group, 128 * cta_group, 32
+                    )
                     comptime transpose_b = True
                     comptime config = BlockScaledMatmulConfig[
                         a_type,
@@ -411,13 +420,15 @@ fn bench_grouped_matmul[
                         transpose_b,
                     ](
                         scaling_kind=UMMAKind.KIND_MXF4NVF4,
-                        cluster_shape=Index(1, 1, 1),
+                        cluster_shape=Index(cta_group, 1, 1),
                         mma_shape=umma_shape,
                         block_swizzle_size=8,
-                        cta_group=1,
+                        cta_group=cta_group,
                         AB_swapped=AB_swapped,
                         k_group_size=1,
-                        num_accum_pipeline_stages=2,
+                        num_accum_pipeline_stages=1 if umma_shape[1]
+                        == 256 else 2,
+                        is_gmm=True,
                     )
                     grouped_matmul_1d1d_nvfp4[
                         transpose_b=transpose_b,
@@ -476,6 +487,9 @@ fn bench_grouped_matmul[
         comptime static_b_scales_shape = DimList(
             num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
         )
+        var dynamic_b_scales_shape = IndexList[3](
+            num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+        )
         var b_scales_size = (
             num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
         )
@@ -490,11 +504,11 @@ fn bench_grouped_matmul[
 
         var a_scales_dev = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
             a_scales_dev_buffer.unsafe_ptr(),
-            DimList(K // BLOCK_SCALE_K, total_num_tokens),
+            IndexList[2](K // BLOCK_SCALE_K, total_num_tokens),
         )
         var b_scales_dev = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
             b_scales_dev_buffer.unsafe_ptr(),
-            static_b_scales_shape,
+            dynamic_b_scales_shape,
         )
 
         init_vector_launch[DType.float32](
@@ -683,6 +697,7 @@ fn create_grouped_matmul_bench[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     AB_swapped: Bool = False,
+    cta_group: Int = 1,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -700,6 +715,7 @@ fn create_grouped_matmul_bench[
         has_epilogue=has_epilogue,
         scaling_kind_str=scaling_kind_str,
         AB_swapped=AB_swapped,
+        cta_group=cta_group,
     ](
         ctx,
         bench,
@@ -720,7 +736,7 @@ fn string_to_list(string: String) raises -> List[Int]:
     return list^
 
 
-def main():
+def main() raises:
     comptime in_type = env_get_dtype["in_type", DType.bfloat16]()
     comptime out_type = env_get_dtype["out_type", DType.bfloat16]()
     comptime scaling_kind_str = env_get_string["scaling_kind", "1d2d"]()
@@ -743,7 +759,14 @@ def main():
     )
     comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
     comptime has_epilogue = env_get_bool["has_epilogue", False]()
-    comptime AB_swapped = env_get_bool["AB_swapped", False]()
+    comptime config_str = env_get_string["config", "noswap_1sm"]()
+    comptime AB_swapped = config_str == "swapped_2sm" or config_str == "swapped_1sm"
+    comptime cta_group = 2 if config_str == "swapped_2sm" else 1
+    comptime assert (
+        config_str == "swapped_2sm"
+        or config_str == "swapped_1sm"
+        or config_str == "noswap_1sm"
+    ), "config must be one of: swapped_2sm, swapped_1sm, noswap_1sm"
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -758,6 +781,7 @@ def main():
             has_epilogue=has_epilogue,
             scaling_kind_str=scaling_kind_str,
             AB_swapped=AB_swapped,
+            cta_group=cta_group,
         ](
             ctx,
             b,

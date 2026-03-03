@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import c_char, external_call
+from std.ffi import c_char, external_call
 
 from .pwd import Passwd
 

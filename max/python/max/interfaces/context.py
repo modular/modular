@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines sampling parameters, generation configuration defaults, and base context protocols for MAX pipeline requests."""
+
 from __future__ import annotations
 
 import logging

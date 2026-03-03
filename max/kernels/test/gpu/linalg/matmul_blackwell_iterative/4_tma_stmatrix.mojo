@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from memory import LegacyUnsafePointer, bitcast
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import argv, size_of
+from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
-from gpu import lane_id as get_lane_id, warp_id
-from gpu.primitives.cluster import block_rank_in_cluster
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, lane_id, thread_idx
-from gpu.memory import external_memory, fence_async_view_proxy
-from gpu.compute.mma import st_matrix
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.arch.tcgen05 import *
+from std.gpu import WARP_SIZE, barrier
+from std.gpu import lane_id as get_lane_id, warp_id
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, lane_id, thread_idx
+from std.gpu.memory import external_memory, fence_async_view_proxy
+from std.gpu.compute.mma import st_matrix
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal
@@ -57,9 +57,9 @@ from layout.tma_async import (
 )
 from std.bit import log2_floor
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -385,8 +385,8 @@ fn kernel_4[
         c_tma_op.async_store(
             c_tma_tile,
             (
-                block_idx.x * UInt(BN) + thread_idx.x * UInt(TMA_BN),
-                block_idx.y * UInt(BM),
+                Int(block_idx.x) * BN + Int(thread_idx.x) * TMA_BN,
+                Int(block_idx.y) * BM,
             ),
         )
         c_tma_op.commit_group()
@@ -558,7 +558,7 @@ def test_blackwell_kernel_4[
     M: Int = 4096,
     N: Int = 4096,
     K: Int = 4096,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     print(M, "x", N, "x", K)
 
     comptime a_layout = Layout.row_major(M, K)
@@ -689,7 +689,7 @@ def test_blackwell_kernel_4[
     b_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             # Run the benchmark

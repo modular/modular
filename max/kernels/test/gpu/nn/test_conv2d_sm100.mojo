@@ -28,19 +28,19 @@ Usage:
     bazel test //max/kernels/test/gpu/linalg:test_conv2d_sm100 --config=b200
 """
 
-from collections import Optional
-from sys import align_of
+from std.collections import Optional
+from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
-from random import rand
-from utils.index import IndexList
+from std.random import rand
+from std.utils.index import IndexList
 from nn.conv_sm100.conv2d import (
     conv2d_fprop,
     conv2d_fprop_with_residual,
@@ -134,9 +134,9 @@ fn test_conv2d_implicit_im2col[
     comptime static_act_shape = DimList(-1, -1, -1, -1)
     comptime static_filter_shape = DimList(-1, -1, -1, -1)
     comptime static_out_shape = DimList(-1, -1, -1, -1)
-    var dynamic_act_shape = DimList(batch, in_h, in_w, in_c)
-    var dynamic_filter_shape = DimList(out_c, filter_h, filter_w, in_c)
-    var dynamic_out_shape = DimList(batch, out_h, out_w, out_c)
+    var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
+    var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
+    var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
     var act_host = NDBuffer[act_type, 4, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
@@ -186,7 +186,7 @@ fn test_conv2d_implicit_im2col[
 
     # Perform im2col on host - use DimList with actual values for proper shape inference
     var im2col_host_ptr = UnsafePointer[Scalar[act_type]].alloc(im2col_size)
-    var dynamic_im2col_shape = DimList(M, K)
+    var dynamic_im2col_shape = IndexList[2](M, K)
     var im2col_host = NDBuffer[act_type, 2](
         im2col_host_ptr, dynamic_im2col_shape
     )
@@ -194,9 +194,9 @@ fn test_conv2d_implicit_im2col[
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     # Create 2D NDBuffers for cuBLAS reference with proper shapes
-    var dynamic_a_ref_shape = DimList(M, K)
-    var dynamic_b_ref_shape = DimList(N, K)
-    var dynamic_c_ref_shape = DimList(M, N)
+    var dynamic_a_ref_shape = IndexList[2](M, K)
+    var dynamic_b_ref_shape = IndexList[2](N, K)
+    var dynamic_c_ref_shape = IndexList[2](M, N)
     var im2col_device_nd = NDBuffer[act_type, 2](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
@@ -335,9 +335,9 @@ fn test_conv2d_1sm[
     comptime static_act_shape = DimList(-1, -1, -1, -1)
     comptime static_filter_shape = DimList(-1, -1, -1, -1)
     comptime static_out_shape = DimList(-1, -1, -1, -1)
-    var dynamic_act_shape = DimList(batch, in_h, in_w, in_c)
-    var dynamic_filter_shape = DimList(out_c, filter_h, filter_w, in_c)
-    var dynamic_out_shape = DimList(batch, out_h, out_w, out_c)
+    var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
+    var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
+    var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
     var act_host = NDBuffer[act_type, 4, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
@@ -385,7 +385,7 @@ fn test_conv2d_1sm[
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
     var im2col_host_ptr = UnsafePointer[Scalar[act_type]].alloc(im2col_size)
-    var dynamic_im2col_shape = DimList(M, K)
+    var dynamic_im2col_shape = IndexList[2](M, K)
     var im2col_host = NDBuffer[act_type, 2](
         im2col_host_ptr, dynamic_im2col_shape
     )
@@ -393,9 +393,9 @@ fn test_conv2d_1sm[
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     # Create 2D NDBuffers for cuBLAS reference
-    var dynamic_a_ref_shape = DimList(M, K)
-    var dynamic_b_ref_shape = DimList(N, K)
-    var dynamic_c_ref_shape = DimList(M, N)
+    var dynamic_a_ref_shape = IndexList[2](M, K)
+    var dynamic_b_ref_shape = IndexList[2](N, K)
+    var dynamic_c_ref_shape = IndexList[2](M, N)
     var im2col_device_nd = NDBuffer[act_type, 2](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
@@ -535,9 +535,9 @@ fn test_conv2d_epilogue_lambda[
     comptime static_act_shape = DimList(-1, -1, -1, -1)
     comptime static_filter_shape = DimList(-1, -1, -1, -1)
     comptime static_out_shape = DimList(-1, -1, -1, -1)
-    var dynamic_act_shape = DimList(batch, in_h, in_w, in_c)
-    var dynamic_filter_shape = DimList(out_c, filter_h, filter_w, in_c)
-    var dynamic_out_shape = DimList(batch, out_h, out_w, out_c)
+    var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
+    var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
+    var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
     var act_host = NDBuffer[act_type, 4, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
@@ -577,7 +577,7 @@ fn test_conv2d_epilogue_lambda[
     # Create bias tensor view for epilogue lambda
     # Bias is 1D [out_c], needs to be broadcast over [M, N] output
     comptime bias_shape = DimList(-1)
-    var dynamic_bias_shape = DimList(out_c)
+    var dynamic_bias_shape = IndexList[1](out_c)
     var bias_tensor = NDBuffer[out_type, 1, _, bias_shape](
         bias_device.unsafe_ptr(), dynamic_bias_shape
     )
@@ -624,7 +624,7 @@ fn test_conv2d_epilogue_lambda[
     var im2col_device = ctx.enqueue_create_buffer[act_type](im2col_size)
 
     var im2col_host_ptr = UnsafePointer[Scalar[act_type]].alloc(im2col_size)
-    var dynamic_im2col_shape = DimList(M, K)
+    var dynamic_im2col_shape = IndexList[2](M, K)
     var im2col_host = NDBuffer[act_type, 2](
         im2col_host_ptr, dynamic_im2col_shape
     )
@@ -632,9 +632,9 @@ fn test_conv2d_epilogue_lambda[
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     # Create 2D NDBuffers for cuBLAS reference
-    var dynamic_a_ref_shape = DimList(M, K)
-    var dynamic_b_ref_shape = DimList(N, K)
-    var dynamic_c_ref_shape = DimList(M, N)
+    var dynamic_a_ref_shape = IndexList[2](M, K)
+    var dynamic_b_ref_shape = IndexList[2](N, K)
+    var dynamic_c_ref_shape = IndexList[2](M, N)
     var im2col_device_nd = NDBuffer[act_type, 2](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
@@ -790,19 +790,19 @@ fn test_conv2d_bias_fusion[
     # Create NDBuffers
     comptime dyn_shape_4d = DimList(-1, -1, -1, -1)
     var act_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
-        act_dev.unsafe_ptr(), DimList(batch, in_h, in_w, in_c)
+        act_dev.unsafe_ptr(), IndexList[4](batch, in_h, in_w, in_c)
     )
     var filter_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
-        filter_dev.unsafe_ptr(), DimList(out_c, filter_h, filter_w, in_c)
+        filter_dev.unsafe_ptr(), IndexList[4](out_c, filter_h, filter_w, in_c)
     )
     var out_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
-        out_dev.unsafe_ptr(), DimList(batch, out_h, out_w, out_c)
+        out_dev.unsafe_ptr(), IndexList[4](batch, out_h, out_w, out_c)
     )
 
     # Create bias tensor for capture
     comptime dyn_shape_1d = DimList(-1)
     var bias_tensor = NDBuffer[dtype, 1, _, dyn_shape_1d](
-        bias_dev.unsafe_ptr(), DimList(out_c)
+        bias_dev.unsafe_ptr(), IndexList[1](out_c)
     )
 
     # Epilogue lambda: add bias (idx[1] = channel index in [M, N] output)
@@ -847,18 +847,22 @@ fn test_conv2d_bias_fusion[
 
     # Reference: im2col + GEMM + bias (CPU bias add)
     var act_host_nd = NDBuffer[dtype, 4, _, dyn_shape_4d](
-        act_host, DimList(batch, in_h, in_w, in_c)
+        act_host, IndexList[4](batch, in_h, in_w, in_c)
     )
     var im2col_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var im2col_host_nd = NDBuffer[dtype, 2](im2col_host, DimList(M, K))
+    var im2col_host_nd = NDBuffer[dtype, 2](im2col_host, IndexList[2](M, K))
     im2col(im2col_host_nd, act_host_nd, problem)
     ctx.enqueue_copy(im2col_dev, im2col_host)
 
-    var im2col_nd = NDBuffer[dtype, 2](im2col_dev.unsafe_ptr(), DimList(M, K))
-    var filter_2d_nd = NDBuffer[dtype, 2](
-        filter_dev.unsafe_ptr(), DimList(N, K)
+    var im2col_nd = NDBuffer[dtype, 2](
+        im2col_dev.unsafe_ptr(), IndexList[2](M, K)
     )
-    var out_ref_nd = NDBuffer[dtype, 2](out_ref_dev.unsafe_ptr(), DimList(M, N))
+    var filter_2d_nd = NDBuffer[dtype, 2](
+        filter_dev.unsafe_ptr(), IndexList[2](N, K)
+    )
+    var out_ref_nd = NDBuffer[dtype, 2](
+        out_ref_dev.unsafe_ptr(), IndexList[2](M, N)
+    )
 
     vendor_blas.matmul(
         ctx,
@@ -985,9 +989,9 @@ fn test_conv2d_residual_api[
     comptime static_act_shape = DimList(-1, -1, -1, -1)
     comptime static_filter_shape = DimList(-1, -1, -1, -1)
     comptime static_out_shape = DimList(-1, -1, -1, -1)
-    var dynamic_act_shape = DimList(batch, in_h, in_w, in_c)
-    var dynamic_filter_shape = DimList(out_c, filter_h, filter_w, in_c)
-    var dynamic_out_shape = DimList(batch, out_h, out_w, out_c)
+    var dynamic_act_shape = IndexList[4](batch, in_h, in_w, in_c)
+    var dynamic_filter_shape = IndexList[4](out_c, filter_h, filter_w, in_c)
+    var dynamic_out_shape = IndexList[4](batch, out_h, out_w, out_c)
 
     var act_host = NDBuffer[dtype, 4, _, static_act_shape](
         act_host_ptr, dynamic_act_shape
@@ -1067,15 +1071,15 @@ fn test_conv2d_residual_api[
     var im2col_device = ctx.enqueue_create_buffer[dtype](im2col_size)
 
     var im2col_host_ptr = UnsafePointer[Scalar[dtype]].alloc(im2col_size)
-    var dynamic_im2col_shape = DimList(M, K)
+    var dynamic_im2col_shape = IndexList[2](M, K)
     var im2col_host = NDBuffer[dtype, 2](im2col_host_ptr, dynamic_im2col_shape)
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
     # Create 2D NDBuffers for cuBLAS reference
-    var dynamic_a_ref_shape = DimList(M, K)
-    var dynamic_b_ref_shape = DimList(N, K)
-    var dynamic_c_ref_shape = DimList(M, N)
+    var dynamic_a_ref_shape = IndexList[2](M, K)
+    var dynamic_b_ref_shape = IndexList[2](N, K)
+    var dynamic_c_ref_shape = IndexList[2](M, N)
     var im2col_device_nd = NDBuffer[dtype, 2](
         im2col_device.unsafe_ptr(), dynamic_a_ref_shape
     )
@@ -1221,7 +1225,7 @@ fn test_conv2d_problem_shape():
     print("  1x1 Conv: PASSED\n")
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("SM100 CONV2D TEST")
     print("=" * 60)

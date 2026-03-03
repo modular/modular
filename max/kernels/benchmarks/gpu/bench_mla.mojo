@@ -11,28 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_dtype, env_get_int, env_get_bool
+from std.sys import env_get_dtype, env_get_int, env_get_bool
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu import *
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu import *
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 from internal_utils._utils import InitializationType
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention
 from nn.mla import flare_mla_decoding, flare_mla_prefill
 from nn.mha_mask import CausalMask, MaterializedMask
-from nn.mha_score_mod import IdentityScoreMod
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn bench_decode[
     mask_rank: Int,
     qkv_type: DType,
+    output_type: DType,
     mask_type: DType,
     depth: Int,
     num_heads: Int,
@@ -74,7 +80,7 @@ fn bench_decode[
     var cb_mask = CacheBustingBuffer[mask_type](
         mask_size, simd_size, ctx, cache_busting
     )
-    var cb_o = CacheBustingBuffer[qkv_type](
+    var cb_o = CacheBustingBuffer[output_type](
         o_size, simd_size, ctx, cache_busting
     )
 
@@ -127,7 +133,7 @@ fn bench_decode[
                     Index(batch_size, num_heads, seq_len, num_keys)
                 ),
             )
-            var output_device = LayoutTensor[qkv_type, output_layout](
+            var output_device = LayoutTensor[output_type, output_layout](
                 cb_o.offset_ptr(iteration),
                 RuntimeLayout[output_layout].row_major(
                     Index(batch_size, seq_len, num_heads, depth)
@@ -140,7 +146,6 @@ fn bench_decode[
                     q_device,
                     k_device,
                     CausalMask(),
-                    IdentityScoreMod(),
                     scale,
                     ctx,
                     num_partitions,
@@ -151,7 +156,6 @@ fn bench_decode[
                     q_device,
                     k_device,
                     MaterializedMask(mask3d),
-                    IdentityScoreMod(),
                     scale,
                     ctx,
                     num_partitions,
@@ -162,7 +166,6 @@ fn bench_decode[
                     q_device,
                     k_device,
                     MaterializedMask(mask4d),
-                    IdentityScoreMod(),
                     scale,
                     ctx,
                     num_partitions,
@@ -201,6 +204,7 @@ fn bench_decode[
 
 fn bench_prefill[
     qkv_type: DType,
+    output_type: DType,
     mask_type: DType,
     depth: Int,
     num_heads: Int,
@@ -240,7 +244,7 @@ fn bench_prefill[
     var cb_cache = CacheBustingBuffer[qkv_type](
         cache_size, simd_size, ctx, cache_busting
     )
-    var cb_o = CacheBustingBuffer[qkv_type](
+    var cb_o = CacheBustingBuffer[output_type](
         o_size, simd_size, ctx, cache_busting
     )
 
@@ -339,7 +343,7 @@ fn bench_prefill[
                     Index(batch_size, num_keys, cache_num_heads, cache_depth)
                 ),
             )
-            var output_device = LayoutTensor[qkv_type, output_layout](
+            var output_device = LayoutTensor[output_type, output_layout](
                 cb_o.offset_ptr(iteration),
                 RuntimeLayout[output_layout].row_major(
                     Index(batch_size * seq_len, num_heads, kv_depth)
@@ -353,7 +357,6 @@ fn bench_prefill[
                 v_device,
                 cache_device,
                 CausalMask(),
-                IdentityScoreMod(),
                 input_row_offsets_device,
                 cache_row_offsets_device,
                 scale,
@@ -401,6 +404,7 @@ struct MLA_cfg(ImplicitlyCopyable):
     var mask_rank: Int
     var qkv_type: DType
     var mask_type: DType
+    var output_type: DType
     var depth: Int
     var prefill_depth: Int
     var num_heads: Int
@@ -418,6 +422,7 @@ struct MLA_cfg(ImplicitlyCopyable):
         return String(
             "mask_rank", self.mask_rank,
             "qkv_type=", self.qkv_type,
+            "/output_type=", self.output_type,
             "/mask_type=", self.mask_type,
             "/depth=", self.depth,
             "/prefill_depth=", self.prefill_depth,
@@ -431,9 +436,10 @@ struct MLA_cfg(ImplicitlyCopyable):
         # fmt: on
 
 
-def main():
+def main() raises:
     comptime mask_rank = env_get_int["mask_rank", 3]()
     comptime qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
+    comptime output_type = env_get_dtype["output_type", DType.bfloat16]()
     comptime mask_type = env_get_dtype["mask_type", DType.float32]()
     comptime depth = env_get_int["depth", 576]()
     comptime prefill_depth = env_get_int["prefill_depth", 192]()
@@ -457,6 +463,7 @@ def main():
     comptime cfg = MLA_cfg(
         mask_rank=mask_rank,
         qkv_type=qkv_type,
+        output_type=output_type,
         mask_type=mask_type,
         depth=depth,
         prefill_depth=prefill_depth,
@@ -475,6 +482,7 @@ def main():
         bench_decode[
             cfg.mask_rank,
             cfg.qkv_type,
+            cfg.output_type,
             cfg.mask_type,
             cfg.depth,
             cfg.num_heads,
@@ -494,6 +502,7 @@ def main():
 
         bench_prefill[
             cfg.qkv_type,
+            cfg.output_type,
             cfg.mask_type,
             cfg.prefill_depth,
             cfg.num_heads,

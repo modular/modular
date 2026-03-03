@@ -34,7 +34,6 @@ async def test_step() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=num_layers,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.from_device(device)],
     )
@@ -91,7 +90,6 @@ async def test_claim_and_release() -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=10,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -148,7 +146,6 @@ async def test_fetch_paged() -> None:
         n_kv_heads=1,
         head_dim=16,
         num_layers=10,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -183,7 +180,6 @@ async def test_reserve_claims_and_releases() -> None:
         n_kv_heads=1,
         head_dim=16,
         num_layers=10,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -198,7 +194,7 @@ async def test_reserve_claims_and_releases() -> None:
         create_text_context(np.zeros(1, dtype=np.int64)) for _ in range(2)
     ]
 
-    with kv_manager.reserve(contexts, replica_idx=0, num_steps=1):
+    with kv_manager.reserve([contexts], num_steps=1):
         for context in contexts:
             assert kv_manager.contains(context.request_id, replica_idx=0)
 
@@ -215,7 +211,6 @@ async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
         n_kv_heads=1,
         head_dim=16,
         num_layers=10,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -253,7 +248,6 @@ async def test_runtime_inputs_lookup_table_uses_explicit_max_cache_length() -> (
         n_kv_heads=1,
         head_dim=16,
         num_layers=10,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.CPU()],
     )

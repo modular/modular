@@ -18,7 +18,7 @@
 
 from layout import Layout, LayoutTensor
 from linalg.arch.cpu.apple_amx_intrinsics import *
-from testing import *
+from std.testing import *
 
 
 fn fill_a(buf: LayoutTensor[mut=True, ...]):
@@ -39,7 +39,7 @@ fn clear_c(buf: LayoutTensor[mut=True, ...]):
     _ = buf.fill(0)
 
 
-def test_dot_at_b[dtype: DType, M: Int, N: Int]():
+def test_dot_at_b[dtype: DType, M: Int, N: Int]() raises:
     # Create LayoutTensors with static shapes
     var a_matrix = LayoutTensor[
         dtype, Layout.row_major(M, N), MutAnyOrigin
@@ -65,10 +65,10 @@ def test_dot_at_b[dtype: DType, M: Int, N: Int]():
             assert_almost_equal(
                 c_matrix[m, n],
                 golden,
-                msg=String("invalid value at m=", m, ",n=", n),
+                msg=t"invalid value at m={m},n={n}",
             )
 
 
-def main():
+def main() raises:
     test_dot_at_b[DType.float32, 16, 16]()
     test_dot_at_b[DType.float16, 32, 32]()

@@ -21,6 +21,7 @@ import max._core
 import max._core.dialects.builtin
 import max._core.dialects.kgen
 import max._core.dialects.m
+import max._core.dialects.mosh
 import max._core.dtype
 from max.mlir import Context, Location
 
@@ -1059,7 +1060,7 @@ class DistributedAllgatherOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
-class DistributedAllreduceSumOp(max._core.Operation):
+class DistributedAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
     """
     Allreduce takes in inputs each coming from a different device with
     the same shape as the final output and performs a sum reduction
@@ -1068,6 +1069,10 @@ class DistributedAllreduceSumOp(max._core.Operation):
 
     Multiple instances of this op are created (one per device) to enable
     multi-threaded execution.
+
+    This op also applies a residual (add), then RMSNorm and dynamic FP8 quantization to the output of AllReduce.
+    It returns both the quantized output value and the quantization scale.
+    It also returns the intermediate output of the residual (add) op.
     """
 
     def __init__(
@@ -1075,9 +1080,16 @@ class DistributedAllreduceSumOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         output: TensorType,
+        out_scale: TensorType,
+        out_residual: TensorType,
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        residual: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        scale_ub: max._core.Value[TensorType],
         in_chain: max._core.Value[ChainType],
         device: max._core.dialects.m.DeviceRefAttr,
     ) -> None: ...
@@ -1086,11 +1098,45 @@ class DistributedAllreduceSumOp(max._core.Operation):
     @property
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
+    def residual(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def scale_ub(self) -> max._core.Value[TensorType]: ...
+    @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
     def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
+
+class DistributedAllreduceSumOp(max._core.Operation):
+    """
+    Allreduce takes in inputs each coming from a different device with
+    the same shape as the final output and performs a sum reduction
+    across the devices.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        outputs: Sequence[max._core.Type],
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class AndOp(max._core.Operation):
     """
@@ -2740,39 +2786,6 @@ class DebugTensorPrintOp(max._core.Operation):
     @label.setter
     def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
 
-class DebugTensorUnsafePrintOp(max._core.Operation):
-    """
-    Deprecated use mo.debug.tensor.print instead to ensure proper sequencing
-    of print operations.
-
-    This is just kept around due to the Mojo Graph API not supporting chains at
-    the time of writing.
-
-    Prints a debug representation of argument input. If a label attribute
-    is supplied the tensor contents is printed with that label. Otherwise
-    just the tensor metadata is printed. For debugging and testing only.
-
-    Example:
-    ```mlir
-      %arg: !mo.tensor<[5], f32>
-      mo.debug.tensor.print(%arg) {label = "label"} : !mo.tensor<[5], f32>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        input: max._core.Value[TensorType],
-        label: max._core.dialects.builtin.StringAttr,
-    ) -> None: ...
-    @property
-    def input(self) -> max._core.Value[TensorType]: ...
-    @property
-    def label(self) -> str: ...
-    @label.setter
-    def label(self, arg: max._core.dialects.builtin.StringAttr, /) -> None: ...
-
 class DivOp(max._core.Operation):
     """
     Returns `x / y`, where `x` and `y` are input tensors.
@@ -4367,7 +4380,29 @@ class ParallelOp(max._core.Operation):
     in parallel for each set of inputs.
 
     The results of the `mo.parallel` op are the operands of the
-    `mo.yield` op from each iteration, which must all have the same type.
+    `mo.yield` op from each iteration. Each result has the same type as its
+    corresponding input.
+
+    Inputs may have different device IDs but must all have the same device
+    label (e.g., all "gpu" or all "cpu"). The body block argument uses the
+    first input's type as the representative type.
+
+    Example with shared type (all inputs same type):
+    ```mlir
+    %res:2 = mo.parallel %arg in (%a, %b : !mo.tensor<[3], f32, gpu:0>) {
+      %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
+      mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
+
+    Example with individual types (different device IDs):
+    ```mlir
+    %res:2 = mo.parallel %arg in (%a : !mo.tensor<[3], f32, gpu:0>,
+                                  %b : !mo.tensor<[3], f32, gpu:1>) {
+      %1 = mo.relu(%arg) : !mo.tensor<[3], f32, gpu:0>
+      mo.yield %1 : !mo.tensor<[3], f32, gpu:0>
+    }
+    ```
     """
 
     def __init__(
@@ -4888,6 +4923,7 @@ class DistributedReducescatterSumOp(max._core.Operation):
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
         in_chain: max._core.Value[ChainType],
         device: max._core.dialects.m.DeviceRefAttr,
+        axis: max._core.dialects.builtin.IntegerAttr,
     ) -> None: ...
     @property
     def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -4899,6 +4935,10 @@ class DistributedReducescatterSumOp(max._core.Operation):
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
     def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
+    @property
+    def axis(self) -> int: ...
+    @axis.setter
+    def axis(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
 
 class ReluOp(max._core.Operation):
     """

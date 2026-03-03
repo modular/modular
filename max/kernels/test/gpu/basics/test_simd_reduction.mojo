@@ -14,19 +14,19 @@
 # on GPUs.
 
 
-from gpu import global_idx
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 comptime buffer_size = 1024
 comptime block_dim = 32
 comptime simd_width = 4
 
 
-def test_simd_reduction(ctx: DeviceContext):
+def test_simd_reduction(ctx: DeviceContext) raises:
     var input_host = UnsafePointer[Scalar[DType.int]].alloc(buffer_size)
     var output_host = UnsafePointer[Scalar[DType.int]].alloc(
         buffer_size // simd_width
@@ -81,6 +81,6 @@ def test_simd_reduction(ctx: DeviceContext):
     output_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_simd_reduction(ctx)

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides PyTorch integration utilities and custom operator support for MAX."""
+
 from __future__ import annotations
 
 import inspect
@@ -124,7 +126,7 @@ class CustomOpLibrary:
             self._kernel_library = KernelLibrary()
             self._kernel_library.load_paths([kernel_library])
 
-        self._session = InferenceSession(devices=devices)
+        self._session = InferenceSession(devices=[*devices])
         self._ops = {}
         self._ops_lock = threading.Lock()
 
@@ -158,6 +160,8 @@ CompiledModelKey = tuple[Hashable, ...]
 
 
 class CustomOp:
+    """A Mojo-implemented custom op registered for use in MAX graphs."""
+
     library: CustomOpLibrary
     name: str
     parameters: ParametersDict | None
@@ -301,6 +305,8 @@ class CustomOp:
 
 
 class MaxOp:
+    """A MAX graph operation registered as a callable for use in PyTorch."""
+
     fn: Callable[..., Iterable[Value[Any]] | Value[Any] | None] | CustomOp
     name: str
     library: CustomOpLibrary

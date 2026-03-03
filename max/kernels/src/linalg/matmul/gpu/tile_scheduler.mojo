@@ -11,21 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, grid_dim
-from hashlib.hasher import Hasher
+from std.gpu import block_idx, grid_dim
+from std.hashlib.hasher import Hasher
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
 
 from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-struct RasterOrder(
-    Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable
-):
+struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
     var _value: Int32
 
     comptime AlongN = Self(0)
@@ -39,6 +37,7 @@ struct RasterOrder(
     fn __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
@@ -52,7 +51,7 @@ struct RasterOrder(
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -86,6 +85,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     fn get_k_start(self) -> UInt32:
         return self.k_start
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

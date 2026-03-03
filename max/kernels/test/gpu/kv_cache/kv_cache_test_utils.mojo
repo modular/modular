@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Shared utilities for KV cache tests."""
 
-from collections import Set
-from math import ceildiv
-from random import random_ui64
+from std.collections import Set
+from std.math import ceildiv
+from std.random import random_ui64
 
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
