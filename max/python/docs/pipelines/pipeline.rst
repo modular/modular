@@ -1,9 +1,12 @@
+:description: Pipeline implementation for text generation inference.
 :title: pipeline
 :type: module
 :lang: python
 :source: max/pipelines/lib/pipeline_variants/text_generation.py
 
 .. py:currentmodule:: max.pipelines.lib.pipeline_variants.text_generation
+
+Pipeline implementation for text generation inference.
 
 .. automodule:: max.pipelines.lib.pipeline_variants.text_generation
    :members:
