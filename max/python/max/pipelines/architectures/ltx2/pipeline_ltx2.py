@@ -1026,22 +1026,13 @@ class LTX2Pipeline(DiffusionPipeline):
 
         extra_params = model_inputs.extra_params or {}
         video_latents_np: np.ndarray = model_inputs.latents
-        audio_latents_np: np.ndarray | None = extra_params.get(
-            "ltx2_audio_latents"
-        )
-        video_coords_np: np.ndarray | None = extra_params.get(
-            "ltx2_video_coords"
-        )
-        audio_coords_np: np.ndarray | None = extra_params.get(
-            "ltx2_audio_coords"
-        )
-        coords_cfg_doubled: bool = bool(
-            extra_params.get("ltx2_coords_cfg_doubled", False)
-        )
+        audio_latents_np: np.ndarray | None = extra_params.get("audio_latents")
+        video_coords_np: np.ndarray | None = extra_params.get("video_coords")
+        audio_coords_np: np.ndarray | None = extra_params.get("audio_coords")
 
-        latent_num_frames = int(extra_params["ltx2_latent_num_frames"])
-        latent_height = int(extra_params["ltx2_latent_height"])
-        latent_width = int(extra_params["ltx2_latent_width"])
+        latent_num_frames = int(extra_params["latent_num_frames"])
+        latent_height = int(extra_params["latent_height"])
+        latent_width = int(extra_params["latent_width"])
 
         video_seq_len = latent_num_frames * latent_height * latent_width
         num_inference_steps = model_inputs.num_inference_steps
@@ -1196,10 +1187,6 @@ class LTX2Pipeline(DiffusionPipeline):
 
         audio_coords_np_f32 = audio_coords_np.astype(np.float32)
         audio_coords = Tensor.from_dlpack(audio_coords_np_f32).to(device)
-
-        if do_classifier_free_guidance and not coords_cfg_doubled:
-            video_coords = F.concat([video_coords, video_coords], axis=0)
-            audio_coords = F.concat([audio_coords, audio_coords], axis=0)
 
         guidance_scale_tensor = Tensor.from_dlpack(
             np.array([guidance_scale], dtype=np.float32),

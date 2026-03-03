@@ -86,3 +86,9 @@ class VideoProviderOptions(BaseModel):
         ),
         gt=0,
     )
+
+    num_visuals: int = Field(
+        1,
+        description="The number of videos to generate. Defaults to 1.",
+        ge=1,
+    )
