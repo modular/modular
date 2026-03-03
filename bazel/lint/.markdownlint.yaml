@@ -43,9 +43,5 @@ MD050:
   # Strong style
   style: "asterisk"
 
-# MD051: Disable link checker because it false-flags custom anchors
-#        https://github.com/DavidAnson/markdownlint/issues/570
-link-fragments: false
-
 # MD041: Don't force first line to be H1 as this prevents branded image headers
 first-line-h1: false

@@ -32,7 +32,7 @@ In particular, we welcome contributions of the following kernels:
 ## Proposals
 
 If you’re interested in making a significant change (one that doesn’t fall into
-the [list of changes we accept](#Changes-we-accept) above), your first step is
+the [list of changes we accept](#changes-we-accept) above), your first step is
 a written proposal. The proposal process:
 
 - Ensures feedback from the widest possible set of community members

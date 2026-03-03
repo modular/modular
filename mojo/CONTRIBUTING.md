@@ -118,7 +118,8 @@ proposals process ensures feedback from the widest possible set of community
 members and serves as an audit log of past proposal changes with most
 importantly the rationale behind it.
 
-Proposals consist of a GitHub [Pull Request](#pull-requests) that adds a
+Proposals consist of a GitHub
+[Pull Request](#submitting-pull-requests) that adds a
 document to the [`proposals/`](./proposals) directory. Contributors are
 encouraged to react with a *thumbs-up* to proposal PRs if they are generally
 interested and supportive of the high-level direction. These are assigned to
