@@ -19,7 +19,7 @@ See
 All implementations are based on that reference material.
 """
 
-from sys import bit_width_of
+from std.sys import bit_width_of
 
 
 @fieldwise_init

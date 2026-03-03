@@ -17,7 +17,7 @@ See https://tvm.apache.org/ffi/get_started/stable_c_abi.html.
 All implementations are based on that reference material.
 """
 
-import format
+import std.format
 
 from .dlpack import DLTensor
 

@@ -13,15 +13,15 @@
 """FlashInfer FP4 GEMM custom op for loading TVM FFI modules."""
 
 import compiler_internal as compiler
-import format
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUstream
-from memory import Span, stack_allocation
-from os import abort
-from runtime.asyncrt import DeviceContextPtr
-from ffi import OwnedDLHandle
+import std.format
+from std.gpu.host import DeviceContext
+from std.gpu.host._nvidia_cuda import CUstream
+from std.memory import Span, stack_allocation
+from std.os import abort
+from std.runtime.asyncrt import DeviceContextPtr
+from std.ffi import OwnedDLHandle
 from tensor import InputTensor, OutputTensor, ManagedTensorSlice
-from utils import IndexList
+from std.utils import IndexList
 
 from .dlpack import DLTensor
 from .tvm_ffi import SafeFunction, TVMFFIAny, take_latest_error
