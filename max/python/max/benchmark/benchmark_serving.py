@@ -64,6 +64,7 @@ from max.benchmark.benchmark_shared.cpu_metrics import (
 from max.benchmark.benchmark_shared.datasets import (
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
+    BaseDistribution,
     BatchJobBenchmarkDataset,
     BenchmarkDataset,
     ChatSession,
@@ -82,7 +83,6 @@ from max.benchmark.benchmark_shared.datasets.types import (
     RequestSamples,
     Samples,
 )
-from max.benchmark.benchmark_shared.distribution import BaseDistribution
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
@@ -894,7 +894,6 @@ async def chat_session_driver(
     request_counter: RequestCounter,
     chat_session: ChatSession,
     max_chat_len: int,
-    delay_between_chat_turns: BaseDistribution | None,
     temperature: float | None,
     top_p: float | None,
     top_k: int | None,
@@ -969,7 +968,6 @@ async def chat_session_driver(
                 )
             break
 
-        content_idx += 2
         message_history.append(
             {
                 "role": "assistant",
@@ -978,9 +976,10 @@ async def chat_session_driver(
         )
         chat_len += output_len
 
-        if delay_between_chat_turns is not None:
-            delay_ms = max(delay_between_chat_turns.sample_value(), 0)
+        if delay_ms := messages[content_idx + 1].delay_until_next_message:
             await asyncio.sleep(delay_ms / 1000)
+
+        content_idx += 2
 
     return session_outputs
 
@@ -1078,7 +1077,6 @@ async def run_multiturn_benchmark(
     model_id: str,
     api_url: str,
     tokenizer: PreTrainedTokenizerBase,
-    delay_between_chat_turns: BaseDistribution | None,
     skip_first_n_requests: int,
     ignore_first_turn_stats: bool,
     lora_manager: LoRABenchmarkManager | None,
@@ -1116,7 +1114,6 @@ async def run_multiturn_benchmark(
                 request_counter=request_counter,
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
-                delay_between_chat_turns=delay_between_chat_turns,
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
@@ -1132,7 +1129,6 @@ async def run_multiturn_benchmark(
                 request_counter=request_counter,
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
-                delay_between_chat_turns=delay_between_chat_turns,
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
@@ -1270,7 +1266,6 @@ async def benchmark(
     collect_server_stats: bool,
     print_inputs_and_outputs: bool,
     max_requests: int,
-    delay_between_chat_turns: BaseDistribution | None,
     skip_first_n_requests: int,
     max_output_len: int | None,
     temperature: float | None,
@@ -1438,7 +1433,6 @@ async def benchmark(
                     model_id=model_id,
                     api_url=api_url,
                     tokenizer=tokenizer,
-                    delay_between_chat_turns=delay_between_chat_turns,
                     skip_first_n_requests=skip_first_n_requests,
                     ignore_first_turn_stats=ignore_first_turn_stats,
                     lora_manager=lora_manager,
@@ -1784,6 +1778,9 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     )
                 samples = benchmark_dataset.gen_twoturn_longcontext_requests(
                     num_chat_sessions=args.num_chat_sessions,
+                    delay_between_chat_turns=BaseDistribution.from_distribution_parameter(
+                        args.delay_between_chat_turns
+                    ),
                     tokenizer=tokenizer,
                 )
             else:
@@ -1852,6 +1849,9 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     output_len=args.random_output_len,
                     num_chat_sessions=args.num_chat_sessions,
                     num_turns=args.random_num_turns,
+                    delay_between_chat_turns=BaseDistribution.from_distribution_parameter(
+                        args.delay_between_chat_turns
+                    ),
                     coefficient_of_variation=args.random_coefficient_of_variation,
                     tokenizer=tokenizer,
                     sys_prompt_ratio=args.random_sys_prompt_ratio,
@@ -2043,9 +2043,6 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             collect_server_stats=args.collect_server_stats,
             print_inputs_and_outputs=args.print_inputs_and_outputs,
             max_requests=args.num_prompts,
-            delay_between_chat_turns=BaseDistribution.from_distribution_parameter(
-                args.delay_between_chat_turns
-            ),
             skip_first_n_requests=args.skip_first_n_requests,
             max_output_len=args.max_output_len,
             temperature=args.temperature,

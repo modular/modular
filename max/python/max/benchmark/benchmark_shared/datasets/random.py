@@ -27,6 +27,7 @@ from scipy.stats import gamma  # type: ignore[attr-defined]
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import override
 
+from .distribution import BaseDistribution
 from .local import LocalBenchmarkDataset
 from .types import (
     ChatSamples,
@@ -246,6 +247,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         output_len: int,
         num_chat_sessions: int,
         num_turns: int,
+        delay_between_chat_turns: BaseDistribution | None,
         coefficient_of_variation: str,
         tokenizer: PreTrainedTokenizerBase,
         sys_prompt_ratio: float,
@@ -286,6 +288,10 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         )
         follow_up_turns = follow_up_turn_samples.requests
 
+        num_turns_per_session = np.random.randint(
+            low=int(num_turns / 2), high=num_turns + 1, size=num_chat_sessions
+        )
+
         sessions: list[ChatSession] = []
         for session_id, first_turn in enumerate(first_turns):
             assert isinstance(first_turn.prompt_formatted, str)
@@ -294,15 +300,19 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                     "user", first_turn.prompt_formatted, tokenizer
                 ),
                 build_chat_message(
-                    "assistant", "", tokenizer, first_turn.output_len
+                    "assistant",
+                    "",
+                    tokenizer,
+                    first_turn.output_len,
+                    delay_until_next_message=max(
+                        delay_between_chat_turns.sample_value(), 0
+                    )
+                    if delay_between_chat_turns
+                    else None,
                 ),
             ]
 
-            num_turns_this_session = np.random.randint(
-                low=int(num_turns / 2), high=num_turns + 1
-            )
-
-            for i in range(num_turns_this_session - 1):
+            for i in range(num_turns_per_session[session_id] - 1):
                 follow_up_turn = follow_up_turns[
                     session_id * (num_turns - 1) + i
                 ]
@@ -314,7 +324,15 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 )
                 messages.append(
                     build_chat_message(
-                        "assistant", "", tokenizer, follow_up_turn.output_len
+                        "assistant",
+                        "",
+                        tokenizer,
+                        follow_up_turn.output_len,
+                        delay_until_next_message=max(
+                            delay_between_chat_turns.sample_value(), 0
+                        )
+                        if delay_between_chat_turns
+                        else None,
                     )
                 )
 

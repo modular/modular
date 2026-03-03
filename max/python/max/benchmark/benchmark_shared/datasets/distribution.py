@@ -15,7 +15,7 @@
 
 Supports parsing distribution specifications from strings like "N(mean, std)"
 for normal distributions, "U(lower, upper)" for uniform distributions,
-"G(shape, scale)" for gamma distributions, as well as plain integer values
+"G(shape, scale)" for gamma distributions, as well as plain float values
 for constant returns.
 """
 
@@ -27,8 +27,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-DistributionParameter = int | str | None
-"""Type alias for parameters that accept an int, a distribution string, or None."""
+DistributionParameter = float | str | None
+"""Type alias for parameters that accept a float, a distribution string, or None."""
 
 
 class BaseDistribution(ABC):
@@ -50,7 +50,7 @@ class BaseDistribution(ABC):
         """Parse a distribution parameter into a concrete distribution instance.
 
         Args:
-            param: An integer (constant value), a string like "N(mean,std), "
+            param: A float (constant value), a string like "N(mean,std), "
                 "U(lower,upper)", "G(shape,scale)", or None.
 
         Returns:
@@ -62,15 +62,15 @@ class BaseDistribution(ABC):
         if param is None:
             return None
 
-        elif isinstance(param, int):
+        elif isinstance(param, float):
             return ConstantDistribution(value=param)
 
         elif isinstance(param, str):
             stripped = param.strip()
 
-            # Try parsing as a plain integer string
+            # Try parsing as a plain float string
             try:
-                return ConstantDistribution(value=int(stripped))
+                return ConstantDistribution(value=float(stripped))
             except ValueError:
                 pass
 
@@ -83,12 +83,13 @@ class BaseDistribution(ABC):
             else:
                 raise ValueError(
                     f"Unrecognized distribution format: '{param}'. "
-                    "Expected an integer, 'N(mean,std)', "
+                    "Expected a float, 'N(mean,std)', "
                     "'U(lower,upper)', or 'G(shape,scale)'."
                 )
+
         else:
             raise TypeError(
-                "Expected int, str, or None for distribution parameter, got "
+                "Expected float, str, or None for distribution parameter, got "
                 "{type(param)}"
             )
 
