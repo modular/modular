@@ -64,7 +64,7 @@ class DecodeNumPartitionsResolver:
         self, batch_size: int, max_cache_valid_length: int
     ) -> MHADecodeDispatchMetadataScalars:
         """Returns decode dispatch metadata for the given shape."""
-        if self._model is None:
+        if self._model is None or batch_size <= 0:
             return MHADecodeDispatchMetadataScalars(
                 batch_size=batch_size,
                 q_max_seq_len=1,

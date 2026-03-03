@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from std.collections import OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
@@ -46,6 +47,8 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_decode_kv_cache_ragged,
     generic_flare_mla_prefill_kv_cache_ragged,
 )
+from layout.layout import Layout
+from layout.layout_tensor import LayoutTensor
 from nn.mla import _k_cache_to_buffer
 from nn.normalization import _rms_norm_warp_tiling_subkernel
 
@@ -1084,6 +1087,9 @@ fn mla_decode_branch_fp8[
     w_uv_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space = AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """
@@ -1134,6 +1140,8 @@ fn mla_decode_branch_fp8[
             each head's original space. Shape: [num_heads, v_head_dim, kv_latent_dim].
         w_uv_scale: The scale for the w_uv weight matrix. Shape varies
             depending on the float8_config.
+        scalar_args_buf: Buffer containing scalar arguments for device graph
+            capture.
         ctx: Device context.
     """
 
@@ -1270,6 +1278,7 @@ fn mla_decode_branch_fp8[
         layer_idx,
         scale,
         raw_output.to_layout_tensor(),
+        scalar_args_buf.to_layout_tensor(),
         ctx,
     )
 
@@ -1348,6 +1357,9 @@ fn mla_prefill_decode_graph_fp8[
     w_uv_scale: TileTensor[
         fp8_scale_dtype, address_space = AddressSpace.GENERIC, ...
     ],
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space = AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """
@@ -1386,6 +1398,7 @@ fn mla_prefill_decode_graph_fp8[
             w_uk_scale,
             w_uv,
             w_uv_scale,
+            scalar_args_buf,
             ctx,
         )
 
@@ -1636,6 +1649,9 @@ fn mla_decode_branch_bf16[
     epsilon: Float32,
     w_uk: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
     w_uv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space = AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA decode path.
@@ -1755,6 +1771,7 @@ fn mla_decode_branch_bf16[
         raw_output_buf,
         row_major((Idx(seq_len), Idx[num_heads](), Idx[kv_latent_dim]())),
     )
+
     generic_flare_mla_decode_kv_cache_ragged[
         target=target,
         mask_str=mask_str,
@@ -1765,6 +1782,7 @@ fn mla_decode_branch_bf16[
         layer_idx,
         scale,
         raw_output.to_layout_tensor(),
+        scalar_args_buf.to_layout_tensor(),
         ctx,
     )
 
@@ -1830,6 +1848,9 @@ fn mla_prefill_decode_graph_bf16[
     w_k: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
     w_uk: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
     w_uv: TileTensor[DType.bfloat16, address_space = AddressSpace.GENERIC, ...],
+    scalar_args_buf: TileTensor[
+        DType.int64, address_space = AddressSpace.GENERIC, ...
+    ],
     ctx: DeviceContext,
 ) raises:
     """BF16 MLA prefill/decode graph.
@@ -1859,6 +1880,7 @@ fn mla_prefill_decode_graph_bf16[
             epsilon,
             w_uk,
             w_uv,
+            scalar_args_buf,
             ctx,
         )
     else:

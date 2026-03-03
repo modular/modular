@@ -155,6 +155,7 @@ class ServeGraphCaptureRunner:
         warmup_model_inputs: WarmupModelInputs,
         max_cache_length_upper_bound: int,
         max_batch_size: int,
+        prepare_for_capture: Callable[[int], None] | None = None,
     ) -> None:
         self._model = model
         self._execute_model = execute_model
@@ -173,6 +174,7 @@ class ServeGraphCaptureRunner:
             )
         self._max_batch_size = max_batch_size
 
+        self._prepare_for_capture = prepare_for_capture
         self.graph_entries: dict[GraphKey, GraphEntry] = {}
 
     def dispatch_metadata(
@@ -233,6 +235,11 @@ class ServeGraphCaptureRunner:
                     assert replay_graph_key not in self.graph_entries, (
                         "unexpected duplicate key"
                     )
+
+                    if self._prepare_for_capture is not None:
+                        self._prepare_for_capture(
+                            dispatch_metadata.max_cache_valid_length
+                        )
 
                     capture_inputs = (
                         _create_model_inputs_with_dispatch_metadata(

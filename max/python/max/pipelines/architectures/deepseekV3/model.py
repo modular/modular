@@ -20,13 +20,19 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import NUM_GROUPS, estimate_ep_memory_usage
+from max.nn.kernels import compute_mla_dispatch_args_scalar
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -55,6 +61,115 @@ from .model_config import DeepseekV3Config
 logger = logging.getLogger("max.pipelines")
 
 
+class MLADecodeDispatchState:
+    """Per-device GPU+CPU buffer pairs for MLA decode dispatch scalar args.
+
+    Uses a compiled single-op graph per device that calls
+    `compute_mla_dispatch_args_scalar`. Outputs are copied into
+    pre-allocated stable buffers.
+
+    Buffer layout: [batch_size, q_max_seq_len, num_partitions,
+    max_cache_valid_length]
+    """
+
+    def __init__(
+        self,
+        session: InferenceSession,
+        devices: list[Device],
+        num_heads: int,
+        q_max_seq_len: int = 1,
+    ) -> None:
+        self._num_devices = len(devices)
+        self._q_max_seq_len = q_max_seq_len
+        self._gpu_bufs = [Buffer.zeros([4], DType.int64).to(d) for d in devices]
+        self._models = [
+            session.load(self._build_graph(DeviceRef.from_device(d), num_heads))
+            for d in devices
+        ]
+        self._batch_size_bufs = [
+            Buffer.zeros([1], DType.int64) for _ in range(self._num_devices)
+        ]
+        self._max_cache_len_bufs = [
+            Buffer.zeros([1], DType.int64) for _ in range(self._num_devices)
+        ]
+        self._q_max_seq_len_bufs = [
+            Buffer.zeros([1], DType.int64) for _ in range(self._num_devices)
+        ]
+        self._batch_sizes = [0] * self._num_devices
+        self._max_cache_valid_lengths = [0] * self._num_devices
+
+    @property
+    def gpu_buffers(self) -> list[Buffer]:
+        return self._gpu_bufs
+
+    def update_initial(
+        self,
+        replica_batches: Sequence[Sequence[TextContext]],
+    ) -> None:
+        n_batches = len(replica_batches)
+        for i in range(self._num_devices):
+            if i < n_batches:
+                batch = replica_batches[i]
+                self._batch_sizes[i] = len(batch)
+                self._max_cache_valid_lengths[i] = max(
+                    (ctx.tokens.current_position for ctx in batch),
+                    default=0,
+                )
+            else:
+                self._batch_sizes[i] = 0
+                self._max_cache_valid_lengths[i] = 0
+            self._update(i)
+
+    def set_max_cache_valid_lengths(self, max_cache_valid_length: int) -> None:
+        """Update all devices' max_cache_valid_length and recompute dispatch args."""
+        for i in range(self._num_devices):
+            self._max_cache_valid_lengths[i] = max_cache_valid_length
+            self._update(i)
+
+    def update_next(self) -> None:
+        for i in range(self._num_devices):
+            self._max_cache_valid_lengths[i] += self._q_max_seq_len
+            self._update(i)
+
+    def _update(self, i: int) -> None:
+        if self._batch_sizes[i] == 0:
+            zero_buf = Buffer.zeros([4], DType.int64)
+            self._gpu_bufs[i].inplace_copy_from(zero_buf)
+            return
+        self._batch_size_bufs[i][0] = self._batch_sizes[i]
+        self._max_cache_len_bufs[i][0] = self._max_cache_valid_lengths[i]
+        self._q_max_seq_len_bufs[i][0] = self._q_max_seq_len
+        results = self._models[i].execute(
+            self._batch_size_bufs[i],
+            self._max_cache_len_bufs[i],
+            self._q_max_seq_len_bufs[i],
+        )
+        self._gpu_bufs[i].inplace_copy_from(results[0])
+
+    @staticmethod
+    def _build_graph(device: DeviceRef, num_heads: int) -> Graph:
+        with Graph(
+            "mla_dispatch_args",
+            input_types=[
+                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+                TensorType(DType.int64, shape=[1], device=DeviceRef.CPU()),
+            ],
+        ) as graph:
+            batch_size_val = graph.inputs[0].tensor
+            max_cache_valid_length_val = graph.inputs[1].tensor
+            q_max_seq_len_val = graph.inputs[2].tensor
+            gpu_args = compute_mla_dispatch_args_scalar(
+                batch_size_val,
+                max_cache_valid_length_val,
+                q_max_seq_len_val,
+                num_heads=num_heads,
+                device=device,
+            )
+            graph.output(gpu_args)
+        return graph
+
+
 @dataclass
 class DeepseekV3Inputs(DeepseekV2Inputs):
     """A class representing inputs for the DeepseekV3 model."""
@@ -68,8 +183,13 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
     data_parallel_splits: Buffer = field(kw_only=True)
     """Tensor containing the data parallel splits for the MLA layer."""
 
-    ep_inputs: tuple[Buffer, ...] = field(default=(), kw_only=True)
-    """EP communication buffers injected at prepare time."""
+    mla_decode_scalar_args: list[Buffer] = field(
+        kw_only=True, default_factory=list
+    )
+    """Per-device GPU buffers for MLA decode scalar args."""
+
+    ep_inputs: tuple[Buffer, ...] = field(kw_only=True, default=())
+    """Expert parallel communication buffers (atomic counters and device pointers)."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -83,6 +203,7 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
             *self.signal_buffers,
             *kv_cache_inputs,
             *self.batch_context_lengths,
+            *self.mla_decode_scalar_args,
             *self.ep_inputs,
         )
 
@@ -436,6 +557,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             for _ in range(len(self.devices))
         ]
 
+        q_max_seq_len = 1
+        spec_cfg = self.pipeline_config.speculative
+        if spec_cfg is not None and spec_cfg.is_mtp():
+            q_max_seq_len = spec_cfg.num_speculative_tokens + 1
+
+        self._mla_state = MLADecodeDispatchState(
+            session=session,
+            devices=self.devices,
+            num_heads=self.huggingface_config.num_attention_heads,
+            q_max_seq_len=q_max_seq_len,
+        )
+
         timer = CompilationTimer("model")
         if self.adapter:
             state_dict = self.adapter(
@@ -504,6 +637,12 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 for _ in range(len(self.devices))
             ]
 
+            # Unmarshal MLA decode scalar args (GPU per device).
+            mla_decode_scalar_args = [
+                next(variadic_args_iter).tensor
+                for _ in range(len(self.devices))
+            ]
+
             # all remaining arguments are for EP inputs
             ep_model_inputs = list(variadic_args_iter)
 
@@ -517,6 +656,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 data_parallel_splits.tensor,
                 batch_context_lengths,
                 ep_model_inputs,
+                mla_decode_scalar_args=mla_decode_scalar_args,
             )
 
             graph.output(*outputs)
@@ -586,6 +726,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
             )
+
+    def prepare_for_capture(self, max_cache_length: int) -> None:
+        """Sets canonical MLA dispatch args for graph capture."""
+        self._mla_state.set_max_cache_valid_lengths(max_cache_length)
 
     def prepare_initial_token_inputs(
         self,
@@ -709,6 +853,8 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         data_parallel_splits = Buffer.from_numpy(
             compute_data_parallel_splits(replica_batches)
         )
+        if self.pipeline_config.runtime.pipeline_role != "prefill_only":
+            self._mla_state.update_initial(replica_batches)
 
         ep_inputs = (
             ()
@@ -727,6 +873,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 np.array([return_n_logits], dtype=np.int64)
             ),
             data_parallel_splits=data_parallel_splits,
+            mla_decode_scalar_args=self._mla_state.gpu_buffers,
             ep_inputs=ep_inputs,
         )
 
@@ -743,6 +890,12 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         next_host_input_row_offsets = self._host_input_row_offsets_prealloc[
             :row_offsets_size
         ]
+
+        # Update MLA decode scalar args: max_cache_valid_length grows by 1
+        # each decode step, and num_partitions may change accordingly.
+        # TODO: support MTP
+        self._mla_state.update_next()
+
         return DeepseekV3Inputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
@@ -752,5 +905,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
             data_parallel_splits=prev_model_inputs.data_parallel_splits,
+            mla_decode_scalar_args=self._mla_state.gpu_buffers,
             ep_inputs=prev_model_inputs.ep_inputs,
         )

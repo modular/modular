@@ -30,6 +30,7 @@ from std.memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.mha import flash_attention
 from nn.mla import flare_mla_decoding, flare_mla_prefill
+from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from nn.mha_mask import CausalMask, MaterializedMask
 
 from std.utils.index import Index
@@ -91,6 +92,12 @@ fn bench_decode[
     cb_k.init_on_device(random_distribution, ctx)
     cb_mask.init_on_device(random_distribution, ctx)
 
+    var mla_args = MLADispatchScalarArgs[
+        num_heads=num_heads,
+        _is_cache_length_accurate=True,
+    ](batch_size, num_keys, 1, ctx)
+    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+
     # Layout definitions.
     comptime q_layout = Layout.row_major(
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
@@ -104,7 +111,7 @@ fn bench_decode[
 
     @parameter
     @always_inline
-    @__copy_capture(cb_q, cb_k, cb_mask, cb_o)
+    @__copy_capture(cb_q, cb_k, cb_mask, cb_o, scalar_args_buf_lt)
     fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
@@ -148,7 +155,8 @@ fn bench_decode[
                     CausalMask(),
                     scale,
                     ctx,
-                    num_partitions,
+                    scalar_args_buf_lt,
+                    num_partitions=num_partitions,
                 )
             elif mask_rank == 3:
                 flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -158,7 +166,8 @@ fn bench_decode[
                     MaterializedMask(mask3d),
                     scale,
                     ctx,
-                    num_partitions,
+                    scalar_args_buf_lt,
+                    num_partitions=num_partitions,
                 )
             else:
                 flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -168,7 +177,8 @@ fn bench_decode[
                     MaterializedMask(mask4d),
                     scale,
                     ctx,
-                    num_partitions,
+                    scalar_args_buf_lt,
+                    num_partitions=num_partitions,
                 )
 
         b.iter_custom[_kernel_launch](ctx)
@@ -200,6 +210,7 @@ fn bench_decode[
     _ = cb_k
     _ = cb_mask
     _ = cb_o
+    _ = mla_args
 
 
 fn bench_prefill[
