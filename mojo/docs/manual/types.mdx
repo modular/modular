@@ -136,10 +136,34 @@ Table 3 shows how these types are represented in memory.
 | `Float16` | 1 bit | 5 bits   | 10 bits  |
 </figure>
 
-Numbers with exponent values of all ones or all zeros represent special values,
-allowing floating-point numbers to represent infinity, negative infinity,
-signed zeros, and not-a-number (NaN). For more details on how floating-point
-numbers are represented, see [IEEE 754](https://en.wikipedia.org/wiki/IEEE_754).
+Exponent values of all zeros or all ones represent special cases. These
+patterns allow floating-point numbers to encode positive and negative
+infinity, signed zeros, and not-a-number (NaN). These values are available
+as static constants provided by
+[`FloatLiteral`](/mojo/std/builtin/float_literal/FloatLiteral):
+
+```mojo
+from std.math import copysign
+from std.utils.numerics import isfinite, isinf, isnan
+
+var inf = FloatLiteral.infinity
+print(isinf(inf))  # `True`
+print(inf > 0)     # `True`
+
+var neginf = FloatLiteral.negative_infinity
+print(isinf(neginf))  # `True`
+print(neginf < 0)     # `True`
+
+var nan = FloatLiteral.nan
+print(isnan(nan))  # `True`
+
+var negzero = FloatLiteral.negative_zero
+print(negzero == 0.0)              # `True`
+print(copysign(1.0, negzero) < 0)  # `True`
+```
+
+For more details on how floating-point numbers are represented, see
+[IEEE 754](https://en.wikipedia.org/wiki/IEEE_754).
 
 #### Floating-point approximations and comparisons
 
