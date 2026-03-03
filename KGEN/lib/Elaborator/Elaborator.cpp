@@ -1185,6 +1185,12 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
                           type);
 
   // Concretize the paramfor_has_next generator function.
+  if (!isa<SymbolConstantAttr>(hasNext)) {
+    parent->setToError(ErrorTree(op.getLoc(),
+                                 "INTERNAL ERROR: paramfor_has_next should "
+                                 "resolve to a concrete function"));
+    return failure();
+  }
   ErrorTreeOr<FuncOp> hasNextFunc = getConcreteFunction(
       parent, op.getLoc(), cast<SymbolConstantAttr>(hasNext));
   if (hasNextFunc.isError()) {
@@ -1195,6 +1201,12 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     return ElaborationState::skipNode();
 
   // Concretize the sequence generator function.
+  if (!isa<SymbolConstantAttr>(getNextIter)) {
+    parent->setToError(
+        ErrorTree(op.getLoc(), "INTERNAL ERROR: paramfor_get_next_iter should "
+                               "resolve to a concrete function"));
+    return failure();
+  }
   ErrorTreeOr<FuncOp> getNextIterFunc = getConcreteFunction(
       parent, op.getLoc(), cast<SymbolConstantAttr>(getNextIter));
   if (getNextIterFunc.isError()) {
@@ -1269,11 +1281,11 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
     ++loopUnrollCount;
   }
 
-  if (options.loopUnrollingWarnThreshold > 0 &&
-      loopUnrollCount > options.loopUnrollingWarnThreshold) {
+  if (config.loopUnrollingWarnThreshold > 0 &&
+      loopUnrollCount > config.loopUnrollingWarnThreshold) {
     InFlightDiagnostic diag = mlir::emitWarning(
         op->getLoc(), "comptime for unrolling loop more than " +
-                          Twine(options.loopUnrollingWarnThreshold) +
+                          Twine(config.loopUnrollingWarnThreshold) +
                           " times may cause long "
                           "compilation time and large code size. (use "
                           "'--loop-unrolling-warn-threshold' to increase the "
@@ -2957,7 +2969,8 @@ public:
                                       optimizeInterpreter,
                                       useParametricInterpreter,
                                       errorIncludePrelude,
-                                      errorVerbose};
+                                      errorVerbose,
+                                      loopUnrollingWarnThreshold};
 
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
     options.elaborationErrorIncludePrelude = errorIncludePrelude;

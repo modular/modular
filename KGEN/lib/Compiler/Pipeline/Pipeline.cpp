@@ -155,6 +155,8 @@ void KGEN::buildElaborateModulePipeline(
       options.elaborationErrorIncludePrelude;
   elaboratorOptions.errorVerbose = options.elaborationErrorVerbose;
   elaboratorOptions.maxDepth = options.elaborationMaxDepth;
+  elaboratorOptions.loopUnrollingWarnThreshold =
+      options.loopUnrollingWarnThreshold;
   pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
                                        compileAsmFn, compileOffloadFn));
 }

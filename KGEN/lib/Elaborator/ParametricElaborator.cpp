@@ -1270,11 +1270,11 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
     ++loopUnrollCount;
   }
 
-  if (options.loopUnrollingWarnThreshold > 0 &&
-      loopUnrollCount > options.loopUnrollingWarnThreshold) {
+  if (config.loopUnrollingWarnThreshold > 0 &&
+      loopUnrollCount > config.loopUnrollingWarnThreshold) {
     InFlightDiagnostic diag = mlir::emitWarning(
         op->getLoc(), "comptime for unrolling loop more than " +
-                          Twine(options.loopUnrollingWarnThreshold) +
+                          Twine(config.loopUnrollingWarnThreshold) +
                           " times may cause long "
                           "compilation time and large code size. (use "
                           "'--loop-unrolling-warn-threshold' to increase the "

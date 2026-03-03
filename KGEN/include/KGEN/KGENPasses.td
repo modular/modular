@@ -455,7 +455,11 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
               "\"show only simple concrete parameter values "
               "(string, integer, float, boolean) \"),"
             "clEnumValN(CompilationOptions::kAllParams, \"all-params\","
-              "\"show all concrete parameter values\"))">
+              "\"show all concrete parameter values\"))">,
+    Option<"loopUnrollingWarnThreshold", "loop-unrolling-warn-threshold",
+           "unsigned", "65536",
+           "Threshold to warn if a loop is unrolled for too many times, "
+           "default value is 65536, set to 0 to disable the warning.">
   ];
 }
 
