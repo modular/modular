@@ -310,23 +310,10 @@ class Flux2Pipeline(DiffusionPipeline):
         )
 
     def build_decode_latents(self) -> None:
-        dtype = self.vae.config.dtype
         device = self.transformer.devices[0]
         num_channels = self.vae.bn.running_mean.shape[0].dim
-
-        input_types = [
-            TensorType(
-                dtype,
-                shape=["batch", "height", "width", num_channels],
-                device=device,
-            ),
-            TensorType(dtype, shape=[num_channels], device=device),
-            TensorType(dtype, shape=[num_channels], device=device),
-        ]
-
-        self.__dict__["_postprocess_latents"] = max_compile(
-            self._postprocess_latents,
-            input_types=input_types,
+        self._postprocess_and_decode = self.vae.build_fused_decode(
+            device, num_channels
         )
 
     def concat_image_latents(
@@ -530,8 +517,8 @@ class Flux2Pipeline(DiffusionPipeline):
         latents: Tensor,
         latent_h: int,
         latent_w: int,
-    ) -> list[np.ndarray]:
-        """Decode Flux2 packed latents into image arrays for all batch elements.
+    ) -> np.ndarray:
+        """Decode Flux2 packed latents into a (B, H, W, C) float32 NumPy array.
 
         Args:
             latents: Packed latents, shaped (B, S, C).
@@ -539,75 +526,17 @@ class Flux2Pipeline(DiffusionPipeline):
             latent_w: Latent width after packing (latent_w // 2).
 
         Returns:
-            List of float32 HWC NumPy arrays, one per batch element.
+            Float32 NumPy array of shape (B, H, W, C).
         """
-        # Unpack: (B, S, C) -> (B, H, W, C)
         batch = int(latents.shape[0])
         c = int(latents.shape[2])
         latents_bhwc = F.reshape(latents, (batch, latent_h, latent_w, c))
 
         bn_mean = self.vae.bn.running_mean
         bn_var = self.vae.bn.running_var
-        latents_decoded = self._postprocess_latents(
-            latents_bhwc, bn_mean, bn_var
-        )
+        decoded = self._postprocess_and_decode(latents_bhwc, bn_mean, bn_var)
 
-        # Decode the full batch with the VAE in a single call, then split.
-        decoded = self.vae.decode(latents_decoded)
-        numpy_decoded = self._to_numpy(decoded)  # (B, 3, H, W)
-        return [self._image_to_flat_hwc(numpy_decoded[b]) for b in range(batch)]
-
-    def _postprocess_latents(
-        self,
-        latents_bhwc: Tensor,
-        bn_mean: Tensor,
-        bn_var: Tensor,
-    ) -> Tensor:
-        """Denormalize and unpatchify latents for VAE decoding.
-
-        Args:
-            latents_bhwc: Packed latents of shape (B, H, W, C).
-            bn_mean: BatchNorm running mean of shape (C,).
-            bn_var: BatchNorm running variance of shape (C,).
-
-        Returns:
-            Unpatchified latents of shape (B, C//4, H*2, W*2).
-        """
-        batch = latents_bhwc.shape[0]
-        h = latents_bhwc.shape[1]
-        w = latents_bhwc.shape[2]
-        c = latents_bhwc.shape[3]
-
-        # Permute: (B, H, W, C) -> (B, C, H, W)
-        latents = F.permute(latents_bhwc, (0, 3, 1, 2))
-
-        # BN denormalization
-        bn_mean_r = F.reshape(bn_mean, (1, c, 1, 1))
-        bn_var_r = F.reshape(bn_var, (1, c, 1, 1))
-        bn_std = F.sqrt(bn_var_r + self.vae.config.batch_norm_eps)
-        latents = latents * bn_std + bn_mean_r
-
-        # Unpatchify: (B, C, H, W) -> (B, C//4, H*2, W*2)
-        latents = F.reshape(latents, (batch, c // 4, 2, 2, h, w))
-        latents = F.permute(latents, (0, 1, 4, 2, 5, 3))
-        latents = F.reshape(latents, (batch, c // 4, h * 2, w * 2))
-
-        return latents
-
-    def _to_numpy(self, image: Tensor) -> np.ndarray:
-        """Convert a MAX Tensor to a CPU NumPy array (float32)."""
-        cpu_image: Tensor = image.cast(DType.float32).to(CPU())
-        return np.from_dlpack(cpu_image)
-
-    @staticmethod
-    def _image_to_flat_hwc(image: np.ndarray) -> np.ndarray:
-        """Convert a tensor-like NumPy image to a flat HWC float32 array."""
-        img = np.asarray(image)
-        while img.ndim > 3:
-            img = img.squeeze(0)
-        if img.ndim == 3 and img.shape[0] == 3:
-            img = np.transpose(img, (1, 2, 0))
-        return img.astype(np.float32, copy=False)
+        return np.from_dlpack(decoded)  # (B, H, W, C)
 
     @staticmethod
     def _prepare_text_ids(
@@ -814,10 +743,10 @@ class Flux2Pipeline(DiffusionPipeline):
 
         # 5) Decode final outputs for all batch elements in a single pass.
         with Tracer("decode_outputs"):
-            image_list = self.decode_latents(
+            images = self.decode_latents(
                 latents,
                 model_inputs.latent_h // 2,
                 model_inputs.latent_w // 2,
             )
 
-        return Flux2PipelineOutput(images=image_list)  # type: ignore[arg-type]
+        return Flux2PipelineOutput(images=images)
