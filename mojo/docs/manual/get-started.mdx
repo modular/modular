@@ -1010,7 +1010,7 @@ function. We indicate that a method is static by using the
 `@staticmethod` decorator.
 
 ```mojo title="gridv1.mojo"
-import random
+import std.random
 
 @fieldwise_init
 struct Grid(Copyable, Stringable):
@@ -1294,7 +1294,7 @@ game UI. This requires a complete rewrite of the `run_display()` function. Take
 a look at the updated code for `life.mojo`, and we'll explain more below:
 
 ```mojo title="life.mojo"
-import time
+import std.time
 
 from gridv1 import Grid
 from std.python import Python
