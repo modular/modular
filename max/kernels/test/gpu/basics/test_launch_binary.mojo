@@ -66,7 +66,7 @@ def test_vec_add(ctx: DeviceContext) raises:
             assert_equal(
                 out_host[i],
                 Float32(i + 2),
-                msg=String("at index", i, "the value is", out_host[i]),
+                msg=t"at index{i} the value is{out_host[i]}",
             )
 
 

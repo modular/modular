@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
+import std.time
 
 from gridv2 import Grid
-from python import Python
+from std.python import Python
 
 
 def run_display(

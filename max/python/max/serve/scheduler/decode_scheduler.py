@@ -89,7 +89,7 @@ class DecodeScheduler(Scheduler):
         self.prefill_reqs: dict[RequestID, tuple[TextContext, int]] = {}
         self.inflight_transfers: dict[RequestID, TransferReqData] = {}
         self.prefill_reqs_per_replica: list[int] = [
-            0 for _ in range(self.kv_cache.num_replicas)
+            0 for _ in range(scheduler_config.data_parallel_degree)
         ]
 
         self.transfer_engine = KVTransferEngine(
@@ -97,7 +97,7 @@ class DecodeScheduler(Scheduler):
             # TODO: Also support scales tensors
             tensors=[
                 self.kv_cache.get_device_buffer(replica_idx).values
-                for replica_idx in range(self.kv_cache.num_replicas)
+                for replica_idx in range(scheduler_config.data_parallel_degree)
             ],
             # Assume all replicas have the same number of pages.
             total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
@@ -173,8 +173,13 @@ class DecodeScheduler(Scheduler):
         )
 
         # Set dst_idx to -1 to denote pages which the decode already has due to
-        # prefix caching.
-        for i in range(data.tokens.processed_length // self.kv_cache.page_size):
+        # prefix caching. processed_length is in tokens; divide by page_size to
+        # convert to blocks before accounting for data-parallel degree.
+        for i in range(
+            data.tokens.processed_length
+            // self.kv_cache.params.page_size
+            // self.scheduler_config.data_parallel_degree
+        ):
             dst_idxs[i] = -1
 
         self.dispatcher.send_request_nowait(
@@ -210,7 +215,9 @@ class DecodeScheduler(Scheduler):
                     self.kv_cache.get_num_used_pages(replica_idx)
                     / self.kv_cache.get_num_pages(replica_idx)
                     < 0.9
-                    for replica_idx in range(self.kv_cache.num_replicas)
+                    for replica_idx in range(
+                        self.scheduler_config.data_parallel_degree
+                    )
                 )
             )
         ):

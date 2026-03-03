@@ -108,46 +108,11 @@ def _test_kernel_impl[
     var K = expert_shape[1]
 
     print(
-        String(
-            "[",
-            kernel_type,
-            " kernel] ",
-            "in/out dtypes=(",
-            a_type,
-            ", ",
-            b_type,
-            ", ",
-            c_type,
-            ", ",
-            scales_dtype,
-            ") ",
-            " problem shape=(",
-            M,
-            ", ",
-            N,
-            ", ",
-            K,
-            ") ",
-            "mma_shape=",
-            mma_shape,
-            " block_tile_shape=",
-            block_tile_shape,
-            " cta_group=",
-            cta_group,
-            " cluster_shape=(",
-            cluster_shape[0],
-            ", ",
-            cluster_shape[1],
-            ", ",
-            cluster_shape[2],
-            ")",
-            " swapAB=",
-            swapAB,
-            " k_group_size=",
-            k_group_size,
-            " SF_VECTOR_SIZE=",
-            SF_VECTOR_SIZE,
-        )
+        t"[{kernel_type} kernel] in/out dtypes=({a_type}, {b_type}, {c_type},"
+        t" {scales_dtype})  problem shape=({M}, {N}, {K})"
+        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
+        t" {cluster_shape[1]}, {cluster_shape[2]})"
+        t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
     comptime static_a_shape = DimList(Dim(), expert_shape[1])

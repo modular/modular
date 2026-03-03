@@ -390,7 +390,7 @@ fn test[
                     expect,
                     atol=1e-5,
                     rtol=rtol,
-                    msg=String(h, s, d, actual, expect, rerr, sep=" "),
+                    msg=t"{h} {s} {d} {actual} {expect} {rerr}",
                 )
 
     _ = q_device_ptr

@@ -42,7 +42,7 @@ from .utils import (
     load_b_tile,
     pad,
 )
-import itertools
+import std.itertools
 
 
 trait KVBuffer:

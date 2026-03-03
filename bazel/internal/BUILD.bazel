@@ -69,6 +69,18 @@ gpu_toolchain_alias(
 )
 
 modular_cc_library(
+    name = "gtest_main_objc_pool_check",
+    testonly = True,
+    srcs = ["GTestMainObjcPoolCheck.cpp"],
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//third-party/unittest:gmock",
+        "@llvm-project//third-party/unittest:gtest",
+    ],
+)
+
+modular_cc_library(
     name = "debugging_test_lib",
     srcs = ["debugging_test_lib.cpp"],
     hdrs = ["debugging_test_lib.h"],

@@ -25,7 +25,7 @@ from std.sys import (
 )
 from std.sys.intrinsics import PrefetchOptions, readfirstlane
 
-import gpu.memory as gpu_memory
+import std.gpu.memory as gpu_memory
 from std.algorithm import vectorize
 from std.bit import log2_floor
 from std.builtin.device_passable import DevicePassable
@@ -266,7 +266,6 @@ struct LayoutTensor[
     alignment: Int = align_of[dtype](),
 ](
     DevicePassable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
     _Expable,
@@ -5742,6 +5741,7 @@ struct LayoutTensor[
         return self
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Convert the tensor to a string representation.
 

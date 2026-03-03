@@ -74,7 +74,6 @@ struct Bool(
     Floatable,
     Hashable,
     ImplicitlyCopyable,
-    Indexer,
     Intable,
     TrivialRegisterPassable,
     Writable,
@@ -256,15 +255,6 @@ struct Bool(
             The integral representation of the value.
         """
         return self.__int__()
-
-    @always_inline("builtin")
-    fn __mlir_index__(self) -> __mlir_type.index:
-        """Convert to index.
-
-        Returns:
-            1 if the Bool is True, 0 otherwise.
-        """
-        return self.__int__()._mlir_value
 
     @always_inline("nodebug")
     fn __float__(self) -> Float64:

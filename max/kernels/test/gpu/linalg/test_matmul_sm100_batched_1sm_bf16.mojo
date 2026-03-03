@@ -69,41 +69,11 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     var K = k.value
 
     print(
-        String(
-            "in/out dtypes=(",
-            a_type,
-            ", ",
-            b_type,
-            ", ",
-            c_type,
-            ") ",
-            " problem shape=(",
-            B,
-            ", ",
-            M,
-            ", ",
-            N,
-            ", ",
-            K,
-            ") ",
-            "mma_shape=",
-            mma_shape,
-            " block_tile_shape=",
-            block_tile_shape,
-            " cta_group=",
-            cta_group,
-            " cluster_shape=(",
-            cluster_shape[0],
-            ", ",
-            cluster_shape[1],
-            ", ",
-            cluster_shape[2],
-            ")",
-            " swapAB=",
-            swapAB,
-            " k_group_size=",
-            k_group_size,
-        )
+        t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({B},"
+        t" {M}, {N}, {K})"
+        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
+        t" {cluster_shape[1]}, {cluster_shape[2]})"
+        t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
     comptime static_a_shape = DimList(batch.dim, m.dim, k.dim)

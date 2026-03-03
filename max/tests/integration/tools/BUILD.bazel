@@ -230,6 +230,7 @@ modular_py_binary(
 modular_py_test(
     name = "test_precompile_all_pipelines_cpu",
     size = "large",
+    timeout = "long",
     srcs = ["test_precompile_all_pipelines_cpu.py"],
     imports = ["."],
     tags = [

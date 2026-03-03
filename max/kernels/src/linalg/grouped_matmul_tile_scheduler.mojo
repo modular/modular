@@ -37,7 +37,7 @@ struct RasterOrder(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -62,6 +62,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     fn is_done(self) -> Bool:
         return self.terminate
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

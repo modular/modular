@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test for MixedLayout GPU memory codegen with runtime indices."""
 
-import sys
+import std.sys
 
 from std.gpu import thread_idx
 from std.gpu.host import DeviceContext

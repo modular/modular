@@ -196,7 +196,7 @@ class SpeculativeDecodingPipelineBase(
             self.pipeline_config.model.device_specs
         )
         target_config = self.pipeline_config.model.huggingface_config
-        target_session = InferenceSession(devices=self.target_devices)
+        target_session = InferenceSession(devices=[*self.target_devices])
         self.pipeline_config.configure_session(target_session)
         target_config = AutoConfig.from_pretrained(
             self.pipeline_config.model.model_path,
@@ -272,7 +272,7 @@ class SpeculativeDecodingPipelineBase(
         self.draft_devices = load_devices(
             self.pipeline_config.draft_model.device_specs
         )
-        draft_session = InferenceSession(devices=self.draft_devices)
+        draft_session = InferenceSession(devices=[*self.draft_devices])
         self.pipeline_config.configure_session(draft_session)
 
         if self.pipeline_config.draft_model is None:

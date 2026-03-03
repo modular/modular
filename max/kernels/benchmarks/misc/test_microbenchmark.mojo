@@ -84,7 +84,7 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
 
     @no_inline
     fn __str__(self) -> String:
-        return String("m = ", self.m, ", n = ", self.n, ", k = ", self.k)
+        return t"m = {self.m}, n = {self.n}, k = {self.k}"
 
     fn __del__(deinit self):
         self.a_ptr.free()
@@ -163,7 +163,7 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](
 
     @no_inline
     fn __str__(self) -> String:
-        return String("m = ", self.m, ", n = ", self.n, ", k = ", self.k)
+        return t"m = {self.m}, n = {self.n}, k = {self.k}"
 
     fn __del__(deinit self):
         self.a_ptr.free()

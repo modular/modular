@@ -13,10 +13,10 @@
 
 # DOC: mojo/docs/manual/get-started.mdx
 
-import time
+import std.time
 
 from gridv1 import Grid
-from python import Python
+from std.python import Python
 
 
 def run_display(

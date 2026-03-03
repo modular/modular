@@ -16,7 +16,7 @@ from std.os import abort
 from std.random import rand
 from std.sys import CompilationTarget, argv, simd_width_of, size_of
 
-import benchmark
+import std.benchmark
 from std.algorithm.functional import vectorize
 from layout import Layout, RuntimeLayout
 from layout.int_tuple import IntTuple, size

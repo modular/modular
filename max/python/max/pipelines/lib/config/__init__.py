@@ -13,8 +13,11 @@
 
 """Configuration classes for MAX pipelines."""
 
-from .config import (
+from max.pipelines.lib.pipeline_runtime_config import (
     DEFAULT_MAX_BATCH_INPUT_TOKENS,
+)
+
+from .config import (
     AudioGenerationConfig,
     PipelineConfig,
     PrependPromptSpeechTokens,

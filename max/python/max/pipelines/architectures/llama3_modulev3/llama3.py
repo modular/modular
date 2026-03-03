@@ -28,14 +28,14 @@ from max.nn.kv_cache import (
     unflatten_ragged_mha_decode_inputs,
 )
 from max.nn.module_v3 import Module
+from max.nn.module_v3.common_layers.attention import AttentionWithRope
+from max.nn.module_v3.common_layers.mlp import MLP
 from max.nn.module_v3.embedding import Embedding
 from max.nn.module_v3.linear import Linear
 from max.nn.module_v3.norm import LayerNorm, RMSNorm
 from max.nn.module_v3.sequential import ModuleList
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 
-from ..common_layers.attention import AttentionWithRope
-from ..common_layers.mlp import MLP
 from .layers.mlp import LlamaStackedMLP
 from .layers.rotary_embedding import (
     Llama3RotaryEmbedding,
@@ -272,8 +272,9 @@ class Llama3(Module[..., tuple[Tensor, ...]]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
+        kv_values = [arg._graph_value for arg in variadic_args]
         kv_collections = unflatten_ragged_mha_decode_inputs(
-            variadic_args, n_devices=self.kv_params.n_devices
+            kv_values, n_devices=self.kv_params.n_devices
         )
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets

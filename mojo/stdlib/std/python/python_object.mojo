@@ -22,6 +22,7 @@ from std.python import PythonObject
 from std.os import abort
 from std.sys import bit_width_of
 from std.ffi import c_double, c_long, c_size_t, c_ssize_t
+import std.format._utils as fmt
 
 from std.reflection import get_type_name
 
@@ -1623,6 +1624,22 @@ struct PythonObject(
         except e:
             # TODO: make this method raising when we can raise parametrically.
             abort(t"failed to write PythonObject to writer: {e}")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `PythonObject` to a writer.
+
+        Uses Python's `repr()` to get the representation of the underlying
+        Python object.
+
+        Args:
+            writer: The object to write to.
+        """
+        try:
+            var repr_str = String(py=self.__repr__())
+            fmt.FormatStruct(writer, "PythonObject").fields(repr_str)
+        except e:
+            abort(t"failed to write PythonObject repr to writer: {e}")
 
     # ===-------------------------------------------------------------------===#
     # Methods

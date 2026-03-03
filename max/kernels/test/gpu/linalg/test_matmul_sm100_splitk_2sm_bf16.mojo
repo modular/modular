@@ -79,30 +79,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     if not benchmark:
         print(
-            String(
-                "in/out dtypes=(",
-                a_type,
-                ", ",
-                b_type,
-                ", ",
-                c_type,
-                ") ",
-                " problem shape=(",
-                M,
-                ", ",
-                N,
-                ", ",
-                K,
-                ") ",
-                "mma_shape=",
-                mma_shape,
-                " block_tile_shape=",
-                block_tile_shape,
-                " swapAB=",
-                swapAB,
-                " num_split_k=",
-                num_split_k,
-            )
+            t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
+            t" {N}, {K})"
+            t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} swapAB={swapAB} num_split_k={num_split_k}"
         )
 
     comptime static_a_shape = DimList(m.dim, k.dim)

@@ -65,7 +65,7 @@ def test_dot_at_b[dtype: DType, M: Int, N: Int]() raises:
             assert_almost_equal(
                 c_matrix[m, n],
                 golden,
-                msg=String("invalid value at m=", m, ",n=", n),
+                msg=t"invalid value at m={m},n={n}",
             )
 
 

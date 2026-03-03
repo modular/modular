@@ -67,22 +67,8 @@ fn test_scaled_mxfp8_cublaslt[
     comptime scales_type = MXFP8_SF_DTYPE
 
     print(
-        String(
-            "in/out dtypes=(",
-            input_type,
-            ", ",
-            output_type,
-            ", ",
-            scales_type,
-            ") ",
-            " problem shape=(",
-            M,
-            ", ",
-            N,
-            ", ",
-            K,
-            ") ",
-        )
+        t"in/out dtypes=({input_type}, {output_type}, {scales_type})  problem"
+        t" shape=({M}, {N}, {K}) "
     )
 
     comptime static_a_shape = DimList(m.dim, k.dim)

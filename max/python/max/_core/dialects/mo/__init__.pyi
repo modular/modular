@@ -21,6 +21,7 @@ import max._core
 import max._core.dialects.builtin
 import max._core.dialects.kgen
 import max._core.dialects.m
+import max._core.dialects.mosh
 import max._core.dtype
 from max.mlir import Context, Location
 
@@ -1059,7 +1060,7 @@ class DistributedAllgatherOp(max._core.Operation):
     @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
 
-class DistributedAllreduceSumOp(max._core.Operation):
+class DistributedAllreduceAddRmsNormQuantFp8Op(max._core.Operation):
     """
     Allreduce takes in inputs each coming from a different device with
     the same shape as the final output and performs a sum reduction
@@ -1068,6 +1069,10 @@ class DistributedAllreduceSumOp(max._core.Operation):
 
     Multiple instances of this op are created (one per device) to enable
     multi-threaded execution.
+
+    This op also applies a residual (add), then RMSNorm and dynamic FP8 quantization to the output of AllReduce.
+    It returns both the quantized output value and the quantization scale.
+    It also returns the intermediate output of the residual (add) op.
     """
 
     def __init__(
@@ -1075,9 +1080,16 @@ class DistributedAllreduceSumOp(max._core.Operation):
         builder: max._core.OpBuilder,
         location: Location,
         output: TensorType,
+        out_scale: TensorType,
+        out_residual: TensorType,
         out_chain: ChainType,
         inputs: Sequence[max._core.Value[max._core.Type]],
         signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        residual: max._core.Value[TensorType],
+        gamma: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        scale_ub: max._core.Value[TensorType],
         in_chain: max._core.Value[ChainType],
         device: max._core.dialects.m.DeviceRefAttr,
     ) -> None: ...
@@ -1086,11 +1098,45 @@ class DistributedAllreduceSumOp(max._core.Operation):
     @property
     def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
     @property
+    def residual(self) -> max._core.Value[TensorType]: ...
+    @property
+    def gamma(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def scale_ub(self) -> max._core.Value[TensorType]: ...
+    @property
     def in_chain(self) -> max._core.Value[ChainType]: ...
     @property
     def device(self) -> max._core.dialects.m.DeviceRefAttr: ...
     @device.setter
     def device(self, arg: max._core.dialects.m.DeviceRefAttr, /) -> None: ...
+
+class DistributedAllreduceSumOp(max._core.Operation):
+    """
+    Allreduce takes in inputs each coming from a different device with
+    the same shape as the final output and performs a sum reduction
+    across the devices.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        outputs: Sequence[max._core.Type],
+        out_chain: ChainType,
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        signal_buffers: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+    ) -> None: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def signal_buffers(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
 
 class AndOp(max._core.Operation):
     """

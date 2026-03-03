@@ -13,6 +13,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MAX profiler Python bindings."""
+
 class Trace:
     """
     Context manager for creating profiling spans.

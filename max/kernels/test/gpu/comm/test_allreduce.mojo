@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
+import std.time
 from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
 from std.itertools import product
 

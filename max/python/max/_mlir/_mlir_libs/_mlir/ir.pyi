@@ -2,6 +2,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MLIR IR Bindings"""
+
 import enum
 import types
 from collections.abc import Callable, Iterator, Sequence
@@ -2437,6 +2439,39 @@ class StridedLayoutAttr(Attribute):
     def strides(self) -> list[int]:
         """Returns the value of the float point attribute"""
 
+class DynamicAttr(Attribute):
+    def __init__(self, cast_from_attr: Attribute) -> None: ...
+    @property
+    def type(self) -> Type: ...
+
+    static_typeid: TypeID = ...
+    """static_typeid(/) -> TypeID"""
+
+    @property
+    def typeid(self) -> TypeID: ...
+    def __repr__(self) -> str: ...
+    @staticmethod
+    def get(
+        full_attr_name: str,
+        attributes: Sequence[Attribute],
+        context: Context | None = None,
+    ) -> DynamicAttr:
+        """Create a dynamic attribute."""
+
+    @property
+    def params(self) -> list[Attribute]:
+        """
+        Returns the parameters of the dynamic attribute as a list of attributes.
+        """
+
+    @property
+    def attr_name(self) -> str: ...
+    @staticmethod
+    def lookup_typeid(
+        full_attr_name: str, context: Context | None = None
+    ) -> TypeID:
+        """Look up the TypeID for the given dynamic attribute name."""
+
 class MemoryEffectInstancesList:
     pass
 
@@ -3299,3 +3334,32 @@ class OpaqueType(Type):
     @property
     def data(self) -> str:
         """Returns the data for the Opaque type as a string."""
+
+class DynamicType(Type):
+    def __init__(self, cast_from_type: Type) -> None: ...
+
+    static_typeid: TypeID = ...
+    """static_typeid(/) -> TypeID"""
+
+    @property
+    def typeid(self) -> TypeID: ...
+    def __repr__(self) -> str: ...
+    @staticmethod
+    def get(
+        full_type_name: str,
+        attributes: Sequence[Attribute],
+        context: Context | None = None,
+    ) -> DynamicType:
+        """Create a dynamic type."""
+
+    @property
+    def params(self) -> list[Attribute]:
+        """Returns the parameters of the dynamic type as a list of attributes."""
+
+    @property
+    def type_name(self) -> str: ...
+    @staticmethod
+    def lookup_typeid(
+        full_type_name: str, context: Context | None = None
+    ) -> TypeID:
+        """Look up the TypeID for the given dynamic type name."""

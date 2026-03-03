@@ -17,7 +17,7 @@
 
 from std.collections import OptionalReg
 
-import time
+import std.time
 from std.io.io import _printf
 from std.math import sqrt
 from std.os.path import dirname

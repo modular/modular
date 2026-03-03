@@ -201,7 +201,7 @@ fn ep_dispatch_async_kernel_api[
         var func = gpu_ctx.compile_function[dispatch_async, dispatch_async]()
 
         comptime if use_shmem:
-            var cached_module_key = String("EP_DISPATCH_INITED_DEV_", gpu_id)
+            var cached_module_key = String(t"EP_DISPATCH_INITED_DEV_{gpu_id}")
 
             # Don't initialize the module repeatedly
             if not Int(global_cache_lookup(cached_module_key)):
@@ -666,7 +666,7 @@ fn ep_combine_async_kernel_api[
         var func = gpu_ctx.compile_function[combine_async, combine_async]()
 
         comptime if use_shmem:
-            var cached_module_key = String("EP_COMBINE_INITED_DEV_", gpu_id)
+            var cached_module_key = String(t"EP_COMBINE_INITED_DEV_{gpu_id}")
 
             # Don't initialize the module repeatedly
             if not Int(global_cache_lookup(cached_module_key)):

@@ -1259,26 +1259,20 @@ print("c2: Real: {}; Imaginary: {}".format(c2.re, c2.im))
 c2: Real: 3.1415899999999999; Imaginary: 0.0
 ```
 
-### Implement the `Writable` and `Stringable` traits
+### Implement the `Writable` trait
 
 To make it simpler to print `Complex` values, let's implement the
-[Writable](/mojo/std/format/Writable) trait. While we're at it, let's
-also implement the [`Stringable`](/mojo/std/builtin/str/Stringable) trait so
-that we can use the `String()` constructor to generate a `String` representation of a
+[Writable](/mojo/std/format/Writable) trait so that we can use the
+`String()` constructor to generate a `String` representation of a
 `Complex` value. You can find out more about these traits and their associated
-methods in [The `Stringable`, `Representable`, and `Writable`
-traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
+methods in [The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).
 
 ```mojo
 struct Complex(
     Writable,
-    Stringable,
-     TrivialRegisterPassable
+    TrivialRegisterPassable
 ):
     # ...
-
-    fn __str__(self) -> String:
-        return String.write(self)
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("(", self.re)
@@ -1291,8 +1285,7 @@ struct Complex(
 
 :::note
 
-The `Writable` trait doesn't allow the `write_to()` method to raise an error and
-the `Stringable` trait doesn't allow the `__str__()` method to raise an error.
+The `Writable` trait doesn't allow the `write_to()` method to raise an error.
 Because defining a method with `def` implies that it can raise an error, we
 instead have to define these methods with `fn`. See
 [Functions](/mojo/manual/functions) for more information on the differences
@@ -1627,8 +1620,6 @@ we'll go ahead and implement the operators for completeness.)
 ```mojo
 struct Complex(
     Equatable,
-    Formattable,
-    Stringable,
 ):
     # ...
     fn __eq__(self, other: Self) -> Bool:

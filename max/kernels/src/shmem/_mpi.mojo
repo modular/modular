@@ -56,7 +56,7 @@ fn _init_mpi_dylib() -> OwnedDLHandle:
     try:
         return OwnedDLHandle(path=lib, flags=flags)
     except e:
-        abort(String("failed to load MPI library: ", e))
+        abort(t"failed to load MPI library: {e}")
 
 
 @always_inline

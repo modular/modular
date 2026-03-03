@@ -371,5 +371,83 @@ def test_variadic_list_linear_type() raises:
     take_owned_linear(ExplicitDelOnly(5), ExplicitDelOnly(10))
 
 
+def test_variadic_list_write_to() raises:
+    fn check_three(*args: Int) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(1, 2, 3)")
+
+    fn check_single(*args: Int) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(42)")
+
+    fn check_empty(*args: Int) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "()")
+
+    check_three(1, 2, 3)
+    check_single(42)
+    check_empty()
+
+
+def test_variadic_list_write_repr_to() raises:
+    fn check_three(*args: Int) raises:
+        var s = String()
+        args.write_repr_to(s)
+        assert_equal(s, "VariadicList[Int]((Int(1), Int(2), Int(3)))")
+
+    fn check_single(*args: Int) raises:
+        var s = String()
+        args.write_repr_to(s)
+        assert_equal(s, "VariadicList[Int]((Int(42)))")
+
+    check_three(1, 2, 3)
+    check_single(42)
+
+
+def test_variadic_list_mem_write_to() raises:
+    fn check_two(*args: String) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(hello, world)")
+
+    fn check_single(*args: String) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(hi)")
+
+    check_two("hello", "world")
+    check_single("hi")
+
+
+def test_variadic_list_mem_write_repr_to() raises:
+    fn check_two(*args: String) raises:
+        var s = String()
+        args.write_repr_to(s)
+        assert_equal(s, "VariadicList[String](('hello', 'world'))")
+
+    check_two("hello", "world")
+
+
+def test_variadic_pack_write_to() raises:
+    def helper[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_to(s)
+        assert_equal(s, "(1, hello, True)")
+
+    helper(1, "hello", True)
+
+
+def test_variadic_pack_write_repr_to() raises:
+    def helper[*Ts: Writable](*args: *Ts) raises:
+        var s = String()
+        args.write_repr_to(s)
+        assert_equal(s, "(Int(1), 'hello', True)")
+
+    helper(1, "hello", True)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

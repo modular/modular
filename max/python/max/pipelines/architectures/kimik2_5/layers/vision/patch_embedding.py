@@ -246,7 +246,6 @@ class PatchEmbedding(Module, Shardable):
                 dtype=dtype,
                 device=device,
                 permute=True,
-                name="proj",
             )
 
             self.pos_emb = Learnable2DInterpPosEmbDividedFixed(
@@ -319,7 +318,8 @@ class PatchEmbedding(Module, Shardable):
         Args:
             pixel_values: (n_patches, in_channels, patch_size, patch_size) in NCHW format,
                 i.e. n_patches patches of shape (3, 14, 14).
-            grid_thws: (n_images, 3) temporal, height, width per image.
+            grid_thws: (n_videos, 3) temporal, height, width per video,
+                dtype int64.
 
         Returns:
             Tensor of shape (n_patches, hidden_size).

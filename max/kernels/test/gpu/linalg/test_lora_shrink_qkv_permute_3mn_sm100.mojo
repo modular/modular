@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import itertools
+import std.itertools
 
 from buffer import Dim, DimList, NDBuffer
 from std.gpu.host import DeviceContext
@@ -218,17 +218,9 @@ fn test[
         assert_almost_equal(
             actual,
             expect,
-            msg=String(
-                "qkv_idx: ",
-                qkv_idx,
-                " m: ",
-                m,
-                " n: ",
-                n,
-                " ref: ",
-                expect,
-                " actual: ",
-                actual,
+            msg=(
+                t"qkv_idx: {qkv_idx} m: {m} n: {n} ref: {expect} actual:"
+                t" {actual}"
             ),
             rtol=rtol,
         )

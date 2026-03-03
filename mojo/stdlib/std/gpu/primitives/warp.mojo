@@ -1117,7 +1117,11 @@ fn prefix_sum[
 
 @always_inline("nodebug")
 fn _has_redux_f32_support[dtype: DType, simd_width: Int]() -> Bool:
-    return _is_sm_100x_or_newer() and dtype == DType.float32 and simd_width == 1
+    return (
+        (is_nvidia_gpu["sm_100a"]() or is_nvidia_gpu["sm_101a"]())
+        and dtype == DType.float32
+        and simd_width == 1
+    )
 
 
 @always_inline("nodebug")
@@ -1126,7 +1130,7 @@ fn _redux_f32_max_min[direction: StaticString](val: SIMD) -> type_of(val):
     return inlined_assembly[
         instruction + " $0, $1, $2;",
         type_of(val),
-        constraints="=r,r,i",
+        constraints="=f,f,i",
         has_side_effect=True,
     ](val, Int32(_FULL_MASK))
 

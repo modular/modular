@@ -25,16 +25,15 @@ from __future__ import annotations
 
 import math
 
-import numpy as np
 import pytest
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from conftest import TorchPatchEmbed, TorchPosEmb
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.kimik2_5.layers.patch_embedding import (
+from max.pipelines.architectures.kimik2_5.layers.vision.patch_embedding import (
     Learnable2DInterpPosEmbDividedFixed,
     PatchEmbedding,
 )
@@ -62,9 +61,9 @@ def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
 
 
 def _create_state_dict(has_bias: bool) -> dict[str, torch.Tensor]:
-    """State dict keys match Module.raw_state_dict (proj has name='proj' -> proj.proj.*)."""
+    """State dict keys match Module.raw_state_dict."""
     state: dict[str, torch.Tensor] = {
-        "proj.proj.weight": _generate_tensor(
+        "proj.weight": _generate_tensor(
             (HIDDEN_SIZE, IN_CHANNELS, PATCH_SIZE, PATCH_SIZE)
         ),
         "pos_emb.weight": _generate_tensor(
@@ -72,7 +71,7 @@ def _create_state_dict(has_bias: bool) -> dict[str, torch.Tensor]:
         ),
     }
     if has_bias:
-        state["proj.proj.bias"] = _generate_tensor((HIDDEN_SIZE,))
+        state["proj.bias"] = _generate_tensor((HIDDEN_SIZE,))
     return state
 
 
@@ -142,119 +141,6 @@ def _assert_close(expected: torch.Tensor, actual: torch.Tensor) -> None:
     )
 
 
-# -----------------------------------------------------------------------------
-# Full torch reference (MoonVision3dPatchEmbed + Learnable2DInterpPosEmbDivided_fixed)
-# for test_patch_embedding_full_matches_torch once MAX pos_emb is implemented.
-# Reference: nvidia/Kimi-K2.5-NVFP4 modeling_kimi_k25.py
-# -----------------------------------------------------------------------------
-
-
-def _get_1d_sincos_pos_embed(embed_dim: int, t_size: int) -> np.ndarray:
-    """1D sincos positional embedding. Returns (t_size, embed_dim)."""
-    assert embed_dim % 2 == 0
-    omega = np.arange(embed_dim // 2, dtype=np.float32)
-    omega /= embed_dim / 2.0
-    omega = 1.0 / (10000**omega)
-    grid_t = np.arange(t_size, dtype=np.float32)
-    out = np.einsum("m,d->md", grid_t, omega)
-    emb_sin = np.sin(out)
-    emb_cos = np.cos(out)
-    return np.concatenate([emb_sin, emb_cos], axis=1)
-
-
-def _get_rope_shape(
-    org: torch.Tensor, interpolation_mode: str, shape: tuple[int, int]
-) -> torch.Tensor:
-    """Interpolate 2D pos grid (H, W, C) to (h, w), return (h*w, C)."""
-    # org: (H, W, C) -> interpolate to (h, w) -> (h*w, C)
-    x = org.permute(2, 0, 1).unsqueeze(0)
-    x = F.interpolate(x, size=shape, mode=interpolation_mode)
-    x = x.squeeze(0).permute(1, 2, 0).flatten(0, 1)
-    return x
-
-
-class _Learnable2DInterpPosEmbDividedFixedTorch(nn.Module):
-    """Torch reference for Learnable2DInterpPosEmbDivided_fixed."""
-
-    def __init__(
-        self,
-        height: int,
-        width: int,
-        num_frames: int,
-        dim: int,
-        interpolation_mode: str = "bicubic",
-    ) -> None:
-        super().__init__()
-        self.height = height
-        self.width = width
-        self.num_frames = num_frames
-        self.dim = dim
-        self.interpolation_mode = interpolation_mode
-        self.weight = nn.Parameter(torch.empty(height, width, dim))
-        time_embed = _get_1d_sincos_pos_embed(dim, num_frames)
-        self.register_buffer(
-            "time_weight",
-            torch.from_numpy(time_embed).float().unsqueeze(1),
-            persistent=False,
-        )
-
-    def forward(self, x: torch.Tensor, grid_thws: torch.Tensor) -> torch.Tensor:
-        pos_embs = []
-        for t, h, w in grid_thws.tolist():
-            assert t <= self.num_frames
-            if (h, w) == (self.weight.shape[0], self.weight.shape[1]):
-                pos_emb_2d = self.weight.flatten(0, 1)
-            else:
-                pos_emb_2d = _get_rope_shape(
-                    self.weight, self.interpolation_mode, (h, w)
-                )
-            if t == 1:
-                pos_emb_3d = pos_emb_2d
-            else:
-                pos_emb_3d = (
-                    pos_emb_2d.unsqueeze(0).repeat(t, 1, 1)
-                    + self.time_weight[0:t]
-                )
-            pos_embs.append(pos_emb_3d.reshape(-1, self.dim))
-        return x + torch.cat(pos_embs, dim=0)
-
-
-class _MoonVision3dPatchEmbedTorch(nn.Module):
-    """Full torch reference: proj + pos_emb (MoonVision3dPatchEmbed)."""
-
-    def __init__(
-        self,
-        out_dim: int,
-        in_dim: int = 3,
-        patch_size: int | tuple[int, int] = (14, 14),
-        pos_emb_height: int = 64,
-        pos_emb_width: int = 64,
-        pos_emb_time: int = 4,
-        has_bias: bool = True,
-    ) -> None:
-        super().__init__()
-        if isinstance(patch_size, int):
-            patch_size = (patch_size, patch_size)
-        self.proj = nn.Conv2d(
-            in_dim,
-            out_dim,
-            kernel_size=patch_size,
-            stride=patch_size,
-            bias=has_bias,
-        )
-        self.pos_emb = _Learnable2DInterpPosEmbDividedFixedTorch(
-            height=pos_emb_height,
-            width=pos_emb_width,
-            num_frames=pos_emb_time,
-            dim=out_dim,
-        )
-
-    def forward(self, x: torch.Tensor, grid_thws: torch.Tensor) -> torch.Tensor:
-        x = self.proj(x).view(x.size(0), -1)
-        x = self.pos_emb(x, grid_thws)
-        return x
-
-
 def _torch_full_patch_embed(
     pixel_values: torch.Tensor,
     grid_thws: torch.Tensor,
@@ -262,7 +148,7 @@ def _torch_full_patch_embed(
     has_bias: bool,
 ) -> torch.Tensor:
     """Full reference: MoonVision3dPatchEmbed (proj + pos_emb)."""
-    model = _MoonVision3dPatchEmbedTorch(
+    model = TorchPatchEmbed(
         out_dim=HIDDEN_SIZE,
         in_dim=IN_CHANNELS,
         patch_size=PATCH_SIZE,
@@ -271,9 +157,9 @@ def _torch_full_patch_embed(
         pos_emb_time=INIT_POS_EMB_TIME,
         has_bias=has_bias,
     ).to(dtype=TORCH_DTYPE)
-    model.proj.weight = nn.Parameter(state_dict["proj.proj.weight"])
+    model.proj.weight = nn.Parameter(state_dict["proj.weight"])
     if has_bias:
-        model.proj.bias = nn.Parameter(state_dict["proj.proj.bias"])
+        model.proj.bias = nn.Parameter(state_dict["proj.bias"])
     model.pos_emb.weight = nn.Parameter(state_dict["pos_emb.weight"])
     model.eval()
     with torch.no_grad():
@@ -336,7 +222,7 @@ def _run_torch_pos_emb(
     device: torch.device,
 ) -> torch.Tensor:
     """Run the torch reference Learnable2DInterpPosEmbDivided_fixed."""
-    model = _Learnable2DInterpPosEmbDividedFixedTorch(
+    model = TorchPosEmb(
         height=height,
         width=width,
         num_frames=num_frames,

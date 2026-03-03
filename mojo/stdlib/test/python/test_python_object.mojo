@@ -601,16 +601,13 @@ def test_contains_dunder() raises:
 
 
 @fieldwise_init
-struct Person(Defaultable, Movable, Representable):
+struct Person(Defaultable, Movable, Writable):
     var name: String
     var age: Int
 
     fn __init__(out self):
         self.name = ""
         self.age = 0
-
-    fn __repr__(self) -> String:
-        return String("Person(", self.name, ", ", self.age, ")")
 
 
 def test_python_mojo_object_operations() raises:
@@ -828,6 +825,18 @@ def test_python_object_string() raises:
     var a = p.evaluate("A()")
     with assert_raises(contains="__str__ returned non-string"):
         _ = String(py=a)
+
+
+def test_python_object_write_repr_to() raises:
+    var obj = PythonObject(42)
+    var s = String()
+    obj.write_repr_to(s)
+    assert_equal(s, "PythonObject(42)")
+
+    var str_obj = PythonObject("hello")
+    s = String()
+    str_obj.write_repr_to(s)
+    assert_equal(s, "PythonObject('hello')")
 
 
 def main() raises:
