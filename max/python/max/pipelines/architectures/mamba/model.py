@@ -428,6 +428,24 @@ class MambaModel(PipelineModel[TextContext]):
         )
         tokens = np.concatenate([ctx.tokens.active for ctx in context_batch])
 
+        # If SSM states are already cached from a previous batch, continue
+        # in step mode rather than re-running prefill. The pipeline scheduler
+        # calls prepare_initial_token_inputs at the start of each batch,
+        # but for Mamba the SSM state is not reconstructable from tokens
+        # alone — it must be carried forward from the previous step.
+        if hasattr(self, "_layer_states") and self._layer_states:
+            return MambaModelInputs(
+                tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
+                input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
+                    self.devices[0]
+                ),
+                return_n_logits=Buffer.from_numpy(
+                    np.array([return_n_logits], dtype=np.int64)
+                ),
+                is_prefill=False,
+                layer_states=self._layer_states,
+            )
+
         return MambaModelInputs(
             tokens=Buffer.from_numpy(tokens).to(self.devices[0]),
             input_row_offsets=Buffer.from_numpy(input_row_offsets).to(
