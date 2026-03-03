@@ -218,7 +218,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_draft_tokens: Buffer,
         merged_draft_offsets: Buffer,
         all_draft_logits: Buffer,
-    ) -> tuple[Buffer, Buffer, Buffer]:
+    ) -> tuple[Buffer, Buffer, Buffer | None]:
         """Verifies draft tokens against the target model and returns merged outputs."""
         # # The kv cache manager for the target model uses these indices to set the lengths of the cache. We bump them manually here even though the tokens array has not been filled. They are reset when doing the final update of the contexts after both draft and target models have run.
         with reserve_token_space_for_batch(
@@ -250,7 +250,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         # Generate Final Samples
         assert target_outputs.logit_offsets is not None
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
-            self._rejection_sampler(
+            self._call_rejection_sampler(
                 draft_tokens,
                 draft_logits,
                 target_outputs.logits,
@@ -258,9 +258,6 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 all_draft_logits,
             )
         )
-        assert isinstance(first_rejected_tokens, Buffer)
-        assert isinstance(recovered_tokens, Buffer)
-        assert isinstance(bonus_tokens, Buffer)
 
         return first_rejected_tokens, recovered_tokens, bonus_tokens
 
@@ -326,7 +323,9 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             context_batch=context_batch,
             first_rejected_tokens=first_rejected_tokens.to_numpy(),
             recovered_tokens=recovered_tokens.to_numpy(),
-            bonus_tokens=bonus_tokens.to_numpy(),
+            bonus_tokens=(
+                bonus_tokens.to_numpy() if bonus_tokens is not None else None
+            ),
             draft_tokens=draft_tokens.to_numpy(),
             num_draft_tokens_generated=num_draft_tokens_generated,
         )

@@ -196,7 +196,9 @@ def test_speculative_decoding_no_rejection(
         context_batch=context_batch,
         first_rejected_tokens=first_rejected_tokens.to_numpy(),
         recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy(),
+        bonus_tokens=bonus_tokens.to_numpy()
+        if bonus_tokens is not None
+        else None,
         draft_tokens=draft_tokens.to_numpy(),
         num_draft_tokens_generated=num_steps,
     )
@@ -294,7 +296,9 @@ def test_speculative_decoding_partial_rejection(
         context_batch=context_batch,
         first_rejected_tokens=first_rejected_tokens_host,
         recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy(),
+        bonus_tokens=bonus_tokens.to_numpy()
+        if bonus_tokens is not None
+        else None,
         draft_tokens=draft_tokens_host,
         num_draft_tokens_generated=num_steps,
     )

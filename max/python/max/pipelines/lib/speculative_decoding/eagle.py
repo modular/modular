@@ -679,7 +679,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         assert target_outputs.logit_offsets is not None
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
-            self._rejection_sampler(
+            self._call_rejection_sampler(
                 draft_tokens,
                 draft_logits,
                 target_outputs.logits,
@@ -687,8 +687,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 all_draft_logits,
             )
         )
-        assert isinstance(first_rejected_tokens, Buffer)
-        assert isinstance(recovered_tokens, Buffer)
 
         first_rejected_tokens_np = first_rejected_tokens.to_numpy()
         recovered_tokens_np = recovered_tokens.to_numpy()
