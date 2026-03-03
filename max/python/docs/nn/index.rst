@@ -49,8 +49,11 @@ Eager API (module_v3)
 =====================
 
 .. note::
-   The eager API provides PyTorch-style execution. Import from ``max.nn.module_v3``.
-   Enable with ``--prefer-module-v3`` when running ``max serve`` or ``max generate``.
+   The eager API provides PyTorch-style execution. Import from ``max.nn.module_v3``
+   directly — no server flag required.
+
+   To load the eager architecture variant in the inference server, pass
+   ``--prefer-module-v3`` to ``max serve`` or ``max generate``.
 
 * :code_link:`/max/api/python/nn/module_v3/module|module`: Base class for all neural network modules.
 * :code_link:`/max/api/python/nn/module_v3/Conv2d|Conv2d`: 2D convolution layer.

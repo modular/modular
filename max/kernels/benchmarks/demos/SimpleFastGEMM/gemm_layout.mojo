@@ -16,7 +16,7 @@
 from std.math import align_up
 from std.sys import align_of, simd_width_of
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
 from layout import *
 from std.memory import LegacyUnsafePointer

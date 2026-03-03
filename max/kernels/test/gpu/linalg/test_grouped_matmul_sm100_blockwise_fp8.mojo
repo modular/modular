@@ -348,7 +348,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
             assert_almost_equal(
                 c_host[mi, ni][0],
                 c_host_ref[mi, ni][0],
-                msg=String("m: ", mi, " n: ", ni),
+                msg=t"m: {mi} n: {ni}",
                 rtol=rtol,
                 atol=atol,
             )

@@ -275,7 +275,7 @@ class Encoder(Module, Shardable):
                 (batch_size + 1,), dtype uint32.
             max_seq_len: Maximum sequence length, shape (1,), dtype uint32.
             position_ids: 1-D int tensor of flat grid indices
-                (row * max_width + col) for RoPE lookup.
+                (row * max_width + col) for RoPE lookup, dtype int64.
 
         Returns:
             Output tensor of shape (n_patches, hidden_dim).

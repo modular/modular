@@ -19,16 +19,15 @@ import math
 
 import pytest
 import torch
-import torch.nn as nn
-from conftest import TorchMLP2, TorchRope2DPosEmbRepeated
+from conftest import TorchEncoder, TorchEncoderBlock, TorchRope2DPosEmbRepeated
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.pipelines.architectures.kimik2_5.layers.data_processing import (
+from max.pipelines.architectures.kimik2_5.layers.vision.data_processing import (
     compute_position_ids,
 )
-from max.pipelines.architectures.kimik2_5.layers.encoder import (
+from max.pipelines.architectures.kimik2_5.layers.vision.encoder import (
     Encoder,
     EncoderBlock,
 )
@@ -48,113 +47,6 @@ ROPE_THETA = 10000.0
 
 def _generate_tensor(shape: tuple[int, ...]) -> torch.Tensor:
     return (torch.randn(shape) * (1.0 / math.sqrt(shape[-1]))).to(TORCH_DTYPE)
-
-
-def torch_apply_rope(
-    xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor]:
-    freqs_cis = freqs_cis.unsqueeze(-2)  # ..., 1, head_dim/2
-    xq_ = torch.view_as_complex(xq.float().view(*xq.shape[:-1], -1, 2))
-    xk_ = torch.view_as_complex(xk.float().view(*xq.shape[:-1], -1, 2))
-    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(-2)
-    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(-2)
-    return xq_out.type_as(xq), xk_out.type_as(xk)
-
-
-def torch_eager_attention(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    input_row_offsets: torch.Tensor,
-) -> torch.Tensor:
-    seq_length = q.shape[0]
-    attention_mask = torch.zeros(
-        [1, seq_length, seq_length], device=q.device, dtype=torch.bool
-    )
-    for i in range(1, len(input_row_offsets)):
-        attention_mask[
-            ...,
-            input_row_offsets[i - 1] : input_row_offsets[i],
-            input_row_offsets[i - 1] : input_row_offsets[i],
-        ] = True
-    q = q.transpose(0, 1)
-    k = k.transpose(0, 1)
-    v = v.transpose(0, 1)
-
-    attn_weight = q @ k.transpose(-2, -1) / math.sqrt(q.shape[-1])
-    attn_weight += attention_mask
-    attn_weight = torch.softmax(attn_weight, dim=-1, dtype=torch.float32).to(
-        q.dtype
-    )
-
-    attn_output = attn_weight @ v
-    attn_output = attn_output.transpose(0, 1)
-    attn_output = attn_output.reshape(seq_length, -1)
-    return attn_output
-
-
-class TorchEncoderBlock(nn.Module):
-    """PyTorch reference for a single vision encoder layer."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.num_heads = NUM_HEADS
-        self.hidden_dim = HIDDEN_DIM
-        self.hidden_size_per_attention_head = HIDDEN_DIM // NUM_HEADS
-
-        self.norm0 = nn.LayerNorm(HIDDEN_DIM)
-        self.norm1 = nn.LayerNorm(HIDDEN_DIM)
-
-        self.wqkv = nn.Linear(HIDDEN_DIM, HIDDEN_DIM * 3)
-        self.wo = nn.Linear(HIDDEN_DIM, HIDDEN_DIM)
-
-        self.mlp = TorchMLP2(
-            dim=(HIDDEN_DIM, MLP_DIM, HIDDEN_DIM), has_bias=True
-        )
-
-    def attention_qkvpacked(
-        self,
-        x: torch.Tensor,
-        input_row_offsets: torch.Tensor,
-        rope_freqs_cis: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        xqkv = self.wqkv(x)
-
-        qkv_shape = xqkv.size()[:-1] + (
-            3,
-            self.num_heads,
-            self.hidden_size_per_attention_head,
-        )
-        xqkv = xqkv.view(*qkv_shape)
-        xq, xk, xv = torch.unbind(xqkv, dim=-3)
-
-        xq, xk = torch_apply_rope(xq, xk, rope_freqs_cis)
-
-        attn_out = torch_eager_attention(
-            xq, xk, xv, input_row_offsets=input_row_offsets
-        )
-
-        attn_out = self.wo(attn_out)
-        return attn_out
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        input_row_offsets: torch.Tensor,
-        rope_freqs_cis: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        residual = x
-        x = self.norm0(x)
-
-        x = self.attention_qkvpacked(x, input_row_offsets, rope_freqs_cis)
-        x = residual + x
-
-        residual = x
-        x = self.norm1(x)
-        x = self.mlp(x)
-        x = residual + x
-
-        return x
 
 
 def _create_encoder_layer_weights() -> dict[str, torch.Tensor]:
@@ -285,7 +177,7 @@ def test_encoder_layer(grid_thws: list[tuple[int, int, int]]) -> None:
         state_dict, x, input_row_offsets, max_seq_len, rope_freqs_cis_real
     )
 
-    ref = TorchEncoderBlock()
+    ref = TorchEncoderBlock(NUM_HEADS, HIDDEN_DIM, MLP_DIM)
     # Strip "attn." prefix so keys match the torch reference module.
     torch_state_dict = {
         k.removeprefix("attn."): v for k, v in state_dict.items()
@@ -298,31 +190,6 @@ def test_encoder_layer(grid_thws: list[tuple[int, int, int]]) -> None:
     ).detach()
 
     _assert_close(torch_output, max_output)
-
-
-class TorchEncoder(nn.Module):
-    """PyTorch reference for the full vision encoder."""
-
-    def __init__(self, num_layers: int) -> None:
-        super().__init__()
-        self.rope_2d = TorchRope2DPosEmbRepeated(
-            HEAD_DIM, ROPE_MAX_HEIGHT, ROPE_MAX_WIDTH, ROPE_THETA
-        )
-        self.blocks = nn.ModuleList(
-            [TorchEncoderBlock() for _ in range(num_layers)]
-        )
-        self.norm = nn.LayerNorm(HIDDEN_DIM)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        input_row_offsets: torch.Tensor,
-        grid_thws: torch.Tensor,
-    ) -> torch.Tensor:
-        rope_freqs_cis = self.rope_2d.get_freqs_cis(grid_thws, device=x.device)
-        for block in self.blocks:
-            x = block(x, input_row_offsets, rope_freqs_cis)
-        return self.norm(x)
 
 
 def _create_encoder_weights(num_layers: int) -> dict[str, torch.Tensor]:
@@ -439,7 +306,15 @@ def test_encoder(grid_thws: list[tuple[int, int, int]]) -> None:
         state_dict, num_layers, x, input_row_offsets, max_seq_len, position_ids
     )
 
-    ref = TorchEncoder(num_layers)
+    ref = TorchEncoder(
+        num_heads=NUM_HEADS,
+        hidden_dim=HIDDEN_DIM,
+        mlp_dim=MLP_DIM,
+        num_layers=num_layers,
+        rope_max_height=ROPE_MAX_HEIGHT,
+        rope_max_width=ROPE_MAX_WIDTH,
+        rope_theta=ROPE_THETA,
+    )
     # Strip "attn." within block keys so they match the torch reference.
     torch_state_dict = {
         k.replace(".attn.", "."): v for k, v in state_dict.items()

@@ -16,7 +16,7 @@ from std.memory import LegacyUnsafePointer
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.os import abort
 
-import benchmark
+import std.benchmark
 from std.benchmark import Unit, keep
 from layout import Coord, TileTensor
 from layout._layout import row_major

@@ -30,7 +30,7 @@ def test_fast_div() raises:
         assert_equal(
             Scalar[fast_div.uint_type](i) / fast_div,
             Scalar[fast_div.uint_type](i // divisor),
-            msg=String("mismatch for ", i, "/", divisor),
+            msg=t"mismatch for {i}/{divisor}",
         )
 
 

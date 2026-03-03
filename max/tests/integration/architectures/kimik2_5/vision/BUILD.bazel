@@ -8,7 +8,7 @@ package(default_visibility = [
 ])
 
 modular_py_test(
-    name = "kimik2_5",
+    name = "kimik2_5_vision",
     size = "large",
     srcs = glob(
         ["*.py"],

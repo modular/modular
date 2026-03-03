@@ -236,7 +236,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         total_size += router_size
 
         # Handle expert parallelism
-        ep_size = max(pipeline_config.ep_size, 1)
+        ep_size = max(pipeline_config.runtime.ep_size, 1)
         if ep_size == 1:
             total_size += routing_experts_size
         else:
@@ -524,7 +524,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
         # If we are not in decode only mode, we need to create a list of
         # tensors containing the context length of each batch. Needed by MLA prefill.
-        if self.pipeline_config.pipeline_role != "decode_only":
+        if self.pipeline_config.runtime.pipeline_role != "decode_only":
             for i, batch in enumerate(replica_batches):
                 curr_length = sum([ctx.tokens.active_length for ctx in batch])
                 self._batch_context_lengths_prealloc_cpu[i][0] = curr_length

@@ -64,7 +64,7 @@ fn _init_dylib() -> OwnedDLHandle:
         )
         return dylib^
     except e:
-        abort(String("CUDA NVML library initialization failed: ", e))
+        abort(t"CUDA NVML library initialization failed: {e}")
 
 
 @always_inline
@@ -83,7 +83,7 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(ImplicitlyCopyable, Stringable):
+struct DriverVersion(ImplicitlyCopyable, Writable):
     var _value: List[String]
 
     fn __init__(out self, var value: List[String]):
@@ -101,9 +101,21 @@ struct DriverVersion(ImplicitlyCopyable, Stringable):
     fn patch(self) raises -> Int:
         return Int(self._value[2]) if len(self._value) > 2 else 0
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         var patch = self._value[2] if len(self._value) > 2 else ""
-        return String(self._value[0], ".", self._value[1], ".", patch)
+        return t"{self._value[0]}.{self._value[1]}.{patch}"
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the driver version string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        ref major = self._value[0]
+        ref minor = self._value[1]
+        var patch = self._value[2] if len(self._value) > 2 else ""
+        t"{major}.{minor}.{patch}".write_to(writer)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -112,7 +124,7 @@ struct DriverVersion(ImplicitlyCopyable, Stringable):
 
 
 @fieldwise_init
-struct Result(Equatable, Stringable, TrivialRegisterPassable, Writable):
+struct Result(Equatable, TrivialRegisterPassable, Writable):
     var code: Int32
 
     comptime SUCCESS = Self(0)
@@ -275,6 +287,7 @@ struct Result(Equatable, Stringable, TrivialRegisterPassable, Writable):
         else:
             writer.write("NVML_UNKNOWN")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String(self)
 

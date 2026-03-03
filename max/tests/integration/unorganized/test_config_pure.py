@@ -1360,7 +1360,7 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
                 model_path="test/model",
                 device_specs=[DeviceSpec.accelerator()],
             ),
-            pipeline_role="prefill_only",
+            runtime=PipelineRuntimeConfig(pipeline_role="prefill_only"),
         )
         config._validate_and_resolve_overlap_scheduler()
         assert config.runtime.enable_overlap_scheduler is False
@@ -1408,8 +1408,9 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             model_path="test/model",
             device_specs=[DeviceSpec.accelerator()],
         ),
-        pipeline_role="prefill_only",
-        runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
+        runtime=PipelineRuntimeConfig(
+            pipeline_role="prefill_only", enable_overlap_scheduler=True
+        ),
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()
@@ -1420,9 +1421,10 @@ def test_validate_and_resolve_overlap_scheduler__validate() -> None:
             model_path="test/model",
             device_specs=[DeviceSpec.accelerator()],
         ),
-        pipeline_role="prefill_and_decode",
+        runtime=PipelineRuntimeConfig(
+            pipeline_role="prefill_and_decode", enable_overlap_scheduler=True
+        ),
         audio_decoder=Mock(),
-        runtime=PipelineRuntimeConfig(enable_overlap_scheduler=True),
     )
     with pytest.raises(ValueError):
         config._validate_and_resolve_overlap_scheduler()

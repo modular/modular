@@ -18,7 +18,10 @@ from std.gpu.host import DeviceContext
 
 
 fn kernel():
-    print("Hello from the GPU")
+    # Does not work on Apple Silicon
+    # Can't test due to CI
+    # print("Hello from the GPU")
+    pass
 
 
 def main() raises:

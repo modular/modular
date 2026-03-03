@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements :class:`Weights` loading from safetensors checkpoint files."""
+
 from __future__ import annotations
 
 import difflib

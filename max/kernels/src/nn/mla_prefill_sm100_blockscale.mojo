@@ -50,8 +50,10 @@ from layout.tma_async import (
 )
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-import gpu.primitives.warp as warp
+from layout.swizzle import make_swizzle
 
+import std.gpu.primitives.warp as warp
+from std.gpu.globals import WARP_SIZE
 from std.gpu.memory import AddressSpace, external_memory
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host import DeviceContext, FuncAttribute
@@ -66,7 +68,6 @@ from nn.mha_utils import (
     MHAConfig,
     NoPartition,
     OptionallyStaticInt,
-    _is_decoding,
 )
 from std.gpu.compute.arch.tcgen05 import *
 from linalg.arch.sm100.mma import smem_descriptor
@@ -80,6 +81,9 @@ from nn.mla_prefill_sm100_utils import (
     MLAPositionSummary,
     MLAKVProducerPipeline,
     split_smem,
+    TMAtoCvtPipeline,
+    CvtToMMAPipline,
+    cvt_block_fp8_to_bf16_with_scale,
 )
 
 
@@ -91,7 +95,8 @@ struct WarpRole(Equatable, TrivialRegisterPassable):
     comptime Correction = Self(2)
     comptime MMA = Self(3)
     comptime Load = Self(4)
-    comptime Empty = Self(5)
+    comptime CVTToBF16 = Self(5)
+    comptime Empty = Self(6)
 
     @always_inline
     fn __eq__(self, other: Int) -> Bool:
@@ -110,6 +115,8 @@ fn warp_idx_to_role(warp_idx: UInt32) -> WarpRole:
         return WarpRole.MMA
     elif warp_idx == 13:
         return WarpRole.Load
+    elif warp_idx >= 14 and warp_idx < 16:
+        return WarpRole.CVTToBF16
     else:
         return WarpRole.Empty
 
@@ -124,6 +131,14 @@ struct MLASmemStorage[dtype: DType, num_mbars: Int, config: MLAConfig]:
     var kv_smem: InlineArray[Scalar[Self.dtype], Self.kv_smem_size]
     var correction_smem: InlineArray[Float32, Self.correction_smem_size]
     var mbar_base: InlineArray[SharedMemBarrier, Self.num_mbars]
+    var tma_to_cvt_producer_mbars: InlineArray[
+        SharedMemBarrier, Self.num_kv_stages
+    ]
+    var tma_to_cvt_consumer_mbars: InlineArray[
+        SharedMemBarrier, Self.num_kv_stages
+    ]
+    var cvt_to_mma_producer_mbars: InlineArray[SharedMemBarrier, 2]
+    var cvt_to_mma_consumer_mbars: InlineArray[SharedMemBarrier, 2]
     var tmem_addr: InlineArray[UInt32, 1]
 
 
@@ -140,7 +155,9 @@ __extension SM100MLA:
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
-    fn mla_prefill_kernel_bf16(
+    fn mla_prefill_kernel_blockscale[
+        blockwise_scale: Int = 0,
+    ](
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
@@ -188,7 +205,6 @@ __extension SM100MLA:
         ],
     ):
         comptime assert Self.MMA_M == 64 or Self.MMA_M == 128
-        comptime assert _is_decoding[Self.MaxSeqLenType]() == False
         comptime assert Self.config.supported(), (
             "depth = "
             + String(Self.config.depth)
@@ -230,10 +246,34 @@ __extension SM100MLA:
         var kv_smem = smem_storage.kv_smem.unsafe_ptr()
         var correction_smem = smem_storage.correction_smem.unsafe_ptr()
         var mbar_base = smem_storage.mbar_base.unsafe_ptr()
+        var tma_to_cvt_producer_mbars = (
+            smem_storage.tma_to_cvt_producer_mbars.unsafe_ptr()
+        )
+        var tma_to_cvt_consumer_mbars = (
+            smem_storage.tma_to_cvt_consumer_mbars.unsafe_ptr()
+        )
+        var cvt_to_mma_producer_mbars = (
+            smem_storage.cvt_to_mma_producer_mbars.unsafe_ptr()
+        )
+        var cvt_to_mma_consumer_mbars = (
+            smem_storage.cvt_to_mma_consumer_mbars.unsafe_ptr()
+        )
         var ptr_tmem_addr = smem_storage.tmem_addr.unsafe_ptr()
 
         # All barriers are managed by misc_mbars (S/C/order/Q1Sync/KV/O)
         var misc_mbars: Self.MiscMBarsType = {mbar_base}
+
+        var tma_to_cvt_pipeline = TMAtoCvtPipeline[
+            Self.config.num_kv_stages,
+            num_producer=1,
+            num_consumer=64,
+        ](tma_to_cvt_producer_mbars, tma_to_cvt_consumer_mbars)
+
+        var cvt_to_mma_pipeline = CvtToMMAPipline[
+            2,
+            num_producer=64,
+            num_consumer=1,
+        ](cvt_to_mma_producer_mbars, cvt_to_mma_consumer_mbars)
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
         comptime num_reg_softmax = 184
@@ -250,6 +290,8 @@ __extension SM100MLA:
         if warp_idx == 0:
             # Initialize all barriers (S/C/order/Q1Sync/KV/O) in one call
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
+            tma_to_cvt_pipeline.init()
+            cvt_to_mma_pipeline.init()
         elif warp_idx == 1:
             tcgen05_alloc[Self.cta_group](
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
@@ -334,6 +376,7 @@ __extension SM100MLA:
 
             Self.load(
                 misc_mbars,
+                tma_to_cvt_pipeline,
                 pos.score_row,
                 pos.num_keys,
                 seq_info,
@@ -366,20 +409,56 @@ __extension SM100MLA:
             Self.mma(
                 ptr_tmem_addr[0],
                 misc_mbars,
+                cvt_to_mma_pipeline,
                 pos.score_row,
                 pos.num_keys,
                 mask,
                 q_smem,
             )
+        elif role == WarpRole.CVTToBF16:
+            warpgroup_reg_dealloc[num_reg_other]()
+
+            var seq_info: SeqInfo = get_seq_info[Self.BM, Self.num_q_heads](
+                batch_size, max_seq_len, valid_length, partition
+            )
+
+            if not seq_info.is_valid():
+                return
+
+            var pos: MLAPositionSummary = MLAPositionSummary.create[
+                _ndbuffer_mha_operand = Self._ndbuffer_mha_operand,
+            ](k_rope_lut, seq_info)
+
+            var iter_count: UInt32 = (
+                mask.last_masked_set_end[Self.BM, Self.BN, Self.page_size](
+                    pos.score_row, pos.num_keys
+                )
+                - 1
+            )
+
+            var local_thread_idx = UInt32(thread_idx.x - 14 * UInt(WARP_SIZE))
+
+            var kv_mem_ptr = q_smem + Self.config.BM * Self.config.padded_depth
+
+            Self.convert_fp8_to_bf16(
+                iter_count,
+                tma_to_cvt_pipeline,
+                cvt_to_mma_pipeline,
+                k_rope_lut,
+                kv_mem_ptr,
+                seq_info,
+                pos.num_keys,
+                local_thread_idx,
+            )
+
         elif role == WarpRole.Empty:
             warpgroup_reg_dealloc[num_reg_empty]()
 
     @staticmethod
     @always_inline
-    fn load[
-        KRopeType: MHAOperand
-    ](
+    fn load(
         mbars: Self.MiscMBarsType,
+        mut tma_to_cvt_pipeline: TMAtoCvtPipeline,
         score_row: UInt32,
         num_keys: UInt32,
         seq_info: SeqInfo,
@@ -400,7 +479,7 @@ __extension SM100MLA:
             BK = Self.kv_depth,
         ],
         k_rope_tma_op: KVTMATile[
-            KRopeType.dtype,
+            Self.KRopeType.dtype,
             Self.config.k_rope_swizzle_mode,
             BN = Self.config.BN,
             BK = Self.k_rope_depth,
@@ -412,11 +491,11 @@ __extension SM100MLA:
             BK = Self.kv_depth,
         ],
         kv_lut: Self.KVLUTType,
-        k_rope_lut: KRopeType,
+        k_rope_lut: Self.KRopeType,
         q_smem: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
     ):
         comptime KVPipeType = MLAKVProducerPipeline[
-            Self.KVLUTType.dtype, KRopeType.dtype, Self.config
+            Self.KVLUTType.dtype, Self.KRopeType.dtype, Self.config
         ]
 
         # If two-qo, we produce qkv in a pattern of
@@ -426,6 +505,7 @@ __extension SM100MLA:
         ]
         comptime QType = SMemTensorLT[type_of(q_tma_op).layout]
         comptime KType = SMemTensorLT[type_of(k_tma_op).layout]
+        comptime KRopeSMType = SMemTensorLT[type_of(k_rope_tma_op).layout]
         comptime VType = SMemTensorLT[type_of(v_tma_op).layout]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
@@ -451,13 +531,14 @@ __extension SM100MLA:
         # copy q0
         if elect:
             # Q0
-            mbark0.mbar[].expect_bytes(Int32(pipeline_kv.k_bytes + q_bytes))
+            mbark0.mbar[].expect_bytes(
+                Int32(pipeline_kv.k_nope_bytes + q_bytes)
+            )
             q_tma_op.async_copy(
                 QType(q_smem),
                 mbark0.mbar[],
                 q_coord[
                     depth = Self.depth,
-                    swizzle_granularity = Self.swizzle_granularity,
                     decoding=False,
                 ](q_gmem_row, q_head_idx),
             )
@@ -479,33 +560,36 @@ __extension SM100MLA:
             KVPipeType.k_nope_tma_layout,
             KVPipeType.k_rope_tma_layout,
             Self.KVLUTType.dtype,
-            KRopeType.dtype,
+            Self.KRopeType.dtype,
         ](mbark0.smem)
         if elect:
             # K0
             k_tma_op.async_copy(
                 k_smem,
                 mbark0.mbar[],
-                kv_coord[
-                    depth = Self.kv_depth,
-                    swizzle_granularity = Self.swizzle_granularity,
-                ](kv_gmem_row, kv_head_idx),
+                kv_coord[depth = Self.kv_depth,](kv_gmem_row, kv_head_idx),
             )
             # K0 rope
-            var k_rope_coord = kv_coord[
-                depth = Self.k_rope_depth,
-                swizzle_granularity = Self.swizzle_granularity,
-            ](k_rope_gmem_row, k_rope_head_idx)
+            var k_rope_coord = kv_coord[depth = Self.k_rope_depth,](
+                k_rope_gmem_row, k_rope_head_idx
+            )
             k_rope_coord[0] = UInt32(
                 Self.cache_depth - Self.k_rope_depth
             )  # only load last 64 head_dims
 
+            tma_to_cvt_pipeline.producer_mbar()[].expect_bytes(
+                Int32(pipeline_kv.k_rope_bytes)
+            )
+
             k_rope_tma_op.async_copy(
                 k_rope_smem,
-                mbark0.mbar[],
+                tma_to_cvt_pipeline.producer_mbar()[],
                 k_rope_coord,
             )
+
+        tma_to_cvt_pipeline.step()
         pipeline_kv.commit_kv_step()
+
         if elect:
             var q1_mbar = mbars.q1_wait_mbar()
             q1_mbar[0].expect_bytes(Int32(q_bytes))
@@ -515,7 +599,6 @@ __extension SM100MLA:
                 q1_mbar[0],
                 q_coord[
                     depth = Self.depth,
-                    swizzle_granularity = Self.swizzle_granularity,
                     decoding=False,
                 ](q_gmem_row + UInt32(Self.config.BM // 2), q_head_idx),
             )
@@ -525,10 +608,7 @@ __extension SM100MLA:
             v_tma_op.async_copy(
                 mbarv0.smem,
                 mbarv0.mbar[],
-                kv_coord[
-                    depth = Self.kv_depth,
-                    swizzle_granularity = Self.swizzle_granularity,
-                ](kv_gmem_row, kv_head_idx),
+                kv_coord[depth = Self.kv_depth,](kv_gmem_row, kv_head_idx),
             )
         pipeline_kv.commit_kv_step()
         comptime check_mask = mask.nonfull_sets[Self.BM, Self.BN]()[
@@ -550,56 +630,144 @@ __extension SM100MLA:
             k_rope_gmem_row = k_rope_lut.row_idx(seq_info.prompt_idx, kv_row)
             # produce k
             pipeline_kv.acquire_kv()
+
             if elect:
-                mbarkn = pipeline_kv.get_k[qk_stage=0]()
+                mbarkn = pipeline_kv.get_k[qk_stage=0, expect=False]()
                 k_smem_n, k_rope_smem_n = split_smem[
                     KVPipeType.k_nope_tma_layout,
                     KVPipeType.k_rope_tma_layout,
                     Self.KVLUTType.dtype,
-                    KRopeType.dtype,
+                    Self.KRopeType.dtype,
                 ](mbarkn.smem)
 
+                mbarkn.mbar[].expect_bytes(Int32(pipeline_kv.k_nope_bytes))
                 k_tma_op.async_copy(
                     k_smem_n,
                     mbarkn.mbar[],
-                    kv_coord[
-                        depth = Self.kv_depth,
-                        swizzle_granularity = Self.swizzle_granularity,
-                    ](kv_gmem_row, kv_head_idx),
+                    kv_coord[depth = Self.kv_depth,](kv_gmem_row, kv_head_idx),
                 )
                 # K rope
-                var k_rope_coord = kv_coord[
-                    depth = Self.k_rope_depth,
-                    swizzle_granularity = Self.swizzle_granularity,
-                ](k_rope_gmem_row, k_rope_head_idx)
+                tma_to_cvt_pipeline.producer_mbar()[].expect_bytes(
+                    Int32(pipeline_kv.k_rope_bytes)
+                )
+
+                var k_rope_coord = kv_coord[depth = Self.k_rope_depth,](
+                    k_rope_gmem_row, k_rope_head_idx
+                )
                 k_rope_coord[0] = UInt32(
                     Self.cache_depth - Self.k_rope_depth
                 )  # only load last 64 head_dims
                 k_rope_tma_op.async_copy(
                     k_rope_smem_n,
-                    mbarkn.mbar[],
+                    tma_to_cvt_pipeline.producer_mbar()[],
                     k_rope_coord,
                 )
 
             pipeline_kv.commit_kv_step()
+            tma_to_cvt_pipeline.step()
             pipeline_kv.acquire_kv()
+
             if elect:
                 mbarvn = pipeline_kv.get_v[qk_stage=0]()
                 v_tma_op.async_copy(
                     mbarvn.smem,
                     mbarvn.mbar[],
-                    kv_coord[
-                        depth = Self.kv_depth,
-                        swizzle_granularity = Self.swizzle_granularity,
-                    ](kv_gmem_row, kv_head_idx),
+                    kv_coord[depth = Self.kv_depth,](kv_gmem_row, kv_head_idx),
                 )
             pipeline_kv.commit_kv_step()
+
+    @staticmethod
+    @always_inline
+    fn convert_fp8_to_bf16(
+        mut iter_count: UInt32,
+        mut tma_to_cvt_pipeline: TMAtoCvtPipeline,
+        mut cvt_to_mma_pipeline: CvtToMMAPipline,
+        k_rope: Self.KRopeType,
+        kv_mem_ptr: SharedMemPointer[Scalar[Self.KVLUTType.dtype]],
+        seq_info: SeqInfo,
+        num_keys: UInt32,
+        local_thread_idx: UInt32,
+    ):
+        var k_rope_smem_ptr = kv_mem_ptr + Self.config.BN * Self.kv_depth
+        var local_warp_idx = local_thread_idx // UInt32(WARP_SIZE)
+        var local_lane_idx = local_thread_idx % UInt32(WARP_SIZE)
+
+        var kv_start_tok: UInt32 = 0
+
+        comptime swizzle_fp8 = make_swizzle[
+            Self.KRopeType.dtype, TensorMapSwizzle.SWIZZLE_64B
+        ]()
+        comptime swizzle_bf16 = make_swizzle[
+            Self.KVLUTType.dtype, TensorMapSwizzle.SWIZZLE_128B
+        ]()
+
+        var k_rope_tensor_fp8 = LayoutTensor[
+            Self.KRopeType.dtype,
+            Layout.row_major(Self.config.BN, Self.k_rope_depth),
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](k_rope_smem_ptr.bitcast[Scalar[Self.KRopeType.dtype]]())
+
+        var k_rope_tensor_bf16 = LayoutTensor[
+            Self.KVLUTType.dtype,
+            Layout.row_major(Self.config.BN, Self.k_rope_depth),
+            MutAnyOrigin,
+            address_space = AddressSpace.SHARED,
+        ](k_rope_smem_ptr.bitcast[Scalar[Self.KVLUTType.dtype]]())
+
+        # each warp do 32x64 tile
+        k_rope_tile_fp8 = k_rope_tensor_fp8.tile[
+            Self.config.BN // 2, Self.k_rope_depth
+        ](Int(local_warp_idx), 0)
+        k_rope_tile_bf16 = k_rope_tensor_bf16.tile[
+            Self.config.BN // 2, Self.k_rope_depth
+        ](Int(local_warp_idx), 0)
+
+        tma_to_cvt_pipeline.consumer_wait()
+
+        cvt_block_fp8_to_bf16_with_scale[
+            swizzle_fp8=swizzle_fp8,
+            swizzle_bf16=swizzle_bf16,
+        ](
+            k_rope_tile_fp8,
+            k_rope_tile_bf16,
+            k_rope,
+            seq_info,
+            kv_start_tok + UInt32(Self.BN // 2) * local_warp_idx,
+            num_keys,
+            local_lane_idx,
+        )
+
+        tma_to_cvt_pipeline.step()
+        cvt_to_mma_pipeline.producer_commit()
+
+        while iter_count != 0:
+            iter_count -= 1
+            kv_start_tok += UInt32(Self.BN)
+            tma_to_cvt_pipeline.consumer_wait()
+
+            cvt_block_fp8_to_bf16_with_scale[
+                swizzle_fp8=swizzle_fp8,
+                swizzle_bf16=swizzle_bf16,
+            ](
+                k_rope_tile_fp8,
+                k_rope_tile_bf16,
+                k_rope,
+                seq_info,
+                kv_start_tok + UInt32(Self.BN // 2) * local_warp_idx,
+                num_keys,
+                local_lane_idx,
+            )
+
+            tma_to_cvt_pipeline.step()
+            cvt_to_mma_pipeline.producer_commit()
 
     @staticmethod
     @always_inline
     fn mma(
         tmem_addr: UInt32,
         mbars: Self.MiscMBarsType,
+        mut cvt_to_mma_pipeline: CvtToMMAPipline,
         score_row: UInt32,
         num_keys: UInt32,
         mask: Self.MaskType,
@@ -657,9 +825,14 @@ __extension SM100MLA:
         )
 
         # Q_0 @ K_0'
+        # wait for CVT for fp8 case, else wait for producer
         pipeline.consumer_wait[0]()  # wait K0
+        cvt_to_mma_pipeline.consumer_wait()
+
+        # wait for cvt producer barrier
         k0 = k_smem_descriptor + full_kv_bytes * pipeline.state.index()
         e = elect()
+
         Self.UMMA0Type.mma(q0, k0, s0_tmem, elect=e, c_scale=0)
         pipeline_s0.commit_mma(e)
 
@@ -669,6 +842,7 @@ __extension SM100MLA:
         pipeline_s1.commit_mma(e)
 
         pipeline.consumer_release[0](e)  # release K0, step to V state
+        cvt_to_mma_pipeline.step()
 
         # Wait V0
         pipeline.consumer_wait[0]()  # wait V0
@@ -688,8 +862,11 @@ __extension SM100MLA:
 
             # Q_0 @ K_n'
             pipeline.consumer_wait[0]()  # wait Kn
+            cvt_to_mma_pipeline.consumer_wait()
+
             kn = k_smem_descriptor + full_kv_bytes * pipeline.state.index()
             Self.UMMA0Type.mma(q0, kn, s0_tmem, elect=e, c_scale=0)
+
             pipeline_s0.commit_mma(e)
 
             # O_1 + P_1 @ V_{n-1}
@@ -708,6 +885,7 @@ __extension SM100MLA:
             phase ^= 1
 
             pipeline.consumer_release[0](e)  # release K, step to V state
+            cvt_to_mma_pipeline.step()
 
             # O_0 + P_0 @ V_n
             pipeline.consumer_wait[0]()  # wait Vn
@@ -715,14 +893,13 @@ __extension SM100MLA:
             _ = consumer_s0[].wait(phase)
             Self.UMMA1Type.mma(s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1)
             pipeline_o0.commit_mma(e)
-
         _ = consumer_s1[].wait(phase)
         Self.UMMA1Type.mma(s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale)
         pipeline_o1.commit_mma(e)
 
 
 @always_inline
-fn mla_sm100_prefill_bf16[
+fn mla_sm100_prefill_blockscale[
     output_type: DType,
     q_type: DType,
     KVType: MHAOperand,
@@ -735,6 +912,7 @@ fn mla_sm100_prefill_bf16[
     q_depth: Int,
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
+    blockwise_scale: Int = 0,
 ](
     output: LayoutTensor[
         output_type, address_space = AddressSpace.GENERIC, ...
@@ -814,6 +992,7 @@ fn mla_sm100_prefill_bf16[
         fa4_config=fa4_config,
         cache_depth=cache_depth,
         _ndbuffer_mha_operand=_ndbuffer_mha_operand,
+        blockwise_scale=blockwise_scale,
     ](
         ragged_tma_store,
         q_tma_op,
@@ -843,6 +1022,7 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     fa4_config: MLAConfig,
     cache_depth: Int,
     _ndbuffer_mha_operand: Bool,
+    blockwise_scale: Int = 0,
 ](
     ragged_tma_store: RaggedTMA3DTile[
         output_type,
@@ -917,7 +1097,9 @@ fn _mla_prefill_sm100_valid_length_dispatch[
         _ndbuffer_mha_operand,
     ]
 
-    comptime kernel = SM100MLAType.mla_prefill_kernel_bf16
+    comptime kernel = SM100MLAType.mla_prefill_kernel_blockscale[
+        blockwise_scale
+    ]
 
     comptime out_depth = SM100MLAType.kv_depth
 
@@ -949,7 +1131,13 @@ fn _mla_prefill_sm100_valid_length_dispatch[
     )
 
     comptime num_threads = fa4_config.num_threads
-    comptime smem_use = fa4_config.smem_used
+    comptime smem_use = size_of[
+        MLASmemStorage[
+            SM100MLAType.qkv_type,
+            Int(SM100MLAType.MiscMBarsType.num_mbars()),
+            fa4_config,
+        ]
+    ]()
 
     ctx.enqueue_function[kernel, kernel](
         q_tma_op,

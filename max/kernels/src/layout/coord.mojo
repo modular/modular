@@ -28,7 +28,7 @@ from std.sys.intrinsics import _type_is_eq_parse_time
 
 
 trait CoordLike(
-    Defaultable, ImplicitlyCopyable, Representable, TrivialRegisterPassable
+    Defaultable, ImplicitlyCopyable, TrivialRegisterPassable, Writable
 ):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
@@ -57,14 +57,6 @@ trait CoordLike(
 
         Returns:
             The number of elements (1 for single values, >1 for tuples).
-        """
-        ...
-
-    fn __repr__(self) -> String:
-        """Get the string representation of this type.
-
-        Returns:
-            A string representation of the value.
         """
         ...
 
@@ -140,13 +132,32 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         """
         return 1
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Get the string representation of this compile-time integer.
 
         Returns:
             A string in the format "ComptimeInt[value]()".
         """
-        return String("ComptimeInt[", self.value(), "]()")
+        var s = String()
+        self.write_repr_to(s)
+        return s^
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write this compile-time integer to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(self.value())
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this compile-time integer to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        t"ComptimeInt[{self.value()}]()".write_to(writer)
 
     @always_inline("nodebug")
     fn product(self) -> Int:
@@ -228,6 +239,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         """
         return 1
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __repr__(self) -> String:
         """Get the string representation of this runtime integer.
@@ -235,7 +247,25 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         Returns:
             A string in the format "RuntimeInt(value)".
         """
-        return String("RuntimeInt(", self.value(), ")")
+        var s = String()
+        self.write_repr_to(s)
+        return s^
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Write this runtime integer to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(self.value())
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this runtime integer to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        t"RuntimeInt({self.value()})".write_to(writer)
 
     @always_inline("nodebug")
     fn product(self) -> Int:
@@ -432,6 +462,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         comptime result = Variadic.size(Self.element_types)
         return result
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @always_inline("nodebug")
     fn __repr__(self) -> String:
         """Get the string representation of this Coord.
@@ -439,13 +470,17 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         Returns:
             A string in the format "Coord(elem1, elem2, ...)".
         """
-        var result = String("Coord(")
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
-        comptime for i in range(Self.__len__()):
-            result += self[i].__repr__()
-            if i < Self.__len__() - 1:
-                result += String(", ")
-        return result + String(")")
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this Coord to a writer.
+
+        Args:
+            writer: The writer to write the representation to.
+        """
+        t"Coord({self})".write_to(writer)
 
     fn __len__(self) -> Int:
         """Get the length of the tuple.

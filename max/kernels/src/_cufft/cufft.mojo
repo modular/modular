@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import ffi
+import std.ffi
 
 from std.complex import ComplexFloat32, ComplexFloat64
 from std.gpu.host._nvidia_cuda import CUstream

@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Implements math methods that work on layout tensors."""
 
-import math
+import std.math
 from std.sys.info import simd_width_of
 
-import algorithm.reduction
+import std.algorithm.reduction
 from std.algorithm import vectorize
 from std.math.math import max as b_max
 from layout import Coord, Idx, LayoutTensor, TileTensor, UNKNOWN_VALUE

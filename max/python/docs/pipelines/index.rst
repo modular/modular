@@ -17,17 +17,18 @@ deployment.
 Modules
 =======
 
-* :code_link:`/max/api/python/pipelines/architectures|architectures`
-* :code_link:`/max/api/python/pipelines/config|config`
-* :code_link:`/max/api/python/pipelines/core|core`
-* :code_link:`/max/api/python/pipelines/hf_utils|hf_utils`
-* :code_link:`/max/api/python/pipelines/interfaces|interfaces`
-* :code_link:`/max/api/python/pipelines/lora_config|lora_config`
-* :code_link:`/max/api/python/pipelines/model_config|model_config`
-* :code_link:`/max/api/python/pipelines/pipeline|pipeline`
-* :code_link:`/max/api/python/pipelines/registry|registry`
-* :code_link:`/max/api/python/pipelines/sampling|sampling`
-* :code_link:`/max/api/python/pipelines/tokenizer|tokenizer`
+* :code_link:`/max/api/python/pipelines/architectures|architectures`: Architecture classes for all supported model types.
+* :code_link:`/max/api/python/pipelines/config|config`: Pipeline configuration for text generation, embeddings, audio generation, and more.
+* :code_link:`/max/api/python/pipelines/core|core`: Core pipeline request and response types.
+* :code_link:`/max/api/python/pipelines/hf_utils|hf_utils`: Utilities for interacting with Hugging Face repositories and weight files.
+* :code_link:`/max/api/python/pipelines/interfaces|interfaces`: Abstract base classes and protocols for pipeline components.
+* :code_link:`/max/api/python/pipelines/log_probabilities|log_probabilities`: Log probability computation graphs.
+* :code_link:`/max/api/python/pipelines/lora_config|lora_config`: LoRA adapter configuration and management.
+* :code_link:`/max/api/python/pipelines/model_config|model_config`: Model configuration dataclasses.
+* :code_link:`/max/api/python/pipelines/pipeline|pipeline`: Pipeline implementations for text generation.
+* :code_link:`/max/api/python/pipelines/registry|registry`: Model registry and factory functions.
+* :code_link:`/max/api/python/pipelines/sampling|sampling`: Token sampling and speculative decoding utilities.
+* :code_link:`/max/api/python/pipelines/tokenizer|tokenizer`: Tokenization utilities for pipeline inputs.
 
 
 .. toctree::

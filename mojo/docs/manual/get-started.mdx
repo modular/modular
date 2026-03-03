@@ -756,19 +756,22 @@ struct Grid(Copyable):
 
     fn grid_str(self) -> String:
         # Create an empty String
-        str = String()
+        writer = String()
 
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
                 if self.data[row][col] == 1:
-                    str += "*"  # If cell is populated, append an asterisk
+                    # If cell is populated, write an asterisk
+                    writer.write_string("*")
                 else:
-                    str += " "  # If cell is not populated, append a space
+                    # If cell is not populated, append a space
+                    writer.write_string(" ")
             if row != self.rows - 1:
-                str += "\n"     # Add a newline between rows, but not at the end
-        return str
+                # Add a newline between rows, but not at the end
+                writer.write_string("\n")
+        return writer
 ```
 
 Aside from moving the code from one source file to another, there are a few
@@ -813,7 +816,7 @@ def main() raises:
 Once again, our refactoring has improved the structure of our code, but it still
 produces the same output. You can verify this by running the program again.
 
-## 9. Implement support for the `Stringable` trait
+## 9. Implement support for the `Writable` trait
 
 You can convert most Mojo types to `String` using `String(my_val)` to produce a
 `String` representation of that instance. However, you'll get an error if you
@@ -824,27 +827,43 @@ can accept a value only if its type implements some required behavior—in this
 case, it only accepts types that can generate a `String` representation.
 
 To enforce this, the `String()` constructors require a type to conform to the
-[`Stringable`] trait. (This type of function is sometimes referred to as a
+[`Writable`] trait. (This type of function is sometimes referred to as a
 [*generic* function](/mojo/manual/parameters/#parameters-and-generics).) Each
-trait requires a conforming type to implement a `__str__()` method that returns
-a `String` representation. (To learn more, read [The `Stringable`,
-`Representable`, and `Writable`
-traits](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
+trait requires a conforming type to implement a `write_to()` method that writes
+its `String` representation. (To learn more, read [The `Writable` trait](/mojo/manual/traits#the-stringable-representable-and-writable-traits).)
 
-Our `grid_str()` method already returns a `String` representation, so it looks
-like we just have to rename it to `__str__()`. However, we also need to indicate
-which trait `Grid` conforms to. In our case, it must be `Stringable`.
+Notice that `write_to()` takes a `mut writer: Some[Writer]` argument. The
+`Writer` trait represents anything that can be written to—`String` buffers,
+files, network streams, and so on. By writing to a generic `Writer` instead of
+building and returning a `String`, your type works with any output destination.
+
+Our `grid_str()` method already write our `String` representation, so it looks
+like we'll have to rename it to `write_to()` and add the `Writer` argument to
+the function, and remove the `String` return value. We also need to indicate
+which trait `Grid` conforms to. In our case, it must be `Writable`.
 
 In `gridv1.mojo`, we need to update the `Grid` declaration to indicate that
-the type conforms to `Stringable` and rename the `grid_str()` method to
-`__str__()`:
+the type conforms to `Writable` and update the `grid_str()` to `write_to()`.
 
 ```mojo title="gridv1.mojo"
 @fieldwise_init
-struct Grid(Copyable, Stringable):
+struct Grid(Copyable, Writable):
     ...
-    fn __str__(self) -> String:
-        ...
+
+    fn write_to(self, mut writer: Some[Writer]):
+      # Iterate through rows 0 through rows-1
+      for row in range(self.rows):
+          # Iterate through columns 0 through cols-1
+          for col in range(self.cols):
+              if self[row, col] == 1:
+                  # If cell is populated, write an asterisk
+                  writer.write_string("*")
+              else:
+                  # If cell is not populated, write a space
+                  writer.write_string(" ")
+          if row != self.rows - 1:
+              # Add a newline between rows, but not at the end
+              writer.write_string("\n")
 ```
 
 Now let's verify that `String()` works with an instance of `Grid`.

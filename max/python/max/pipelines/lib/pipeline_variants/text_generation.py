@@ -181,7 +181,7 @@ class TextGenerationPipeline(
             )
 
         # Initialize Session.
-        session = InferenceSession(devices=self._devices)
+        session = InferenceSession(devices=[*self._devices])
         self.session = session
 
         # Configure session with pipeline settings.

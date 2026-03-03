@@ -16,7 +16,7 @@ from std.collections import Optional, OptionalReg
 
 from std.sys import align_of, is_amd_gpu, is_nvidia_gpu, simd_width_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm import sync_parallelize, vectorize
 from std.algorithm._gpu.reduction import block_reduce, row_reduce
 from std.algorithm.reduction import (

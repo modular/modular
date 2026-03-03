@@ -22,8 +22,8 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
-from math import ceildiv
-from collections import Set, InlineArray
+from std.math import ceildiv
+from std.collections import Set, InlineArray
 
 from layout.layout_tensor import LayoutTensorIter, _compute_distribute_layout
 from layout.layout import (
@@ -34,9 +34,9 @@ from layout.layout import (
     coalesce,
 )
 from layout.int_tuple import flatten
-from memory import UnsafePointer, memset
-from testing import assert_equal
-from utils import Index, IndexList
+from std.memory import UnsafePointer, memset
+from std.testing import assert_equal
+from std.utils import Index, IndexList
 
 
 def accessing_tensor_elements_example() raises:

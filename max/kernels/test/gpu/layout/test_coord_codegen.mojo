@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Test for MixedTuple GPU memory codegen."""
 
-import sys
+import std.sys
 
 from std.gpu.host.compile import _compile_code, get_gpu_target
 from layout import ComptimeInt, Idx, Coord, RuntimeInt

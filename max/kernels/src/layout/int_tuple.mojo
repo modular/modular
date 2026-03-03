@@ -336,7 +336,6 @@ struct IntTuple(
     Intable,
     Iterable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A hierarchical, nested tuple of integers with efficient memory management.
@@ -1333,6 +1332,7 @@ struct IntTuple(
                     writer.write(", ")
             writer.write(")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """
         Returns a string representation of this `IntTuple`.
@@ -1407,6 +1407,7 @@ struct IntTuple(
         return not Self.is_equal(self, other)
 
     @always_inline("nodebug")
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """
         Returns a string representation of this `IntTuple` for debugging.
@@ -1414,7 +1415,7 @@ struct IntTuple(
         Returns:
             A string representation of the `IntTuple`, same as `__str__`.
         """
-        return self.__str__()
+        return String.write(self)
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:

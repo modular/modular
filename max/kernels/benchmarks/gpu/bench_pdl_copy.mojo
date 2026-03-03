@@ -159,7 +159,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         b.iter_custom[kernel_launch](context)
 
     b.bench_function[bench_func](
-        BenchId("copy_pdl", input_id=String("length=", length)),
+        BenchId("copy_pdl", input_id=t"length={length}"),
     )
     context.synchronize()
     context.enqueue_copy(c_host, c_device)
@@ -232,7 +232,7 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         b.iter_custom[kernel_launch](context)
 
     b.bench_function[bench_func](
-        BenchId("copy_n", input_id=String("length=", length)),
+        BenchId("copy_n", input_id=t"length={length}"),
     )
     context.synchronize()
     context.enqueue_copy(c_host, c_device)

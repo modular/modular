@@ -28,7 +28,7 @@ from std.sys import (
 )
 
 from nn.mha import q_num_matrix_view_rows
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,
@@ -1310,12 +1310,26 @@ fn flare_mla_prefill[
     padding). Such lengths are passed in valid_length argument.
     """
     comptime assert rank == 3, "only support ragged inputs"
-    comptime assert (
-        q.dtype == output.dtype
-    ), "Q, K, V, output should have same type."
-    comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
-    ), "Only support single and half precision."
+
+    comptime if q.dtype == DType.bfloat16 and cache_t.dtype == DType.bfloat16:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == cache_t.dtype == output.dtype
+        ), "Q, K, V, output should have same type if q.dtype is bfloat16"
+    elif q.dtype == DType.bfloat16 and cache_t.dtype == DType.float8_e4m3fn:
+        comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
+            "Q, K, V, output should have same type if q.dtype is bfloat16 and"
+            " k_rope.dtype is float8_e4m3fn"
+        )
+    elif q.dtype == DType.float8_e4m3fn and cache_t.dtype == DType.float8_e4m3fn:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == cache_t.dtype
+            and output.dtype == DType.bfloat16
+        ), (
+            "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
+            " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
+        )
+    else:
+        comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
     @parameter
@@ -1458,17 +1472,26 @@ fn flare_mla_prefill[
     ] = None,
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
-    comptime assert (
-        q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
-    ) if k_rope.dtype == DType.bfloat16 else (
-        q.dtype == k.dtype == v.dtype == output.dtype
-    ), (
-        "Q, K, V, output should have same type if k_rope.dtype is bfloat16,"
-        " otherwise only Q, K, V should have same type."
-    )
-    comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
-    ), "Only support single and half precision."
+
+    comptime if q.dtype == DType.bfloat16 and k_rope.dtype == DType.bfloat16:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
+        ), "Q, K, V, output should have same type if q.dtype is bfloat16"
+    elif q.dtype == DType.bfloat16 and k_rope.dtype == DType.float8_e4m3fn:
+        comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
+            "Q, K, V, output should have same type if q.dtype is bfloat16 and"
+            " k_rope.dtype is float8_e4m3fn"
+        )
+    elif q.dtype == DType.float8_e4m3fn and k_rope.dtype == DType.float8_e4m3fn:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == k_rope.dtype
+            and output.dtype == DType.bfloat16
+        ), (
+            "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
+            " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
+        )
+    else:
+        comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
     @parameter

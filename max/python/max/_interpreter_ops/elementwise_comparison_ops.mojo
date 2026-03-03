@@ -90,10 +90,7 @@ fn PyInit_elementwise_comparison_ops() -> PythonObject:
         return b.finalize()
     except e:
         abort(
-            String(
-                "failed to create elementwise comparison op bindings module: ",
-                e,
-            )
+            t"failed to create elementwise comparison op bindings module: {e}"
         )
 
 

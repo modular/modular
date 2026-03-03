@@ -310,7 +310,7 @@ We look forward to working together with you in making Mojo better for everyone!
 
 To ensure quicker reviews:
 
-- **Ensure your PR is small and focused.** See the [pull request size section](#about-pull-request-sizes)
+- **Ensure your PR is small and focused.** See the [pull request size section](mojo/CONTRIBUTING.md#about-pull-request-sizes)
   for more info.
 - Write a good commit message/PR description outlining the motivation and
   describing the changes. Use the [pull request template](.github/PULL_REQUEST_TEMPLATE.md)

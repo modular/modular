@@ -24,7 +24,7 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.collections import OptionalReg
 from std.gpu import (
     PDL,
@@ -1048,7 +1048,7 @@ struct EPLocalSyncCounters[n_experts: Int](
 
     @staticmethod
     fn get_type_name() -> String:
-        return String("EPLocalSyncCounters[n_experts=", Self.n_experts, "]")
+        return t"EPLocalSyncCounters[n_experts={Self.n_experts}]"
 
     @always_inline
     @staticmethod

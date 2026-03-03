@@ -49,7 +49,7 @@ trait Enum(TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct ThreadRole(Enum, Stringable, Writable):
+struct ThreadRole(Enum, Writable):
     var _value: Int
 
     @always_inline
@@ -60,6 +60,7 @@ struct ThreadRole(Enum, Stringable, Writable):
     comptime CONSUMER = Self(1)
     comptime PRODUCER_CONSUMER = Self(2)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @always_inline
     fn __str__(self) -> String:
         """Returns the string representation of this algorithm.
@@ -74,7 +75,7 @@ struct ThreadRole(Enum, Stringable, Writable):
         elif self is Self.PRODUCER_CONSUMER:
             return "PRODUCER_CONSUMER"
         else:
-            return String("UNKNOWN_ROLE: ", self._value)
+            return t"UNKNOWN_ROLE: {self._value}"
 
     @always_inline
     fn write_to[W: Writer](self, mut writer: W) -> None:

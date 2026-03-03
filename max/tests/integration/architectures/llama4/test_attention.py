@@ -145,7 +145,7 @@ def generate_max_outputs(
         devices=[DeviceRef.from_device(device)],
     )
 
-    session = InferenceSession(devices=[Accelerator(0)])
+    session = InferenceSession(devices=[device])
     outputs = []
     for layer_idx, use_rope in enumerate([True, False]):
         attention = _Llama4TextAttention(

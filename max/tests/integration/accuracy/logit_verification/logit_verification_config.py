@@ -56,6 +56,8 @@ class PregeneratedTorchGoldens(BaseModel):
 class Agent(BaseModel):
     "Kiteworks agent configuration"
 
+    model_config = ConfigDict(frozen=True)
+
     pool: str
     arch: str | None = None
     resource_class: str
@@ -66,6 +68,7 @@ class PipelineConfig(BaseModel):
     "Logit verification pipeline configuration"
 
     pre_submit_agents: list[Agent] = Field(default_factory=list)
+    post_submit_agents: list[Agent] = Field(default_factory=list)
     pipeline: str
 
     compatible_with: list[DeviceKind] = Field(default_factory=list)
@@ -91,11 +94,34 @@ class LogitVerificationConfig(BaseModel):
     )
 
     @property
+    def combined_matrix(self) -> list[list[tuple[str, Agent]]]:
+        return [
+            [
+                (pipeline_name, agent)
+                for agent in set(
+                    self.pipelines[pipeline_name].pre_submit_agents
+                )
+                | set(self.pipelines[pipeline_name].post_submit_agents)
+            ]
+            for pipeline_name in self.pipelines
+        ]
+
+    @property
     def pre_submit_matrix(self) -> list[list[tuple[str, Agent]]]:
         return [
             [
                 (pipeline_name, agent)
                 for agent in self.pipelines[pipeline_name].pre_submit_agents
+            ]
+            for pipeline_name in self.pipelines
+        ]
+
+    @property
+    def post_submit_matrix(self) -> list[list[tuple[str, Agent]]]:
+        return [
+            [
+                (pipeline_name, agent)
+                for agent in self.pipelines[pipeline_name].post_submit_agents
             ]
             for pipeline_name in self.pipelines
         ]

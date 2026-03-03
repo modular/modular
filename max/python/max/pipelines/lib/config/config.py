@@ -31,7 +31,6 @@ from max.pipelines.lib.memory_estimation import (
     to_human_readable_bytes,
 )
 from max.pipelines.lib.pipeline_runtime_config import (
-    DEFAULT_MAX_BATCH_INPUT_TOKENS,
     PipelineRuntimeConfig,
 )
 from max.pipelines.lib.registry import (
@@ -49,7 +48,6 @@ from pydantic import (
 )
 from typing_extensions import Self, override
 
-from .config_enums import PipelineRole
 from .kv_cache_config import KVCacheConfig
 from .lora_config import LoRAConfig
 from .model_config import MAXModelConfig
@@ -77,14 +75,6 @@ class PipelineConfig(ConfigFileModel):
     # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
     model_config = ConfigDict(extra="ignore")
 
-    pipeline_role: PipelineRole = Field(
-        default="prefill_and_decode",
-        description=(
-            "Whether the pipeline should serve both a prefill or decode role or "
-            "both."
-        ),
-    )
-
     max_batch_size: int | None = Field(
         default=None,
         description=(
@@ -93,31 +83,6 @@ class PipelineConfig(ConfigFileModel):
             "set this higher based on server capacity. When "
             "device_graph_capture is enabled, overlap pre-captures decode "
             "graph entries for batch sizes [1..max_batch_size]."
-        ),
-    )
-
-    ep_size: int = Field(
-        default=1,
-        description=(
-            "The expert parallelism size. Needs to be 1 (no expert parallelism) "
-            "or the total number of GPUs across nodes."
-        ),
-    )
-
-    max_batch_input_tokens: int = Field(
-        default=DEFAULT_MAX_BATCH_INPUT_TOKENS,
-        description=(
-            "The target number of un-encoded tokens to include in each batch. "
-            "This value is used for chunked prefill and memory estimation."
-        ),
-    )
-
-    max_batch_total_tokens: int | None = Field(
-        default=None,
-        description=(
-            "Ensures the sum of page-aligned context lengths in a batch does "
-            "not exceed max_batch_total_tokens. Alignment uses the KV cache "
-            "page size. If None, the sum is not limited."
         ),
     )
 
@@ -651,7 +616,7 @@ class PipelineConfig(ConfigFileModel):
                     "DeepseekV32ForCausalLM",
                     "DeepseekV3ForCausalLMNextN",
                 )
-                and self.pipeline_role == "prefill_and_decode"
+                and self.runtime.pipeline_role == "prefill_and_decode"
                 and not self.sampling.enable_structured_output
                 and not self.sampling.enable_variable_logits
                 and not self.speculative
@@ -667,11 +632,11 @@ class PipelineConfig(ConfigFileModel):
 
         # Raise errors when we detect features that are not compatible with the overlap scheduler.
         if self.runtime.enable_overlap_scheduler:
-            if self.pipeline_role != "prefill_and_decode":
+            if self.runtime.pipeline_role != "prefill_and_decode":
                 raise ValueError(
                     "The Overlap scheduler does not support Disaggregated Inference yet. "
                     "It is only supported with the PrefillAndDecode pipeline role. "
-                    f"Found {self.pipeline_role}."
+                    f"Found {self.runtime.pipeline_role}."
                 )
             if self.sampling.enable_structured_output:
                 raise ValueError(
@@ -702,13 +667,6 @@ class PipelineConfig(ConfigFileModel):
         if not self.runtime.device_graph_capture:
             return
 
-        # TODO(GENAI-363): Support device graph capture warmup with data
-        # parallelism by capturing per-replica inputs.
-        if self.model.data_parallel_degree > 1:
-            raise ValueError(
-                "device_graph_capture currently requires "
-                "data_parallel_degree=1."
-            )
         if self.max_batch_size is None:
             raise ValueError(
                 "device_graph_capture requires max_batch_size to be set."
@@ -752,7 +710,7 @@ class PipelineConfig(ConfigFileModel):
         )
 
         if not draft_arch:
-            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
+            # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.draft_model.huggingface_model_repo,
@@ -773,7 +731,7 @@ class PipelineConfig(ConfigFileModel):
             prefer_module_v3=self.runtime.prefer_module_v3,
         )
         if not target_arch:
-            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
+            # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=self.model.huggingface_model_repo,
@@ -860,7 +818,7 @@ class PipelineConfig(ConfigFileModel):
 
         # If nothing is provided, we should not update any more params.
         if not arch:
-            # Check if a ModuleV3 version exists when ModuleV2 lookup failed
+            # Check if an eager (ModuleV3) variant exists when the graph API lookup failed
             if not self.runtime.prefer_module_v3:
                 v3_arch = PIPELINE_REGISTRY.retrieve_architecture(
                     huggingface_repo=model_config.huggingface_model_repo,
@@ -994,13 +952,13 @@ class PipelineConfig(ConfigFileModel):
         # This needs to be done after max_length is resolved.
         if (
             arch.requires_max_batch_context_length
-            and self.max_batch_total_tokens is None
+            and self.runtime.max_batch_total_tokens is None
         ):
             logger.warning(
                 f"Architecture '{arch.name}' requires max-batch-total-tokens to be specified but found None. "
                 f"Defaulting to the max sequence length of the model: {self.model.max_length}"
             )
-            self.max_batch_total_tokens = self.model.max_length
+            self.runtime.max_batch_total_tokens = self.model.max_length
 
     # NOTE: Do not override `__getstate__` / `__setstate__` on Pydantic models.
     #
@@ -1102,7 +1060,7 @@ class PipelineConfig(ConfigFileModel):
             ("max_seq_len", self.model.max_length),
             ("max_batch_size", self.max_batch_size),
             ("chunked_prefill", self.runtime.enable_chunked_prefill),
-            ("max_batch_input_tokens", self.max_batch_input_tokens),
+            ("max_batch_input_tokens", self.runtime.max_batch_input_tokens),
             (
                 "in_flight_batching",
                 self.runtime.enable_in_flight_batching,

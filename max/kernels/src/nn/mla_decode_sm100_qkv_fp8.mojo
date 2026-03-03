@@ -33,7 +33,7 @@ SMEM Layout (native FP8):
 from std.math import ceildiv, exp2, recip, log2
 from std.math.constants import log2e
 from std.sys import size_of
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,

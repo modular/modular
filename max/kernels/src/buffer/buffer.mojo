@@ -234,7 +234,6 @@ struct NDBuffer[
     DevicePassable,
     ImplicitlyCopyable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -633,6 +632,7 @@ struct NDBuffer[
 
         return product
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets the buffer as a string.
@@ -665,6 +665,7 @@ struct NDBuffer[
 
         writer.write(")")
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Gets the buffer as a string.
@@ -672,7 +673,7 @@ struct NDBuffer[
         Returns:
           A compact string representation of the buffer.
         """
-        return self.__str__()
+        return String.write(self)
 
     @always_inline
     fn _offset(

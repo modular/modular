@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
+import std.time
 from std.collections import Optional
 from std.math import ceildiv, floor
 from std.sys import argv, env_get_string
@@ -278,7 +278,7 @@ fn arg_parse(handle: String, default: Float64) raises -> Float64:
 
 
 @fieldwise_init
-struct Mode(Stringable, TrivialRegisterPassable):
+struct Mode(TrivialRegisterPassable, Writable):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")
@@ -301,7 +301,16 @@ struct Mode(Stringable, TrivialRegisterPassable):
     fn append(mut self, other: Self):
         self._value |= other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the mode as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
         s = List[String]()
         if Self.RUN == self:
             s.append(Self.RUN.handle)
@@ -311,7 +320,7 @@ struct Mode(Stringable, TrivialRegisterPassable):
             s.append(Self.VERIFY.handle)
         if Self.NONE == self:
             s.append(Self.NONE.handle)
-        return StaticString(Self.SEP).join(s)
+        writer.write(StaticString(Self.SEP).join(s))
 
     fn __eq__(self, mode: Self) -> Bool:
         if mode._value == self._value == Self.NONE._value:

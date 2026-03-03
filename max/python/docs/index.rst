@@ -25,7 +25,7 @@ For an introduction, see the
 Packages and modules
 ====================
 
-* :code_link:`/max/api/python/diagnostics/gpu|diagnostics.gpu`: GPU monitoring and performance diagnostics utilities.
+* :code_link:`/max/api/python/diagnostics|diagnostics`: GPU monitoring and performance diagnostics utilities.
 * :code_link:`/max/api/python/driver|driver`: Low-level device management and tensor operations.
 * :code_link:`/max/api/python/dtype|dtype`: Unified data type system supporting various numeric formats.
 * :code_link:`/max/api/python/engine|engine`: Model execution runtime with automatic optimization.
@@ -42,7 +42,7 @@ Packages and modules
 .. toctree::
    :hidden:
 
-   diagnostics/gpu/index.rst
+   diagnostics/index.rst
    driver
    dtype
    engine

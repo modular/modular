@@ -20,7 +20,7 @@ from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
 from std.sys.intrinsics import strided_load, strided_store
 
-import algorithm
+import std.algorithm
 from buffer.dimlist import DimList, Dim, _make_partially_static_index_list
 from std.builtin.device_passable import DevicePassable
 from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
@@ -652,7 +652,7 @@ struct ManagedTensorSlice[
     io_spec: IOSpec[mut, input],
     *,
     static_spec: StaticTensorSpec[dtype, rank],
-](DevicePassable, Stringable, TrivialRegisterPassable, Writable):
+](DevicePassable, TrivialRegisterPassable, Writable):
     """A view of a tensor that does not own the underlying allocated pointer.
     When the object lifetime ends it does not free the underlying pointer.
     Conversely, if a `ManagedTensorSlice` is created, it will not extend the
@@ -1399,15 +1399,17 @@ struct ManagedTensorSlice[
         writer.write("}")
 
     @no_inline
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Gets the buffer as a string.
 
         Returns:
           A compact string representation of the buffer.
         """
-        return self.__str__()
+        return String.write(self)
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Gets the buffer as a string.
 

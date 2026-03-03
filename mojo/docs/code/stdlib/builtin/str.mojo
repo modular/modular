@@ -15,11 +15,11 @@ from std.testing import assert_true
 
 
 @fieldwise_init
-struct Foo(Stringable):
+struct Foo(Writable):
     var s: String
 
-    fn __str__(self) -> String:
-        return self.s
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write_string(self.s)
 
 
 def main() raises:

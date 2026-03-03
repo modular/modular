@@ -551,7 +551,7 @@ fn load_lds_fragment[
             )
 
 
-struct KernelConfig(ImplicitlyCopyable, Movable, Stringable, Writable):
+struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
     var block_shape: IndexList[3]
     var warp_shape: IndexList[3]
     var mma_shape: IndexList[3]
@@ -589,9 +589,11 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Stringable, Writable):
         writer.write("_")
         Self._write_index_list(writer, self.mma_shape, "x")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         return String.write(self)
 
