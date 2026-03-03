@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import numpy.typing as npt
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.experimental import functional as F
@@ -49,18 +48,35 @@ class Flux2ModelInputs:
     latent_image_ids: Tensor
     """Latent image positional identifiers on device."""
 
-    sigmas: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """Precomputed sigma schedule for denoising."""
+    sigmas: Tensor
+    """Precomputed sigma schedule for denoising, on device."""
 
-    height: int = 1024
-    width: int = 1024
-    num_inference_steps: int = 50
-    guidance_scale: float = 4.0
-    num_images_per_prompt: int = 1
-    input_image: Image.Image | None = None
-    """Optional input image for image-to-image generation (PIL.Image.Image)."""
+    guidance: Tensor
+    """Guidance scale broadcast tensor on device."""
+
+    latent_h: int
+    """Latent height in patches (height // vae_scale_factor)."""
+
+    latent_w: int
+    """Latent width in patches (width // vae_scale_factor)."""
+
+    image_seq_len: int
+    """Packed image sequence length ((latent_h // 2) * (latent_w // 2))."""
+
+    height: int
+    """Output image height in pixels."""
+
+    width: int
+    """Output image width in pixels."""
+
+    num_inference_steps: int
+    """Number of denoising steps to run."""
+
+    num_images_per_prompt: int
+    """Number of images to generate per prompt."""
+
+    input_image: Image.Image | None
+    """Optional input image for image-to-image generation."""
 
     def __post_init__(self) -> None:
         if not isinstance(self.height, int) or self.height <= 0:
@@ -84,10 +100,6 @@ class Flux2ModelInputs:
         ):
             raise ValueError(
                 f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
-            )
-        if not isinstance(self.sigmas, np.ndarray) or self.sigmas.size == 0:
-            raise ValueError(
-                "Flux2ModelInputs requires a non-empty numpy array for: sigmas"
             )
 
 
@@ -154,12 +166,48 @@ class Flux2Pipeline(DiffusionPipeline):
             raise ValueError(
                 "Flux2Pipeline requires non-empty latent_image_ids in PixelContext"
             )
+        if context.sigmas.size == 0:
+            raise ValueError(
+                "Flux2Pipeline requires non-empty sigmas in PixelContext"
+            )
+
         raw_input = context.input_image
         input_image: Image.Image | None = (
             Image.fromarray(raw_input.astype(np.uint8))
             if isinstance(raw_input, np.ndarray)
             else raw_input
         )
+
+        device = self.transformer.devices[0]
+
+        # Retrieve cached sigmas, if possible.
+        latent_h = context.height // self.vae_scale_factor
+        latent_w = context.width // self.vae_scale_factor
+        image_seq_len = (latent_h // 2) * (latent_w // 2)
+        sigmas_key = f"{context.num_inference_steps}_{image_seq_len}"
+        if sigmas_key in self._cached_sigmas:
+            sigmas = self._cached_sigmas[sigmas_key]
+        else:
+            sigmas = Tensor(
+                storage=Buffer.from_dlpack(context.sigmas).to(device)
+            )
+            self._cached_sigmas[sigmas_key] = sigmas
+
+        # Retrieve cached guidance, if possible.
+        guidance_key = (
+            f"{context.num_images_per_prompt}_{context.guidance_scale}"
+        )
+        if guidance_key in self._cached_guidance:
+            guidance = self._cached_guidance[guidance_key]
+        else:
+            guidance = Tensor.full(
+                [context.num_images_per_prompt],
+                context.guidance_scale,
+                device=device,
+                dtype=self.transformer.config.dtype,
+            )
+            self._cached_guidance[guidance_key] = guidance
+
         return Flux2ModelInputs(
             tokens=Tensor(
                 storage=Buffer.from_dlpack(context.tokens.array).to(
@@ -167,20 +215,19 @@ class Flux2Pipeline(DiffusionPipeline):
                 )
             ),
             latents=Tensor(
-                storage=Buffer.from_dlpack(context.latents).to(
-                    self.transformer.devices[0]
-                )
+                storage=Buffer.from_dlpack(context.latents).to(device)
             ),
             latent_image_ids=Tensor(
-                storage=Buffer.from_dlpack(context.latent_image_ids).to(
-                    self.transformer.devices[0]
-                )
+                storage=Buffer.from_dlpack(context.latent_image_ids).to(device)
             ),
-            sigmas=context.sigmas,
+            sigmas=sigmas,
+            guidance=guidance,
+            latent_h=latent_h,
+            latent_w=latent_w,
+            image_seq_len=image_seq_len,
             height=context.height,
             width=context.width,
             num_inference_steps=context.num_inference_steps,
-            guidance_scale=context.guidance_scale,
             num_images_per_prompt=context.num_images_per_prompt,
             input_image=input_image,
         )
@@ -488,26 +535,23 @@ class Flux2Pipeline(DiffusionPipeline):
     def decode_latents(
         self,
         latents: Tensor,
-        height: int,
-        width: int,
+        latent_h: int,
+        latent_w: int,
     ) -> np.ndarray:
         """Decode Flux2 packed latents into an image array.
 
         Args:
             latents: Packed latents, shaped (B, S, C).
-            height: Output image height in pixels.
-            width: Output image width in pixels.
+            latent_h: Latent height after packing (latent_h // 2).
+            latent_w: Latent width after packing (latent_w // 2).
 
         Returns:
             A float32 HWC NumPy array.
         """
-        h_latent = height // (self.vae_scale_factor * 2)
-        w_latent = width // (self.vae_scale_factor * 2)
-
         # Unpack: (B, S, C) -> (B, H, W, C)
         batch = int(latents.shape[0])
         c = int(latents.shape[2])
-        latents_bhwc = F.reshape(latents, (batch, h_latent, w_latent, c))
+        latents_bhwc = F.reshape(latents, (batch, latent_h, latent_w, c))
 
         bn_mean = self.vae.bn.running_mean
         bn_var = self.vae.bn.running_var
@@ -706,7 +750,6 @@ class Flux2Pipeline(DiffusionPipeline):
             num_images_per_prompt=model_inputs.num_images_per_prompt,
         )
         batch_size = int(prompt_embeds.shape[0])
-        dtype = prompt_embeds.dtype
 
         image_latents = None
         image_latent_ids = None
@@ -725,28 +768,8 @@ class Flux2Pipeline(DiffusionPipeline):
 
         # 3) Prepare scheduler tensors.
         with Tracer("prepare_scheduler"):
-            device = self.transformer.devices[0]
-            guidance_key = f"{batch_size}_{model_inputs.guidance_scale}"
-            if guidance_key in self._cached_guidance:
-                guidance = self._cached_guidance[guidance_key]
-            else:
-                guidance = Tensor.full(
-                    [latents.shape[0]],
-                    model_inputs.guidance_scale,
-                    device=device,
-                    dtype=dtype,
-                )
-                self._cached_guidance[guidance_key] = guidance
-
-            image_seq_len = int(latents.shape[1])
-            num_inference_steps = model_inputs.num_inference_steps
-            sigmas_key = f"{num_inference_steps}_{image_seq_len}"
-            if sigmas_key in self._cached_sigmas:
-                sigmas = self._cached_sigmas[sigmas_key]
-            else:
-                sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(device)
-                self._cached_sigmas[sigmas_key] = sigmas
-            all_timesteps, all_dts = self.prepare_scheduler(sigmas)
+            all_timesteps, all_dts = self.prepare_scheduler(model_inputs.sigmas)
+            guidance = model_inputs.guidance
 
             # For faster tensor slicing inside the denoising loop.
             timesteps_seq: Any = all_timesteps
@@ -757,11 +780,13 @@ class Flux2Pipeline(DiffusionPipeline):
                 dts_seq = dts_seq.driver_tensor
 
         # 4) Denoising loop.
-        num_noise_tokens = int(latents.shape[1])
+        num_noise_tokens = model_inputs.image_seq_len
 
         is_img2img = image_latents is not None
         with Tracer("denoising_loop"):
-            for i in tqdm(range(num_inference_steps), desc="Denoising"):
+            for i in tqdm(
+                range(model_inputs.num_inference_steps), desc="Denoising"
+            ):
                 with Tracer(f"denoising_step_{i}"):
                     timestep = timesteps_seq[i : i + 1]
                     dt = dts_seq[i : i + 1]
@@ -805,8 +830,8 @@ class Flux2Pipeline(DiffusionPipeline):
                 image_list.append(
                     self.decode_latents(
                         latents_b,
-                        model_inputs.height,
-                        model_inputs.width,
+                        model_inputs.latent_h // 2,
+                        model_inputs.latent_w // 2,
                     )
                 )
 
