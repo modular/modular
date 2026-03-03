@@ -75,7 +75,6 @@ def test_memory_estimation__infer_optimal_batch_size() -> None:
     # Max batch size on CPU is always 1.
     inferred_batch_size = MemoryEstimator._infer_optimal_batch_size(
         arch_config=MagicMock(spec=ArchConfigWithKVCache),
-        available_kv_cache_memory=1000000000,
         devices=[CPU()],
     )
     assert inferred_batch_size == 1

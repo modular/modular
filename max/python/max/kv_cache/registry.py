@@ -16,20 +16,16 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-from typing import Any
 from unittest.mock import MagicMock, Mock
 
-from max.driver import Device, is_virtual_device_mode
+from max.driver import is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
     compute_num_device_blocks,
     compute_num_host_blocks,
-    estimated_memory_size,
 )
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
 
 from .paged_kv_cache import PagedKVCacheManager
 
@@ -155,37 +151,3 @@ def load_multi_kv_managers(
         )
         for params in params.params
     ]
-
-
-def estimate_kv_cache_size(
-    params: KVCacheParamInterface,
-    max_batch_size: int,
-    max_seq_len: int,
-    available_cache_memory: int,
-) -> int:
-    """Estimates the KV cache size in bytes for the given params and constraints."""
-    assert max_batch_size > 0, "max_batch_size must be greater than 0"
-
-    return estimated_memory_size(
-        params=params,
-        available_cache_memory=available_cache_memory,
-        max_batch_size=max_batch_size,
-        max_seq_len=max_seq_len,
-    )
-
-
-def infer_optimal_batch_size(
-    params: KVCacheParamInterface,
-    max_seq_len: int,
-    available_cache_memory: int,
-    devices: Sequence[Device],
-    **kwargs: Any,
-) -> int:
-    """Infers the optimal batch size for the constraints."""
-    return PagedKVCacheManager.infer_optimal_batch_size(
-        params=params,
-        max_seq_len=max_seq_len,
-        available_cache_memory=available_cache_memory,
-        devices=devices,
-        **kwargs,
-    )

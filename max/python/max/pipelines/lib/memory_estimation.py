@@ -19,9 +19,11 @@ import logging
 from io import StringIO
 from typing import TYPE_CHECKING, cast
 
-from max.driver import Device, is_virtual_device_mode, load_devices
-from max.kv_cache import estimate_kv_cache_size, infer_optimal_batch_size
-from max.nn.kv_cache import compute_max_seq_len_fitting_in_cache
+from max.driver import Device, is_virtual_device_mode
+from max.nn.kv_cache import (
+    compute_max_seq_len_fitting_in_cache,
+    estimated_memory_size,
+)
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
@@ -32,8 +34,7 @@ from .interfaces import ArchConfig, ArchConfigWithKVCache
 
 logger = logging.getLogger("max.pipelines")
 
-_MAX_DEFAULT_BATCH_SIZE = 4096
-_MIN_DEFAULT_BATCH_SIZE = 1
+_DEFAULT_BATCH_SIZE = 512
 
 
 class MemoryEstimator:
@@ -242,9 +243,7 @@ class MemoryEstimator:
 
         if not user_provided_max_batch_size:
             pipeline_config.runtime.max_batch_size = (
-                cls._infer_optimal_batch_size(
-                    arch_config, available_kv_cache_memory, devices
-                )
+                cls._infer_optimal_batch_size(arch_config, devices)
             )
 
         assert pipeline_config.runtime.max_batch_size is not None
@@ -356,9 +355,7 @@ class MemoryEstimator:
 
             if not user_provided_max_batch_size:
                 pipeline_config.runtime.max_batch_size = (
-                    cls._infer_optimal_batch_size(
-                        arch_config, available_kv_cache_memory, devices
-                    )
+                    cls._infer_optimal_batch_size(arch_config, devices)
                 )
 
             # Use max_seq_len_override for binary search since we're varying model_config.max_length
@@ -465,7 +462,7 @@ class MemoryEstimator:
                 if max_seq_len_override is not None
                 else arch_config.get_max_seq_len()
             )
-            return estimate_kv_cache_size(
+            return estimated_memory_size(
                 params=params,
                 max_batch_size=max_batch_size,
                 max_seq_len=max_seq_len,
@@ -711,7 +708,6 @@ class MemoryEstimator:
     def _infer_optimal_batch_size(
         cls,
         arch_config: ArchConfig,
-        available_kv_cache_memory: int,
         devices: list[Device],
     ) -> int:
         """Infer the optimal batch size for the model.
@@ -719,31 +715,10 @@ class MemoryEstimator:
         Args:
             arch_config: Architecture config that provides KV cache parameters.
             devices: The list of devices on which the model will run.
-            available_kv_cache_memory: Available memory for KV cache in bytes.
         """
         if not isinstance(arch_config, ArchConfigWithKVCache):
-            return _MIN_DEFAULT_BATCH_SIZE
+            return 1
         if len(devices) == 1 and devices[0].is_host:
             # batching on CPU is generally not useful, so we hard-code a batch size of 1.
             return 1
-
-        kv_params = arch_config.get_kv_params()
-        max_seq_len = arch_config.get_max_seq_len()
-
-        device_objs = (
-            devices
-            if isinstance(devices[0], Device)
-            else load_devices([d for d in devices])
-        )
-
-        inferred_batch_size = infer_optimal_batch_size(
-            params=kv_params,
-            max_seq_len=max_seq_len,
-            available_cache_memory=available_kv_cache_memory,
-            devices=device_objs,
-        )
-        # Clamp the batch size
-        return max(
-            _MIN_DEFAULT_BATCH_SIZE,
-            min(inferred_batch_size, _MAX_DEFAULT_BATCH_SIZE),
-        )
+        return _DEFAULT_BATCH_SIZE

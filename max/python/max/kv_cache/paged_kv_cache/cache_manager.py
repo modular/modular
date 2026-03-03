@@ -29,7 +29,6 @@ from max.graph import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.kv_connector import KVConnector
 from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, RaggedKVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import (
@@ -683,22 +682,6 @@ class PagedKVCacheManager:
         for replica in self._replica:
             replica.block_manager.reset_prefix_cache()
             replica.connector.reset_prefix_cache()
-
-    @classmethod
-    def infer_optimal_batch_size(
-        cls,
-        params: KVCacheParamInterface,
-        max_seq_len: int,
-        available_cache_memory: int,
-        devices: Sequence[Device],
-        **kwargs: Any,
-    ) -> int:
-        """Infers a default optimal batch size for paged attention (``512``)."""
-        # We just hard-code a default of 512 for paged attention.
-        # The worst case scenario if this is too high is that we'll evict
-        # requests at an elevated rate. We print warnings in that case so users
-        # are aware of what needs to be tweaked/changed.
-        return 512
 
     def get_metrics(self, replica_idx: int) -> KVCacheMetrics:
         """Returns metrics for the given replica."""

@@ -220,9 +220,6 @@ class ModelInputs:
 class PipelineModel(ABC, Generic[BaseContextType]):
     """A pipeline model with setup, input preparation and execution methods."""
 
-    _MAX_DEFAULT_BATCH_SIZE = 4096
-    _MIN_DEFAULT_BATCH_SIZE = 1
-
     def __init__(
         self,
         pipeline_config: PipelineConfig,
