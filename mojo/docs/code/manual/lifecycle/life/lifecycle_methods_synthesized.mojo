@@ -24,7 +24,7 @@ struct Pair(ImplicitlyCopyable):
     var second: Int
 
 
-def main():
+def main() raises:
     pet = MyPet("Fido", 3)
     pet2 = pet
     print(pet2.name)

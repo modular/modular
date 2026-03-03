@@ -17,13 +17,13 @@ Documentation for these functions can be found online at:
   <https://docs.python.org/3/c-api/stable.html#contents-of-limited-api>
 """
 
-from collections import InlineArray
-from memory import OpaquePointer, alloc
-from os import abort, getenv, setenv
-from os.path import dirname
-from pathlib import Path
-from sys.arg import argv
-from ffi import (
+from std.collections import InlineArray
+from std.memory import OpaquePointer, alloc
+from std.os import abort, getenv, setenv
+from std.os.path import dirname
+from std.pathlib import Path
+from std.sys.arg import argv
+from std.ffi import (
     external_call,
     _DLHandle,
     OwnedDLHandle,
@@ -37,7 +37,7 @@ from ffi import (
     c_ulong,
 )
 
-from utils import Variant
+from std.utils import Variant
 
 comptime Py_ssize_t = c_ssize_t
 comptime Py_hash_t = Py_ssize_t
@@ -1445,7 +1445,7 @@ struct CPython(Defaultable, Movable):
             if file_dir == "" and not python_path:
                 file_dir = ":"
             if python_path:
-                _ = setenv("PYTHONPATH", String(file_dir, ":", python_path))
+                _ = setenv("PYTHONPATH", t"{file_dir}:{python_path}")
             else:
                 _ = setenv("PYTHONPATH", file_dir)
 
@@ -1475,7 +1475,7 @@ struct CPython(Defaultable, Movable):
                 # If the library is not present in the current process, try to load it from the environment variable.
                 self.lib = OwnedDLHandle(python_lib)
         except e:
-            abort(String("Failed to load libpython from", python_lib, ":\n", e))
+            abort(t"Failed to load libpython from {python_lib}:\n{e}")
 
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):

@@ -16,10 +16,10 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-from hashlib.hasher import Hasher
-from os import abort
-from sys import CompilationTarget, bit_width_of, size_of
-from sys.intrinsics import _type_is_eq
+from std.hashlib.hasher import Hasher
+from std.os import abort
+from std.sys import CompilationTarget, bit_width_of, size_of
+from std.sys.intrinsics import _type_is_eq
 
 comptime _mIsSigned = __mlir_attr.`#pop.simd<1> : !pop.scalar<ui8>`
 comptime _mIsInteger = __mlir_attr.`#pop.simd<128> : !pop.scalar<ui8>`

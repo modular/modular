@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     var vector = SIMD[DType.int16, 4](1, 2, 3, 4)
     vector = vector * vector
     for i in range(4):
@@ -43,7 +43,7 @@ def main():
 
     # second example
 
-    from math import sqrt
+    from std.math import sqrt
 
     fn rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
         return 1 / sqrt(x)

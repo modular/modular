@@ -11,29 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from math import align_down, align_up, ceildiv
+from std.collections import Optional
+from std.math import align_down, align_up, ceildiv
 
-from sys._build import is_debug_build
-from sys.info import simd_width_of, size_of
+from std.sys._build import is_debug_build
+from std.sys.info import simd_width_of, size_of
 
-from algorithm.functional import (
+from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     _get_start_indices_of_nth_subvolume_uint,
     elementwise,
     sync_parallelize,
 )
-from gpu import block_idx, thread_idx
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.info import is_cpu, is_valid_target
-from layout._coord import Coord, Idx, coord_to_index_list
+from std.gpu import block_idx, thread_idx
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host.info import is_cpu, is_valid_target
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
-from memory import memcpy
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.memory import memcpy
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
-from utils import IndexList, StaticTuple, product
+from std.utils import IndexList, StaticTuple, product
 
 from .gather_scatter import normalize_neg_index
 
@@ -790,7 +789,6 @@ fn _concat_gpu_elementwise[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var in_index = out_index
-        in_index[axis] = out_index[axis]
         var out_coord = Coord(out_index)
         comptime assert out_coord.flat_rank == output.flat_rank
 
@@ -806,22 +804,27 @@ fn _concat_gpu_elementwise[
                     comptime func = epilogue_fn.value()
                     func[dtype, _rank, simd_width](
                         out_index,
-                        input.load[width=1](in_coord),
+                        input.load[width=simd_width](in_coord),
                     )
                 else:
-                    output.store(out_coord, input.load[width=1](in_coord))
+                    output.store[width=simd_width](
+                        out_coord, input.load[width=simd_width](in_coord)
+                    )
                 return
 
             in_index[axis] -= input_shape[axis]
 
-    # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
-    # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
-    # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
-    # Because the inner dim is contiguous we will get coalesced memory access
-    # using the elementwise generator with simd_width=1.
-    elementwise[per_output_elem, 1, target="gpu"](
-        coord_to_index_list(output.layout.shape_coord()), ctx
-    )
+    # When axis != rank-1, the SIMD group spans the innermost (non-concat)
+    # dimension, so all elements belong to the same input and we can safely
+    # use vectorized loads/stores (float4 = 128-bit transactions).
+    comptime if axis != output.rank - 1:
+        elementwise[per_output_elem, 4, target="gpu"](
+            coord_to_index_list(output.layout.shape_coord()), ctx
+        )
+    else:
+        elementwise[per_output_elem, 1, target="gpu"](
+            coord_to_index_list(output.layout.shape_coord()), ctx
+        )
 
 
 @always_inline
@@ -1020,7 +1023,6 @@ fn _fused_concat_gpu_elementwise[
         simd_width: Int, _rank: Int, alignment: Int = 1
     ](out_index: IndexList[_rank]):
         var in_index = out_index
-        in_index[axis] = out_index[axis]
 
         comptime for i in range(num_inputs):
             var input_shape = input_shapes[i]
@@ -1034,14 +1036,16 @@ fn _fused_concat_gpu_elementwise[
 
             in_index[axis] -= input_shape[axis]
 
-    # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
-    # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
-    # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
-    # Because the inner dim is contiguous we will get coalesced memory access
-    # using the elementwise generator with simd_width=1.
-    elementwise[per_output_elem, 1, target="gpu"](
-        coord_to_index_list(output.layout.shape_coord()), ctx
-    )
+    # When axis != rank-1, the SIMD group spans the innermost (non-concat)
+    # dimension, so we can safely use vectorized loads/stores.
+    comptime if axis != rank - 1:
+        elementwise[per_output_elem, 4, target="gpu"](
+            coord_to_index_list(output.layout.shape_coord()), ctx
+        )
+    else:
+        elementwise[per_output_elem, 1, target="gpu"](
+            coord_to_index_list(output.layout.shape_coord()), ctx
+        )
 
 
 @always_inline

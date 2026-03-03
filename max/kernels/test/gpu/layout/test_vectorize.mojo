@@ -14,10 +14,10 @@
 from layout import *
 from layout.int_tuple import product
 from layout.layout_tensor import *
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn test_vectorize_2() raises:
@@ -116,5 +116,5 @@ fn test_vectorize_2() raises:
     heap.free()
 
 
-def main():
+def main() raises:
     test_vectorize_2()

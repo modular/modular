@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from random import rand, seed
+from std.os import abort
+from std.random import rand, seed
 
 import internal_utils
 from layout.layout_tensor import UNKNOWN_VALUE, Layout, LayoutTensor
 from linalg.qr_factorization import form_q, qr_factorization
-from memory import LegacyUnsafePointer, memcpy
+from std.memory import LegacyUnsafePointer, memcpy
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
 # A is a general matrix, B is a non-unit upper triangular matrix
@@ -76,7 +76,7 @@ def all_almost_id[
     A: LayoutTensor[dtype, element_layout=element_layout, ...],
     atol: Float64,
     rtol: Float64,
-):
+) raises:
     m, n = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     for i in range(m):
         for j in range(n):
@@ -115,7 +115,7 @@ fn create_tensor[
     return {ptr, dynamic_layout}
 
 
-def main():
+def main() raises:
     atol = 1e-5
     rtol = 1e-3
     m, n = 80, 50

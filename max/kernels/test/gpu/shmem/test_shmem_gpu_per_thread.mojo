@@ -18,9 +18,9 @@ See `test_shmem_gpu_per_process.mojo` for how you can launch one GPU per process
 using mpirun (NVIDIA only).
 """
 # RUN: %mojo %s
-from memory import UnsafePointer, alloc
+from std.memory import UnsafePointer, alloc
 
-from testing import assert_equal
+from std.testing import assert_equal
 from shmem import *
 
 
@@ -34,7 +34,7 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32, MutAnyOrigin]):
 
 
 # Must have this signature to use `shmem_launch`
-def simple_shift(ctx: SHMEMContext):
+def simple_shift(ctx: SHMEMContext) raises:
     # Set up buffers to test devices are communicating with the correct IDs
     var target_device = ctx.enqueue_create_buffer[DType.int32](1)
     var target_host = alloc[Int32](1)
@@ -55,5 +55,5 @@ def simple_shift(ctx: SHMEMContext):
     assert_equal(target_host[0], expected_peer)
 
 
-def main():
+def main() raises:
     shmem_launch[simple_shift]()

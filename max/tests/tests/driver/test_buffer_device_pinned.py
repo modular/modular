@@ -102,6 +102,10 @@ def test_device_pinned_buffer_data_transfer() -> None:
     )
     result_buffer.inplace_copy_from(gpu_buffer)
 
+    # DevicePinnedBuffer skips automatic synchronization in to_numpy(),
+    # so we must explicitly synchronize to ensure the async copy completes.
+    gpu.synchronize()
+
     # Verify data is correct
     result_np = result_buffer.to_numpy()
     expected = np.arange(100, dtype=np.float32)

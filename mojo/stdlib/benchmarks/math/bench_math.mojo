@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
-from random import *
+from std.math import *
+from std.random import *
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
@@ -118,7 +118,7 @@ fn bench_math2[math_f2p: fn(Int, Int, /) -> Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_math[sin]](BenchId("bench_math_sin"))

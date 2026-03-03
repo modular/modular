@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_ui64
+from std.math import ceildiv
+from std.random import random_ui64
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 from kv_cache_test_utils import PagedLookupTable
 
@@ -251,7 +251,7 @@ fn test_kv_cache_radd[
     _ = paged_lut^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_kv_cache_radd[DType.float32, 8, 128, 128](
             IndexList[4](10, 20, 30, 40),

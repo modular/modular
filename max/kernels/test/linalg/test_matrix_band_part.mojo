@@ -15,10 +15,10 @@ from layout import Layout, LayoutTensor
 from layout.int_tuple import to_index_list
 from buffer.dimlist import DimList
 from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
-from runtime.asyncrt import DeviceContextPtr
-from testing import assert_equal
+from std.runtime.asyncrt import DeviceContextPtr
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def matrix_band_part[
@@ -30,7 +30,7 @@ def matrix_band_part[
     num_lower: Int,
     num_upper: Int,
     exclude: Bool,
-):
+) raises:
     comptime int_type = DType.int
     comptime cond_type = DType.bool
 
@@ -75,7 +75,7 @@ def matrix_band_part[
     )
 
 
-def test_matrix_band_part():
+def test_matrix_band_part() raises:
     comptime layout = Layout.row_major(3, 3)
     comptime dtype = DType.float32
 
@@ -129,5 +129,5 @@ def test_matrix_band_part():
     assert_equal(output[2, 2], 0)
 
 
-def main():
+def main() raises:
     test_matrix_band_part()

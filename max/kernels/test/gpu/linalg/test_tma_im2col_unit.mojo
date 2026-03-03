@@ -21,14 +21,14 @@ Test cases from CUTLASS (simplest first):
 3. 3x3 filter, symmetric padding: {2, 8, 8, 32} NHWC, {256, 3, 3, 32} KRSC, pad=(1,1)
 """
 
-from sys import size_of
+from std.sys import size_of
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import barrier, thread_idx, block_idx
-from gpu.host import DeviceContext, FuncAttribute
-from testing import assert_false
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.memory import AddressSpace, external_memory
+from std.gpu import barrier, thread_idx, block_idx
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.testing import assert_false
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace, external_memory
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tma_async import (
@@ -36,8 +36,8 @@ from layout.tma_async import (
     TMATensorTileIm2col,
     create_tensor_tile_im2col,
 )
-from memory import LegacyUnsafePointer
-from utils.index import Index
+from std.memory import LegacyUnsafePointer
+from std.utils.index import Index
 
 # Create a mutable UnsafePointer alias for host memory operations
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -432,7 +432,7 @@ fn run_im2col_test[
     return errors == 0
 
 
-def main():
+def main() raises:
     print("=" * 70)
     print("TMA Im2Col Unit Tests (ported from CUTLASS)")
     print("=" * 70)

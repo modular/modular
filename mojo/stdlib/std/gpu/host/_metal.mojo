@@ -11,8 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import external_call
-from gpu.host.device_context import _ConstCharPtr, _checked, _DeviceContextPtr
+from std.ffi import external_call
+from std.gpu.host.device_context import (
+    _ConstCharPtr,
+    _checked,
+    _DeviceContextPtr,
+)
 
 
 struct _MTLDevice:

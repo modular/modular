@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from memory import LegacyUnsafePointer
+from std.math import ceildiv, isclose
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import argv
+from std.sys import argv
 
 from buffer import DimList, NDBuffer
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx, warp_id
-from gpu.memory import async_copy_wait_all
-from gpu.sync import barrier
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx, warp_id
+from std.gpu.memory import async_copy_wait_all
+from std.gpu.sync import barrier
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import (
     copy_from_nd_buffer,
@@ -36,9 +36,9 @@ from layout.layout_tensor import (
 )
 from layout.math import outer_product_acc
 from linalg.matmul.gpu import matmul_kernel_naive
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import Index
+from std.utils import Index
 
 
 fn is_benchmark() -> Bool:
@@ -310,6 +310,6 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_gemm_kernel_dynamic(ctx)

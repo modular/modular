@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import rsqrt
-from random import random_ui64, seed
+from std.collections import Set
+from std.math import rsqrt
+from std.random import random_ui64, seed
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -25,10 +25,9 @@ from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import MaterializedMask
-from nn.mha_score_mod import IdentityScoreMod
-from testing import assert_almost_equal
-from sys import has_amd_gpu_accelerator
-from utils import Index, IndexList
+from std.testing import assert_almost_equal
+from std.sys import has_amd_gpu_accelerator
+from std.utils import Index, IndexList
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime replit_num_q_heads = 24
@@ -47,7 +46,7 @@ def execute_flash_attention[
     layer_idx: Int,
     cache_valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
     ctx: DeviceContext,
-):
+) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
@@ -235,7 +234,6 @@ def execute_flash_attention[
                 cache_lengths_for_mask.device_tensor().runtime_layout,
             ),
         ),
-        IdentityScoreMod(),
         valid_lengths_tensor,
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -288,7 +286,7 @@ def execute_flash_attention[
                     )
 
 
-def execute_flash_attention_suite(ctx: DeviceContext):
+def execute_flash_attention_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.float32, DType.bfloat16)
     var bs = 2
     var valid_length_managed = ManagedLayoutTensor[
@@ -351,7 +349,7 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         )
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         execute_flash_attention_suite(ctx)

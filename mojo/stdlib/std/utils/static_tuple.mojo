@@ -15,12 +15,12 @@
 You can import these APIs from the `utils` package. For example:
 
 ```mojo
-from utils import StaticTuple
+from std.utils import StaticTuple
 ```
 """
 
-from builtin.device_passable import DevicePassable
-from compile import get_type_name
+from std.builtin.device_passable import DevicePassable
+from std.compile import get_type_name
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -121,7 +121,30 @@ struct StaticTuple[element_type: TrivialRegisterPassable, size: Int](
         self = Self(values=elems)
 
     @always_inline
-    fn __init__(out self, values: VariadicList[Self.element_type]):
+    fn __init__(out self, values: VariadicParamList[Self.element_type]):
+        """Creates a tuple constant using the specified values.
+
+        Args:
+            values: The list of values.
+        """
+        _static_tuple_construction_checks[Self.size]()
+
+        if len(values) == 1:
+            return Self(fill=values[0])
+
+        debug_assert(
+            Self.size == len(values), "mismatch in the number of elements"
+        )
+
+        self = Self()
+
+        comptime for idx in range(Self.size):
+            self.__setitem__[idx](values[idx])
+
+    @always_inline
+    fn __init__(
+        out self, values: VariadicList[Self.element_type, is_owned=False]
+    ):
         """Creates a tuple constant using the specified values.
 
         Args:

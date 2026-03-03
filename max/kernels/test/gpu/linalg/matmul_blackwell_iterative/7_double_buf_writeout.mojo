@@ -11,35 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib import default_comp_time_hasher
-from math import align_up, ceildiv
-from memory import LegacyUnsafePointer, bitcast
+from std.hashlib import default_comp_time_hasher
+from std.math import align_up, ceildiv
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import argv, size_of
+from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from bit import next_power_of_two, prev_power_of_two
+from std.bit import next_power_of_two, prev_power_of_two
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import fence_async_view_proxy, external_memory
-from gpu.compute.mma import st_matrix
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.sync import named_barrier
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import fence_async_view_proxy, external_memory
+from std.gpu.compute.mma import st_matrix
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.sync import named_barrier
+from std.gpu.compute.arch.tcgen05 import *
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout import (
     UNKNOWN_VALUE,
@@ -67,9 +67,9 @@ from layout.tma_async import (
 )
 from linalg.arch.sm100 import MmaOpSM100_SS
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 
 fn is_benchmark() -> Bool:
@@ -192,13 +192,13 @@ fn load_AB[
     if elect_one_cta:
         tma_mbar[stage].expect_bytes(Int32(expected_bytes))
 
-    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-        a_tma_rows
-    ) + work_tile_coord[0] * UInt(BM)
+    var a_gmem_slice_coord = (
+        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
+    )
     var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1] * UInt(MMA_N)
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1]) * MMA_N
     )
 
     var a_smem_tile = a_smem.next(stage)[]
@@ -214,14 +214,14 @@ fn load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), a_gmem_slice_coord),
+        (Int(iter_idx) * BK, a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (iter_idx * UInt(BK), b_gmem_slice_coord),
+        (Int(iter_idx) * BK, b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -447,8 +447,8 @@ fn multi_stage_store_C[
             c_tma_op.async_store(
                 c_smem_tile,
                 (
-                    work_tile_coord[1] * UInt(MMA_N) + UInt(stage * stageN),
-                    work_tile_coord[0] * UInt(BM),
+                    Int(work_tile_coord[1]) * MMA_N + stage * stageN,
+                    Int(work_tile_coord[0]) * BM,
                 ),
             )
             c_tma_op.commit_group()
@@ -890,7 +890,7 @@ def test_blackwell_kernel_7[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     benchmark: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     var M = m.value
     var N = n.value
     var K = k.value
@@ -910,16 +910,14 @@ def test_blackwell_kernel_7[
             )
         )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
     comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim
     )
-    comptime static_c_shape = DimList(m.dim, n.dim)
 
     # Define layouts for LayoutTensor
-    comptime a_layout = Layout.row_major[2](static_a_shape)
-    comptime b_layout = Layout.row_major[2](static_b_shape)
-    comptime c_layout = Layout.row_major[2](static_c_shape)
+    comptime a_layout = Layout.row_major[dims = DimList(m.dim, k.dim)]()
+    comptime b_layout = Layout.row_major[dims=static_b_shape]()
+    comptime c_layout = Layout.row_major[dims = DimList(m.dim, n.dim)]()
 
     # Host memory allocation
     var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
@@ -1124,7 +1122,7 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
             print("error")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Run the benchmark
         if is_benchmark():

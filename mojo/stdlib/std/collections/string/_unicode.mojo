@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string._unicode_lookups import *
+from std.collections.string._unicode_lookups import *
 
-from memory import Span
+from std.memory import Span
 
 
 fn _uppercase_mapping_index(rune: Codepoint) -> Int:

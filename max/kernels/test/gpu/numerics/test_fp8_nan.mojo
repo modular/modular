@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.simd import *
-from gpu.host import DeviceContext
-from memory import bitcast
+from std.builtin.simd import *
+from std.gpu.host import DeviceContext
+from std.memory import bitcast
 
 
 fn print_bits[dtype: DType](val: Scalar[dtype]):
@@ -33,6 +33,6 @@ fn test():
     print_bits(Float8_e4m3fn(FloatLiteral.nan))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         ctx.enqueue_function_experimental[test](grid_dim=1, block_dim=1)

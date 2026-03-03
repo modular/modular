@@ -22,7 +22,7 @@ This module provides compile-time introspection of type and function names:
 Example:
 
 ```mojo
-from reflection import get_type_name, get_function_name
+from std.reflection import get_type_name, get_function_name
 
 struct Point:
     var x: Int
@@ -37,8 +37,8 @@ fn main():
 ```
 """
 
-from sys.info import _current_target, _TargetType
-from collections.string.string_slice import get_static_string
+from std.sys.info import _current_target, _TargetType
+from std.collections.string.string_slice import get_static_string
 
 
 fn get_linkage_name[
@@ -155,7 +155,7 @@ fn get_base_type_name[T: AnyType]() -> StaticString:
 
     Example:
         ```mojo
-        from collections import List, Dict
+        from std.collections import List, Dict
 
         fn main():
             print(get_base_type_name[List[Int]]())  # "List"

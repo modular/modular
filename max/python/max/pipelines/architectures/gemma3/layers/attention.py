@@ -25,7 +25,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention import MHAMaskVariant
+from max.nn.attention import MHAMaskVariant, num_heads_for_device
 from max.nn.float8_config import Float8Config
 from max.nn.kernels import (
     flash_attention_ragged,
@@ -36,40 +36,11 @@ from max.nn.kernels import (
     quantize_static_scaled_float8,
     rms_norm_key_cache,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues, uses_opaque
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
-
-
-def compute_heads_per_device(
-    *, total_heads: int, device_idx: int, num_devices: int
-) -> int:
-    """Computes the number of attention heads per device for sharding.
-
-    This function calculates the number of heads for a given device, enforcing
-    that the total number of heads is evenly divisible by the number of devices.
-    Uneven distribution is disallowed to prevent workload imbalance.
-
-    Args:
-        total_heads: The total number of attention heads.
-        device_idx: The index of the current device (0-indexed).
-        num_devices: The total number of devices for sharding.
-
-    Returns:
-        The number of heads assigned to the specified device.
-
-    Raises:
-        ValueError: If `total_heads` is not evenly divisible by `num_devices`.
-    """
-    base_heads, remainder = divmod(total_heads, num_devices)
-    if device_idx < remainder:
-        raise ValueError(
-            "An uneven distribution of heads is not supported as it will cause a workload imbalance."
-        )
-    else:
-        return base_heads
 
 
 class Gemma3Attention(Module, Shardable):
@@ -138,12 +109,6 @@ class Gemma3Attention(Module, Shardable):
         self.sliding_window_pattern = sliding_window_pattern
         self.qk_norm_eps = qk_norm_eps
         self.float8_config = float8_config
-
-        if not uses_opaque(self.kv_params.cache_strategy):
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
 
         self.q_norm = Gemma3RMSNorm(
             self.kv_params.head_dim, DType.bfloat16, self.qk_norm_eps
@@ -447,13 +412,13 @@ class Gemma3Attention(Module, Shardable):
         shards = []
         for shard_idx, device in enumerate(devices):
             # Calculate sharded dimensions - handle uneven head distribution
-            sharded_num_heads = compute_heads_per_device(
-                total_heads=self.n_heads,
+            sharded_num_heads = num_heads_for_device(
+                num_heads=self.n_heads,
                 device_idx=shard_idx,
                 num_devices=self.sharding_strategy.num_devices,
             )
-            sharded_num_kv_heads = compute_heads_per_device(
-                total_heads=self.kv_params.n_kv_heads,
+            sharded_num_kv_heads = num_heads_for_device(
+                num_heads=self.kv_params.n_kv_heads,
                 device_idx=shard_idx,
                 num_devices=self.sharding_strategy.num_devices,
             )

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
-from testing import assert_equal, assert_raises, TestSuite
+from std.python import Python, PythonObject
+from std.testing import assert_equal, assert_raises, TestSuite
 
 
 fn test_python_exception_import() raises:
@@ -49,5 +49,5 @@ fn test_python_exception_call() raises:
             _ = my_module.AbstractPerson()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

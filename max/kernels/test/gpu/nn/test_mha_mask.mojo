@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
-from sys.info import CompilationTarget
+from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.sys.info import CompilationTarget
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
 from nn.mha_mask import (
     AndMask,
     CausalMask,
@@ -26,12 +26,12 @@ from nn.mha_mask import (
     SlidingWindowCausalMask,
     TileMaskStatus,
 )
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-def test_causal_mask():
+def test_causal_mask() raises:
     comptime type = DType.int32
 
     print("test_causal_mask")
@@ -77,7 +77,7 @@ def test_causal_mask():
     )
 
 
-def test_causal_mask_asm():
+def test_causal_mask_asm() raises:
     """Verify mask comparison is not in 64 bits."""
 
     print("== test_causal_mask_asm")
@@ -116,7 +116,7 @@ def test_causal_mask_asm():
         ]()
 
 
-def test_and_mask():
+def test_and_mask() raises:
     comptime type = DType.int32
 
     print("test_and_mask")
@@ -153,7 +153,7 @@ def test_and_mask():
     )
 
 
-def test_sliding_window_causal_mask():
+def test_sliding_window_causal_mask() raises:
     print("test_sliding_window_causal_mask")
 
     comptime mask = SlidingWindowCausalMask[3]()
@@ -163,7 +163,7 @@ def test_sliding_window_causal_mask():
         offset: IndexList[2, ...],
         size: type_of(offset),
         expected: TileMaskStatus,
-    ):
+    ) raises:
         var status = mask.status(offset, size)
         assert_equal(
             status,
@@ -205,7 +205,7 @@ def test_sliding_window_causal_mask():
     check_status(Index(1, 4), Index(3, 2), TileMaskStatus.FULL_MASK)
 
 
-def test_sliding_window_causal_mask_asm():
+def test_sliding_window_causal_mask_asm() raises:
     """Verify mask comparison is not in 64 bits."""
 
     print("== test_sliding_window_causal_mask_asm")
@@ -245,7 +245,7 @@ def test_sliding_window_causal_mask_asm():
         ]()
 
 
-def main():
+def main() raises:
     test_causal_mask()
     test_causal_mask_asm()
     test_and_mask()

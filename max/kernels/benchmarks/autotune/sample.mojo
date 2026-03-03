@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_dtype, env_get_int
+from std.sys import env_get_dtype, env_get_int
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from internal_utils import (
     Mode,
     arg_parse,
@@ -22,8 +22,8 @@ from internal_utils import (
     update_bench_config_args,
 )
 
-from time import sleep
-from os import getenv
+from std.time import sleep
+from std.os import getenv
 
 # mojo build sample.mojo
 # mpirun -n 8 ./sample -o output.csv
@@ -58,7 +58,7 @@ fn bench_func[
         print("pretending to run the kernel...PASS")
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.float16]()
     comptime shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
     comptime shape = int_list_to_tuple[shape_int_list]()

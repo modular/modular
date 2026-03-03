@@ -136,7 +136,6 @@ def run_kv_cache_2m_iadd(
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         devices=[device_ref],
     )

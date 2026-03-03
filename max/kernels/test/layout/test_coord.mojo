@@ -13,12 +13,12 @@
 """Tests for the unified LayoutLike system."""
 
 from buffer import Dim, DimList
-from sys import size_of
-from sys.intrinsics import _type_is_eq
+from std.sys import size_of
+from std.sys.intrinsics import _type_is_eq
 
-from builtin.variadics import Variadic
+from std.builtin.variadics import Variadic
 
-from layout._coord import (
+from layout.coord import (
     ComptimeInt,
     CoordLike,
     Idx,
@@ -30,7 +30,7 @@ from layout._coord import (
     _DimsToCoordLike,
     _Idx2CrdResultTypes,
 )
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
 fn test_nested_layouts() raises:
@@ -120,13 +120,13 @@ fn test_default_init_nested() raises:
     assert_equal(c[2].value(), 0)
 
 
-def test_from_dimlist_empty():
+def test_from_dimlist_empty() raises:
     comptime dims = DimList()
     comptime coord = _DimsToCoordLike[DType.int32, dims]
     assert_equal(Variadic.size(coord), 0)
 
 
-def test_from_dimlist():
+def test_from_dimlist() raises:
     comptime dims = DimList(Dim(5), Dim(), Dim(3))
     comptime coord = _DimsToCoordLike[DType.int32, dims]
     assert_equal(Variadic.size(coord), 3)
@@ -366,5 +366,5 @@ fn test_idx2crd_mixed_static_dynamic_idx() raises:
     assert_true(_type_is_eq[type_of(c5[1]), ComptimeInt[1]]())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

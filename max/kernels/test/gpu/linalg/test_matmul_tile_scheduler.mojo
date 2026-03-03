@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu import block_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx
 from linalg.matmul.gpu.tile_scheduler import TileScheduler
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn test_kernel():
@@ -51,7 +51,7 @@ fn test_kernel():
 # CHECK-DAG: 1 (8, 12, 0, 5, False)
 # CHECK-DAG: 2 (12, 8, 0, 5, False)
 # CHECK-DAG: 3 (12, 12, 0, 5, False)
-def test(ctx: DeviceContext):
+def test(ctx: DeviceContext) raises:
     comptime kernel = test_kernel
 
     ctx.enqueue_function_experimental[kernel](
@@ -62,6 +62,6 @@ def test(ctx: DeviceContext):
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test(ctx)

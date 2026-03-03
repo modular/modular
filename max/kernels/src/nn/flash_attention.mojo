@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import align_down, align_up, ceildiv, exp
+from std.collections import OptionalReg
+from std.math import align_down, align_up, ceildiv, exp
 
-from os import abort
-from sys import align_of, simd_width_of
-from sys.info import CompilationTarget
+from std.os import abort
+from std.sys import align_of, simd_width_of
+from std.sys.info import CompilationTarget
 
-from algorithm import sync_parallelize, tile, vectorize
-from algorithm.reduction import (
+from std.algorithm import sync_parallelize, tile, vectorize
+from std.algorithm.reduction import (
     _simd_max,
     _simd_max_elementwise,
     _simd_sum,
@@ -36,55 +36,43 @@ from linalg.matmul.cpu.apple_accelerate import (
 )
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
-from memory import memset_zero, stack_allocation
+from std.memory import memset_zero, stack_allocation
 from nn.mha_mask import MHAMask
-from runtime.asyncrt import parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.asyncrt import parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
+@fieldwise_init
 struct _MatmulConfig:
-    var col_sizes: VariadicList[Int]
-    var row_sizes: VariadicList[Int]
-    var gemv_sizes: VariadicList[Int]
-    var pack_sizes: VariadicList[Int]
-
-    fn __init__(
-        out self,
-        *,
-        col_sizes: VariadicList[Int],
-        row_sizes: VariadicList[Int],
-        gemv_sizes: VariadicList[Int],
-        pack_sizes: VariadicList[Int],
-    ):
-        self.col_sizes = col_sizes
-        self.row_sizes = row_sizes
-        self.gemv_sizes = gemv_sizes
-        self.pack_sizes = pack_sizes
+    var col_sizes: List[Int]
+    var row_sizes: List[Int]
+    var gemv_sizes: List[Int]
+    var pack_sizes: List[Int]
 
     @staticmethod
     fn _get_config() -> _MatmulConfig:
         comptime if CompilationTarget.has_neon():
             return _MatmulConfig(
-                col_sizes=VariadicList[Int](4, 3, 2, 1),
-                row_sizes=VariadicList[Int](6, 4, 1),
-                gemv_sizes=VariadicList[Int](32, 4, 1),
-                pack_sizes=VariadicList[Int](32, 8, 4, 1),
+                col_sizes=[4, 3, 2, 1],
+                row_sizes=[6, 4, 1],
+                gemv_sizes=[32, 4, 1],
+                pack_sizes=[32, 8, 4, 1],
             )
         elif CompilationTarget.has_avx512f():
             return _MatmulConfig(
-                col_sizes=VariadicList[Int](4, 3, 2, 1),
-                row_sizes=VariadicList[Int](6, 4, 1),
-                gemv_sizes=VariadicList[Int](64, 16, 4, 1),
-                pack_sizes=VariadicList[Int](64, 16, 8, 4, 1),
+                col_sizes=[4, 3, 2, 1],
+                row_sizes=[6, 4, 1],
+                gemv_sizes=[64, 16, 4, 1],
+                pack_sizes=[64, 16, 8, 4, 1],
             )
         else:
             return _MatmulConfig(
-                col_sizes=VariadicList[Int](3, 2, 1),
-                row_sizes=VariadicList[Int](4, 1),
-                gemv_sizes=VariadicList[Int](64, 16, 4, 1),
-                pack_sizes=VariadicList[Int](64, 16, 8, 4, 1),
+                col_sizes=[3, 2, 1],
+                row_sizes=[4, 1],
+                gemv_sizes=[64, 16, 4, 1],
+                pack_sizes=[64, 16, 8, 4, 1],
             )
 
 
@@ -133,7 +121,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
 
                 bk_ptr += b_stride
 
-        tile[loop_body, VariadicList[Int](Self.simd_width, 1)](0, K)
+        tile[loop_body, [Self.simd_width, 1]](0, K)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = ak_ptr
         _ = bk_ptr
@@ -175,7 +163,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
                 ak_ptr += 1
                 bk_ptr += b_stride
 
-        tile[loop_body, VariadicList[Int](2, 1)](0, K)
+        tile[loop_body, [2, 1]](0, K)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = ak_ptr
         _ = bk_ptr
@@ -259,7 +247,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         # SIMD width has not been observed to improve performance and causes
         # code size to unnecessarily increase.
         comptime transpose_width = 4
-        comptime tile_sizes = VariadicList[Int](transpose_width, 1)
+        comptime tile_sizes = [transpose_width, 1]
 
         comptime layout = Layout.row_major(transpose_width, transpose_width)
         var transpose_stack = InlineArray[Scalar[Self.dtype], layout.size()](
@@ -403,7 +391,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
 
             cn_ptr += tile_n
 
-        tile[process_cols, VariadicList[Int](4, 1)](0, N)
+        tile[process_cols, [4, 1]](0, N)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = K
         _ = cn_ptr

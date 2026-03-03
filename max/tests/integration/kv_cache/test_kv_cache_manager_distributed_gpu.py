@@ -46,7 +46,6 @@ def _create_kv_manager(
         n_kv_heads=8,
         head_dim=32,
         num_layers=10,
-        cache_strategy="paged",
         page_size=32,
         devices=[DeviceRef.GPU(i) for i in range(num_devices)],
         data_parallel_degree=data_parallel_degree,

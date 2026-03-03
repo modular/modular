@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_true
+from std.testing import assert_true
 
 
 @fieldwise_init
@@ -22,7 +22,7 @@ struct Foo(Stringable):
         return self.s
 
 
-def main():
+def main() raises:
     var foo = Foo("test")
     print(String(foo) == "test")  # True
 

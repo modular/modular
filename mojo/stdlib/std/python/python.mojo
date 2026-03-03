@@ -15,13 +15,13 @@
 You can import these APIs from the `python` package. For example:
 
 ```mojo
-from python import Python
+from std.python import Python
 ```
 """
 
-from collections.dict import OwnedKwargsDict
-from os import abort
-from ffi import _Global
+from std.collections.dict import OwnedKwargsDict
+from std.os import abort
+from std.ffi import _Global
 
 from ._cpython import (
     CPython,
@@ -186,7 +186,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         For example:
 
         ```mojo
-        from python import Python
+        from std.python import Python
 
         # Specify path to `mypython.py` module
         Python.add_to_path("path/to/module")
@@ -216,7 +216,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         in Python. For example:
 
         ```mojo
-        from python import Python
+        from std.python import Python
 
         # This is equivalent to Python's `import numpy as np`
         np = Python.import_module("numpy")

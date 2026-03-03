@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes utilities for working with the SM100 MMA instructions."""
 
-from os import abort
-from sys import size_of
-from sys._assembly import inlined_assembly
-from sys.info import _has_blackwell_tcgen05
+from std.os import abort
+from std.sys import size_of
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _has_blackwell_tcgen05
 
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
-from utils.index import IndexList
-from hashlib.hasher import Hasher
+from std.utils.index import IndexList
+from std.hashlib.hasher import Hasher
 
 # ===----------------------------------------------------------------------=== #
 # MMA Instruction Descriptor
@@ -29,9 +29,7 @@ from hashlib.hasher import Hasher
 
 
 @fieldwise_init("implicit")
-struct UMMAKind(
-    Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable
-):
+struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
     """Struct for UMMA instruction types.
 
     This struct defines the different types of UMMA instructions that is supported by BlackWell.
@@ -93,6 +91,7 @@ struct UMMAKind(
         """
         return self._value != other._value
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Convert UMMA kind to a string, this can be used as the instruction qualifier.

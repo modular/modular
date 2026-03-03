@@ -91,37 +91,36 @@ For the naive allreduce (no P2P) per-device flow and staging details, see the
 `_allreduce_naive_single` docstring in this file.
 """
 
-from collections import InlineArray
-from math import ceildiv
-from sys import align_of, simd_width_of, size_of
+from std.collections import InlineArray
+from std.math import ceildiv
+from std.sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
-from layout._tile_tensor import TileTensor
+from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
-from layout._coord import Coord, Idx
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     block_dim,
     global_idx,
     grid_dim,
 )
-from gpu.primitives.grid_controls import (
+from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
-from utils import IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.utils import IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
-from collections.optional import Optional
+from std.collections.optional import Optional
 
 from .reducescatter import (
     ReduceScatterConfig,
-    _reduce_scatter_impl,
+    _reduce_scatter_flat_impl,
     _load_reduce,
     _target_address_space,
 )
@@ -447,7 +446,7 @@ fn _allreduce_2stage_kernel[
             val.cast[dtype](),
         )
 
-    _reduce_scatter_impl[
+    _reduce_scatter_flat_impl[
         ngpus, output_lambda=rs_output_lambda, use_multimem=use_multimem
     ](ptrs, tmp_buff, my_rank, rs_config)
 
@@ -488,7 +487,7 @@ fn _allreduce_2stage_kernel[
     # Ragged tail - max 1 simd vector per gpu, spread work between threads
     if global_tid < ngpus:
         var peer_rank = (my_rank + global_tid) % ngpus
-        if peer_rank < rs_config.remainder:
+        if peer_rank < rs_config.axis_remainder:
             var idx = (
                 rs_config.rank_part(0) - simd_width
             )  # last ragged simd_vector

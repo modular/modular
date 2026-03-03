@@ -11,32 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import isclose
-from random import rand, random_float64, seed
-from sys import has_amd_gpu_accelerator
+from std.math import isclose
+from std.random import rand, random_float64, seed
+from std.sys import has_amd_gpu_accelerator
 
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, RuntimeLayout
-from layout._coord import Coord, Idx
+from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.softmax import (
     _online_softmax_kernel,
     _softmax_cpu,
     _softmax_gpu,
     softmax_with_temperature,
 )
-from testing import assert_almost_equal, assert_true
-from utils.numerics import get_accum_type
+from std.testing import assert_almost_equal, assert_true
+from std.utils.numerics import get_accum_type
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn test_gpu_softmax(ctx: DeviceContext) raises:
@@ -137,7 +136,7 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     _ = out_device_ptr
 
 
-def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
+def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
     print("== test_gpu_softmax_half")
     comptime seed_val = 42
     seed(seed_val)
@@ -430,8 +429,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
         per_row: If True, use per-row temperature array; otherwise scalar.
     """
 
-    @parameter
-    if per_row:
+    comptime if per_row:
         print("== test_gpu_softmax_temperature (per_row)")
     else:
         print("== test_gpu_softmax_temperature (scalar)")
@@ -462,8 +460,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     var temp_host_ptr = UnsafePointer[Scalar[type]].alloc(batch_size)
     var temp_device = ctx.enqueue_create_buffer[type](batch_size)
 
-    @parameter
-    if per_row:
+    comptime if per_row:
         rand[type](temp_host_ptr, batch_size)
         for i in range(batch_size):
             temp_host_ptr[i] = temp_host_ptr[i] * 1.5 + 0.5
@@ -543,7 +540,7 @@ fn test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     _ = scaled_host
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_gpu_softmax(ctx)
         test_gpu_softmax_half[DType.bfloat16](ctx)

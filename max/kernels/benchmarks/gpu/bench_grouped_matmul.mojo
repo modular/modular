@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from math import ceildiv, align_up
-from sys import (
+from std.os import abort
+from std.math import ceildiv, align_up
+from std.sys import (
     env_get_bool,
     env_get_dtype,
     env_get_int,
@@ -24,10 +24,16 @@ from sys import (
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import arg_parse
 from internal_utils._utils import (
     InitializationType,
@@ -43,24 +49,23 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from memory import LegacyUnsafePointer
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
-from layout._coord import Coord, Idx, RuntimeInt
+from layout import Coord, Idx, RuntimeInt, TileTensor
 from layout._layout import row_major
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._tile_tensor import TileTensor
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
     GMEMLayout1D,
 )
 from linalg.utils import elementwise_epilogue_type
 
-from utils import Index, IndexList
-from collections import Optional
+from std.utils import Index, IndexList
+from std.collections import Optional
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -174,6 +179,7 @@ fn bench_grouped_matmul[
     comptime static_c_shape = DimList(Dim(), N)
     var c_size = total_num_tokens * N
     comptime static_b_shape = DimList(num_experts, N, packed_K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, packed_K)
     var b_size = num_experts * N * packed_K
 
     # Host allocations
@@ -225,15 +231,15 @@ fn bench_grouped_matmul[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, packed_K),
+        IndexList[2](total_num_tokens, packed_K),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
@@ -476,6 +482,9 @@ fn bench_grouped_matmul[
         comptime static_b_scales_shape = DimList(
             num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
         )
+        var dynamic_b_scales_shape = IndexList[3](
+            num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
+        )
         var b_scales_size = (
             num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
         )
@@ -490,11 +499,11 @@ fn bench_grouped_matmul[
 
         var a_scales_dev = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
             a_scales_dev_buffer.unsafe_ptr(),
-            DimList(K // BLOCK_SCALE_K, total_num_tokens),
+            IndexList[2](K // BLOCK_SCALE_K, total_num_tokens),
         )
         var b_scales_dev = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
             b_scales_dev_buffer.unsafe_ptr(),
-            static_b_scales_shape,
+            dynamic_b_scales_shape,
         )
 
         init_vector_launch[DType.float32](
@@ -720,7 +729,7 @@ fn string_to_list(string: String) raises -> List[Int]:
     return list^
 
 
-def main():
+def main() raises:
     comptime in_type = env_get_dtype["in_type", DType.bfloat16]()
     comptime out_type = env_get_dtype["out_type", DType.bfloat16]()
     comptime scaling_kind_str = env_get_string["scaling_kind", "1d2d"]()

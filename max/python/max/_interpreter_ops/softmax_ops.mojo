@@ -13,18 +13,18 @@
 
 """Mojo kernel wrappers for softmax MO interpreter operations."""
 
-from os import abort
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from sys.info import has_accelerator, simd_width_of
+from std.os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.sys.info import has_accelerator, simd_width_of
 
-from math import exp, log
-from algorithm.functional import IndexList
-from memory import OpaquePointer
+from std.math import exp, log
+from std.algorithm.functional import IndexList
+from std.memory import OpaquePointer
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
 from nn.softmax import softmax as nn_softmax, logsoftmax as nn_logsoftmax
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
 from op_utils import _get_dtype, _get_buffer_ptr, _get_ctx, _get_shape, MAX_RANK
 

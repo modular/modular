@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv, gcd
-from sys import align_of, size_of
-from sys.info import (
+from std.math import align_up, ceildiv, gcd
+from std.sys import align_of, size_of
+from std.sys.info import (
     _is_amd_rdna,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
@@ -22,21 +22,27 @@ from sys.info import (
     simd_width_of,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from algorithm import sync_parallelize, vectorize
-from algorithm.functional import _get_start_indices_of_nth_subvolume_uint
-from algorithm.reduction import _reduce_generator
+from std.algorithm import elementwise, sync_parallelize, vectorize
+from std.algorithm.functional import _get_start_indices_of_nth_subvolume_uint
+from std.algorithm.reduction import _reduce_generator
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
-from gpu import block_idx, global_idx
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.memory import AddressSpace
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import A100, is_cpu, is_valid_target
-from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor, RuntimeLayout
+from std.gpu import block_idx, global_idx
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.memory import AddressSpace
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import A100, is_cpu, is_valid_target
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
 from layout._layout import Layout as TileLayout, row_major, TensorLayout
-from layout._tile_tensor import TileTensor
-from layout._coord import (
+from layout.coord import (
     Coord,
     CoordLike,
     ComptimeInt,
@@ -44,16 +50,16 @@ from layout._coord import (
     Idx,
     coord_to_index_list,
 )
-from logger import Logger
-from memory import LegacyUnsafePointer, memset_zero
+from std.logger import Logger
+from std.memory import LegacyUnsafePointer, memset_zero
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
-from gpu.host.info import B200, H100
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.gpu.host.info import B200, H100
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from .matmul.cpu.apple_accelerate import (
     apple_batched_matmul,
@@ -65,6 +71,9 @@ from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from .matmul.gpu.amd import gemm_kernel_amd
 from .matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
+)
+from .matmul.gpu.sm100_structured.default.dispatch import (
+    batched_matmul_dispatch_sm100_bf16,
 )
 from .utils import GemmShape
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
@@ -228,7 +237,7 @@ fn _reshape_tile_tensor_with_batch_to_3d(
         origin = tensor.origin,
         address_space = tensor.address_space,
         linear_idx_type = tensor.linear_idx_type,
-        element_shape_types = tensor.element_shape_types,
+        element_size = tensor.element_size,
     ],
 ):
     """
@@ -633,7 +642,9 @@ fn _batched_matmul_cpu[
                 a_packed_ptr = UnsafePointer[Scalar[a_type]].alloc(
                     mh * kh, alignment=alignment
                 )
-            var a_packed = NDBuffer[a_type, 2](a_packed_ptr, DimList(mh, kh))
+            var a_packed = NDBuffer[a_type, 2](
+                a_packed_ptr, IndexList[2](mh, kh)
+            )
 
             if use_i8mm:
                 packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
@@ -917,6 +928,54 @@ fn _batched_matmul_gpu[
 
     comptime a_k = a_tensor_reshaped.LayoutType._shape_types[2].static_value
     comptime c_n = c_tensor_reshaped.LayoutType._shape_types[2].static_value
+
+    # SM100 (B200+) batched BF16 matmul dispatch
+    comptime use_SM100_kernels = (
+        has_nvidia_gpu_accelerator()
+        and ctx.default_device_info.compute > H100.compute
+    )
+    comptime if use_SM100_kernels and has_static_NK and transpose_b:
+        comptime bf16_ok = (a_type == b_type == c_type == DType.bfloat16)
+        comptime align_ok = (
+            c_n * size_of[c_type]() % 16 == 0
+            and a_k * size_of[a_type]() % 16 == 0
+        )
+        comptime if bf16_ok and align_ok:
+            batched_matmul_dispatch_sm100_bf16[
+                c_type, a_type, b_type, transpose_b
+            ](
+                c_tensor_reshaped,
+                a_tensor_reshaped,
+                b_tensor_reshaped,
+                ctx,
+            )
+
+            comptime if elementwise_epilogue_fn:
+                comptime epilogue = elementwise_epilogue_fn.value()
+                # SM100+ supports 32B load/store to global memory.
+                comptime simd_size = 32 // size_of[c_type]()
+
+                var c_ndbuf = c_tensor_reshaped._to_ndbuffer()
+
+                @parameter
+                @__copy_capture(c_ndbuf)
+                fn epilogue_wrapper[
+                    simd_width: Int, rank: Int, alignment: Int = 1
+                ](idx: IndexList[rank]):
+                    var c_coord = Index(idx[0], idx[1], idx[2])
+                    var c_val = c_ndbuf.load[
+                        width=simd_width,
+                        alignment = alignment * size_of[c_type](),
+                    ](c_coord)
+                    epilogue[c_type, simd_width, alignment=alignment](
+                        c_coord, c_val
+                    )
+
+                elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                    Index(batch_size, m, n), ctx
+                )
+
+            return
 
     comptime multistage_gemm_cond = (
         c_n % 128 == 0 and a_k % 32 == 0 and a_k >= 128

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from nn.pad import pad_constant, pad_reflect, pad_repeat
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 # CHECK-LABEL: test_pad_1d
@@ -685,7 +685,7 @@ fn test_pad_repeat_3d() raises:
     assert_equal(output[4, 3, 2], 4)
 
 
-def main():
+def main() raises:
     test_pad_1d()
     test_pad_reflect_1d()
     test_pad_repeat_1d()

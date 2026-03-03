@@ -14,36 +14,35 @@
 Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
-from collections import Optional
-from math import ceil, fma
-from sys import align_of, simd_width_of, size_of
-from sys.info import CompilationTarget, is_gpu
-from sys.intrinsics import strided_load, strided_store
+from std.collections import Optional
+from std.math import ceil, fma
+from std.sys import align_of, simd_width_of, size_of
+from std.sys.info import CompilationTarget, is_gpu
+from std.sys.intrinsics import strided_load, strided_store
 
 import algorithm
 from buffer.dimlist import DimList, Dim, _make_partially_static_index_list
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 from compiler_internal.directives import StaticTensorSpec, __mogg_intrinsic_attr
-from gpu.host import get_gpu_target
-from gpu.host.info import is_cpu
-from gpu.host.info import is_gpu as _is_gpu
-from layout import LayoutTensor
-from layout._coord import Coord, _DimsToCoordLike
+from std.gpu.host import get_gpu_target
+from std.gpu.host.info import is_cpu
+from std.gpu.host.info import is_gpu as _is_gpu
+from layout import LayoutTensor, TileTensor
+from layout.coord import Coord, _DimsToCoordLike
 from layout._layout import Layout as TileLayout
-from layout._tile_tensor import TileTensor
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import trace_arg
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import trace_arg
 from tensor import RuntimeTensorSpec
 
-from utils import IndexList, StaticTuple
-from utils._serialize import _serialize
+from std.utils import IndexList, StaticTuple
+from std.utils._serialize import _serialize
 
 from ._indexing import _dot_prod, _row_major_strides, _slice_to_tuple
 from .io_spec import IO, IOSpec
@@ -1470,7 +1469,7 @@ struct VariadicTensors[
     size: Int,
     io_spec: IOSpec[mut, input],
     *,
-    static_specs: StaticTuple[StaticTensorSpec[dtype, rank], size],
+    static_specs: InlineArray[StaticTensorSpec[dtype, rank], size],
 ](Sized, TrivialRegisterPassable):
     """A tuple-like container of tensors representing variadic arguments from
     the graph compiler."""

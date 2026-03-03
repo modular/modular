@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     simd1 = SIMD[DType.int32, 4](2, 3, 4, 5)
     simd2 = SIMD[DType.int32, 4](-1, 2, -3, 4)
     simd3 = simd1 * simd2

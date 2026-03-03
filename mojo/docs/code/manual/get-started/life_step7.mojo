@@ -32,7 +32,7 @@ fn grid_str(grid: Grid) -> String:
     return str
 
 
-def main():
+def main() raises:
     glider = [
         [0, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 1, 0, 0, 0, 0, 0],

@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from format._utils import FormatStruct, Named
+from std.format._utils import FormatStruct, Named
 
 
 struct Slice(

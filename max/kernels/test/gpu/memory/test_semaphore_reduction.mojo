@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import rand
+from std.random import rand
 
-from gpu import block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext
-from gpu.sync.semaphore import Semaphore
-from memory import LegacyUnsafePointer, memset_zero
+from std.gpu import block_dim, block_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.sync.semaphore import Semaphore
+from std.memory import LegacyUnsafePointer, memset_zero
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn semaphore_vector_reduce[
@@ -199,7 +199,7 @@ fn run_matrix_reduction[
     c_host_ref.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_vector_reduction[DType.float32, 128, 4](ctx)
         run_matrix_reduction[DType.float32, 128, 128, 4](ctx)

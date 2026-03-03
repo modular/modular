@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from gpu.primitives.cluster import block_rank_in_cluster
-from gpu.host import DeviceContext, Dim
-from gpu import block_idx, cluster_idx
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.host import DeviceContext, Dim
+from std.gpu import block_idx, cluster_idx
 
 
 fn test_thread_block_cluster():
@@ -115,7 +115,7 @@ fn test_tbc_launch_config_2x2x2(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_tbc_launch_config_2x1x1(ctx)
         test_tbc_launch_config_1x2x1(ctx)

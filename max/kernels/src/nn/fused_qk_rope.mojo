@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import gcd
-from sys.info import _current_target, simd_width_of
+from std.collections import OptionalReg
+from std.math import gcd
+from std.sys.info import _current_target, simd_width_of
 
-from algorithm.functional import elementwise
-from utils.numerics import get_accum_type
-from complex import ComplexSIMD
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
+from std.algorithm.functional import elementwise
+from std.utils.numerics import get_accum_type
+from std.complex import ComplexSIMD
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
 from kv_cache.types import KVCacheT, KVCollectionT
-from layout._coord import (
+from layout.coord import (
     Coord,
     CoordLike,
     Idx,
@@ -30,10 +30,10 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import TensorLayout, RowMajorLayout, Layout, row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline

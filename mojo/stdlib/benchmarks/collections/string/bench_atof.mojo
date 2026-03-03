@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import _dir_of_current_file
+from std.pathlib import _dir_of_current_file
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -46,7 +46,7 @@ fn bench_parsing_all_floats_in_file[
 # ===-----------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     var bench = Bench()
     comptime files = ["canada", "mesh"]
 

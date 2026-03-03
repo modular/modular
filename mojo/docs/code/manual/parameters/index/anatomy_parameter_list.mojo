@@ -42,7 +42,7 @@ fn my_sort[
     return sorted
 
 
-def main():
+def main() raises:
     comptime dtype = DType.int32
     comptime input2 = SIMD[dtype, 8](9, 3, 3, 1, 11, 10, 5, 2)
 

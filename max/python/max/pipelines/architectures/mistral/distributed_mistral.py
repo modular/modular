@@ -101,12 +101,6 @@ class DistributedMistral(DistributedTransformer):
             quantization_encoding=None,
         )
 
-        if config.kv_params.cache_strategy != "paged":
-            raise ValueError(
-                "Unsupported caching strategy "
-                + str(config.kv_params.cache_strategy)
-            )
-
         super().__init__(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,

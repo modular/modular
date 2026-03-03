@@ -32,13 +32,13 @@ This pattern is based on NVIDIA CuTe DSL's grouped block-scaled GEMM which uses
 `tensormap.replace.tile.global_address` PTX instructions for dynamic updates.
 """
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier, WARP_SIZE
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
-from gpu import block_idx, thread_idx, lane_id
-from gpu.sync import syncwarp
+from std.gpu import barrier, WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
+from std.gpu import block_idx, thread_idx, lane_id
+from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -49,10 +49,10 @@ from layout.tma_async import (
     TMATensorTile,
     TMATensorTileArray,
 )
-from memory import stack_allocation, UnsafePointer
-from testing import assert_equal
+from std.memory import stack_allocation, UnsafePointer
+from std.testing import assert_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # =============================================================================
@@ -225,7 +225,7 @@ fn test_grouped_tensormap_update_kernel[
 def test_grouped_tensormap_update[
     num_groups: Int,
     tile_shape: IndexList[2],
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     """Test updating 2 tensormaps in a loop simulating group iteration.
 
     Creates num_groups sets of A, B tensors with distinct data.
@@ -441,7 +441,7 @@ def test_grouped_tensormap_update[
     # Cleanup
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("=" * 60)
         print("Test: Grouped TensorMap Update Pattern")

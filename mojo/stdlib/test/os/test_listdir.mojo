@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import listdir
-from pathlib import Path
+from std.os import listdir
+from std.pathlib import Path
 
-from testing import TestSuite, assert_true
+from std.testing import TestSuite, assert_true
 
 
-def test_listdir():
+def test_listdir() raises:
     var ls = listdir(Path())
     assert_true(len(ls) > 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

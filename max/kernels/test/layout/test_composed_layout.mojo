@@ -14,7 +14,7 @@
 from layout import *
 from layout.layout import Layout
 from layout.swizzle import ComposedLayout, Swizzle
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn test_composed_layout() raises:
@@ -71,7 +71,7 @@ fn test_composed_layout_swizzle_rt() raises:
     assert_equal(comp_layout(5), 40)
 
 
-def main():
+def main() raises:
     test_composed_layout()
     test_composed_layout_swizzle()
     test_composed_layout_swizzle_rt()

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -47,6 +47,6 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
         print("Res=", res_host[0])
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_kernel_with_list(ctx)

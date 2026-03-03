@@ -15,9 +15,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-)
+from max.pipelines.lib import SupportedArchitecture
 
 from . import weight_adapters
 from .model import BertPipelineModel
@@ -33,8 +31,8 @@ bert_arch = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": [],
-        "bfloat16": [],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=BertPipelineModel,
     tokenizer=BertTokenizer,

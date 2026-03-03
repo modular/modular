@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import (
+from std.math import ceildiv
+from std.sys import (
     align_of,
     has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
@@ -23,7 +23,7 @@ from sys import (
 
 import gpu.primitives.warp as warp
 from buffer.dimlist import Dim
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -33,12 +33,12 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.memory import (
+from std.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
 )
-from gpu.compute.mma import mma
+from std.gpu.compute.mma import mma
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
@@ -55,9 +55,9 @@ from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 
-from utils import StaticTuple
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 from ...utils import apply_epilogue, elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig, block_swizzle

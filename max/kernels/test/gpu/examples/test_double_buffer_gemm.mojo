@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from sys import argv, simd_width_of
-from sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
+from std.math import ceildiv, isclose
+from std.sys import argv, simd_width_of
+from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
-from gpu.host import DeviceContext
-from gpu.memory import async_copy_wait_all
+from std.gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.memory import async_copy_wait_all
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -29,7 +29,7 @@ from layout.layout_tensor import (
 )
 from layout.math import outer_product_acc
 from linalg.matmul.gpu import matmul_kernel_naive
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
 fn is_benchmark() -> Bool:
@@ -445,6 +445,6 @@ fn test(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test(ctx)

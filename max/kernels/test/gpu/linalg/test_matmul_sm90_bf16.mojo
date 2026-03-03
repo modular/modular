@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils._utils import dynamic, static
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 
-from utils.index import Index
+from std.utils.index import Index
 
 # Helper to calculate block_tile_shape based on num_consumer and wgmma_n
 comptime block_tile_shape[num_consumer: Int, wgmma_n: Int] = Index(
@@ -28,7 +28,7 @@ comptime block_tile_shape[num_consumer: Int, wgmma_n: Int] = Index(
 comptime wgmma_shape[wgmma_n: Int] = Index(64, wgmma_n, 16)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime wgmma_n: List[Int] = [128, 256]
 

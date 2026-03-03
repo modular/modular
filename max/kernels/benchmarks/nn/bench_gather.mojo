@@ -11,18 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import rand, randint
+from std.random import rand, randint
 
-from benchmark import *
+from std.benchmark import *
 from layout._layout import row_major
-from layout._coord import Coord
-from layout._tile_tensor import TileTensor
+from layout import Coord, TileTensor
 from nn.gather_scatter import gather_elements
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn bench_gather(mut m: Bench, spec: GatherSpec) raises:
@@ -105,7 +104,7 @@ struct GatherSpec(ImplicitlyCopyable, Stringable):
         # fmt: on
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
     bench_gather(m, GatherSpec(axis=1, m1=400, m2=400, n1=200, n2=200))
     bench_gather(m, GatherSpec(axis=1, m1=1000, m2=1000, n1=200, n2=200))

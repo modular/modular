@@ -13,17 +13,17 @@
 
 """Mojo kernel wrappers for matmul MO interpreter operations."""
 
-from os import abort
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
-from sys.info import has_accelerator
+from std.os import abort
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.sys.info import has_accelerator
 
-from algorithm.functional import IndexList
-from memory import OpaquePointer
+from std.algorithm.functional import IndexList
+from std.memory import OpaquePointer
 from linalg.matmul import matmul
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.runtime_layout import RuntimeLayout
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor.managed_tensor_slice import ManagedTensorSlice
 from tensor.io_spec import Input, _FusedComputeOutput
 from compiler_internal import StaticTensorSpec
@@ -352,7 +352,7 @@ fn batch_matmul_shape_dispatcher(
     var b_dims = _get_shape(rhs_shape, rank)
 
     # Dispatch on rank to call batched_matmul_shape with compile-time rank
-    from python import Python
+    from std.python import Python
 
     var out_shape = Python.evaluate("[]")
     if rank == 3:

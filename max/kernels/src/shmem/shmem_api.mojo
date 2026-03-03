@@ -19,9 +19,9 @@ http://openshmem.org/site/sites/default/site_files/OpenSHMEM-1.6.pdf
 The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
-from collections.optional import OptionalReg
-from os import getenv, setenv
-from sys import (
+from std.collections.optional import OptionalReg
+from std.os import getenv, setenv
+from std.sys import (
     CompilationTarget,
     argv,
     has_nvidia_gpu_accelerator,
@@ -30,9 +30,9 @@ from sys import (
     is_nvidia_gpu,
     size_of,
 )
-from ffi import c_int, c_size_t, external_call
+from std.ffi import c_int, c_size_t, external_call
 
-from gpu.host import (
+from std.gpu.host import (
     ConstantMemoryMapping,
     DeviceAttribute,
     DeviceContext,
@@ -42,15 +42,18 @@ from gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
-from gpu.host._amdgpu_hip import HIP, HIP_MODULE
-from gpu.host.device_context import (
+from std.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
+from std.gpu.host._amdgpu_hip import HIP, HIP_MODULE
+from std.gpu.host.device_context import (
     _ConstCharPtr,
     _checked,
     _DeviceContextPtr,
     _DumpPath,
 )
-from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+from std.gpu.host.launch_attribute import (
+    LaunchAttributeID,
+    LaunchAttributeValue,
+)
 
 from ._mpi import (
     MPI_Comm_rank,
@@ -266,8 +269,7 @@ fn shmem_create_uniqueid(
         A `SHMEMUniqueID` to be passed to `shmem_init_thread_tcp`.
     """
 
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         return rocshmem_create_uniqueid(server_ip, server_port)
     else:
         return CompilationTarget.unsupported_target_error[

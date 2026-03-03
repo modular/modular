@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import assert_true
+from std.testing import assert_true
 
 
-def main():
+def main() raises:
     # start-basic-example
     comptime addOne[x: Int]: Int = x + 1
     comptime nine = addOne[8]

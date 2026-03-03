@@ -12,20 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from sys import has_nvidia_gpu_accelerator, simd_width_of
+from std.sys import has_nvidia_gpu_accelerator, simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from algorithm.functional import elementwise
+from std.algorithm.functional import elementwise
 from buffer import NDBuffer
-from gpu.host import DeviceContext, get_gpu_target
-from layout._coord import Coord, Idx
+from std.gpu.host import DeviceContext, get_gpu_target
+from layout import Coord, Idx, TileTensor
 from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
 from linalg.bmm import _batched_matmul_gpu
 
-from random import rand
-from testing import assert_almost_equal
-from utils import IndexList
+from std.random import rand
+from std.testing import assert_almost_equal
+from std.utils import IndexList
 
 comptime epilogue_func_type = fn[
     dtype: DType, width: Int, *, alignment: Int = 1
@@ -359,7 +358,7 @@ fn test_non_row_major_layout[
     c_host_ref_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Test zero-dimension edge cases
         test_dynamic_shapes[

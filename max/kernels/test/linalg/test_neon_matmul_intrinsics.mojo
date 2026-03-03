@@ -17,7 +17,7 @@
 # REQUIRES: neon_matmul
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 
 from linalg.arch.cpu.neon_intrinsics import _neon_matmul
 

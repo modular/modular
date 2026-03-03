@@ -15,7 +15,7 @@
 
 import math
 
-from utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type
 
 # ===----------------------------------------------------------------------=== #
 # sign

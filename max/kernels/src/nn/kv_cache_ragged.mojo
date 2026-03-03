@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _current_target, simd_width_of
-from sys.intrinsics import _type_is_eq
+from std.sys.info import _current_target, simd_width_of
+from std.sys.intrinsics import _type_is_eq
 
-from algorithm.functional import elementwise, unswitch
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu, is_gpu
-from collections import OptionalReg
+from std.algorithm.functional import elementwise, unswitch
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu, is_gpu
+from std.collections import OptionalReg
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
@@ -26,10 +26,19 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
-from layout import LayoutTensor, Layout, RuntimeLayout, IntTuple, UNKNOWN_VALUE
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from layout import (
+    Coord,
+    CoordLike,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+)
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
@@ -41,10 +50,12 @@ from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import fused_qk_rope_ragged
-from nn.mha import flash_attention as gpu_flash_attention
+from nn.mha import (
+    MHADecodeDispatchMetadata,
+    flash_attention as gpu_flash_attention,
+)
 from nn.mha_mask import MHAMask
-from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
-from nn.mha_utils import dispatch_mask_and_score_mod
+from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
 from nn.mla import (
     _k_cache_to_buffer,
     flare_mla_decoding,
@@ -54,10 +65,10 @@ from nn.mla import (
 from quantization.qmatmul import matmul_qint4
 from quantization.qmatmul_gpu import matmul_gpu_qint4_impl
 from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (ragged)
@@ -2672,7 +2683,6 @@ fn generic_flash_attention_kv_cache_ragged[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
@@ -2686,6 +2696,7 @@ fn generic_flash_attention_kv_cache_ragged[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
     @always_inline
     @parameter
@@ -2704,7 +2715,7 @@ fn generic_flash_attention_kv_cache_ragged[
         desc_parts.append("sink=False")
         return String(";").join(desc_parts)
 
-    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
+    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + ".nhead_" + String(
         collection_t.kv_params.num_heads
     ) + ".hdim_" + String(
         collection_t.kv_params.head_size
@@ -2718,7 +2729,6 @@ fn generic_flash_attention_kv_cache_ragged[
         return _flash_attention_dispatch[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -2728,6 +2738,7 @@ fn generic_flash_attention_kv_cache_ragged[
             scale,
             output,
             context,
+            decode_dispatch_metadata,
         )
 
 
@@ -2738,7 +2749,6 @@ fn _flash_attention_dispatch[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[
@@ -2754,6 +2764,7 @@ fn _flash_attention_dispatch[
         mut=True, dtype, address_space = AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
+    decode_dispatch_metadata: MHADecodeDispatchMetadata,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
@@ -2768,9 +2779,7 @@ fn _flash_attention_dispatch[
 
     @parameter
     @__copy_capture(k, v)
-    fn _dispatch_flash_attention[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         @parameter
         fn call_flash_attention[sink: Bool]() raises:
             comptime if is_cpu[target]():
@@ -2786,32 +2795,27 @@ fn _flash_attention_dispatch[
                     sink_weights,
                 )
             else:
-                comptime use_score_mod = not _type_is_eq[
-                    score_mod_t, IdentityScoreMod
-                ]()
-                gpu_flash_attention[
-                    use_score_mod=use_score_mod, ragged=True, sink=sink
-                ](
+                gpu_flash_attention[ragged=True, sink=sink](
                     output,
                     q,
                     k,
                     v,
                     mask,
-                    score_mod,
                     input_row_offsets,
                     scale,
                     context.get_device_context(),
                     sink_weights=sink_weights,
+                    decode_dispatch_metadata=OptionalReg[
+                        MHADecodeDispatchMetadata
+                    ](decode_dispatch_metadata),
                 )
 
         unswitch[call_flash_attention](Bool(sink_weights))
 
-    return dispatch_mask_and_score_mod[
+    return dispatch_mask[
         mask_str,
-        score_mod_str,
         _dispatch_flash_attention,
         local_window_size,
-        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -2823,7 +2827,6 @@ fn generic_flash_attention_kv_cache_ragged_sink[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
@@ -2840,6 +2843,7 @@ fn generic_flash_attention_kv_cache_ragged_sink[
     sink_weights: LayoutTensor[
         mut=False, dtype, address_space = AddressSpace.GENERIC, ...
     ],
+    decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
     @always_inline
     @parameter
@@ -2858,7 +2862,7 @@ fn generic_flash_attention_kv_cache_ragged_sink[
         desc_parts.append("sink=True")
         return String(";").join(desc_parts)
 
-    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + "." + score_mod_str + ".nhead_" + String(
+    comptime name = "mo.mha.ragged." + collection_t.name_str + "." + mask_str + ".nhead_" + String(
         collection_t.kv_params.num_heads
     ) + ".hdim_" + String(
         collection_t.kv_params.head_size
@@ -2872,7 +2876,6 @@ fn generic_flash_attention_kv_cache_ragged_sink[
         return _flash_attention_dispatch[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -2882,14 +2885,8 @@ fn generic_flash_attention_kv_cache_ragged_sink[
             scale,
             output,
             context,
-            LayoutTensor[
-                dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                sink_weights.ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    sink_weights.runtime_layout.shape.value.canonicalize(),
-                ),
-            ),
+            decode_dispatch_metadata,
+            as_dynamic_row_major_1d(sink_weights),
         )
 
 
@@ -2901,23 +2898,20 @@ fn generic_flash_attention_kv_cache_ragged_sink[
 @always_inline
 fn generic_flare_mla_decode_kv_cache_ragged[
     collection_t: KVCollectionT,
-    dtype: DType,
+    q_dtype: DType,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[q_dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -2940,8 +2934,6 @@ fn generic_flare_mla_decode_kv_cache_ragged[
         + collection_t.name_str
         + "."
         + mask_str
-        + "."
-        + score_mod_str
         + ".nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
@@ -2952,7 +2944,6 @@ fn generic_flare_mla_decode_kv_cache_ragged[
         return _flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,
@@ -2967,24 +2958,21 @@ fn generic_flare_mla_decode_kv_cache_ragged[
 
 @always_inline
 fn _flare_mla_decode_kv_cache_ragged[
-    dtype: DType,
+    q_dtype: DType,
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
-    q: LayoutTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    q: LayoutTensor[q_dtype, address_space = AddressSpace.GENERIC, ...],
     input_row_offsets: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
-    ],
+    output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
     context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
@@ -3007,26 +2995,21 @@ fn _flare_mla_decode_kv_cache_ragged[
     @parameter
     @always_inline
     @__copy_capture(k)
-    fn _dispatch_mla[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[rank = q.rank, ragged=True](
             output,
             q,
             k,
             mask,
-            score_mod,
             input_row_offsets,
             scale,
             context.get_device_context(),
         )
 
-    dispatch_mask_and_score_mod[
+    dispatch_mask[
         mask_str,
-        score_mod_str,
         _dispatch_mla,
         local_window_size,
-        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -3036,7 +3019,6 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
     dtype: DType,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
@@ -3100,8 +3082,6 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
         + collection_t.name_str
         + "."
         + mask_str
-        + "."
-        + score_mod_str
         + ".nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
@@ -3111,7 +3091,6 @@ fn generic_flare_mla_prefill_kv_cache_ragged[
     ):
         return _flare_mla_prefill_kv_cache_ragged[
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             target=target,
             local_window_size=local_window_size,
         ](
@@ -3135,7 +3114,6 @@ fn _flare_mla_prefill_kv_cache_ragged[
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString,
     local_window_size: Int = -1,
 ](
@@ -3188,9 +3166,7 @@ fn _flare_mla_prefill_kv_cache_ragged[
 
     @parameter
     @__copy_capture(k_rope)
-    fn _mla_dispatch[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _mla_dispatch[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_prefill[rank=3,](
             output,
             q,
@@ -3198,7 +3174,6 @@ fn _flare_mla_prefill_kv_cache_ragged[
             v,
             k_rope,
             mask,
-            score_mod,
             input_row_offsets,
             buffer_row_offsets,
             scale,
@@ -3215,12 +3190,10 @@ fn _flare_mla_prefill_kv_cache_ragged[
             ),
         )
 
-    dispatch_mask_and_score_mod[
+    dispatch_mask[
         mask_str,
-        score_mod_str,
         _mla_dispatch,
         local_window_size,
-        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -3345,7 +3318,6 @@ fn _cross_attention_dispatch[
     *,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[
@@ -3378,9 +3350,7 @@ fn _cross_attention_dispatch[
     @__copy_capture(
         q, k, v, output, context, q_input_row_offsets, kv_input_row_offsets
     )
-    fn _dispatch_flash_attention[
-        mask_t: MHAMask, score_mod_t: ScoreModTrait
-    ](mask: mask_t, score_mod: score_mod_t) raises:
+    fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
         comptime if is_cpu[target]():
             return flash_attention_kv_cache_cpu(
                 q,
@@ -3395,18 +3365,12 @@ fn _cross_attention_dispatch[
                 sink_weights,
             )
         else:
-            comptime use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-            gpu_flash_attention[
-                use_score_mod=use_score_mod, ragged=True, sink=False
-            ](
+            gpu_flash_attention[ragged=True, sink=False](
                 output,
                 q,
                 k,
                 v,
                 mask,
-                IdentityScoreMod(),
                 q_input_row_offsets,
                 scale,
                 context.get_device_context(),
@@ -3424,12 +3388,10 @@ fn _cross_attention_dispatch[
                 None,
             )
 
-    return dispatch_mask_and_score_mod[
+    return dispatch_mask[
         mask_str,
-        score_mod_str,
         _dispatch_flash_attention,
         local_window_size,
-        Int(collection_t.kv_params.num_heads),
     ]()
 
 
@@ -3440,7 +3402,6 @@ fn generic_cross_attention_kv_cache[
     //,
     target: StaticString,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     local_window_size: Int = -1,
 ](
     q: LayoutTensor[mut=True, dtype, address_space = AddressSpace.GENERIC, ...],
@@ -3492,8 +3453,6 @@ fn generic_cross_attention_kv_cache[
         + collection_t.name_str
         + "."
         + mask_str
-        + "."
-        + score_mod_str
         + ".nhead_"
         + String(collection_t.kv_params.num_heads)
         + ".hdim_"
@@ -3504,7 +3463,6 @@ fn generic_cross_attention_kv_cache[
         return _cross_attention_dispatch[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q,

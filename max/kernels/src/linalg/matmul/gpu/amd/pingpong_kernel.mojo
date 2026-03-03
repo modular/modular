@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from bit import log2_floor
-from sys import simd_width_of, size_of
+from std.math import ceildiv
+from std.bit import log2_floor
+from std.sys import simd_width_of, size_of
 
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -22,28 +22,28 @@ from gpu import (
     thread_idx,
     grid_dim,
 )
-from gpu import warp_id
-from gpu.host import DeviceContext
-from gpu.intrinsics import AMDBufferResource
-from gpu.memory import AddressSpace
-from gpu.compute.mma import mma
-from sys import llvm_intrinsic
-from gpu.sync import barrier, schedule_barrier, s_waitcnt
-from memory import LegacyUnsafePointer
+from std.gpu import warp_id
+from std.gpu.host import DeviceContext
+from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.memory import AddressSpace
+from std.gpu.compute.mma import mma
+from std.sys import llvm_intrinsic
+from std.gpu.sync import barrier, schedule_barrier, s_waitcnt
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 
-from utils import Index, IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.utils import Index, IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
-from sys.intrinsics import readfirstlane, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from os.atomic import Atomic
+from std.sys.intrinsics import readfirstlane, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.os.atomic import Atomic
 
-from gpu._utils import to_i64
+from std.gpu._utils import to_i64
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
 from ....structuring import SMemTile, RegTile, eval
 from ....utils import elementwise_epilogue_type
@@ -111,7 +111,9 @@ fn make_mma_swizzle[dtype: DType, MMA_M: Int, MMA_K: Int]() -> Swizzle:
     # Compute lds_frag_width (elements loaded per LDS read)
     comptime mma_frag_width = (MMA_M * MMA_K) // WARP_SIZE
     # FP8 16×16×128 uses split-K with 16-element fragments
-    comptime use_split_k = (dtype.is_float8() and MMA_M == 16 and MMA_K == 128)
+    comptime use_split_k = (
+        dtype == DType.float8_e4m3fn and MMA_M == 16 and MMA_K == 128
+    )
     comptime lds_frag_width = 16 if use_split_k else mma_frag_width
 
     # Compute swizzle parameters
@@ -338,7 +340,7 @@ fn _load_from_lds[
                 _type = SIMD[DType.bfloat16, 8]._mlir_type
             ](llvm_res)
         )
-    elif dtype.is_float8() and width == 8:
+    elif dtype == DType.float8_e4m3fn and width == 8:
         # FP8 x8 = 64 bits = ds_read_b64
         # Load as i8 vector, then bitcast to fp8 (same bit pattern)
         var llvm_res = __mlir_op.`llvm.load`[
@@ -354,7 +356,7 @@ fn _load_from_lds[
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype.is_float8() and width == 16:
+    elif dtype == DType.float8_e4m3fn and width == 16:
         # FP8 x16 = 128 bits = ds_read_b128
         # Used for 16×16×128 MMA (HipKittens-style FP8 schedule)
         var llvm_res = __mlir_op.`llvm.load`[
@@ -370,7 +372,7 @@ fn _load_from_lds[
         return bitcast[dtype, width](
             rebind[SIMD[DType.uint8, width]](uint8_vec)
         )
-    elif dtype.is_float8() and width == 32:
+    elif dtype == DType.float8_e4m3fn and width == 32:
         # FP8 x32 = 256 bits = 2 x ds_read_b128
         # Used for 32×32×64 MMA (mfma_scale_f32_32x32x64)
         # Load as two 128-bit chunks using pointer arithmetic
@@ -1238,8 +1240,6 @@ struct AMDPingPongMatmul[
     /,
     # Enable 16×32 swizzle pattern for bank conflict avoidance
     enable_swizzle: Bool,
-    # Optional elementwise epilogue function (e.g., for FP8 per-tensor scaling)
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ]:
     """8-warp ping-pong matmul for AMD MI355X.
 
@@ -1364,13 +1364,13 @@ struct AMDPingPongMatmul[
         a: LayoutTensor[
             Self.a_type,
             Self.a_layout,
-            ImmutAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ],
         b: LayoutTensor[
             Self.b_type,
             Self.b_layout,
-            ImmutAnyOrigin,
+            MutAnyOrigin,
             address_space = AddressSpace.GENERIC,
         ],
         c: LayoutTensor[
@@ -2109,7 +2109,6 @@ struct AMDPingPongMatmul[
             MMA_M,
             MMA_N,
             output_thread_layout,
-            Self.elementwise_lambda_fn,
         ](
             c_reg_fragment,
             c_gmem_fragment,

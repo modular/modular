@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Provides device query utilities for communication primitives. """
 
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 from internal_utils import TuningConfig, Table
-from gpu.host.info import GPUInfo
+from std.gpu.host.info import GPUInfo
 
 
 @fieldwise_init
@@ -99,6 +99,22 @@ fn _dispatch_max_num_blocks[
     If no matching config is found then falls back to default configs
     (encoded with ngpus=-1 and num_bytes=-1)
     """
+
+    # Validate that every entry has num_blocks <= 512 (MAX_NUM_BLOCKS_UPPER_BOUND
+    # from sync.mojo). _multi_gpu_barrier indexes Signal.self_counter and
+    # Signal.peer_counter with block_idx.x; those arrays are statically sized
+    # to MAX_NUM_BLOCKS_UPPER_BOUND, so an entry exceeding 512 would silently
+    # corrupt barrier state.
+    @parameter
+    fn _entry_exceeds_block_bound(x: TuningConfigAllreduce) -> Bool:
+        return x.num_blocks > 512
+
+    comptime _over_limit = allreduce_table.query_index[
+        _entry_exceeds_block_bound
+    ]()
+    comptime assert (
+        len(_over_limit) == 0
+    ), "allreduce_table entry has num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND (512)"
 
     # get default entry
     # TODO(KERN-2503): first search for default for that sm

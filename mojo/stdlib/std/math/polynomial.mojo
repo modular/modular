@@ -15,7 +15,7 @@
 You can import these APIs from the `math` package. For example:
 
 ```mojo
-from math.polynomial import polynomial_evaluate
+from std.math.polynomial import polynomial_evaluate
 ```
 """
 

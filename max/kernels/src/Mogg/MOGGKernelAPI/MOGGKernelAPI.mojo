@@ -15,8 +15,8 @@
 # General imports
 # ===-----------------------------------------------------------------------===#
 
-from collections import OptionalReg
-from math import (
+from std.collections import OptionalReg
+from std.math import (
     acos,
     atanh,
     ceil,
@@ -35,41 +35,41 @@ from math import (
     sqrt,
     tanh,
 )
-from random import randn, seed
-from ffi import external_call
-from sys import align_of, llvm_intrinsic
-from sys.info import simd_width_of, size_of, _current_target
-from sys.intrinsics import _type_is_eq
+from std.random import randn, seed
+from std.ffi import external_call
+from std.sys import align_of, llvm_intrinsic
+from std.sys.info import simd_width_of, size_of, _current_target
+from std.sys.intrinsics import _type_is_eq
 
 import compiler_internal as compiler
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
 # ===-----------------------------------------------------------------------===#
-from algorithm import max as reduce_max
-from algorithm import mean
-from algorithm import min as reduce_min
-from algorithm import elementwise, product, sum
-from algorithm.reduction import _reduce_generator
+from std.algorithm import max as reduce_max
+from std.algorithm import mean
+from std.algorithm import min as reduce_min
+from std.algorithm import elementwise, product, sum
+from std.algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from builtin.simd import _pow
+from std.builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 from comm.reducescatter import reducescatter
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 from compiler_internal import StaticTensorSpec
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu, is_gpu, is_valid_target
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import UNKNOWN_VALUE, IntTuple
+from layout import IntTuple, TileTensor, UNKNOWN_VALUE
 from layout.layout_tensor import Layout, LayoutTensor, RuntimeLayout
-from layout._coord import (
+from layout.coord import (
     DynamicCoord,
     RuntimeInt,
     Coord,
@@ -78,7 +78,6 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import Layout as TileLayout, row_major
-from layout._tile_tensor import TileTensor
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
@@ -205,10 +204,13 @@ from nn.kv_cache_ragged import (
     kv_matmul_ragged_paged,
     unfused_qkv_matmul_ragged_paged_gguf_quantized,
 )
-from nn.mha import flash_attention, flash_attention_ragged
+from nn.mha import (
+    MHADecodeDispatchMetadata,
+    flash_attention,
+    flash_attention_ragged,
+)
 from nn.mha_mask import MHAMask
-from nn.mha_score_mod import IdentityScoreMod, ScoreModTrait
-from nn.mha_utils import dispatch_mask_and_score_mod
+from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
 from nn.mla_graph import (
     mla_prefill_branch_fp8,
     mla_prefill_branch_bf16,
@@ -279,8 +281,8 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor import (
     DynamicTensor,
     ElementwiseBinaryComparisonOp,
@@ -326,12 +328,16 @@ from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
 from tensor.transitional import managed_tensor_slice_to_ndbuffer
-from time import sleep
+from std.time import sleep
 
-from utils import IndexList, StaticTuple
-from utils.index import Index
-from utils.numerics import isinf, isnan
+from std.utils import IndexList, StaticTuple
+from std.utils.index import Index
+from std.utils.numerics import isinf, isnan
+from nn.learnable_2d_interp_pos_emb import learnable_2d_interp_pos_emb
 from nn.spatial_merge import spatial_merge
+from nn.tpool_patch_merger import (
+    tpool_patch_merger as nn_tpool_patch_merger,
+)
 
 # ===-----------------------------------------------------------------------===#
 # Helpers
@@ -1770,19 +1776,15 @@ struct BroadcastShape:
 
 fn tuple_to_dimlist[size: Int](tuple: StaticTuple[Dim, size]) -> DimList:
     comptime if size == 1:
-        return DimList(VariadicList[Dim](tuple[0]))
+        return DimList(tuple[0])
     elif size == 2:
-        return DimList(VariadicList[Dim](tuple[0], tuple[1]))
+        return DimList(tuple[0], tuple[1])
     elif size == 3:
-        return DimList(VariadicList[Dim](tuple[0], tuple[1], tuple[2]))
+        return DimList(tuple[0], tuple[1], tuple[2])
     elif size == 4:
-        return DimList(
-            VariadicList[Dim](tuple[0], tuple[1], tuple[2], tuple[3])
-        )
+        return DimList(tuple[0], tuple[1], tuple[2], tuple[3])
     elif size == 5:
-        return DimList(
-            VariadicList[Dim](tuple[0], tuple[1], tuple[2], tuple[3], tuple[4])
-        )
+        return DimList(tuple[0], tuple[1], tuple[2], tuple[3], tuple[4])
 
     return DimList.create_unknown[size]()
 
@@ -5385,7 +5387,6 @@ struct FlashAttentionGPU:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
@@ -5442,36 +5443,23 @@ struct FlashAttentionGPU:
         var k_buffer = k.to_layout_tensor()
         var v_buffer = v.to_layout_tensor()
 
-        comptime num_kv_heads = Int(
-            k_buffer.layout.shape[2]
-        ) if k_buffer.layout.shape != UNKNOWN_VALUE else -1
-
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
-        fn _dispatch_flash_attention[
-            mask_t: MHAMask, score_mod_t: ScoreModTrait
-        ](mask: mask_t, score_mod: score_mod_t) raises:
-            comptime use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-
-            flash_attention[use_score_mod=use_score_mod](
+        fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+            flash_attention[](
                 output_buffer,
                 q_buffer,
                 k_buffer,
                 v_buffer,
                 mask,
-                score_mod,
                 scale,
                 ctx[],
             )
 
-        dispatch_mask_and_score_mod[
+        dispatch_mask[
             mask_str,
-            score_mod_str,
             _dispatch_flash_attention,
             local_window_size,
-            num_kv_heads,
         ]()
 
 
@@ -5483,7 +5471,6 @@ struct PaddedFlashAttentionGPU:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
@@ -5506,21 +5493,10 @@ struct PaddedFlashAttentionGPU:
         ]
         _valid_length = rebind[valid_length_t](valid_length.to_layout_tensor())
 
-        comptime num_kv_heads = Int(
-            k_buffer.layout.shape[2]
-        ) if k_buffer.layout.shape[2] != UNKNOWN_VALUE else -1
-
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
-        fn _dispatch_flash_attention[
-            mask_t: MHAMask, score_mod_t: ScoreModTrait
-        ](mask: mask_t, score_mod: score_mod_t) raises:
-            comptime use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-
+        fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
             flash_attention[
-                use_score_mod=use_score_mod,
                 _use_valid_length=True,
                 _padded_ndbuffer=True,
             ](
@@ -5529,18 +5505,15 @@ struct PaddedFlashAttentionGPU:
                 k_buffer,
                 v_buffer,
                 mask,
-                score_mod,
                 scale,
                 ctx[],
                 valid_length=OptionalReg[valid_length_t](_valid_length),
             )
 
-        dispatch_mask_and_score_mod[
+        dispatch_mask[
             mask_str,
-            score_mod_str,
             _dispatch_flash_attention,
             local_window_size,
-            num_kv_heads,
         ]()
 
 
@@ -5552,7 +5525,6 @@ struct RaggedFlashAttentionGPU:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[rank=rank],
@@ -5583,20 +5555,10 @@ struct RaggedFlashAttentionGPU:
             input_row_offsets.to_layout_tensor()
         )
 
-        comptime num_kv_heads = Int(
-            k_buffer.layout.shape[1]
-        ) if k_buffer.layout.shape[1] != UNKNOWN_VALUE else -1
-
         @parameter
         @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
-        fn _dispatch_flash_attention[
-            mask_t: MHAMask, score_mod_t: ScoreModTrait
-        ](mask: mask_t, score_mod: score_mod_t) raises:
-            comptime use_score_mod = not _type_is_eq[
-                score_mod_t, IdentityScoreMod
-            ]()
-
-            flash_attention_ragged[use_score_mod=use_score_mod](
+        fn _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+            flash_attention_ragged[](
                 output_buffer,
                 q_buffer,
                 k_buffer,
@@ -5604,17 +5566,14 @@ struct RaggedFlashAttentionGPU:
                 _input_row_offsets,
                 q_max_seq_len.to_layout_tensor(),
                 mask,
-                score_mod,
                 scale,
                 ctx[],
             )
 
-        dispatch_mask_and_score_mod[
+        dispatch_mask[
             mask_str,
-            score_mod_str,
             _dispatch_flash_attention,
             local_window_size,
-            num_kv_heads,
         ]()
 
 
@@ -7032,7 +6991,6 @@ struct Struct_mha_padded_paged:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[dtype=dtype, rank=4],
@@ -7057,7 +7015,6 @@ struct Struct_mha_padded_paged:
         generic_flash_attention_kv_cache_padded[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
         ](
             q.to_layout_tensor(),
@@ -7077,8 +7034,90 @@ struct Struct_mha_padded_paged:
         )
 
 
+@always_inline
+fn _unmarshal_mha_decode_dispatch_metadata(
+    mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1],
+) -> MHADecodeDispatchMetadata:
+    return MHADecodeDispatchMetadata(
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[0]),
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[1]),
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[2]),
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[3]),
+    )
+
+
+@always_inline
+fn _execute_mha_ragged_paged_scalar_args[
+    dtype: DType,
+    //,
+    target: StaticString,
+    mask_str: StaticString,
+    sink: Bool = False,
+    local_window_size: Int = -1,
+](
+    output: OutputTensor[dtype=dtype, rank=3],
+    q: InputTensor[dtype=dtype, rank=3],
+    input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
+    kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+    cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
+    kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
+    max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+    layer_idx: UInt32,
+    scale: Float32,
+    mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1],
+    context: DeviceContextPtr,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+) raises:
+    var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
+        mha_decode_dispatch_metadata
+    )
+    var kv_collection = generic_get_paged_cache(
+        kv_blocks,
+        cache_lengths,
+        kv_lookup_table,
+        max_lengths,
+    )
+    var input_row_offsets_lt = as_dynamic_row_major_1d(
+        input_row_offsets.to_layout_tensor().get_immutable()
+    )
+
+    comptime if sink:
+        generic_flash_attention_kv_cache_ragged_sink[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets_lt,
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            context,
+            sink_weights.value(),
+            decode_dispatch_metadata,
+        )
+    else:
+        generic_flash_attention_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets_lt,
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            context,
+            decode_dispatch_metadata,
+        )
+
+
 @compiler.register("mo.mha.ragged.paged")
-struct Struct_mha_ragged_paged:
+struct Struct_mha_ragged_paged_scalar_args:
     @always_inline
     @staticmethod
     fn execute[
@@ -7086,7 +7125,6 @@ struct Struct_mha_ragged_paged:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7098,38 +7136,30 @@ struct Struct_mha_ragged_paged:
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
         layer_idx: UInt32,
         scale: Float32,
+        mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        var kv_collection = generic_get_paged_cache(
+        _execute_mha_ragged_paged_scalar_args[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            output,
+            q,
+            input_row_offsets,
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
             max_lengths,
-        )
-        generic_flash_attention_kv_cache_ragged[
-            target=target,
-            mask_str=mask_str,
-            score_mod_str=score_mod_str,
-            local_window_size=local_window_size,
-        ](
-            q.to_layout_tensor(),
-            rebind[
-                LayoutTensor[
-                    DType.uint32,
-                    Layout.row_major(UNKNOWN_VALUE),
-                    ImmutAnyOrigin,
-                ]
-            ](input_row_offsets.to_layout_tensor()),
-            kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            mha_decode_dispatch_metadata,
             context,
         )
 
 
 @compiler.register("mo.mha.ragged.paged.sink_weights")
-struct Struct_mha_ragged_paged_sink_weights:
+struct Struct_mha_ragged_paged_sink_weights_scalar_args:
     @always_inline
     @staticmethod
     fn execute[
@@ -7137,7 +7167,6 @@ struct Struct_mha_ragged_paged_sink_weights:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         local_window_size: Int = -1,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7150,35 +7179,33 @@ struct Struct_mha_ragged_paged_sink_weights:
         layer_idx: UInt32,
         scale: Float32,
         sink_weights: InputTensor[dtype=dtype, rank=1],
+        mha_decode_dispatch_metadata: InputTensor[dtype = DType.int64, rank=1],
         context: DeviceContextPtr,
     ) raises:
-        var sink_buf = sink_weights.to_layout_tensor()
-        var kv_collection = generic_get_paged_cache(
+        var sink_weights_lt = sink_weights.to_layout_tensor()
+        var sink_weights_rebound = as_dynamic_row_major_1d(sink_weights_lt)
+        _execute_mha_ragged_paged_scalar_args[
+            target=target,
+            mask_str=mask_str,
+            sink=True,
+            local_window_size=local_window_size,
+        ](
+            output,
+            q,
+            input_row_offsets,
             kv_blocks,
             cache_lengths,
             kv_lookup_table,
             max_lengths,
-        )
-        generic_flash_attention_kv_cache_ragged_sink[
-            target=target,
-            mask_str=mask_str,
-            score_mod_str=score_mod_str,
-            local_window_size=local_window_size,
-        ](
-            q.to_layout_tensor(),
-            rebind[
-                LayoutTensor[
-                    DType.uint32,
-                    Layout.row_major(UNKNOWN_VALUE),
-                    ImmutAnyOrigin,
-                ]
-            ](input_row_offsets.to_layout_tensor()),
-            kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            mha_decode_dispatch_metadata,
             context,
-            sink_buf,
+            OptionalReg[
+                LayoutTensor[
+                    dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+                ]
+            ](sink_weights_rebound),
         )
 
 
@@ -7196,15 +7223,16 @@ struct Struct_mla_decode_ragged_paged:
     @staticmethod
     fn execute[
         dtype: DType,
+        q_dtype: DType,
+        kv_dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
-        q: InputTensor[dtype=dtype, rank=3],
+        q: InputTensor[dtype=q_dtype, rank=3],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6],
         cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
         kv_lookup_table: InputTensor[dtype = DType.uint32, rank=2],
         max_lengths: InputTensor[dtype = DType.uint32, rank=2],
@@ -7224,7 +7252,6 @@ struct Struct_mla_decode_ragged_paged:
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
         ](
             q.to_layout_tensor(),
             input_row_offsets.to_layout_tensor(),
@@ -7245,7 +7272,6 @@ struct Struct_mla_prefill_ragged_paged:
         //,
         target: StaticString,
         mask_str: StaticString,
-        score_mod_str: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
         q: InputTensor[dtype=dtype, rank=3],
@@ -7271,7 +7297,6 @@ struct Struct_mla_prefill_ragged_paged:
         generic_flare_mla_prefill_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
         ](
             q.to_layout_tensor(),
             k.to_layout_tensor(),
@@ -7413,7 +7438,6 @@ struct Struct_mla_prefill_graph_paged:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7457,7 +7481,6 @@ struct Struct_mla_prefill_graph_paged:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7495,7 +7518,6 @@ struct Struct_mla_decode_graph_paged:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7536,7 +7558,6 @@ struct Struct_mla_decode_graph_paged:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7566,7 +7587,6 @@ struct Struct_mla_prefill_graph_bf16_paged:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
@@ -7605,7 +7625,6 @@ struct Struct_mla_prefill_graph_bf16_paged:
         ):
             mla_prefill_branch_bf16[
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7636,7 +7655,6 @@ struct Struct_mla_decode_graph_bf16_paged:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
@@ -7672,7 +7690,6 @@ struct Struct_mla_decode_graph_bf16_paged:
         ):
             mla_decode_branch_bf16[
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7706,7 +7723,6 @@ struct Struct_mla_prefill_graph_decode_paged:
         n_scale_granularity: Int,
         k_scale_granularity: Int,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=3],
@@ -7752,7 +7768,6 @@ struct Struct_mla_prefill_graph_decode_paged:
                 n_scale_granularity=n_scale_granularity,
                 k_scale_granularity=k_scale_granularity,
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7788,7 +7803,6 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         gamma_dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
@@ -7828,7 +7842,6 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
         ):
             mla_prefill_decode_graph_bf16[
                 mask_str=mask_str,
-                score_mod_str=score_mod_str,
                 target=target,
             ](
                 output.to_tile_tensor[DType.int64](),
@@ -7867,7 +7880,6 @@ struct Struct_cross_attention_ragged_paged:
         dtype: DType,
         //,
         mask_str: StaticString,
-        score_mod_str: StaticString,
         target: StaticString,
         local_window_size: Int = -1,
     ](
@@ -7892,7 +7904,6 @@ struct Struct_cross_attention_ragged_paged:
         )
         generic_cross_attention_kv_cache[
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             local_window_size=local_window_size,
             target=target,
         ](
@@ -8457,8 +8468,7 @@ struct Struct_kv_cache_store_k_scales_paged:
 
         var cuda_ctx: Optional[DeviceContext] = None
 
-        @parameter
-        if is_gpu[target]():
+        comptime if is_gpu[target]():
             cuda_ctx = context.get_device_context()
 
         var input_row_offsets_lt = input_row_offsets.to_layout_tensor()
@@ -8493,8 +8503,7 @@ struct Struct_kv_cache_store_k_scales_paged:
                 loaded_val,
             )
 
-        @parameter
-        if is_gpu[target]():
+        comptime if is_gpu[target]():
             if cuda_ctx is None:
                 raise Error("ctx is None")
             comptime compile_target = get_gpu_target()
@@ -9484,6 +9493,7 @@ struct DistributedReduceScatterSum:
         rank: Int,
         target: StaticString,
         _trace_name: StaticString,
+        axis: Int = -1,
     ](
         output: FusedOutputTensor[dtype=dtype, rank=rank],
         inputs: InputVariadicTensors[dtype, rank, ...],
@@ -9563,7 +9573,9 @@ struct DistributedReduceScatterSum:
             )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            reducescatter[ngpus=num_devices, output_lambda=output_lambda](
+            reducescatter[
+                ngpus=num_devices, output_lambda=output_lambda, axis=axis
+            ](
                 in_bufs,
                 out_buf.make_dynamic[DType.int64](),
                 rank_sigs,
@@ -10507,6 +10519,38 @@ struct Struct_kv_cache_ragged_paged_radd:
         )
 
 
+@compiler.register("learnable_2d_interp_pos_emb")
+struct Learnable2DInterpPosEmb:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2],
+        x: InputTensor[dtype=dtype, rank=2],
+        weight: InputTensor[dtype=dtype, rank=3],
+        grid_thws: InputTensor[dtype = DType.int64, rank=2],
+        time_weight: InputTensor[dtype = DType.float32, rank=2],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "learnable_2d_interp_pos_emb only supported on GPUs"
+
+        var cuda_ctx = ctx.get_device_context()
+
+        learnable_2d_interp_pos_emb[dtype](
+            output.to_tile_tensor[DType.int64](),
+            x.to_tile_tensor[DType.int64](),
+            weight.to_tile_tensor[DType.int64](),
+            grid_thws.to_tile_tensor[DType.int64](),
+            time_weight.to_tile_tensor[DType.int64](),
+            cuda_ctx,
+        )
+
+
 @compiler.register("mo.spatial_merge")
 struct SpatialMerge:
     @always_inline
@@ -10533,6 +10577,55 @@ struct SpatialMerge:
             grid_thw.to_tile_tensor[DType.int64](),
             Int(hidden_size),
             Int(merge_size),
+            cuda_ctx,
+        )
+
+
+@compiler.register("tpool_patch_merger")
+struct TPoolPatchMerger:
+    @always_inline
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2],
+        input: InputTensor[dtype=dtype, rank=2],
+        grid_thws: InputTensor[dtype = DType.int64, rank=2],
+        kH: Int32,
+        kW: Int32,
+        max_h: Int32,
+        max_w: Int32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "tpool_patch_merger only supported on GPUs"
+
+        var cuda_ctx = ctx.get_device_context()
+
+        var out_tt = output.to_tile_tensor[DType.int64]()
+        var in_tt = input.to_tile_tensor[DType.int64]()
+        var grid_tt = grid_thws.to_tile_tensor[DType.int64]()
+
+        nn_tpool_patch_merger[dtype](
+            TileTensor(
+                out_tt.ptr.unsafe_origin_cast[MutAnyOrigin](),
+                out_tt.layout,
+            ),
+            TileTensor(
+                in_tt.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+                in_tt.layout,
+            ),
+            TileTensor(
+                grid_tt.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+                grid_tt.layout,
+            ),
+            Int(kH),
+            Int(kW),
+            Int(max_h),
+            Int(max_w),
             cuda_ctx,
         )
 

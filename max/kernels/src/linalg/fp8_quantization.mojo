@@ -11,37 +11,41 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import get_static_string
-from math import ceildiv
-from sys import simd_width_of, has_nvidia_gpu_accelerator
-from sys import align_of, size_of
+from std.collections.string.string_slice import get_static_string
+from std.math import ceildiv
+from std.sys import simd_width_of, has_nvidia_gpu_accelerator
+from std.sys import align_of, size_of
 import gpu.primitives.block
-from algorithm.functional import _elementwise_impl_gpu
+from std.algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
     global_idx,
     thread_idx,
 )
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import B200, H100
-from layout import IntTuple, Layout, LayoutTensor
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import B200, H100
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    coord_to_index_list,
+)
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout._coord import coord_to_index_list
-from layout._tile_tensor import TileTensor
-from logger import Logger
-from memory import LegacyUnsafePointer, bitcast
+from std.logger import Logger
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.bit import log2_floor
-from algorithm import elementwise
-from utils.index import Index, IndexList, StaticTuple
-from utils.numerics import get_accum_type, max_finite, min_finite
+from std.algorithm import elementwise
+from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.numerics import get_accum_type, max_finite, min_finite
 
 from .matmul import matmul
 from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
@@ -1235,22 +1239,22 @@ fn naive_blockwise_scaled_fp8_grouped_matmul_kernel[
         var b_expert_ptr = b.ptr + expert * N * K
         for k in range(K):
             var a_val = rebind[Scalar[a_type]](a_row_ptr[k]).cast[accum_type]()
-            var a_scale = rebind[Scalar[accum_type]](
+            var a_scale = rebind[Scalar[a_scales_type]](
                 a_scales[
                     k // Int(MAT_A_ROWS_SCALE_SIZE),
                     m_global // Int(MAT_A_COLS_SCALE_SIZE),
                 ]
-            )
+            ).cast[accum_type]()
             var b_val = rebind[Scalar[b_type]](b_expert_ptr[n * K + k]).cast[
                 accum_type
             ]()
-            var b_scale = rebind[Scalar[accum_type]](
+            var b_scale = rebind[Scalar[b_scales_type]](
                 b_scales[
                     UInt(expert),
                     n // Int(MAT_B_ROWS_SCALE_SIZE),
                     k // Int(MAT_B_COLS_SCALE_SIZE),
                 ]
-            )
+            ).cast[accum_type]()
             accum += a_val * b_val * a_scale * b_scale
 
     comptime if elementwise_lambda_fn:

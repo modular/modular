@@ -10,38 +10,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from math import align_up, ceildiv, gcd
-from sys import align_of, size_of, simd_width_of
-from gpu.host.info import B200, H100
+from std.collections import Optional
+from std.math import align_up, ceildiv, gcd
+from std.sys import align_of, size_of, simd_width_of
+from std.gpu.host.info import B200, H100
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import (
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_id_in_cluster, block_idx, lane_id, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout, LayoutTensor
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.int_tuple import IntTuple
@@ -57,14 +57,14 @@ from layout.tma_async import (
     create_tensor_tile,
     create_tma_tile,
 )
-from logger import Logger
+from std.logger import Logger
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from .arch.sm100 import MmaOpSM100_SS
 from .matmul.gpu.sm100.config import MatmulConfig
@@ -234,7 +234,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         alignment=128,
     ]
     comptime a_scales_smem_tile_t = LayoutTensor[
-        accum_type,
+        a_scales_type,
         a_scales_smem_layout,
         MutAnyOrigin,
         address_space = AddressSpace.SHARED,
@@ -252,7 +252,7 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
         (b_size * size_of[b_type]()) % 128
     ) == 0, "preserve alignment"
     comptime assert (
-        (a_scales_size * size_of[accum_type]()) % 16
+        (a_scales_size * size_of[a_scales_type]()) % 16
     ) == 0, "preserve alignment"
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
@@ -376,18 +376,18 @@ fn matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
-                    b_scale = rebind[Scalar[accum_type]](
+                    b_scale = rebind[Scalar[b_scales_type]](
                         b_scales_2d[b_scale_m_offset + idx0, k_iter]
-                    )
+                    ).cast[accum_type]()
                 else:
-                    b_scale = rebind[Scalar[accum_type]](
+                    b_scale = rebind[Scalar[b_scales_type]](
                         b_scales_2d[b_scale_m_offset + idx0 + 1, k_iter]
-                    )
+                    ).cast[accum_type]()
 
             else:
-                b_scale = rebind[Scalar[accum_type]](
+                b_scale = rebind[Scalar[b_scales_type]](
                     b_scales_2d[b_scale_m_offset + block_idx.x, k_iter]
-                )
+                ).cast[accum_type]()
 
             var m_offset = (warp_id * 16) + (lane_id() // 4)
 
@@ -604,7 +604,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8[
 
     comptime smem_use = (
         BM * size_of[a_type]() + BN * size_of[b_type]()
-    ) * BK + 24 + size_of[accum_type]() * BM
+    ) * BK + 24 + size_of[a_scales_type]() * BM
 
     comptime block_dim = 128
 
@@ -778,8 +778,8 @@ fn load_AB[
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
 
-    var a_gmem_slice_coord = (
-        peer_cta_coord[2] * UInt(a_tma_rows) + work_tile_coord[0]
+    var a_gmem_slice_coord = Int(peer_cta_coord[2]) * a_tma_rows + Int(
+        work_tile_coord[0]
     )
     var expert_id = expert_ids[Int(scheduler.current_group_idx)]
     var b_gmem_slice_coord_vec = type_of(expert_id)(
@@ -788,7 +788,7 @@ fn load_AB[
         + work_tile_coord[1]
     ) + expert_id * type_of(expert_id)(scheduler.static_MN)
     comptime assert b_gmem_slice_coord_vec.size == 1
-    var b_gmem_slice_coord = b_gmem_slice_coord_vec[0]
+    var b_gmem_slice_coord = Int(b_gmem_slice_coord_vec[0])
 
     var a_smem_tile = a_smem.next(stage)[]
     var b_smem_tile = b_smem.next(stage)[]
@@ -809,14 +809,14 @@ fn load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), a_gmem_slice_coord),
+            (Int(iter_idx) * BK, a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (iter_idx * UInt(BK), UInt(b_gmem_slice_coord)),
+            (Int(iter_idx) * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -1033,8 +1033,8 @@ fn multi_stage_reg_epilogue[
                 c_tma_op.async_store(
                     c_smem_split,
                     (
-                        coord_n,
-                        coord_m,
+                        Int(coord_n),
+                        Int(coord_m),
                     ),
                 )
                 c_tma_op.commit_group()
@@ -1119,7 +1119,7 @@ fn promote_accumulators[
 
     comptime assert (
         a_scales_type == b_scales_type and accum_type == DType.float32
-    ), "Only support float32 for a_scales, b_scales, and accum_type"
+    ), "a_scales_type must equal b_scales_type, and accum_type must be float32"
     # Rows each warp is responsible for:
     # warp_id 0 -> 0-15 upper, 16-31 lower
     # warp_id 1 -> 32-47 upper, 48-63 lower
@@ -1430,7 +1430,7 @@ fn blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     comptime assert (
         b_scales_type == a_scales_type and accum_type == DType.float32
-    ), "Only support float32 for a_scales and b_scales"
+    ), "a_scales_type must equal b_scales_type, and accum_type must be float32"
     comptime assert transpose_b, "only support k-major B"
 
     comptime SCHEDULER_THREADS = WARP_SIZE
@@ -1994,7 +1994,7 @@ fn grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
 
     comptime assert (
         a_scales_type == b_scales_type
-    ), "Only support float32 for scales"
+    ), "a_scales_type must equal b_scales_type"
 
     if (a_scales.dim(1) * size_of[a_scales_type]()) % 16 != 0:
         raise Error(
@@ -2240,9 +2240,9 @@ fn grouped_matmul_dynamic_scaled_fp8[
     comptime assert (
         a_type == b_type == DType.float8_e4m3fn
     ), "input A and B dtype should be float8_e4m3fn"
-    comptime assert (
-        a_scales_type == b_scales_type == DType.float32
-    ), "input A and B scales dtype should be float32"
+    comptime assert a_scales_type == b_scales_type and (
+        a_scales_type == DType.float32 or a_scales_type == DType.bfloat16
+    ), "input A and B scales dtype should be float32 or bfloat16"
     comptime assert (
         input_scale_granularity == "block"
         and weight_scale_granularity == "block"

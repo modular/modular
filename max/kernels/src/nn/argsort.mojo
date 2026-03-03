@@ -12,21 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OptionalReg
-from math import ceildiv, iota
-from sys.info import simd_width_of
+from std.collections import OptionalReg
+from std.math import ceildiv, iota
+from std.sys.info import simd_width_of
 
-from algorithm import elementwise
-from bit import next_power_of_two
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
-from layout._coord import Coord, Idx
+from std.algorithm import elementwise
+from std.bit import next_power_of_two
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
+from layout import Coord, Idx, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
-from utils.index import IndexList, StaticTuple
+from std.utils.index import IndexList, StaticTuple
 
 
 fn _argsort_cpu[

@@ -20,21 +20,11 @@ from max.graph import DeviceRef
 from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     KVCacheQuantizationConfig,
-    KVCacheStrategy,
 )
 from pydantic import Field, PrivateAttr
 
 
 class KVCacheConfig(ConfigFileModel):
-    cache_strategy: KVCacheStrategy = Field(
-        default="model_default",
-        description=(
-            "The cache strategy to use. This defaults to model_default, which "
-            "selects the default strategy for the requested architecture. You "
-            "can also force a specific strategy: continuous or paged."
-        ),
-    )
-
     kv_cache_page_size: int = Field(
         default=128,
         description="The number of tokens in a single page in the paged KVCache.",
@@ -160,7 +150,6 @@ class KVCacheConfig(ConfigFileModel):
             head_dim=head_dim,
             num_layers=num_layers,
             page_size=self.kv_cache_page_size,
-            cache_strategy=self.cache_strategy,
             enable_prefix_caching=self.enable_prefix_caching,
             enable_kvcache_swapping_to_host=self.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,

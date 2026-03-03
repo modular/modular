@@ -10,15 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up
-from sys import align_of, simd_width_of
-from sys.info import CompilationTarget
-from sys.intrinsics import PrefetchOptions
+from std.math import align_down, align_up
+from std.sys import align_of, simd_width_of
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import PrefetchOptions
 
-from algorithm import unswitch
+from std.algorithm import unswitch
 from buffer.buffer import NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
-from memory import (
+from std.memory import (
     LegacyUnsafePointer,
     memcpy,
     stack_allocation,
@@ -27,7 +27,7 @@ from memory import (
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from register import register_internal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .matmul.cpu.apple_accelerate import use_apple_accelerate_lib
 from .transpose import transpose, transpose_inplace
@@ -686,7 +686,7 @@ fn pack_b[
             for idx_n in range(0, n_out, tile_n):
                 var packed_dst_view = NDBuffer[b_type, 3](
                     dst_flat.data + dst_offset,
-                    DimList(
+                    IndexList[3](
                         tile_n // inner_size2,
                         tile_k2 // factor,
                         inner_size2 * factor,
@@ -731,7 +731,7 @@ fn pack_b[
             for idx_n_t in range(0, n_out_t, tile_n):
                 var packed_dst_view_t = NDBuffer[b_type, 3](
                     dst_flat.data + dst_offset,
-                    DimList(tile_n // inner_size, tile_k, inner_size),
+                    IndexList[3](tile_n // inner_size, tile_k, inner_size),
                 )
                 var valid_k_t = min(tile_k, k_in_t - idx_k_t)
                 var valid_n_t = min(tile_n, n_in_t - idx_n_t)
@@ -980,7 +980,7 @@ struct BTileGenerator[
         comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
         var k = align_up(tile_dim_nk[1], factor)
-        var tile_shape_nopack = DimList(
+        var tile_shape_nopack = IndexList[3](
             tile_dim_nk[0] // inner_size2,
             k // factor,
             factor * inner_size2,
@@ -1043,7 +1043,7 @@ struct BTileGenerator[
                 min(self.tile_n_k[1], valid_data_dim_nk[1]), factor
             )
 
-            var tile_shape_pack = DimList(
+            var tile_shape_pack = IndexList[3](
                 self.tile_n_k[0] // inner_size2,
                 tile_k2 // factor,
                 inner_size2 * factor,

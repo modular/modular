@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides PyTorch integration utilities and custom operator support for MAX."""
+
 from __future__ import annotations
 
 import inspect

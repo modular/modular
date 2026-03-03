@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import randn
+from std.random import randn
 
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 
 
 fn random_normal[

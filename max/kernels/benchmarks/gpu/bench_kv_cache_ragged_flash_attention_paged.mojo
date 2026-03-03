@@ -11,33 +11,38 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv, rsqrt
-from random import random_ui64, seed
-from sys import env_get_dtype, env_get_int
+from std.collections import Set
+from std.math import ceildiv, rsqrt
+from std.random import random_ui64, seed
+from std.sys import env_get_dtype, env_get_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from layout._fillers import random
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def flops(
     batch: Int, nheads: Int, seqlen_q: Int, seqlen_k: Int, headdim: Int
-) -> Int:
+) raises -> Int:
     var avg_seqlen = Float64(max(seqlen_k - seqlen_q, 0) + seqlen_k) / 2
     return Int(
         Float64(batch * nheads * 2 * seqlen_q)
@@ -99,7 +104,7 @@ def execute_kv_cache_ragged_flash_attention[
     cache_len: Int,
     use_random_cache_lengths: Bool,
     run_benchmark: Bool,
-):
+) raises:
     comptime num_layers = 1
     comptime layer_idx = 0
     var num_pages = batch_size * ceildiv(seq_len + cache_len, page_size) * 2
@@ -187,7 +192,7 @@ def execute_kv_cache_ragged_flash_attention[
     var q_host_ptr = UnsafePointer[Scalar[dtype]].alloc(q_size)
     var q_host = NDBuffer[dtype, 3, _, static_q_shape](
         q_host_ptr,
-        DimList(Int(total_seq_len), num_q_heads, head_dim),
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
     )
     random(
         LayoutTensor[
@@ -205,7 +210,7 @@ def execute_kv_cache_ragged_flash_attention[
     ctx.enqueue_copy(q_dev_buffer, q_host_ptr)
     var q_device = NDBuffer[dtype, 3, _, static_q_shape](
         q_dev_buffer.unsafe_ptr(),
-        DimList(Int(total_seq_len), num_q_heads, head_dim),
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
     )
 
     # Output tensor allocation
@@ -214,7 +219,7 @@ def execute_kv_cache_ragged_flash_attention[
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
     var output_device = NDBuffer[dtype, 3, _, static_q_shape](
         output_dev_buffer.unsafe_ptr(),
-        DimList(Int(total_seq_len), num_q_heads, head_dim),
+        IndexList[3](Int(total_seq_len), num_q_heads, head_dim),
     )
     comptime output_layout = Layout.row_major(
         UNKNOWN_VALUE, num_q_heads, head_dim
@@ -381,7 +386,6 @@ def execute_kv_cache_ragged_flash_attention[
                     k_cache_device,
                     v_cache_device,
                     CausalMask(),
-                    IdentityScoreMod(),
                     input_row_offsets_layout_tensor,
                     rsqrt(Float32(head_dim)),
                     ctx,
@@ -419,7 +423,6 @@ def execute_kv_cache_ragged_flash_attention[
             k_cache_device,
             v_cache_device,
             CausalMask(),
-            IdentityScoreMod(),
             input_row_offsets_layout_tensor,
             rsqrt(Float32(head_dim)),
             ctx,
@@ -442,7 +445,7 @@ def execute_kv_cache_ragged_flash_attention[
     _ = kv_block_paged_dev_buffer^
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     comptime head_dim = env_get_int["head_dim", 128]()

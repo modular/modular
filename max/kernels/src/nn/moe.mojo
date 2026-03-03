@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from math import align_up, ceildiv
-from memory import stack_allocation
+from std.math import align_up, ceildiv
+from std.memory import stack_allocation
 
-from os.atomic import Atomic
-from sys.info import simd_width_of
+from std.os.atomic import Atomic
+from std.sys.info import simd_width_of
 
 import gpu.primitives.warp as warp
-from bit import pop_count, log2_floor
-from gpu import (
+from std.bit import pop_count, log2_floor
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -30,16 +30,16 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from gpu.host.info import is_gpu
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.host.info import is_gpu
+from layout import Coord, CoordLike, Idx, coord_to_index_list
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor, stack_allocation as tensor_alloc
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel
+from layout.tile_tensor import TileTensor, stack_allocation as tensor_alloc
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel
 
-from utils.index import IndexList, StaticTuple
-from builtin.dtype import _uint_type_of_width
+from std.utils.index import IndexList, StaticTuple
+from std.builtin.dtype import _uint_type_of_width
 
 from nn.topk import TopK_2
 

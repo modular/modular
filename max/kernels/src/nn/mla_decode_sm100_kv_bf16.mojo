@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import size_of
+from std.math import ceildiv
+from std.sys import size_of
 import gpu.primitives.warp as warp
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     block_idx,
     thread_idx,
     warp_id,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.primitives.grid_controls import launch_dependent_grids
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from gpu.compute.arch.tcgen05 import (
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.primitives.grid_controls import launch_dependent_grids
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_before,
@@ -35,17 +35,16 @@ from gpu.compute.arch.tcgen05 import (
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from memory import bitcast
+from std.memory import bitcast
 from nn.mha_fa3_utils import (
     OptionalPointer,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
-from nn.mha_sm100_2q import (
+from nn.sm100_attention_utils import (
     elect,
 )
 from nn.mha_fa3_utils import KVTMATile
@@ -84,9 +83,7 @@ struct MLA_SM100_Decode_KV_BF16[
     output_type: DType,
     SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     config: MLA_SM100_Decode_Config,
-    use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
@@ -123,9 +120,7 @@ struct MLA_SM100_Decode_KV_BF16[
         Self.output_type,
         Self.SplitAccumType,
         Self.MaskType,
-        Self.ScoreModType,
         Self.config,
-        Self.use_score_mod,
         Self.ValidLengthType,
         Self._is_cache_length_accurate,
         Self.ragged,
@@ -208,11 +203,9 @@ struct MLA_SM100_Decode_KV_BF16[
         batch_size: Int,
         q_max_seq_len: Int,
         num_partitions: Int,
-        max_cache_valid_length: Int,  # longest KV cache entry,
         mla_decode_pack: MLA_Decode_Pack[
             ValidLengthType = Self.ValidLengthType,
             MaskType = Self.MaskType,
-            ScoreModType = Self.ScoreModType,
             SplitAccumType = Self.SplitAccumType,
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
@@ -221,7 +214,6 @@ struct MLA_SM100_Decode_KV_BF16[
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
         mask = mla_decode_pack.mask
-        score_mod = mla_decode_pack.score_mod
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         var offset_position = OffsetPosition[
@@ -306,12 +298,14 @@ struct MLA_SM100_Decode_KV_BF16[
 
         var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
 
+        # max_smem is double-buffered (2 x 128 elements) to avoid a race
+        # condition in softmax; li_smem is a single 128-element buffer.
         var max_smem = (out_smem + out_smem_total).bitcast[
             Scalar[Self.AccumType]
         ]()
 
         var li_smem = (
-            max_smem + WARPGROUP_SIZE
+            max_smem + 2 * WARPGROUP_SIZE
         )  # 128 x1 for SMEM correction for Softmax
         #  Now we have to define MBARS for the kernel
         var mbar_base: MBarType = (li_smem + WARPGROUP_SIZE).bitcast[
@@ -421,9 +415,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 offset_position,
                 scale,
                 mask,
-                score_mod,
                 prompt_idx=UInt32(offset_position.batch_idx),
-                max_seq_len=UInt32(q_max_seq_len),
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
             )

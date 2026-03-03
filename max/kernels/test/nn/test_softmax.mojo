@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simd_width_of
+from std.sys.info import simd_width_of
 
 from layout._fillers import arange
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.softmax import logsoftmax, softmax_2_pass
 
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 # CHECK-LABEL: test_logsoftmax
@@ -101,6 +101,6 @@ fn test_softmax_2pass():
     # CHECK-NEXT: 0.63640{{[0-9]+}}
 
 
-def main():
+def main() raises:
     test_logsoftmax()
     test_softmax_2pass()

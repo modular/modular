@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.dict import DictEntry
-from hashlib import Hasher
-from random.random import random_si64, seed
-from sys import size_of
+from std.collections.dict import DictEntry
+from std.hashlib import Hasher
+from std.random.random import random_si64, seed
+from std.sys import size_of
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -185,7 +185,7 @@ fn total_bytes_used[H: Hasher](items: Dict[Int, Int, H]) -> Int:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=5))
     m.bench_function[bench_dict_init](BenchId("bench_dict_init"))

@@ -11,17 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_int
+from std.sys import env_get_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from builtin._closure import __ownership_keepalive
-from gpu import *
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.builtin._closure import __ownership_keepalive
+from std.gpu import *
+from std.gpu.host import DeviceContext
 from internal_utils import update_bench_config_args
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn vec_func(
@@ -95,7 +101,7 @@ fn bench_vec_add(
     out_host.free()
 
 
-def main():
+def main() raises:
     comptime block_dim = env_get_int["block_dim", 32]()
     var m = Bench()
     update_bench_config_args(m)

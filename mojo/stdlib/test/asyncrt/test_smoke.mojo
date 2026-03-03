@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
-from testing import TestSuite, assert_equal
+from std.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
 fn _ownership_helper(
@@ -135,7 +135,7 @@ fn _run_peer_access(ctx: DeviceContext) raises:
             print("Enabled peer access.")
 
 
-def test_smoke():
+def test_smoke() raises:
     var ctx = create_test_device_context()
     print("-------")
     print("Running test_smoke(" + ctx.name() + "):")
@@ -151,5 +151,5 @@ def test_smoke():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

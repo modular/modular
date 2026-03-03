@@ -20,7 +20,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from max.driver import Device
-from max.engine import Model
 from max.graph.weights import Weights
 
 if TYPE_CHECKING:
@@ -46,16 +45,3 @@ class ComponentModel(ABC):
     def load_model(self) -> Callable[..., Any]:
         """Load and return a runtime model instance."""
         ...
-
-    def unwrap_model(self) -> Model | None:
-        """Return the unwrapped runtime model when available."""
-        model: Any = getattr(self, "model", None)
-        if model is None:
-            return None
-
-        while hasattr(model, "__wrapped__"):
-            model = model.__wrapped__
-
-        if isinstance(model, Model):
-            return model
-        return None

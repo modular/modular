@@ -15,7 +15,7 @@
 from linalg.utils import partition_work
 from nn.conv_utils import ConvShape, get_conv_num_partitions
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 # CHECK-LABEL: test_conv_partition

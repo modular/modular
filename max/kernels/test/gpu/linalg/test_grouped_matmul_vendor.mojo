@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul_vendor, naive_grouped_matmul
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn test_vendor[
@@ -74,6 +74,7 @@ fn test_vendor[
     var a_size = total_num_tokens * K
 
     comptime static_b_shape = DimList(num_experts, N, K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
     comptime static_c_shape = DimList(Dim(), N)
@@ -116,11 +117,11 @@ fn test_vendor[
     # Create host NDBuffers for offsets and expert_ids (needed for function calls)
     var a_offsets_host = NDBuffer[DType.uint32, 1, MutAnyOrigin](
         a_offsets_host_ptr,
-        num_active_experts + 1,
+        IndexList[1](num_active_experts + 1),
     )
     var expert_ids_host = NDBuffer[DType.int32, 1, MutAnyOrigin](
         expert_ids_host_ptr,
-        num_active_experts,
+        IndexList[1](num_active_experts),
     )
 
     # Setup offsets and expert ids
@@ -149,27 +150,27 @@ fn test_vendor[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var c_ref_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_ref_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_active_experts + 1,
+        IndexList[1](num_active_experts + 1),
     )
     var expert_ids_dev = NDBuffer[DType.int32, 1](
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_active_experts,
+        IndexList[1](num_active_experts),
     )
 
     # Move inputs to device
@@ -283,6 +284,7 @@ fn test_negative_lora_id_vendor[
     var a_size = total_num_tokens * K
 
     comptime static_b_shape = DimList(num_experts, N, K)
+    var dynamic_b_shape = IndexList[3](num_experts, N, K)
     var b_size = num_experts * N * K
 
     comptime static_c_shape = DimList(Dim(), N)
@@ -320,11 +322,11 @@ fn test_negative_lora_id_vendor[
     # Create host NDBuffers for offsets and expert_ids (needed for function calls)
     var a_offsets_host = NDBuffer[DType.uint32, 1, MutAnyOrigin](
         a_offsets_host_ptr,
-        num_active_experts + 1,
+        IndexList[1](num_active_experts + 1),
     )
     var expert_ids_host = NDBuffer[DType.int32, 1, MutAnyOrigin](
         expert_ids_host_ptr,
-        num_active_experts,
+        IndexList[1](num_active_experts),
     )
 
     # Setup offsets and expert ids
@@ -352,15 +354,15 @@ fn test_negative_lora_id_vendor[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var c_dev = NDBuffer[c_type, 2, _, static_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, N),
+        IndexList[2](total_num_tokens, N),
     )
 
     # Move inputs to device
@@ -453,7 +455,7 @@ fn test_negative_lora_id_vendor[
     _ = expert_ids_dev_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Single matmul
         test_vendor[

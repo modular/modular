@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import rand, randint
+from std.random import rand, randint
 
-from benchmark import *
+from std.benchmark import *
 from buffer.dimlist import Dim
 from nn.gather_scatter import scatter_elements
 from tensor import DynamicTensor
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 fn bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
@@ -120,7 +120,7 @@ struct ScatterSpec(ImplicitlyCopyable, Stringable):
         )
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
     bench_scatter(m, ScatterSpec(axis=1, m1=400, m2=400, n1=200, n2=200))
     bench_scatter(m, ScatterSpec(axis=1, m1=1000, m2=1000, n1=200, n2=200))

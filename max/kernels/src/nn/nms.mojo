@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
+from std.math import iota
 
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
+from layout import Coord, Idx, TileTensor
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @fieldwise_init

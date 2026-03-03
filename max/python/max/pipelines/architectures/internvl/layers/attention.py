@@ -19,40 +19,12 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.nn.attention import num_heads_for_device
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_gpu
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
-
-
-def compute_heads_per_device(
-    *, total_heads: int, device_idx: int, num_devices: int
-) -> int:
-    """Compute number of heads for a specific device with uneven distribution.
-
-    This function distributes heads across devices handling cases where the total
-    number of heads is not evenly divisible by the number of devices. It follows
-    the same logic as weight._compute_shard_range for consistency.
-
-    Args:
-        total_heads: Total number of attention heads.
-        device_idx: The index of the current device (0-based).
-        num_devices: Total number of devices.
-
-    Returns:
-        Number of heads assigned to the specified device.
-
-    Example:
-        For 25 heads across 2 devices:
-        - Device 0: 13 heads (indices 0-12)
-        - Device 1: 12 heads (indices 13-24)
-    """
-    base_heads, remainder = divmod(total_heads, num_devices)
-    if device_idx < remainder:
-        return base_heads + 1
-    else:
-        return base_heads
 
 
 class InternVLMultiheadAttention(Module, Shardable):
@@ -379,8 +351,8 @@ class InternVLMultiheadAttention(Module, Shardable):
         shards = []
         for shard_idx, device in enumerate(devices):
             # Calculate sharded dimensions - handle uneven head distribution
-            sharded_num_heads = compute_heads_per_device(
-                total_heads=self.num_heads,
+            sharded_num_heads = num_heads_for_device(
+                num_heads=self.num_heads,
                 device_idx=shard_idx,
                 num_devices=self.sharding_strategy.num_devices,
             )

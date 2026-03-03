@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 import gpu.primitives.warp as warp
-from gpu import barrier, global_idx
-from gpu.globals import WARP_SIZE
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu import barrier, global_idx
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn kernel[
@@ -87,6 +87,6 @@ fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
     shared_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_barrier[DType.float32](ctx)

@@ -13,18 +13,18 @@
 
 # Use `kgen --emit=asm %s -o %t.asm` to exam the assembly code.
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import simd_width_of
+from std.sys import simd_width_of
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from nn.conv import conv1d_update_wo_tile
 from nn.conv_utils import ConvShape
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime type = DType.float32
 comptime micro_kernel_height = 2
@@ -164,5 +164,5 @@ fn test_conv1d_register_tiling() raises:
     assert_equal(SIMD[type, simd_size](0), actual)
 
 
-def main():
+def main() raises:
     test_conv1d_register_tiling()

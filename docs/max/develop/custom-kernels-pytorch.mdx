@@ -47,7 +47,7 @@ interface.
 Create a new file called `grayscale.py` and add the following code:
 
 ```python title="grayscale.py"
-from pathlib import Path
+from std.pathlib import Path
 import torch
 
 @torch.compile
@@ -72,7 +72,7 @@ allows you to load and use compiled Mojo operations directly in PyTorch.
 Update the `grayscale.py` file to include the following code:
 
 ```python title="grayscale.py"
-from pathlib import Path
+from std.pathlib import Path
 import torch
 from max.torch import CustomOpLibrary
 
@@ -107,8 +107,8 @@ the following code:
 ```mojo title="grayscale.mojo"
 from compiler import register
 from max.tensor import InputTensor, OutputTensor, foreach
-from runtime.asyncrt import DeviceContextPtr
-from utils.index import IndexList
+from std.runtime.asyncrt import DeviceContextPtr
+from std.utils.index import IndexList
 
 @register("grayscale")
 struct Grayscale:

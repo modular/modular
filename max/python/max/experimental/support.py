@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides utility functions for context variable management and driver tensor type conversion."""
+
 from __future__ import annotations
 
 import contextlib

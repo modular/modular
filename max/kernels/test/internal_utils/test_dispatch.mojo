@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from bit import next_power_of_two
+from std.bit import next_power_of_two
 
 # from internal_utils import Table, TuningConfig
 from internal_utils import (
@@ -21,7 +21,7 @@ from internal_utils import (
     TuningTableNvidia,
     arg_parse,
 )
-from testing import assert_equal
+from std.testing import assert_equal
 
 # Highly recommended to use "vendor_arch_dtype" format for table names.
 # For example:
@@ -176,7 +176,7 @@ fn dispatch_matmul_nvidia[static_n: Int, static_k: Int](m: Int) raises:
                 # return
 
 
-def main():
+def main() raises:
     var m = arg_parse("m", 0)
     print(String(materialize[TuningTableAMD]()))
     dispatch_matmul_amd[static_n=1, static_k=1](m)

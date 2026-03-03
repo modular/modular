@@ -11,27 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set, OptionalReg
-from math import rsqrt
-from random import random_ui64, seed
-from sys import env_get_dtype, env_get_int
+from std.collections import Set, OptionalReg
+from std.math import rsqrt
+from std.random import random_ui64, seed
+from std.sys import env_get_dtype, env_get_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import UnsafePointer
+from std.memory import UnsafePointer
 from layout import UNKNOWN_VALUE, LayoutTensor, Layout, RuntimeLayout
 from layout._fillers import random
 from layout.layout import *
 from nn.mha import flash_attention, flash_attention_ragged
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn _get_run_name[
@@ -77,7 +82,7 @@ def execute_kv_cache_ragged_flash_attention[
     use_random_seq_lengths: Bool,
     cache_len: Int,
     use_random_cache_lengths: Bool,
-):
+) raises:
     comptime num_layers = 1
     comptime layer_idx = 0
 
@@ -301,7 +306,6 @@ def execute_kv_cache_ragged_flash_attention[
                 k_cache_device,
                 v_cache_device,
                 CausalMask(),
-                IdentityScoreMod(),
                 input_row_offsets_tensor,
                 rsqrt(Float32(head_dim)),
                 ctx,
@@ -323,7 +327,7 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
 
-def main():
+def main() raises:
     comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     comptime head_dim = env_get_int["head_dim", 128]()

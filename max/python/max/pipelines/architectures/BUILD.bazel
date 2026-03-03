@@ -14,6 +14,7 @@ modular_py_library(
         "decord",
     ],
     deps = [
+        requirement("av"),  # For Kimi2.5 video reader
         requirement("huggingface-hub"),  # For Mistral, should we be circumventing the cache here?
         requirement("numpy"),
         requirement("pillow"),
@@ -31,6 +32,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/dataprocessing",

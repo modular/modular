@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import align_of, simd_width_of
+from std.collections import Optional
+from std.sys import align_of, simd_width_of
 
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -22,7 +22,7 @@ from gpu import (
     lane_id,
     warp_id,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     AMDScheduleBarrierMask,
     schedule_barrier,
     schedule_group_barrier,
@@ -38,10 +38,10 @@ from layout.layout_tensor import (
 from layout._utils import idx2crd
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory import stack_allocation
+from std.memory import stack_allocation
 
-from utils import IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.utils import IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
 from ....structuring import (
     IteratorScatterGatherAmd,
@@ -55,7 +55,7 @@ from .._multistage_gemm_gpu import (
     warp_split_k_reduction,
     WarpSplitKReductionSMem,
 )
-from itertools import product
+from std.itertools import product
 
 comptime SMemWarpTileType[
     _dtype: DType, layout: Layout, warp_rows: Int, warp_cols: Int

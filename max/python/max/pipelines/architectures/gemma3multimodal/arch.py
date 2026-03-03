@@ -14,10 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextAndVisionTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextAndVisionTokenizer
 
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma3ForConditionalGenerationConfig
@@ -40,8 +37,8 @@ gemma3_multimodal_arch = SupportedArchitecture(
     example_repo_ids=example_repo_ids,
     default_encoding="bfloat16",
     supported_encodings={
-        "bfloat16": ["paged"],
-        "float8_e4m3fn": ["paged"],
+        "bfloat16",
+        "float8_e4m3fn",
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,

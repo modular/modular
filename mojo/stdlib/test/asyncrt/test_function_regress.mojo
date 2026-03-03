@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import is_gpu
+from std.sys import is_gpu
 
 from asyncrt_test_utils import create_test_device_context
-from builtin.device_passable import DevicePassable
-from gpu import *
-from gpu.host import DeviceContext
-from testing import TestSuite, assert_equal
-from sys import has_apple_gpu_accelerator
+from std.builtin.device_passable import DevicePassable
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite, assert_equal
+from std.sys import has_apple_gpu_accelerator
 
 comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
@@ -127,7 +127,7 @@ fn _vec_func[
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
-def test_function_compilation():
+def test_function_compilation() raises:
     var ctx = create_test_device_context()
     _run_test_function_compilation(ctx)
 
@@ -162,7 +162,7 @@ fn _run_test_function_compilation(ctx: DeviceContext) raises:
     _ = compiled_vec_func_3
 
 
-def test_function_checked():
+def test_function_checked() raises:
     var ctx = create_test_device_context()
     _run_test_function_checked(ctx)
 
@@ -221,7 +221,7 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
             )
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

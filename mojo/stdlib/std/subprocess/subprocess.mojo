@@ -17,13 +17,13 @@ retrieving their output, similar to Python's `subprocess` module. It handles
 process creation, output capture, and resource cleanup automatically.
 """
 
-import sys._libc as libc
-from ffi import external_call
-from sys._libc import FILE_ptr, pclose, popen
-from ffi import c_char
-from sys.info import CompilationTarget
+import std.sys._libc as libc
+from std.ffi import external_call
+from std.sys._libc import FILE_ptr, pclose, popen
+from std.ffi import c_char
+from std.sys.info import CompilationTarget
 
-from memory import Span
+from std.memory import Span
 
 
 struct _POpenHandle:

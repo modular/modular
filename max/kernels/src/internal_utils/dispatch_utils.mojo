@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from builtin.sort import _quicksort
+from std.builtin.sort import _quicksort
 
 
 # DO NOT CHANGE

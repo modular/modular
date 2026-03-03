@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from math import ceildiv
-from sys import CompilationTarget, align_of, simd_width_of, size_of
-from sys.intrinsics import llvm_intrinsic
+from std.collections import Optional
+from std.math import ceildiv
+from std.sys import CompilationTarget, align_of, simd_width_of, size_of
+from std.sys.intrinsics import llvm_intrinsic
 
-from algorithm import sync_parallelize, tile
+from std.algorithm import sync_parallelize, tile
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
@@ -25,15 +25,15 @@ from linalg.arch.cpu.vnni_intrinsics import (
 )
 from linalg.matmul import elementwise_epilogue_type
 from linalg.utils import partition_work
-from memory import (
+from std.memory import (
     alloc,
     bitcast,
     stack_allocation,
 )
 
-from runtime.asyncrt import parallelism_level
+from std.runtime.asyncrt import parallelism_level
 
-from utils.index import Index
+from std.utils.index import Index
 
 from ._utils import roundeven_to_int32
 
@@ -327,7 +327,7 @@ fn _quantize_a_Q8_K[
 
             packed_ptr += tile_m
 
-        tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+        tile[process_rows, [4, 2, 1]](0, M)
         # TODO(MOCO-2074): Suppress false positive unused var warning.
         _ = am_ptr
 
@@ -1175,7 +1175,7 @@ fn _matmul_Q4_K_columns[
         a_ptr += tile_m
         c_ptr += tile_m * N
 
-    tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+    tile[process_rows, [4, 2, 1]](0, M)
 
 
 @always_inline
@@ -1403,7 +1403,7 @@ fn _matmul_Q6_K_columns[
         a_ptr += tile_m
         c_ptr += tile_m * N
 
-    tile[process_rows, VariadicList[Int](4, 2, 1)](0, M)
+    tile[process_rows, [4, 2, 1]](0, M)
 
 
 @always_inline
@@ -1494,9 +1494,7 @@ fn _matmul_Qb_K[
                 bn_packed_ptr += tile_n * simd_width
                 cn_ptr += tile_n * simd_width
 
-            tile[process_cols, VariadicList[Int](2, 1)](
-                0, ceildiv(task_n_count, simd_width)
-            )
+            tile[process_cols, [2, 1]](0, ceildiv(task_n_count, simd_width))
             # TODO(MOCO-2074): Suppress false positive unused var warning.
             _ = bn_packed_ptr
             _ = cn_ptr

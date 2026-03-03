@@ -11,25 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import size_of
+from std.math import ceildiv
+from std.sys import size_of
 import gpu.primitives.warp as warp
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     thread_idx,
     block_idx,
     warp_id,
 )
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.primitives.grid_controls import launch_dependent_grids
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from gpu.sync import (
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.primitives.grid_controls import launch_dependent_grids
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
+from std.gpu.sync import (
     named_barrier,
 )
-from gpu.compute.arch.tcgen05 import (
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_fence_before,
@@ -39,22 +39,21 @@ from layout.swizzle import make_swizzle
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from memory import bitcast
+from std.memory import bitcast
 from nn.mha_fa3_utils import (
     OptionalPointer,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
-from nn.mha_sm100_2q import (
+from nn.sm100_attention_utils import (
     elect,
     elect_mma_arrive,
 )
 from layout._layout import row_major
-from layout._tile_tensor import stack_allocation as tt_stack_allocation
+from layout import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 
 from nn.mla_decode_sm100_utils import (
@@ -98,9 +97,7 @@ struct MLA_SM100_Decode_KV_FP8[
     output_type: DType,
     SplitAccumType: OptionalPointer,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     config: MLA_SM100_Decode_Config,
-    use_score_mod: Bool,
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
@@ -146,9 +143,7 @@ struct MLA_SM100_Decode_KV_FP8[
         Self.output_type,
         Self.SplitAccumType,
         Self.MaskType,
-        Self.ScoreModType,
         Self.config,
-        Self.use_score_mod,
         Self.ValidLengthType,
         Self._is_cache_length_accurate,
         Self.ragged,
@@ -267,11 +262,9 @@ struct MLA_SM100_Decode_KV_FP8[
         batch_size: Int,
         q_max_seq_len: Int,
         num_partitions: Int,
-        max_cache_valid_length: Int,  # longest KV cache entry,
         mla_decode_pack: MLA_Decode_Pack[
             ValidLengthType = Self.ValidLengthType,
             MaskType = Self.MaskType,
-            ScoreModType = Self.ScoreModType,
             SplitAccumType = Self.SplitAccumType,
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
@@ -283,7 +276,6 @@ struct MLA_SM100_Decode_KV_FP8[
         comptime num_reg_keep_mma_load_store = 72
         comptime num_reg_keep_fp8tofp16 = 184
         mask = mla_decode_pack.mask
-        score_mod = mla_decode_pack.score_mod
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         var offset_position = OffsetPosition[
@@ -371,12 +363,14 @@ struct MLA_SM100_Decode_KV_FP8[
 
         var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
 
+        # max_smem is double-buffered (2 x 128 elements) to avoid a race
+        # condition in softmax; li_smem is a single 128-element buffer.
         var max_smem = (out_smem + out_smem_total).bitcast[
             Scalar[Self.AccumType]
         ]()
 
         var li_smem = (
-            max_smem + WARPGROUP_SIZE
+            max_smem + 2 * WARPGROUP_SIZE
         )  # 128 x1 for SMEM correction for Softmax
 
         # Scale SMEM for blockwise FP8 scaling (e8m0, 1 byte per scale).
@@ -510,9 +504,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 offset_position,
                 scale,
                 mask,
-                score_mod,
                 prompt_idx=UInt32(offset_position.batch_idx),
-                max_seq_len=UInt32(q_max_seq_len),
                 lse_accum_split_ptr=lse_accum_split_ptr,
                 batch_size=batch_size,
             )
@@ -681,8 +673,7 @@ struct MLA_SM100_Decode_KV_FP8[
         # into scale SMEM stage matching the KV pipeline stage).
         # Each thread's mbar.arrive() has release semantics, making its
         # prior SMEM writes visible to the converter's mbar.wait() (acquire).
-        @parameter
-        if Self.config.scale_block_size > 0:
+        comptime if Self.config.scale_block_size > 0:
             var stage_idx = kv_load_prod.pipe.state.index()
             Self._load_scales_for_tile(
                 scale_smem_base,
@@ -729,8 +720,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 )
 
             # Load blockwise scales for this tile (all warp 8 threads).
-            @parameter
-            if Self.config.scale_block_size > 0:
+            comptime if Self.config.scale_block_size > 0:
                 var stage_idx = kv_load_prod.pipe.state.index()
                 Self._load_scales_for_tile(
                     scale_smem_base,
@@ -923,8 +913,7 @@ struct MLA_SM100_Decode_KV_FP8[
                 # scale_idx = (b * BN + col0) // scale_block_size
                 # All 32 columns this thread handles within a block share
                 # the same scale when scale_block_size >= 32.
-                @parameter
-                if Self.config.scale_block_size > 0:
+                comptime if Self.config.scale_block_size > 0:
                     var scale_idx = (
                         b * BN + col0
                     ) // Self.config.scale_block_size

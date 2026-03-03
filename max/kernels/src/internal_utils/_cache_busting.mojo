@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import size_of
-from gpu.host import DeviceBuffer, DeviceContext
+from std.math import align_up
+from std.sys import size_of
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils._utils import InitializationType
 
 # 512 MiB — larger than 2x the infinity cache on MI300x (256 MiB)

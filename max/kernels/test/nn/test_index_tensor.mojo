@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_ui64
+from std.random import random_ui64
 
-from layout._coord import Coord
+from layout import Coord, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
 from nn.index_tensor import (
     _index_tensor_1d,
@@ -25,10 +24,10 @@ from nn.index_tensor import (
     advanced_indexing_setitem_inplace,
     index_tensor_shape,
 )
-from runtime.asyncrt import DeviceContextPtr
-from testing import assert_equal
+from std.runtime.asyncrt import DeviceContextPtr
+from std.testing import assert_equal
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 # TODO: It is like example 5 ONNX.
@@ -681,7 +680,7 @@ fn test_advanced_indexing_setitem_inplace() raises:
     _ = input_stack^
 
 
-def main():
+def main() raises:
     test_index_tensor_DLRM()
     test_index_tensor_DLRM_batch()
     test_index_tensor_CLIPVIT()

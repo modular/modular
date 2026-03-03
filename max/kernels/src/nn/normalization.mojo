@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv, clamp, rsqrt
-from sys.info import align_of, simd_width_of, size_of
+from std.math import align_down, ceildiv, clamp, rsqrt
+from std.sys.info import align_of, simd_width_of, size_of
 
 import gpu.primitives.warp as warp
-from algorithm import map_reduce, mean, variance, vectorize
-from algorithm.functional import (
+from std.algorithm import map_reduce, mean, variance, vectorize
+from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     sync_parallelize,
 )
-from algorithm.reduction import _simd_sum, _simd_sum_elementwise
-from bit import log2_floor
+from std.algorithm.reduction import _simd_sum, _simd_sum_elementwise
+from std.bit import log2_floor
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import (
+from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
@@ -34,12 +34,12 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceContext, FuncAttribute, get_gpu_target
-from gpu.host.info import is_cpu, is_gpu
-from gpu.memory import external_memory
-from gpu.primitives import block
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from layout._coord import (
+from std.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from std.gpu.host.info import is_cpu, is_gpu
+from std.gpu.memory import external_memory
+from std.gpu.primitives import block
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from layout.coord import (
     Coord,
     CoordLike,
     DynamicCoord,
@@ -48,19 +48,19 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import Layout, TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout import Layout as LegacyLayout
 from layout.layout_tensor import LayoutTensor as LegacyLayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
-from memory import stack_allocation
+from std.memory import stack_allocation
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, max_finite, min_finite
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type, max_finite, min_finite
 from linalg.fp8_utils import (
     compute_dynamic_fp8_scale,
     fp8_quantize,
@@ -2145,6 +2145,7 @@ fn rms_norm_fused_fp8[
     ],
     /,
     target: StaticString = "gpu",
+    compile_only: Bool = False,
 ](
     shape: IndexList[rank],
     output: NDBuffer[mut=True, out_dtype, rank, ...],
@@ -2170,6 +2171,9 @@ fn rms_norm_fused_fp8[
         rank: Tensor rank.
         input_fn: Function to load input values.
         target: Target device ("gpu" or "cpu").
+        compile_only: If True, only compiles the kernel without executing it.
+            Used to pre-compile kernels and avoid JIT compilation deadlocks
+            in multi-GPU contexts.
 
     Args:
         shape: Input tensor shape.
@@ -2214,6 +2218,7 @@ fn rms_norm_fused_fp8[
                 scales_dtype,
                 rank,
                 input_fn,
+                compile_only=compile_only,
             ](
                 shape,
                 output,
@@ -2237,6 +2242,7 @@ fn _rms_norm_fused_fp8_gpu[
     input_fn: fn[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         in_dtype, width
     ],
+    compile_only: Bool = False,
 ](
     shape: IndexList[rank],
     output: NDBuffer[mut=True, out_dtype, rank, ...],
@@ -2271,12 +2277,12 @@ fn _rms_norm_fused_fp8_gpu[
 
     # Create 2D output buffer view
     var output_2d = NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin](
-        output.data, DimList(rows, cols)
+        output.data, IndexList[2](rows, cols)
     )
 
     # Create 1D view of scale_output for internal kernel use
     var scale_output_1d = NDBuffer[mut=True, scales_dtype, 1, MutAnyOrigin](
-        scale_output.data, DimList(rows)
+        scale_output.data, IndexList[1](rows)
     )
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
@@ -2295,6 +2301,7 @@ fn _rms_norm_fused_fp8_gpu[
             scales_dtype,
             input_fn_2d,
             use_warp_tiling=warp_tiling,
+            compile_only=compile_only,
         ](
             rows,
             cols,
@@ -2430,6 +2437,7 @@ fn _rms_norm_fused_fp8_gpu_launch[
         in_dtype, width
     ],
     use_warp_tiling: Bool,
+    compile_only: Bool = False,
 ](
     rows: Int,
     cols: Int,
@@ -2483,17 +2491,20 @@ fn _rms_norm_fused_fp8_gpu_launch[
             input_fn=input_fn,
             output_fn=output_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
-            gamma,
-            scale_buffer_tensor,
-            epsilon,
-            weight_offset,
-            cols,
-            scale_ub.cast[scales_dtype](),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            attributes=pdl_launch_attributes(),
-        )
+        comptime if compile_only:
+            _ = ctx.compile_function[kernel, kernel]()
+        else:
+            ctx.enqueue_function[kernel, kernel](
+                gamma,
+                scale_buffer_tensor,
+                epsilon,
+                weight_offset,
+                cols,
+                scale_ub.cast[scales_dtype](),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
     else:
         comptime kernel = _rms_norm_fused_fp8_kernel_block[
             mut = gamma.mut,
@@ -2508,17 +2519,20 @@ fn _rms_norm_fused_fp8_gpu_launch[
             input_fn=input_fn,
             output_fn=output_fn,
         ]
-        ctx.enqueue_function[kernel, kernel](
-            gamma,
-            scale_buffer_tensor,
-            epsilon,
-            weight_offset,
-            cols,
-            scale_ub.cast[scales_dtype](),
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            attributes=pdl_launch_attributes(),
-        )
+        comptime if compile_only:
+            _ = ctx.compile_function[kernel, kernel]()
+        else:
+            ctx.enqueue_function[kernel, kernel](
+                gamma,
+                scale_buffer_tensor,
+                epsilon,
+                weight_offset,
+                cols,
+                scale_ub.cast[scales_dtype](),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                attributes=pdl_launch_attributes(),
+            )
 
 
 fn _rms_norm_fused_fp8_kernel_block[

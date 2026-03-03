@@ -23,14 +23,14 @@ The synchronization primitives help coordinate execution between threads within
 thread blocks and warps, and manage memory consistency across different memory spaces.
 """
 
-from os import abort
-from os.atomic import Consistency, fence
-from sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from sys.info import CompilationTarget, _is_amd_cdna
-from sys.param_env import env_get_bool
+from std.os import abort
+from std.os.atomic import Consistency, fence
+from std.sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.sys.info import CompilationTarget, _is_amd_cdna
+from std.sys.param_env import env_get_bool
 
-from gpu.intrinsics import Scope
+from std.gpu.intrinsics import Scope
 
 from .._utils import to_i32, to_llvm_shared_mem_ptr
 
@@ -845,7 +845,7 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
 
     Example:
         ```mojo
-        from gpu.sync.sync import cp_async_bulk_wait_group
+        from std.gpu.sync.sync import cp_async_bulk_wait_group
 
         # Wait until at most 2 async groups are pending
         cp_async_bulk_wait_group[2]()

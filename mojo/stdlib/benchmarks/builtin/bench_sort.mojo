@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import *
+from std.random import *
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.builtin.sort import _heap_sort, _insertion_sort, _small_sort, sort
 
 # ===-----------------------------------------------------------------------===#
@@ -292,7 +292,7 @@ fn bench_low_cardinality_list_sort(mut m: Bench, count: Int, delta: Int) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(max_runtime_secs=0.1))
 
     comptime dtypes = [

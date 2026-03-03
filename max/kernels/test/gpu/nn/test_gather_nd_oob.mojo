@@ -11,16 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout._layout import row_major
-from layout._coord import Coord
-from layout._tile_tensor import TileTensor
-from memory import LegacyUnsafePointer
+from layout import Coord, TileTensor
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def execute_gather_nd_test[
@@ -35,7 +34,7 @@ def execute_gather_nd_test[
     indices_host_ptr: UnsafePointer[Scalar[indices_type]],
     indices_shape: IndexList[indices_rank],
     ctx: DeviceContext,
-):
+) raises:
     # Compute sizes
     var data_size = 1
     for i in range(data_rank):
@@ -145,7 +144,7 @@ fn test_gather_nd_oob(ctx: DeviceContext) raises:
     indices_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK: {{.*}}data index out of bounds{{.*}}
         test_gather_nd_oob(ctx)

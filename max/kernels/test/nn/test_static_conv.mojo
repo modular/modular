@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import rand
-from sys.info import simd_width_of
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import simd_width_of
 
-from itertools import product
+from std.itertools import product
 from layout import IntTuple, LayoutTensor, RuntimeLayout, Layout
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
@@ -27,7 +27,7 @@ from nn.conv_utils import (
     get_micro_kernel_shape,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn test[
@@ -223,7 +223,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     test[
         1,  # N
         14,  # H

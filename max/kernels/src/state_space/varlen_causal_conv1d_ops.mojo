@@ -18,14 +18,14 @@ This module registers operations for variable-length causal 1D convolution:
 - causal_conv1d_varlen_states: Extract states from varlen sequences
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
 import compiler_internal as compiler
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import is_cpu, is_gpu
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,

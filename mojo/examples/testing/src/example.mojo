@@ -14,7 +14,7 @@
 from my_math import dec, inc
 
 
-def main():
+def main() raises:
     i = 0
     print("Incrementing")
     while i < 5:

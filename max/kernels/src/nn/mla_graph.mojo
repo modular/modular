@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import align_up, ceildiv
+from std.math import align_up, ceildiv
 
-from sys import simd_width_of, size_of
-from utils.index import Index, IndexList
+from std.sys import simd_width_of, size_of
+from std.utils.index import Index, IndexList
 
-from algorithm.functional import _elementwise_impl_gpu
-from gpu import (
+from std.algorithm.functional import _elementwise_impl_gpu
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
@@ -26,15 +26,14 @@ from gpu import (
     grid_dim,
     thread_idx,
 )
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext, get_gpu_target
-from layout._coord import Coord, CoordLike, Idx, coord_to_index_list
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.host import DeviceContext, get_gpu_target
+from layout import Coord, CoordLike, Idx, TileTensor, coord_to_index_list
 from layout._layout import TensorLayout, Layout as TileLayout, row_major
-from layout._tile_tensor import TileTensor
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
-from utils.index import StaticTuple
-from utils.numerics import get_accum_type
+from std.utils.index import StaticTuple
+from std.utils.numerics import get_accum_type
 from linalg.fp8_quantization import (
     matmul_dynamic_scaled_fp8,
     quantize_dynamic_scaled_fp8,
@@ -351,7 +350,6 @@ fn mla_prefill_branch_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString = "cpu",
 ](
     output: TileTensor[
@@ -405,7 +403,6 @@ fn mla_prefill_branch_fp8[
         k_scale_granularity: Granularity of the scale for K dimension of the
             matrix multiplication.
         mask_str: Mask variant.
-        score_mod_str: Positional encoding variant.
         target: Target device.
 
     Args:
@@ -655,7 +652,6 @@ fn mla_prefill_branch_fp8[
     generic_flare_mla_prefill_kv_cache_ragged[
         target=target,
         mask_str=mask_str,
-        score_mod_str=score_mod_str,
     ](
         q.to_layout_tensor(),
         k.to_layout_tensor(),
@@ -773,7 +769,6 @@ fn mla_decode_branch_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString = "cpu",
 ](
     output: TileTensor[
@@ -823,7 +818,6 @@ fn mla_decode_branch_fp8[
         k_scale_granularity: Granularity of the scale for K dimension of the
             matrix multiplication.
         mask_str: Mask variant.
-        score_mod_str: Positional encoding variant.
         target: Target device.
 
     Args:
@@ -977,7 +971,6 @@ fn mla_decode_branch_fp8[
     generic_flare_mla_decode_kv_cache_ragged[
         target=target,
         mask_str=mask_str,
-        score_mod_str=score_mod_str,
     ](
         mla_decode_input.to_layout_tensor(),
         input_row_offsets.to_layout_tensor(),
@@ -1028,7 +1021,6 @@ fn mla_prefill_decode_graph_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString = "cpu",
 ](
     output: TileTensor[
@@ -1087,7 +1079,6 @@ fn mla_prefill_decode_graph_fp8[
             n_scale_granularity=n_scale_granularity,
             k_scale_granularity=k_scale_granularity,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             target=target,
         ](
             output,
@@ -1112,7 +1103,6 @@ fn mla_prefill_decode_graph_fp8[
             n_scale_granularity=n_scale_granularity,
             k_scale_granularity=k_scale_granularity,
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             target=target,
         ](
             output,
@@ -1144,7 +1134,6 @@ fn mla_prefill_branch_bf16[
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString = "cpu",
 ](
     output: TileTensor[
@@ -1311,7 +1300,6 @@ fn mla_prefill_branch_bf16[
     generic_flare_mla_prefill_kv_cache_ragged[
         target=target,
         mask_str=mask_str,
-        score_mod_str=score_mod_str,
     ](
         q.to_layout_tensor(),
         k.to_layout_tensor(),
@@ -1336,7 +1324,6 @@ fn mla_decode_branch_bf16[
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString = "cpu",
 ](
     output: TileTensor[
@@ -1475,7 +1462,6 @@ fn mla_decode_branch_bf16[
     generic_flare_mla_decode_kv_cache_ragged[
         target=target,
         mask_str=mask_str,
-        score_mod_str=score_mod_str,
     ](
         mla_decode_input.to_layout_tensor(),
         input_row_offsets.to_layout_tensor(),
@@ -1521,7 +1507,6 @@ fn mla_prefill_decode_graph_bf16[
     collection_t: KVCollectionT,
     //,
     mask_str: StaticString,
-    score_mod_str: StaticString,
     target: StaticString = "cpu",
 ](
     output: TileTensor[
@@ -1563,7 +1548,6 @@ fn mla_prefill_decode_graph_bf16[
     if max_seq_len == 1:
         mla_decode_branch_bf16[
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             target=target,
         ](
             output,
@@ -1582,7 +1566,6 @@ fn mla_prefill_decode_graph_bf16[
     else:
         mla_prefill_branch_bf16[
             mask_str=mask_str,
-            score_mod_str=score_mod_str,
             target=target,
         ](
             output,

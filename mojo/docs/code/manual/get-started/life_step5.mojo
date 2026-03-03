@@ -32,7 +32,7 @@ fn grid_str(rows: Int, cols: Int, grid: List[List[Int]]) -> String:
     return str
 
 
-def main():
+def main() raises:
     num_rows = 8
     num_cols = 8
     glider = [

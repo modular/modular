@@ -23,24 +23,24 @@ requires per-K-iteration scaling in CUDA cores:
     result = accum  # write to SMEM → GMEM
 """
 
-from math import gcd
+from std.math import gcd
 
-from gpu import WARP_SIZE, lane_id
-from gpu import warp_id as get_warp_id
-from gpu.memory import AddressSpace
-from gpu.primitives.cluster import block_rank_in_cluster
-from gpu.sync import syncwarp
-from layout._coord import Coord, Idx
+from std.gpu import WARP_SIZE, lane_id
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import AddressSpace
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.sync import syncwarp
+from layout import Coord, Idx, TileTensor, stack_allocation
 from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor, stack_allocation
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.tile_types import (
     SMemTileArray2DRowMajor,
     static_row_major,
 )
 from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from ..structured_kernels.config import OutputPipelineConfig
 from ..structured_kernels.tile_pipeline import OutputStage, EpilogueKStage
 from ..structured_kernels.tmem import TmemAddress, TmemFragments
 
@@ -182,9 +182,7 @@ struct BlockwiseFP8Accumulator[
     fn promote[
         # Parameters derived from argument types (use _ for inference)
         num_pipeline_stages: Int,
-        num_accum_pipeline_stages: Int,
-        stage_stride_cols: Int,
-        cta_group: Int,
+        opc: OutputPipelineConfig,
         num_input_stages: Int,
         # Type parameters
         b_scales_dtype: DType,
@@ -202,9 +200,7 @@ struct BlockwiseFP8Accumulator[
             num_pipeline_stages,
         ],
         epi_stage: EpilogueKStage[
-            num_accum_pipeline_stages,
-            stage_stride_cols,
-            cta_group,
+            opc,
             num_input_stages,
         ],
         work_tile_coord: Tuple[UInt, UInt],
@@ -286,10 +282,12 @@ struct BlockwiseFP8Accumulator[
         var staged_c_row: UInt
         var staged_c_col: UInt
 
-        comptime if Self.MMA_M == 256 or (Self.MMA_M == 128 and cta_group == 1):
+        comptime if Self.MMA_M == 256 or (
+            Self.MMA_M == 128 and opc.cta_group == 1
+        ):
             staged_c_row = warp_id * UInt(WARP_SIZE)
             staged_c_col = UInt(0)
-        elif Self.MMA_M == 64 and cta_group == 1:
+        elif Self.MMA_M == 64 and opc.cta_group == 1:
             staged_c_row = warp_id * UInt(WARP_SIZE // 2)
             staged_c_col = UInt(0)
         else:

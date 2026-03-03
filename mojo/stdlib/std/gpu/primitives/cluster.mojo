@@ -21,12 +21,12 @@ Note: These are low-level primitives that correspond directly to PTX/NVVM instru
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
 
-from sys import _RegisterPackType, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
+from std.sys import _RegisterPackType, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
 
 
-from utils.index import IndexList, product
+from std.utils.index import IndexList, product
 
 # ===-----------------------------------------------------------------------===#
 #  1D ctaid in a cluster

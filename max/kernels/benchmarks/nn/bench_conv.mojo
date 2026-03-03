@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import align_up, ceildiv
-from random import rand
-from sys import simd_width_of, size_of
-from sys.param_env import env_get_int, env_get_string
+from std.math import align_up, ceildiv
+from std.random import rand
+from std.sys import simd_width_of, size_of
+from std.sys.param_env import env_get_int, env_get_string
 
-from benchmark import *
-from benchmark import keep
+from std.benchmark import *
+from std.benchmark import keep
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
@@ -29,8 +29,8 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
@@ -258,7 +258,7 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
         )
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig())
 
     comptime fp32_1d = ConvSpecStatic(

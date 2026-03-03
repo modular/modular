@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines the :class:`PipelineTokenizer` protocol for language model tokenizers used in MAX pipelines."""
+
 from __future__ import annotations
 
 from typing import Protocol, TypeVar, runtime_checkable

@@ -18,7 +18,7 @@ fn test_cannot_cast_between_different_types[T: AnyType](p: UnsafePointer[T]):
     pass
 
 
-def main():
+def main() raises:
     var x = 42
 
     var p = UnsafePointer(to=x)

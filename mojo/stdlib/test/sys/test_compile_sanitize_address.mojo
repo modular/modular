@@ -15,10 +15,10 @@
 # RUN: %mojo-build  %s -o %t 2>&1
 # RUN: %t | FileCheck %s --check-prefix=CHECK-OFF
 
-from sys.compile import SanitizeAddress
+from std.sys.compile import SanitizeAddress
 
 
-def main():
+def main() raises:
     print(SanitizeAddress)
     # CHECK-ON: True
     # CHECK-OFF: False

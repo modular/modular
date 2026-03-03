@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, recip
-from sys import simd_width_of
-from sys.intrinsics import readfirstlane
+from std.math import ceildiv, recip
+from std.sys import simd_width_of
+from std.sys.intrinsics import readfirstlane
 
-from gpu import barrier, block_idx, lane_id
-from gpu import warp_id as get_warp_id
+from std.gpu import barrier, block_idx, lane_id
+from std.gpu import warp_id as get_warp_id
 from layout import Layout, LayoutTensor
 from layout._utils import idx2crd
 from layout.layout import blocked_product
@@ -28,10 +28,10 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle
 from layout.tensor_core import TiledTensorCore
-from memory.pointer import AddressSpace as BaseAddressSpace
+from std.memory.pointer import AddressSpace as BaseAddressSpace
 from nn.mha_utils import _kernel_mask
 
-from utils import IndexList
+from std.utils import IndexList
 
 from .utils import (
     LocalLayoutTensor,

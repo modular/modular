@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.compile import _compile_code
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import *
+from std.testing import *
 
 
-def test_convert_asm():
+def test_convert_asm() raises:
     @parameter
     fn my_cast[
         frm: DType, to: DType
@@ -94,7 +94,7 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
             assert_equal(host_buf[i], Scalar[dst_type](i))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_convert_asm()
         # Only support 2xFP32 -> 2xBF16 conversion via ptx.

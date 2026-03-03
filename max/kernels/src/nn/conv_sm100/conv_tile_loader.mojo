@@ -19,10 +19,10 @@ The TMA descriptor encodes convolution geometry and transforms coordinates
 on-the-fly during memory loads.
 """
 
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 from layout import Layout, LayoutTensor
 from layout.tma_async import SharedMemBarrier, TMATensorTileIm2col
-from layout._tile_tensor import TileTensor, TensorLayout
+from layout.tile_tensor import TileTensor, TensorLayout
 
 
 struct TileLoaderTMAIm2col[

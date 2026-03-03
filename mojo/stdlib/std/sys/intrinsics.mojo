@@ -15,14 +15,14 @@
 You can import these APIs from the `sys` package. For example:
 
 ```mojo
-from sys import PrefetchLocality
+from std.sys import PrefetchLocality
 ```
 """
 
-import math
-from collections.string.string_slice import _get_kgen_string
-from sys import is_compile_time
-from sys.info import _is_sm_9x_or_newer, is_gpu
+import std.math
+from std.collections.string.string_slice import _get_kgen_string
+from std.sys import is_compile_time
+from std.sys.info import _is_sm_9x_or_newer, is_gpu
 
 
 from ._assembly import inlined_assembly

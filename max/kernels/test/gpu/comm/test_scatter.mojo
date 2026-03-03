@@ -32,12 +32,13 @@ Uses the example from KERN-2435: DP=4, TP=2, 8 GPUs distributing row_offsets.
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import InlineArray
-from math import ceildiv
-from sys import size_of
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import assert_true
+from std.collections import InlineArray
+from std.math import ceildiv
+from std.sys import size_of
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import assert_true
 
+from std.utils import IndexList
 from comm import Signal, MAX_GPUS
 from comm.scatter import scatter
 from comm.sync import enable_p2p
@@ -77,9 +78,9 @@ fn _test_pull[
 
     # Allocate input chunks on GPU 0.
     var input_devbufs = List[DeviceBuffer[dtype]]()
-    var input_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], dp_size](
-        fill={}
-    )
+    var input_bufs = InlineArray[
+        NDBuffer[dtype, rank, ImmutAnyOrigin], dp_size
+    ](fill={})
     var host_buf = alloc[Scalar[dtype]](max_chunk_size)
 
     for dp in range(dp_size):
@@ -89,8 +90,8 @@ fn _test_pull[
             host_buf[j] = expected[dp][j]
         ctxs[0].enqueue_copy(dev_buf, host_buf)
         ctxs[0].synchronize()
-        input_bufs[dp] = NDBuffer[dtype, rank, MutAnyOrigin](
-            dev_buf.unsafe_ptr(), DimList(n)
+        input_bufs[dp] = NDBuffer[dtype, rank, ImmutAnyOrigin](
+            dev_buf.unsafe_ptr(), IndexList[1](n)
         )
         input_devbufs.append(dev_buf)
     host_buf.free()
@@ -107,7 +108,7 @@ fn _test_pull[
         ctxs[i].enqueue_memset(out_buf, 0)
         ctxs[i].synchronize()
         output_bufs[i] = NDBuffer[dtype, rank, MutAnyOrigin](
-            out_buf.unsafe_ptr(), DimList(n)
+            out_buf.unsafe_ptr(), IndexList[1](n)
         )
         output_devbufs.append(out_buf)
 
@@ -124,8 +125,7 @@ fn _test_pull[
         signal_bufs.append(sig_buf)
 
     # Launch scatter.
-    @parameter
-    for i in range(ngpus):
+    comptime for i in range(ngpus):
         scatter[ngpus=ngpus, dp_size=dp_size](
             input_bufs, output_bufs[i], rank_sigs, ctxs[i]
         )
@@ -216,13 +216,11 @@ fn _test_dp4_large_chunks() raises:
     _test_pull[ngpus=8, dp_size=4](expected)
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
-    if not enable_p2p():
-        print("P2P not enabled, skipping test.")
-        return
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     _test_dp2()
     _test_dp2_fewer_elems_gpu0()

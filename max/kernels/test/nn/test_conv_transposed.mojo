@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from random import rand
-from sys.info import simd_width_of
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import simd_width_of
 
-from algorithm.functional import vectorize
-from layout._coord import Coord
+from std.algorithm.functional import vectorize
+from layout import Coord, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,
@@ -35,9 +34,9 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime simd_size: Int = simd_width_of[DType.float32]()
 comptime dtype = DType.float32
@@ -489,7 +488,7 @@ fn test_3d_multi_channel() raises:
     )
 
 
-def main():
+def main() raises:
     var suite = TestSuite()
 
     # Test conv_transpose_shape function

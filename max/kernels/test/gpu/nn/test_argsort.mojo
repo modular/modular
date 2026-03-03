@@ -12,15 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext
-from layout._coord import Idx
+from std.gpu.host import DeviceContext
+from layout import Idx, TileTensor
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 
 from nn.argsort import argsort
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn linear_filler(i: Int, n: Int) -> Float32:
@@ -124,7 +123,7 @@ fn test_argsort_helper[
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=1024)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:  # argmax tests
         test_argsort_helper[
             dtype = DType.float32, filler=linear_filler, ascending=True

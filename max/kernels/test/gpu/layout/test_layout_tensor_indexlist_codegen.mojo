@@ -23,11 +23,11 @@ could use compile-time constants.
 After the fix, both should produce equivalent code.
 """
 
-from compile import compile_info
-from gpu.host import get_gpu_target
+from std.compile import compile_info
+from std.gpu.host import get_gpu_target
 from layout import Layout, LayoutTensor
-from testing import assert_true
-from utils import Index
+from std.testing import assert_true
+from std.utils import Index
 
 
 comptime layout_2d = Layout.row_major(10, 20)
@@ -164,7 +164,7 @@ fn test_aligned_load_codegen_equivalence() raises:
         )
 
 
-def main():
+def main() raises:
     test_store_codegen_equivalence()
     test_load_codegen_equivalence()
     test_aligned_load_codegen_equivalence()

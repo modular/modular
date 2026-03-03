@@ -15,8 +15,8 @@
 You can import these APIs from the `benchmark` package. For example:
 
 ```mojo
-import benchmark
-from time import sleep
+import std.benchmark
+from std.time import sleep
 ```
 
 You can pass any `fn` as a parameter into `benchmark.run[...]()`, it will return
@@ -90,7 +90,7 @@ If you want to use a different time unit you can bring in the Unit and pass
 it in as an argument:
 
 ```mojo
-from benchmark import Unit
+from std.benchmark import Unit
 
 report.print(Unit.ms)
 ```
@@ -139,9 +139,9 @@ Note that benchmarking continues until `min_runtime_secs` has
 elapsed and either `max_runtime_secs` OR `max_iters` is achieved.
 """
 
-from time import time_function
-from testing import assert_true
-from utils.numerics import max_finite, min_finite
+from std.time import time_function
+from std.testing import assert_true
+from std.utils.numerics import max_finite, min_finite
 
 
 # ===-----------------------------------------------------------------------===#

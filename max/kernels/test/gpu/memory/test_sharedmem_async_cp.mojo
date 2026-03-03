@@ -13,9 +13,9 @@
 
 import time
 
-from gpu import memory, sync, thread_idx
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer, stack_allocation
+from std.gpu import memory, sync, thread_idx
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer, stack_allocation
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -105,6 +105,6 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     _ = copy_via_shared_gpu^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_copy_via_shared(ctx)

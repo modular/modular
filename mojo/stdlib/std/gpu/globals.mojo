@@ -21,7 +21,7 @@ The constants are resolved at compile time based on the target GPU architecture 
 are used to optimize code generation and ensure hardware compatibility.
 """
 
-from sys.info import (
+from std.sys.info import (
     CompilationTarget,
     _accelerator_arch,
     _is_amd_rdna,

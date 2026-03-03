@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
 from layout import *
 from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -35,7 +35,7 @@ fn gpu_kernel(
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         var vec_a_ptr = UnsafePointer[Float32].alloc(16)
         var vec_b_ptr = UnsafePointer[Float32].alloc(16)

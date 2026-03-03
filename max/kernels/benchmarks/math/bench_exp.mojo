@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
-from math.math import _exp_taylor, _ldexp_impl
-from math.polynomial import polynomial_evaluate
-from ffi import external_call
-from sys import llvm_intrinsic, simd_width_of, size_of
-from sys.arg import argv
+from std.math import *
+from std.math.math import _exp_taylor, _ldexp_impl
+from std.math.polynomial import polynomial_evaluate
+from std.ffi import external_call
+from std.sys import llvm_intrinsic, simd_width_of, size_of
+from std.sys.arg import argv
+from std.utils import IndexList
 
-from algorithm.functional import vectorize
-from benchmark import (
+from std.algorithm.functional import vectorize
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -28,9 +29,9 @@ from benchmark import (
     keep,
 )
 from buffer import NDBuffer
-from builtin.range import _StridedRange
-from compile import compile_info
-from memory import LegacyUnsafePointer, bitcast
+from std.builtin.range import _StridedRange
+from std.compile import compile_info
+from std.memory import LegacyUnsafePointer, bitcast
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -81,8 +82,8 @@ def bench_unary[
         @parameter
         fn iter_fn():
             apply[func](
-                NDBuffer[dtype, 1](input_ptr, size),
-                NDBuffer[dtype, 1](output_ptr, size),
+                NDBuffer[dtype, 1](input_ptr, IndexList[1](size)),
+                NDBuffer[dtype, 1](output_ptr, IndexList[1](size)),
             )
             keep(output_ptr)
 
@@ -388,7 +389,7 @@ fn mlas_llvm_ldexp[
     return max(llvm_ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
 
 
-def accuracy_test():
+def accuracy_test() raises:
     comptime delta_min = -16
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
@@ -418,7 +419,7 @@ def accuracy_test():
         print("deltas", i + delta_min, deltas[i])
 
 
-def main():
+def main() raises:
     var args = argv()
     for arg in args:
         if arg == "-c":
