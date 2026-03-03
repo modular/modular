@@ -108,9 +108,7 @@ fn mha_operand_tma_copy_kernel[
             src_tma_tile.async_copy(
                 smem_tile,
                 mbar,
-                kv_coord[
-                    depth=head_size, swizzle_granularity=swizzle_granularity
-                ](src_row, head_idx),
+                kv_coord[depth=head_size](src_row, head_idx),
             )
 
         # Synchronize all threads
@@ -130,9 +128,7 @@ fn mha_operand_tma_copy_kernel[
             # Initiate TMA store
             dst_tma_tile.async_store(
                 smem_tile,
-                kv_coord[
-                    depth=head_size, swizzle_granularity=swizzle_granularity
-                ](dst_row, head_idx),
+                kv_coord[depth=head_size](dst_row, head_idx),
             )
 
             dst_tma_tile.commit_group()
