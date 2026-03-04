@@ -214,7 +214,9 @@ class Model:
         """
 
     def __repr__(self) -> str: ...
-    def capture(self, graph_key: int, *inputs: Buffer) -> list[Buffer]:
+    def capture(
+        self, graph_keys: int | Sequence[int], *inputs: Buffer
+    ) -> list[Buffer]:
         """
         Capture execution into a device graph for caller-provided key.
 
@@ -224,10 +226,12 @@ class Model:
         phases are safe to capture (e.g. decode-only in serving).
         """
 
-    def replay(self, graph_key: int, *inputs: Buffer) -> None:
+    def replay(self, graph_keys: int | Sequence[int], *inputs: Buffer) -> None:
         """Replay the captured device graph for the provided key."""
 
-    def debug_verify_replay(self, graph_key: int, *inputs: Buffer) -> None:
+    def debug_verify_replay(
+        self, graph_keys: int | Sequence[int], *inputs: Buffer
+    ) -> None:
         """
         Execute eagerly and verify the launch trace matches the captured graph.
 
@@ -236,7 +240,7 @@ class Model:
         graph capture issues.
 
         Args:
-            graph_key: Caller-provided graph key that identifies captured graph.
+            graph_keys: One graph key per participating device stream.
             inputs: Input buffers matching the captured input signature.
 
         Raises:
@@ -247,17 +251,23 @@ class Model:
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
     def _capture(
-        self, graph_key: int, inputs: Sequence[max._core.driver.Buffer]
+        self,
+        graph_keys: Sequence[int],
+        inputs: Sequence[max._core.driver.Buffer],
     ) -> list[max._core.driver.Buffer]:
         """Capture execution into a device graph."""
 
     def _replay(
-        self, graph_key: int, inputs: Sequence[max._core.driver.Buffer]
+        self,
+        graph_keys: Sequence[int],
+        inputs: Sequence[max._core.driver.Buffer],
     ) -> None:
         """Replay the captured device graph."""
 
     def _debug_verify_replay(
-        self, graph_key: int, inputs: Sequence[max._core.driver.Buffer]
+        self,
+        graph_keys: Sequence[int],
+        inputs: Sequence[max._core.driver.Buffer],
     ) -> None:
         """Debug verify replay against captured graph."""
 
