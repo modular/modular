@@ -1219,6 +1219,22 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
 The generated generator type is [Prev: AnyType, Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> Prev,
 """
 
+comptime _ReduceVariadicValueIdxGeneratorTypeGenerator[
+    Prev: AnyType, From: AnyType
+] = __mlir_type[
+    `!lit.generator<<"Prev": `,
+    +Prev,
+    `, "From": !kgen.variadic<`,
+    From,
+    `>, "Idx":`,
+    Int,
+    `>`,
+    +Prev,
+    `>`,
+]
+"""This specifies a generator to generate a generator type for the reducer of
+values. The result generator type is [Prev: AnyType, Ts: Variadic.ValuesOfType[AnyType], idx: Int] -> Prev,
+"""
 
 comptime _IndexToIntWrap[
     From: type_of(AnyType),
@@ -1228,7 +1244,7 @@ comptime _IndexToIntWrap[
     VA: Variadic.TypesOfTrait[From],
     idx: __mlir_type.index,
 ] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
-
+"""Wrapper for type -> value."""
 
 comptime _ReduceVariadicAndIdxToVariadic[
     From: type_of(AnyType),
@@ -1251,6 +1267,37 @@ comptime _ReduceVariadicAndIdxToVariadic[
     type_of(BaseVal),
 ]
 """Construct a new variadic of types using a reducer. To reduce to a single
+type, one could reduce the input to a single element variadic instead.
+
+Parameters:
+    From: The common trait bound for the input variadic types.
+    To: The common trait bound for the output variadic types.
+    BaseVal: The initial value to reduce on.
+    VariadicType: The variadic to be reduced.
+    Reducer: A `[BaseVal: Variadic.TypesOfTrait[To], Ts: *From, idx: index] -> To` that does the reduction.
+"""
+
+comptime _ReduceVariadicValueAndIdxToVariadic[
+    From: AnyType,
+    To: AnyType,
+    //,
+    *,
+    BaseVal: Variadic.ValuesOfType[To],
+    VariadicType: Variadic.ValuesOfType[From],
+    Reducer: _ReduceVariadicValueIdxGeneratorTypeGenerator[
+        Variadic.ValuesOfType[To], From
+    ],
+] = __mlir_attr[
+    `#kgen.variadic.reduce<`,
+    BaseVal,
+    `,`,
+    VariadicType,
+    `,`,
+    _IndexToIntValueWrap[From, Variadic.ValuesOfType[To], Reducer],
+    `> : `,
+    type_of(BaseVal),
+]
+"""Construct a new variadic of values using a reducer. To reduce to a single
 type, one could reduce the input to a single element variadic instead.
 
 Parameters:
@@ -1427,7 +1474,6 @@ comptime _VariadicValuesIdxToTypeGeneratorTypeGenerator[
 The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> AnyType,
 which maps the input variadic + index of the current element to another type.
 """
-
 
 comptime _WrapVariadicValuesIdxToTypeMapperToReducer[
     F: AnyType,

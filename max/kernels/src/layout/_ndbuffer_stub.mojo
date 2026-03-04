@@ -21,6 +21,7 @@ from layout.int_tuple import depth
 from layout.layout import make_layout
 
 from std.utils import IndexList, StaticTuple
+from std.builtin.variadics import _ReduceVariadicValueAndIdxToVariadic
 
 comptime _swizzle_signature = fn[dtype: DType](Scalar[dtype]) -> Scalar[dtype]
 
@@ -172,24 +173,57 @@ fn _distribute_mask[
     return res
 
 
+comptime _ValueIdxToValueGeneratorType[
+    From: AnyType, To: AnyType
+] = __mlir_type[
+    `!lit.generator<<"From": `,
+    +From,
+    `, "Idx":`,
+    Int,
+    `>`,
+    +To,
+    `>`,
+]
+"""This specifies a generator to generate a generator type for the reducer of
+values. The result generator type is [From, idx: Int] -> To,
+"""
+
+comptime _ValueToValueMapper[
+    FromType: AnyType,
+    ToType: AnyType,
+    //,
+    Mapper: _ValueIdxToValueGeneratorType[FromType, ToType],
+    Prev: Variadic.ValuesOfType[ToType],
+    From: Variadic.ValuesOfType[FromType],
+    idx: Int,
+] = Variadic.concat_values[
+    Prev,
+    Variadic.values[Mapper[From[idx], idx]],
+]
+comptime _ValueToValueVariadicMapper[
+    FromType: AnyType,
+    ToType: AnyType,
+    //,
+    Mapper: _ValueIdxToValueGeneratorType[FromType, ToType],
+    From: Variadic.ValuesOfType[FromType],
+] = _ReduceVariadicValueAndIdxToVariadic[
+    BaseVal = Variadic.empty_of_type[ToType],
+    VariadicType=From,
+    Reducer = _ValueToValueMapper[Mapper, ...],
+]
+"""Given a mapping function for an element+index and a variadic list of that
+element, this applies the function to each entry in the list and returns a new
+list of results."""
+
+
 # Returns the shape of distribute `thread_layout` into `shape`.
 #
 @always_inline("nodebug")
 fn _distribute_shape[thread_layout: Layout, shape: DimList]() -> DimList:
-    comptime assert (
-        thread_layout.rank() <= 3
-    ), "_distribute_shape requires thread_layout <= 3"
-
-    comptime shape_at[i: Int]: Dim = shape.at[i]() // Int(
-        thread_layout.shape[i]
+    comptime transform[dim: Dim, idx: Int]: Dim = dim // Int(
+        thread_layout.shape[idx]
     )
-    comptime if thread_layout.rank() == 1:
-        return DimList(shape_at[0])
-    elif thread_layout.rank() == 2:
-        return DimList(shape_at[0], shape_at[1])
-    elif thread_layout.rank() == 3:
-        return DimList(shape_at[0], shape_at[1], shape_at[2])
-    return DimList()
+    return DimList(_ValueToValueVariadicMapper[transform, shape.value.value])
 
 
 # Distribute thread_layout and returns the fragments of `thread_id`.
@@ -240,17 +274,8 @@ fn distribute[
 
 @always_inline("nodebug")
 fn _vectorize_shape[*sizes: Int, shape: DimList]() -> DimList:
-    comptime shape_at[i: Int]: Dim = shape.at[i]() // sizes[i]
-
-    comptime rank = std.builtin.Variadic.size(sizes)
-    comptime assert rank <= 3, "_vectorize_shape vector sizes <= 3"
-    comptime if rank == 1:
-        return DimList(shape_at[0])
-    elif rank == 2:
-        return DimList(shape_at[0], shape_at[1])
-    elif rank == 3:
-        return DimList(shape_at[0], shape_at[1], shape_at[2])
-    return DimList()
+    comptime transform[dim: Dim, idx: Int]: Dim = dim // sizes[idx]
+    return DimList(_ValueToValueVariadicMapper[transform, shape.value.value])
 
 
 @always_inline("nodebug")
