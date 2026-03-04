@@ -1019,6 +1019,8 @@ fn idx2crd[
     output coordinate is a ComptimeInt[0]. Otherwise, coordinates are
     RuntimeInt[out_dtype].
 
+    The idx, and all components of shape and stride must be non-negative.
+
     Parameters:
         Shape: The shape type (must be CoordLike).
         Stride: The stride type (must be CoordLike).
@@ -1077,7 +1079,9 @@ fn idx2crd[
             else:
                 var stride_val = stride_t[i].value()
                 var shape_val = shape_t[i].value()
-                var coord_val = (idx // stride_val) % shape_val
+                var coord_val = Int(
+                    (UInt(idx) // UInt(stride_val)) % UInt(shape_val)
+                )
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](
                         RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
@@ -1089,7 +1093,9 @@ fn idx2crd[
                 rebind[ResultTypes[0]](ComptimeInt[0]())
             )
         else:
-            var coord_val = (idx // stride.value()) % shape.value()
+            var coord_val = Int(
+                (UInt(idx) // UInt(stride.value())) % UInt(shape.value())
+            )
 
             comptime for i in range(shape_len):
                 UnsafePointer(to=result[i]).init_pointee_copy(
@@ -1116,6 +1122,8 @@ fn idx2crd[
     This overload accepts a CoordLike index, enabling compile-time result
     computation when the index, shape, and stride are all statically known.
     Uses the per-element formula: ``coord[i] = (idx // stride[i]) % shape[i]``.
+
+    The idx, and all components of shape and stride must be non-negative.
 
     Parameters:
         Index: The index type (must be CoordLike).
@@ -1173,7 +1181,9 @@ fn idx2crd[
             else:
                 var stride_val = stride_t[i].value()
                 var shape_val = shape_t[i].value()
-                var coord_val = (idx.value() // stride_val) % shape_val
+                var coord_val = Int(
+                    (UInt(idx.value()) // UInt(stride_val)) % UInt(shape_val)
+                )
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](
                         RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
@@ -1192,7 +1202,10 @@ fn idx2crd[
             # All static: result is ComptimeInt, already default-initialized.
             pass
         else:
-            var coord_val = (idx.value() // stride.value()) % shape.value()
+            var coord_val = Int(
+                (UInt(idx.value()) // UInt(stride.value()))
+                % UInt(shape.value())
+            )
 
             comptime for i in range(shape_len):
                 UnsafePointer(to=result[i]).init_pointee_copy(

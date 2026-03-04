@@ -239,6 +239,8 @@ struct Layout[
     are known at compile time and others are determined at runtime. It enables
     more ergonomic layout definitions while maintaining performance.
 
+    A Layout's shape and strides must be non-negative.
+
     Parameters:
         shape_types: The types for the shape dimensions.
         stride_types: The types for the stride dimensions.
@@ -357,7 +359,10 @@ struct Layout[
         var stride_t = self._stride.tuple()
 
         comptime for i in range(Self.rank):
-            var coord_val = (idx // stride_t[i].value()) % shape_t[i].value()
+            var coord_val = Int(
+                (UInt(idx) // UInt(stride_t[i].value()))
+                % UInt(shape_t[i].value())
+            )
             UnsafePointer(to=result[i]).init_pointee_copy(
                 rebind[ResultType.element_types[i]](
                     RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
