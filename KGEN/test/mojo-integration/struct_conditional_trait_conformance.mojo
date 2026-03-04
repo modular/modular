@@ -25,6 +25,16 @@ struct CopyableType(Copyable, ImplicitlyDestructible, Movable):
         self.x = x
 
 
+# An implicitly-copyable type (ImplicitlyCopyable ⊃ Copyable ⊃ Movable)
+struct ImplCopyableType(
+    Copyable, ImplicitlyCopyable, ImplicitlyDestructible, Movable
+):
+    var x: Int
+
+    fn __init__(out self, x: Int):
+        self.x = x
+
+
 # ===========================================================================
 # Test 1: Simple Conditional Conformance
 # ===========================================================================
@@ -501,6 +511,92 @@ fn test_violated_precedence():
 
 
 # ===========================================================================
+# Test 12: Conditional Movable transfer via conforms_to(T, Copyable)
+# ===========================================================================
+# The struct is conditionally Movable gated by conforms_to(T, Copyable).
+# The transfer operator (^) should work when T satisfies the condition.
+
+
+struct MovableViaCopyable[T: ImplicitlyDestructible & Movable](
+    ImplicitlyDestructible,
+    Movable where conforms_to(T, Copyable),
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+
+fn test_move_via_copyable():
+    var original = MovableViaCopyable(CopyableType(100))
+    var moved = original^
+    # CHECK: move_via_copyable: 100
+    print("move_via_copyable:", moved.value.x)
+
+
+# ===========================================================================
+# Test 13: Conditional Movable transfer via conforms_to(T, ImplicitlyCopyable)
+# ===========================================================================
+# Same as Test 12, but gated by conforms_to(T, ImplicitlyCopyable).
+# ImplicitlyCopyable also subsumes Movable, so the transfer should work.
+
+
+struct MovableViaImplCopyable[T: ImplicitlyDestructible & Movable](
+    ImplicitlyDestructible,
+    Movable where conforms_to(T, ImplicitlyCopyable),
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+
+fn test_move_via_impl_copyable():
+    var original = MovableViaImplCopyable(ImplCopyableType(200))
+    var moved = original^
+    # CHECK: move_via_impl_copyable: 200
+    print("move_via_impl_copyable:", moved.value.x)
+
+
+# ===========================================================================
+# Test 14: Both Movable and Copyable as conditional conformances
+# ===========================================================================
+# Both Movable and Copyable are conditional.  The Copyable constraint must
+# explicitly imply the Movable constraint (ancestor requirement).  Both
+# transfer (^) and copy should work when conditions are met.
+
+
+struct BothConditionalMoveCopy[T: ImplicitlyDestructible & Movable](
+    Copyable where conforms_to(T, Copyable) and conforms_to(T, Movable),
+    ImplicitlyDestructible,
+    Movable where conforms_to(T, Movable),
+):
+    var value: Self.T
+
+    fn __init__(out self, var value: Self.T):
+        self.value = value^
+
+    fn __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Movable):
+        self.value = rebind_var[Self.T](
+            trait_downcast[Copyable](copy.value).copy()
+        )
+
+
+fn test_both_conditional_move_copy():
+    var original = BothConditionalMoveCopy(CopyableType(300))
+    var copied = original.copy()
+    # CHECK: both_cond_copy: 300
+    print("both_cond_copy:", copied.value.x)
+
+    var another = BothConditionalMoveCopy(CopyableType(400))
+    var moved = another^
+    # CHECK: both_cond_move: 400
+    print("both_cond_move:", moved.value.x)
+
+
+# ===========================================================================
 # Main
 # ===========================================================================
 
@@ -520,3 +616,6 @@ fn main():
     test_diamond_same_constraint()
     test_diamond_reordered_constraint()
     test_violated_precedence()
+    test_move_via_copyable()
+    test_move_via_impl_copyable()
+    test_both_conditional_move_copy()
