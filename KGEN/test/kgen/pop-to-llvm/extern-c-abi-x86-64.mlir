@@ -9,9 +9,9 @@
 //   KGEN/test/mojo-integration/extern-c-abi/
 //
 // TRANSFORM UNDER TEST:
-//   KGEN/lib/KGENToLLVM/LowerPOPToLLVM.cpp  — ConvertPOPExternalCall
-//   KGEN/lib/KGENToLLVM/CABISystemV.cpp      — SystemVABIInfo classifier
-//   KGEN/lib/KGENToLLVM/CABILowering.cpp     — shared utilities
+//   KGEN/lib/KGENToLLVM/LowerPOPToLLVMExternalCalls.cpp — ConvertPOPExternalCall
+//   KGEN/lib/KGENToLLVM/CABISystemV.cpp                 — SystemVABIInfo classifier
+//   KGEN/lib/KGENToLLVM/CABILowering.cpp                — shared utilities
 //
 // RELATED TEST FILES:
 //   extern-c-abi.mlir         — platform-independent tests (DefaultCABIInfo,
@@ -69,6 +69,17 @@
 //   H1  func_attrs_passthrough    funcAttrs = ["noinline"]    → passthrough on llvm.func
 //   H2  arg_attrs_two_reg         argAttrs on two-reg struct  → attr on first register
 //   H3  arg_attrs_sret            argAttrs with sret return   → attr shifted past sret ptr
+//
+// Group F — Vector type fields: SSE classification (regression guards)
+//   F1  arg_vec2xf32_struct       {vector<2xf32>}       correct: f64 (SSE)
+//   F2  arg_vec2xf32_and_f64      {vector<2xf32>,f64}   correct: SSEPair(f64,f64)
+//
+// Group N — Nested struct fields (LLVMStructType)
+//   N1  arg_nested_float_4        {struct<(f32)>}          correct: f32  (SSE)
+//   N2  arg_nested_float_8        {struct<(f32,f32)>}      correct: f64  (SSE)
+//   N3  arg_nested_float_and_f64  {struct<(f32,f32)>,f64}  correct: SSEPair(f64,f64)
+//   N4  arg_nested_int_8          {struct<(i32,i32)>}      correct: i64  (regression guard)
+//   N5  arg_nested_int_and_i64    {struct<(i32,i32)>,i64}  correct: IntegerPair(i64,i64)
 //
 // MODULE HEADER NOTE: Each test uses the standard x86-64 Linux data layout
 // string to drive struct size and alignment computation in getStructSize(),
@@ -563,4 +574,129 @@ llvm.func @arg_attrs_sret(%arg0: i32) {
 }
 // sret ptr at param 0, original arg with user attr at param 1.
 // CHECK: llvm.func @c_h3(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i32 {llvm.noundef})
+}
+
+//===----------------------------------------------------------------------===//
+// Group F: Vector type fields — SSE classification (regression guards)
+//
+// In the MLIR assembly context, vector<N x f32> inside !llvm.struct<(...)> is
+// parsed as mlir::VectorType (MLIR built-in), which IS handled by the existing
+// dyn_cast<mlir::VectorType> check in isAllFloatStruct and classifyEightbyte.
+// These tests verify that vector fields remain correctly classified as SSE.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// F1: {vector<2 x f32>} (8 bytes, all-float via VectorType) → SSE → f64.
+// The vector field is recognized by isAllFloatStruct (VectorType with float
+// elements); 8-byte all-float struct → f64 (SSE). Regression guard.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_vec2xf32_struct
+llvm.func @arg_vec2xf32_struct(%arg0: !llvm.struct<(vector<2 x f32>)>) {
+  // CHECK: llvm.call @c_f1(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_f1(%arg0) : (!llvm.struct<(vector<2 x f32>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_f1(f64)
+}
+
+// -----
+
+// F2: {vector<2 x f32>, f64} (16 bytes) → SSEPair → (f64, f64).
+// Eightbyte 0 (bytes 0-7): vector<2 x f32> (VectorType) → SSE → f64.
+// Eightbyte 1 (bytes 8-15): f64 → SSE → f64.
+// Both SSE → SSEPair. Regression guard.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_vec2xf32_and_f64
+llvm.func @arg_vec2xf32_and_f64(%arg0: !llvm.struct<(vector<2 x f32>, f64)>) {
+  // CHECK: llvm.call @c_f2(%{{.*}}, %{{.*}}) : (f64, f64) -> ()
+  pop.external_call @c_f2(%arg0) : (!llvm.struct<(vector<2 x f32>, f64)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_f2(f64, f64)
+}
+
+//===----------------------------------------------------------------------===//
+// Group N: Nested struct fields (LLVMStructType)
+//
+// isAllFloatStruct and classifyEightbyte now recurse into nested LLVMStructType
+// fields, so float nested structs receive correct SSE classification.
+// N1-N3: nested float structs → SSE. N4-N5: integer regression guards.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// N1: {struct<(f32)>} (4 bytes) — CORRECT: isAllFloatStruct now recurses into
+// nested LLVMStructType fields. Inner struct<(f32)> is all-float → outer is
+// all-float → 4-byte SSE struct → f32.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_nested_float_4
+llvm.func @arg_nested_float_4(%arg0: !llvm.struct<(!llvm.struct<(f32)>)>) {
+  // CHECK: llvm.call @c_n1(%{{.*}}) : (f32) -> ()
+  pop.external_call @c_n1(%arg0) : (!llvm.struct<(!llvm.struct<(f32)>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n1(f32)
+}
+
+// -----
+
+// N2: {struct<(f32,f32)>} (8 bytes) — CORRECT: isAllFloatStruct recurses into
+// nested struct<(f32,f32)> → all-float → 8-byte SSE struct → f64.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_nested_float_8
+llvm.func @arg_nested_float_8(%arg0: !llvm.struct<(!llvm.struct<(f32, f32)>)>) {
+  // CHECK: llvm.call @c_n2(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_n2(%arg0) : (!llvm.struct<(!llvm.struct<(f32, f32)>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n2(f64)
+}
+
+// -----
+
+// N3: {struct<(f32,f32)>, f64} (16 bytes) — CORRECT: classifyEightbyte now
+// recurses into nested LLVMStructType fields.
+// Eightbyte 0 (bytes 0-7): struct<(f32,f32)> → recursive classify → SSE → f64.
+// Eightbyte 1 (bytes 8-15): f64 → SSE → f64.
+// Both SSE → SSEPair (f64, f64).
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_nested_float_and_f64
+llvm.func @arg_nested_float_and_f64(%arg0: !llvm.struct<(!llvm.struct<(f32, f32)>, f64)>) {
+  // CHECK: llvm.call @c_n3(%{{.*}}, %{{.*}}) : (f64, f64) -> ()
+  pop.external_call @c_n3(%arg0) : (!llvm.struct<(!llvm.struct<(f32, f32)>, f64)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n3(f64, f64)
+}
+
+// -----
+
+// N4: {struct<(i32,i32)>} (8 bytes) — CORRECT: nested struct with integer fields.
+// isAllFloatStruct correctly returns false (not all float). classifyEightbyte:
+// the LLVMStructType field defaults to INTEGER, which is correct here.
+// Regression guard: integer nested structs must remain i64.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_nested_int_8
+llvm.func @arg_nested_int_8(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>)>) {
+  // CHECK: llvm.call @c_n4(%{{.*}}) : (i64) -> ()
+  pop.external_call @c_n4(%arg0) : (!llvm.struct<(!llvm.struct<(i32, i32)>)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n4(i64)
+}
+
+// -----
+
+// N5: {struct<(i32,i32)>, i64} (16 bytes) — CORRECT: eightbyte 0 has
+// struct<(i32,i32)> → INTEGER (correct); eightbyte 1 has i64 → INTEGER.
+// IntegerPair (i64, i64). Regression guard.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_nested_int_and_i64
+llvm.func @arg_nested_int_and_i64(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>, i64)>) {
+  // CHECK: llvm.call @c_n5(%{{.*}}, %{{.*}}) : (i64, i64) -> ()
+  pop.external_call @c_n5(%arg0) : (!llvm.struct<(!llvm.struct<(i32, i32)>, i64)>) -> ()
+  llvm.return
+}
+// CHECK: llvm.func @c_n5(i64, i64)
 }
