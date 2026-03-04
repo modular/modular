@@ -383,6 +383,15 @@ fn fused_rope_rmsnorm_quantization_kernel[
                         (Idx(global_token_idx), Idx(idx))
                     ).cast[accum_type]()
 
+                # Prefetch gamma before block_reduce to overlap memory
+                # latency with reduction compute.
+                var gamma_val = SIMD[gamma_dtype, k_width](0)
+                if idx < kv_norm_dim:
+                    gamma_val = gamma.load[
+                        width=k_width,
+                        alignment = align_of[SIMD[gamma_dtype, k_width]](),
+                    ](Coord(Idx(idx)))
+
                 var norm_val = _rms_norm_warp_tiling_subkernel[
                     warps_per_block,
                     False,  # Do not multiply the gamma before casting.
@@ -390,7 +399,7 @@ fn fused_rope_rmsnorm_quantization_kernel[
                     global_token_idx,
                     idx,
                     vec_data,
-                    gamma,
+                    gamma_val,
                     epsilon.cast[accum_type](),
                     0.0,
                     kv_norm_dim,
