@@ -43,7 +43,7 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
   if (!shared)
     return;
 
-  if (isa<Unclassified>(info))
+  if (isa<Unclassified, UnprovableConstraints>(info))
     return;
 
   if (isa<DependsOnUnresolved>(info)) {
