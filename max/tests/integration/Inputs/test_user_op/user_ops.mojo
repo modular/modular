@@ -54,7 +54,8 @@ struct ParameterizedOpaqueType:
     fn execute[
         P0: Int
     ](
-        output: OutputTensor[dtype = DType.int32, rank=1], x: SIMDPair[P0, _]
+        output: OutputTensor[dtype = DType.int32, rank=1, ...],
+        x: SIMDPair[P0, _],
     ) capturing:
         output.store(IndexList[1](0), x.x)
         output.store(IndexList[1](P0), x.y)

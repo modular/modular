@@ -38,7 +38,7 @@ from std.sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, Float32],
+    a_ptr: UnsafePointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -84,7 +84,7 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, Float16],
+    a_ptr: UnsafePointer[mut=False, Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -132,7 +132,7 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, BFloat16],
+    a_ptr: UnsafePointer[mut=False, BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -208,7 +208,7 @@ fn load_matrix_a[
 fn load_matrix_a_amd[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[mut=False, Float32],
+    a_ptr: UnsafePointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -244,7 +244,7 @@ fn load_matrix_a_amd[
 fn load_matrix_a_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    a_ptr: UnsafePointer[mut=False, Scalar[dtype]],
+    a_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -314,7 +314,7 @@ fn load_matrix_a_amd[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, Float32],
+    b_ptr: UnsafePointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -357,7 +357,7 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, Float16],
+    b_ptr: UnsafePointer[mut=False, Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -400,7 +400,7 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, BFloat16],
+    b_ptr: UnsafePointer[mut=False, BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -460,7 +460,7 @@ fn load_matrix_b[
 fn load_matrix_b_amd[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[mut=False, Float32],
+    b_ptr: UnsafePointer[mut=False, Float32, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -492,7 +492,7 @@ fn load_matrix_b_amd[
 fn load_matrix_b_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    b_ptr: UnsafePointer[mut=False, Scalar[dtype]],
+    b_ptr: UnsafePointer[mut=False, Scalar[dtype], _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -564,7 +564,7 @@ fn load_matrix_b_amd[
 fn _store_matrix_d_nvidia[
     dtype: DType, //, m: Int, n: Int, k: Int
 ](
-    d_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -615,7 +615,7 @@ fn _store_matrix_d_nvidia[
 fn _store_matrix_d_amd[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    d_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,
@@ -682,7 +682,7 @@ fn _store_matrix_d_amd[
 fn store_matrix_d[
     dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
 ](
-    d_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    d_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,

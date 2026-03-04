@@ -556,7 +556,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(
-        self, src_ptr: UnsafePointer[Scalar[Self.dtype]]
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -1153,7 +1153,7 @@ struct DeviceBuffer[dtype: DType](
         self.context().enqueue_copy(self, src)
 
     fn enqueue_copy_from(
-        self, src_ptr: UnsafePointer[Scalar[Self.dtype]]
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -3340,7 +3340,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ](self._handle)
 
     @doc_private
-    fn __init__(out self, handle: OpaquePointer[mut=True]):
+    fn __init__(out self, handle: OpaquePointer[mut=True, _]):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
         self._handle = handle.bitcast[_DeviceContextCpp]()

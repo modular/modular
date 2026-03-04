@@ -803,6 +803,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -834,6 +835,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeKV = LayoutTensorIter[
         k_type,
         Layout(IntTuple(Int(BN), Int(BK)), IntTuple(Int(nope_dim), 1)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -847,6 +849,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeV = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BK), Int(nope_dim)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -859,6 +862,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -919,6 +923,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeP = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -2111,7 +2116,7 @@ fn mla_prefill_single_batch[
     q_depth: Int = 192,
     cache_depth: Int = 576,
 ](
-    q_ptr: UnsafePointer[mut=True, Scalar[q_type]],
+    q_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
@@ -2171,6 +2176,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -2195,6 +2201,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -2207,6 +2214,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeV = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BK), Int(depth)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -2309,6 +2317,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeP = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]

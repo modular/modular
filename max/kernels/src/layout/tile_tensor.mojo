@@ -2469,7 +2469,7 @@ comptime _ToRuntimeInts[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=element_types,
-    Mapper = _ToRuntimeMapper[dtype],
+    Mapper = _ToRuntimeMapper[dtype, ...],
 ]
 """Convert all shape types to RuntimeInt for slicing operations.
 
@@ -2493,7 +2493,7 @@ comptime _Slice[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=element_types,
-    Mapper = _SliceMapper[slices=slices],
+    Mapper = _SliceMapper[slices=slices, ...],
 ]
 
 
@@ -2514,7 +2514,7 @@ comptime _IsRowMajorHelper[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=stride_types,
-    Mapper = _IsRowMajorMapper[expected_strides = _RowMajor[*shape_types]],
+    Mapper = _IsRowMajorMapper[expected_strides = _RowMajor[*shape_types], ...],
 ]
 """Returns variadic of ComptimeInt[1] if strides match, ComptimeInt[0] if not."""
 

@@ -593,12 +593,9 @@ fn warp_specialized_matmul[
     consumer_warps: Int,
     pipeline_stages: Int = 1,
 ](
-    a_device_tensor: LayoutTensor[
-        DType.bfloat16,
-        Layout.row_major(M, K),
-    ],
-    b_device_tensor: LayoutTensor[DType.bfloat16, Layout.row_major(N, K)],
-    c_device_tensor: LayoutTensor[DType.float32, Layout.row_major(M, N)],
+    a_device_tensor: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), ...],
+    b_device_tensor: LayoutTensor[DType.bfloat16, Layout.row_major(N, K), ...],
+    c_device_tensor: LayoutTensor[DType.float32, Layout.row_major(M, N), ...],
     ctx: DeviceContext,
 ) raises:
     comptime kernel = warp_specialized_matmul_kernel[

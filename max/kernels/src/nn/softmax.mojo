@@ -1305,8 +1305,8 @@ fn _online_softmax_iter_for_mma_output[
     output_reg_tile: LayoutTensor[mut=True, dtype, ...],
     score_reg_tile: LayoutTensor[mut=True, dtype, ...],
     warp_scratch: LayoutTensor[mut=True, dtype, ...],
-    rowmax: UnsafePointer[mut=True, Scalar[dtype]],
-    rowsum: UnsafePointer[mut=True, Scalar[dtype]],
+    rowmax: UnsafePointer[mut=True, Scalar[dtype], _],
+    rowsum: UnsafePointer[mut=True, Scalar[dtype], _],
 ):
     comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
@@ -1672,9 +1672,10 @@ fn _online_softmax_iter_for_mma_output_split_warp_reduce[
         mut=True,
         Scalar[dtype],
         address_space = AddressSpace.SHARED,
+        _,
     ],
-    rowmax: UnsafePointer[mut=True, Scalar[dtype]],
-    rowsum: UnsafePointer[mut=True, Scalar[dtype]],
+    rowmax: UnsafePointer[mut=True, Scalar[dtype], _],
+    rowsum: UnsafePointer[mut=True, Scalar[dtype], _],
 ):
     # Here, we use naming conventions aligning with MHA's
     comptime num_m_mmas = score_layout_by_mma_unit.shape[0].value()

@@ -1282,7 +1282,7 @@ fn iota[
 fn iota[
     dtype: DType, //
 ](
-    buff: UnsafePointer[mut=True, Scalar[dtype], address_space=_],
+    buff: UnsafePointer[mut=True, Scalar[dtype], _, address_space=_],
     len: Int,
     offset: Int = 0,
 ):
@@ -2961,7 +2961,7 @@ fn gcd(m: Int, n: Int, /) -> Int:
     return u << shift
 
 
-fn gcd(s: Span[Int], /) -> Int:
+fn gcd(s: Span[Int, _], /) -> Int:
     """Computes the greatest common divisor of a span of integers.
 
     Args:
@@ -3033,7 +3033,7 @@ fn lcm(m: Int, n: Int, /) -> Int:
     return 0
 
 
-fn lcm(s: Span[Int], /) -> Int:
+fn lcm(s: Span[Int, _], /) -> Int:
     """Computes the least common multiple of a span of integers.
 
     Args:

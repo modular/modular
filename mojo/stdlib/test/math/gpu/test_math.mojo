@@ -101,8 +101,8 @@ def test_math() raises:
 
             comptime for idx in range(ls):
                 comptime kernel_fn = kernel_fns[idx]
-                run_func[DType.float32, kernel_fn[]](ctx)
-                run_func[DType.float16, kernel_fn[]](ctx)
+                run_func[DType.float32, kernel_fn[...]](ctx)
+                run_func[DType.float16, kernel_fn[...]](ctx)
 
         # Anything that's commented does not work atm and needs to be
         # implemented. This list is also not exhaustive and needs to be

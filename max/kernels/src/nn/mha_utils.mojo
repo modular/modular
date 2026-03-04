@@ -422,7 +422,7 @@ fn _copy_frag_to_smem_nvidia[
         type0, layout0, address_space = AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space = AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -521,7 +521,7 @@ fn _copy_frag_to_smem_amd[
         type0, layout0, address_space = AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space = AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -601,7 +601,7 @@ fn _copy_frag_to_smem[
         type0, layout0, address_space = AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space = AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,

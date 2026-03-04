@@ -461,7 +461,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         _level: Level
     ](
         self,
-        values: VariadicPack[element_trait=Writable],
+        values: VariadicPack[element_trait=Writable, ...],
         *,
         location: SourceLocation,
         sep: StaticString = " ",

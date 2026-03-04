@@ -198,7 +198,7 @@ def test_large_layout_linear_index() raises:
     # Shape size exceeds Int32 max but stays within UInt32 max.
     # This ensures the runtime layout uses Int64 for linear indexing.
     comptime large_layout = Layout.row_major(65536, 57344)
-    comptime tensor_type = LayoutTensor[DType.uint8, large_layout]
+    comptime tensor_type = LayoutTensor[DType.uint8, large_layout, _]
 
     var shape = tensor_type.RuntimeLayoutType.ShapeType(65536, 57344)
     var stride = tensor_type.RuntimeLayoutType.StrideType(57344, 1)

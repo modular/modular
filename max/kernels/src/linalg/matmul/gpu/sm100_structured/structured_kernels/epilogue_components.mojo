@@ -1105,7 +1105,7 @@ struct EpilogueApplier[
         local_col: UInt32,
         is_upper: Bool,
         src_ptr: UnsafePointer[
-            Scalar[c_type], address_space = AddressSpace.SHARED
+            Scalar[c_type], _, address_space = AddressSpace.SHARED
         ],
         beta: Scalar[epilogue_dtype],
     ):
@@ -1174,7 +1174,7 @@ struct EpilogueApplier[
         mut lower_frag: SIMD[epilogue_dtype, frag_size],
         stage: UInt32,
         src_ptr: UnsafePointer[
-            Scalar[c_type], address_space = AddressSpace.SHARED
+            Scalar[c_type], _, address_space = AddressSpace.SHARED
         ],
         beta: Scalar[epilogue_dtype],
     ) -> Tuple[

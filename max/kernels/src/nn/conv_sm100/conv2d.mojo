@@ -80,9 +80,9 @@ fn conv2d_fprop[
     ] = None,
     register_based_epilogue: Bool = True,
 ](
-    output: NDBuffer[out_type, 4],  # NHWC
-    activation: NDBuffer[act_type, 4],  # NHWC
-    filter: NDBuffer[filter_type, 4],  # KRSC (out_ch, R, S, in_ch)
+    output: NDBuffer[out_type, 4, _],  # NHWC
+    activation: NDBuffer[act_type, 4, _],  # NHWC
+    filter: NDBuffer[filter_type, 4, _],  # KRSC (out_ch, R, S, in_ch)
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
 ) raises:
@@ -351,10 +351,10 @@ fn conv2d_fprop_with_residual[
     register_based_epilogue: Bool = True,
     has_residual: Bool = False,
 ](
-    output: NDBuffer[out_type, 4],  # NHWC - D = Conv(A,B) + beta*C
-    activation: NDBuffer[act_type, 4],  # NHWC - A
-    filter: NDBuffer[filter_type, 4],  # KRSC - B
-    source: NDBuffer[out_type, 4],  # NHWC - C (residual input)
+    output: NDBuffer[out_type, 4, _],  # NHWC - D = Conv(A,B) + beta*C
+    activation: NDBuffer[act_type, 4, _],  # NHWC - A
+    filter: NDBuffer[filter_type, 4, _],  # KRSC - B
+    source: NDBuffer[out_type, 4, _],  # NHWC - C (residual input)
     beta: Float32,  # Residual scale factor
     problem: Conv2dProblemShape,
     ctx: DeviceContext,

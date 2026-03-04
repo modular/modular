@@ -29,7 +29,7 @@ comptime ConditionalType[
 ] = Variadic.concat_types[
     Variadic.filter_types[
         *Variadic.types[T=Trait, Then],
-        predicate = _ConditionalTypePredicate[Trait, If],
+        predicate = _ConditionalTypePredicate[Trait, If, ...],
     ],
     Variadic.types[Else],
 ][

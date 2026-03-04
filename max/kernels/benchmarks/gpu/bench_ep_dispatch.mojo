@@ -60,7 +60,7 @@ from std.utils import IndexList
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32], n_tokens: Int):
+](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 

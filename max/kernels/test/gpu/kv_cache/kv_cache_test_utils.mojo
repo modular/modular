@@ -53,7 +53,7 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
         return RuntimeLayout[Self.layout].row_major(self.shape)
 
     fn _tensor(
-        self, ptr: UnsafePointer[Scalar[Self.dtype]]
+        self, ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) -> Self.tensor_type:
         return Self.tensor_type(ptr, self._runtime_layout())
 

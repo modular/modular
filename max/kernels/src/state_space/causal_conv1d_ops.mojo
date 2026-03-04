@@ -67,10 +67,10 @@ struct CausalConv1D[activation: StaticString]:
         rank: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        input: InputTensor[dtype=dtype, rank=rank],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         if rank != 3:
@@ -382,9 +382,9 @@ struct CausalConv1D[activation: StaticString]:
         dtype: DType,
         rank: Int,
     ](
-        input: InputTensor[dtype=dtype, rank=rank],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -422,12 +422,12 @@ struct CausalConv1DUpdate[activation: StaticString]:
         rank: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        conv_state: OutputTensor[dtype=dtype, rank=rank],
-        input: InputTensor[dtype=dtype, rank=rank],
-        conv_state_in: InputTensor[dtype=dtype, rank=rank],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        conv_state: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         if rank != 3:
@@ -580,9 +580,9 @@ struct CausalConv1DUpdate[activation: StaticString]:
         dtype: DType,
         rank: Int,
     ](
-        input: InputTensor[dtype=dtype, rank=rank],
-        conv_state_in: InputTensor[dtype=dtype, rank=rank],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        conv_state_in: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
     ) -> Tuple[IndexList[rank], IndexList[rank]]:
         return (input.shape(), conv_state_in.shape())

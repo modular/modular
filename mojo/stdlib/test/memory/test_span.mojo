@@ -119,7 +119,7 @@ def test_indexing() raises:
 
 
 def test_span_slice() raises:
-    def compare(s: Span[Int], l: List[Int]) raises -> Bool:
+    def compare(s: Span[Int, ...], l: List[Int]) raises -> Bool:
         if len(s) != len(l):
             return False
         for i in range(len(s)):
@@ -213,7 +213,7 @@ def test_span_coerce() raises:
     var l = [1, 2, 3]
     var a: InlineArray[Int, 3] = [1, 2, 3]
 
-    fn takes_span(s: Span[Int]):
+    fn takes_span(s: Span[Int, ...]):
         pass
 
     takes_span(l)
@@ -334,14 +334,14 @@ def test_apply() raises:
         ]
         twice = items.copy()
         span = Span(twice)
-        span.apply[func = _twice[D]]()
+        span.apply[func = _twice[D, ...]]()
         for i, item in enumerate(items):
             assert_true(span[i] == item * 2)
 
         # twice only even numbers
         twice = items.copy()
         span = Span(twice)
-        span.apply[func = _twice[D], cond = _where[D]]()
+        span.apply[func = _twice[D, ...], cond = _where[D, ...]]()
         for i, item in enumerate(items):
             if item % 2 == 0:
                 assert_true(span[i] == item * 2)

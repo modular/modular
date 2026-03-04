@@ -105,7 +105,7 @@ fn _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
         return None
 
 
-fn is_uppercase(s: StringSlice[mut=False]) -> Bool:
+fn is_uppercase(s: StringSlice[mut=False, _]) -> Bool:
     """Returns True if all characters in the string are uppercase, and
         there is at least one cased character.
 
@@ -134,7 +134,7 @@ fn is_uppercase(s: StringSlice[mut=False]) -> Bool:
     return found
 
 
-fn is_lowercase(s: StringSlice[mut=False]) -> Bool:
+fn is_lowercase(s: StringSlice[mut=False, _]) -> Bool:
     """Returns True if all characters in the string are lowercase, and
         there is at least one cased character.
 
@@ -165,7 +165,7 @@ fn is_lowercase(s: StringSlice[mut=False]) -> Bool:
     return found
 
 
-fn to_lowercase(s: StringSlice[mut=False]) -> String:
+fn to_lowercase(s: StringSlice[mut=False, _]) -> String:
     """Returns a new string with all characters converted to uppercase.
 
     Args:
@@ -193,7 +193,7 @@ fn to_lowercase(s: StringSlice[mut=False]) -> String:
     return result^
 
 
-fn to_uppercase(s: StringSlice[mut=False]) -> String:
+fn to_uppercase(s: StringSlice[mut=False, _]) -> String:
     """Returns a new string with all characters converted to uppercase.
 
     Args:

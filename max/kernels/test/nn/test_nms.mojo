@@ -42,7 +42,7 @@ fn fill_boxes[
     dtype: DType
 ](
     batch_size: Int,
-    box_list: Span[BoxCoords[dtype]],
+    box_list: Span[BoxCoords[dtype], ...],
     boxes: TileTensor[mut=True, dtype, ...],
 ):
     comptime assert boxes.flat_rank == 3
@@ -74,7 +74,7 @@ fn fill_scores[
 ](
     batch_size: Int,
     num_classes: Int,
-    scores_list: Span[Scalar[dtype]],
+    scores_list: Span[Scalar[dtype], ...],
     scores: TileTensor[mut=True, dtype, ...],
 ):
     comptime assert scores.flat_rank == 3
@@ -94,8 +94,8 @@ fn test_case[
     iou_threshold: Float32,
     score_threshold: Float32,
     max_output_boxes_per_class: Int,
-    box_list: Span[BoxCoords[dtype]],
-    scores_list: Span[Scalar[dtype]],
+    box_list: Span[BoxCoords[dtype], ...],
+    scores_list: Span[Scalar[dtype], ...],
 ):
     # Create boxes tensor
     var boxes_shape = IndexList[3](batch_size, num_boxes, 4)

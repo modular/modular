@@ -831,8 +831,8 @@ fn split_k_reduce[
     work_space_layout: Layout,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[mut=True, c_type, c_layout],
-    work_space: LayoutTensor[work_space_type, work_space_layout],
+    c: LayoutTensor[mut=True, c_type, c_layout, ...],
+    work_space: LayoutTensor[work_space_type, work_space_layout, ...],
     ctx: DeviceContext,
 ) raises:
     comptime simd_width = simd_width_of[c_type, target = get_gpu_target()]()

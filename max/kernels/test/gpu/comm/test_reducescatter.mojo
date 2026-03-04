@@ -177,7 +177,7 @@ fn reducescatter_test[
         reducescatter[
             ngpus=ngpus,
             output_lambda = Optional[elementwise_epilogue_type](
-                outputs_lambda[input_index=i]
+                outputs_lambda[input_index=i, ...]
             ) if use_custom_epilogue else None,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 
@@ -412,7 +412,7 @@ fn reducescatter_axis_test[
             ngpus=ngpus,
             axis=axis,
             output_lambda = Optional[elementwise_epilogue_type](
-                outputs_lambda[input_index=i]
+                outputs_lambda[input_index=i, ...]
             ) if use_custom_epilogue else None,
         ](in_bufs, out_bufs[i], rank_sigs, list_of_ctx[i])
 

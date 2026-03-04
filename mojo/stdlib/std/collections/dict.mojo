@@ -97,7 +97,7 @@ struct _Group(Copyable, Movable):
     var ctrl: SIMD[DType.uint8, _GROUP_WIDTH]
 
     @always_inline
-    fn __init__(out self, ptr: UnsafePointer[UInt8]):
+    fn __init__(out self, ptr: UnsafePointer[UInt8, _]):
         """Load a group of control bytes from memory.
 
         Args:

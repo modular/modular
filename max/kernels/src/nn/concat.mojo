@@ -52,9 +52,9 @@ fn memcpy_or_fuse[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    dest_data: UnsafePointer[mut=True, Int8],
+    dest_data: UnsafePointer[mut=True, Int8, _],
     out_byte_offset: Int,
-    src_data: UnsafePointer[Int8],
+    src_data: UnsafePointer[Int8, _],
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:
@@ -1061,7 +1061,7 @@ fn _fused_concat_gpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[mut=True, dtype],
+    output: TileTensor[mut=True, dtype, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1127,7 +1127,7 @@ fn fused_concat[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
-    output: TileTensor[mut=True, dtype],
+    output: TileTensor[mut=True, dtype, _, _],
     ctx: DeviceContextPtr,
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"

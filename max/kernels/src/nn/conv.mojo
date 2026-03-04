@@ -920,6 +920,7 @@ struct ConvDirectNHWC[
             Layout.row_major(
                 micro_kernel_height, micro_kernel_width * simd_size
             ),
+            _,
         ],
     ):
         """Initialize a micro tile to zero.
@@ -951,6 +952,7 @@ struct ConvDirectNHWC[
             Layout.row_major(
                 micro_kernel_height, micro_kernel_width * simd_size
             ),
+            _,
         ],
     ):
         """Load a micro tile from the output buffer.
@@ -1007,6 +1009,7 @@ struct ConvDirectNHWC[
             Layout.row_major(
                 micro_kernel_height, micro_kernel_width * simd_size
             ),
+            _,
         ],
         output_base: UnsafePointer[Scalar[Self.output_type]],
     ):
@@ -1061,7 +1064,7 @@ struct ConvDirectNHWC[
     ](
         self,
         input_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(micro_kernel_height)
+            DType.int32, Layout.row_major(micro_kernel_height), _
         ],
         input_offset: Int,
         c_tile_size: Int,
@@ -2963,9 +2966,9 @@ fn conv_nhwc_direct[
     lambdas_have_fusion: Bool,
     elementwise_lambda: elementwise_simd_epilogue_type,
 ](
-    input: LayoutTensor[input_type, input_layout],
-    filter: LayoutTensor[filter_type, filter_layout],
-    output: LayoutTensor[mut=True, output_type, output_layout],
+    input: LayoutTensor[input_type, input_layout, _],
+    filter: LayoutTensor[filter_type, filter_layout, _],
+    output: LayoutTensor[mut=True, output_type, output_layout, _],
     stride: IndexList[conv_info_rank],
     dilation: IndexList[conv_info_rank],
     pad_d: IndexList[2],

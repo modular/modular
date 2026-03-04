@@ -124,8 +124,8 @@ fn block_memcpy[
     num_bytes: Int,
     block_size: Int,
 ](
-    dst_p: UnsafePointer[mut=True, UInt8, address_space=dst_addr_space],
-    src_p: UnsafePointer[mut=False, UInt8, address_space=src_addr_space],
+    dst_p: UnsafePointer[mut=True, UInt8, _, address_space=dst_addr_space],
+    src_p: UnsafePointer[mut=False, UInt8, _, address_space=src_addr_space],
     thread_idx: UInt,
 ) -> None:
     """
@@ -331,8 +331,8 @@ trait TokenFormat(DevicePassable, TrivialRegisterPassable):
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
-        src_p: UnsafePointer[mut=False, Scalar[src_type]],
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], _],
         input_scale: Float32,
     ) -> None:
         "Copy the token to the send buffer. This function needs to be called by all threads in the block."
@@ -343,7 +343,7 @@ trait TokenFormat(DevicePassable, TrivialRegisterPassable):
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
+        buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
         expert_id: Int,
         expert_token_index: Int,
@@ -407,8 +407,8 @@ struct BF16TokenFormat[
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
-        src_p: UnsafePointer[mut=False, Scalar[src_type]],
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], _],
         input_scale: Float32,
     ) -> None:
         block_memcpy[Self.hid_dim * size_of[BFloat16](), Int(block_size)](
@@ -422,7 +422,7 @@ struct BF16TokenFormat[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
+        buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
         expert_id: Int,
         expert_token_index: Int,
@@ -572,8 +572,8 @@ struct BlockwiseFP8TokenFormat[
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
-        src_p: UnsafePointer[mut=False, Scalar[src_type]],
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], _],
         input_scale: Float32,
     ) -> None:
         comptime src_width = simd_width_of[src_type]()
@@ -624,7 +624,7 @@ struct BlockwiseFP8TokenFormat[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
+        buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
         expert_id: Int,
         expert_token_index: Int,
@@ -877,8 +877,8 @@ struct NVFP4TokenFormat[
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
-        src_p: UnsafePointer[mut=False, Scalar[src_type]],
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], _],
         input_scale: Float32,
     ) -> None:
         comptime src_width = 8
@@ -931,7 +931,7 @@ struct NVFP4TokenFormat[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
+        buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
         expert_id: Int,
         expert_token_index: Int,
@@ -1034,7 +1034,7 @@ struct EPLocalSyncCounters[n_experts: Int](
     comptime device_type: AnyType = Self
 
     @always_inline
-    fn __init__(out self, ptr: UnsafePointer[Int32]):
+    fn __init__(out self, ptr: UnsafePointer[Int32, _]):
         self.ptr = UnsafePointer[Int32, MutExternalOrigin](ptr)
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):

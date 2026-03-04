@@ -123,7 +123,9 @@ def test_merge() raises:
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
 def _test_get_immutable() raises -> Int:
-    fn foo(x: Pointer[mut=False, Int], y: Pointer[mut=False, Int]) -> Int:
+    fn foo(
+        x: Pointer[mut=False, Int, ...], y: Pointer[mut=False, Int, ...]
+    ) -> Int:
         return x[]
 
     var x = Int(0)

@@ -1080,7 +1080,7 @@ fn reshape_contiguous_buffer[
 @register_internal("get_simd_width_for_dtypes")
 @always_inline
 fn get_simd_width_for_dtypes[
-    dtypes: StaticTuple[DType], target: StaticString
+    dtypes: StaticTuple[DType, _], target: StaticString
 ]() -> Int:
     comptime assert dtypes.size > 0
 
@@ -1148,7 +1148,7 @@ fn to_managed_tensor_slice[
 @always_inline
 fn _get_scalar_from_managed_tensor_slice[
     dtype: DType,
-](tensor: ManagedTensorSlice[dtype=dtype]) -> Scalar[dtype]:
+](tensor: ManagedTensorSlice[dtype=dtype, ...]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.

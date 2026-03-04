@@ -957,7 +957,7 @@ struct TileWriter[
         c_tensor_layout: Layout,
     ](
         c_smem_ptr: UnsafePointer[
-            Scalar[Self.c_type], address_space = AddressSpace.SHARED
+            Scalar[Self.c_type], _, address_space = AddressSpace.SHARED
         ],
         c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
         m_abs: UInt32,

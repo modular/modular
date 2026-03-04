@@ -1679,6 +1679,7 @@ fn mha_single_batch[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -1703,6 +1704,7 @@ fn mha_single_batch[
     comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -1715,6 +1717,7 @@ fn mha_single_batch[
     comptime IteratorTypeV = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BK), Int(BN)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -1829,6 +1832,7 @@ fn mha_single_batch[
     comptime IteratorTypeP = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -2415,6 +2419,7 @@ fn mha_single_batch_pipelined[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -2439,6 +2444,7 @@ fn mha_single_batch_pipelined[
     comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -2559,6 +2565,7 @@ fn mha_single_batch_pipelined[
     comptime IteratorTypeP = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -3308,7 +3315,7 @@ fn scale_and_mask_helper[
     simd_width: Int,
 ](
     p_reg_tile: LayoutTensor[
-        mut=True, p_type, p_layout, address_space = AddressSpace.LOCAL
+        mut=True, p_type, p_layout, _, address_space = AddressSpace.LOCAL
     ],
     scale_log2e: Float32,
     num_keys: UInt,
@@ -3464,6 +3471,7 @@ fn mha_decoding_single_batch[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -3487,6 +3495,7 @@ fn mha_decoding_single_batch[
     comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -3499,6 +3508,7 @@ fn mha_decoding_single_batch[
     comptime IteratorTypeV = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BK), Int(BN)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -3583,6 +3593,7 @@ fn mha_decoding_single_batch[
     comptime IteratorTypeP = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -3906,6 +3917,7 @@ fn mha_decoding_single_batch[
             comptime IteratorTypeVSub = LayoutTensorIter[
                 v_type,
                 Layout.row_major(Int(WN), Int(BN)),
+                _,
                 address_space = AddressSpace.SHARED,
                 circular=True,
             ]
@@ -4155,6 +4167,7 @@ fn mha_decoding_single_batch_pipelined[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -4277,6 +4290,7 @@ fn mha_decoding_single_batch_pipelined[
     comptime IteratorTypeP = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]

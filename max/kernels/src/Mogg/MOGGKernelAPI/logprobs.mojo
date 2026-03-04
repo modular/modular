@@ -70,14 +70,14 @@ fn compute_log_probabilities_1tok[
     target: StaticString, levels: Int
 ](
     output_token_index: Int,
-    lp_logits: OutputTensor[dtype=logit_dtype, rank=2],
-    lp_tokens: OutputTensor[dtype=token_dtype, rank=2],
-    logits: InputTensor[dtype=logit_dtype, rank=2],
-    tokens: InputTensor[dtype=token_dtype, rank=1],
-    sampled_tokens: InputTensor[dtype=token_dtype, rank=1],
-    logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-    token_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-    lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1],
+    lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
+    lp_tokens: OutputTensor[dtype=token_dtype, rank=2, ...],
+    logits: InputTensor[dtype=logit_dtype, rank=2, ...],
+    tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+    sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+    logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+    token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+    lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
 ) -> None:
     var vocab_size = logits.shape()[1]
     var batch_index = get_batch_from_row_offsets(
@@ -134,15 +134,15 @@ struct LogProbabilitiesRagged:
     fn execute[
         target: StaticString, levels: Int
     ](
-        lp_logits: OutputTensor[dtype=logit_dtype, rank=2],
-        lp_tokens: OutputTensor[dtype=token_dtype, rank=2],
-        logits: InputTensor[dtype=logit_dtype, rank=2],
-        tokens: InputTensor[dtype=token_dtype, rank=1],
-        sampled_tokens: InputTensor[dtype=token_dtype, rank=1],
-        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1],
+        lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
+        lp_tokens: OutputTensor[dtype=token_dtype, rank=2, ...],
+        logits: InputTensor[dtype=logit_dtype, rank=2, ...],
+        tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+        sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises -> None:
         var num_output_tokens = lp_logits.shape()[0]
@@ -203,13 +203,13 @@ struct LogProbabilitiesRagged:
     fn shape[
         levels: Int
     ](
-        logits: InputTensor[dtype=logit_dtype, rank=2],
-        tokens: InputTensor[dtype=token_dtype, rank=1],
-        sampled_tokens: InputTensor[dtype=token_dtype, rank=1],
-        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1],
+        logits: InputTensor[dtype=logit_dtype, rank=2, ...],
+        tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+        sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
     ) -> IndexList[2]:
         return IndexList[2](
             Int(lp_output_offsets_host[lp_output_offsets_host.shape()[0] - 1]),

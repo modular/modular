@@ -180,7 +180,7 @@ struct Pipe:
             raise Error("Can not write from read only side of pipe")
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+    fn read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from this pipe.
 
         Args:

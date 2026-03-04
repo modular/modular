@@ -352,7 +352,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_eq(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
+        fn is_eq(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
             for e in keys:
                 if self.get(e, 0) != other.get(e, 0):
                     return False
@@ -389,7 +389,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_le(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
+        fn is_le(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
             for e in keys:
                 if self.get(e, 0) > other.get(e, 0):
                     return False
@@ -425,7 +425,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_lt(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
+        fn is_lt(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
             for e in keys:
                 if self.get(e, 0) >= other.get(e, 0):
                     return False

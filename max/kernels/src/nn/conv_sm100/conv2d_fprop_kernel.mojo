@@ -288,11 +288,13 @@ struct Conv2dFpropKernel[
 
     # ========== Tile Loader Types ==========
     comptime ActTileLoaderTypeIm2col = TileLoaderTMAIm2col[
-        cta_group = Self.cta_group
+        ..., cta_group = Self.cta_group
     ]
-    comptime FilterTileLoaderType = TileLoaderTMA[cta_group = Self.cta_group]
+    comptime FilterTileLoaderType = TileLoaderTMA[
+        ..., cta_group = Self.cta_group
+    ]
     # Source C tile loader for residual (same structure as output)
-    comptime SrcTileLoaderType = TileLoaderTMA[cta_group=1]
+    comptime SrcTileLoaderType = TileLoaderTMA[..., cta_group=1]
 
     # TMA expected bytes
     comptime act_expected_bytes = Self.SmemType.act_smem_layout.size() * size_of[

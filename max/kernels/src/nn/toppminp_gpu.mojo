@@ -518,7 +518,7 @@ fn run_radix_sort_pairs_gpu[
     ctx: DeviceContext,
     mut keys: DoubleBuffer[dtype, ...],
     mut key_ids: DoubleBuffer[out_idx_type, ...],
-    skip_sort: UnsafePointer[mut=True, Scalar[DType.bool]],
+    skip_sort: UnsafePointer[mut=True, Scalar[DType.bool], _],
     in_shape: IndexList,
 ) raises:
     var batch_size = in_shape[0]

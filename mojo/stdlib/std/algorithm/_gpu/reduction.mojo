@@ -151,7 +151,9 @@ fn block_reduce[
     var result = StaticTuple[Scalar[dtype], num_reductions]()
 
     comptime for i in range(num_reductions):
-        result[i] = result_packed[i].reduce[reduce_fn[dtype, reduction_idx=i]]()
+        result[i] = result_packed[i].reduce[
+            reduce_fn[dtype, reduction_idx=i, ...]
+        ]()
 
     return result
 

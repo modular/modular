@@ -64,7 +64,7 @@ fn tcgen05_alloc[
     cta_group: Int32
 ](
     ptr_tmem_addr: UnsafePointer[
-        mut=True, UInt32, address_space = AddressSpace.SHARED
+        mut=True, UInt32, _, address_space = AddressSpace.SHARED
     ],
     num_cols: UInt32,
 ):

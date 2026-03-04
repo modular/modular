@@ -82,7 +82,7 @@ fn simd_store_into_managed_tensor_slice[
     static_spec: StaticTensorSpec[dtype, rank],
     element_alignment: Int = 1,
 ](
-    tensor: ManagedTensorSlice[static_spec=static_spec],
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
     indices: IndexList[rank],
     value: SIMD[dtype, simd_width],
 ):
@@ -242,7 +242,7 @@ fn simd_load_from_managed_tensor_slice[
     static_spec: StaticTensorSpec[dtype, rank],
     element_alignment: Int = 1,
 ](
-    tensor: ManagedTensorSlice[static_spec=static_spec],
+    tensor: ManagedTensorSlice[static_spec=static_spec, ...],
     indices: IndexList[rank],
 ) -> SIMD[dtype, simd_width]:
     var flat_index = tensor._compute_offset(indices)
@@ -380,15 +380,15 @@ fn rebuild_static_tensor_specs_with_compute_output_lambda[
 # ManagedTensorSlice class
 # ===----------------------------------------------------------------------=== #
 
-comptime OutputTensor = ManagedTensorSlice[io_spec=Output]
-comptime InputTensor = ManagedTensorSlice[io_spec=Input]
+comptime OutputTensor = ManagedTensorSlice[io_spec=Output, ...]
+comptime InputTensor = ManagedTensorSlice[io_spec=Input, ...]
 
-comptime _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput]
-comptime _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput]
-comptime _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput]
+comptime _MutableInputTensor = ManagedTensorSlice[io_spec=MutableInput, ...]
+comptime _FusedOutputTensor = ManagedTensorSlice[io_spec=FusedOutput, ...]
+comptime _FusedInputTensor = ManagedTensorSlice[io_spec=FusedInput, ...]
 
 comptime _FusedComputeOutputTensor = ManagedTensorSlice[
-    io_spec=_FusedComputeOutput
+    io_spec=_FusedComputeOutput, ...
 ]
 
 comptime DynamicTensor[dtype: DType, rank: Int] = ManagedTensorSlice[
@@ -842,10 +842,7 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](
-        self: ManagedTensorSlice[
-            mut=True,
-            static_spec = Self.static_spec,
-        ],
+        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec, ...],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ):
@@ -876,7 +873,7 @@ struct ManagedTensorSlice[
         _rank: Int,
         element_alignment: Int = 1,
     ](
-        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec],
+        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec, ...],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing:
@@ -924,7 +921,7 @@ struct ManagedTensorSlice[
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](
-        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec],
+        self: ManagedTensorSlice[mut=True, static_spec = Self.static_spec, ...],
         index: IndexList[_rank],
         val: SIMD[Self.dtype, width],
     ) capturing -> SIMD[Self.dtype, width]:
@@ -1208,12 +1205,14 @@ fn trace_slice_arg(name: String, buf: ManagedTensorSlice) -> String:
 # VariadicTensors
 # ===----------------------------------------------------------------------=== #
 
-comptime InputVariadicTensors = VariadicTensors[io_spec=Input]
-comptime OutputVariadicTensors = VariadicTensors[io_spec=Output]
+comptime InputVariadicTensors = VariadicTensors[io_spec=Input, ...]
+comptime OutputVariadicTensors = VariadicTensors[io_spec=Output, ...]
 
-comptime _MutableInputVariadicTensors = VariadicTensors[io_spec=MutableInput]
-comptime _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput]
-comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput]
+comptime _MutableInputVariadicTensors = VariadicTensors[
+    io_spec=MutableInput, ...
+]
+comptime _FusedInputVariadicTensors = VariadicTensors[io_spec=FusedInput, ...]
+comptime _FusedOutputVariadicTensors = VariadicTensors[io_spec=FusedOutput, ...]
 
 
 @fieldwise_init
@@ -1324,7 +1323,7 @@ fn foreach[
     _trace_name: StaticString = "mogg.for_each",
     use_blocking_impl: Bool = False,
 ](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
@@ -1381,7 +1380,7 @@ fn foreach[
     _trace_name: StaticString = "mogg.for_each",
     use_blocking_impl: Bool = False,
 ](
-    tensor: ManagedTensorSlice[dtype=dtype, rank=rank],
+    tensor: ManagedTensorSlice[dtype=dtype, rank=rank, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
@@ -1433,7 +1432,7 @@ fn foreach[
     _trace_name: StaticString = "mogg.for_each",
     use_blocking_impl: Bool = False,
 ](
-    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
+    tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """Apply the function `func` to each element of the tensor slice.
@@ -1485,8 +1484,8 @@ fn view_copy_impl[
     _trace_name: StaticString = "mogg.view_copy_impl",
     use_blocking_impl: Bool = False,
 ](
-    z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank],
-    x: ManagedTensorSlice[static_spec=spec],
+    z: ManagedTensorSlice[mut=True, dtype=dtype, rank=rank, ...],
+    x: ManagedTensorSlice[static_spec=spec, ...],
     ctx: DeviceContextPtr,
 ) raises:
     comptime assert _compatible_with[

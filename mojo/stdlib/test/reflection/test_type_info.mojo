@@ -184,13 +184,13 @@ def test_get_type_name_struct() raises:
 
 
 def test_get_type_name_partially_bound_type() raises:
-    var name = get_type_name[Foo[Bar[2](y=3, z=0.125)]]()
+    var name = get_type_name[Foo[Bar[2](y=3, z=0.125), ...]]()
     assert_equal(
         name,
         (
             "test_type_info.Foo["
             "test_type_info.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
-            '{3, 0.125 : SIMD[DType.float64, 1]}, ?, None, {"hello\0", 5}]'
+            "{3, 0.125 : SIMD[DType.float64, 1]}, ?, ?, ?]"
         ),
     )
 

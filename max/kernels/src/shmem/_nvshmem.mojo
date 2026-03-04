@@ -477,8 +477,8 @@ fn nvshmem_put[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -493,8 +493,8 @@ fn nvshmem_put_nbi[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -506,7 +506,7 @@ fn nvshmem_put_nbi[
 
 fn nvshmem_p[
     dtype: DType
-](dest: UnsafePointer[Scalar[dtype]], value: Scalar[dtype], pe: c_int,):
+](dest: UnsafePointer[Scalar[dtype], _], value: Scalar[dtype], pe: c_int,):
     comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_p"]()
     external_call[symbol, NoneType](dest, value, pe)
 
@@ -516,8 +516,8 @@ fn nvshmem_get[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -532,8 +532,8 @@ fn nvshmem_get_nbi[
     //,
     scope: SHMEMScope,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -545,7 +545,7 @@ fn nvshmem_get_nbi[
 
 fn nvshmem_g[
     dtype: DType
-](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
+](source: UnsafePointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
     comptime symbol = _dtype_to_nvshmem_type["nvshmem_", dtype, "_g"]()
     return external_call[symbol, Scalar[dtype]](source, pe)
 
@@ -569,10 +569,10 @@ fn nvshmemx_signal_op(
 fn nvshmem_put_signal_nbi[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: Int,
-    sig_addr: UnsafePointer[UInt64],
+    sig_addr: UnsafePointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,

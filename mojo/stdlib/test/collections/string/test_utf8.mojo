@@ -104,14 +104,14 @@ comptime BAD_SEQUENCES: List[List[Byte]] = [
 # ===----------------------------------------------------------------------=== #
 
 
-def validate_utf8[span: Span[Byte]]() raises -> Bool:
+def validate_utf8[span: Span[Byte, ...]]() raises -> Bool:
     comptime comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comp_time, runtime)
     return comp_time
 
 
-def validate_utf8(span: Span[Byte]) raises -> Bool:
+def validate_utf8(span: Span[Byte, ...]) raises -> Bool:
     var comp_time = _is_valid_utf8_comptime(span)
     var runtime = _is_valid_utf8_runtime(span)
     assert_equal(comp_time, runtime)

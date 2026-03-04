@@ -117,7 +117,7 @@ fn mandelbrot(
 
 
 def draw_mandelbrot(
-    tensor: LayoutTensor[int_dtype, layout], iterations: Int32
+    tensor: LayoutTensor[int_dtype, layout, ...], iterations: Int32
 ) raises -> String:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")

@@ -236,7 +236,7 @@ struct TMALoad[
 
 comptime UInt32Indices[rank: Int] = IndexList[rank, element_type = DType.uint32]
 comptime MBarPtr = UnsafePointer[
-    SharedMemBarrier, address_space = AddressSpace.SHARED
+    SharedMemBarrier, _, address_space = AddressSpace.SHARED
 ]
 
 

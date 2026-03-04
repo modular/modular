@@ -36,7 +36,7 @@ from ..mma import _has_type, _has_shape, _unsupported_mma_op
 fn _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[Float16],
+    a_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -58,7 +58,7 @@ fn _load_matrix_a_amd_rdna[
 fn _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[BFloat16],
+    a_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -80,7 +80,7 @@ fn _load_matrix_a_amd_rdna[
 fn _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[Float16],
+    b_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -102,7 +102,7 @@ fn _load_matrix_b_amd_rdna[
 fn _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -122,7 +122,7 @@ fn _load_matrix_b_amd_rdna[
 
 @always_inline
 fn load_matrix_a_amd_rdna16x16x16(
-    a_ptr: UnsafePointer[Float16],
+    a_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -152,7 +152,7 @@ fn load_matrix_a_amd_rdna16x16x16(
 
 @always_inline
 fn load_matrix_a_amd_rdna16x16x16(
-    a_ptr: UnsafePointer[BFloat16],
+    a_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -182,7 +182,7 @@ fn load_matrix_a_amd_rdna16x16x16(
 
 @always_inline
 fn load_matrix_b_amd_rdna16x16x16(
-    b_ptr: UnsafePointer[Float16],
+    b_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -212,7 +212,7 @@ fn load_matrix_b_amd_rdna16x16x16(
 
 @always_inline
 fn load_matrix_b_amd_rdna16x16x16(
-    b_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,

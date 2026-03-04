@@ -67,11 +67,14 @@ comptime num_micro_tile = ceildiv(F, micro_kernel_f_size)
 
 
 fn static_conv(
-    output: LayoutTensor[mut=True, value_type, Layout.row_major(N, HO, WO, F)],
-    input: LayoutTensor[value_type, Layout.row_major(N, H, W, C)],
+    output: LayoutTensor[
+        mut=True, value_type, Layout.row_major(N, HO, WO, F), _
+    ],
+    input: LayoutTensor[value_type, Layout.row_major(N, H, W, C), _],
     filter: LayoutTensor[
         value_type,
         Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
+        _,
     ],
 ):
     var conv_shape = ConvShape[2](

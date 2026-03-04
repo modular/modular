@@ -608,8 +608,8 @@ fn shmem_get[
     dtype: DType,
     scope: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -640,8 +640,8 @@ fn shmem_get_nbi[
     dtype: DType,
     scope: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -673,7 +673,7 @@ fn shmem_get_nbi[
 
 fn shmem_g[
     dtype: DType
-](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
+](source: UnsafePointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
     """Copies one data item from a remote PE.
 
     Very low latency get capability for single elements.
@@ -702,8 +702,8 @@ fn shmem_put[
     //,
     kind: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -739,8 +739,8 @@ fn shmem_put_nbi[
     //,
     kind: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -812,10 +812,10 @@ fn shmem_p[
 fn shmem_put_signal_nbi[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: Int,
-    sig_addr: UnsafePointer[UInt64],
+    sig_addr: UnsafePointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -921,7 +921,7 @@ fn shmem_barrier_all():
 
 
 fn shmem_signal_wait_until(
-    sig_addr: UnsafePointer[mut=True, UInt64], cmp: c_int, cmp_value: UInt64
+    sig_addr: UnsafePointer[mut=True, UInt64, _], cmp: c_int, cmp_value: UInt64
 ):
     """Wait for a variable on the local PE to change from a signaling operation.
 
@@ -991,7 +991,7 @@ fn shmem_fence():
 
 
 fn shmem_signal_op(
-    sig_addr: UnsafePointer[mut=True, UInt64],
+    sig_addr: UnsafePointer[mut=True, UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,

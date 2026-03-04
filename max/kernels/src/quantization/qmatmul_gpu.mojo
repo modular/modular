@@ -104,7 +104,7 @@ fn multistage_mma_q[
     next_op_b_iter_alignment: Int = align_of[b_type](),
 ](
     c: LayoutTensor[
-        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL
+        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, ...
     ],
     a_iter_arg: LayoutTensorIter[_, a_layout, ...],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
@@ -583,6 +583,7 @@ fn multistage_qgemm_kernel[
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
         circular=True,
@@ -606,6 +607,7 @@ fn multistage_qgemm_kernel[
     comptime IteratorTypeB = LayoutTensorIter[
         b_type,
         b_smem_layout,
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -629,6 +631,7 @@ fn multistage_qgemm_kernel[
     comptime IteratorTypeScales = LayoutTensorIter[
         scales_type,
         scales_smem_layout,
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]

@@ -2132,9 +2132,9 @@ fn ping_pong_matmul[
     //,
     enable_swizzle: Bool = True,
 ](
-    a_device_tensor: LayoutTensor[a_type, a_layout],
-    b_device_tensor: LayoutTensor[b_type, b_layout],
-    c_device_tensor: LayoutTensor[c_type, c_layout],
+    a_device_tensor: LayoutTensor[a_type, a_layout, ...],
+    b_device_tensor: LayoutTensor[b_type, b_layout, ...],
+    c_device_tensor: LayoutTensor[c_type, c_layout, ...],
     ctx: DeviceContext,
 ) raises:
     comptime assert a_type == b_type, "A and B must have the same type"

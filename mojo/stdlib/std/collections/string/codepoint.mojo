@@ -160,7 +160,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
             return None
 
     @staticmethod
-    fn ord(string: StringSlice[mut=False]) -> Codepoint:
+    fn ord(string: StringSlice[mut=False, _]) -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
         string.
 

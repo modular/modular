@@ -373,7 +373,7 @@ struct IntTuple(
 
     @staticmethod
     @always_inline("nodebug")
-    fn elements_size(elements: VariadicList[IntTuple]) -> Int:
+    fn elements_size(elements: VariadicList[IntTuple, ...]) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct

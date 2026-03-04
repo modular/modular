@@ -16,10 +16,10 @@ from std.ffi import external_call
 
 @always_inline
 fn __sanitizer_annotate_contiguous_container(
-    beg: UnsafePointer[NoneType],
-    end: UnsafePointer[NoneType],
-    old_mid: UnsafePointer[NoneType],
-    new_mid: UnsafePointer[NoneType],
+    beg: UnsafePointer[NoneType, _],
+    end: UnsafePointer[NoneType, _],
+    old_mid: UnsafePointer[NoneType, _],
+    new_mid: UnsafePointer[NoneType, _],
 ):
     # follows __annotate_contiguous_container from __debug_utils
     # https://github.com/llvm/llvm-project/blob/main/libcxx/include/__debug_utils/sanitizers.h

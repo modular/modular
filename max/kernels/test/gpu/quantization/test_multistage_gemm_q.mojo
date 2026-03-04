@@ -120,13 +120,13 @@ fn repack_Q4_0_for_sm8x[
             IntTuple(1, 128),
         ),
     )
-    var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout](
+    var repack_weights = LayoutTensor[DType.uint32, repacked_b_layout, _](
         q_packed_weight.ptr.bitcast[UInt32](),
     )
 
     comptime b_scales_layout = Layout.row_major(K_groups, N)
     var b_scales_ptr = q_packed_weight.ptr + N * K // 2
-    var repack_scales = LayoutTensor[scales_type, b_scales_layout](
+    var repack_scales = LayoutTensor[scales_type, b_scales_layout, _](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
     )
 
@@ -139,6 +139,7 @@ fn repack_Q4_0_for_sm8x[
     var qb_smem = LayoutTensor[
         DType.uint8,
         Layout.row_major(BN, 2 * group_bytes),
+        _,
         address_space = AddressSpace.SHARED,
     ](smem.bitcast[UInt8]())
 
@@ -284,13 +285,13 @@ fn create_ref_b[
     comptime scales_type = DType.bfloat16
     comptime b_type = DType.uint32
     comptime b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
-    var b_q = LayoutTensor[b_type, b_weight_layout](
+    var b_q = LayoutTensor[b_type, b_weight_layout, _](
         b_packed.ptr.bitcast[Scalar[b_type]](),
     )
 
     comptime b_scales_layout = Layout.row_major(K // group_size, N)
     var b_scales_ptr = b_packed.ptr + N * K // 2
-    var scales = LayoutTensor[scales_type, b_scales_layout](
+    var scales = LayoutTensor[scales_type, b_scales_layout, _](
         b_scales_ptr.bitcast[Scalar[scales_type]](),
     )
 
@@ -417,7 +418,7 @@ fn test_repack_Q4_0_for_sm8x(
 ) raises:
     print("test repack_Q4_0_for_sm8x")
 
-    fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype]]):
+    fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
         rand(array.unsafe_ptr(), len(array), min=0, max=255)
 
     fn build_b_buffer(N: Int, K: Int, b_ptr: UnsafePointer[UInt8]):
@@ -528,10 +529,11 @@ fn test_repack_Q4_0_for_sm8x(
         Int(n.dim) // 64,
         Int(k.dim) * 64 // pack_factor,
     )
-    comptime gguf_b_tensor_type = LayoutTensor[DType.uint8, gguf_b_layout]
+    comptime gguf_b_tensor_type = LayoutTensor[DType.uint8, gguf_b_layout, _]
     comptime repacked_dequan_tensor_type = LayoutTensor[
         DType.bfloat16,
         repack_dequan_layout,
+        _,
     ]
 
     var gguf_b_tensor = gguf_b_tensor_type(
@@ -546,7 +548,7 @@ fn test_repack_Q4_0_for_sm8x(
             ]()
         ),
     )
-    var repacked_b_tensor = LayoutTensor[DType.uint8, repacked_b_layout](
+    var repacked_b_tensor = LayoutTensor[DType.uint8, repacked_b_layout, _](
         repacked_b_device.unsafe_ptr(),
     )
     var repacked_dequan_tensor = repacked_dequan_tensor_type(
@@ -724,8 +726,8 @@ fn test_quantized[
 
     comptime b_layout = Layout.row_major[dims = b_device_nd.shape]()
     comptime b_ref_layout = Layout.row_major[dims = b_device_ref_nd.shape]()
-    comptime b_tensor_type = LayoutTensor[dtype, b_layout]
-    comptime b_ref_tensor_type = LayoutTensor[a_type, b_ref_layout]
+    comptime b_tensor_type = LayoutTensor[dtype, b_layout, _]
+    comptime b_ref_tensor_type = LayoutTensor[a_type, b_ref_layout, _]
 
     var b_tensor = b_tensor_type(
         b_device.unsafe_ptr(),

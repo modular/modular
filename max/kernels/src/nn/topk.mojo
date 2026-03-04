@@ -102,7 +102,7 @@ fn _adjust_top_p[
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](
     top_p: Scalar[T],
-    values: UnsafePointer[Scalar[T], address_space=address_space],
+    values: UnsafePointer[Scalar[T], _, address_space=address_space],
     k: Int,
     total_sum: Scalar[T],
 ) -> Scalar[T]:
