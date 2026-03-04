@@ -133,8 +133,13 @@ def test_pow() raises:
         115792089237316195423570985008687907853269984665640564039457584007913129639936,
     )
     assert_equal(IntLiteral.__pow__(64, 0), 1)
-    # Cannot exponentiate by a negative amount
+    # Cannot exponentiate by a negative amount...
     assert_equal(IntLiteral.__pow__(64, -1), 0)
+    # ... except for 1, which is always 1...
+    assert_equal(IntLiteral.__pow__(1, -9), 1)
+    # ... and -1, which is either 1 or -1
+    assert_equal(IntLiteral.__pow__(-1, -3), -1)
+    assert_equal(IntLiteral.__pow__(-1, -2), 1)
 
 
 def main() raises:
