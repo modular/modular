@@ -291,7 +291,10 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             reg_per = 224 if self.num_queries_per_block > 64 else 256
             if num_keys_per_block:
                 self.num_keys_per_block = num_keys_per_block.value()
-            elif depth == 64:  # FIXME: larger values cause inworld failures
+            # FIXME: for depth == 64, larger num_keys_per_block values currently
+            #        trigger correctness issues; this hardcoded value is a
+            #        temporary workaround and should be revisited.
+            elif depth == 64:
                 self.num_keys_per_block = 64
             else:
                 # BN
