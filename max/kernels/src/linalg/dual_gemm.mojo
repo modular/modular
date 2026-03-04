@@ -543,6 +543,7 @@ fn multistage_dual_gemm_kernel[
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
+        _,
         address_space = a_smem.address_space,
         alignment=alignment,
         circular=True,
@@ -560,6 +561,7 @@ fn multistage_dual_gemm_kernel[
     comptime IteratorTypeB = LayoutTensorIter[
         b_type,
         b_smem_layout,
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -801,10 +803,10 @@ fn multistage_dual_gemm[
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b0: LayoutTensor[b_type, b_layout],
-    b1: LayoutTensor[b_type, b_layout],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b0: LayoutTensor[b_type, b_layout, ...],
+    b1: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()

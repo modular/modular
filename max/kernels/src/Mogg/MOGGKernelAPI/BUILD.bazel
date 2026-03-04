@@ -8,6 +8,7 @@ mogg_lib_deps = [
     "//max:linalg",
     "//max:nn",
     "//max:quantization",
+    "//max:structured_kernels",
     "//max:tensor",
     "//max:compiler_internal",
     "//max:shmem",

@@ -757,7 +757,7 @@ create an instance of `Span`. Binding the `mut` parameter by keyword lets you
 define a `Span` that requires a mutable origin.
 
 ```mojo
-def mutate_span(span: Span[mut=True, Byte]) raises:
+def mutate_span(span: Span[mut=True, Byte, ...]) raises:
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
             span.swap_elements(i, i + 1)
@@ -1418,43 +1418,6 @@ devour(Fudge[4, 6, 8]())
 Devoured Fudge (3,6,9)
 Devoured Fudge (4,6,8)
 ```
-
-### Legacy syntax (omitted parameters)
-
-You can also specify an unbound or partially-bound type by omitting parameters:
-for example:
-
-```mojo
-fn nibble(f: Fudge[5]):
-    print("Ate", String(f))
-
-nibble(Fudge[5, 4, 7]())
-```
-
-```output
-Ate Fudge (5,4,7)
-```
-
-Here, `Fudge[5]` works like `Fudge[5, ...]` **except** in the handling of
-parameters with default values. Instead of discarding the default value of
-`chocolate`, `Fudge[5]` binds the default value immediately, making it
-equivalent to: `Fudge[5, _, 7]`.
-
-This means that the following code won't compile with the previous definition
-for the `nibble()` function, since it doesn't use the default value for
-`chocolate`:
-
-```mojo
-nibble(Fudge[5, 5, 9]())
-# ERROR: invalid call to 'nibble': argument #0 cannot be converted from 'Fudge[5, 5, 9]' to 'Fudge[5, 5, 7]'
-```
-
-:::note TODO
-
-We intend to reconcile the behavior of omitted parameters and explicitly unbound
-parameters in the future.
-
-:::
 
 ## The `rebind()` builtin
 

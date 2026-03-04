@@ -26,11 +26,7 @@ from max.experimental import functional as F
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn import ReturnLogits
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
@@ -177,11 +173,14 @@ class Olmo3Model(PipelineModelWithKVCache[TextContext]):
             The loaded MAX Engine model object.
         """
 
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         ).to(self.devices[0])
 
         timer = CompilationTimer("model")
@@ -295,7 +294,6 @@ class Olmo3Model(PipelineModelWithKVCache[TextContext]):
 
         context_batch = replica_batches[0]
         assert kv_cache_inputs is not None
-        kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
 
         input_row_offsets = np.cumsum(
             [0] + [ctx.tokens.active_length for ctx in context_batch],

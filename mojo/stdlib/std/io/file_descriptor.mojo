@@ -92,7 +92,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         self.write_bytes(string.as_bytes())
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+    fn read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from the file into a buffer.
 
         Args:

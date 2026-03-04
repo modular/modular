@@ -130,8 +130,8 @@ Within the Mojo file, you'll need to import the Mojo
 [`benchmark`](https://docs.modular.com/mojo/std/benchmark/) package.
 
 ```mojo
-from sys import env_get_string, env_get_int
-from internal_utils import env_get_dtype, env_get_shape, int_list_to_tuple
+from sys import get_defined_dtype, get_defined_int, get_defined_string
+from internal_utils import get_defined_shape, int_list_to_tuple
 from benchmark import (
     BenchConfig,
     Bench,
@@ -148,10 +148,10 @@ input parameters, such as datatype and shape:
 
 ```mojo
 fn main():
-    alias dtype = env_get_dtype["dtype", DType.float16]()
-    alias shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
+    alias dtype = get_defined_dtype["dtype", DType.float16]()
+    alias shape_int_list = get_defined_shape["shape", "1024x1024x1024"]()
     alias shape = int_list_to_tuple[shape_int_list]()
-    alias stages = env_get_int["stages", 0]()
+    alias stages = get_defined_int["stages", 0]()
 ```
 
 Take care that your parameters are captured properly.

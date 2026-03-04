@@ -21,8 +21,8 @@ from std.sys.info import has_accelerator, simd_width_of
 from std.math import exp, log
 from std.algorithm.functional import IndexList
 from std.memory import OpaquePointer
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout.runtime_layout import RuntimeLayout
+from layout import Idx, TileTensor
+from layout._layout import row_major
 from nn.softmax import softmax as nn_softmax, logsoftmax as nn_logsoftmax
 from std.runtime.asyncrt import DeviceContextPtr
 
@@ -145,7 +145,7 @@ fn softmax_op[
     else:
         comptime if has_accelerator():
             comptime if dtype in (DType.float32, DType.float16, DType.bfloat16):
-                # GPU path: use nn.softmax kernel via input_fn + LayoutTensor
+                # GPU path: use nn.softmax kernel via input_fn + TileTensor
                 @always_inline
                 @parameter
                 @__copy_capture(in_ptr, axis_dim)
@@ -156,15 +156,10 @@ fn softmax_op[
                     var flat_idx = c[0] * axis_dim + c[1]
                     return in_ptr.load[width=width](flat_idx)
 
-                comptime out_layout = Layout.row_major(
-                    UNKNOWN_VALUE, UNKNOWN_VALUE
+                var output_tensor = TileTensor(
+                    out_ptr,
+                    row_major((Idx(batch_dim), Idx(axis_dim))),
                 )
-                var rt = RuntimeLayout[out_layout].row_major(shape)
-                var output_tensor = LayoutTensor[
-                    dtype,
-                    out_layout,
-                    MutExternalOrigin,
-                ](out_ptr, rt)
 
                 var device_ctx = DeviceContextPtr(ctx)
 

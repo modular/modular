@@ -41,7 +41,7 @@ from quantization.qmatmul_k import (
 from std.utils.index import Index, IndexList
 
 
-fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype]]):
+fn fill_random[dtype: DType](mut array: InlineArray[Scalar[dtype], ...]):
     rand(array.unsafe_ptr(), len(array))
 
 
@@ -101,23 +101,23 @@ trait QuantizedGemm:
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
-        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
+        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
     ) raises:
         ...
 
     @staticmethod
     fn kernel(
-        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
-        c: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
+        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
     ):
         ...
 
     @staticmethod
     fn dot_product(
-        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
+        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
         m: Int,
         n: Int,
         k: Int,
@@ -162,23 +162,23 @@ struct qgemm_Q4_0(QuantizedGemm):
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
-        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
+        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
     ) raises:
         matmul_qint4_pack_b[_block_Q4_0.group_size](b, b_packed)
 
     @staticmethod
     fn kernel(
-        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
-        c: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
+        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
     ):
         matmul_qint4[_block_Q4_0.group_size](a, b, c)
 
     @staticmethod
     fn dot_product(
-        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
+        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
         m: Int,
         n: Int,
         k: Int,
@@ -260,23 +260,23 @@ struct qgemm_Q4_K(QuantizedGemm):
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
-        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
+        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
     ) raises:
         matmul_Q4_K_pack_b(b, b_packed)
 
     @staticmethod
     fn kernel(
-        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
-        c: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
+        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
     ):
         matmul_Q4_K(a, b, c)
 
     @staticmethod
     fn dot_product(
-        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
+        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
         m: Int,
         n: Int,
         k: Int,
@@ -395,23 +395,23 @@ struct qgemm_Q6_K(QuantizedGemm):
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
-        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()],
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
+        b_packed: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _],
     ) raises:
         matmul_Q6_K_pack_b(b, b_packed)
 
     @staticmethod
     fn kernel(
-        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
-        c: LayoutTensor[DType.float32, Layout.row_major[2]()],
+        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
+        c: LayoutTensor[DType.float32, Layout.row_major[2](), _],
     ):
         matmul_Q6_K(a, b, c)
 
     @staticmethod
     fn dot_product(
-        a: LayoutTensor[DType.float32, Layout.row_major[2]()],
-        b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
+        a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+        b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
         m: Int,
         n: Int,
         k: Int,
@@ -472,9 +472,9 @@ struct qgemm_Q6_K(QuantizedGemm):
 fn reference_gemm[
     qgemm: QuantizedGemm
 ](
-    a: LayoutTensor[DType.float32, Layout.row_major[2]()],
-    b: LayoutTensor[DType.uint8, Layout.row_major[2]()],
-    c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2]()],
+    a: LayoutTensor[DType.float32, Layout.row_major[2](), _],
+    b: LayoutTensor[DType.uint8, Layout.row_major[2](), _],
+    c: LayoutTensor[mut=True, DType.float32, Layout.row_major[2](), _],
 ):
     var M = a.dim[0]()
     var N = b.dim[0]()
@@ -535,7 +535,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
 
     @staticmethod
     def _pack_b_buffer(
-        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2]()]
+        b: LayoutTensor[mut=True, DType.uint8, Layout.row_major[2](), _]
     ) raises -> LayoutTensor[DType.uint8, Layout.row_major[2](), MutAnyOrigin]:
         var b_packed_buffer = UnsafePointer[UInt8].alloc(b.size())
         var b_packed = LayoutTensor[

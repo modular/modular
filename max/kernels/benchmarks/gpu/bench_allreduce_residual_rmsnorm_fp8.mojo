@@ -22,9 +22,9 @@ Measures five variants:
 """
 
 from std.sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
     is_amd_gpu,
     size_of,
     simd_width_of,
@@ -1012,7 +1012,7 @@ fn bench_allreduce_rmsnorm_fp8[
     # --- Optional verification: compare fused vs fully-fused on GPU 0 ---
     # Uses fresh DeviceBuffers (not CacheBustingBuffers) for D2H copies
     # to avoid buffer size mismatch that crashed the HIP driver.
-    comptime verify = env_get_bool["verify", True]()
+    comptime verify = get_defined_bool["verify", True]()
     comptime if verify:
         _verify_results[in_dtype, out_dtype, ngpus, num_cols](
             num_rows,
@@ -1067,15 +1067,15 @@ fn bench_allreduce_rmsnorm_fp8[
 
 
 def main() raises:
-    comptime in_dtype = env_get_dtype["in_dtype", DType.bfloat16]()
-    comptime out_dtype = env_get_dtype[
+    comptime in_dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
+    comptime out_dtype = get_defined_dtype[
         "out_dtype",
         DType.float8_e4m3fnuz if is_amd_gpu() else DType.float8_e4m3fn,
     ]()
-    comptime num_gpus = env_get_int["num_gpus", 4]()
+    comptime num_gpus = get_defined_int["num_gpus", 4]()
     var num_rows = Int(arg_parse("num_rows", 1))
-    comptime num_cols = env_get_int["num_cols", 8192]()
-    comptime cache_busting = env_get_bool["cache_busting", True]()
+    comptime num_cols = get_defined_int["num_cols", 8192]()
+    comptime cache_busting = get_defined_bool["cache_busting", True]()
 
     var num_devices = DeviceContext.number_of_devices()
     if num_devices < num_gpus:

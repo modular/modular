@@ -27,10 +27,13 @@ logger = logging.getLogger("max.pipelines")
 
 
 class ProfilingConfig(ConfigFileModel):
+    """Configuration for pipeline profiling."""
+
     gpu_profiling: GPUProfilingMode = Field(
         default="off",
         description="Whether to enable GPU profiling of the model.",
     )
+    """Whether to enable GPU profiling of the model."""
 
     _config_file_section_name: str = PrivateAttr(default="profiling_config")
     """The section name to use when loading this config from a MAXConfig file.

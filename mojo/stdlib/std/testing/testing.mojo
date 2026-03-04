@@ -184,8 +184,8 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal(
-    lhs: StringSlice[mut=False],
-    rhs: StringSlice[mut=False],
+    lhs: StringSlice[mut=False, _],
+    rhs: StringSlice[mut=False, _],
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,

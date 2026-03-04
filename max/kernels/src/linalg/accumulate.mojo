@@ -620,7 +620,7 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
+            DType.int32, Layout.row_major(Self.num_rows), ...
         ],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
@@ -855,7 +855,7 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
+            DType.int32, Layout.row_major(Self.num_rows), ...
         ],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
@@ -1068,7 +1068,7 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
+            DType.int32, Layout.row_major(Self.num_rows), ...
         ],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],

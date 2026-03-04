@@ -107,14 +107,14 @@ class EmbeddingModel:
         Returns:
             The encoded sentences.
         """
-        if self.pipeline_config.max_batch_size is None:
+        if self.pipeline_config.runtime.max_batch_size is None:
             logger.warning(
                 "Please set --max-batch-size, otherwise the batch size"
                 " will automatically be set to 1."
             )
             batch_size = 1
         else:
-            batch_size = self.pipeline_config.max_batch_size
+            batch_size = self.pipeline_config.runtime.max_batch_size
         start = 0
         loop = asyncio.get_event_loop()
         results = []

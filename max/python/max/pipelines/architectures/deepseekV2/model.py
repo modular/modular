@@ -31,7 +31,7 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -265,14 +265,14 @@ class DeepseekV2Model(PipelineModelWithKVCache[TextContext]):
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
-        return unflatten_ragged_mha_decode_inputs(
+        return unflatten_ragged_attention_inputs(
             kv_inputs_flat, n_devices=kv_params.n_devices
         )
 
     def _build_graph(self) -> Graph:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
-        max_batch_size = self.pipeline_config.max_batch_size
+        max_batch_size = self.pipeline_config.runtime.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         self._input_row_offsets_prealloc = Buffer.from_numpy(

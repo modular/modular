@@ -42,9 +42,9 @@ from __future__ import annotations
 import numpy as np
 from max.driver import Buffer
 from max.kv_cache.connectors.lmcache_connector import LMCacheConnector
-from max.kv_cache.paged_kv_cache.cache_manager import PagedKVCacheManager
-from max.kv_cache.paged_kv_cache.tp_cache_manager import (
-    _TPPagedKVCacheManager,
+from max.kv_cache.paged_kv_cache.cache_manager import (
+    PagedKVCacheManager,
+    _ReplicaMetadata,
 )
 from test_common.context_utils import create_text_context
 
@@ -54,16 +54,6 @@ from .conftest import (
     fill_paged_cache,
     make_dummy_context,
 )
-
-# Type alias for the kv_cache_manager fixture yield type.
-_ManagerPair = tuple[PagedKVCacheManager, _TPPagedKVCacheManager]
-
-
-def _get_connector(tp_mgr: _TPPagedKVCacheManager) -> LMCacheConnector:
-    """Extract and type-narrow the LMCacheConnector from a tp manager."""
-    connector = tp_mgr.connector
-    assert isinstance(connector, LMCacheConnector)
-    return connector
 
 
 def get_cache_keys(
@@ -80,6 +70,24 @@ def get_cache_keys(
     ):
         keys.append(key)
     return keys
+
+
+def get_replica(kv_cache_manager: PagedKVCacheManager) -> _ReplicaMetadata:
+    replica = kv_cache_manager._replica[0]
+    return replica
+
+
+def get_connector(kv_cache_manager: PagedKVCacheManager) -> LMCacheConnector:
+    replica = get_replica(kv_cache_manager)
+    connector = replica.connector
+    assert isinstance(connector, LMCacheConnector)
+    return connector
+
+
+def get_device_buffer(kv_cache_manager: PagedKVCacheManager) -> Buffer:
+    replica = get_replica(kv_cache_manager)
+    device_buffer = replica.device_buffer
+    return device_buffer.values[0]
 
 
 def query_backend(
@@ -107,49 +115,40 @@ def query_backend(
 
 
 def test_creates_lmcache_connector(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
-    assert isinstance(connector, LMCacheConnector)
+    connector = get_connector(kv_cache_manager)
     assert connector.name == "LMCacheConnector"
 
 
 def test_connector_has_gpu_connector(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     assert connector._gpu_connector is not None
 
 
-# --- Save / Flush ---
-
-
 def test_save_queues_blocks(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     connector.save([0, 1, 2], [100, 200, 300])
     assert len(connector._pending_saves) == 3
 
 
 def test_flush_executes_pending_saves(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     connector.save([0, 1], [100, 200])
     connector.flush()
     assert len(connector._pending_saves) == 0
 
 
 def test_duplicate_hash_not_saved_twice(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
 
     # Save block with hash 100
     connector.save([0], [100])
@@ -169,21 +168,19 @@ def test_duplicate_hash_not_saved_twice(
 
 
 def test_lookup_returns_zero_for_uncached_blocks(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
     """Uses unique hash values not used by other tests."""
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     ctx = make_dummy_context()
     tokens = connector.lookup(ctx, [99999, 99998, 99997])
     assert tokens == 0
 
 
 def test_lookup_finds_cached_blocks(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     connector.save([0, 1, 2], [100, 200, 300])
     connector.flush()
 
@@ -193,11 +190,10 @@ def test_lookup_finds_cached_blocks(
 
 
 def test_lookup_stops_at_first_miss(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
     """Uses unique hashes to ensure the middle block is truly missing."""
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     connector.save([0], [1000])
     connector.save([2], [1002])
     connector.flush()
@@ -211,10 +207,9 @@ def test_lookup_stops_at_first_miss(
 
 
 def test_load_returns_hashes_for_loaded_blocks(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     connector.save([0, 1], [100, 200])
     connector.flush()
 
@@ -225,10 +220,9 @@ def test_load_returns_hashes_for_loaded_blocks(
 
 
 def test_load_without_lookup_returns_empty(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     ctx = make_dummy_context()
     loaded_hashes = connector.load(ctx, [0, 1])
     assert loaded_hashes == []
@@ -238,13 +232,12 @@ def test_load_without_lookup_returns_empty(
 
 
 def test_full_prefix_cache_hit(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
+    device_buffer = get_device_buffer(kv_cache_manager)
 
     # Fill device tensor with pattern so we can verify data integrity
-    device_buffer = tp_mgr.device_buffer.values[0]
     pattern = np.arange(device_buffer.to_numpy().size, dtype=np.float32)
     pattern = pattern.reshape(device_buffer.shape)
     device_buffer.inplace_copy_from(Buffer.from_numpy(pattern))
@@ -261,11 +254,10 @@ def test_full_prefix_cache_hit(
 
 
 def test_partial_prefix_hit(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
     """Uses unique hashes to ensure the third block is truly missing."""
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     connector.save([0, 1], [2000, 2001])
     connector.flush()
 
@@ -278,10 +270,9 @@ def test_partial_prefix_hit(
 
 
 def test_multiple_requests_independent(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     connector.save([0, 1, 2, 3], [100, 200, 300, 400])
     connector.flush()
 
@@ -303,67 +294,63 @@ def test_multiple_requests_independent(
 
 
 def test_claim_alloc_step_with_lmcache(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    manager, tp_mgr = kv_cache_manager
-
     tokens = np.arange(INTEGRATION_PAGE_SIZE * 2, dtype=np.int64)
     ctx = create_text_context(tokens)
 
-    manager.claim(ctx.request_id, replica_idx=0)
-    manager.alloc(ctx, replica_idx=0, num_steps=1)
+    kv_cache_manager.claim(ctx.request_id, replica_idx=0)
+    kv_cache_manager.alloc(ctx, replica_idx=0, num_steps=1)
 
-    allocated_blocks = tp_mgr.block_manager.req_to_blocks.get(
-        ctx.request_id, []
+    allocated_blocks = kv_cache_manager.get_req_blocks(
+        ctx.request_id, replica_idx=0
     )
     assert len(allocated_blocks) >= 2
 
-    manager.step([[ctx]])
-    manager.release(ctx.request_id, replica_idx=0)
+    kv_cache_manager.step([[ctx]])
+    kv_cache_manager.release(ctx.request_id, replica_idx=0)
 
 
 def test_prefix_cache_reuse_with_lmcache(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    manager, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
 
     # First request - generates and saves blocks
     tokens1 = np.arange(INTEGRATION_PAGE_SIZE, dtype=np.int64)
     ctx1 = create_text_context(tokens1)
 
-    manager.claim(ctx1.request_id, replica_idx=0)
-    manager.alloc(ctx1, replica_idx=0, num_steps=1)
-    manager.step([[ctx1]])
+    kv_cache_manager.claim(ctx1.request_id, replica_idx=0)
+    kv_cache_manager.alloc(ctx1, replica_idx=0, num_steps=1)
+    kv_cache_manager.step([[ctx1]])
 
-    list(tp_mgr.block_manager.req_to_blocks.get(ctx1.request_id, []))
+    list(kv_cache_manager.get_req_blocks(ctx1.request_id, replica_idx=0))
 
     connector.flush()
-    manager.release(ctx1.request_id, replica_idx=0)
+    kv_cache_manager.release(ctx1.request_id, replica_idx=0)
 
     # Second request with same prefix - should reuse from cache
     tokens2 = np.arange(INTEGRATION_PAGE_SIZE, dtype=np.int64)
     ctx2 = create_text_context(tokens2)
 
-    manager.claim(ctx2.request_id, replica_idx=0)
-    manager.alloc(ctx2, replica_idx=0, num_steps=1)
+    kv_cache_manager.claim(ctx2.request_id, replica_idx=0)
+    kv_cache_manager.alloc(ctx2, replica_idx=0, num_steps=1)
 
     block_ids2 = list(
-        tp_mgr.block_manager.req_to_blocks.get(ctx2.request_id, [])
+        kv_cache_manager.get_req_blocks(ctx2.request_id, replica_idx=0)
     )
     assert len(block_ids2) >= 1
 
-    manager.release(ctx2.request_id, replica_idx=0)
+    kv_cache_manager.release(ctx2.request_id, replica_idx=0)
 
 
 # --- Cleanup ---
 
 
 def test_on_request_complete_clears_state(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
     connector.save([0], [100])
     connector.flush()
 
@@ -376,7 +363,7 @@ def test_on_request_complete_clears_state(
 
 
 def test_flush_clears_pending_and_shutdown_flag_initialized(
-    kv_cache_manager: _ManagerPair,
+    kv_cache_manager: PagedKVCacheManager,
 ) -> None:
     """Verifies flush() and _is_shutdown initialization.
 
@@ -384,8 +371,8 @@ def test_flush_clears_pending_and_shutdown_flag_initialized(
     observability thread bug and would break subsequent tests sharing
     the module-scoped manager.
     """
-    _, tp_mgr = kv_cache_manager
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager)
+    assert isinstance(connector, LMCacheConnector)
     connector.save([0, 1], [100, 200])
     assert len(connector._pending_saves) == 2
 
@@ -400,10 +387,11 @@ def test_flush_clears_pending_and_shutdown_flag_initialized(
 
 
 def test_tiered_storage_config(
-    kv_cache_manager_with_disk: _TPPagedKVCacheManager,
+    kv_cache_manager_with_disk: PagedKVCacheManager,
 ) -> None:
     """Verify both LocalCPUBackend and LocalDiskBackend are initialized."""
-    connector = _get_connector(kv_cache_manager_with_disk)
+    connector = get_connector(kv_cache_manager_with_disk)
+    assert isinstance(connector, LMCacheConnector)
     engine = connector._engine
     assert engine.storage_manager is not None
     backends = list(engine.storage_manager.storage_backends.keys())
@@ -417,15 +405,14 @@ def test_tiered_storage_config(
 
 
 def test_disk_tier_storage(
-    kv_cache_manager_with_disk: _TPPagedKVCacheManager,
+    kv_cache_manager_with_disk: PagedKVCacheManager,
 ) -> None:
     """Verify blocks are written to disk tier by querying it directly."""
     import time
 
-    tp_mgr = kv_cache_manager_with_disk
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager_with_disk)
+    device_buffer = get_device_buffer(kv_cache_manager_with_disk)
 
-    device_buffer = tp_mgr.device_buffer.values[0]
     pattern = np.arange(device_buffer.to_numpy().size, dtype=np.float32)
     pattern = pattern.reshape(device_buffer.shape)
     device_buffer.inplace_copy_from(Buffer.from_numpy(pattern))
@@ -458,11 +445,11 @@ def test_disk_tier_storage(
 
 
 def test_tiered_storage_roundtrip(
-    kv_cache_manager_with_disk: _TPPagedKVCacheManager,
+    kv_cache_manager_with_disk: PagedKVCacheManager,
 ) -> None:
     """Save -> clear device -> load -> verify data integrity."""
-    tp_mgr = kv_cache_manager_with_disk
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager_with_disk)
+    device_buffer = get_device_buffer(kv_cache_manager_with_disk)
 
     test_config = KVCacheTestConfig(
         num_blocks=64,
@@ -473,7 +460,6 @@ def test_tiered_storage_roundtrip(
         head_dim=64,
     )
 
-    device_buffer = tp_mgr.device_buffer.values[0]
     original_pattern = fill_paged_cache(device_buffer, test_config)
 
     block_ids = list(range(8))
@@ -510,11 +496,11 @@ def test_tiered_storage_roundtrip(
 
 
 def test_tiered_storage_pattern_verification(
-    kv_cache_manager_with_disk: _TPPagedKVCacheManager,
+    kv_cache_manager_with_disk: PagedKVCacheManager,
 ) -> None:
     """Precise bit-level save/load verification."""
-    tp_mgr = kv_cache_manager_with_disk
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager_with_disk)
+    device_buffer = get_device_buffer(kv_cache_manager_with_disk)
 
     test_config = KVCacheTestConfig(
         num_blocks=64,
@@ -525,7 +511,6 @@ def test_tiered_storage_pattern_verification(
         head_dim=64,
     )
 
-    device_buffer = tp_mgr.device_buffer.values[0]
     original_pattern = fill_paged_cache(device_buffer, test_config)
 
     block_ids = list(range(8))
@@ -563,13 +548,12 @@ def test_tiered_storage_pattern_verification(
 
 
 def test_multiple_requests_with_tiered_storage(
-    kv_cache_manager_with_disk: _TPPagedKVCacheManager,
+    kv_cache_manager_with_disk: PagedKVCacheManager,
 ) -> None:
     """Multiple batches can be stored and accessed independently."""
-    tp_mgr = kv_cache_manager_with_disk
-    connector = _get_connector(tp_mgr)
+    connector = get_connector(kv_cache_manager_with_disk)
+    device_buffer = get_device_buffer(kv_cache_manager_with_disk)
 
-    device_buffer = tp_mgr.device_buffer.values[0]
     pattern = np.arange(device_buffer.to_numpy().size, dtype=np.float32)
     pattern = pattern.reshape(device_buffer.shape)
     device_buffer.inplace_copy_from(Buffer.from_numpy(pattern))

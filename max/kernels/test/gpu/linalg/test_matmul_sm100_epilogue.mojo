@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
 from std.random import random_si64, random_float64
-from std.sys import align_of, size_of, env_get_bool
+from std.sys import align_of, size_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer import NDBuffer
@@ -26,7 +26,7 @@ from internal_utils import assert_almost_equal
 from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
@@ -64,9 +64,32 @@ def test_matmul_sm100_epilogue[
     var K = k.value
 
     print(
-        t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
-        t" {N}, {K})"
-        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} register_based_epilogue={register_based_epilogue} swapAB={swapAB} k_group_size={k_group_size}"
+        String(
+            "in/out dtypes=(",
+            a_type,
+            ", ",
+            b_type,
+            ", ",
+            c_type,
+            ") ",
+            " problem shape=(",
+            M,
+            ", ",
+            N,
+            ", ",
+            K,
+            ") ",
+            "mma_shape=",
+            mma_shape,
+            " block_tile_shape=",
+            block_tile_shape,
+            " register_based_epilogue=",
+            register_based_epilogue,
+            " swapAB=",
+            swapAB,
+            " k_group_size=",
+            k_group_size,
+        )
     )
 
     comptime static_a_shape = DimList(m.dim, k.dim)
@@ -249,8 +272,8 @@ def test_matmul_sm100_epilogue[
 # Quick mode: reduce test configs for faster iteration
 # QUICK_TEST=True: 48 tests (8 configs × 6 sizes) - ~30 seconds
 # FASTER_TEST=True: 8 tests (4 configs × 2 sizes) - ~5 seconds
-comptime QUICK_TEST = env_get_bool["QUICK_TEST", False]()
-comptime FASTER_TEST = env_get_bool["FASTER_TEST", False]()
+comptime QUICK_TEST = get_defined_bool["QUICK_TEST", False]()
+comptime FASTER_TEST = get_defined_bool["FASTER_TEST", False]()
 
 
 def main() raises:

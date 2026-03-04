@@ -56,7 +56,7 @@ from layout.tma_async import (
     TMATensorTile,
     TMATensorTileIm2col,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     TMATile,
     TmaOpType,
     TmaOpTypeIm2col,
@@ -67,16 +67,16 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     SMemTileArray2DRowMajor,
 )
 
 # Import shared components from matmul structured kernels
-from linalg.matmul.gpu.sm100_structured.structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     WarpRole,
     KernelContext,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
+from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import (
@@ -88,8 +88,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_pipeline import 
     InputConsumer,
     OutputTilePipeline,
 )
-from linalg.matmul.gpu.sm100_structured.structured_kernels.barriers import (
-    TmemDeallocBarrier,
+from structured_kernels.barriers import (
     WarpGroupBarrier,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
@@ -97,6 +96,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAllocation,
+    TmemDeallocBarrier,
     TmemTensor,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.warp_context import (
@@ -288,11 +288,13 @@ struct Conv2dFpropKernel[
 
     # ========== Tile Loader Types ==========
     comptime ActTileLoaderTypeIm2col = TileLoaderTMAIm2col[
-        cta_group = Self.cta_group
+        ..., cta_group = Self.cta_group
     ]
-    comptime FilterTileLoaderType = TileLoaderTMA[cta_group = Self.cta_group]
+    comptime FilterTileLoaderType = TileLoaderTMA[
+        ..., cta_group = Self.cta_group
+    ]
     # Source C tile loader for residual (same structure as output)
-    comptime SrcTileLoaderType = TileLoaderTMA[cta_group=1]
+    comptime SrcTileLoaderType = TileLoaderTMA[..., cta_group=1]
 
     # TMA expected bytes
     comptime act_expected_bytes = Self.SmemType.act_smem_layout.size() * size_of[

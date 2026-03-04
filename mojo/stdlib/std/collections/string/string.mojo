@@ -366,7 +366,7 @@ struct String(
         self = Self()
         tstring.write_to(self)
 
-    fn __init__(out self, *, unsafe_from_utf8: Span[Byte]):
+    fn __init__(out self, *, unsafe_from_utf8: Span[Byte, _]):
         """Construct a string by copying the data. This constructor is explicit
         because it can involve memory allocation.
 
@@ -392,7 +392,7 @@ struct String(
             count=length,
         )
 
-    fn __init__(out self, *, from_utf8_lossy: Span[Byte]):
+    fn __init__(out self, *, from_utf8_lossy: Span[Byte, _]):
         """Construct a string from a span of bytes, including invalid UTF-8.
 
         Since `String` is guaranteed to be valid UTF-8, invalid UTF-8 sequences
@@ -425,7 +425,7 @@ struct String(
             if len(chunk.invalid) > 0:
                 self += REPLACEMENT
 
-    fn __init__(out self, *, from_utf8: Span[Byte]) raises:
+    fn __init__(out self, *, from_utf8: Span[Byte, _]) raises:
         """Construct a string from a span of bytes, raising an error if the data
         is not valid UTF-8.
 
@@ -628,7 +628,7 @@ struct String(
     fn __init__(
         out self,
         *,
-        unsafe_from_utf8_ptr: UnsafePointer[mut=False, c_char],
+        unsafe_from_utf8_ptr: UnsafePointer[mut=False, c_char, _],
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -643,7 +643,7 @@ struct String(
         self = String(StringSlice(unsafe_from_utf8_ptr=unsafe_from_utf8_ptr))
 
     fn __init__(
-        out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8]
+        out self, *, unsafe_from_utf8_ptr: UnsafePointer[mut=False, UInt8, _]
     ):
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
@@ -890,7 +890,7 @@ struct String(
         return StringSlice(self) < StringSlice(rhs)
 
     @staticmethod
-    fn _add(lhs: Span[Byte], rhs: Span[Byte]) -> String:
+    fn _add(lhs: Span[Byte, _], rhs: Span[Byte, _]) -> String:
         var lhs_len = len(lhs)
         var rhs_len = len(rhs)
 
@@ -938,7 +938,7 @@ struct String(
         _ = codepoint.unsafe_write_utf8(self.unsafe_ptr_mut() + length)
         self.set_byte_length(new_length)
 
-    fn __radd__(self, other: StringSlice[mut=False]) -> String:
+    fn __radd__(self, other: StringSlice[mut=False, _]) -> String:
         """Creates a string by prepending another string slice to the start.
 
         Args:
@@ -949,7 +949,7 @@ struct String(
         """
         return Self._add(other.as_bytes(), self.as_bytes())
 
-    fn _iadd(mut self, other: Span[mut=False, Byte]):
+    fn _iadd(mut self, other: Span[mut=False, Byte, _]):
         var other_len = len(other)
         if other_len == 0:
             return
@@ -963,7 +963,7 @@ struct String(
         self.set_byte_length(new_len)
         self._clear_nul_terminator()
 
-    fn __iadd__(mut self, other: StringSlice[mut=False]):
+    fn __iadd__(mut self, other: StringSlice[mut=False, _]):
         """Appends another string slice to this string.
 
         Args:

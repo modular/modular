@@ -36,7 +36,7 @@ from layout.tma_async import SharedMemBarrier, TMATensorTile
 from linalg.structuring import SMemTile as LTSMemTile
 
 # Import TileTensor types for overloaded load methods
-from .tile_types import SMemTile2D, TMATile
+from structured_kernels.tile_types import SMemTile2D, TMATile
 
 # Import variadic types for TileTensor load overload
 from std.builtin.variadics import Variadic
