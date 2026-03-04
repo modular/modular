@@ -24,8 +24,6 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import (
-    Coord,
-    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
@@ -910,12 +908,12 @@ def rms_norm_kv_cache_ragged_paged[
         params,
         page_size,
     ],
-    gamma: LayoutTensor[dtype, ...],
+    gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
     layer_idx: UInt32,
     total_seq_len: UInt32,
-    input_row_offsets: LayoutTensor[DType.uint32, ...],
+    input_row_offsets: TileTensor[DType.uint32, ...],
     context: DeviceContextPtr,
 ) raises:
     """Performs RMSNorm in place on new entries in the key cache.
@@ -941,15 +939,18 @@ def rms_norm_kv_cache_ragged_paged[
     multiply the normalized values by the gamma tensor before casting to the
     output dtype or not. We set it to `True` by default.
     """
+    comptime assert gamma.flat_rank == 1, "gamma must be rank 1"
+    comptime assert (
+        input_row_offsets.flat_rank == 1
+    ), "input_row_offsets must be rank 1"
+
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     comptime rank = 3 if per_head_norm else 2
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var kv_params = k_cache.kv_params
-    comptime rms_norm_cols = Int(gamma.layout.shape[0])
+    comptime rms_norm_cols = gamma.static_shape[0]
 
-    comptime assert (
-        gamma.layout.shape[0] != UNKNOWN_VALUE
-    ), "Need static shape for gamma"
+    comptime assert rms_norm_cols != -1, "Need static shape for gamma"
     comptime assert (
         rms_norm_cols <= Int(kv_collection.kv_params.head_size)
         or not per_head_norm
@@ -1054,7 +1055,7 @@ def rms_norm_kv_cache_ragged_paged[
             multiply_before_cast=multiply_before_cast,
         ](
             shape,
-            TileTensor(gamma.ptr, row_major(Coord(Idx(gamma.size())))),
+            gamma,
             epsilon,
             weight_offset,
             context,

@@ -9367,12 +9367,12 @@ struct Struct_rms_norm_kv_cache_ragged_paged:
             per_head_norm=per_head_norm,
         ](
             kv_collection,
-            gamma.to_layout_tensor(),
+            gamma.to_tile_tensor[DType.int64](),
             epsilon,
             weight_offset,
             layer_idx,
             total_seq_len,
-            input_row_offsets.to_layout_tensor(),
+            input_row_offsets.to_tile_tensor[DType.int64](),
             context,
         )
 
