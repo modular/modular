@@ -24,11 +24,10 @@ from max.driver import DeviceSpec, load_devices, scan_available_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import SafetensorWeights, WeightsAdapter
+from test_common.mocks import DummyPipelineConfig
 from transformers import PretrainedConfig
 from transformers.models.llama.configuration_llama import LlamaConfig
 from transformers.models.llama.modeling_llama import LlamaForCausalLM
-
-from test_common.mocks import DummyPipelineConfig
 
 
 def make_small_llama_config(**overrides: Any) -> LlamaConfig:

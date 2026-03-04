@@ -22,6 +22,11 @@ import requests
 import torch
 from diffusers.pipelines.flux import FluxPipeline
 from PIL import Image
+from test_common.numerics import log_softmax
+from test_common.test_data import (
+    MockPixelGenerationRequest,
+    MockTextGenerationRequest,
+)
 from transformers import (
     LogitsProcessorList,
     MllamaProcessor,
@@ -29,12 +34,6 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
-)
-
-from test_common.numerics import log_softmax
-from test_common.test_data import (
-    MockPixelGenerationRequest,
-    MockTextGenerationRequest,
 )
 
 
