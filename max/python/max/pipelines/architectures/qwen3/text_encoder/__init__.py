@@ -20,7 +20,7 @@ from .model import (
 )
 
 __all__ = [
-    "Qwen3TextEncoderModel",
     "Qwen3TextEncoderKleinModel",
+    "Qwen3TextEncoderModel",
     "Qwen3TextEncoderZImageModel",
 ]

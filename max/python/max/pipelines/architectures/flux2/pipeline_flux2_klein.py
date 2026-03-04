@@ -105,9 +105,9 @@ class Flux2KleinPipeline(Flux2Pipeline):
                 f"Unexpected prompt_embeds rank={prompt_embeds.rank}; expected 2 or 3."
             )
 
-        prompt_embeds = prompt_embeds.to(
-            self.transformer.devices[0]
-        ).cast(self.transformer.config.dtype)
+        prompt_embeds = prompt_embeds.to(self.transformer.devices[0]).cast(
+            self.transformer.config.dtype
+        )
         batch_size = int(prompt_embeds.shape[0])
         seq_len = int(prompt_embeds.shape[1])
 
