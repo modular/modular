@@ -78,6 +78,50 @@ def _get_visible_device_prefix(target_accelerator: str = "") -> str:
         return ""
 
 
+def _get_gpu_count(target_accelerator: str = "") -> int | None:
+    """Detect available GPUs, capped by any visibility env var."""
+    hw_count = _get_hw_gpu_count(target_accelerator)
+    if hw_count is None:
+        return None
+    prefix = _get_visible_device_prefix(target_accelerator)
+    if prefix:
+        vis = os.environ.get(prefix, "").strip()
+        if vis:
+            return min(hw_count, len(set(v.strip() for v in vis.split(","))))
+    return hw_count
+
+
+def _get_hw_gpu_count(target_accelerator: str) -> int | None:
+    """Query physical GPU count from vendor tools."""
+    if "nvidia" in target_accelerator or "cuda" in target_accelerator:
+        smi = get_nvidia_smi()
+        if not smi:
+            return None
+        try:
+            out = subprocess.check_output(
+                [smi, "--query-gpu=name", "--format=csv,noheader"],
+                timeout=10,
+            )
+            return len(out.decode().strip().splitlines())
+        except (subprocess.SubprocessError, OSError):
+            return None
+    if "amd" in target_accelerator:
+        smi = shutil.which("rocm-smi")
+        if not smi:
+            return None
+        try:
+            out = subprocess.check_output([smi, "--showid"], timeout=10)
+            lines = out.decode().strip().splitlines()
+            return sum(
+                1
+                for line in lines
+                if line.strip() and line.strip()[0].isdigit()
+            )
+        except (subprocess.SubprocessError, OSError):
+            return None
+    return None
+
+
 @functools.cache
 def get_nvidia_smi():  # noqa: ANN201
     return shutil.which("nvidia-smi")

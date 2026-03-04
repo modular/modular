@@ -19,6 +19,7 @@ import glob
 import json
 import logging
 import math
+import multiprocessing
 import os
 import shutil
 import string
@@ -102,6 +103,18 @@ def _run_cmdline(
             f"Unable to run command {list2cmdline(cmd)}: {exc}",
             os.EX_OSERR,
         )
+
+
+def _init_gpu_worker(
+    gpu_queue: multiprocessing.Queue, visible_device_prefix: str
+) -> None:
+    """Worker initializer that assigns a dedicated GPU to each pool worker."""
+    gpu_id = gpu_queue.get()
+    if visible_device_prefix:
+        os.environ[visible_device_prefix] = str(gpu_id)
+    logging.debug(
+        f"Worker pid={os.getpid()} assigned {visible_device_prefix}={gpu_id}"
+    )
 
 
 @dataclass(frozen=True)
@@ -788,6 +801,17 @@ class BuildItem:
     exec_benchmark_time: float = 0
 
 
+@dataclass
+class ExecTaskArgs:
+    """Arguments for a single benchmark execution task."""
+
+    build_item: BuildItem
+    profile: str
+    exec_prefix: list[str]
+    exec_suffix: list[str]
+    timeout_secs: int | None
+
+
 def _get_similar_files(path: Path) -> list[Path]:
     """Returns a list of files that belong to the same benchmark but are
     created by different processes, e.g. due to using mpirun
@@ -1062,13 +1086,11 @@ class Scheduler:
         profile,  # noqa: ANN001
         exec_prefix,  # noqa: ANN001
         exec_suffix,  # noqa: ANN001
-        env: dict[str, str] | None = None,
         timeout_secs: int | None = None,
     ) -> BuildItem:
         """Execute all the items in the scheduler"""
 
-        if env is None:
-            env = {}
+        env: dict[str, str] = {}
         bin_name = build_item.spec_instance.hash(with_variables=False)
 
         exec_prefix_item = copy.deepcopy(exec_prefix)
@@ -1109,17 +1131,44 @@ class Scheduler:
 
     @staticmethod
     def _pool_execute_item_wrapper(
-        args: tuple[
-            BuildItem, str, list[str], list[str], dict[str, str], int | None
-        ],
+        args: ExecTaskArgs,
     ) -> BuildItem:
-        return Scheduler.execute_item(*args)
+        return Scheduler.execute_item(
+            build_item=args.build_item,
+            profile=args.profile,
+            exec_prefix=args.exec_prefix,
+            exec_suffix=args.exec_suffix,
+            timeout_secs=args.timeout_secs,
+        )
 
     def setup_build_pool(self) -> None:
         self.build_pool = Pool(self.num_cpu)
 
-    def setup_execution_pool(self) -> None:
-        self.execution_pool = Pool(self.num_gpu)
+    def setup_execution_pool(
+        self,
+        visible_device_prefix: str = "",
+        use_mpirun: bool = False,
+    ) -> None:
+        if visible_device_prefix and self.num_gpu > 1 and not use_mpirun:
+            gpu_queue: multiprocessing.Queue = multiprocessing.Queue()
+            # Respect any pre-set device visibility env var
+            existing = os.environ.get(visible_device_prefix, "")
+            if existing.strip():
+                visible_ids = list(
+                    dict.fromkeys(v.strip() for v in existing.split(","))
+                )
+                for gpu_id in visible_ids[: self.num_gpu]:
+                    gpu_queue.put(gpu_id)
+            else:
+                for i in range(self.num_gpu):
+                    gpu_queue.put(i)
+            self.execution_pool = Pool(
+                self.num_gpu,
+                initializer=_init_gpu_worker,
+                initargs=(gpu_queue, visible_device_prefix),
+            )
+        else:
+            self.execution_pool = Pool(self.num_gpu)
 
     def close_build_pool(self) -> None:
         self.build_pool.close()

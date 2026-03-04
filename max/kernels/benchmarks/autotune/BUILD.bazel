@@ -160,6 +160,7 @@ modular_py_test(
         ":kbench",
         ":kplot",
         ":kprofile",
+        requirement("pytest-mock"),
     ],
 )
 
