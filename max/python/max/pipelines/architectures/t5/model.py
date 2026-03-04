@@ -20,7 +20,7 @@ from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 
-from .model_config import T5Config, T5ConfigBase
+from .model_config import T5Config
 from .t5 import T5EncoderModel
 from .weight_adapters import convert_safetensor_state_dict
 
@@ -34,7 +34,7 @@ class T5Model(ComponentModel):
         weights: Weights,
     ) -> None:
         super().__init__(config, encoding, devices, weights)
-        self.config: T5ConfigBase = T5Config.generate(
+        self.config = T5Config.initialize_from_config(
             config,
             encoding,
             devices,
@@ -45,9 +45,9 @@ class T5Model(ComponentModel):
         state_dict = {key: value.data() for key, value in self.weights.items()}
         state_dict = convert_safetensor_state_dict(state_dict)
         with F.lazy():
-            t5 = T5EncoderModel(self.config)  # type: ignore[arg-type]
+            t5 = T5EncoderModel(self.config)
             t5.to(self.devices[0])
-        self.model: Model = t5.compile(*t5.input_types(), weights=state_dict)  # type: ignore[assignment]
+        self.model = t5.compile(*t5.input_types(), weights=state_dict)
         return self.model
 
     def __call__(self, *args, **kwargs):

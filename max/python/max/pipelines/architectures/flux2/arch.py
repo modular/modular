@@ -33,7 +33,7 @@ class Flux2ArchConfig(ArchConfig):
     pipeline_config: PipelineConfig
 
     def get_max_seq_len(self) -> int:
-        return 0  # Not used for pixel generation.
+        return 512
 
     @classmethod
     def initialize(cls, pipeline_config: PipelineConfig) -> Self:

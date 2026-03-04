@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from dataclasses import dataclass
+
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import PixelContext
@@ -18,9 +20,26 @@ from max.pipelines.lib import (
     PixelGenerationTokenizer,
     SupportedArchitecture,
 )
+from max.pipelines.lib.config import PipelineConfig
+from max.pipelines.lib.interfaces import ArchConfig
+from typing_extensions import Self
 
-from .model_config import FluxConfig
 from .pipeline_flux import FluxPipeline
+
+
+@dataclass(kw_only=True)
+class FluxArchConfig(ArchConfig):
+    """Pipeline-level config for Flux1 (implements ArchConfig; no KV cache)."""
+
+    pipeline_config: PipelineConfig
+
+    def get_max_seq_len(self) -> int:
+        return 77
+
+    @classmethod
+    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+        return cls(pipeline_config=pipeline_config)
+
 
 flux1_arch = SupportedArchitecture(
     name="FluxPipeline",
@@ -33,7 +52,7 @@ flux1_arch = SupportedArchitecture(
     ],
     pipeline_model=FluxPipeline,  # type: ignore[arg-type]
     context_type=PixelContext,
-    config=FluxConfig,
+    config=FluxArchConfig,
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=PixelGenerationTokenizer,
 )

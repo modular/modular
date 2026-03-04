@@ -22,13 +22,13 @@ from max.nn.module_v3 import Embedding, Linear, Module
 from max.nn.module_v3.norm import LayerNorm
 from max.nn.module_v3.sequential import ModuleList
 
-from .model_config import ClipConfigBase
+from .model_config import ClipConfig
 
 
 class CLIPTextEmbeddings(Module[..., Tensor]):
     def __init__(
         self,
-        config: ClipConfigBase,
+        config: ClipConfig,
     ):
         """Initialize CLIP text embeddings.
 
@@ -97,7 +97,7 @@ class CLIPTextEmbeddings(Module[..., Tensor]):
 class CLIPAttention(Module[..., Tensor]):
     def __init__(
         self,
-        config: ClipConfigBase,
+        config: ClipConfig,
     ):
         """Initialize CLIP attention module.
 
@@ -202,7 +202,7 @@ class CLIPAttention(Module[..., Tensor]):
 class CLIPMLP(Module[[Tensor], Tensor]):
     def __init__(
         self,
-        config: ClipConfigBase,
+        config: ClipConfig,
     ):
         """Initialize CLIP MLP.
 
@@ -241,7 +241,7 @@ class CLIPMLP(Module[[Tensor], Tensor]):
 class CLIPEncoderLayer(Module[..., Tensor]):
     def __init__(
         self,
-        config: ClipConfigBase,
+        config: ClipConfig,
     ):
         """Initialize CLIP encoder layer.
 
@@ -300,7 +300,7 @@ class CLIPEncoderLayer(Module[..., Tensor]):
 class CLIPEncoder(Module[..., Tensor]):
     def __init__(
         self,
-        config: ClipConfigBase,
+        config: ClipConfig,
     ):
         """Initialize CLIP encoder.
 
@@ -341,7 +341,7 @@ class CLIPEncoder(Module[..., Tensor]):
 class CLIPTextTransformer(Module[..., tuple[Tensor, Tensor]]):
     def __init__(
         self,
-        config: ClipConfigBase,
+        config: ClipConfig,
     ):
         """Initialize CLIP text transformer.
 
@@ -466,7 +466,7 @@ class CLIPTextTransformer(Module[..., tuple[Tensor, Tensor]]):
 class CLIPTextModel(Module[..., tuple[Tensor, Tensor]]):
     def __init__(
         self,
-        config: ClipConfigBase,
+        config: ClipConfig,
     ):
         """Initialize CLIP text model with MAX.
 

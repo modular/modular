@@ -32,7 +32,7 @@ from max.nn.module_v3.sequential import ModuleList
 from .layers import EncoderAttention, RotaryEmbedding
 
 if TYPE_CHECKING:
-    from .model_config import Qwen3TextEncoderConfigBase
+    from .model_config import Qwen3TextEncoderConfig
 
 
 class Qwen3MLP(Module[[Tensor], Tensor]):
@@ -105,7 +105,7 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
     Returns hidden states from all layers for use in diffusion pipelines.
     """
 
-    def __init__(self, config: Qwen3TextEncoderConfigBase) -> None:
+    def __init__(self, config: Qwen3TextEncoderConfig) -> None:
         super().__init__()
 
         self.dim = config.hidden_size
