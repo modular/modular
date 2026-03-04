@@ -155,7 +155,10 @@ modular_py_binary(
         "//max/tests/integration/architectures/internvl:torch_utils",
         "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
         "//max/tests/integration/architectures/qwen3vl:generate_utils",
-        "//max/tests/integration/test_common",
+        "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:github_utils",
+        "//max/tests/integration/test_common:numpy_encoder",
+        "//max/tests/integration/test_common:torch_utils",
         requirement("click"),
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
         requirement("diffusers"),  # Required for image generation pipelines
