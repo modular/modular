@@ -303,9 +303,9 @@ class ZImagePipeline(DiffusionPipeline):
         latents = F.reshape(
             latents, (batch_size, c_quarter, half_h * 2, half_w * 2)
         )
-        latents = (
-            latents / float(self.vae.config.scaling_factor)
-        ) + float(self.vae.config.shift_factor or 0.0)
+        latents = (latents / float(self.vae.config.scaling_factor)) + float(
+            self.vae.config.shift_factor or 0.0
+        )
         return latents
 
     @staticmethod
@@ -369,7 +369,9 @@ class ZImagePipeline(DiffusionPipeline):
     def preprocess_latents(self, latents: Tensor, dtype: DType) -> Tensor:
         # Compiled pack kernel expects fp32 input, then we cast to model dtype.
         with Tracer("host_to_device_latents"):
-            latents = latents.to(self.transformer.devices[0]).cast(DType.float32)
+            latents = latents.to(self.transformer.devices[0]).cast(
+                DType.float32
+            )
 
         with Tracer("patchify_and_pack"):
             batch, channels, height, width = map(int, latents.shape)
@@ -407,9 +409,7 @@ class ZImagePipeline(DiffusionPipeline):
         image_bchw = np.ascontiguousarray(image_bchw)
 
         return (
-            Tensor.from_dlpack(image_bchw)
-            .to(self.vae.devices[0])
-            .cast(dtype)
+            Tensor.from_dlpack(image_bchw).to(self.vae.devices[0]).cast(dtype)
         )
 
     def _prepare_img2img_latents(
@@ -539,7 +539,9 @@ class ZImagePipeline(DiffusionPipeline):
             ).hexdigest()
             timesteps_key = f"{num_timesteps}_{batch_size}_{timesteps_digest}"
             if timesteps_key in self._cached_timesteps_batched:
-                timesteps_batched = self._cached_timesteps_batched[timesteps_key]
+                timesteps_batched = self._cached_timesteps_batched[
+                    timesteps_key
+                ]
             else:
                 timesteps_np = np.broadcast_to(
                     transformed_timesteps[:, None], (num_timesteps, batch_size)
@@ -547,7 +549,9 @@ class ZImagePipeline(DiffusionPipeline):
                 timesteps_batched = Tensor.from_dlpack(
                     np.ascontiguousarray(timesteps_np)
                 ).to(device)
-                self._cached_timesteps_batched[timesteps_key] = timesteps_batched
+                self._cached_timesteps_batched[timesteps_key] = (
+                    timesteps_batched
+                )
 
             # Keep Tensor indexing semantics for [step, batch] access.
             timesteps_seq: Any = timesteps_batched
@@ -555,7 +559,9 @@ class ZImagePipeline(DiffusionPipeline):
         cfg_active: np.ndarray | None = None
         if do_cfg:
             if model_inputs.cfg_truncation <= 1.0:
-                cfg_active = transformed_timesteps <= model_inputs.cfg_truncation
+                cfg_active = (
+                    transformed_timesteps <= model_inputs.cfg_truncation
+                )
             else:
                 cfg_active = np.ones(num_timesteps, dtype=np.bool_)
 

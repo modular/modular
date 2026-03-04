@@ -14,4 +14,4 @@
 from .attention import ZImageAttention
 from .embeddings import RopeEmbedder, TimestepEmbedder
 
-__all__ = ["ZImageAttention", "RopeEmbedder", "TimestepEmbedder"]
+__all__ = ["RopeEmbedder", "TimestepEmbedder", "ZImageAttention"]

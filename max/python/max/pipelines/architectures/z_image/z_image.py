@@ -104,7 +104,9 @@ class ZImageTransformerBlock(Module[..., Tensor]):
             ffn_out = self.feed_forward(self.ffn_norm1(x) * scale_mlp)
             x = x + gate_mlp * self.ffn_norm2(ffn_out)
         else:
-            attn_out = self.attention(self.attention_norm1(x), freqs_cis=freqs_cis)
+            attn_out = self.attention(
+                self.attention_norm1(x), freqs_cis=freqs_cis
+            )
             x = x + self.attention_norm2(attn_out)
             x = x + self.ffn_norm2(self.feed_forward(self.ffn_norm1(x)))
 
@@ -148,7 +150,10 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         self.patch_size = config.all_patch_size[0]
         self.f_patch_size = config.all_f_patch_size[0]
         self.packed_channels = (
-            self.f_patch_size * self.patch_size * self.patch_size * self.in_channels
+            self.f_patch_size
+            * self.patch_size
+            * self.patch_size
+            * self.in_channels
         )
 
         self.x_embedder = Linear(
