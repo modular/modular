@@ -29,8 +29,8 @@ from max.nn import (
 from max.nn.attention.attention_with_rope import AttentionWithRope
 from max.nn.float8_config import Float8WeightScaleSpec
 from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
     KVCacheParams,
-    MHADecodeDispatchMetadata,
     PagedCacheValues,
 )
 from max.nn.rotary_embedding import RotaryEmbedding
@@ -191,7 +191,7 @@ def _build_and_execute_attention_graph(
     max_lengths_type = kv_symbolic_inputs.max_lengths
     dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
     assert dispatch_metadata_symbol is not None
-    mha_decode_dispatch_metadata_type = dispatch_metadata_symbol.tensor
+    attention_dispatch_metadata_type = dispatch_metadata_symbol.tensor
 
     # Prepare input data
     np.random.seed(42)
@@ -223,7 +223,7 @@ def _build_and_execute_attention_graph(
             cache_lengths_type,
             lookup_table_type,
             max_lengths_type,
-            mha_decode_dispatch_metadata_type,
+            attention_dispatch_metadata_type,
         ],
     ) as graph:
         freqs_cis = rope.freqs_cis
@@ -236,7 +236,7 @@ def _build_and_execute_attention_graph(
             cache_lengths,
             lookup_table,
             max_lengths,
-            mha_decode_dispatch_metadata,
+            attention_dispatch_metadata,
         ) = graph.inputs
 
         kv_collection = PagedCacheValues(
@@ -244,8 +244,8 @@ def _build_and_execute_attention_graph(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
-            dispatch_metadata=MHADecodeDispatchMetadata(
-                mha_decode_dispatch_metadata.tensor
+            dispatch_metadata=AttentionDispatchMetadata(
+                attention_dispatch_metadata.tensor
             ),
         )
         output = attention(
@@ -275,8 +275,8 @@ def _build_and_execute_attention_graph(
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
-    assert kv_runtime_inputs.mha_decode_dispatch_metadata is not None
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     result = model.execute(
         input_tensor,
@@ -285,7 +285,7 @@ def _build_and_execute_attention_graph(
         kv_runtime_inputs.cache_lengths,
         kv_runtime_inputs.lookup_table,
         kv_runtime_inputs.max_lengths,
-        kv_runtime_inputs.mha_decode_dispatch_metadata,
+        kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
 
     return torch.from_dlpack(result)

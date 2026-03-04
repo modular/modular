@@ -30,10 +30,6 @@ fn devour2(f: Fudge[_, chocolate=_, cream=6]):
     print("Devoured", String(f))
 
 
-fn nibble(f: Fudge[5]):
-    print("Ate", String(f))
-
-
 def main() raises:
     eat(Fudge[5, 5, 7]())
     eat(Fudge[5, 8, 9]())
@@ -41,5 +37,3 @@ def main() raises:
     # parameter 'cream' of argument 'f' type 'Fudge
     devour(Fudge[3, 6, 9]())
     devour(Fudge[4, 6, 8]())
-
-    nibble(Fudge[5, 4, 7]())

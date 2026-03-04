@@ -30,7 +30,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.os.path import dirname
 from std.pathlib import Path
 from shmem import *
-from std.sys.param_env import env_get_string
+from std.sys.defines import get_defined_string
 from std.testing import assert_equal
 
 

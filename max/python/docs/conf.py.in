@@ -35,7 +35,8 @@ autoclass_content = "both"
 # This ensures that all instances of CustomExtensionsType are not unfolded
 # (previously it was only sometimes unfolded, which was confusing/inconsistent)
 autodoc_type_aliases = {
-  'CustomExtensionsType': 'max.engine.CustomExtensionsType'
+  'CustomExtensionsType': 'max.engine.CustomExtensionsType',
+  'SupportedEncoding': 'max.pipelines.lib.config.SupportedEncoding',
 }
 
 # Show argument type hints in the parameters description only, because a lot

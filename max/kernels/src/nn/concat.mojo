@@ -52,9 +52,9 @@ fn memcpy_or_fuse[
     dtype: DType,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    dest_data: UnsafePointer[mut=True, Int8],
+    dest_data: UnsafePointer[mut=True, Int8, _],
     out_byte_offset: Int,
-    src_data: UnsafePointer[Int8],
+    src_data: UnsafePointer[Int8, _],
     n: Int,
     out_shape: IndexList[rank, ...],
 ) raises:
@@ -87,7 +87,7 @@ fn memcpy_or_fuse[
         ](index: IndexList[_rank]):
             var coord = Coord(index)
             comptime assert coord.flat_rank == input.flat_rank
-            var load = input.load[width=simd_width](coord)
+            var load = input.load[width=simd_width, alignment=1](coord)
 
             # Convert the linearized address back to the n-D indices.
             comptime assert _rank == 1
@@ -498,7 +498,7 @@ fn _concat_small[
                 in_index[axis] = target_dim
                 var coord = Coord(in_index)
                 comptime assert coord.flat_rank == input.flat_rank
-                var load = input.load[width=simd_width](coord)
+                var load = input.load[width=simd_width, alignment=1](coord)
 
                 comptime if epilogue_fn:
                     comptime func = epilogue_fn.value()
@@ -506,7 +506,7 @@ fn _concat_small[
                 else:
                     var coord = Coord(out_index)
                     comptime assert coord.flat_rank == output.flat_rank
-                    output.store[width=simd_width](coord, load)
+                    output.store[width=simd_width, alignment=1](coord, load)
                 return
             else:
                 # Keep looking...
@@ -808,7 +808,8 @@ fn _concat_gpu_elementwise[
                     )
                 else:
                     output.store[width=simd_width](
-                        out_coord, input.load[width=simd_width](in_coord)
+                        out_coord,
+                        input.load[width=simd_width](in_coord),
                     )
                 return
 
@@ -1028,7 +1029,7 @@ fn _fused_concat_gpu_elementwise[
             var input_shape = input_shapes[i]
 
             if in_index[axis] < input_shape[axis]:
-                output_0_fn[dtype, _rank, width=simd_width, alignment=1](
+                output_0_fn[dtype, _rank, width=simd_width](
                     out_index,
                     input_fn[i, simd_width, _rank](in_index),
                 )
@@ -1060,7 +1061,7 @@ fn _fused_concat_gpu[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], size],
-    output: TileTensor[mut=True, dtype],
+    output: TileTensor[mut=True, dtype, _, _],
     ctx: DeviceContext,
 ) raises:
     comptime num_inputs = input_shapes.size
@@ -1126,7 +1127,7 @@ fn fused_concat[
 ](
     axis: Int,
     input_shapes: StaticTuple[IndexList[rank], _],
-    output: TileTensor[mut=True, dtype],
+    output: TileTensor[mut=True, dtype, _, _],
     ctx: DeviceContextPtr,
 ) raises:
     comptime assert is_valid_target[target](), "not a valid target"

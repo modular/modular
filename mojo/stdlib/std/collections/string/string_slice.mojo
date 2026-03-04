@@ -2651,7 +2651,7 @@ fn _to_string_list[
 
 @always_inline
 fn _unsafe_strlen(
-    ptr: UnsafePointer[mut=False, Byte], max: UInt = UInt.MAX
+    ptr: UnsafePointer[mut=False, Byte, _], max: UInt = UInt.MAX
 ) -> UInt:
     """Get the length of a null-terminated string from a pointer.
 
@@ -2874,7 +2874,7 @@ fn _memmem_impl[
 fn _memrchr[
     dtype: DType
 ](
-    source: UnsafePointer[mut=False, Scalar[dtype]],
+    source: UnsafePointer[mut=False, Scalar[dtype], _],
     char: Scalar[dtype],
     len: Int,
 ) -> type_of(source):
@@ -2890,9 +2890,9 @@ fn _memrchr[
 fn _memrmem[
     dtype: DType
 ](
-    haystack: UnsafePointer[mut=False, Scalar[dtype]],
+    haystack: UnsafePointer[mut=False, Scalar[dtype], _],
     haystack_len: Int,
-    needle: UnsafePointer[mut=False, Scalar[dtype]],
+    needle: UnsafePointer[mut=False, Scalar[dtype], _],
     needle_len: Int,
 ) -> type_of(haystack):
     if not needle_len:

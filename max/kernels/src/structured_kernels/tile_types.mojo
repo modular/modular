@@ -17,7 +17,7 @@ All SMEM storage uses TileTensor natively. TileTensors are passed directly
 to TMA and MMA via TileTensor overloads.
 
 Usage:
-    from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+    from structured_kernels.tile_types import (
         SMemTile, SMemTileArray2D, SMemTileArrayWithLayout
     )
 
@@ -58,7 +58,8 @@ from layout.coord import (
     _DimsToCoordLike,
 )
 from layout._layout import Layout, TensorLayout, row_major
-from linalg.structuring import SMemTileArray as LTSMemTileArray
+from .smem_types import SMemTileArray as LTSMemTileArray
+from std.utils.index import IndexList
 from std.memory import LegacyUnsafePointer, stack_allocation
 from std.utils.static_tuple import StaticTuple
 
@@ -67,6 +68,17 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 # Core matrix constant from tensor_core_async.mojo
 comptime _CM_NUM_ROWS = 8
+
+
+# ============================================================================
+# TilePayload - Marker trait for tile payload types
+# ============================================================================
+
+
+trait TilePayload(TrivialRegisterPassable):
+    """Trait for tile payload types. Must be extend TrivialRegisterPassable."""
+
+    pass
 
 
 # ============================================================================

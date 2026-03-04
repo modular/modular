@@ -53,7 +53,9 @@ fn color_to_grayscale(
         gray_tensor[row, col] = gray.cast[int_dtype]()
 
 
-def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout_orig]) raises:
+def print_image(
+    gray_tensor: LayoutTensor[int_dtype, gray_layout_orig, ...]
+) raises:
     """A helper function to print out the grayscale channel intensities."""
     for row in range(HEIGHT):
         for col in range(WIDTH):
@@ -114,7 +116,9 @@ def test_color_to_grayscale() raises:
         )
 
         with gray_buffer.map_to_host() as host_buffer:
-            host_tensor = LayoutTensor[int_dtype, gray_layout_orig](host_buffer)
+            host_tensor = LayoutTensor[int_dtype, gray_layout_orig, ...](
+                host_buffer
+            )
             print("Resulting grayscale image:")
             print_image(host_tensor)
             assert_equal(host_tensor[0, 0], 17)

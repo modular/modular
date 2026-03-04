@@ -32,12 +32,12 @@ from std.sys._amdgpu import (
 )
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
-from std.sys.param_env import env_get_string
+from std.sys.defines import get_defined_string
 
 from std.collections.string.string_slice import _get_kgen_string
 from std.reflection import call_location, SourceLocation
 
-comptime ASSERT_MODE = env_get_string["ASSERT", "safe"]()
+comptime ASSERT_MODE = get_defined_string["ASSERT", "safe"]()
 """The compile-time assertion mode from the ASSERT environment variable."""
 
 
@@ -407,7 +407,7 @@ fn debug_assert[
 
 @no_inline
 fn _debug_assert_msg(
-    message: UnsafePointer[mut=False, Byte], length: Int, loc: SourceLocation
+    message: UnsafePointer[mut=False, Byte, _], length: Int, loc: SourceLocation
 ):
     """Aborts with (or prints) the given message and location.
 

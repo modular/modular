@@ -67,7 +67,7 @@ fn ldg[
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: UnsafePointer[mut=False, Scalar[dtype]]) -> SIMD[dtype, width]:
+](x: UnsafePointer[mut=False, Scalar[dtype], _]) -> SIMD[dtype, width]:
     """Load data from global memory through the non-coherent cache.
 
     This function provides a hardware-accelerated global memory load operation
@@ -1181,7 +1181,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         self,
         vector_offset: Int32,
         shared_ptr: UnsafePointer[
-            mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space = AddressSpace.SHARED
         ],
         *,
         scalar_offset: Int32 = 0,
@@ -1344,7 +1344,7 @@ fn ds_read_tr16_b64[
     //,
 ](
     shared_ptr: UnsafePointer[
-        mut=False, Scalar[dtype], address_space = AddressSpace.SHARED
+        mut=False, Scalar[dtype], _, address_space = AddressSpace.SHARED
     ]
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.

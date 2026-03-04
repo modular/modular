@@ -338,10 +338,10 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Number of multiturn chat sessions."""
 
-    delay_between_chat_turns: int | str | None = field(
+    delay_between_chat_turns: float | str | None = field(
         default=None, metadata={"group": "Workload Configuration"}
     )
-    """Delay between chat turns in ms. Accepts an integer for a constant delay,
+    """Delay between chat turns in ms. Accepts a float for a constant delay,
     or a distribution string: 'N(mean,std)' for normal, 'U(lower,upper)' for uniform or 'G(shape,scale)' for gamma."""
 
     # Output control (serving-specific extensions)
@@ -422,6 +422,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         default=0, metadata={"group": "Traffic Control"}
     )
     """Skip first N requests for measurements."""
+
+    skip_last_n_requests: int = field(
+        default=0, metadata={"group": "Traffic Control"}
+    )
+    """Skip last N requests for measurements."""
 
     chat_warmup_delay_ms: float = field(
         default=0.0, metadata={"group": "Traffic Control"}
@@ -514,6 +519,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Enable server stats collection for serving benchmarks."""
 
+    print_workload_stats: bool = field(
+        default=False, metadata={"group": "Control Flags"}
+    )
+    """Print workload distribution statistics (input/output lengths, num turns, delays)."""
+
     trace: bool = field(default=False, metadata={"group": "Control Flags"})
     """Enable nsys tracing of the benchmark run. Requires the server to be run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs."""
 
@@ -601,6 +611,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "request_rate": "Requests per second (finite rate for realistic benchmarking).",
             "burstiness": "Burstiness factor (1.0 = Poisson process).",
             "skip_first_n_requests": "Skip first N requests for measurements.",
+            "skip_last_n_requests": "Skip last N requests for measurements.",
             "chat_warmup_delay_ms": "Delay between starting chat sessions.",
             "sonnet_input_len": "Number of input tokens per request, used only for sonnet dataset.",
             "sonnet_prefix_len": "Number of prefix tokens per request, used only for sonnet dataset.",
@@ -622,6 +633,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
             "collect_cpu_stats": "Enable CPU stats collection for serving benchmarks.",
             "collect_server_stats": "Enable server stats collection for serving benchmarks.",
+            "print_workload_stats": "Print workload distribution statistics (input/output lengths, num turns, delays).",
             "trace": "Enable nsys tracing. Requires server run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs.",
             "trace_file": "Path to save nsys trace. Default: $MODULAR_PATH/profile.nsys-rep or ./profile.nsys-rep.",
             "trace_session": "Optional session name to trace. If not specified, nsys traces the default session.",

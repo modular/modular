@@ -30,7 +30,12 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.pipelines.core import TextContext
-from max.pipelines.lib import PIPELINE_REGISTRY, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    MAXModelConfig,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
 from max.serve import api_server
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
@@ -41,7 +46,12 @@ from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
 @pytest.fixture
 def mock_pipeline_config() -> PipelineConfig:
-    pipeline_config = PipelineConfig.model_construct(max_batch_size=1)
+    runtime = PipelineRuntimeConfig.model_construct(
+        max_batch_size=1,
+    )
+    pipeline_config = PipelineConfig.model_construct(
+        runtime=runtime,
+    )
 
     model_config = MAXModelConfig.model_construct(served_model_name="echo")
     pipeline_config.model = model_config

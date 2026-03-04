@@ -40,7 +40,7 @@ from std.gpu.primitives.cluster import (
 from std.gpu.sync import named_barrier, syncwarp
 from layout._layout import TensorLayout
 from layout import TileTensor
-from ..structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     TMATile,
     static_row_major,
 )
@@ -51,7 +51,7 @@ from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_SS
 
 from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
-from ..structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     WarpRole1D1D,
     compute_tma_tile_dims,
     compute_accum_barrier_counts,
@@ -65,8 +65,8 @@ from ..structured_kernels.tile_pipeline import (
     OutputTilePipeline,
     BlockwiseFP8TilePayload,
 )
-from ..structured_kernels.tmem import TmemAllocation
-from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from ..structured_kernels.tmem import TmemAllocation, TmemDeallocBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,

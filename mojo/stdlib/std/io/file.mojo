@@ -652,7 +652,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
     fn _write(
         self,
-        ptr: UnsafePointer[mut=False, UInt8, address_space=_],
+        ptr: UnsafePointer[mut=False, UInt8, _, address_space=_],
         len: Int,
     ) raises:
         """Write the data to the file, handling partial writes automatically.

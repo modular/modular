@@ -21,7 +21,7 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_mha_decode_inputs
+from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
@@ -302,7 +302,7 @@ def generate_qwen3_max_outputs(
     ) as graph:
         x, input_row_offsets_input, *kv_cache = graph.inputs
 
-        kv_collection = unflatten_ragged_mha_decode_inputs(
+        kv_collection = unflatten_ragged_attention_inputs(
             kv_cache, n_devices=1
         )[0]
 
@@ -325,8 +325,8 @@ def generate_qwen3_max_outputs(
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
-    kv_cache_runtime = kv_manager.runtime_inputs([batch])[0]
-    assert kv_cache_runtime.mha_decode_dispatch_metadata is not None
+    kv_cache_runtime = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_cache_runtime.attention_dispatch_metadata is not None
 
     result = compiled.execute(
         Buffer.from_dlpack(flat_input.to(torch_device)).to(device),

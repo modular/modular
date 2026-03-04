@@ -25,6 +25,9 @@ logger = logging.getLogger("max.pipelines")
 SpeculativeMethod = Literal["standalone", "eagle", "mtp"]
 """The supported methods for speculative decoding."""
 
+RejectionSamplingStrategy = Literal["greedy", "residual"]
+"""The supported rejection sampling strategies for speculative decoding."""
+
 
 class SpeculativeConfig(ConfigFileModel):
     """Configuration for speculative decoding."""
@@ -32,9 +35,20 @@ class SpeculativeConfig(ConfigFileModel):
     speculative_method: SpeculativeMethod | None = Field(
         default=None, description="The speculative decoding method to use."
     )
+    """The speculative decoding method to use."""
 
     num_speculative_tokens: int = Field(
         default=5, description="The number of speculative tokens."
+    )
+    """The number of speculative tokens to generate per step."""
+
+    rejection_sampling_strategy: RejectionSamplingStrategy = Field(
+        default="residual",
+        description=(
+            "The rejection sampling strategy to use. 'residual' uses"
+            " residual distribution sampling with bonus tokens. 'greedy'"
+            " uses simple greedy rejection sampling without bonus tokens."
+        ),
     )
 
     _config_file_section_name: str = "speculative_config"
@@ -53,3 +67,7 @@ class SpeculativeConfig(ConfigFileModel):
     def is_mtp(self) -> bool:
         """Returns whether the speculative method is MTP."""
         return self.speculative_method == "mtp"
+
+    def uses_greedy_rejection(self) -> bool:
+        """Returns whether the greedy rejection sampling strategy is used."""
+        return self.rejection_sampling_strategy == "greedy"

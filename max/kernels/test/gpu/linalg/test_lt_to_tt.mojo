@@ -14,7 +14,7 @@
 
 from buffer import Dim, DimList
 from layout import Layout, LayoutTensor, RuntimeLayout
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
 from std.testing import assert_equal

@@ -23,18 +23,23 @@ logger = logging.getLogger("max.pipelines")
 
 
 class LoRAConfig(ConfigFileModel):
+    """Configuration for LoRA (Low-Rank Adaptation) inference."""
+
     enable_lora: bool = Field(
         default=False, description="Enables LoRA on the server."
     )
+    """Whether LoRA adapters are enabled on the server."""
 
     lora_paths: list[str] = Field(
         default_factory=list,
         description="List of statically defined LoRA paths.",
     )
+    """The list of statically defined LoRA adapter paths."""
 
     max_lora_rank: int = Field(
         default=16, description="Maximum rank of all possible LoRAs."
     )
+    """The maximum rank of all LoRA adapters."""
 
     max_num_loras: int = Field(
         default=1,
@@ -45,6 +50,7 @@ class LoRAConfig(ConfigFileModel):
             "usage."
         ),
     )
+    """The maximum number of active LoRA adapters in a batch."""
 
     _config_file_section_name: str = "lora_config"
     """The section name to use when loading this config from a MAXConfig file.
