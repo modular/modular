@@ -1495,12 +1495,12 @@ fn matmul_dispatch_sm100_bf16[
 
     comptime FLUX2_NK = [
         Index(6144, 24576),
-        # Index(55296, 6144),
-        # Index(6144, 6144),
-        # Index(36864, 6144),
-        # Index(6144, 18432),
-        # Index(1024, 5120),
-        # Index(32768, 5120),
+        Index(55296, 6144),
+        Index(6144, 6144),
+        Index(36864, 6144),
+        Index(6144, 18432),
+        Index(1024, 5120),
+        Index(32768, 5120),
     ]
 
     comptime static_NK = Index(static_N, static_K)
