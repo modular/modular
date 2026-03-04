@@ -794,7 +794,10 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
   if (isRegisterPassable(loc, shared))
     return true;
 
-  // Check whether the type conforms to `Movable` trait.
+  // Check whether the type conforms to `Movable` trait.  Use
+  // checkConformance (not doesNominalTypeConformTo directly) so that
+  // concrete parameter bindings are available to evaluate conditional
+  // conformance constraints — matching isCopyable's behavior.
   ASTDecl *traitDecl =
       shared.lookupBuiltinTrait("Movable", typeDecl, typeDecl->getLoc());
   if (!traitDecl)
@@ -802,7 +805,7 @@ bool ASTType::isMovable(llvm::SMLoc loc, SharedState &shared) const {
   auto trait = dyn_cast_or_null<TraitDeclOp>(traitDecl->getIfOperation());
   if (!trait)
     return false;
-  return typeDecl->doesNominalTypeConformTo(trait.bindReference()) ==
+  return checkConformance(trait.bindReference(), shared) ==
          ConformanceResult::Yes;
 }
 
