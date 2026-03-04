@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from memory import UnsafePointer
-from utils import IndexList, Variant
-from python import Python, PythonObject
-from python._cpython import RichCompareOps
-from python.bindings import (
+from std.memory import UnsafePointer
+from std.utils import IndexList, Variant
+from std.python import Python, PythonObject
+from std.python._cpython import RichCompareOps
+from std.python.bindings import (
     PythonModuleBuilder,
     PyTypeObjectSlot,
     NotImplementedError,
@@ -47,7 +47,7 @@ fn _compute_bounding_box_area(
     return (ext_x[1] - ext_x[0]) * (ext_y[1] - ext_y[0])
 
 
-struct DataFrame(Defaultable, Movable, Representable):
+struct DataFrame(Defaultable, Movable, Writable):
     """A simple columnar data structure.
 
     This struct contains points with the x,y coordinates stored in columns. Some algorithms
@@ -168,8 +168,8 @@ struct DataFrame(Defaultable, Movable, Representable):
             _ = self_ptr[].pos_x.pop(index_mojo)
             _ = self_ptr[].pos_y.pop(index_mojo)
 
-    fn __repr__(self) -> String:
-        return String("DataFrame( length=", len(self.pos_x), ")")
+    fn write_to(self, mut writer: Some[Writer]):
+        writer.write("DataFrame( length=", len(self.pos_x), ")")
 
     @staticmethod
     fn rich_compare(

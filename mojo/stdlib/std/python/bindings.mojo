@@ -20,7 +20,7 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from std.ffi import _Global, c_int
+from std.ffi import _Global, c_int, c_long
 from std.sys.info import size_of
 
 from std.builtin._startup import _ensure_current_or_global_runtime_init
@@ -235,7 +235,7 @@ fn _tp_repr_wrapper[
 
 struct PyTypeObjectSlot(
     ImplicitlyCopyable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
 ):
     """Tag struct for defining methods for the various type object slots.
 
@@ -331,7 +331,7 @@ struct PyTypeObjectSlot(
 
 
 @fieldwise_init
-struct NotImplementedError(TrivialRegisterType, Writable):
+struct NotImplementedError(TrivialRegisterPassable, Writable):
     """A custom error type to be returned from Mojo binding functions to signal NotImplemented.
     """
 
