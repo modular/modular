@@ -37,7 +37,10 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
 )
-from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.lib.config.config_enums import (
+    is_float4_encoding,
+    supported_encoding_dtype,
+)
 from max.pipelines.lib.utils import compute_data_parallel_splits
 from max.support.algorithm import flatten2d
 from max.support.human_readable_formatter import to_human_readable_bytes
@@ -99,13 +102,10 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         if not self._shared_weights:
             return
         for key, value in self._shared_weights.items():
-            if key in state_dict:
-                state_dict[key] = cast(WeightData, value)
-            else:
-                logger.debug(
-                    "Shared weight '%s' not found in NextN state_dict; skipping",
-                    key,
-                )
+            # Replace existing weights or add missing ones.  The NextN
+            # safetensors may omit weights shared with the target model
+            # (e.g. embed_tokens, lm_head) so we must be able to add them.
+            state_dict[key] = cast(WeightData, value)
 
     @classmethod
     def get_kv_params(
@@ -116,6 +116,9 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
+        encoding = pipeline_config.model.quantization_encoding
+        if encoding is not None and is_float4_encoding(encoding):
+            cache_dtype = DType.bfloat16
         return DeepseekV3NextNConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -147,7 +150,12 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         )
         encoding = draft_model_config.quantization_encoding
         assert encoding is not None
-        dtype_bytes = supported_encoding_dtype(encoding).size_in_bytes
+        # NextN weights are always BF16 even when the pipeline encoding is FP4,
+        # because the NextN checkpoint is not quantized.
+        if is_float4_encoding(encoding):
+            dtype_bytes = DType.bfloat16.size_in_bytes
+        else:
+            dtype_bytes = supported_encoding_dtype(encoding).size_in_bytes
         config = draft_model_config.huggingface_config
         assert config is not None
         n_gpus_per_node = len(draft_model_config.device_specs)
@@ -285,6 +293,25 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         if base_key in state_dict and nextn_key in state_dict:
             del state_dict[base_key]
 
+        # The HF config may declare NVFP4 quantization (e.g. quantization_config
+        # inherited from the target model), but the NextN weights may actually
+        # be all BF16. Detect this by checking for weight_scale_2 keys which
+        # are only present when weights are truly FP4-quantized.
+        if (
+            base_config.float8_config is not None
+            and base_config.float8_config.is_nvfp4
+            and not any("weight_scale_2" in key for key in state_dict)
+        ):
+            logger.info(
+                "NextN weights are BF16 (no weight_scale_2 found); "
+                "disabling NVFP4 config."
+            )
+            base_config.float8_config = None
+            base_config.dtype = DType.bfloat16
+            if base_config.ep_config is not None:
+                base_config.ep_config.dispatch_dtype = DType.bfloat16
+                base_config.ep_config.dispatch_fp8_config = None
+
         # Build NextN config from the base config's fields, avoiding
         # asdict() which recursively converts nested dataclasses to dicts.
         model_config = DeepseekV3NextNConfig(
@@ -299,7 +326,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Load the NextN model with the given weights."""
 
-        max_batch_size = self.pipeline_config.max_batch_size
+        max_batch_size = self.pipeline_config.runtime.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         # `_host_input_row_offsets_prealloc` tensor needs to reserve space for

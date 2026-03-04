@@ -115,7 +115,7 @@ fn tma_tile_qo[
     depth: Int,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], _],
     rows: Int,
     out res: QOTMATile[dtype, BM, BK, swizzle_mode],
 ) raises:

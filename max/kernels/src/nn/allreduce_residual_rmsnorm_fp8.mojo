@@ -54,7 +54,7 @@ from std.collections import InlineArray, Optional
 from std.math import ceildiv, rsqrt
 from std.sys import (
     align_of,
-    env_get_int,
+    get_defined_int,
     has_amd_gpu_accelerator,
     simd_width_of,
     size_of,
@@ -75,12 +75,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
 from layout import Coord, Idx, TileTensor
 from layout._layout import TensorLayout, row_major
-from layout.int_tuple import UNKNOWN_VALUE
-from layout.layout import Layout as LegacyLayout
-from layout.layout_tensor import LayoutTensor as LegacyLayoutTensor
-from layout.runtime_layout import RuntimeLayout
 from std.utils import IndexList, StaticTuple
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type, max_finite
 
 from std.runtime.asyncrt import DeviceContextPtr
@@ -114,7 +109,8 @@ fn _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
-    scale_layout: LegacyLayout,
+    scale_origin: MutOrigin,
+    ScaleLayoutType: TensorLayout,
     //,
     ngpus: Int,
     simd_width: Int,
@@ -128,8 +124,8 @@ fn _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ],
     gamma: TileTensor[in_dtype, LayoutType, origin],
-    scale_buffer: LegacyLayoutTensor[
-        mut=True, scales_dtype, scale_layout, MutAnyOrigin
+    scale_buffer: TileTensor[
+        mut=True, scales_dtype, ScaleLayoutType, scale_origin
     ],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
@@ -149,6 +145,7 @@ fn _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     Gamma weights are preloaded once and reused across all rows.
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
@@ -266,7 +263,8 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
-    scale_layout: LegacyLayout,
+    scale_origin: MutOrigin,
+    ScaleLayoutType: TensorLayout,
     //,
     ngpus: Int,
     simd_width: Int,
@@ -280,8 +278,8 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
         UnsafePointer[Scalar[in_dtype], ImmutAnyOrigin], ngpus
     ],
     gamma: TileTensor[in_dtype, LayoutType, origin],
-    scale_buffer: LegacyLayoutTensor[
-        mut=True, scales_dtype, scale_layout, MutAnyOrigin
+    scale_buffer: TileTensor[
+        mut=True, scales_dtype, ScaleLayoutType, scale_origin
     ],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
@@ -332,6 +330,7 @@ fn _allreduce_rmsnorm_fp8_kernel_2stage[
     on any GPU reads them from GPU C's scratch in Stage 2.
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
@@ -603,15 +602,8 @@ fn _allreduce_rmsnorm_fp8_launch[
     fn output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
         output.store[width=width](IndexList[2](row, col), val)
 
-    # Create a scale buffer tensor from scale_output.
-    comptime layout_1d = LegacyLayout.row_major(UNKNOWN_VALUE)
-    var scale_buffer_tensor = LegacyLayoutTensor[
-        mut=True,
-        scales_dtype,
-        layout_1d,
-        MutAnyOrigin,
-        address_space = scale_output.address_space,
-    ](scale_output.data, RuntimeLayout[layout_1d].row_major(Index(rows)))
+    # Create a scale buffer TileTensor from scale_output NDBuffer.
+    var scale_buffer_tensor = TileTensor(scale_output)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         mut = gamma.mut,
@@ -620,7 +612,8 @@ fn _allreduce_rmsnorm_fp8_launch[
         in_dtype=in_dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
-        scale_layout=layout_1d,
+        scale_origin = scale_buffer_tensor.origin,
+        ScaleLayoutType = scale_buffer_tensor.LayoutType,
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
@@ -746,15 +739,8 @@ fn _allreduce_rmsnorm_fp8_launch_2stage[
     fn output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
         output.store[width=width](IndexList[2](row, col), val)
 
-    # Create a scale buffer tensor from scale_output.
-    comptime layout_1d = LegacyLayout.row_major(UNKNOWN_VALUE)
-    var scale_buffer_tensor = LegacyLayoutTensor[
-        mut=True,
-        scales_dtype,
-        layout_1d,
-        MutAnyOrigin,
-        address_space = scale_output.address_space,
-    ](scale_output.data, RuntimeLayout[layout_1d].row_major(Index(rows)))
+    # Create a scale buffer TileTensor from scale_output NDBuffer.
+    var scale_buffer_tensor = TileTensor(scale_output)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_2stage[
         mut = gamma.mut,
@@ -763,7 +749,8 @@ fn _allreduce_rmsnorm_fp8_launch_2stage[
         in_dtype=in_dtype,
         out_dtype=out_dtype,
         scales_dtype=scales_dtype,
-        scale_layout=layout_1d,
+        scale_origin = scale_buffer_tensor.origin,
+        ScaleLayoutType = scale_buffer_tensor.LayoutType,
         ngpus=ngpus,
         simd_width=simd_width,
         threads_per_block=threads_per_block,
@@ -960,7 +947,7 @@ fn _dispatch_fused_kernel[
     #   1 = force 1-stage for all sizes
     #   2 = force 2-stage for all sizes
     #   3 = force split (2-kernel) path for all sizes (residual only)
-    comptime force_stage = env_get_int["FORCE_ALLREDUCE_STAGE", 0]()
+    comptime force_stage = get_defined_int["FORCE_ALLREDUCE_STAGE", 0]()
 
     # Per-rank byte thresholds for switching to 2-stage allreduce.
     # Derived from empirical sweep data (bf16, per-rank crossover points):

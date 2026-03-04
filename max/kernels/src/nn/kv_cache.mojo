@@ -1402,10 +1402,10 @@ def print_kv_cache_paged_generic_gpu[
 fn _continuous_batch_kv_cache_collection[
     dtype: DType, //, kv_params: KVCacheStaticParams
 ](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
     out result: ContinuousBatchingKVCacheCollection[dtype, kv_params],
 ):
     # Marshal LayoutTensor into arguments expected by the
@@ -1423,10 +1423,10 @@ fn _continuous_batch_kv_cache_collection[
 fn generic_get_continuous_cache[
     dtype: DType, kv_params: KVCacheStaticParams
 ](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
 ) -> ContinuousBatchingKVCacheCollection[dtype, kv_params]:
     return _continuous_batch_kv_cache_collection[kv_params](
         blocks, cache_lengths, lookup_table, max_lengths
@@ -1436,10 +1436,10 @@ fn generic_get_continuous_cache[
 fn generic_get_paged_cache[
     dtype: DType,
 ](
-    blocks: MutableInputTensor[dtype=dtype, rank=6],
-    cache_lengths: InputTensor[dtype = DType.uint32, rank=1],
-    lookup_table: InputTensor[dtype = DType.uint32, rank=2],
-    max_lengths: InputTensor[dtype = DType.uint32, rank=2],
+    blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+    cache_lengths: InputTensor[dtype = DType.uint32, rank=1, ...],
+    lookup_table: InputTensor[dtype = DType.uint32, rank=2, ...],
+    max_lengths: InputTensor[dtype = DType.uint32, rank=2, ...],
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
@@ -1493,10 +1493,10 @@ fn generic_get_paged_cache[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    lookup_table: LayoutTensor[DType.uint32, Layout.row_major[2]()],
-    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
     out result: PagedKVCacheCollection[dtype, kv_params, page_size],
 ):
     return {
@@ -1515,11 +1515,11 @@ fn generic_get_paged_cache_with_scales[
     page_size: Int,
     quantization_granularity: Int,
 ](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
-    lookup_table: LayoutTensor[DType.uint32, Layout.row_major[2]()],
-    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2]()],
-    scales: LayoutTensor[mut=True, scale_dtype, Layout.row_major[6]()],
+    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    cache_lengths: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
+    lookup_table: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
+    max_lengths: LayoutTensor[DType.uint32, Layout.row_major[2](), _],
+    scales: LayoutTensor[mut=True, scale_dtype, Layout.row_major[6](), _],
     out result: PagedKVCacheCollection[
         dtype, kv_params, page_size, scale_dtype, quantization_granularity
     ],
@@ -1551,10 +1551,10 @@ fn generic_get_paged_cache_with_scales[
 fn copy_kv_pages_d2h[
     dtype: DType,
 ](
-    device_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    host_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6]()],
-    src_page_ids: LayoutTensor[DType.int64, Layout.row_major[1]()],
-    dst_page_ids: LayoutTensor[DType.int64, Layout.row_major[1]()],
+    device_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    host_kv_blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
+    src_page_ids: LayoutTensor[DType.int64, Layout.row_major[1](), _],
+    dst_page_ids: LayoutTensor[DType.int64, Layout.row_major[1](), _],
     layer_idx: Int,
     ctx: DeviceContext,
 ) raises:

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.sys import env_get_int, env_get_string
+from std.sys import get_defined_int, get_defined_string
 
 from std.benchmark import (
     Bench,
@@ -338,11 +338,11 @@ def main() raises:
     comptime input_type = DType.bfloat16
 
     var M = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int["K", 1]()
+    comptime N = get_defined_int["N", 1]()
+    comptime K = get_defined_int["K", 1]()
 
     comptime output_type = get_dtype[
-        env_get_string["output_type", "bfloat16"]()
+        get_defined_string["output_type", "bfloat16"]()
     ]()
 
     var mode = arg_parse("mode", "default")  # [default, naive, transpose]

@@ -113,14 +113,14 @@ def load_scheduler(
                 response_queue,
             ),
             cancel_queue=cancel_queue,
-            max_batch_size=pipeline_config.max_batch_size
-            if pipeline_config.max_batch_size is not None
+            max_batch_size=pipeline_config.runtime.max_batch_size
+            if pipeline_config.runtime.max_batch_size is not None
             else 1,
         )
     elif pipeline.__class__.__name__ == "EmbeddingsPipeline":
         embeddings_scheduler_config = EmbeddingsSchedulerConfig(
-            max_batch_size=pipeline_config.max_batch_size
-            if pipeline_config.max_batch_size is not None
+            max_batch_size=pipeline_config.runtime.max_batch_size
+            if pipeline_config.runtime.max_batch_size is not None
             else 1
         )
         emb_pipeline = cast(EmbeddingsPipelineType, pipeline)
@@ -150,7 +150,7 @@ def load_scheduler(
         assert pipeline_config.model.max_length is not None
 
         token_gen_config = AudioGenerationSchedulerConfig(
-            max_batch_size=pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
             max_forward_steps_tg=pipeline_config.runtime.max_num_steps
             if pipeline_config.runtime.max_num_steps != -1
             else 1,

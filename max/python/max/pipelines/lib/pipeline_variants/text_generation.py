@@ -50,7 +50,7 @@ from max.interfaces import (
 )
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputsSequence, KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast

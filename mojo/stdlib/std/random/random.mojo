@@ -138,7 +138,10 @@ fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
 fn randint[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype]], size: Int, low: Int, high: Int
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    size: Int,
+    low: Int,
+    high: Int,
 ) where dtype.is_integral():
     """Fills memory with uniformly distributed random integers in the range [low, high].
 

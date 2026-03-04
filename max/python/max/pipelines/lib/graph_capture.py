@@ -31,11 +31,11 @@ import numpy as np
 from max.driver import Accelerator, Buffer
 from max.engine import InferenceSession, Model
 from max.nn.kv_cache import (
-    DecodeNumPartitionsResolver,
-    KVCacheInputsSequence,
+    AttentionDispatchMetadataScalars,
+    AttentionDispatchResolver,
+    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParams,
-    MHADecodeDispatchMetadataScalars,
-    RaggedKVCacheInputs,
 )
 
 from .interfaces import ModelInputs, ModelOutputs
@@ -57,35 +57,29 @@ _PARTITION_PROBE_GRANULARITY = 256
 
 def _ragged_kv_inputs_from_model_inputs(
     model_inputs: ModelInputs,
-) -> tuple[RaggedKVCacheInputs, ...]:
+) -> tuple[KVCacheInputsPerDevice, ...]:
     kv = model_inputs.kv_cache_inputs
     if kv is None:
         raise ValueError(
-            "Overlap graph capture requires RaggedKVCacheInputs, but "
+            "Overlap graph capture requires KVCacheInputs, but "
             "model_inputs.kv_cache_inputs is None."
         )
-    seq = kv.kv_cache_inputs if isinstance(kv, KVCacheInputsSequence) else [kv]
+    seq = kv.inputs
     if not seq:
         raise ValueError("Expected at least one KV cache input for replay.")
-    for item in seq:
-        if not isinstance(item, RaggedKVCacheInputs):
-            raise TypeError(
-                "Expected RaggedKVCacheInputs for overlap graph capture, got "
-                f"{type(item).__name__}."
-            )
-    return tuple(seq)  # type: ignore[arg-type]
+    return tuple(seq)
 
 
-def mha_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
+def attention_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
     """Builds a replay key from token count and decode kernel mode."""
     batch_token_count = int(model_inputs.buffers[0].shape[0])
     metadata = _ragged_kv_inputs_from_model_inputs(model_inputs)[
         0
-    ].mha_decode_dispatch_metadata
+    ].attention_dispatch_metadata
     if metadata is None:
         raise ValueError(
-            "Expected mha_decode_dispatch_metadata in "
-            "RaggedKVCacheInputs for overlap graph capture."
+            "Expected attention_dispatch_metadata in "
+            "KVCacheInputs for overlap graph capture."
         )
     num_partitions = int(metadata.to_numpy()[2])
     if num_partitions < 1:
@@ -98,31 +92,35 @@ def mha_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
 
 def _create_model_inputs_with_dispatch_metadata(
     model_inputs: ModelInputs,
-    source_ragged: Sequence[RaggedKVCacheInputs],
-    dispatch_metadata: MHADecodeDispatchMetadataScalars,
+    source_ragged: Sequence[KVCacheInputsPerDevice],
+    dispatch_metadata: AttentionDispatchMetadataScalars,
 ) -> ModelInputs:
     """Returns a copy of *model_inputs* with capture dispatch metadata."""
     max_cache_u32 = np.uint32(dispatch_metadata.max_cache_valid_length)
-    metadata_buf = dispatch_metadata.to_buffer()
-    capture_ragged: list[RaggedKVCacheInputs] = []
+    # MLA: the resolver produced the buffer on the primary GPU.
+    # Each TP shard needs metadata on its own device.
+    # MHA: a single CPU buffer is shared across all shards.
+    gpu_buf = dispatch_metadata.device_buffer
+    cpu_buf = None if gpu_buf is not None else dispatch_metadata.to_buffer()
+    capture_ragged: list[KVCacheInputsPerDevice] = []
     for kv in source_ragged:
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
+        if gpu_buf is not None:
+            # Place metadata on the same device as this shard's KV blocks.
+            metadata = gpu_buf.to(kv.blocks.device)
+        else:
+            assert cpu_buf is not None
+            metadata = cpu_buf
         capture_ragged.append(
             replace(
                 kv,
                 max_lengths=Buffer.from_numpy(ml),
-                mha_decode_dispatch_metadata=metadata_buf,
+                attention_dispatch_metadata=metadata,
             )
         )
     result = copy.copy(model_inputs)
-    kv_inputs = model_inputs.kv_cache_inputs
-    if isinstance(kv_inputs, KVCacheInputsSequence):
-        result.kv_cache_inputs = KVCacheInputsSequence(
-            kv_cache_inputs=capture_ragged
-        )
-    else:
-        result.kv_cache_inputs = capture_ragged[0]
+    result.kv_cache_inputs = KVCacheInputs(inputs=capture_ragged)
     return result
 
 
@@ -165,7 +163,14 @@ class ServeGraphCaptureRunner:
                 "max-cache length upper bound."
             )
         self._max_cache_length_upper_bound = max_cache_length_upper_bound
-        self._resolver = DecodeNumPartitionsResolver(session, kv_params)
+        self._resolver = AttentionDispatchResolver(
+            session=session,
+            device=kv_params.devices[0],
+            is_mla=kv_params.is_mla,
+            n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
+            q_max_seq_len=kv_params.q_max_seq_len,
+            num_q_heads=kv_params.num_q_heads,
+        )
         if max_batch_size < 1:
             raise ValueError(
                 "Device graph capture requires a positive decode capture "
@@ -177,7 +182,7 @@ class ServeGraphCaptureRunner:
 
     def dispatch_metadata(
         self, batch_size: int
-    ) -> list[MHADecodeDispatchMetadataScalars]:
+    ) -> list[AttentionDispatchMetadataScalars]:
         """Returns capture metadata for distinct decode kernel modes."""
         # Probe at _PARTITION_PROBE_GRANULARITY intervals to discover every
         # distinct decode kernel mode (num_partitions). Collect the largest
@@ -280,7 +285,7 @@ class ServeGraphCaptureRunner:
         different (but graph-key-equivalent) input shape.
         """
         input_buffers = model_inputs.buffers
-        replay_graph_key = mha_graph_key_from_inputs(model_inputs)
+        replay_graph_key = attention_graph_key_from_inputs(model_inputs)
         packed_model_graph_key = _pack_model_graph_key(replay_graph_key)
         try:
             captured_inputs, outputs = self.graph_entries[replay_graph_key]
@@ -311,7 +316,7 @@ class ServeGraphCaptureRunner:
 
         if debug_verify_replay:
             verify_inputs = debug_verify_model_inputs or model_inputs
-            verify_graph_key = mha_graph_key_from_inputs(verify_inputs)
+            verify_graph_key = attention_graph_key_from_inputs(verify_inputs)
             if verify_graph_key != replay_graph_key:
                 raise ValueError(
                     "debug_verify_model_inputs must map to the same graph key "

@@ -23,7 +23,7 @@ from std.sys import (
     size_of,
     is_nvidia_gpu,
     is_amd_gpu,
-    env_get_int,
+    get_defined_int,
     CompilationTarget,
 )
 
@@ -105,7 +105,10 @@ from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
 from std.gpu.host.info import B200, GPUInfo
-from nn.mla_decode_sm100_dispatch import mla_decode_sm100_dispatch
+from nn.mla_decode_sm100_dispatch import (
+    MLADispatchScalarArgs,
+    mla_decode_sm100_dispatch,
+)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -140,6 +143,9 @@ fn flare_mla_decoding[
     ],
     scale: Float32,
     ctx: DeviceContext,
+    scalar_args_buf: LayoutTensor[
+        DType.int64, Layout.row_major(4), MutAnyOrigin
+    ],
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
@@ -224,6 +230,7 @@ fn flare_mla_decoding[
             num_keys,
             scale,
             ctx,
+            scalar_args_buf,
             kv_input_row_offsets,
             num_partitions,
         )
@@ -249,6 +256,9 @@ fn flare_mla_decoding[
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
+    scalar_args_buf: LayoutTensor[
+        DType.int64, Layout.row_major(4), MutAnyOrigin
+    ],
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
 ) raises:
@@ -292,8 +302,9 @@ fn flare_mla_decoding[
         num_keys,
         scale,
         ctx,
-        None,
-        num_partitions,
+        scalar_args_buf,
+        kv_input_row_offsets=None,
+        num_partitions=num_partitions,
     )
 
 
@@ -331,6 +342,9 @@ fn flare_mla_decoding_dispatch[
     max_cache_valid_length: Int,
     scale: Float32,
     ctx: DeviceContext,
+    scalar_args_buf: LayoutTensor[
+        DType.int64, Layout.row_major(4), MutAnyOrigin
+    ],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -366,48 +380,102 @@ fn flare_mla_decoding_dispatch[
         q.rank - 2, q.rank
     ](), "Need num_heads and head_dim to be static for Q."
 
-    var batch_size: Int
-
-    comptime if ragged:
-        batch_size = valid_length.dim[0]() - 1
-    # This branch holds for both KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs.
-    # Q is BSHD, S is either homogeneous or padded to same length.
-    else:
-        batch_size = q.dim[0]()
-
-    if batch_size == 0:
-        return
-
     comptime if ctx.default_device_info == B200:
-        mla_decode_sm100_dispatch[
-            q.dtype,
-            q.layout,
-            k_t,
-            output.dtype,
-            output.layout,
-            mask_t,
-            valid_length.layout,
-            config=config,
-            depth = Int(depth),
-            num_heads = Int(num_heads),
-            group = Int(group),
-            ragged=ragged,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
-            q,
-            k,
-            output,
-            scale,
-            batch_size,
-            max_cache_valid_length,
-            max_prompt_len,
-            valid_length,
-            mask_functor,
-            ctx,
-        )
+        if scalar_args_buf.ptr:
+            # Capturable path: GPU buffer is pre-computed, compute host-side
+            # dispatch args from inputs.
+            var batch_size: Int
+            comptime if ragged:
+                batch_size = valid_length.dim[0]() - 1
+            else:
+                batch_size = q.dim[0]()
+            if batch_size == 0:
+                return
+            mla_decode_sm100_dispatch[
+                q.dtype,
+                q.layout,
+                k_t,
+                output.dtype,
+                output.layout,
+                mask_t,
+                valid_length.layout,
+                config=config,
+                depth = Int(depth),
+                num_heads = Int(num_heads),
+                group = Int(group),
+                ragged=ragged,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q,
+                k,
+                output,
+                scale,
+                valid_length,
+                mask_functor,
+                scalar_args_buf,
+                batch_size,
+                max_prompt_len,
+                max_cache_valid_length,
+                ctx,
+            )
+        else:
+            # Legacy path: compute dispatch params and GPU buffer from inputs.
+            var batch_size: Int
+            comptime if ragged:
+                batch_size = valid_length.dim[0]() - 1
+            else:
+                batch_size = q.dim[0]()
+            if batch_size == 0:
+                return
+
+            comptime num_heads_val = Int(q.layout.shape[q.rank - 2])
+            comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+            var local_args = MLADispatchScalarArgs[
+                num_heads=num_heads_val,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                is_fp8_kv=_is_fp8_kv,
+            ](batch_size, max_cache_valid_length, max_prompt_len, ctx)
+            mla_decode_sm100_dispatch[
+                q.dtype,
+                q.layout,
+                k_t,
+                output.dtype,
+                output.layout,
+                mask_t,
+                valid_length.layout,
+                config=config,
+                depth = Int(depth),
+                num_heads = Int(num_heads),
+                group = Int(group),
+                ragged=ragged,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q,
+                k,
+                output,
+                scale,
+                valid_length,
+                mask_functor,
+                local_args.gpu_layout_tensor(),
+                local_args.batch_size,
+                local_args.q_max_seq_len,
+                local_args.max_cache_valid_length,
+                ctx,
+            )
+            _ = local_args^
 
     else:
+        var batch_size: Int
+        comptime if ragged:
+            batch_size = valid_length.dim[0]() - 1
+        else:
+            batch_size = q.dim[0]()
+
+        if batch_size == 0:
+            return
+
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
@@ -735,6 +803,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -766,6 +835,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeKV = LayoutTensorIter[
         k_type,
         Layout(IntTuple(Int(BN), Int(BK)), IntTuple(Int(nope_dim), 1)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -779,6 +849,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeV = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BK), Int(nope_dim)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -791,6 +862,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -851,6 +923,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeP = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -2043,7 +2116,7 @@ fn mla_prefill_single_batch[
     q_depth: Int = 192,
     cache_depth: Int = 576,
 ](
-    q_ptr: UnsafePointer[mut=True, Scalar[q_type]],
+    q_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
@@ -2103,6 +2176,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -2127,6 +2201,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -2139,6 +2214,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeV = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BK), Int(depth)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -2241,6 +2317,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeP = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]

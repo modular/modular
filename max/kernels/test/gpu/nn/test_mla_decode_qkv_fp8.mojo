@@ -41,7 +41,10 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask, NullMask
 from nn.mha_operand import LayoutTensorMHAOperand
-from nn.mla_decode_sm100_dispatch import mla_decode_sm100_dispatch
+from nn.mla_decode_sm100_dispatch import (
+    MLADispatchScalarArgs,
+    mla_decode_sm100_dispatch,
+)
 from nn.mha_utils import MHAConfig
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
@@ -317,6 +320,18 @@ fn test[
     # ---- Launch the native FP8 kernel via mla_decode_sm100_dispatch ----
     print("  Launching native FP8 kernel...")
 
+    var mla_args = MLADispatchScalarArgs[
+        num_heads=num_heads,
+        _is_cache_length_accurate=True,
+        is_fp8_kv=True,
+    ](
+        batch_size,
+        num_keys,
+        seq_len,
+        ctx,
+    )
+    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+
     @parameter
     @always_inline
     @__copy_capture(
@@ -324,6 +339,7 @@ fn test[
         k_operand,
         output_device,
         null_valid_length,
+        scalar_args_buf_lt,
         mask3d,
         mask4d,
     )
@@ -349,11 +365,12 @@ fn test[
                 k_operand,
                 output_device,
                 scale,
-                batch_size,
-                num_keys,
-                seq_len,
                 null_valid_length,
                 CausalMask(),
+                scalar_args_buf_lt,
+                batch_size,
+                seq_len,
+                num_keys,
                 ctx,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
@@ -376,11 +393,12 @@ fn test[
                 k_operand,
                 output_device,
                 scale,
-                batch_size,
-                num_keys,
-                seq_len,
                 null_valid_length,
                 NullMask(),
+                scalar_args_buf_lt,
+                batch_size,
+                seq_len,
+                num_keys,
                 ctx,
             )
         elif mla_mask_type == MLAMaskType.MASK_3D:
@@ -403,11 +421,12 @@ fn test[
                 k_operand,
                 output_device,
                 scale,
-                batch_size,
-                num_keys,
-                seq_len,
                 null_valid_length,
                 MaterializedMask(mask3d),
+                scalar_args_buf_lt,
+                batch_size,
+                seq_len,
+                num_keys,
                 ctx,
             )
         elif mla_mask_type == MLAMaskType.MASK_4D:
@@ -430,11 +449,12 @@ fn test[
                 k_operand,
                 output_device,
                 scale,
-                batch_size,
-                num_keys,
-                seq_len,
                 null_valid_length,
                 MaterializedMask(mask4d),
+                scalar_args_buf_lt,
+                batch_size,
+                seq_len,
+                num_keys,
                 ctx,
             )
 
@@ -702,6 +722,18 @@ fn bench[
         )
     )
 
+    var mla_args = MLADispatchScalarArgs[
+        num_heads=num_heads,
+        _is_cache_length_accurate=True,
+        is_fp8_kv=True,
+    ](
+        batch_size,
+        num_keys,
+        seq_len,
+        ctx,
+    )
+    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+
     @parameter
     @always_inline
     @__copy_capture(
@@ -709,6 +741,7 @@ fn bench[
         k_operand,
         output_device,
         null_valid_length,
+        scalar_args_buf_lt,
     )
     fn kernel_launch(ctx: DeviceContext) raises:
         comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
@@ -731,11 +764,12 @@ fn bench[
             k_operand,
             output_device,
             scale,
-            batch_size,
-            num_keys,
-            seq_len,
             null_valid_length,
             NullMask(),
+            scalar_args_buf_lt,
+            batch_size,
+            seq_len,
+            num_keys,
             ctx,
         )
 

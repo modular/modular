@@ -75,12 +75,7 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import (
-    Buffer,
-    DeviceEvent,
-    DevicePinnedBuffer,
-    load_devices,
-)
+from max.driver import Buffer, DeviceEvent, DevicePinnedBuffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType, ops
@@ -104,19 +99,12 @@ from max.interfaces.tokens import TokenBuffer
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.registry import load_multi_kv_managers
 from max.nn import kernels
-from max.nn.kv_cache import (
-    KVCacheInputsSequence,
-    KVCacheParams,
-    MultiKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 
-from .text_generation import (
-    TextGenerationPipelineInterface,
-    load_kv_manager,
-)
+from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     get_eos_tokens,
     get_weight_paths,
@@ -432,7 +420,7 @@ class OverlapTextGenerationPipeline(
         if isinstance(kv_params, MultiKVCacheParams):
             kv_managers = load_multi_kv_managers(
                 params=kv_params,
-                max_batch_size=self._pipeline_config.max_batch_size,
+                max_batch_size=self._pipeline_config.runtime.max_batch_size,
                 max_seq_len=self._pipeline_model.max_seq_len,
                 session=session,
                 available_cache_memory=available_cache_memory,
@@ -445,7 +433,7 @@ class OverlapTextGenerationPipeline(
             assert isinstance(kv_params, KVCacheParams)
             self._kv_manager = load_kv_manager(
                 params=kv_params,
-                max_batch_size=self._pipeline_config.max_batch_size,
+                max_batch_size=self._pipeline_config.runtime.max_batch_size,
                 max_seq_len=self._pipeline_model.max_seq_len,
                 session=session,
                 available_cache_memory=available_cache_memory,
@@ -523,9 +511,7 @@ class OverlapTextGenerationPipeline(
                 model_inputs = (
                     self._pipeline_model.prepare_initial_token_inputs(
                         replica_batches=replica_batches,
-                        kv_cache_inputs=KVCacheInputsSequence(
-                            kv_cache_inputs=kv_cache_inputs
-                        ),
+                        kv_cache_inputs=kv_cache_inputs,
                     )
                 )
             yield model_inputs
@@ -537,24 +523,28 @@ class OverlapTextGenerationPipeline(
                 "Device graph capture is enabled but pipeline model does not "
                 "expose a compiled model for capture/replay."
             )
-        if self._pipeline_config.max_batch_size is None:
+        if self._pipeline_config.runtime.max_batch_size is None:
             raise RuntimeError(
                 "device_graph_capture requires max_batch_size to be resolved."
             )
 
         max_capture_batch_size = min(
-            self._pipeline_config.max_batch_size,
+            self._pipeline_config.runtime.max_batch_size,
             _MAX_GRAPH_CAPTURE_BATCH_SIZE,
         )
-        if max_capture_batch_size < self._pipeline_config.max_batch_size:
+        if (
+            max_capture_batch_size
+            < self._pipeline_config.runtime.max_batch_size
+        ):
             logger.warning(
                 "Capping graph capture batch size to %d "
                 "(max_batch_size=%d). Decode batches above %d will fall "
                 "back to eager execution.",
                 max_capture_batch_size,
-                self._pipeline_config.max_batch_size,
+                self._pipeline_config.runtime.max_batch_size,
                 max_capture_batch_size,
             )
+
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
             execute_model=self._pipeline_model.execute,
@@ -606,9 +596,7 @@ class OverlapTextGenerationPipeline(
         with Tracer("prepare_initial_token_inputs"):
             model_inputs = self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=inputs.batches,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
-                ),
+                kv_cache_inputs=kv_cache_inputs,
             )
 
         if debug_verify_replay_enabled:
@@ -616,10 +604,8 @@ class OverlapTextGenerationPipeline(
             # runtime-shaped KV inputs used for debug verification.
             debug_verify_model_inputs = copy.copy(model_inputs)
             debug_verify_model_inputs.update(
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=self._kv_manager.runtime_inputs(
-                        inputs.batches, num_steps=1
-                    )
+                kv_cache_inputs=self._kv_manager.runtime_inputs(
+                    inputs.batches, num_steps=1
                 )
             )
 

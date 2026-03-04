@@ -19,9 +19,11 @@ import logging
 from io import StringIO
 from typing import TYPE_CHECKING, cast
 
-from max.driver import Device, is_virtual_device_mode, load_devices
-from max.kv_cache import estimate_kv_cache_size, infer_optimal_batch_size
-from max.nn.kv_cache import compute_max_seq_len_fitting_in_cache
+from max.driver import Device, is_virtual_device_mode
+from max.nn.kv_cache import (
+    compute_max_seq_len_fitting_in_cache,
+    estimated_memory_size,
+)
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 if TYPE_CHECKING:
@@ -36,8 +38,7 @@ from .interfaces import (
 
 logger = logging.getLogger("max.pipelines")
 
-_MAX_DEFAULT_BATCH_SIZE = 4096
-_MIN_DEFAULT_BATCH_SIZE = 1
+_DEFAULT_BATCH_SIZE = 512
 
 
 class MemoryEstimator:
@@ -174,8 +175,8 @@ class MemoryEstimator:
                 "Skipping memory estimation in virtual device mode "
                 "(cross-compilation)"
             )
-            if not pipeline_config.max_batch_size:
-                pipeline_config.max_batch_size = 1
+            if not pipeline_config.runtime.max_batch_size:
+                pipeline_config.runtime.max_batch_size = 1
             if not model_config.max_length:
                 model_config.max_length = arch_config.get_max_seq_len()
             # Set a large available cache memory value since we're not actually
@@ -192,8 +193,8 @@ class MemoryEstimator:
             if is_draft_model:
                 # Early return for draft model - we don't modify the original config
                 return
-            if not pipeline_config.max_batch_size:
-                pipeline_config.max_batch_size = 1
+            if not pipeline_config.runtime.max_batch_size:
+                pipeline_config.runtime.max_batch_size = 1
             if not model_config.max_length:
                 model_config.max_length = arch_config.get_max_seq_len()
             return
@@ -226,7 +227,7 @@ class MemoryEstimator:
 
         user_provided_max_length = model_config.max_length is not None
         user_provided_max_batch_size = (
-            pipeline_config.max_batch_size is not None
+            pipeline_config.runtime.max_batch_size is not None
         )
 
         if is_draft_model:
@@ -235,12 +236,12 @@ class MemoryEstimator:
                     "quantization_encoding must be provided for draft model"
                 )
 
-            assert pipeline_config.max_batch_size is not None, (
+            assert pipeline_config.runtime.max_batch_size is not None, (
                 "max_batch_size must be provided for draft model"
             )
             kv_cache_size = cls._calculate_kv_cache_size(
                 arch_config=arch_config,
-                max_batch_size=pipeline_config.max_batch_size,
+                max_batch_size=pipeline_config.runtime.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
             )
 
@@ -257,25 +258,25 @@ class MemoryEstimator:
             )
 
         if not user_provided_max_batch_size:
-            pipeline_config.max_batch_size = cls._infer_optimal_batch_size(
-                arch_config, available_kv_cache_memory, devices
+            pipeline_config.runtime.max_batch_size = (
+                cls._infer_optimal_batch_size(arch_config, devices)
             )
 
-        assert pipeline_config.max_batch_size is not None
+        assert pipeline_config.runtime.max_batch_size is not None
         if (
-            pipeline_config.max_batch_size
+            pipeline_config.runtime.max_batch_size
             > pipeline_config.runtime.max_batch_input_tokens
         ):
             logger.info(
-                f"max_batch_size of {pipeline_config.max_batch_size} cannot be larger than max_batch_input_tokens of {pipeline_config.runtime.max_batch_input_tokens}, overriding max_batch_size to {pipeline_config.runtime.max_batch_input_tokens}"
+                f"max_batch_size of {pipeline_config.runtime.max_batch_size} cannot be larger than max_batch_input_tokens of {pipeline_config.runtime.max_batch_input_tokens}, overriding max_batch_size to {pipeline_config.runtime.max_batch_input_tokens}"
             )
-            pipeline_config.max_batch_size = (
+            pipeline_config.runtime.max_batch_size = (
                 pipeline_config.runtime.max_batch_input_tokens
             )
 
         actual_kv_cache_size = cls._calculate_kv_cache_size(
             arch_config=arch_config,
-            max_batch_size=pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
             available_kv_cache_memory=available_kv_cache_memory,
         )
 
@@ -308,7 +309,7 @@ class MemoryEstimator:
 
             actual_kv_cache_size = cls._calculate_kv_cache_size(
                 arch_config=arch_config,
-                max_batch_size=pipeline_config.max_batch_size,
+                max_batch_size=pipeline_config.runtime.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
             )
             total_size = model_weights_size + actual_kv_cache_size
@@ -352,7 +353,7 @@ class MemoryEstimator:
         """
         model_config = pipeline_config.model
         assert model_config.max_length is not None
-        assert pipeline_config.max_batch_size is not None
+        assert pipeline_config.runtime.max_batch_size is not None
 
         found_valid_max_length = False
         lower = 1
@@ -369,14 +370,14 @@ class MemoryEstimator:
             model_config.max_length = inferred_max_length
 
             if not user_provided_max_batch_size:
-                pipeline_config.max_batch_size = cls._infer_optimal_batch_size(
-                    arch_config, available_kv_cache_memory, devices
+                pipeline_config.runtime.max_batch_size = (
+                    cls._infer_optimal_batch_size(arch_config, devices)
                 )
 
             # Use max_seq_len_override for binary search since we're varying model_config.max_length
             kv_cache_size = cls._calculate_kv_cache_size(
                 arch_config=arch_config,
-                max_batch_size=pipeline_config.max_batch_size,
+                max_batch_size=pipeline_config.runtime.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 max_seq_len_override=inferred_max_length,
             )
@@ -395,7 +396,7 @@ class MemoryEstimator:
         return (
             found_valid_max_length,
             inferred_max_length,
-            pipeline_config.max_batch_size,
+            pipeline_config.runtime.max_batch_size,
         )
 
     @classmethod
@@ -420,17 +421,19 @@ class MemoryEstimator:
 
         found_valid_max_batch_size = False
         pipeline_config.model.max_length = original_max_length
-        inferred_max_batch_size = cast(int, pipeline_config.max_batch_size)
+        inferred_max_batch_size = cast(
+            int, pipeline_config.runtime.max_batch_size
+        )
         lower = 1
-        upper = cast(int, pipeline_config.max_batch_size)
+        upper = cast(int, pipeline_config.runtime.max_batch_size)
 
         while not found_valid_max_batch_size:
             inferred_max_batch_size = (lower + upper) // 2
-            pipeline_config.max_batch_size = inferred_max_batch_size
+            pipeline_config.runtime.max_batch_size = inferred_max_batch_size
 
             kv_cache_size = cls._calculate_kv_cache_size(
                 arch_config=arch_config,
-                max_batch_size=pipeline_config.max_batch_size,
+                max_batch_size=pipeline_config.runtime.max_batch_size,
                 available_kv_cache_memory=available_kv_cache_memory,
                 max_seq_len_override=original_max_length,
             )
@@ -475,7 +478,7 @@ class MemoryEstimator:
                 if max_seq_len_override is not None
                 else arch_config.get_max_seq_len()
             )
-            return estimate_kv_cache_size(
+            return estimated_memory_size(
                 params=params,
                 max_batch_size=max_batch_size,
                 max_seq_len=max_seq_len,
@@ -529,7 +532,9 @@ class MemoryEstimator:
                             +----------------+----------------------+--------------------------+
         """
         original_max_length = cast(int, pipeline_config.model.max_length)
-        original_max_batch_size = cast(int, pipeline_config.max_batch_size)
+        original_max_batch_size = cast(
+            int, pipeline_config.runtime.max_batch_size
+        )
 
         # Find valid configurations through binary search
         (
@@ -544,7 +549,7 @@ class MemoryEstimator:
             devices,
         )
 
-        pipeline_config.max_batch_size = original_max_batch_size
+        pipeline_config.runtime.max_batch_size = original_max_batch_size
 
         found_valid_max_batch_size, inferred_max_batch_size = (
             cls._find_valid_batch_size(
@@ -731,7 +736,6 @@ class MemoryEstimator:
     def _infer_optimal_batch_size(
         cls,
         arch_config: ArchConfig,
-        available_kv_cache_memory: int,
         devices: list[Device],
     ) -> int:
         """Infer the optimal batch size for the model.

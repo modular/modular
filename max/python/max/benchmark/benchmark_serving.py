@@ -64,6 +64,7 @@ from max.benchmark.benchmark_shared.cpu_metrics import (
 from max.benchmark.benchmark_shared.datasets import (
     ArxivSummarizationBenchmarkDataset,
     AxolotlBenchmarkDataset,
+    BaseDistribution,
     BatchJobBenchmarkDataset,
     BenchmarkDataset,
     ChatSession,
@@ -82,7 +83,6 @@ from max.benchmark.benchmark_shared.datasets.types import (
     RequestSamples,
     Samples,
 )
-from max.benchmark.benchmark_shared.distribution import BaseDistribution
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
 )
@@ -613,6 +613,119 @@ def print_input_prompts(samples: Samples) -> None:
         print(elide_data_uris_in_string(str(prompt_info)))
 
 
+def _format_distribution_table(
+    values: Sequence[float | int], label: str
+) -> str:
+    """Format distribution statistics as a mini-table with header and value rows."""
+    _STAT_COLUMNS = (
+        "min",
+        "max",
+        "mean",
+        "std",
+        "p5",
+        "p25",
+        "p50",
+        "p75",
+        "p95",
+        "p99",
+    )
+    _COL_WIDTH = 10
+
+    arr = np.array(values, dtype=float)
+    p5, p25, p50, p75, p95, p99 = np.percentile(arr, [5, 25, 50, 75, 95, 99])
+    stat_values = (
+        np.min(arr),
+        np.max(arr),
+        np.mean(arr),
+        np.std(arr),
+        p5,
+        p25,
+        p50,
+        p75,
+        p95,
+        p99,
+    )
+    header = "    " + "".join(f"{name:<{_COL_WIDTH}}" for name in _STAT_COLUMNS)
+    row = "    " + "".join(f"{v:<{_COL_WIDTH}.2f}" for v in stat_values)
+    return f"  {label}:\n{header}\n{row}"
+
+
+def print_workload_stats(samples: Samples) -> None:
+    """Print workload distribution statistics and exit.
+
+    For single-turn workloads, prints input/output length stats.
+    For multi-turn workloads, additionally prints num_turns and
+    delay_until_next_message stats.
+    """
+    print_section(title=" Workload Statistics ", char="=")
+
+    if isinstance(samples, RequestSamples):
+        input_lens = [r.prompt_len for r in samples.requests]
+        output_lens = [
+            r.output_len for r in samples.requests if r.output_len is not None
+        ]
+
+        print(f"  {'Total requests:':<30} {len(samples.requests)}")
+        print()
+        print(_format_distribution_table(input_lens, "Input length"))
+        if output_lens:
+            print()
+            print(_format_distribution_table(output_lens, "Output length"))
+        else:
+            print()
+            print("  Output length:  not specified (server-determined)")
+
+    elif isinstance(samples, ChatSamples):
+        sessions = samples.chat_sessions
+        num_turns_list = [len(s.messages) // 2 for s in sessions]
+
+        all_input_lens: list[int] = []
+        all_output_lens: list[int] = []
+        all_delays: list[float] = []
+
+        for session in sessions:
+            current_context_length = 0
+            for msg in session.messages:
+                current_context_length += msg.num_tokens
+                if msg.source == "user":
+                    all_input_lens.append(current_context_length)
+                else:
+                    all_output_lens.append(msg.num_tokens)
+                if msg.delay_until_next_message is not None:
+                    all_delays.append(msg.delay_until_next_message)
+
+        print(f"  {'Total sessions:':<30} {len(sessions)}")
+        print(f"  {'Total turns (across all):':<30} {sum(num_turns_list)}")
+        print()
+        print(
+            _format_distribution_table(
+                all_input_lens, "Input length (per turn)"
+            )
+        )
+        print()
+        print(
+            _format_distribution_table(
+                all_output_lens, "Output length (per turn)"
+            )
+        )
+        print()
+        print(
+            _format_distribution_table(num_turns_list, "Num turns per session")
+        )
+        if all_delays:
+            print()
+            print(
+                _format_distribution_table(
+                    all_delays, "Delay between chat turns (ms)"
+                )
+            )
+        else:
+            print()
+            print("  Delay until next msg:  none configured")
+
+    print("=" * 50)
+
+
 def _warn_on_request_failures(
     outputs: Sequence[RequestFuncOutput],
     completed: int,
@@ -697,6 +810,7 @@ def calculate_metrics(
     gpu_metrics: list[dict[str, GPUStats]] | None,
     cpu_metrics: dict[str, Any],
     skip_first_n_requests: int,
+    skip_last_n_requests: int,
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None = None,
@@ -742,6 +856,11 @@ def calculate_metrics(
             # counts and throughputs.
             if i < skip_first_n_requests:
                 continue
+            if (
+                skip_last_n_requests > 0
+                and i >= len(outputs) - skip_last_n_requests
+            ):
+                continue
 
             tpots += outputs[i].tpot
             itls += outputs[i].itl
@@ -769,6 +888,30 @@ def calculate_metrics(
         failures=failures,
         failed_responses=failed_responses,
     )
+
+    measured_count = len(ttfts)
+    if measured_count == 0 and completed > 0:
+        warnings.warn(
+            (
+                f"All {completed} successful requests were excluded by"
+                f" skip_first_n_requests={skip_first_n_requests} and"
+                f" skip_last_n_requests={skip_last_n_requests}."
+                " Consider running a longer benchmark."
+            ),
+            stacklevel=2,
+        )
+    elif 0 < measured_count < 10:
+        warnings.warn(
+            (
+                f"Only {measured_count} requests remain after skipping"
+                f" first {skip_first_n_requests} and last"
+                f" {skip_last_n_requests} requests."
+                " Results may not be reliable."
+                " Consider running a longer benchmark."
+            ),
+            stacklevel=2,
+        )
+
     (
         peak_gpu_memory_mib,
         available_gpu_memory_mib,
@@ -894,7 +1037,6 @@ async def chat_session_driver(
     request_counter: RequestCounter,
     chat_session: ChatSession,
     max_chat_len: int,
-    delay_between_chat_turns: BaseDistribution | None,
     temperature: float | None,
     top_p: float | None,
     top_k: int | None,
@@ -969,7 +1111,6 @@ async def chat_session_driver(
                 )
             break
 
-        content_idx += 2
         message_history.append(
             {
                 "role": "assistant",
@@ -978,9 +1119,10 @@ async def chat_session_driver(
         )
         chat_len += output_len
 
-        if delay_between_chat_turns is not None:
-            delay_ms = max(delay_between_chat_turns.sample_value(), 0)
+        if delay_ms := messages[content_idx + 1].delay_until_next_message:
             await asyncio.sleep(delay_ms / 1000)
+
+        content_idx += 2
 
     return session_outputs
 
@@ -1078,7 +1220,6 @@ async def run_multiturn_benchmark(
     model_id: str,
     api_url: str,
     tokenizer: PreTrainedTokenizerBase,
-    delay_between_chat_turns: BaseDistribution | None,
     skip_first_n_requests: int,
     ignore_first_turn_stats: bool,
     lora_manager: LoRABenchmarkManager | None,
@@ -1116,7 +1257,6 @@ async def run_multiturn_benchmark(
                 request_counter=request_counter,
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
-                delay_between_chat_turns=delay_between_chat_turns,
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
@@ -1132,7 +1272,6 @@ async def run_multiturn_benchmark(
                 request_counter=request_counter,
                 chat_session=chat_session,
                 max_chat_len=tokenizer.model_max_length,
-                delay_between_chat_turns=delay_between_chat_turns,
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
@@ -1270,8 +1409,8 @@ async def benchmark(
     collect_server_stats: bool,
     print_inputs_and_outputs: bool,
     max_requests: int,
-    delay_between_chat_turns: BaseDistribution | None,
     skip_first_n_requests: int,
+    skip_last_n_requests: int,
     max_output_len: int | None,
     temperature: float | None,
     top_p: float | None,
@@ -1438,7 +1577,6 @@ async def benchmark(
                     model_id=model_id,
                     api_url=api_url,
                     tokenizer=tokenizer,
-                    delay_between_chat_turns=delay_between_chat_turns,
                     skip_first_n_requests=skip_first_n_requests,
                     ignore_first_turn_stats=ignore_first_turn_stats,
                     lora_manager=lora_manager,
@@ -1597,6 +1735,7 @@ async def benchmark(
         gpu_metrics=gpu_metrics,
         cpu_metrics=cpu_metrics,
         skip_first_n_requests=skip_first_n_requests,
+        skip_last_n_requests=skip_last_n_requests,
         max_concurrency=max_concurrency,
         collect_gpu_stats=collect_gpu_stats,
         server_metrics=server_metrics,
@@ -1618,6 +1757,8 @@ async def benchmark(
         "completed": text_metrics.completed,
         "failures": text_metrics.failures,
         "max_concurrency": text_metrics.max_concurrency,
+        "skip_first_n_requests": skip_first_n_requests,
+        "skip_last_n_requests": skip_last_n_requests,
         "total_input_tokens": text_metrics.total_input,
         "total_output_tokens": text_metrics.total_output,
         "request_throughput": text_metrics.request_throughput,
@@ -1784,6 +1925,9 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     )
                 samples = benchmark_dataset.gen_twoturn_longcontext_requests(
                     num_chat_sessions=args.num_chat_sessions,
+                    delay_between_chat_turns=BaseDistribution.from_distribution_parameter(
+                        args.delay_between_chat_turns
+                    ),
                     tokenizer=tokenizer,
                 )
             else:
@@ -1852,6 +1996,9 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
                     output_len=args.random_output_len,
                     num_chat_sessions=args.num_chat_sessions,
                     num_turns=args.random_num_turns,
+                    delay_between_chat_turns=BaseDistribution.from_distribution_parameter(
+                        args.delay_between_chat_turns
+                    ),
                     coefficient_of_variation=args.random_coefficient_of_variation,
                     tokenizer=tokenizer,
                     sys_prompt_ratio=args.random_sys_prompt_ratio,
@@ -1953,6 +2100,9 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
     else:
         raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
+    if args.print_workload_stats:
+        print_workload_stats(samples)
+
     if args.print_inputs_and_outputs:
         print_input_prompts(samples)
 
@@ -2022,6 +2172,23 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         if args.image_seed is not None:
             image_extra_body["seed"] = args.image_seed
 
+    # Auto-default skip counts to max_concurrency when not explicitly set
+    skip_first_n_requests = args.skip_first_n_requests
+    skip_last_n_requests = args.skip_last_n_requests
+    if max_concurrency is not None:
+        if skip_first_n_requests == 0:
+            skip_first_n_requests = max_concurrency
+            logger.info(
+                f"Auto-setting skip_first_n_requests={skip_first_n_requests}"
+                f" (max_concurrency={max_concurrency})"
+            )
+        if skip_last_n_requests == 0:
+            skip_last_n_requests = max_concurrency
+            logger.info(
+                f"Auto-setting skip_last_n_requests={skip_last_n_requests}"
+                f" (max_concurrency={max_concurrency})"
+            )
+
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
     benchmark_result, benchmark_metrics = asyncio.run(
@@ -2043,10 +2210,8 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             collect_server_stats=args.collect_server_stats,
             print_inputs_and_outputs=args.print_inputs_and_outputs,
             max_requests=args.num_prompts,
-            delay_between_chat_turns=BaseDistribution.from_distribution_parameter(
-                args.delay_between_chat_turns
-            ),
-            skip_first_n_requests=args.skip_first_n_requests,
+            skip_first_n_requests=skip_first_n_requests,
+            skip_last_n_requests=skip_last_n_requests,
             max_output_len=args.max_output_len,
             temperature=args.temperature,
             top_p=args.top_p,

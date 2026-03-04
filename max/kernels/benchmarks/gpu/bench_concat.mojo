@@ -13,7 +13,7 @@
 
 from std.os import abort
 from std.random import randn
-from std.sys import env_get_int, size_of
+from std.sys import get_defined_int, size_of
 
 from std.algorithm.functional import elementwise
 from std.benchmark import (
@@ -170,7 +170,7 @@ fn bench_concat[
             if output_host.load[width=1](out_coord) != input.load[width=1](
                 in_coord
             ):
-                abort(t"mismatch at coords {out_coords}")
+                abort(String("mismatch at coords ", out_coords))
 
         elementwise[check, 1](input_shape)
         offset += input_shape[axis]
@@ -181,17 +181,17 @@ fn bench_concat[
 
 
 def main() raises:
-    comptime num_inputs = env_get_int["num_inputs", 2]()
-    comptime axis = env_get_int["axis", 0]()
-    comptime W0 = env_get_int["W0", 1]()
-    comptime X0 = env_get_int["X0", 1]()
-    comptime Y0 = env_get_int["Y0", 1]()
-    comptime Z0 = env_get_int["Z0", 1]()
+    comptime num_inputs = get_defined_int["num_inputs", 2]()
+    comptime axis = get_defined_int["axis", 0]()
+    comptime W0 = get_defined_int["W0", 1]()
+    comptime X0 = get_defined_int["X0", 1]()
+    comptime Y0 = get_defined_int["Y0", 1]()
+    comptime Z0 = get_defined_int["Z0", 1]()
 
-    comptime W1 = env_get_int["W1", 1]()
-    comptime X1 = env_get_int["X1", 1]()
-    comptime Y1 = env_get_int["Y1", 1]()
-    comptime Z1 = env_get_int["Z1", 1]()
+    comptime W1 = get_defined_int["W1", 1]()
+    comptime X1 = get_defined_int["X1", 1]()
+    comptime Y1 = get_defined_int["Y1", 1]()
+    comptime Z1 = get_defined_int["Z1", 1]()
 
     var b = Bench()
     with DeviceContext() as ctx:

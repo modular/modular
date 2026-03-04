@@ -31,7 +31,7 @@ from layout import Layout
 from std.utils.index import IndexList
 
 from ..structured_kernels.config import MatmulConfig
-from ..structured_kernels.pipeline_storage import (
+from structured_kernels.pipeline_storage import (
     BlockwiseFP8TileStorage,
     SmemPipelineBundle,
     SmemLayouts,

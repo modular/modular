@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import env_get_dtype, env_get_int
+from std.sys import get_defined_dtype, get_defined_int
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from internal_utils import (
     Mode,
     arg_parse,
-    env_get_shape,
+    get_defined_shape,
     int_list_to_tuple,
     update_bench_config_args,
 )
@@ -48,7 +48,7 @@ fn bench_func[
 
     if Mode.BENCHMARK == mode:
         m.bench_function[bench_iter](
-            BenchId(name, input_id=t"1st-metric (pe_rank={pe_rank})")
+            BenchId(name, input_id=String("1st-metric (pe_rank=", pe_rank, ")"))
         )
         # TODO: enable the following line after adding support for multi-output to kplot and kprofile.
         # m.bench_function[bench_iter](BenchId(name, input_id=String("2nd-metric (pe_rank=",pe_rank,")")))
@@ -59,10 +59,10 @@ fn bench_func[
 
 
 def main() raises:
-    comptime dtype = env_get_dtype["dtype", DType.float16]()
-    comptime shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
+    comptime dtype = get_defined_dtype["dtype", DType.float16]()
+    comptime shape_int_list = get_defined_shape["shape", "1024x1024x1024"]()
     comptime shape = int_list_to_tuple[shape_int_list]()
-    comptime stages = env_get_int["stages", 0]()
+    comptime stages = get_defined_int["stages", 0]()
 
     var runtime_x = arg_parse("x", 0)
 

@@ -385,7 +385,7 @@ class TestPipelineConfigUtilityMethods:
         config = PipelineConfig(**kwargs)  # type: ignore[arg-type]
 
         # Should have created all configs correctly
-        assert config.max_batch_size == 4
+        assert config.runtime.max_batch_size == 4
 
         # LoRA config
         assert config.lora is not None
@@ -563,8 +563,8 @@ def test_config__test_incompatible_quantization_encoding(
                 ],
                 max_length=1,
             ),
-            max_batch_size=1,
             runtime=PipelineRuntimeConfig(
+                max_batch_size=1,
                 prefer_module_v3=True,
             ),
         )
@@ -582,8 +582,8 @@ def test_config__test_incompatible_quantization_encoding(
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
-        max_batch_size=1,
         runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
             prefer_module_v3=True,
         ),
     )
@@ -609,8 +609,8 @@ def test_config__test_quantization_encoding_with_dtype_casting(
                 quantization_encoding="float32",
                 max_length=1,
             ),
-            max_batch_size=1,
             runtime=PipelineRuntimeConfig(
+                max_batch_size=1,
                 prefer_module_v3=True,
             ),
         )
@@ -635,8 +635,8 @@ def test_config__test_quantization_encoding_with_dtype_casting2(
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
-        max_batch_size=1,
         runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
             prefer_module_v3=True,
         ),
     )
@@ -662,8 +662,8 @@ def test_config__test_quantization_encoding_with_dtype_casting3(
             allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
             max_length=1,
         ),
-        max_batch_size=1,
         runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
             prefer_module_v3=True,
         ),
     )
@@ -710,8 +710,8 @@ def test_config__test_retrieve_factory_with_known_architecture(
             quantization_encoding="bfloat16",
             max_length=1,
         ),
-        max_batch_size=1,
         runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
             prefer_module_v3=True,
         ),
     )
@@ -734,8 +734,8 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
             model=MAXModelConfig(
                 model_path=gemma_3_1b_it_local_path, max_length=1
             ),
-            max_batch_size=1,
             runtime=PipelineRuntimeConfig(
+                max_batch_size=1,
                 prefer_module_v3=True,
             ),
         )
@@ -1287,6 +1287,59 @@ class TestSamplingConfig:
 
         # Assert that enable_penalties is False
         assert sampling_config.enable_penalties is False
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
+@pytest.mark.parametrize(
+    "arch_name,max_batch_size,force,is_cuda,expected_device_graph_capture",
+    [
+        ("LlamaForCausalLM", 16, False, True, True),
+        ("LlamaForCausalLM", 16, False, False, False),
+        ("LlamaForCausalLM", None, False, True, False),
+        ("LlamaForCausalLM", 16, True, True, False),
+        ("SomeOtherArchitecture", 16, False, True, False),
+    ],
+)
+def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_capture(
+    arch_name: str,
+    max_batch_size: int | None,
+    force: bool,
+    is_cuda: bool,
+    expected_device_graph_capture: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Mock .huggingface_model_repo so that we don't reach out to HF.
+    monkeypatch.setattr(MAXModelConfig, "huggingface_model_repo", Mock())
+    # Force PIPELINE_REGISTRY.retrieve_architecture to return a custom arch.
+    arch = SimpleNamespace(name=arch_name)
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch),
+    )
+    monkeypatch.setattr(
+        "max.pipelines.lib.config.config.accelerator_api",
+        Mock(return_value="cuda" if is_cuda else "hip"),
+    )
+
+    config = PipelineConfig(
+        model=MAXModelConfig(
+            model_path="test/model",
+            device_specs=[DeviceSpec.accelerator()],
+        ),
+        runtime=PipelineRuntimeConfig(
+            max_num_steps=42,
+            force=force,
+            max_batch_size=max_batch_size,
+        ),
+    )
+    config._validate_and_resolve_overlap_scheduler()
+
+    assert config.runtime.device_graph_capture is expected_device_graph_capture
+    if expected_device_graph_capture:
+        assert config.runtime.enable_overlap_scheduler is True
+        assert config.runtime.max_num_steps == 1
 
 
 @prepare_registry

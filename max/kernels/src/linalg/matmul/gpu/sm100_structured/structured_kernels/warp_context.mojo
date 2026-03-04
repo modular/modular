@@ -16,7 +16,8 @@ MmaWarpContext: MMA warp - allocates TMEM, deallocates on exit
 EpilogueWarpContext: Epilogue warp - consumes TMEM, signals completion on exit
 """
 
-from .barriers import TmemDeallocBarrier, WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
+from .tmem import TmemDeallocBarrier
 from .config import OutputPipelineConfig
 from .tile_pipeline import (
     MbarPtr,
@@ -28,7 +29,7 @@ from .tile_pipeline import (
     MmaStage,
     EpilogueStage,
 )
-from .pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 from .tmem import TmemAllocation
 
 

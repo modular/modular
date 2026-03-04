@@ -49,11 +49,6 @@ from layout.coord import (
 )
 from layout._layout import Layout, TensorLayout, row_major
 from layout import TileTensor
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
-from layout.layout import Layout as LegacyLayout
-from layout.layout_tensor import LayoutTensor as LegacyLayoutTensor
-from layout.runtime_layout import RuntimeLayout
-from layout.runtime_tuple import RuntimeTuple
 from std.memory import stack_allocation
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
@@ -1326,7 +1321,9 @@ fn rms_norm_cpu[
             var input_val = input_fn[simd_width](row, col).cast[
                 intermediate_type
             ]()
-            var gamma_val = gamma.load[width=simd_width](Coord(Idx(col)))
+            var gamma_val = gamma.load[width=simd_width, alignment=1](
+                Coord(Idx(col))
+            )
             var norm_val: SIMD[dtype, simd_width]
 
             if multiply_before_cast:
@@ -2335,7 +2332,8 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
-    scale_layout: LegacyLayout,
+    scale_origin: MutOrigin,
+    ScaleLayoutType: TensorLayout,
     //,
     simd_width: Int,
     threads_per_block: Int,
@@ -2347,8 +2345,8 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
     ) capturing -> None,
 ](
     gamma: TileTensor[in_dtype, LayoutType, origin],
-    scale_buffer: LegacyLayoutTensor[
-        mut=True, scales_dtype, scale_layout, MutAnyOrigin
+    scale_buffer: TileTensor[
+        mut=True, scales_dtype, ScaleLayoutType, scale_origin
     ],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
@@ -2360,6 +2358,7 @@ fn _rms_norm_fused_fp8_kernel_warp_tiling[
     This kernel always multiplies by gamma before quantizing to FP8.
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
@@ -2467,15 +2466,8 @@ fn _rms_norm_fused_fp8_gpu_launch[
         """Write output to buffer."""
         output.store[width=width](IndexList[2](row, col), val)
 
-    # Create a scale buffer tensor from scale_output
-    comptime layout_1d = LegacyLayout.row_major(UNKNOWN_VALUE)
-    var scale_buffer_tensor = LegacyLayoutTensor[
-        mut=True,
-        scales_dtype,
-        layout_1d,
-        MutAnyOrigin,
-        address_space = scale_output.address_space,
-    ](scale_output.data, RuntimeLayout[layout_1d].row_major(Index(rows)))
+    # Create a scale buffer TileTensor from scale_output NDBuffer.
+    var scale_buffer_tensor = TileTensor(scale_output)
 
     comptime if use_warp_tiling:
         comptime kernel = _rms_norm_fused_fp8_kernel_warp_tiling[
@@ -2485,7 +2477,8 @@ fn _rms_norm_fused_fp8_gpu_launch[
             in_dtype=in_dtype,
             out_dtype=out_dtype,
             scales_dtype=scales_dtype,
-            scale_layout=layout_1d,
+            scale_origin = scale_buffer_tensor.origin,
+            ScaleLayoutType = scale_buffer_tensor.LayoutType,
             simd_width=simd_width,
             threads_per_block=threads_per_block,
             input_fn=input_fn,
@@ -2513,7 +2506,8 @@ fn _rms_norm_fused_fp8_gpu_launch[
             in_dtype=in_dtype,
             out_dtype=out_dtype,
             scales_dtype=scales_dtype,
-            scale_layout=layout_1d,
+            scale_origin = scale_buffer_tensor.origin,
+            ScaleLayoutType = scale_buffer_tensor.LayoutType,
             simd_width=simd_width,
             threads_per_block=threads_per_block,
             input_fn=input_fn,
@@ -2542,7 +2536,8 @@ fn _rms_norm_fused_fp8_kernel_block[
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
-    scale_layout: LegacyLayout,
+    scale_origin: MutOrigin,
+    ScaleLayoutType: TensorLayout,
     //,
     simd_width: Int,
     threads_per_block: Int,
@@ -2554,8 +2549,8 @@ fn _rms_norm_fused_fp8_kernel_block[
     ) capturing -> None,
 ](
     gamma: TileTensor[in_dtype, LayoutType, origin],
-    scale_buffer: LegacyLayoutTensor[
-        mut=True, scales_dtype, scale_layout, MutAnyOrigin
+    scale_buffer: TileTensor[
+        mut=True, scales_dtype, ScaleLayoutType, scale_origin
     ],
     epsilon: Scalar[in_dtype],
     weight_offset: Scalar[in_dtype],
@@ -2567,6 +2562,7 @@ fn _rms_norm_fused_fp8_kernel_block[
     This kernel always multiplies by gamma before quantizing to FP8.
     """
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime assert scale_buffer.flat_rank == 1, "scale_buffer must have rank 1"
 
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()

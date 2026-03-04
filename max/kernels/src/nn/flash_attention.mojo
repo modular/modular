@@ -89,9 +89,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         tile_m: Int, tile_n: Int
     ](
         K: Int,
-        a_ptr: UnsafePointer[Scalar[Self.dtype]],
+        a_ptr: UnsafePointer[Scalar[Self.dtype], _],
         a_stride: Int,
-        b_ptr: UnsafePointer[Scalar[Self.dtype]],
+        b_ptr: UnsafePointer[Scalar[Self.dtype], _],
         b_stride: Int,
         mut c_tile: _Accumulator[Self.dtype, tile_m, tile_n, Self.simd_width],
     ):
@@ -132,9 +132,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         tile_m: Int, tile_n: Int
     ](
         K: Int,
-        a_ptr: UnsafePointer[Scalar[Self.dtype]],
+        a_ptr: UnsafePointer[Scalar[Self.dtype], _],
         a_stride: Int,
-        b_ptr: UnsafePointer[Scalar[Self.dtype]],
+        b_ptr: UnsafePointer[Scalar[Self.dtype], _],
         b_stride: Int,
         mut c_tile: _Accumulator[Self.dtype, tile_m, tile_n, Self.simd_width],
     ):
@@ -174,9 +174,9 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         M: Int,
         N: Int,
         K: Int,
-        a_ptr: UnsafePointer[Scalar[Self.dtype]],
+        a_ptr: UnsafePointer[Scalar[Self.dtype], _],
         a_stride: Int,
-        b_ptr: UnsafePointer[Scalar[Self.dtype]],
+        b_ptr: UnsafePointer[Scalar[Self.dtype], _],
         c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         c_stride: Int,
         accumulate: Bool = False,
@@ -330,7 +330,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
     ](
         N: Int,
         dynamic_k: Int,
-        a_ptr: UnsafePointer[Scalar[Self.dtype]],
+        a_ptr: UnsafePointer[Scalar[Self.dtype], _],
         c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
     ):
         var K = static_k if static_k != UNKNOWN_VALUE else dynamic_k
@@ -403,7 +403,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
     ](
         N: Int,
         K: Int,
-        a_ptr: UnsafePointer[Scalar[Self.dtype]],
+        a_ptr: UnsafePointer[Scalar[Self.dtype], _],
         c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         accumulate: Bool = False,
     ):
@@ -439,7 +439,7 @@ struct _Matmul[dtype: DType, simd_width: Int]:
         M: Int,
         N: Int,
         K: Int,
-        a_ptr: UnsafePointer[Scalar[Self.dtype]],
+        a_ptr: UnsafePointer[Scalar[Self.dtype], _],
         a_stride: Int,
         packed_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         c_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],

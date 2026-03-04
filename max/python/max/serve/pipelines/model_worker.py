@@ -216,7 +216,7 @@ class ModelWorker:
                             "device_graph_capture is enabled but the pipeline "
                             "does not support graph-capture warmup."
                         )
-                    max_batch_size = pipeline_config.max_batch_size
+                    max_batch_size = pipeline_config.runtime.max_batch_size
                     if max_batch_size is None:
                         raise ValueError(
                             "device_graph_capture requires max_batch_size to be set."

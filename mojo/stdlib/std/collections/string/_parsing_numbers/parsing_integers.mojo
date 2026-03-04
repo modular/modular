@@ -17,7 +17,7 @@ from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
 
 
 fn standardize_string_slice(
-    x: StringSlice[mut=False],
+    x: StringSlice[mut=False, _],
 ) -> InlineArray[Byte, CONTAINER_SIZE]:
     """Put the input string in an inline array, aligned to the right and padded
     with "0" on the left.
@@ -39,7 +39,7 @@ fn standardize_string_slice(
 # to the simd width and the base, but Mojo's compile-time
 # computation is not yet powerful enough yet.
 # For now we focus on base 10.
-fn to_integer(x: StringSlice[mut=False]) raises -> UInt64:
+fn to_integer(x: StringSlice[mut=False, _]) raises -> UInt64:
     """The input does not need to be padded with "0" on the left.
     The function returns the integer value represented by the input string.
     """

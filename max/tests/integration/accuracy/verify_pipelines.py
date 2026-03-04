@@ -25,7 +25,7 @@ import traceback
 from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 import click
 from generate_llm_logits import Flake, generate_llm_logits
@@ -37,6 +37,7 @@ from max.tests.integration.accuracy.logit_verification.logit_verification_config
     LOGIT_VERIFICATION_CONFIG,
     DeviceKind,
     PipelineConfig,
+    PregeneratedTorchGoldens,
     SupportedEncoding,
 )
 from test_common.evaluate import ModelOutput
@@ -103,6 +104,14 @@ class VerificationVerdict:
     @property
     def emoji(self) -> str:
         return self.status.emoji
+
+
+@dataclass
+class V2V3ComparisonResult:
+    """Result of comparing V2 and V3 outputs for a single pipeline."""
+
+    v2_verdict: VerificationVerdict
+    v3_verdict: VerificationVerdict
 
 
 def resolve_rlocation(rloc: str) -> Path:
@@ -363,6 +372,114 @@ def dump_results(
             )
 
 
+def _has_v2_v3_difference(result: V2V3ComparisonResult) -> bool:
+    """Check if V2 and V3 produced different verification results vs torch."""
+    v2 = result.v2_verdict.discrepancy_report
+    v3 = result.v3_verdict.discrepancy_report
+    if v2 is None or v3 is None:
+        # If either errored, we can't compare — flag it.
+        return v2 is not v3
+    if v2.model_modality == Modality.LOGIT:
+        if v2.avg_mae != v3.avg_mae:
+            return True
+        if v2.max_kl_div != v3.max_kl_div:
+            return True
+        if v2.avg_kl_div != v3.avg_kl_div:
+            return True
+    if v2.model_modality == Modality.EMBEDDING:
+        if v2.avg_mae != v3.avg_mae:
+            return True
+    return False
+
+
+def _fmt_v2_v3_diff(v2_val: float | None, v3_val: float | None) -> str:
+    """Format the signed difference V3 - V2, or 'ERR' if either is None."""
+    if v2_val is None or v3_val is None:
+        return "ERR"
+    diff = v3_val - v2_val
+    if diff == 0:
+        return "---"
+    return f"{diff:+.2e}"
+
+
+def dump_v2_v3_comparison(
+    results: Mapping[str, V2V3ComparisonResult],
+    *,
+    to: TextIO = sys.stdout,
+) -> None:
+    """Display V2 vs V3 comparison showing differences in their torch results."""
+
+    any_logit, any_embedding, any_failed = False, False, False
+
+    for r in results.values():
+        v2 = r.v2_verdict.discrepancy_report
+        v3 = r.v3_verdict.discrepancy_report
+        if v2 is None or v3 is None:
+            any_failed = True
+        elif v2.model_modality == Modality.LOGIT:
+            any_logit = True
+        elif v2.model_modality == Modality.EMBEDDING:
+            any_embedding = True
+
+    if any_failed:
+        to.write("\n\n## V2-vs-V3 Failed Models\n")
+        to.write("| Model | V2 | V3 |\n")
+        to.write("| :---  | :-: | :-: |\n")
+        for name, r in sorted(results.items()):
+            v2 = r.v2_verdict.discrepancy_report
+            v3 = r.v3_verdict.discrepancy_report
+            if v2 is not None and v3 is not None:
+                continue
+            to.write(
+                f"| {display_name(name)} | {r.v2_verdict.emoji} | {r.v3_verdict.emoji} |\n"
+            )
+
+    if any_logit:
+        to.write("## V2 vs V3 LLM Comparison\n")
+        to.write(
+            "ΔKL Div (avg) and ΔMAE = V3 minus V2 (positive = V3 further from torch).\n"
+        )
+        to.write("| Status | Model | ΔKL Div (avg) | ΔMAE |\n")
+        to.write("| :----: | :---- | :-----------: | :--: |\n")
+        for name, r in sorted(results.items(), key=lambda x: x[0].lower()):
+            v2 = r.v2_verdict.discrepancy_report
+            v3 = r.v3_verdict.discrepancy_report
+            if v2 is None or v3 is None:
+                continue
+            if v2.model_modality != Modality.LOGIT:
+                continue
+
+            has_diff = _has_v2_v3_difference(r)
+            emoji = "🟠" if has_diff else "✅"
+
+            to.write(
+                f"| {emoji} | {display_name(name)}"
+                f" | {_fmt_v2_v3_diff(v2.avg_kl_div, v3.avg_kl_div)}"
+                f" | {_fmt_v2_v3_diff(v2.avg_mae, v3.avg_mae)} |\n"
+            )
+
+    if any_embedding:
+        to.write("\n\n## V2 vs V3 Embedding Comparison\n")
+        to.write("ΔMAE = V3 minus V2 (positive = V3 further from torch).\n")
+        to.write("| Status | Model | ΔMAE |\n")
+        to.write("| :----: | :---- | :--: |\n")
+        for name, r in sorted(results.items(), key=lambda x: x[0].lower()):
+            v2 = r.v2_verdict.discrepancy_report
+            v3 = r.v3_verdict.discrepancy_report
+            if v2 is None or v3 is None:
+                continue
+            if v2.model_modality != Modality.EMBEDDING:
+                continue
+
+            has_diff = _has_v2_v3_difference(r)
+            emoji = "\U0001f7e0" if has_diff else "\u2705"
+
+            to.write(
+                f"| {emoji} | {display_name(name)}"
+                f" | {_fmt_v2_v3_diff(v2.avg_mae, v3.avg_mae)} |\n"
+            )
+
+
 @dataclass
 class TagFilter:
     """User-provided filters on a tag list."""
@@ -441,6 +558,7 @@ def generate_llm_logits_with_optional_retry(
     reference: list[ModelOutput] | None = None,
     retry_on_flake: bool = True,
     timeout: int | None = None,
+    config_params_override: dict[str, Any] | None = None,
 ) -> None:
     """Generate logits with optional retry capability.
 
@@ -461,6 +579,7 @@ def generate_llm_logits_with_optional_retry(
                 output_path=output_path,
                 print_output=False,
                 reference=reference,
+                config_params_override=config_params_override,
             ),
             timeout=timeout if timeout is not None else 1200,
         )
@@ -621,6 +740,154 @@ def run_llm_verification(
         return VerificationVerdict(status=VerificationStatus.ERROR)
 
 
+def run_v2_v3_comparison(
+    *,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
+    pipeline: str,
+    encoding: SupportedEncoding,
+    pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None,
+    absolute_tolerance: float | None = None,
+    relative_tolerance: float | None = None,
+    cos_dist_threshold: float | None = None,
+    kl_div_threshold: float | None = None,
+    timeout: int | None = None,
+) -> V2V3ComparisonResult:
+    """Run both V2 and V3, verify each against torch, and compare them directly."""
+
+    fssafe_pipeline = pipeline.replace("/", "_")
+
+    # 1. Get torch baseline (shared between V2 and V3).
+    if pregenerated_torch_goldens is not None:
+        tar_file = load_from_tar(pregenerated_torch_goldens.tar_file)
+        torch_golden_path = Path(tar_file, pregenerated_torch_goldens.json_file)
+    else:
+        torch_golden_path = Path(
+            f"/tmp/goldens_torch_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+        )
+        generate_llm_logits_with_optional_retry(
+            framework="torch",
+            device=devices,
+            pipeline=pipeline,
+            encoding=encoding,
+            output_path=torch_golden_path,
+            timeout=timeout,
+        )
+
+    torch_results: list[ModelOutput] = NumpyDecoder().decode(
+        torch_golden_path.read_text()
+    )
+
+    if find_tolerances:
+        print_suggested_tolerances = True
+        kl_div_threshold = 1e-10
+        cos_dist_threshold = 1e-10
+        absolute_tolerance = 1e-4
+        relative_tolerance = 1e-4
+
+    eval_metrics = []
+    if absolute_tolerance is not None and relative_tolerance is not None:
+        eval_metrics.append("tol")
+    if cos_dist_threshold is not None:
+        eval_metrics.append("cos")
+    if kl_div_threshold is not None:
+        eval_metrics.append("kl")
+    if not eval_metrics:
+        # Default to kl and cos for comparison mode.
+        eval_metrics = ["kl", "cos"]
+
+    # 2. Generate and verify V2 outputs.
+    v2_golden_path = Path(
+        f"/tmp/goldens_max_v2_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+    )
+    print("\n--- Generating V2 (Graph API) outputs ---", flush=True)
+    generate_llm_logits_with_optional_retry(
+        framework="max",
+        device=devices,
+        pipeline=pipeline,
+        encoding=encoding,
+        output_path=v2_golden_path,
+        reference=torch_results,
+        timeout=timeout,
+        config_params_override={"prefer_module_v3": False},
+    )
+
+    print("\n--- Verifying V2 vs Torch ---", flush=True)
+    try:
+        v2_result = verify(
+            pipeline_outputs=v2_golden_path,
+            torch_outputs=torch_golden_path,
+            eval_metric=eval_metrics,
+            relative_tolerance=relative_tolerance,
+            absolute_tolerance=absolute_tolerance,
+            cos_dist_threshold=cos_dist_threshold,
+            kl_div_threshold=kl_div_threshold,
+            print_suggested_tolerances=print_suggested_tolerances,
+        )
+        v2_status = (
+            VerificationStatus.OK
+            if v2_result.passed
+            else VerificationStatus.INVALID
+        )
+        v2_verdict = VerificationVerdict(
+            status=v2_status,
+            discrepancy_report=v2_result.discrepancy_report,
+            kl_div_threshold=kl_div_threshold,
+        )
+    except Exception:
+        traceback.print_exc()
+        v2_verdict = VerificationVerdict(status=VerificationStatus.ERROR)
+
+    # 3. Generate and verify V3 outputs.
+    v3_golden_path = Path(
+        f"/tmp/goldens_max_v3_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+    )
+    print("\n--- Generating V3 (Eager API) outputs ---", flush=True)
+    generate_llm_logits_with_optional_retry(
+        framework="max",
+        device=devices,
+        pipeline=pipeline,
+        encoding=encoding,
+        output_path=v3_golden_path,
+        reference=torch_results,
+        timeout=timeout,
+        config_params_override={"prefer_module_v3": True},
+    )
+
+    print("\n--- Verifying V3 vs Torch ---", flush=True)
+    try:
+        v3_result = verify(
+            pipeline_outputs=v3_golden_path,
+            torch_outputs=torch_golden_path,
+            eval_metric=eval_metrics,
+            relative_tolerance=relative_tolerance,
+            absolute_tolerance=absolute_tolerance,
+            cos_dist_threshold=cos_dist_threshold,
+            kl_div_threshold=kl_div_threshold,
+            print_suggested_tolerances=print_suggested_tolerances,
+        )
+        v3_status = (
+            VerificationStatus.OK
+            if v3_result.passed
+            else VerificationStatus.INVALID
+        )
+        v3_verdict = VerificationVerdict(
+            status=v3_status,
+            discrepancy_report=v3_result.discrepancy_report,
+            kl_div_threshold=kl_div_threshold,
+        )
+    except Exception:
+        traceback.print_exc()
+        v3_verdict = VerificationVerdict(status=VerificationStatus.ERROR)
+
+    return V2V3ComparisonResult(
+        v2_verdict=v2_verdict,
+        v3_verdict=v3_verdict,
+    )
+
+
 def _run_pixel_generation_verification(
     config: PipelineConfig,
     *,
@@ -755,6 +1022,58 @@ def run_pixel_generation_verification(
         return VerificationVerdict(status=VerificationStatus.ERROR)
 
 
+def run_compare_v2_v3(
+    config: PipelineConfig,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
+) -> V2V3ComparisonResult:
+    return run_v2_v3_comparison(
+        device_type=device_type,
+        devices=devices,
+        find_tolerances=find_tolerances,
+        print_suggested_tolerances=print_suggested_tolerances,
+        pipeline=config.pipeline,
+        encoding=config.encoding,
+        pregenerated_torch_goldens=config.pregenerated_torch_goldens,
+        absolute_tolerance=config.absolute_tolerance,
+        relative_tolerance=config.relative_tolerance,
+        cos_dist_threshold=config.cos_dist_threshold,
+        kl_div_threshold=config.kl_div_threshold,
+        timeout=config.timeout,
+    )
+
+
+def run_compare_v2_v3_protected(
+    config: PipelineConfig,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
+) -> V2V3ComparisonResult:
+    try:
+        with detect_infra_errors():
+            return run_compare_v2_v3(
+                config,
+                device_type,
+                devices,
+                find_tolerances,
+                print_suggested_tolerances,
+            )
+    except Flake:
+        flake = VerificationVerdict(status=VerificationStatus.FLAKE)
+        return V2V3ComparisonResult(v2_verdict=flake, v3_verdict=flake)
+    except InfraError:
+        traceback.print_exc()
+        infra = VerificationVerdict(status=VerificationStatus.INFRA)
+        return V2V3ComparisonResult(v2_verdict=infra, v3_verdict=infra)
+    except Exception:
+        traceback.print_exc()
+        error = VerificationVerdict(status=VerificationStatus.ERROR)
+        return V2V3ComparisonResult(v2_verdict=error, v3_verdict=error)
+
+
 def _is_pixel_generation(config: PipelineConfig) -> bool:
     """Determines if a pipeline config is for pixel/image generation."""
     return (
@@ -831,6 +1150,16 @@ def _is_pixel_generation(config: PipelineConfig) -> bool:
         " require vLLM-generated goldens."
     ),
 )
+@click.option(
+    "--compare-v2-v3",
+    "compare_v2_v3",
+    is_flag=True,
+    default=False,
+    help=(
+        "Run both V2 (graph API) and V3 (eager API) and compare their outputs"
+        " against the torch baseline."
+    ),
+)
 def main(
     report: TextIO | None,
     store_verdicts_json: Path | None,
@@ -842,6 +1171,7 @@ def main(
     print_suggested_tolerances: bool,
     name_filter: str | None,
     no_aws: bool,
+    compare_v2_v3: bool,
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
 
@@ -853,6 +1183,47 @@ def main(
         else DeviceKind.GPU
     )
     devices_str = "cpu" if devices_str is None else devices_str
+
+    if compare_v2_v3:
+        # V2 vs V3 comparison mode: run both V2 and V3 and compare their outputs.
+        comparison_results: dict[str, V2V3ComparisonResult] = {}
+        for pipeline_name in pipelines:
+            pipeline_config = LOGIT_VERIFICATION_CONFIG.pipelines[pipeline_name]
+            if device_type not in pipeline_config.compatible_with:
+                continue
+            if not tag_filter.satisfied_by(pipeline_config.tags):
+                continue
+            if name_filter and not any(
+                f.strip().casefold() in pipeline_name.casefold()
+                for f in name_filter.split(",")
+                if f.strip()
+            ):
+                continue
+            start_time = time.time()
+            print(f"\n===== Running {pipeline_name} =====", flush=True)
+            result = run_compare_v2_v3_protected(
+                pipeline_config,
+                device_type,
+                devices_str,
+                find_tolerances,
+                print_suggested_tolerances,
+            )
+            comparison_results[pipeline_name] = result
+            duration = f"{time.time() - start_time:.0f}s"
+            print(
+                f"\n===== Finished {pipeline_name} ({duration}) =====",
+                flush=True,
+            )
+            dump_results({f"{pipeline_name} [V2]": result.v2_verdict})
+            dump_results({f"{pipeline_name} [V3]": result.v3_verdict})
+
+        print()
+        print("-" * 40)
+        print()
+        dump_v2_v3_comparison(comparison_results)
+        if report:
+            dump_v2_v3_comparison(comparison_results, to=report)
+        return
 
     verdicts: dict[str, VerificationVerdict] = {}
     for pipeline_name in pipelines:

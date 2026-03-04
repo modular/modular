@@ -528,6 +528,81 @@ def test_log1p() raises:
     _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
+def test_log1p_accuracy() raises:
+    # Compare log1p against libm across several regimes.
+
+    # Small values near zero (critical regime where log1p matters).
+    var small_vals: InlineArray[Float64, 14] = [
+        1e-15,
+        1e-12,
+        1e-10,
+        1e-8,
+        1e-6,
+        1e-4,
+        1e-2,
+        -1e-15,
+        -1e-12,
+        -1e-10,
+        -1e-8,
+        -1e-6,
+        -1e-4,
+        -1e-2,
+    ]
+    for val in small_vals:
+        assert_almost_equal(
+            log1p(val),
+            _call_libm["log1p"](val),
+            msg=String("f64 small mismatch for the value = ", val),
+        )
+
+    # Float32 small values.
+    var small_vals_f32: InlineArray[Float32, 6] = [
+        1e-7,
+        1e-5,
+        1e-3,
+        -1e-7,
+        -1e-5,
+        -1e-3,
+    ]
+    for val in small_vals_f32:
+        assert_almost_equal(
+            log1p(val),
+            _call_libm["log1p"](val),
+            msg=String("f32 small mismatch for the value = ", val),
+        )
+
+    # Moderate values.
+    comptime n = 1_000
+    for i in range(n):
+        var val = Float64(i) / (n / 10.5) - 0.5
+        assert_almost_equal(
+            log1p(val),
+            _call_libm["log1p"](val),
+            msg=String("f64 moderate mismatch for the value = ", val),
+        )
+
+    # Values near the singularity at x = -1.
+    var near_neg1: InlineArray[Float64, 5] = [
+        -0.9,
+        -0.99,
+        -0.999,
+        -0.9999,
+        -0.99999,
+    ]
+    for val in near_neg1:
+        assert_almost_equal(
+            log1p(val),
+            _call_libm["log1p"](val),
+            msg=String("f64 near-singularity mismatch for the value = ", val),
+        )
+
+    # Edge cases.
+    assert_true(isnan(log1p(nan[DType.float64]())))
+    assert_equal(log1p(Float64(0)), Float64(0))
+    assert_true(isinf(log1p(Float64(-1))))
+    assert_true(isnan(log1p(Float64(-2))))
+
+
 def test_gcd() raises:
     var l = [2, 4, 6, 8, 16]
     var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
@@ -765,6 +840,21 @@ def test_asin() raises:
             msg=String("mismatch for the value = ", val),
         )
 
+    # Float64 accuracy across [-1, 1].
+    for i in range(n):
+        var val = Float64(i) / (n * 2) - 1
+        assert_almost_equal(
+            asin(val),
+            _call_libm["asin"](val),
+            msg=String("f64 mismatch for the value = ", val),
+        )
+
+    # Edge cases.
+    assert_equal(asin(Float64(0)), Float64(0))
+    assert_almost_equal(asin(Float64(1)), pi / 2.0)
+    assert_almost_equal(asin(Float64(-1)), -(pi / 2.0))
+    assert_true(isnan(asin(nan[DType.float64]())))
+
 
 def test_erfc() raises:
     comptime n = 10_000
@@ -796,6 +886,21 @@ def test_acos() raises:
             _call_libm["acos"](val),
             msg=String("mismatch for the value = ", val),
         )
+
+    # Float64 accuracy across [-1, 1].
+    for i in range(n):
+        var val = Float64(i) / (n * 2) - 1
+        assert_almost_equal(
+            acos(val),
+            _call_libm["acos"](val),
+            msg=String("f64 mismatch for the value = ", val),
+        )
+
+    # Edge cases.
+    assert_almost_equal(acos(Float64(1)), Float64(0))
+    assert_almost_equal(acos(Float64(-1)), pi)
+    assert_almost_equal(acos(Float64(0)), pi / 2.0)
+    assert_true(isnan(acos(nan[DType.float64]())))
 
 
 def main() raises:
