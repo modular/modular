@@ -376,12 +376,18 @@ fn fused_rope_rmsnorm_quantization_kernel[
                 ), "kv_norm_dim should be divisible by k_width"
 
                 var vec_data = SIMD[accum_type, k_width](0)
+                var gamma_val = SIMD[gamma_dtype, k_width](0)
 
                 var idx = Int(thread_idx.x) * k_width
                 if idx < kv_norm_dim:
                     vec_data = kv.load[width=k_width](
                         (Idx(global_token_idx), Idx(idx))
                     ).cast[accum_type]()
+                    # Prefetch gamma before reduction.
+                    gamma_val = gamma.load[
+                        width=k_width,
+                        alignment = align_of[SIMD[gamma_dtype, k_width]](),
+                    ](Coord(Idx(idx)))
 
                 var norm_val = _rms_norm_warp_tiling_subkernel[
                     warps_per_block,
@@ -390,7 +396,7 @@ fn fused_rope_rmsnorm_quantization_kernel[
                     global_token_idx,
                     idx,
                     vec_data,
-                    gamma,
+                    gamma_val,
                     epsilon.cast[accum_type](),
                     0.0,
                     kv_norm_dim,

@@ -895,6 +895,7 @@ fn rms_norm_gpu_warp_tiling_128[
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var vec_data = SIMD[accum_type, simd_width](0)
+    var gamma_val = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     # Each warp handles 2 rows, so total rows per block is warps_per_block * 2
     var block_row = block_idx.x * UInt(warps_per_block * 2)
@@ -906,7 +907,6 @@ fn rms_norm_gpu_warp_tiling_128[
     var idx = local_tid * UInt(simd_width)
 
     with PDL():
-        var gamma_val = SIMD[dtype, simd_width](0)
         if row < UInt(num_rows) and idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
                 accum_type
@@ -961,12 +961,12 @@ fn rms_norm_gpu_warp_tiling[
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var vec_data = SIMD[accum_type, simd_width](0)
+    var gamma_val = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * UInt(simd_width)
 
     with PDL():
-        var gamma_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx)).cast[
                 accum_type
@@ -1514,12 +1514,12 @@ fn rms_norm_fused_residual_add_gpu_warp_tiling[
     var weight_offset_accum2 = weight_offset2.cast[accum_type]()
 
     var vec_data = SIMD[dtype, simd_width](0)
+    var gamma1_val = SIMD[dtype, simd_width](0)
     var tid = thread_idx.x
     var row = block_idx.x
     var idx = tid * UInt(simd_width)
 
     with PDL():
-        var gamma1_val = SIMD[dtype, simd_width](0)
         if idx < UInt(num_cols):
             vec_data = input_fn[simd_width](Int(row), Int(idx))
             # Prefetch gamma1 before reduction to overlap load with compute.
