@@ -150,8 +150,9 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn write[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -164,11 +165,13 @@ struct BlockwiseFP8TileWriter[
             cluster_size,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_rank, c_tile_shape, c_desc_shape
+        ],
         c_coord: Tuple[UInt, UInt],
     ):
         """Write accumulated register tiles to GMEM via double-buffered SMEM."""
-        Self._write_impl[c_layout, c_desc_layout, cluster_size](
+        Self._write_impl[c_rank, c_tile_shape, c_desc_shape, cluster_size](
             accum, c_tiles, c_tma_op, c_coord
         )
 
@@ -177,8 +180,9 @@ struct BlockwiseFP8TileWriter[
     @staticmethod
     @always_inline
     fn _write_impl[
-        c_layout: Layout,
-        c_desc_layout: Layout,
+        c_rank: Int,
+        c_tile_shape: IndexList[c_rank],
+        c_desc_shape: IndexList[c_rank],
         cluster_size: Int,
     ](
         accum: BlockwiseFP8Accumulator[
@@ -191,7 +195,9 @@ struct BlockwiseFP8TileWriter[
             cluster_size,
         ],
         c_tiles: Self.CTileArray,
-        c_tma_op: TMATensorTile[Self.c_type, c_layout, c_desc_layout],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_rank, c_tile_shape, c_desc_shape
+        ],
         c_coord: Tuple[UInt, UInt],
     ):
         """Internal implementation for writing accumulated register tiles."""
@@ -242,7 +248,7 @@ struct BlockwiseFP8TileWriter[
                 Self.stageN,  # stage_contiguous_size
                 Self.c_swizzle,
             ]
-            StoreExec.execute[c_layout, c_desc_layout](
+            StoreExec.execute[c_rank, c_tile_shape, c_desc_shape](
                 c_smem_tile,
                 store_coords,
                 c_tma_op,
@@ -251,8 +257,9 @@ struct BlockwiseFP8TileWriter[
             )
             tma_wait_pipelined[
                 Self.c_type,
-                c_layout,
-                c_desc_layout,
+                c_rank,
+                c_tile_shape,
+                c_desc_shape,
                 stage == Self.num_stages - 1,
             ](c_tma_op)
 

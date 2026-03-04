@@ -193,12 +193,15 @@ fn grouped_matmul_sm90[
         pdl_level=config.pdl_level(),
         elementwise_lambda_fn=elementwise_lambda_fn,
     ].run_grouped[
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
+        type_of(a_tma_op).rank,
+        type_of(b_tma_op).rank,
+        type_of(c_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(b_tma_op).tile_shape,
+        type_of(c_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(c_tma_op).desc_shape,
     ]
 
     ctx.enqueue_function[kernel, kernel](

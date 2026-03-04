@@ -1013,8 +1013,9 @@ fn produce[
     qkv_type: DType,
     BM: Int,
     BN: Int,
-    q_smem_layout: Layout,
-    q_desc_layout: Layout,
+    q_rank: Int,
+    q_tile_shape: IndexList[q_rank],
+    q_desc_shape: IndexList[q_rank],
     depth: Int,
     padded_depth: Int,
     num_heads: Int,
@@ -1035,8 +1036,9 @@ fn produce[
 ](
     q_tma_op: TMATensorTile[
         qkv_type,
-        q_smem_layout,
-        q_desc_layout,
+        q_rank,
+        q_tile_shape,
+        q_desc_shape,
     ],
     k_tma_op: KVTMATile[
         qkv_type,
@@ -1114,7 +1116,7 @@ fn produce[
         q_idx: UInt32, offset: UInt32 = 0
     ) -> LayoutTensor[
         qkv_type,
-        q_smem_layout,
+        Layout.row_major(q_tile_shape),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,

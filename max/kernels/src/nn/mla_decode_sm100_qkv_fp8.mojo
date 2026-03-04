@@ -550,7 +550,8 @@ struct MLA_SM100_Decode_QKV_FP8[
             # Q TMA: load FP8 Q directly into q_smem
             var q_block_smem = q_smem
             var q_smem_tensor = SharedMemTensor[
-                Self.kv_type, type_of(q_tma).layout
+                Self.kv_type,
+                Layout.row_major(type_of(q_tma).tile_shape),
             ](q_block_smem.bitcast[Scalar[Self.kv_type]]())
             q_tma.async_copy(q_smem_tensor, mbar_q[], (Int(UInt(0)), Int(row)))
 

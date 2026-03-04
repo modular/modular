@@ -55,7 +55,12 @@ from std.memory import bitcast
 from std.gpu.sync import named_barrier
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    _idx_product,
+    create_tensor_tile,
+)
 from layout.layout_tensor import LayoutTensorIter
 from std.gpu.memory import external_memory, fence_async_view_proxy
 from std.gpu import barrier
@@ -791,14 +796,17 @@ fn block_scales_interleave[
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
 fn quantize_dynamic_scaled_async_fp4_kernel[
     input_dtype: DType,
-    input_cta_tile_layout: Layout,
-    input_desc_layout: Layout,
+    input_tile_rank: Int,
+    input_tile_shape: IndexList[input_tile_rank],
+    input_desc_shape: IndexList[input_tile_rank],
     output_dtype: DType,
-    output_cta_tile_layout: Layout,
-    output_desc_layout: Layout,
+    output_tile_rank: Int,
+    output_tile_shape: IndexList[output_tile_rank],
+    output_desc_shape: IndexList[output_tile_rank],
     scales_dtype: DType,
-    scales_tma_tile_layout: Layout,
-    scales_desc_layout: Layout,
+    scales_tile_rank: Int,
+    scales_tile_shape: IndexList[scales_tile_rank],
+    scales_desc_shape: IndexList[scales_tile_rank],
     input_swizzle_mode: TensorMapSwizzle,
     output_swizzle_mode: TensorMapSwizzle,
     scales_swizzle_mode: TensorMapSwizzle,
@@ -806,13 +814,13 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
     NUM_PIPELINES_STAGES: UInt,
 ](
     input_tma_op: TMATensorTile[
-        input_dtype, input_cta_tile_layout, input_desc_layout
+        input_dtype, input_tile_rank, input_tile_shape, input_desc_shape
     ],
     output_tma_op: TMATensorTile[
-        output_dtype, output_cta_tile_layout, output_desc_layout
+        output_dtype, output_tile_rank, output_tile_shape, output_desc_shape
     ],
     scales_tma_op: TMATensorTile[
-        scales_dtype, scales_tma_tile_layout, scales_desc_layout
+        scales_dtype, scales_tile_rank, scales_tile_shape, scales_desc_shape
     ],
     tensor_sf: Float32,  # tensor-wise scale factor
 ):
@@ -826,11 +834,15 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
         ]()
     )
 
-    comptime input_smem_tile_size = input_cta_tile_layout.size() * Int(
-        NUM_PIPELINES_STAGES
-    )
-    comptime output_smem_tile_size = output_cta_tile_layout.size()
-    comptime scales_smem_tile_size = scales_tma_tile_layout.size()
+    comptime input_smem_tile_size = _idx_product[
+        input_tile_rank, input_tile_shape
+    ]() * Int(NUM_PIPELINES_STAGES)
+    comptime output_smem_tile_size = _idx_product[
+        output_tile_rank, output_tile_shape
+    ]()
+    comptime scales_smem_tile_size = _idx_product[
+        scales_tile_rank, scales_tile_shape
+    ]()
 
     comptime SF_K_GROUP_SIZE: UInt = SF_VECTOR_SIZE * SF_ATOM_K
     comptime STAGE_GROUP_SIZE = SF_K_GROUP_SIZE // NUM_PIPELINES_STAGES
@@ -858,7 +870,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
 
     var input_smem = LayoutTensorIter[
         input_dtype,
-        input_cta_tile_layout,
+        Layout.row_major(input_tile_shape),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -869,7 +881,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
 
     var output_smem = LayoutTensor[
         output_dtype,
-        output_cta_tile_layout,
+        Layout.row_major(output_tile_shape),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -879,7 +891,7 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
 
     var scales_smem = LayoutTensor[
         scales_dtype,
-        scales_tma_tile_layout,
+        Layout.row_major(scales_tile_shape),
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -899,9 +911,9 @@ fn quantize_dynamic_scaled_async_fp4_kernel[
 
     barrier()
 
-    comptime expected_bytes = input_cta_tile_layout.size() * size_of[
-        input_dtype
-    ]()
+    comptime expected_bytes = _idx_product[
+        input_tile_rank, input_tile_shape
+    ]() * size_of[input_dtype]()
 
     with PDL():
         if thread_idx.x >= 128:
@@ -1100,14 +1112,12 @@ fn quantize_dynamic_scaled_fp4_async[
     var input_tma_op = create_tensor_tile[
         input_tma_tile_shape,
         swizzle_mode=input_swizzle_mode,
-        __tile_layout=Layout.row_major(input_tma_tile_shape),
     ](ctx, input_tensor)
 
     comptime output_tma_tile_shape = Index(128, 32)
     var output_tma_op = create_tensor_tile[
         output_tma_tile_shape,
         swizzle_mode=output_swizzle_mode,
-        __tile_layout=Layout.row_major(output_tma_tile_shape),
     ](ctx, output_tensor)
 
     comptime assert scales_tensor.rank == 5, "scales must be 5D tensors"
@@ -1143,7 +1153,6 @@ fn quantize_dynamic_scaled_fp4_async[
     var scales_tma_op = create_tensor_tile[
         scales_tma_tile_shape,
         swizzle_mode=scales_swizzle_mode,
-        __tile_layout=Layout.row_major(scales_tma_tile_shape),
     ](ctx, scales_4d_tensor)
 
     comptime smem_use = (
@@ -1163,14 +1172,17 @@ fn quantize_dynamic_scaled_fp4_async[
 
     comptime kernel = quantize_dynamic_scaled_async_fp4_kernel[
         type_of(input_tma_op).dtype,
-        type_of(input_tma_op).layout,
-        type_of(input_tma_op).desc_layout,
+        type_of(input_tma_op).rank,
+        type_of(input_tma_op).tile_shape,
+        type_of(input_tma_op).desc_shape,
         type_of(output_tma_op).dtype,
-        type_of(output_tma_op).layout,
-        type_of(output_tma_op).desc_layout,
+        type_of(output_tma_op).rank,
+        type_of(output_tma_op).tile_shape,
+        type_of(output_tma_op).desc_shape,
         type_of(scales_tma_op).dtype,
-        type_of(scales_tma_op).layout,
-        type_of(scales_tma_op).desc_layout,
+        type_of(scales_tma_op).rank,
+        type_of(scales_tma_op).tile_shape,
+        type_of(scales_tma_op).desc_shape,
         input_swizzle_mode,
         output_swizzle_mode,
         scales_swizzle_mode,

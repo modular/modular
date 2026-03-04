@@ -165,8 +165,9 @@ trait SMemTileWriter(TrivialRegisterPassable):
 struct TileWriterTMA[
     tma_origin: ImmutOrigin,
     dtype: DType,
-    tma_layout: Layout,
-    desc_layout: Layout,
+    tma_rank: Int,
+    tile_shape: IndexList[tma_rank],
+    desc_shape: IndexList[tma_rank],
     //,
 ](SMemTileWriter, TrivialRegisterPassable):
     """TMA-based tile writer for hardware-accelerated memory transfers.
@@ -177,14 +178,17 @@ struct TileWriterTMA[
     Parameters:
         tma_origin: Origin type for the TMA operation.
         dtype: Data type of the elements being written.
-        tma_layout: Layout of the TMA tile for async store operations.
-        desc_layout: Layout described by the TMA descriptor.
+        tma_rank: Rank of the TMA tile (number of dimensions).
+        tile_shape: Shape of the TMA tile for async store operations.
+        desc_shape: Shape described by the TMA descriptor.
     """
 
     comptime _dtype = Self.dtype
 
     comptime TMATensorTilePtr = Pointer[
-        TMATensorTile[Self.dtype, Self.tma_layout, Self.desc_layout],
+        TMATensorTile[
+            Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
+        ],
         Self.tma_origin,
     ]
     var tma_op: Self.TMATensorTilePtr

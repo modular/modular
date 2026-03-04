@@ -59,7 +59,7 @@ from layout.tma_async import (
     create_tensor_tile,
     PipelineState,
     SharedMemBarrier,
-    _tma_desc_tile_layout,
+    _default_desc_shape,
     TMATensorTile,
 )
 from layout.runtime_layout import RuntimeLayout
@@ -97,8 +97,9 @@ comptime QOTMATile[
     dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
 ] = TMATensorTile[
     dtype,
-    tile_layout_k_major[dtype, BM, BK, swizzle_mode=swizzle_mode](),
-    _tma_desc_tile_layout[dtype, 2, IndexList[2](BM, BK), swizzle_mode](),
+    2,
+    IndexList[2](BM, BK),
+    _default_desc_shape[2, dtype, IndexList[2](BM, BK), swizzle_mode](),
     is_k_major=True,
 ]
 
@@ -2367,8 +2368,14 @@ struct MLA_SM100_Decode_Common[
         row_start: UInt,
     ):
         var block_smem = smem
+        comptime kv_tile_layout = tile_layout_k_major[
+            Self.kv_type,
+            Self.config.BK1,
+            Self.config.BK0,
+            Self.config.kv_tma_swizzle_mode,
+        ]()
         var smem_tensor = SharedMemTensor[
-            Self.kv_type, type_of(tma).layout  # 64x576 swizzled tile
+            Self.kv_type, kv_tile_layout  # 64x576 swizzled tile
         ](block_smem)
         tma.async_copy_3d(
             smem_tensor, mbar[], (Int(col_start), Int(0), Int(row_start))
@@ -2389,8 +2396,14 @@ struct MLA_SM100_Decode_Common[
         row_start: UInt,
     ):
         var block_smem = smem
+        comptime q_tile_layout = tile_layout_k_major[
+            Self.q_type,
+            Self.config.BM,
+            Self.config.BK0,
+            Self.config.swizzle_mode,
+        ]()
         var smem_tensor = SharedMemTensor[
-            Self.q_type, type_of(tma).layout  # 64x576 swizzled tile
+            Self.q_type, q_tile_layout  # 64x576 swizzled tile
         ](block_smem)
 
         tma.async_copy(smem_tensor, mbar[], (Int(col_start), Int(row_start)))
@@ -3088,9 +3101,15 @@ struct MLA_SM100_Decode_Common[
                         + m * Self.config.BN
                         + k * col_per_warp
                     )
+                    comptime o_tile_layout = tile_layout_k_major[
+                        Self.output_type,
+                        Self.config.out_rows,
+                        Self.config.BN,
+                        Self.config.swizzle_mode,
+                    ]()
                     var smem_tensor = SharedMemTensor[
                         Self.output_type,
-                        type_of(o_tma).layout,
+                        o_tile_layout,
                     ](stage_ptr)
                     if is_leader:
                         fence_async_view_proxy()

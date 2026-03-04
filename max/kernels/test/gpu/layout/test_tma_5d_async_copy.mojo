@@ -24,13 +24,14 @@ from layout.swizzle import make_swizzle
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tensor_tile,
     create_tma_tile,
 )
 from std.memory import stack_allocation
 from std.testing import assert_equal
 
-from std.utils.index import Index
+from std.utils.index import Index, IndexList
 
 
 # Test loading a single 5d tile.
@@ -38,31 +39,28 @@ from std.utils.index import Index
 fn test_tma_5d_load_kernel[
     dtype: DType,
     dst_layout: Layout,
-    cta_tile_layout: Layout,
-    desc_layout: Layout,
+    tile_rank: Int,
+    cta_tile_shape: IndexList[tile_rank],
+    desc_shape: IndexList[tile_rank],
     smem_layout: Layout,
     grid_dim1: Int,
     grid_dim2: Int,
 ](
     dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, cta_tile_layout, desc_layout],
+    tma_tile: TMATensorTile[dtype, tile_rank, cta_tile_shape, desc_shape],
 ):
     comptime assert (
-        cta_tile_layout.size() == smem_layout.size()
+        _idx_product[tile_rank, cta_tile_shape]() == smem_layout.size()
     ), "CTA Tile and SMEM tile should be the same size"
-
-    comptime assert (
-        cta_tile_layout == smem_layout
-    ), "for these test cases cta and smem should have the same size"
 
     comptime dst_dim0 = dst_layout.shape[0].value()
     comptime dst_dim1 = dst_layout.shape[1].value()
 
-    comptime cta_tile_dim0 = cta_tile_layout.shape[0].value()
-    comptime cta_tile_dim1 = cta_tile_layout.shape[1].value()
-    comptime cta_tile_dim2 = cta_tile_layout.shape[2].value()
-    comptime cta_tile_dim3 = cta_tile_layout.shape[3].value()
-    comptime cta_tile_dim4 = cta_tile_layout.shape[4].value()
+    comptime cta_tile_dim0 = cta_tile_shape[0]
+    comptime cta_tile_dim1 = cta_tile_shape[1]
+    comptime cta_tile_dim2 = cta_tile_shape[2]
+    comptime cta_tile_dim3 = cta_tile_shape[3]
+    comptime cta_tile_dim4 = cta_tile_shape[4]
 
     comptime assert (
         dst_dim1 == cta_tile_dim4
@@ -76,7 +74,9 @@ fn test_tma_5d_load_kernel[
         alignment=128,
     ].stack_allocation()
 
-    comptime expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime expected_bytes = _idx_product[
+        tile_rank, cta_tile_shape
+    ]() * size_of[dtype]()
 
     mbar = stack_allocation[
         1,
@@ -122,7 +122,7 @@ fn test_tma_5d_load_kernel[
     )
     comptime dst_tile_size = dst_tile_layout.size()
     comptime DstTileType = LayoutTensor[dtype, dst_tile_layout, MutAnyOrigin]
-    comptime cta_tile_size = cta_tile_layout.size()
+    comptime cta_tile_size = _idx_product[tile_rank, cta_tile_shape]()
 
     local_dst_ptr = dst.ptr + idx * UInt(cta_tile_size)
 
@@ -176,20 +176,20 @@ def test_tma_5d_load_row_major[
             cta_tile_dim4,
         ),
         swizzle_mode=swizzle_mode,
-        __tile_layout=cta_tile_layout,
     ](ctx, src.device_tensor())
 
     ctx.synchronize()
 
     print("src layout:", materialize[src_layout]())
     print("cta tile layout:", materialize[cta_tile_layout]())
-    print("desc layout:", materialize[type_of(tma_tensor).desc_layout]())
+    print("desc shape:", type_of(tma_tensor).desc_shape)
 
     comptime kernel = test_tma_5d_load_kernel[
         type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
-        type_of(tma_tensor).layout,  # cta_tile
-        type_of(tma_tensor).desc_layout,  # desc_tile
+        type_of(tma_tensor).rank,
+        type_of(tma_tensor).tile_shape,  # cta_tile
+        type_of(tma_tensor).desc_shape,  # desc_tile
         smem_tile_layout,  # smem layout
         grid_dim1=src_dim1 // cta_tile_dim1,
         grid_dim2=src_dim2 // cta_tile_dim2,
@@ -214,11 +214,11 @@ def test_tma_5d_load_row_major[
 
     comptime cta_tile_size = cta_tile_layout.size()
 
-    comptime desc_tile_dim0 = type_of(tma_tensor).desc_layout.shape[0].value()
-    comptime desc_tile_dim1 = type_of(tma_tensor).desc_layout.shape[1].value()
-    comptime desc_tile_dim2 = type_of(tma_tensor).desc_layout.shape[2].value()
-    comptime desc_tile_dim3 = type_of(tma_tensor).desc_layout.shape[3].value()
-    comptime desc_tile_dim4 = type_of(tma_tensor).desc_layout.shape[4].value()
+    comptime desc_tile_dim0 = type_of(tma_tensor).desc_shape[0]
+    comptime desc_tile_dim1 = type_of(tma_tensor).desc_shape[1]
+    comptime desc_tile_dim2 = type_of(tma_tensor).desc_shape[2]
+    comptime desc_tile_dim3 = type_of(tma_tensor).desc_shape[3]
+    comptime desc_tile_dim4 = type_of(tma_tensor).desc_shape[4]
 
     comptime desc_tile_size = (
         desc_tile_dim1 * desc_tile_dim2 * desc_tile_dim3 * desc_tile_dim4

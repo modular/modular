@@ -74,8 +74,9 @@ struct TileWriter[
     # Inferred from constructor arg
     tma_origin: ImmutOrigin,
     c_type: DType,
-    c_layout: Layout,
-    c_desc_layout: Layout,
+    c_rank: Int,
+    c_tile_shape: IndexList[c_rank],
+    c_desc_shape: IndexList[c_rank],
     //,
     # Explicit config parameters (works with any config type)
     a_type: DType,
@@ -121,7 +122,7 @@ struct TileWriter[
 
     # Type aliases
     comptime TmaOp = TMATensorTile[
-        Self.c_type, Self.c_layout, Self.c_desc_layout
+        Self.c_type, Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
     # C tile array (output and source tiles)
@@ -600,7 +601,9 @@ struct TileWriter[
                 var store_coords = StoreCoords(
                     (c_coord[0], c_coord[1], batch_idx), UInt32(warp_id)
                 )
-                StoreExecutor.execute[Self.c_layout, Self.c_desc_layout](
+                StoreExecutor.execute[
+                    Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+                ](
                     c_smem_tile,
                     store_coords,
                     self.c_tma_op[],
@@ -609,7 +612,9 @@ struct TileWriter[
                 )
             else:
                 var store_coords = StoreCoords(c_coord, UInt32(warp_id))
-                StoreExecutor.execute[Self.c_layout, Self.c_desc_layout](
+                StoreExecutor.execute[
+                    Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+                ](
                     c_smem_tile,
                     store_coords,
                     self.c_tma_op[],
@@ -619,8 +624,9 @@ struct TileWriter[
 
             tma_wait_pipelined[
                 Self.c_type,
-                Self.c_layout,
-                Self.c_desc_layout,
+                Self.c_rank,
+                Self.c_tile_shape,
+                Self.c_desc_shape,
                 stage == Self.num_stages - 1,
             ](self.c_tma_op[])
 
@@ -821,7 +827,9 @@ struct TileWriter[
                         loop_stage * Self.stageN
                     )
 
-                StoreExecutorLocal.execute[Self.c_layout, Self.c_desc_layout](
+                StoreExecutorLocal.execute[
+                    Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+                ](
                     c_smem_tile,
                     store_coords,
                     self.c_tma_op[],
@@ -834,8 +842,9 @@ struct TileWriter[
             # TMA, preventing SMEM races with double-buffered tiles.
             tma_wait_pipelined[
                 Self.c_type,
-                Self.c_layout,
-                Self.c_desc_layout,
+                Self.c_rank,
+                Self.c_tile_shape,
+                Self.c_desc_shape,
                 loop_stage == Self.num_stages - 1,
             ](self.c_tma_op[])
 
@@ -1239,7 +1248,9 @@ struct TileWriter[
                 batched=Self.batched,
             ]
             var store_coords = StoreCoords(c_coord, UInt32(warp_id))
-            StoreExecutor.execute[Self.c_layout, Self.c_desc_layout](
+            StoreExecutor.execute[
+                Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+            ](
                 c_smem_tile,
                 store_coords,
                 self.c_tma_op[],
@@ -1248,8 +1259,9 @@ struct TileWriter[
             )
             tma_wait_pipelined[
                 Self.c_type,
-                Self.c_layout,
-                Self.c_desc_layout,
+                Self.c_rank,
+                Self.c_tile_shape,
+                Self.c_desc_shape,
                 stage == Self.num_stages - 1,
             ](self.c_tma_op[])
 

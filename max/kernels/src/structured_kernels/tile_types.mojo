@@ -62,6 +62,7 @@ from layout.tile_layout import Layout, TensorLayout
 from .smem_types import SMemTileArray as LTSMemTileArray
 from std.utils.index import IndexList
 from std.memory import LegacyUnsafePointer, stack_allocation
+from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 # Alias for mutable UnsafePointer (same pattern as structuring.mojo)
@@ -308,24 +309,37 @@ fn _strided_layout[
 
 
 # ============================================================================
-# _to_legacy_layout -- Convert new Layout static dims to legacy Layout
+# _to_index_list -- Extract IndexList of shapes from a TensorLayout
 # ============================================================================
 
 
 @parameter
-fn _to_legacy_layout[L: TensorLayout]() -> LegacyLayout:
-    """Convert a new Layout to a legacy Layout using static dimensions.
+fn _to_index_list[L: TensorLayout]() -> IndexList[L.rank]:
+    """Extract static shapes from a TensorLayout into an IndexList.
 
     Works for any rank. TMA layouts are always fully static.
     """
-    var shape = IntTuple()
-    var stride = IntTuple()
+    var result = IndexList[L.rank]()
 
     comptime for i in range(L.rank):
-        shape.append(L.static_shape[i])
-        stride.append(L.static_stride[i])
+        result[i] = L.static_shape[i]
 
-    return LegacyLayout(shape, stride)
+    return result
+
+
+fn _to_index_list[rank: Int, L: TensorLayout]() -> IndexList[rank]:
+    """Extract static shapes from a TensorLayout into an IndexList with explicit rank.
+
+    Used when the compiler can't prove the TensorLayout's rank matches
+    the expected rank.
+    """
+    comptime assert L.rank == rank, "TensorLayout rank must match explicit rank"
+    var result = IndexList[rank]()
+
+    comptime for i in range(rank):
+        result[i] = L.static_shape[i]
+
+    return result
 
 
 # ============================================================================
@@ -427,13 +441,14 @@ comptime TmaOpType[
     desc_layout: TensorLayout,
 ] = TMATensorTile[
     dtype,
-    _to_legacy_layout[tile_layout](),
-    _to_legacy_layout[desc_layout](),
+    tile_layout.rank,
+    _to_index_list[tile_layout](),
+    _to_index_list[tile_layout.rank, desc_layout](),
 ]
 """TMATensorTile type derived from new Layout types.
 
 Single source of truth: new Layout types determine the TMATensorTile
-type parameters via _to_legacy_layout.
+type parameters via _to_index_list.
 """
 
 comptime TmaOpTypeIm2col[
@@ -442,8 +457,9 @@ comptime TmaOpTypeIm2col[
     desc_layout: TensorLayout,
 ] = TMATensorTileIm2col[
     dtype,
-    _to_legacy_layout[tile_layout](),
-    _to_legacy_layout[desc_layout](),
+    tile_layout.rank,
+    _to_index_list[tile_layout](),
+    _to_index_list[tile_layout.rank, desc_layout](),
 ]
 """TMATensorTileIm2col type derived from new Layout types.
 
@@ -464,8 +480,8 @@ struct TMATile[
     """TMA tile descriptor parameterized on new Layout types.
 
     Thin wrapper around TMATensorTile that preserves new Layout type
-    parameters. The underlying TMATensorTile uses legacy Layout
-    (via _to_legacy_layout), but callers work exclusively with new
+    parameters. The underlying TMATensorTile uses rank and IndexList
+    shapes (via _to_index_list), but callers work exclusively with new
     Layout types.
 
     The kernel `run()` accepts `Self.InnerType` (TMATensorTile) for
@@ -496,11 +512,9 @@ struct TMATile[
 
 
 def create_tma_tile[
-    rank: Int,
-    //,
     tma_tile_layout: TensorLayout,
     tma_desc_layout: TensorLayout,
-    tile_shape: IndexList[rank],
+    tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext, tensor: LayoutTensor[...]) raises -> TmaOpType[
@@ -508,12 +522,11 @@ def create_tma_tile[
 ]:
     """Create a TMATensorTile using new Layout types.
 
-    Converts new Layout types to legacy Layout internally, calls
+    Extracts IndexList shapes from new Layout types internally, calls
     create_tensor_tile, and returns TMATensorTile. No LegacyLayout
     is exposed to callers -- the conversion is encapsulated here.
 
     Parameters:
-        rank: Rank of the tile shape (inferred from tile_shape).
         tma_tile_layout: Tile layout as new TensorLayout.
         tma_desc_layout: Descriptor layout as new TensorLayout.
         tile_shape: Physical tile dimensions for the TMA descriptor.
@@ -529,17 +542,15 @@ def create_tma_tile[
     return create_tensor_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
-        __tile_layout=_to_legacy_layout[tma_tile_layout](),
-        __desc_layout=_to_legacy_layout[tma_desc_layout](),
+        __tile_shape=_to_index_list[tma_tile_layout](),
+        __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
     ](ctx, tensor)
 
 
 def create_tma_tile[
-    rank: Int,
-    //,
     tma_tile_layout: TensorLayout,
     tma_desc_layout: TensorLayout,
-    tile_shape: IndexList[rank],
+    tile_shape: IndexList[tma_tile_layout.rank],
     *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext, tensor: TileTensor[...]) raises -> TmaOpType[
@@ -553,7 +564,6 @@ def create_tma_tile[
     reshaped views.
 
     Parameters:
-        rank: Rank of the tile shape (inferred from tile_shape).
         tma_tile_layout: Tile layout as new TensorLayout.
         tma_desc_layout: Descriptor layout as new TensorLayout.
         tile_shape: Physical tile dimensions for the TMA descriptor.
@@ -569,8 +579,8 @@ def create_tma_tile[
     return create_tensor_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
-        __tile_layout=_to_legacy_layout[tma_tile_layout](),
-        __desc_layout=_to_legacy_layout[tma_desc_layout](),
+        __tile_shape=_to_index_list[tma_tile_layout](),
+        __desc_shape=_to_index_list[tma_tile_layout.rank, tma_desc_layout](),
     ](ctx, tensor)
 
 

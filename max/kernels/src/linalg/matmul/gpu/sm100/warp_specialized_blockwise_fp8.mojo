@@ -66,6 +66,7 @@ from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tensor_tile,
     create_tma_tile,
 )
@@ -122,12 +123,15 @@ fn load_AB[
     a_type: DType,
     b_type: DType,
     a_scales_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    a_scales_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    a_scales_desc_layout: Layout,
+    a_rank: Int,
+    a_tile_shape: IndexList[a_rank],
+    a_desc_shape: IndexList[a_rank],
+    b_rank: Int,
+    b_tile_shape: IndexList[b_rank],
+    b_desc_shape: IndexList[b_rank],
+    a_scales_rank: Int,
+    a_scales_tile_shape: IndexList[a_scales_rank],
+    a_scales_desc_shape: IndexList[a_scales_rank],
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     a_scales_smem_layout: Layout,
@@ -138,10 +142,10 @@ fn load_AB[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_layout, a_scales_desc_layout
+        a_scales_type, a_scales_rank, a_scales_tile_shape, a_scales_desc_shape
     ],
     a_smem: LayoutTensorIter[
         a_type,
@@ -189,11 +193,13 @@ fn load_AB[
         a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
     )
 
-    comptime a_tma_load_size = a_desc_layout.size()
-    comptime b_tma_load_size = b_desc_layout.size()
-    comptime a_scales_tma_load_size = a_scales_desc_layout.size()
-    comptime a_tma_rows = a_desc_layout.shape[0].value()
-    comptime b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = _idx_product[a_rank, a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_rank, b_desc_shape]()
+    comptime a_scales_tma_load_size = _idx_product[
+        a_scales_rank, a_scales_desc_shape
+    ]()
+    comptime a_tma_rows = a_desc_shape[0]
+    comptime b_tma_rows = b_desc_shape[0]
 
     var stage = load_mma_pipeline.producer_stage()
 
@@ -249,8 +255,9 @@ fn load_AB[
 @always_inline
 fn multi_stage_reg_epilogue[
     c_smem_layout: Layout,
-    c_layout: Layout,
-    c_desc_layout: Layout,
+    c_rank: Int,
+    c_tile_shape: IndexList[c_rank],
+    c_desc_shape: IndexList[c_rank],
     accum_type: DType,
     accum_layout: Layout,
     /,
@@ -284,7 +291,7 @@ fn multi_stage_reg_epilogue[
         address_space=AddressSpace.SHARED,
         alignment=128,
     ],
-    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
+    c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
     c_coord: Tuple[UInt, UInt],
     elect_one_warp: Bool,
 ):
@@ -727,27 +734,31 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,  # must pass mma_m by mma_n as this layout, since that's how much each output has to be
-    a_scales_tile_layout: Layout,
+    a_rank: Int,
+    a_tile_shape: IndexList[a_rank],
+    a_desc_shape: IndexList[a_rank],
+    b_rank: Int,
+    b_tile_shape: IndexList[b_rank],
+    b_desc_shape: IndexList[b_rank],
+    c_rank: Int,
+    c_tile_shape: IndexList[c_rank],
+    c_desc_shape: IndexList[c_rank],
+    a_scales_rank: Int,
+    a_scales_tile_shape: IndexList[a_scales_rank],
+    a_scales_desc_shape: IndexList[a_scales_rank],
     a_scales_type: DType,
     b_scales_type: DType,
     b_scales_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
-    a_scales_desc_layout: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
     cluster_shape: StaticTuple[Int32, 3],
 ](
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
+    c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_tile_layout, a_scales_desc_layout
+        a_scales_type, a_scales_rank, a_scales_tile_shape, a_scales_desc_shape
     ],
     cluster_dim: StaticTuple[Int32, 3],
     num_iters: UInt,
@@ -805,10 +816,10 @@ fn blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime CLUSTER_M: Int = config.cluster_shape[0]
     comptime CLUSTER_N: Int = config.cluster_shape[1]
 
-    comptime a_tma_load_size = a_desc_layout.size()
-    comptime b_tma_load_size = b_desc_layout.size()
-    comptime a_tma_rows = a_desc_layout.shape[0].value()
-    comptime b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = _idx_product[a_rank, a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_rank, b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape[0]
+    comptime b_tma_rows = b_desc_shape[0]
     comptime c_smem_layout = Layout.row_major(BM, MMA_N)
 
     # keep the physical SMEM buffer BM x MMA_N
@@ -1428,17 +1439,21 @@ fn sm100_warp_specialized_blockwise_fp8[
         a_type,
         b_type,
         c_type,
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
-        a_scales_tma_op.layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(c_tma_op).rank,
+        type_of(c_tma_op).tile_shape,
+        type_of(c_tma_op).desc_shape,
+        type_of(a_scales_tma_op).rank,
+        type_of(a_scales_tma_op).tile_shape,
+        type_of(a_scales_tma_op).desc_shape,
         a_scales_type,
         b_scales_type,
         b_scales_layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
-        a_scales_tma_op.desc_layout,
         transpose_b=transpose_b,
         config=config,
         num_pipeline_stages=Int(max_pipeline_stages),

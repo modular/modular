@@ -269,14 +269,17 @@ struct MatmulTileWriter[
 
     @always_inline
     fn _write_tile_stmatrix[
-        tma_layout: Layout,
-        desc_layout: Layout,
+        tma_rank: Int,
+        tma_tile_shape: IndexList[tma_rank],
+        tma_desc_shape: IndexList[tma_rank],
         accum_type: DType,
         reg_tile_layout: Layout,
         //,
     ](
         self,
-        tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],
+        tma_op: TMATensorTile[
+            Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
+        ],
         reg_tile: RegTile[accum_type, reg_tile_layout],
         output_tile: LayoutTensor[Self.dtype, _, MutAnyOrigin, ...],
         tile_origin: Self.CTensorType.CornerCoordsType,
@@ -284,13 +287,13 @@ struct MatmulTileWriter[
         """Use st.matrix instructions for optimized bf16 output."""
         var max_row, max_col = self._calculate_output_bounds()
 
-        comptime TMA_BN_regular = tma_layout.shape[
+        comptime TMA_BN_regular = tma_tile_shape[
             1
-        ].value() if Self.use_tma_store else Self.WG_BN
+        ] if Self.use_tma_store else Self.WG_BN
 
-        comptime TMA_BN_swapAB = tma_layout.shape[
+        comptime TMA_BN_swapAB = tma_tile_shape[
             0
-        ].value() if Self.use_tma_store else Self.WG_BM
+        ] if Self.use_tma_store else Self.WG_BM
 
         comptime TMA_BN = TMA_BN_swapAB if Self.swapAB else TMA_BN_regular
 
@@ -405,8 +408,11 @@ struct MatmulTileWriter[
                         var smem_offset = self.smem_tile.ptr + (
                             Self.WG_BM * TMA_BN * Int(self.local_thread_idx)
                         )
+                        comptime tma_smem_layout = Layout.row_major(
+                            tma_tile_shape[0], tma_tile_shape[1]
+                        )
                         var tma_tile = SMemTile[
-                            Self.dtype, tma_layout, alignment=128
+                            Self.dtype, tma_smem_layout, alignment=128
                         ](smem_offset)
 
                         var tma_coords = (
@@ -441,14 +447,17 @@ struct MatmulTileWriter[
 
     @always_inline
     fn write_tile[
-        tma_layout: Layout,
-        desc_layout: Layout,
+        tma_rank: Int,
+        tma_tile_shape: IndexList[tma_rank],
+        tma_desc_shape: IndexList[tma_rank],
         accum_type: DType,
         reg_tile_layout: Layout,
         //,
     ](
         self,
-        tma_op: TMATensorTile[Self.dtype, tma_layout, desc_layout],
+        tma_op: TMATensorTile[
+            Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
+        ],
         reg_tile: RegTile[accum_type, reg_tile_layout],
     ):
         """Write output from registers to global memory.
@@ -470,9 +479,9 @@ struct MatmulTileWriter[
 
         comptime output_tile_shape = String(output_tile.layout.shape)
 
-        comptime TMA_BN = tma_layout.shape[
+        comptime TMA_BN = tma_tile_shape[
             1
-        ].value() if Self.use_tma_store else Self.WG_BN
+        ] if Self.use_tma_store else Self.WG_BN
         comptime row_size_aligned = Self.N * size_of[Self.dtype]() % 16 == 0
 
         # Check if st.matrix optimization can be used

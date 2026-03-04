@@ -26,6 +26,7 @@ from layout.swizzle import make_swizzle
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tensor_tile,
     create_tma_tile,
 )
@@ -41,20 +42,23 @@ fn tma_swizzle_multicast_load_kernel[
     dtype: DType,
     layout: Layout,
     cluster_tile_layout: Layout,
-    subcluster_tile_layout: Layout,
-    desc_layout: Layout,
+    subcluster_tile_rank: Int,
+    subcluster_tile_shape: IndexList[subcluster_tile_rank],
+    desc_shape: IndexList[subcluster_tile_rank],
     CLUSTER_M: UInt,
     CLUSTER_N: UInt,
 ](
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, subcluster_tile_layout, desc_layout],
+    tma_tile: TMATensorTile[
+        dtype, subcluster_tile_rank, subcluster_tile_shape, desc_shape
+    ],
 ):
     comptime cluster_tileM = cluster_tile_layout.shape[0].value()
     comptime cluster_tileN = cluster_tile_layout.shape[1].value()
     comptime expected_bytes = cluster_tile_layout.size() * size_of[dtype]()
 
-    comptime subcluster_tileM = subcluster_tile_layout.shape[0].value()
-    comptime subcluster_tileN = subcluster_tile_layout.shape[1].value()
+    comptime subcluster_tileM = subcluster_tile_shape[0]
+    comptime subcluster_tileN = subcluster_tile_shape[1]
 
     var block_rank = block_rank_in_cluster()
     var rank_m = Int(block_rank // UInt32(CLUSTER_N))
@@ -152,9 +156,13 @@ def test_tma_multicast_swizzle[
     ](ctx, src.device_tensor())
 
     # print test info
-    comptime use_multiple_loads = (
-        tma_tensor.layout.size() > tma_tensor.desc_layout.size()
-    )
+    comptime tile_size = _idx_product[
+        type_of(tma_tensor).rank, type_of(tma_tensor).tile_shape
+    ]()
+    comptime desc_size = _idx_product[
+        type_of(tma_tensor).rank, type_of(tma_tensor).desc_shape
+    ]()
+    comptime use_multiple_loads = tile_size > desc_size
     comptime test_name = "test " + String(dtype) + (
         " multiple " if use_multiple_loads else " single "
     ) + "tma w/ " + String(swizzle_mode) + " multicast"
@@ -164,8 +172,9 @@ def test_tma_multicast_swizzle[
         dtype=type_of(tma_tensor).dtype,
         layout=layout,
         cluster_tile_layout=Layout.row_major(tileM, tileN),
-        subcluster_tile_layout=type_of(tma_tensor).layout,
-        desc_layout=type_of(tma_tensor).desc_layout,
+        subcluster_tile_rank=type_of(tma_tensor).rank,
+        subcluster_tile_shape=type_of(tma_tensor).tile_shape,
+        desc_shape=type_of(tma_tensor).desc_shape,
         CLUSTER_M=CLUSTER_M,
         CLUSTER_N=CLUSTER_N,
     ]
@@ -182,12 +191,12 @@ def test_tma_multicast_swizzle[
 
     ctx.synchronize()
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
-    comptime descM = type_of(tma_tensor).desc_layout.shape[0].value()
-    comptime descN = type_of(tma_tensor).desc_layout.shape[1].value()
+    comptime descM = type_of(tma_tensor).desc_shape[0]
+    comptime descN = type_of(tma_tensor).desc_shape[1]
     comptime desc_tile_size = descM * descN
 
     desc_tile = LayoutTensor[
-        dtype, type_of(tma_tensor).desc_layout, MutAnyOrigin
+        dtype, Layout.row_major(descM, descN), MutAnyOrigin
     ].stack_allocation()
 
     src_host = src.tensor()

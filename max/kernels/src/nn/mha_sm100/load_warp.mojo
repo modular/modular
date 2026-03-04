@@ -122,9 +122,15 @@ fn fa4_load[
     # If two-qo, we produce qkv in a pattern of
     # q0 & k0, q1, v0, k1, v1, k2, v2...
     comptime SMemTensorLT[layout: Layout] = SharedMemLT[KVLUTType.dtype, layout]
-    comptime QType = SMemTensorLT[type_of(q_tma_op).layout]
-    comptime KType = SMemTensorLT[type_of(k_tma_op).layout]
-    comptime VType = SMemTensorLT[type_of(v_tma_op).layout]
+    comptime QType = SMemTensorLT[
+        Layout.row_major(type_of(q_tma_op).tile_shape)
+    ]
+    comptime KType = SMemTensorLT[
+        Layout.row_major(type_of(k_tma_op).tile_shape)
+    ]
+    comptime VType = SMemTensorLT[
+        Layout.row_major(type_of(v_tma_op).tile_shape)
+    ]
 
     var kv_head_idx: UInt32 = seq_info.head_idx // UInt32(group)
 

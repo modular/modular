@@ -244,8 +244,8 @@ fn conv2d_fprop[
         act_type,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
-        __tile_layout=KernelType.ActTmaOp.layout,
-        __desc_layout=KernelType.ActTmaOp.desc_layout,
+        __tile_shape=KernelType.ActTmaOp.tile_shape,
+        __desc_shape=KernelType.ActTmaOp.desc_shape,
     ](
         ctx,
         act_tensor,
@@ -495,8 +495,8 @@ fn conv2d_fprop_with_residual[
         act_type,
         Index(BM // cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
-        __tile_layout=KernelType.ActTmaOp.layout,
-        __desc_layout=KernelType.ActTmaOp.desc_layout,
+        __tile_shape=KernelType.ActTmaOp.tile_shape,
+        __desc_shape=KernelType.ActTmaOp.desc_shape,
     ](
         ctx,
         act_tensor,

@@ -34,10 +34,11 @@ from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTileIm2col,
+    _idx_product,
     create_tensor_tile_im2col,
 )
 from std.memory import LegacyUnsafePointer
-from std.utils.index import Index
+from std.utils.index import Index, IndexList
 
 # Create a mutable UnsafePointer alias for host memory operations
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -51,12 +52,13 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
 fn im2col_load_kernel[
     dtype: DType,
-    tile_layout: Layout,
-    desc_layout: Layout,
+    tile_rank: Int,
+    tile_shape: IndexList[tile_rank],
+    desc_shape: IndexList[tile_rank],
     BM: Int,
     BK: Int,
 ](
-    act_tma_op: TMATensorTileIm2col[dtype, tile_layout, desc_layout],
+    act_tma_op: TMATensorTileIm2col[dtype, tile_rank, tile_shape, desc_shape],
     output_ptr: UnsafePointer[Scalar[dtype]],
     k_coord: UInt,
     m_coord: UInt,
@@ -356,7 +358,12 @@ fn run_im2col_test[
     comptime smem_bytes = tile_size * size_of[dtype]() + 256
 
     comptime kernel = im2col_load_kernel[
-        dtype, type_of(act_tma).layout, type_of(act_tma).desc_layout, BM, BK
+        dtype,
+        type_of(act_tma).rank,
+        type_of(act_tma).tile_shape,
+        type_of(act_tma).desc_shape,
+        BM,
+        BK,
     ]
 
     ctx.enqueue_function_unchecked[kernel, dump_asm=False](

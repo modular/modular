@@ -503,10 +503,18 @@ __extension SM100MLA:
         comptime SMemTensorLT[layout: Layout] = SharedMemLT[
             Self.KVLUTType.dtype, layout
         ]
-        comptime QType = SMemTensorLT[type_of(q_tma_op).layout]
-        comptime KType = SMemTensorLT[type_of(k_tma_op).layout]
-        comptime KRopeSMType = SMemTensorLT[type_of(k_rope_tma_op).layout]
-        comptime VType = SMemTensorLT[type_of(v_tma_op).layout]
+        comptime QType = SMemTensorLT[
+            Layout.row_major(type_of(q_tma_op).tile_shape)
+        ]
+        comptime KType = SMemTensorLT[
+            Layout.row_major(type_of(k_tma_op).tile_shape)
+        ]
+        comptime KRopeSMType = SMemTensorLT[
+            Layout.row_major(type_of(k_rope_tma_op).tile_shape)
+        ]
+        comptime VType = SMemTensorLT[
+            Layout.row_major(type_of(v_tma_op).tile_shape)
+        ]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
         var kv_head_idx: UInt32 = seq_info.head_idx

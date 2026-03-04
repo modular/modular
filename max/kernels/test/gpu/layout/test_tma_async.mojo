@@ -27,6 +27,7 @@ from layout.tma_async import (
     create_tensor_tile,
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tma_tile,
     RaggedTensorMap,
 )
@@ -108,19 +109,23 @@ fn tma_ragged_store_kernel[
 fn test_tma_load_kernel[
     dtype: DType,
     layout: Layout,
-    tile_layout: Layout,
+    tile_rank: Int,
+    tile_shape: IndexList[tile_rank],
     thread_layout: Layout,
 ](
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, tile_layout],
+    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape],
 ):
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
-    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_shape[0]
+    comptime tileN = tile_shape[1]
+    comptime expected_bytes = _idx_product[tile_rank, tile_shape]() * size_of[
+        dtype
+    ]()
 
+    comptime __tile_layout = Layout.row_major(tileM, tileN)
     tile = LayoutTensor[
         dtype,
-        tile_layout,
+        __tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -154,22 +159,26 @@ fn test_tma_load_kernel[
 fn test_tma_multiple_loads_kernel[
     dtype: DType,
     layout: Layout,
-    tile_layout: Layout,
+    tile_rank: Int,
+    tile_shape: IndexList[tile_rank],
     thread_layout: Layout,
 ](
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, tile_layout],
+    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape],
 ):
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
-    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_shape[0]
+    comptime tileN = tile_shape[1]
+    comptime expected_bytes = _idx_product[tile_rank, tile_shape]() * size_of[
+        dtype
+    ]()
 
     comptime N = layout.shape[1].value()
     comptime num_iters = ceildiv(N, tileN)
 
+    comptime __tile_layout = Layout.row_major(tileM, tileN)
     tile = LayoutTensor[
         dtype,
-        tile_layout,
+        __tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -333,12 +342,16 @@ def test_tma_load_row_major[
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, src.device_tensor())
     ctx.synchronize()
 
+    comptime __tileM = type_of(tma_tensor).tile_shape[0]
+    comptime __tileN = type_of(tma_tensor).tile_shape[1]
+    comptime __thread_layout = Layout.row_major(__tileM, __tileN)
     comptime if load_along_last_dim:
         comptime kernel = test_tma_multiple_loads_kernel[
             type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
-            type_of(tma_tensor).layout,  # smem layout
-            type_of(tma_tensor).layout,  # thread layout
+            type_of(tma_tensor).rank,  # tile rank
+            type_of(tma_tensor).tile_shape,  # tile shape
+            __thread_layout,  # thread layout
         ]
         ctx.enqueue_function[kernel, kernel](
             dst.device_tensor(),
@@ -350,8 +363,9 @@ def test_tma_load_row_major[
         comptime kernel = test_tma_load_kernel[
             type_of(tma_tensor).dtype,
             Layout.row_major(M_roundup, N_roundup),  # dst layout
-            type_of(tma_tensor).layout,  # smem layout
-            type_of(tma_tensor).layout,  # thread layout
+            type_of(tma_tensor).rank,  # tile rank
+            type_of(tma_tensor).tile_shape,  # tile shape
+            __thread_layout,  # thread layout
         ]
         ctx.enqueue_function[kernel, kernel](
             dst.device_tensor(),
@@ -382,19 +396,23 @@ def test_tma_load_row_major[
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_async_store_kernel[
     dtype: DType,
-    tile_layout: Layout,
-    desc_layout: Layout,
+    tile_rank: Int,
+    tile_shape_param: IndexList[tile_rank],
+    desc_shape_param: IndexList[tile_rank],
     thread_layout: Layout,
     layout: Layout,
 ](
-    tma_tile: TMATensorTile[dtype, tile_layout, desc_layout],
+    tma_tile: TMATensorTile[
+        dtype, tile_rank, tile_shape_param, desc_shape_param
+    ],
     src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
+    comptime tileM = tile_shape_param[0]
+    comptime tileN = tile_shape_param[1]
+    comptime __tile_layout = Layout.row_major(tileM, tileN)
     tile = LayoutTensor[
         dtype,
-        tile_layout,
+        __tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -417,16 +435,21 @@ fn test_tma_async_store_kernel[
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_async_multiple_store_kernel[
-    dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
+    dtype: DType,
+    tile_rank: Int,
+    tile_shape_param: IndexList[tile_rank],
+    thread_layout: Layout,
+    layout: Layout,
 ](
-    tma_tile: TMATensorTile[dtype, tile_layout],
+    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape_param],
     src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
+    comptime tileM = tile_shape_param[0]
+    comptime tileN = tile_shape_param[1]
+    comptime __tile_layout = Layout.row_major(tileM, tileN)
     tile = LayoutTensor[
         dtype,
-        tile_layout,
+        __tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -470,11 +493,15 @@ def test_tma_async_store[
 
     ctx.synchronize()
 
+    comptime __tileM = type_of(tma_tensor).tile_shape[0]
+    comptime __tileN = type_of(tma_tensor).tile_shape[1]
+    comptime __thread_layout = Layout.row_major(__tileM, __tileN)
     comptime if load_along_last_dim:
         comptime kernel = test_tma_async_multiple_store_kernel[
             type_of(tma_tensor).dtype,
-            type_of(tma_tensor).layout,
-            type_of(tma_tensor).layout,
+            type_of(tma_tensor).rank,
+            type_of(tma_tensor).tile_shape,
+            __thread_layout,
             src_layout,
         ]
         ctx.enqueue_function[kernel, kernel](
@@ -486,9 +513,10 @@ def test_tma_async_store[
     else:
         comptime kernel = test_tma_async_store_kernel[
             type_of(tma_tensor).dtype,
-            type_of(tma_tensor).layout,
-            type_of(tma_tensor).desc_layout,
-            type_of(tma_tensor).layout,
+            type_of(tma_tensor).rank,
+            type_of(tma_tensor).tile_shape,
+            type_of(tma_tensor).desc_shape,
+            __thread_layout,
             src_layout,
         ]
         ctx.enqueue_function[kernel, kernel](
@@ -517,16 +545,21 @@ def test_tma_async_store[
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_async_reduce_kernel[
-    dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
+    dtype: DType,
+    tile_rank: Int,
+    tile_shape_param: IndexList[tile_rank],
+    thread_layout: Layout,
+    layout: Layout,
 ](
-    tma_tile: TMATensorTile[dtype, tile_layout],
+    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape_param],
     src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
+    comptime tileM = tile_shape_param[0]
+    comptime tileN = tile_shape_param[1]
+    comptime __tile_layout = Layout.row_major(tileM, tileN)
     tile = LayoutTensor[
         dtype,
-        tile_layout,
+        __tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -549,16 +582,21 @@ fn test_tma_async_reduce_kernel[
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 fn test_tma_async_multiple_reduce_kernel[
-    dtype: DType, tile_layout: Layout, thread_layout: Layout, layout: Layout
+    dtype: DType,
+    tile_rank: Int,
+    tile_shape_param: IndexList[tile_rank],
+    thread_layout: Layout,
+    layout: Layout,
 ](
-    tma_tile: TMATensorTile[dtype, tile_layout],
+    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape_param],
     src: LayoutTensor[dtype, layout, MutAnyOrigin],
 ):
-    comptime tileM = tile_layout.shape[0].value()
-    comptime tileN = tile_layout.shape[1].value()
+    comptime tileM = tile_shape_param[0]
+    comptime tileN = tile_shape_param[1]
+    comptime __tile_layout = Layout.row_major(tileM, tileN)
     tile = LayoutTensor[
         dtype,
-        tile_layout,
+        __tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -604,11 +642,17 @@ def test_tma_async_reduce[
 
     ctx.synchronize()
 
+    comptime __reduce_tileM = type_of(tma_tensor).tile_shape[0]
+    comptime __reduce_tileN = type_of(tma_tensor).tile_shape[1]
+    comptime __reduce_thread_layout = Layout.row_major(
+        __reduce_tileM, __reduce_tileN
+    )
     comptime if load_along_last_dim:
         comptime kernel = test_tma_async_multiple_reduce_kernel[
             type_of(tma_tensor).dtype,
-            type_of(tma_tensor).layout,
-            type_of(tma_tensor).layout,
+            type_of(tma_tensor).rank,
+            type_of(tma_tensor).tile_shape,
+            __reduce_thread_layout,
             src_layout,
         ]
         ctx.enqueue_function[kernel, kernel](
@@ -620,8 +664,9 @@ def test_tma_async_reduce[
     else:
         comptime kernel = test_tma_async_reduce_kernel[
             type_of(tma_tensor).dtype,
-            type_of(tma_tensor).layout,
-            type_of(tma_tensor).layout,
+            type_of(tma_tensor).rank,
+            type_of(tma_tensor).tile_shape,
+            __reduce_thread_layout,
             src_layout,
         ]
         ctx.enqueue_function[kernel, kernel](
@@ -658,34 +703,42 @@ fn test_tma_loads_two_buffers_kernel[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
+    a_tile_rank: Int,
+    b_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    b_tile_shape: IndexList[b_tile_rank],
     a_thread_layout: Layout,
     b_thread_layout: Layout,
 ](
     a_dst: LayoutTensor[dtype, a_layout, MutAnyOrigin],
     b_dst: LayoutTensor[dtype, b_layout, MutAnyOrigin],
-    a_tma_tile: TMATensorTile[dtype, a_tile_layout],
-    b_tma_tile: TMATensorTile[dtype, b_tile_layout],
+    a_tma_tile: TMATensorTile[dtype, a_tile_rank, a_tile_shape],
+    b_tma_tile: TMATensorTile[dtype, b_tile_rank, b_tile_shape],
 ):
-    comptime tileM = a_tile_layout.shape[0].value()
-    comptime tileN = a_tile_layout.shape[1].value()
-    comptime expected_bytes = a_tile_layout.size() * size_of[dtype]()
+    comptime tileM = a_tile_shape[0]
+    comptime tileN = a_tile_shape[1]
+    comptime expected_bytes = _idx_product[
+        a_tile_rank, a_tile_shape
+    ]() * size_of[dtype]()
 
     comptime N = a_layout.shape[1].value()
     comptime num_iters = ceildiv(N, tileN)
 
+    comptime __a_tile_layout = Layout.row_major(tileM, tileN)
     a_tile = LayoutTensor[
         dtype,
-        a_tile_layout,
+        __a_tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
+    comptime __b_tile_layout = Layout.row_major(
+        b_tile_shape[0], b_tile_shape[1]
+    )
     b_tile = LayoutTensor[
         dtype,
-        b_tile_layout,
+        __b_tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -756,14 +809,20 @@ def test_tma_load_two_buffers_row_major[
     var b_tma_tensor = create_tma_tile[tileM, tileN](ctx, b_src.device_tensor())
     ctx.synchronize()
 
+    comptime __a_tileM = type_of(a_tma_tensor).tile_shape[0]
+    comptime __a_tileN = type_of(a_tma_tensor).tile_shape[1]
+    comptime __b_tileM = type_of(b_tma_tensor).tile_shape[0]
+    comptime __b_tileN = type_of(b_tma_tensor).tile_shape[1]
     comptime kernel = test_tma_loads_two_buffers_kernel[
         type_of(a_tma_tensor).dtype,
         Layout.row_major(M_roundup, N_roundup),  # dst layout
         Layout.row_major(M_roundup, N_roundup),  # dst layout
-        type_of(a_tma_tensor).layout,  # smem layout
-        type_of(b_tma_tensor).layout,  # smem layout
-        type_of(a_tma_tensor).layout,  # thread layout
-        type_of(b_tma_tensor).layout,  # thread layout
+        type_of(a_tma_tensor).rank,
+        type_of(b_tma_tensor).rank,
+        type_of(a_tma_tensor).tile_shape,
+        type_of(b_tma_tensor).tile_shape,
+        Layout.row_major(__a_tileM, __a_tileN),  # thread layout
+        Layout.row_major(__b_tileM, __b_tileN),  # thread layout
     ]
     ctx.enqueue_function[kernel, kernel](
         a_dst.device_tensor(),
@@ -813,38 +872,54 @@ def test_tma_load_two_buffers_row_major[
 @__llvm_arg_metadata(b_tma_src_tile, `nvvm.grid_constant`)
 fn test_tma_loads_and_store_two_buffers_kernel[
     dtype: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
+    a_tile_rank: Int,
+    b_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    b_tile_shape: IndexList[b_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
     /,
     *,
     a_layout: Layout,
     b_layout: Layout,
 ](
-    a_tma_dst_tile: TMATensorTile[dtype, a_tile_layout, a_desc_layout],
-    b_tma_dst_tile: TMATensorTile[dtype, b_tile_layout, b_desc_layout],
-    a_tma_src_tile: TMATensorTile[dtype, a_tile_layout, a_desc_layout],
-    b_tma_src_tile: TMATensorTile[dtype, b_tile_layout, b_desc_layout],
+    a_tma_dst_tile: TMATensorTile[
+        dtype, a_tile_rank, a_tile_shape, a_desc_shape
+    ],
+    b_tma_dst_tile: TMATensorTile[
+        dtype, b_tile_rank, b_tile_shape, b_desc_shape
+    ],
+    a_tma_src_tile: TMATensorTile[
+        dtype, a_tile_rank, a_tile_shape, a_desc_shape
+    ],
+    b_tma_src_tile: TMATensorTile[
+        dtype, b_tile_rank, b_tile_shape, b_desc_shape
+    ],
 ):
-    comptime tileM = a_tile_layout.shape[0].value()
-    comptime tileN = a_tile_layout.shape[1].value()
-    comptime expected_bytes = a_tile_layout.size() * size_of[dtype]()
+    comptime tileM = a_tile_shape[0]
+    comptime tileN = a_tile_shape[1]
+    comptime expected_bytes = _idx_product[
+        a_tile_rank, a_tile_shape
+    ]() * size_of[dtype]()
 
     comptime N = a_layout.shape[1].value()
     comptime num_iters = ceildiv(N, tileN)
 
+    comptime __a_tile_layout = Layout.row_major(tileM, tileN)
     a_tile = LayoutTensor[
         dtype,
-        a_tile_layout,
+        __a_tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
+    comptime __b_tile_layout = Layout.row_major(
+        b_tile_shape[0], b_tile_shape[1]
+    )
     b_tile = LayoutTensor[
         dtype,
-        b_tile_layout,
+        __b_tile_layout,
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
         alignment=128,
@@ -942,10 +1017,12 @@ def test_tma_load_and_store_two_buffers_row_major[
 
     comptime kernel = test_tma_loads_and_store_two_buffers_kernel[
         type_of(a_tma_src_tensor).dtype,
-        type_of(a_tma_src_tensor).layout,  # smem layout
-        type_of(a_tma_src_tensor).layout,  # smem layout
-        type_of(a_tma_src_tensor).desc_layout,
-        type_of(b_tma_src_tensor).desc_layout,
+        type_of(a_tma_src_tensor).rank,
+        type_of(b_tma_src_tensor).rank,
+        type_of(a_tma_src_tensor).tile_shape,
+        type_of(b_tma_src_tensor).tile_shape,
+        type_of(a_tma_src_tensor).desc_shape,
+        type_of(b_tma_src_tensor).desc_shape,
         a_layout=dst_layout,  # dst layout
         b_layout=dst_layout,  # dst layout
     ]

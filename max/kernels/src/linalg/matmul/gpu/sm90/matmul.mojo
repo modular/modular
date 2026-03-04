@@ -328,14 +328,14 @@ fn _warp_specialize_gemm_with_multicasting_impl[
         2,
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_layout=Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+        __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
     ]()
 
     comptime if use_tma_store:
         c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
-            __desc_layout=Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+            __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
         ](ctx, c)
 
     var lut_ptr = ctx.enqueue_create_buffer[DType.uint32](0)
@@ -450,12 +450,15 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
             comptime if schedule != MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_regular[].run_persistent[
-                    a_tma_op.layout,
-                    b_tma_op.layout,
-                    c_tma_op.layout,
-                    a_tma_op.desc_layout,
-                    b_tma_op.desc_layout,
-                    c_tma_op.desc_layout,
+                    type_of(a_tma_op).rank,
+                    type_of(b_tma_op).rank,
+                    type_of(c_tma_op).rank,
+                    type_of(a_tma_op).tile_shape,
+                    type_of(b_tma_op).tile_shape,
+                    type_of(c_tma_op).tile_shape,
+                    type_of(a_tma_op).desc_shape,
+                    type_of(b_tma_op).desc_shape,
+                    type_of(c_tma_op).desc_shape,
                     grid_shape=grid_shape_adjusted,
                     schedule=schedule,
                 ]
@@ -478,12 +481,15 @@ fn _warp_specialize_gemm_with_multicasting_impl[
                 comptime kernel = matmul_kernel_regular[
                     hilbert_swizzle=hilbert_swizzle
                 ].run[
-                    a_tma_op.layout,
-                    b_tma_op.layout,
-                    c_tma_op.layout,
-                    a_tma_op.desc_layout,
-                    b_tma_op.desc_layout,
-                    c_tma_op.desc_layout,
+                    type_of(a_tma_op).rank,
+                    type_of(b_tma_op).rank,
+                    type_of(c_tma_op).rank,
+                    type_of(a_tma_op).tile_shape,
+                    type_of(b_tma_op).tile_shape,
+                    type_of(c_tma_op).tile_shape,
+                    type_of(a_tma_op).desc_shape,
+                    type_of(b_tma_op).desc_shape,
+                    type_of(c_tma_op).desc_shape,
                 ]
 
                 ctx.enqueue_function[kernel, kernel](
@@ -519,12 +525,15 @@ fn _warp_specialize_gemm_with_multicasting_impl[
 
             comptime if schedule == MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_swapAB.run[
-                    a_tma_op.layout,
-                    b_tma_op.layout,
-                    c_tma_op.layout,
-                    a_tma_op.desc_layout,
-                    b_tma_op.desc_layout,
-                    c_tma_op.desc_layout,
+                    type_of(a_tma_op).rank,
+                    type_of(b_tma_op).rank,
+                    type_of(c_tma_op).rank,
+                    type_of(a_tma_op).tile_shape,
+                    type_of(b_tma_op).tile_shape,
+                    type_of(c_tma_op).tile_shape,
+                    type_of(a_tma_op).desc_shape,
+                    type_of(b_tma_op).desc_shape,
+                    type_of(c_tma_op).desc_shape,
                 ]
 
                 ctx.enqueue_function[kernel, kernel](
@@ -551,8 +560,9 @@ fn _warp_specialize_gemm_with_multicasting_impl[
             swapAB == False
         ), "swapAB is not supported for unaligned kernel"
         comptime kernel = matmul_kernel_regular[].run_unaligned[
-            c_tma_op.desc_layout,
-            c_tma_op.layout,
+            type_of(c_tma_op).rank,
+            type_of(c_tma_op).tile_shape,
+            type_of(c_tma_op).desc_shape,
         ]
 
         ctx.enqueue_function[kernel, kernel](
@@ -749,7 +759,7 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_layout=Layout.row_major(c_smem_tile[0], c_smem_tile[1]),
+        __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
     ](ctx, c)
 
     comptime scheduler = SplitKTileScheduler[
@@ -833,12 +843,15 @@ fn warp_specialize_gemm_with_multicasting_splitk[
     ), "requested SMEM size exceeds 227KB limit."
 
     comptime kernel = matmul_kernel.run_splitk[
-        a_tma_op.layout,
-        b_tma_op.layout,
-        c_tma_op.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        c_tma_op.desc_layout,
+        type_of(a_tma_op).rank,
+        type_of(b_tma_op).rank,
+        type_of(c_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(b_tma_op).tile_shape,
+        type_of(c_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(c_tma_op).desc_shape,
         splits=splits,
         raster_order=raster_order,
     ]

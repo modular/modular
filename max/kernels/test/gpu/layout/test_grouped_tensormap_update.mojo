@@ -44,6 +44,7 @@ from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_sram_to_dram
 from layout.tma_async import (
+    _idx_product,
     create_tensor_tile,
     SharedMemBarrier,
     TMATensorTile,
@@ -66,24 +67,25 @@ fn test_grouped_tensormap_update_kernel[
     dtype: DType,
     num_groups: Int,
     num_blocks: Int,
-    tile_layout: Layout,
-    desc_layout: Layout,
+    tma_rank: Int,
+    tile_shape: IndexList[tma_rank],
+    desc_shape: IndexList[tma_rank],
     thread_layout: Layout,
 ](
     # Output: concatenated results from all groups
     dst_a: LayoutTensor[
         dtype,
         Layout.row_major(
-            num_groups * tile_layout.shape[0].value(),
-            tile_layout.shape[1].value(),
+            num_groups * tile_shape[0],
+            tile_shape[1],
         ),
         MutAnyOrigin,
     ],
     dst_b: LayoutTensor[
         dtype,
         Layout.row_major(
-            num_groups * tile_layout.shape[0].value(),
-            tile_layout.shape[1].value(),
+            num_groups * tile_shape[0],
+            tile_shape[1],
         ),
         MutAnyOrigin,
     ],
@@ -95,14 +97,14 @@ fn test_grouped_tensormap_update_kernel[
         DType.uint64, Layout.row_major(num_groups, 1), MutAnyOrigin
     ],
     # Template TMA descriptor (grid constant, for SMEM init)
-    template_tma_a: TMATensorTile[dtype, tile_layout, desc_layout],
-    template_tma_b: TMATensorTile[dtype, tile_layout, desc_layout],
+    template_tma_a: TMATensorTile[dtype, tma_rank, tile_shape, desc_shape],
+    template_tma_b: TMATensorTile[dtype, tma_rank, tile_shape, desc_shape],
     # Per-block GMEM tensormaps (TMATensorTileArray)
     device_tma_a: TMATensorTileArray[
-        num_blocks, dtype, tile_layout, desc_layout
+        num_blocks, dtype, tma_rank, tile_shape, desc_shape
     ],
     device_tma_b: TMATensorTileArray[
-        num_blocks, dtype, tile_layout, desc_layout
+        num_blocks, dtype, tma_rank, tile_shape, desc_shape
     ],
 ):
     """Kernel that updates 2 tensormaps for each group and loads data.
@@ -113,9 +115,12 @@ fn test_grouped_tensormap_update_kernel[
     3. Load A and B tiles using block's GMEM tensormaps
     4. Store results to output for verification
     """
-    comptime M = tile_layout.shape[0].value()
-    comptime N = tile_layout.shape[1].value()
-    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime M = tile_shape[0]
+    comptime N = tile_shape[1]
+    comptime tile_layout = Layout.row_major(M, N)
+    comptime expected_bytes = _idx_product[tma_rank, tile_shape]() * size_of[
+        dtype
+    ]()
 
     # Allocate SMEM for tiles
     tile_a = LayoutTensor[
@@ -334,15 +339,17 @@ def test_grouped_tensormap_update[
     var tma_array_a = TMATensorTileArray[
         num_blocks,
         type_of(template_tma_a).dtype,
-        type_of(template_tma_a).layout,
-        type_of(template_tma_a).desc_layout,
+        type_of(template_tma_a).rank,
+        type_of(template_tma_a).tile_shape,
+        type_of(template_tma_a).desc_shape,
     ](device_tensormaps_a.device_data.value())
 
     var tma_array_b = TMATensorTileArray[
         num_blocks,
         type_of(template_tma_b).dtype,
-        type_of(template_tma_b).layout,
-        type_of(template_tma_b).desc_layout,
+        type_of(template_tma_b).rank,
+        type_of(template_tma_b).tile_shape,
+        type_of(template_tma_b).desc_shape,
     ](device_tensormaps_b.device_data.value())
 
     # Initialize all block tensormaps from templates
@@ -362,8 +369,9 @@ def test_grouped_tensormap_update[
         DType.float32,
         num_groups,
         num_blocks,
-        type_of(template_tma_a).layout,
-        type_of(template_tma_a).desc_layout,
+        type_of(template_tma_a).rank,
+        type_of(template_tma_a).tile_shape,
+        type_of(template_tma_a).desc_shape,
         tile_layout,  # thread_layout for copy
     ]
 

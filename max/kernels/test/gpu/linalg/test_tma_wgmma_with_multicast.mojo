@@ -32,7 +32,12 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
     warpgroup_fence,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    _idx_product,
+    create_tma_tile,
+)
 from std.memory import stack_allocation
 from std.testing import assert_almost_equal
 
@@ -46,11 +51,13 @@ fn multicast_tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
     c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
     a_smem_layout: Layout,
@@ -61,8 +68,8 @@ fn multicast_tma_wgmma_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     partitioned_multicast: Bool = False,
 ](
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
 ):
@@ -96,10 +103,10 @@ fn multicast_tma_wgmma_kernel[
     comptime CLUSTER_M = cluster_shape[0]
     comptime CLUSTER_N = cluster_shape[1]
 
-    comptime a_tma_load_size = a_desc_layout.size()
-    comptime b_tma_load_size = b_desc_layout.size()
-    comptime a_tma_rows = a_desc_layout.shape[0].value()
-    comptime b_tma_rows = b_desc_layout.shape[0].value()
+    comptime a_tma_load_size = _idx_product[a_tile_rank, a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_tile_rank, b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape[0]
+    comptime b_tma_rows = b_desc_shape[0]
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -388,11 +395,13 @@ def test_multicast_tma_wgmma[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
         Layout.row_major(M, N),
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
         block_tile_shape,
         wgmma_shape,
         a_smem_layout,

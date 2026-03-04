@@ -41,6 +41,7 @@ from std.gpu.primitives.cluster import block_rank_in_cluster
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
+    _idx_product,
     create_tensor_tile,
     create_tma_tile,
 )
@@ -92,15 +93,19 @@ fn block_scaled_mxfp8_kernel[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_tile_layout: Layout,
-    b_tile_layout: Layout,
-    a_scales_tile_layout: Layout,
-    b_scales_tile_layout: Layout,
+    a_tile_rank: Int,
+    a_tile_shape: IndexList[a_tile_rank],
+    a_desc_shape: IndexList[a_tile_rank],
+    b_tile_rank: Int,
+    b_tile_shape: IndexList[b_tile_rank],
+    b_desc_shape: IndexList[b_tile_rank],
+    a_scales_tile_rank: Int,
+    a_scales_tile_shape: IndexList[a_scales_tile_rank],
+    a_scales_desc_shape: IndexList[a_scales_tile_rank],
+    b_scales_tile_rank: Int,
+    b_scales_tile_shape: IndexList[b_scales_tile_rank],
+    b_scales_desc_shape: IndexList[b_scales_tile_rank],
     c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    a_scales_desc_layout: Layout,
-    b_scales_desc_layout: Layout,
     block_tile_shape: IndexList[3],
     umma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -108,13 +113,19 @@ fn block_scaled_mxfp8_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: UInt = 256,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
+    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type, a_scales_tile_layout, a_scales_desc_layout
+        a_scales_type,
+        a_scales_tile_rank,
+        a_scales_tile_shape,
+        a_scales_desc_shape,
     ],
     b_scales_tma_op: TMATensorTile[
-        b_scales_type, b_scales_tile_layout, b_scales_desc_layout
+        b_scales_type,
+        b_scales_tile_rank,
+        b_scales_tile_shape,
+        b_scales_desc_shape,
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     num_iters: UInt,
@@ -599,7 +610,7 @@ fn sm100_block_scaled_mxfp8[
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout=Layout.row_major(
+        __tile_shape=Index(
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, a_scales_4d)
@@ -609,7 +620,7 @@ fn sm100_block_scaled_mxfp8[
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_layout=Layout.row_major(
+        __tile_shape=Index(
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
         ),
     ](ctx, b_scales_4d)
@@ -628,15 +639,19 @@ fn sm100_block_scaled_mxfp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
-        type_of(a_scales_tma_op).layout,
-        type_of(b_scales_tma_op).layout,
+        type_of(a_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).rank,
+        type_of(b_tma_op).tile_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(a_scales_tma_op).rank,
+        type_of(a_scales_tma_op).tile_shape,
+        type_of(a_scales_tma_op).desc_shape,
+        type_of(b_scales_tma_op).rank,
+        type_of(b_scales_tma_op).tile_shape,
+        type_of(b_scales_tma_op).desc_shape,
         c_layout,
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
-        type_of(a_scales_tma_op).desc_layout,
-        type_of(b_scales_tma_op).desc_layout,
         block_tile_shape,
         umma_shape,
         transpose_b=transpose_b,

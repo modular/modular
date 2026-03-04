@@ -576,7 +576,7 @@ struct HopperMatmulSM90Kernel[
             elementwise_epilogue_type
         ] = Self.elementwise_lambda_fn
     ](
-        c_tma_op: TMATensorTile[Self.c_type, _, _],
+        c_tma_op: TMATensorTile[Self.c_type, _, _, _],
         c: LayoutTensor[Self.c_type, _, MutAnyOrigin, ...],
         c_tile: Self.SMem.CTile,
         output_reg_tile: Self.AccumRegTile,
@@ -618,22 +618,29 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     fn build_tma_loaders[
-        a_tile_layout: Layout,
-        b_tile_layout: Layout,
-        a_desc_layout: Layout,
-        b_desc_layout: Layout,
+        a_tma_rank: Int,
+        b_tma_rank: Int,
+        a_tile_shape: IndexList[a_tma_rank],
+        b_tile_shape: IndexList[b_tma_rank],
+        a_desc_shape: IndexList[a_tma_rank],
+        b_desc_shape: IndexList[b_tma_rank],
         //,
     ](
-        a_tma_op: TMATensorTile[Self.a_type, a_tile_layout, a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, b_tile_layout, b_desc_layout],
+        a_tma_op: TMATensorTile[
+            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
+        ],
+        b_tma_op: TMATensorTile[
+            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
+        ],
         rank_m: UInt,
         rank_n: UInt,
     ) -> Tuple[
         TileLoaderTMA[
             origin_of(a_tma_op),
             Self.a_type,
-            a_tile_layout,
-            a_desc_layout,
+            a_tma_rank,
+            a_tile_shape,
+            a_desc_shape,
             BK=UInt(Self.BK),
             cluster_size=Self.cluster_shape[0],
             use_partitioned_multicast=Self.partitioned_multicast,
@@ -641,8 +648,9 @@ struct HopperMatmulSM90Kernel[
         TileLoaderTMA[
             origin_of(b_tma_op),
             Self.b_type,
-            b_tile_layout,
-            b_desc_layout,
+            b_tma_rank,
+            b_tile_shape,
+            b_desc_shape,
             BK=UInt(Self.BK),
             cluster_size=Self.cluster_shape[1],
             use_partitioned_multicast=Self.partitioned_multicast,
@@ -832,16 +840,25 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     fn run[
-        a_tile_layout: Layout,
-        b_tile_layout: Layout,
-        c_tma_layout: Layout,
-        a_desc_layout: Layout,
-        b_desc_layout: Layout,
-        c_desc_layout: Layout,
+        a_tma_rank: Int,
+        b_tma_rank: Int,
+        c_tma_rank: Int,
+        a_tile_shape: IndexList[a_tma_rank],
+        b_tile_shape: IndexList[b_tma_rank],
+        c_tile_shape: IndexList[c_tma_rank],
+        a_desc_shape: IndexList[a_tma_rank],
+        b_desc_shape: IndexList[b_tma_rank],
+        c_desc_shape: IndexList[c_tma_rank],
     ](
-        a_tma_op: TMATensorTile[Self.a_type, a_tile_layout, a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, b_tile_layout, b_desc_layout],
-        c_tma_op: TMATensorTile[Self.c_type, c_tma_layout, c_desc_layout],
+        a_tma_op: TMATensorTile[
+            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
+        ],
+        b_tma_op: TMATensorTile[
+            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
+        ],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
+        ],
         a: LayoutTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin],
         b: LayoutTensor[Self.b_type, Self.b_layout, ImmutAnyOrigin],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
@@ -978,18 +995,27 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     fn run_splitk[
-        a_tile_layout: Layout,
-        b_tile_layout: Layout,
-        c_tma_layout: Layout,
-        a_desc_layout: Layout,
-        b_desc_layout: Layout,
-        c_desc_layout: Layout,
+        a_tma_rank: Int,
+        b_tma_rank: Int,
+        c_tma_rank: Int,
+        a_tile_shape: IndexList[a_tma_rank],
+        b_tile_shape: IndexList[b_tma_rank],
+        c_tile_shape: IndexList[c_tma_rank],
+        a_desc_shape: IndexList[a_tma_rank],
+        b_desc_shape: IndexList[b_tma_rank],
+        c_desc_shape: IndexList[c_tma_rank],
         splits: Int,
         raster_order: RasterOrder,
     ](
-        a_tma_op: TMATensorTile[Self.a_type, a_tile_layout, a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, b_tile_layout, b_desc_layout],
-        c_tma_op: TMATensorTile[Self.c_type, c_tma_layout, c_desc_layout],
+        a_tma_op: TMATensorTile[
+            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
+        ],
+        b_tma_op: TMATensorTile[
+            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
+        ],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
+        ],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
         workspace_buffer: NDBuffer[Self.accum_type, 3, MutAnyOrigin],
         locks_ptr: UnsafePointer[UInt8],
@@ -1165,16 +1191,25 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     fn run_grouped[
-        a_tile_layout: Layout,
-        b_tile_layout: Layout,
-        c_tile_layout: Layout,
-        a_desc_layout: Layout,
-        b_desc_layout: Layout,
-        c_desc_layout: Layout,
+        a_tma_rank: Int,
+        b_tma_rank: Int,
+        c_tma_rank: Int,
+        a_tile_shape: IndexList[a_tma_rank],
+        b_tile_shape: IndexList[b_tma_rank],
+        c_tile_shape: IndexList[c_tma_rank],
+        a_desc_shape: IndexList[a_tma_rank],
+        b_desc_shape: IndexList[b_tma_rank],
+        c_desc_shape: IndexList[c_tma_rank],
     ](
-        a_tma_op: TMATensorTile[Self.a_type, a_tile_layout, a_desc_layout],
-        b_tma_op: TMATensorTile[Self.b_type, b_tile_layout, b_desc_layout],
-        c_tma_op: TMATensorTile[Self.c_type, c_tile_layout, c_desc_layout],
+        a_tma_op: TMATensorTile[
+            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
+        ],
+        b_tma_op: TMATensorTile[
+            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
+        ],
+        c_tma_op: TMATensorTile[
+            Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
+        ],
         a_offsets: NDBuffer[DType.uint32, 1, ImmutAnyOrigin],
         expert_ids: NDBuffer[DType.int32, 1, ImmutAnyOrigin],
         c: LayoutTensor[Self.c_type, Self.c_layout, MutAnyOrigin],
