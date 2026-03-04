@@ -18,7 +18,12 @@ _LMCACHE_TEST_DEPS = [
     "//max/tests/integration/test_common:context_utils",
     requirement("lmcache"),
     requirement("numpy"),
+    requirement("requests"),
     requirement("torch"),
+]
+
+_LMCACHE_IGNORE_EXTRA_DEPS = [
+    requirement("requests"),
 ]
 
 modular_py_test(
@@ -37,6 +42,7 @@ modular_py_test(
         "//:amd_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    ignore_extra_deps = _LMCACHE_IGNORE_EXTRA_DEPS,
     tags = [
         "gpu",
     ],
@@ -59,6 +65,7 @@ modular_py_test(
         "//:amd_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    ignore_extra_deps = _LMCACHE_IGNORE_EXTRA_DEPS,
     tags = [
         "gpu",
     ],
