@@ -168,12 +168,21 @@ IPInt IPInt::gcd(const IPInt &rhs) const {
   return l;
 }
 
-/// This is limited to exponentiating with non-negative RHS.
+/// This is limited to exponentiating with non-negative RHS when the number to
+/// exponentiate is 0.
 IPInt IPInt::exponentiate(const IPInt &rhs) const {
-  assert(rhs >= 0 && "this exponentiate function doesn't support negative RHS");
+  IPInt base(*this);
+  assert((base != 0 || rhs >= 0) && "'0 ** n' is undefined for negative n");
+  if (rhs < 0) {
+    if (base == 1)
+      return IPInt(1);
+    // (-1) ** n is 1 for even n, -1 for odd n
+    if (base == -1)
+      return IPInt((rhs.abs() & 1) == 0 ? 1 : -1);
+    return IPInt(0);
+  }
   // I looked up and found this fast exponentiation algorithm here:
   // https://mathstats.uncg.edu/sites/pauli/112/HTML/secfastexp.html#algfastexp
-  IPInt base(*this);
   IPInt result = 1;
   IPInt exp = rhs;
   while (exp != 0) {
