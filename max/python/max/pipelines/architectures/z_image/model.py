@@ -75,7 +75,9 @@ class ZImageTransformerModel(ComponentModel):
         device: Device,
     ) -> Tensor:
         ids = np.zeros((seq_len, axes), dtype=np.int64)
-        ids[:, 0] = np.arange(start_index, start_index + seq_len, dtype=np.int64)
+        ids[:, 0] = np.arange(
+            start_index, start_index + seq_len, dtype=np.int64
+        )
         return Tensor.from_dlpack(ids).to(device)
 
     def __call__(

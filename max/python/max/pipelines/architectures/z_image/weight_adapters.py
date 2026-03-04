@@ -81,13 +81,14 @@ def convert_z_image_transformer_state_dict(
         "final_layer.",
     )
     unexpected_keys = [
-        k for k in converted if not any(k.startswith(p) for p in allowed_prefixes)
+        k
+        for k in converted
+        if not any(k.startswith(p) for p in allowed_prefixes)
     ]
     if unexpected_keys:
         sample = ", ".join(unexpected_keys[:8])
         raise ValueError(
-            "Unexpected z-image transformer keys in phase-1 adapter: "
-            f"{sample}"
+            f"Unexpected z-image transformer keys in phase-1 adapter: {sample}"
         )
 
     return converted
