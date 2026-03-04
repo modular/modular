@@ -44,7 +44,6 @@ class ZImageModelInputs(PixelModelInputs):
     num_images_per_prompt: int = 1
     mask: np.ndarray | None = None
     negative_mask: np.ndarray | None = None
-    input_image: np.ndarray | None = None
 
 
 @dataclass
@@ -465,7 +464,7 @@ class ZImagePipeline(DiffusionPipeline):
                 model_inputs.guidance_scale > 1.0
                 and model_inputs.negative_tokens is not None
             )
-            if do_cfg:
+            if do_cfg and model_inputs.negative_tokens is not None:
                 negative_prompt_embeds = self._prepare_prompt_embeddings(
                     tokens=model_inputs.negative_tokens.array,
                     mask=model_inputs.negative_mask,
@@ -519,9 +518,10 @@ class ZImagePipeline(DiffusionPipeline):
                 sigmas = Tensor.from_dlpack(model_inputs.sigmas).to(device)
                 self._cached_sigmas[sigmas_key] = sigmas
             if model_inputs.input_image is not None:
+                img_arr = np.array(model_inputs.input_image)
                 latents = self._prepare_img2img_latents(
                     noise_latents=latents,
-                    image=model_inputs.input_image,
+                    image=img_arr,
                     sigmas=sigmas,
                 )
             latents = self.preprocess_latents(latents, dtype)
