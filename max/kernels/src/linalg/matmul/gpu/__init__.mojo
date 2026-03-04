@@ -501,8 +501,7 @@ fn _matmul_gpu[
     comptime use_sm100_structured_kernels = (
         has_nvidia_gpu_accelerator()
         and (
-            "sm_100a" in _accelerator_arch()
-            or "sm_101a" in _accelerator_arch()
+            "sm_100a" in _accelerator_arch() or "sm_101a" in _accelerator_arch()
         )
     )
     comptime if use_sm100_structured_kernels:

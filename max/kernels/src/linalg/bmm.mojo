@@ -934,8 +934,7 @@ fn _batched_matmul_gpu[
     comptime use_SM100_kernels = (
         has_nvidia_gpu_accelerator()
         and (
-            "sm_100a" in _accelerator_arch()
-            or "sm_101a" in _accelerator_arch()
+            "sm_100a" in _accelerator_arch() or "sm_101a" in _accelerator_arch()
         )
     )
     comptime if use_SM100_kernels and has_static_NK and transpose_b:
