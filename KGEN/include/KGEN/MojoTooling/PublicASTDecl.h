@@ -232,8 +232,11 @@ private:
 /// Stability information extracted from the @stable decorator on a decl.
 /// isStable=false means no @stable decorator. sinceVersion is empty when
 /// the decorator was bare (@stable with no arguments).
+/// isStabilityTracked=true means the symbol is in a package that has opted
+/// into stability tracking (currently only "std").
 struct StableInfo {
   bool isStable = false;
+  bool isStabilityTracked = false;
   std::string sinceVersion;
 };
 
