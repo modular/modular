@@ -810,6 +810,7 @@ def calculate_metrics(
     gpu_metrics: list[dict[str, GPUStats]] | None,
     cpu_metrics: dict[str, Any],
     skip_first_n_requests: int,
+    skip_last_n_requests: int,
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None = None,
@@ -855,6 +856,11 @@ def calculate_metrics(
             # counts and throughputs.
             if i < skip_first_n_requests:
                 continue
+            if (
+                skip_last_n_requests > 0
+                and i >= len(outputs) - skip_last_n_requests
+            ):
+                continue
 
             tpots += outputs[i].tpot
             itls += outputs[i].itl
@@ -882,6 +888,30 @@ def calculate_metrics(
         failures=failures,
         failed_responses=failed_responses,
     )
+
+    measured_count = len(ttfts)
+    if measured_count == 0 and completed > 0:
+        warnings.warn(
+            (
+                f"All {completed} successful requests were excluded by"
+                f" skip_first_n_requests={skip_first_n_requests} and"
+                f" skip_last_n_requests={skip_last_n_requests}."
+                " Consider running a longer benchmark."
+            ),
+            stacklevel=2,
+        )
+    elif 0 < measured_count < 10:
+        warnings.warn(
+            (
+                f"Only {measured_count} requests remain after skipping"
+                f" first {skip_first_n_requests} and last"
+                f" {skip_last_n_requests} requests."
+                " Results may not be reliable."
+                " Consider running a longer benchmark."
+            ),
+            stacklevel=2,
+        )
+
     (
         peak_gpu_memory_mib,
         available_gpu_memory_mib,
@@ -1380,6 +1410,7 @@ async def benchmark(
     print_inputs_and_outputs: bool,
     max_requests: int,
     skip_first_n_requests: int,
+    skip_last_n_requests: int,
     max_output_len: int | None,
     temperature: float | None,
     top_p: float | None,
@@ -1704,6 +1735,7 @@ async def benchmark(
         gpu_metrics=gpu_metrics,
         cpu_metrics=cpu_metrics,
         skip_first_n_requests=skip_first_n_requests,
+        skip_last_n_requests=skip_last_n_requests,
         max_concurrency=max_concurrency,
         collect_gpu_stats=collect_gpu_stats,
         server_metrics=server_metrics,
@@ -1725,6 +1757,8 @@ async def benchmark(
         "completed": text_metrics.completed,
         "failures": text_metrics.failures,
         "max_concurrency": text_metrics.max_concurrency,
+        "skip_first_n_requests": skip_first_n_requests,
+        "skip_last_n_requests": skip_last_n_requests,
         "total_input_tokens": text_metrics.total_input,
         "total_output_tokens": text_metrics.total_output,
         "request_throughput": text_metrics.request_throughput,
@@ -2138,6 +2172,23 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         if args.image_seed is not None:
             image_extra_body["seed"] = args.image_seed
 
+    # Auto-default skip counts to max_concurrency when not explicitly set
+    skip_first_n_requests = args.skip_first_n_requests
+    skip_last_n_requests = args.skip_last_n_requests
+    if max_concurrency is not None:
+        if skip_first_n_requests == 0:
+            skip_first_n_requests = max_concurrency
+            logger.info(
+                f"Auto-setting skip_first_n_requests={skip_first_n_requests}"
+                f" (max_concurrency={max_concurrency})"
+            )
+        if skip_last_n_requests == 0:
+            skip_last_n_requests = max_concurrency
+            logger.info(
+                f"Auto-setting skip_last_n_requests={skip_last_n_requests}"
+                f" (max_concurrency={max_concurrency})"
+            )
+
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
     benchmark_result, benchmark_metrics = asyncio.run(
@@ -2159,7 +2210,8 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
             collect_server_stats=args.collect_server_stats,
             print_inputs_and_outputs=args.print_inputs_and_outputs,
             max_requests=args.num_prompts,
-            skip_first_n_requests=args.skip_first_n_requests,
+            skip_first_n_requests=skip_first_n_requests,
+            skip_last_n_requests=skip_last_n_requests,
             max_output_len=args.max_output_len,
             temperature=args.temperature,
             top_p=args.top_p,

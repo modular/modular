@@ -58,6 +58,7 @@ benchmark_config:
   request_rate: "inf"  # Requests per second (finite rate for realistic benchmarking)
   burstiness: 1.0  # Burstiness factor (1.0 = Poisson process)
   skip_first_n_requests: 0  # Skip first N requests for measurements
+  skip_last_n_requests: 0  # Skip last N requests for measurements
   chat_warmup_delay_ms: 0.0  # Delay between starting chat sessions
   ignore_first_turn_stats: false # Ignore the first turn in a multi-turn chat.
 

@@ -423,6 +423,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
     """Skip first N requests for measurements."""
 
+    skip_last_n_requests: int = field(
+        default=0, metadata={"group": "Traffic Control"}
+    )
+    """Skip last N requests for measurements."""
+
     chat_warmup_delay_ms: float = field(
         default=0.0, metadata={"group": "Traffic Control"}
     )
@@ -606,6 +611,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "request_rate": "Requests per second (finite rate for realistic benchmarking).",
             "burstiness": "Burstiness factor (1.0 = Poisson process).",
             "skip_first_n_requests": "Skip first N requests for measurements.",
+            "skip_last_n_requests": "Skip last N requests for measurements.",
             "chat_warmup_delay_ms": "Delay between starting chat sessions.",
             "sonnet_input_len": "Number of input tokens per request, used only for sonnet dataset.",
             "sonnet_prefix_len": "Number of prefix tokens per request, used only for sonnet dataset.",

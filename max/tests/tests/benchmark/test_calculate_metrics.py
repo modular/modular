@@ -63,6 +63,7 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
         gpu_metrics=None,
         cpu_metrics={},
         skip_first_n_requests=0,
+        skip_last_n_requests=0,
         max_concurrency=None,
         collect_gpu_stats=False,
     )
@@ -106,6 +107,7 @@ def test_tpot_weighted_mean() -> None:
         gpu_metrics=None,
         cpu_metrics={},
         skip_first_n_requests=0,
+        skip_last_n_requests=0,
         max_concurrency=None,
         collect_gpu_stats=False,
     )
@@ -142,6 +144,7 @@ def test_tpot_zero_decode_tokens() -> None:
         gpu_metrics=None,
         cpu_metrics={},
         skip_first_n_requests=0,
+        skip_last_n_requests=0,
         max_concurrency=None,
         collect_gpu_stats=False,
     )
@@ -161,6 +164,7 @@ def test_empty_outputs_no_crash() -> None:
         gpu_metrics=None,
         cpu_metrics={},
         skip_first_n_requests=0,
+        skip_last_n_requests=0,
         max_concurrency=None,
         collect_gpu_stats=False,
     )
@@ -192,6 +196,7 @@ def test_itl_metrics_unchanged() -> None:
         gpu_metrics=None,
         cpu_metrics={},
         skip_first_n_requests=0,
+        skip_last_n_requests=0,
         max_concurrency=None,
         collect_gpu_stats=False,
     )
@@ -228,6 +233,7 @@ def test_failed_requests_excluded() -> None:
         gpu_metrics=None,
         cpu_metrics={},
         skip_first_n_requests=0,
+        skip_last_n_requests=0,
         max_concurrency=None,
         collect_gpu_stats=False,
     )
@@ -237,6 +243,157 @@ def test_failed_requests_excluded() -> None:
     assert metrics.failures == 1
     # TPOT values should only include [0.1, 0.2], not [999.0]
     assert metrics.tpot_ms.median < 500.0
+
+
+def test_skip_last_n_requests() -> None:
+    """Skipping last N requests excludes them from latency metrics."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="first",
+            itl=[0.1, 0.2],
+            tpot=[0.1, 0.2],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="second",
+            itl=[0.1, 0.2],
+            tpot=[0.1, 0.2],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.5,
+            prompt_len=10,
+            generated_text="third",
+            itl=[0.9, 0.8],
+            tpot=[0.9, 0.8],
+        ),
+    ]
+
+    tokenizer = _make_mock_tokenizer({"first": 3, "second": 3, "third": 3})
+
+    metrics_all, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=3.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics={},
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        collect_gpu_stats=False,
+    )
+
+    metrics_skip_last, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=3.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics={},
+        skip_first_n_requests=0,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        collect_gpu_stats=False,
+    )
+
+    # All 3 requests are still counted as completed
+    assert metrics_skip_last.completed == 3
+    # But the last request's high TTFT (0.5s) is excluded from latency metrics
+    assert metrics_skip_last.ttft_ms.mean < metrics_all.ttft_ms.mean
+
+
+def test_skip_first_and_last_n_requests() -> None:
+    """Skipping both first and last N requests works together."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.5,
+            prompt_len=10,
+            generated_text="first",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="middle",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.5,
+            prompt_len=10,
+            generated_text="last",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+    ]
+
+    tokenizer = _make_mock_tokenizer({"first": 2, "middle": 2, "last": 2})
+
+    metrics, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=3.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics={},
+        skip_first_n_requests=1,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        collect_gpu_stats=False,
+    )
+
+    # All 3 completed, but only middle request used for latency metrics
+    assert metrics.completed == 3
+    # Only the middle request's TTFT (0.1s = 100ms) should be measured
+    assert math.isclose(metrics.ttft_ms.mean, 100.0, rel_tol=1e-3)
+
+
+def test_skip_all_requests_warns() -> None:
+    """Skipping all requests emits a warning."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="only",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+    ]
+
+    tokenizer = _make_mock_tokenizer({"only": 2})
+
+    import warnings
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        calculate_metrics(
+            outputs=outputs,
+            dur_s=1.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics={},
+            skip_first_n_requests=1,
+            skip_last_n_requests=1,
+            max_concurrency=None,
+            collect_gpu_stats=False,
+        )
+        assert len(w) == 1
+        assert "excluded" in str(w[0].message).lower()
 
 
 def test_calculate_pixel_generation_metrics() -> None:
