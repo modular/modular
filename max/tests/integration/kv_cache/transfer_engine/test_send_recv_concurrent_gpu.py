@@ -10,6 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Test DP=1, TP=1 with 32 concurrent in-flight transfers using GPU 0 and GPU 1.
+
+The payload size is intentionally kept small (512MB) to ensure the test
+completes in a reasonable time while still validating concurrent transfer logic.
+"""
+
 from __future__ import annotations
 
 import multiprocessing as mp
@@ -20,13 +27,6 @@ from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.kv_cache import KVTransferEngine, TransferReqData
 
-"""
-This test launches 32 concurrent transfers at once.
-
-Note: The payload size is intentionally kept small (512MB) to ensure the test
-completes in a reasonable time while still validating concurrent transfer logic.
-"""
-
 
 def transfer_routine_sender(
     sender_md_queue: mp.Queue,
@@ -36,11 +36,16 @@ def transfer_routine_sender(
     receiver_done_queue: mp.Queue,
     total_num_pages: int,
     total_bytes: int,
-    MB: int,
+    GB: float,
 ) -> None:
     device = Accelerator(0)
 
-    blocks_np = np.full(total_bytes, 42, dtype=np.int8)
+    # Fill each page with a distinct value so scatter bugs are detectable.
+    # Page i gets value (i + 1).
+    page_size = total_bytes // total_num_pages
+    blocks_np = np.empty(total_bytes, dtype=np.int8)
+    for i in range(total_num_pages):
+        blocks_np[i * page_size : (i + 1) * page_size] = i + 1
     blocks = Buffer.from_numpy(blocks_np).to(device)
 
     # Create engine (DP=1, TP=1)
@@ -68,15 +73,19 @@ def transfer_routine_sender(
         engine.sync_and_release(transfer_req)
 
     t1 = time.time()
-    bw = total_bytes / (t1 - t0) / MB
+    bw = total_bytes / (t1 - t0) / GB
     ms = (t1 - t0) * 1000
 
     print(
-        f"[SENDER] Transferring {total_bytes / MB:.2f} MB took {ms:.2f} ms ({bw:.2f} MB/s)"
+        f"[SENDER] Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)"
     )
 
-    # Verify results
-    assert (blocks.to_numpy() == 42).all()
+    # Verify sender buffer is unchanged
+    result = blocks.to_numpy()
+    for i in range(total_num_pages):
+        assert (result[i * page_size : (i + 1) * page_size] == i + 1).all(), (
+            f"Sender page {i} was modified"
+        )
 
     sender_done_queue.put(None)
     receiver_done_queue.get()
@@ -112,8 +121,15 @@ def transfer_routine_receiver(
         transfer_req = transfer_queue.get()
         engine.sync_and_release(transfer_req)
 
-    # TODO: Verify results
-    # assert (blocks.to_numpy() == 42).all()
+    # Verify page-level correctness. Each transfer sends page idx → idx,
+    # so receiver page i should equal sender page value (i + 1).
+    result = blocks.to_numpy()
+    page_size = total_bytes // total_num_pages
+    for i in range(total_num_pages):
+        expected = i + 1
+        assert (
+            result[i * page_size : (i + 1) * page_size] == expected
+        ).all(), f"Receiver page {i} expected value {expected}"
 
     receiver_done_queue.put(None)
     sender_done_queue.get()
@@ -130,8 +146,10 @@ def test_send_recv_basic() -> None:
     receiver_done_queue: mp.Queue = ctx.Queue()
 
     # Transfer parameters
-    MB = 1024 * 1024
-    total_bytes = int(512 * MB)  # 512MB - reduced from 6GB for faster CI runs
+    GB = 1024 * 1024 * 1024
+    total_bytes = (
+        512 * 1024 * 1024
+    )  # 512MB - reduced from 6GB for faster CI runs
     total_num_pages = 32
 
     sender_proc = ctx.Process(
@@ -144,7 +162,7 @@ def test_send_recv_basic() -> None:
             receiver_done_queue,
             total_num_pages,
             total_bytes,
-            MB,
+            GB,
         ),
     )
     receiver_proc = ctx.Process(
