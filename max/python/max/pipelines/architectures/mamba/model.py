@@ -205,11 +205,14 @@ class MambaModel(PipelineModel[TextContext]):
 
         from .mamba_module import MambaPrefill, MambaStep
 
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         ).to(self.devices[0])
 
         # Prepare state dict
