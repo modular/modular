@@ -29,7 +29,7 @@ from std.sys import align_of, simd_width_of
 from std.gpu import WARP_SIZE, lane_id, warp_id
 from std.gpu.memory import fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from .barriers import WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from layout import (
     Layout,
     RuntimeLayout,
@@ -44,12 +44,15 @@ from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
 from linalg.structuring import SMemTileArray, SMemTile
-from linalg.utils import elementwise_compute_lambda_type
+from linalg.utils import (
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+)
 from std.utils.fast_div import FastDiv
 from std.utils.static_tuple import StaticTuple
 
 # TileTensor-based types - use TileSMemTile to avoid name collision with old SMemTile
-from .tile_types import (
+from structured_kernels.tile_types import (
     SMemTile as TileSMemTile,
     SMemTileStride,
     SMemTileShape,
@@ -129,7 +132,7 @@ struct AccumBarrier[cta_group: Int](TrivialRegisterPassable):
 
 
 # Import for AccumBarrier
-from .pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 # =============================================================================
@@ -838,12 +841,21 @@ struct EpilogueApplier[
     var coords: Self.Coords
     var warp_id: UInt32
     var lane_id: UInt32
+    var M: UInt32
+    var N: UInt32
 
     @always_inline
-    fn __init__(out self, warp_id: UInt32, lane_id: UInt32):
+    fn __init__(
+        out self,
+        warp_id: UInt32,
+        lane_id: UInt32,
+        c_shape: Tuple[UInt32, UInt32],
+    ):
         self.coords = Self.Coords(lane_id)
         self.warp_id = warp_id
         self.lane_id = lane_id
+        self.M = c_shape[0]
+        self.N = c_shape[1]
 
     @always_inline
     fn compute_staged_coords(
@@ -964,6 +976,117 @@ struct EpilogueApplier[
 
         return (upper_frag, lower_frag)
 
+    @always_inline
+    fn apply_elementwise_epilogue_to_fragment[
+        epilogue_dtype: DType,
+        frag_size: Int,
+        elementwise_lambda_fn: elementwise_epilogue_type,
+    ](
+        self,
+        frag: SIMD[epilogue_dtype, frag_size],
+        staged_row: UInt32,
+        staged_col: UInt32,
+        is_upper: Bool,
+    ):
+        """Apply elementwise epilogue lambda to fragment elements with global coords.
+
+        Unlike apply_to_fragment which uses a compute lambda that returns modified
+        values, this calls an elementwise epilogue (returns None) that stores
+        directly to global memory.
+        """
+        var top = self.coords.top_upper if is_upper else self.coords.top_lower
+        var bot = (
+            self.coords.bottom_upper if is_upper else self.coords.bottom_lower
+        )
+
+        comptime for rep in range(Self.repeats):
+            comptime inc = rep * 8
+            comptime offset = rep * 4
+
+            var top_col = staged_col + top[1] + UInt32(inc)
+            var bot_col = staged_col + bot[1] + UInt32(inc)
+            var top_row = staged_row + top[0]
+            var bot_row = staged_row + bot[0]
+
+            var elems = frag.slice[4, offset=offset]()
+
+            comptime if Self.transpose_c:
+                # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
+                if top_row >= self.N or bot_row >= self.N:
+                    return
+
+                if top_col < self.M:
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(top_col), Int(top_row)), elems[0]
+                    )
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(bot_col), Int(bot_row)), elems[2]
+                    )
+
+                if (top_col + 1) < self.M:
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(top_col + 1), Int(top_row)), elems[1]
+                    )
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(bot_col + 1), Int(bot_row)), elems[3]
+                    )
+            else:
+                # For N we already know that `static_N * size_of[c_type]() % 16 == 0` so we can skip the write for OOB cols
+                if top_col >= self.N:
+                    return
+
+                var valid_top_row = top_row < self.M
+                var valid_bot_row = bot_row < self.M
+
+                if valid_top_row:
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(top_row), Int(top_col)),
+                        SIMD[epilogue_dtype, 2](elems[0], elems[1]),
+                    )
+
+                if valid_bot_row:
+                    elementwise_lambda_fn[epilogue_dtype](
+                        IndexList[2](Int(bot_row), Int(bot_col)),
+                        SIMD[epilogue_dtype, 2](elems[2], elems[3]),
+                    )
+
+    @always_inline
+    fn apply_elementwise_epilogue_to_both_fragments[
+        epilogue_dtype: DType,
+        frag_size: Int,
+        elementwise_lambda_fn: elementwise_epilogue_type,
+        is_lower_frag_required: Bool,
+    ](
+        self,
+        upper_frag: SIMD[epilogue_dtype, frag_size],
+        lower_frag: SIMD[epilogue_dtype, frag_size],
+        stage: UInt32,
+        c_row: UInt32,
+        c_col: UInt32,
+    ):
+        """Apply elementwise epilogue to both fragments.
+
+        Similar to apply_to_both_fragments but uses elementwise_epilogue_type
+        which writes directly to global memory and returns None.
+        """
+        var staged_row, staged_col = self.compute_staged_coords(
+            stage, c_row, c_col
+        )
+
+        self.apply_elementwise_epilogue_to_fragment[
+            epilogue_dtype, frag_size, elementwise_lambda_fn
+        ](upper_frag, staged_row, staged_col, is_upper=True)
+
+        comptime if is_lower_frag_required:
+            self.apply_elementwise_epilogue_to_fragment[
+                epilogue_dtype, frag_size, elementwise_lambda_fn
+            ](
+                lower_frag,
+                staged_row,
+                staged_col,
+                is_upper=False,
+            )
+
     # =========================================================================
     # Residual Add - Load C from SMEM and add beta*C to fragment registers
     # =========================================================================
@@ -982,7 +1105,7 @@ struct EpilogueApplier[
         local_col: UInt32,
         is_upper: Bool,
         src_ptr: UnsafePointer[
-            Scalar[c_type], address_space = AddressSpace.SHARED
+            Scalar[c_type], _, address_space = AddressSpace.SHARED
         ],
         beta: Scalar[epilogue_dtype],
     ):
@@ -1051,7 +1174,7 @@ struct EpilogueApplier[
         mut lower_frag: SIMD[epilogue_dtype, frag_size],
         stage: UInt32,
         src_ptr: UnsafePointer[
-            Scalar[c_type], address_space = AddressSpace.SHARED
+            Scalar[c_type], _, address_space = AddressSpace.SHARED
         ],
         beta: Scalar[epilogue_dtype],
     ) -> Tuple[

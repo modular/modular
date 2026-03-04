@@ -54,13 +54,13 @@ from ..structured_kernels.epilogue_components import (
     TMAStoreExecutor,
     tma_wait_pipelined,
 )
-from ..structured_kernels.barriers import WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from layout._layout import TensorLayout
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 
 # TileTensor-based types for C tiles
-from ..structured_kernels.tile_types import SMemTileArray2DRowMajor
+from structured_kernels.tile_types import SMemTileArray2DRowMajor
 
 
 # =============================================================================

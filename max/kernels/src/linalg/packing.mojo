@@ -872,7 +872,7 @@ fn pack_transposed_b_ndbuffer[
     c_shape: DimList,
 ](
     b_input: NDBuffer[mut=False, b_type, 2, _, b_shape],
-    output_buffer: NDBuffer[mut=True, b_type, 2],
+    output_buffer: NDBuffer[mut=True, b_type, 2, _],
 ) raises:
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0

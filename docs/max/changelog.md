@@ -65,6 +65,12 @@ what we publish.
 
 #### Python API {#26-2-max-python}
 
+- `Tensor.constant()` is deprecated. Use the `Tensor(data, dtype=...,
+  device=...)` constructor directly, matching PyTorch's `torch.tensor()`
+  semantics. For example, replace `Tensor.constant([1.0, 2.0])` with
+  `Tensor([1.0, 2.0])`. `Tensor.constant()` will be removed in a future
+  release.
+
 - `DeviceEvent` now accepts an `enable_timing=True` parameter to enable GPU
   event timing. Use `start.elapsed_time(end)` to measure elapsed GPU time in
   milliseconds between two timing-enabled events.

@@ -13,8 +13,8 @@
 from std.math import align_down, ceildiv
 from std.sys import (
     align_of,
-    env_get_bool,
-    env_get_int,
+    get_defined_bool,
+    get_defined_int,
     has_accelerator,
     has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
@@ -481,7 +481,7 @@ fn _matmul_gpu[
     logger.info("Static shapes available: N=", b_shape.has_value[1](), " K=", a_shape.has_value[1]())
     # fmt: on
 
-    comptime if env_get_bool["MODULE_USE_VENDOR_BLAS", False]():
+    comptime if get_defined_bool["MODULE_USE_VENDOR_BLAS", False]():
         logger.info("Executing: Vendor BLAS")
         return matmul_vendor[
             transpose_b=transpose_b,
@@ -490,7 +490,7 @@ fn _matmul_gpu[
         ](c, a, b, ctx)
 
     comptime use_experimental_kernels = Bool(
-        env_get_int["USE_EXPERIMENTAL_KERNELS", 0]()
+        get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]()
     )
 
     comptime bf16_or_fp16 = (DType.bfloat16, DType.float16)
@@ -614,10 +614,10 @@ fn _matmul_gpu[
 
                 comptime if not transpose_b:
                     return kernel_helper[128, 128, num_pipeline_stages=2]()
-                elif env_get_bool["AUTOTUNING_MODE", False]():
-                    comptime block_m = env_get_int["TUNE_BM", 128]()
-                    comptime block_n = env_get_int["TUNE_BN", 128]()
-                    comptime num_k_partitions = env_get_int[
+                elif get_defined_bool["AUTOTUNING_MODE", False]():
+                    comptime block_m = get_defined_int["TUNE_BM", 128]()
+                    comptime block_n = get_defined_int["TUNE_BN", 128]()
+                    comptime num_k_partitions = get_defined_int[
                         "TUNE_NUM_K_PARTITIONS", 1
                     ]()
                     return kernel_helper[
@@ -831,8 +831,8 @@ fn split_k_reduce[
     work_space_layout: Layout,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[mut=True, c_type, c_layout],
-    work_space: LayoutTensor[work_space_type, work_space_layout],
+    c: LayoutTensor[mut=True, c_type, c_layout, ...],
+    work_space: LayoutTensor[work_space_type, work_space_layout, ...],
     ctx: DeviceContext,
 ) raises:
     comptime simd_width = simd_width_of[c_type, target = get_gpu_target()]()

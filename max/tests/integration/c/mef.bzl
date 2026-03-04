@@ -22,6 +22,7 @@ MOJO_DEPS = [
     "//max:quantization",
     "//max:register",
     "//max:shmem",
+    "//max:structured_kernels",
     "//max:tensor",
     "//max:weights_registry",
     "@mojo//:std",

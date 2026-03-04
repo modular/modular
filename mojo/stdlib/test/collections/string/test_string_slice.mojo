@@ -73,10 +73,10 @@ fn test_string_slice_layout() raises:
 
 
 def test_constructors() raises:
-    def some_func_immut(b: StringSlice[mut=False]) raises:
+    def some_func_immut(b: StringSlice[mut=False, ...]) raises:
         assert_false(b.mut)
 
-    def some_func_mut(b: StringSlice[mut=True]) raises:
+    def some_func_mut(b: StringSlice[mut=True, ...]) raises:
         assert_true(b.mut)
 
     var a = "123"

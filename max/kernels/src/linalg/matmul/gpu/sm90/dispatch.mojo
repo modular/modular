@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.sys import env_get_bool, env_get_int, size_of
+from std.sys import get_defined_bool, get_defined_int, size_of
 
 from buffer.buffer import NDBuffer
 from std.gpu.primitives.grid_controls import PDLLevel
@@ -514,19 +514,19 @@ fn matmul_dispatch_sm90_fp8[
 
     var m = c.dim[0]()
 
-    comptime if env_get_bool["AUTOTUNING_MODE", False]():
-        comptime NUM_PIPELINE_STAGES = env_get_int[
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
+        comptime NUM_PIPELINE_STAGES = get_defined_int[
             "TUNE_NUM_PIPELINE_STAGES", 4
         ]()
-        comptime NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
-        comptime WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
-        comptime GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+        comptime NUM_CONSUMER = get_defined_int["TUNE_NUM_CONSUMER", 1]()
+        comptime WGMMA_N = get_defined_int["TUNE_WGMMA_N", 128]()
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 1]()
+        comptime GRID_DIM_X = get_defined_int["TUNE_GRID_DIM_X", 1]()
         comptime GRID_DIM_Y = H100.sm_count // GRID_DIM_X
         comptime BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
 
         comptime SCHEDULE_TYPE = MatmulSchedule(
-            env_get_int["TUNE_SCHEDULE_TYPE", 1]()
+            get_defined_int["TUNE_SCHEDULE_TYPE", 1]()
         )
 
         comptime H100_FP8_TUNING_CONFIG = MatmulConfig[
@@ -2160,31 +2160,31 @@ fn matmul_dispatch_sm90_bf16_fp32[
     comptime mma_k = 16 // size_factor
     comptime BK = 64 // size_factor
 
-    comptime if env_get_bool["AUTOTUNING_MODE", False]():
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
         comptime static_N = c.shape.get[1]()
         comptime static_K = a.shape.get[1]()
 
-        comptime IS_LARGE_GEMM_SHAPE = env_get_bool[
+        comptime IS_LARGE_GEMM_SHAPE = get_defined_bool[
             "TUNE_LARGE_GEMM_SHAPE", True
         ]()
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 1]()
-        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        comptime NUM_PIPELINE_STAGES = env_get_int[
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 1]()
+        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime NUM_PIPELINE_STAGES = get_defined_int[
             "TUNE_NUM_PIPELINE_STAGES", 4
         ]()
-        comptime NUM_CONSUMER = env_get_int["TUNE_NUM_CONSUMER", 1]()
-        comptime WGMMA_N = env_get_int["TUNE_WGMMA_N", 128]()
+        comptime NUM_CONSUMER = get_defined_int["TUNE_NUM_CONSUMER", 1]()
+        comptime WGMMA_N = get_defined_int["TUNE_WGMMA_N", 128]()
         comptime BLOCK_TILE_DIM_M = 64 * NUM_CONSUMER
-        comptime PARTITIONED_MULTICAST = env_get_bool[
+        comptime PARTITIONED_MULTICAST = get_defined_bool[
             "TUNE_PARTITIONED_MULTICAST", False
         ]()
         comptime SCHEDULE_TYPE = MatmulSchedule(
-            Int32(env_get_int["TUNE_SCHEDULE_TYPE", 0]())
+            Int32(get_defined_int["TUNE_SCHEDULE_TYPE", 0]())
         )
 
         comptime if IS_LARGE_GEMM_SHAPE:
             # GRID_DIM_X = 2^n for n in range[0-7]
-            comptime GRID_DIM_X = env_get_int["TUNE_GRID_DIM_X", 1]()
+            comptime GRID_DIM_X = get_defined_int["TUNE_GRID_DIM_X", 1]()
             comptime GRID_DIM_Y = H100.sm_count // GRID_DIM_X
 
             comptime H100_TUNING_CONFIG = MatmulConfig[
@@ -2219,10 +2219,10 @@ fn matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
 
         else:
-            comptime IS_SPLITK = env_get_bool["TUNE_IS_SPLITK", False]()
+            comptime IS_SPLITK = get_defined_bool["TUNE_IS_SPLITK", False]()
 
             comptime if not IS_SPLITK:
-                comptime NUM_PIPELINE_STAGES = env_get_int[
+                comptime NUM_PIPELINE_STAGES = get_defined_int[
                     "TUNE_NUM_PIPELINE_STAGES", 4
                 ]()
                 comptime GRID_DIM_X = H100.sm_count
@@ -2267,7 +2267,7 @@ fn matmul_dispatch_sm90_bf16_fp32[
                 return DISPATCH_HIT
 
             else:
-                comptime SPLITS = env_get_int["TUNE_SPLITS", 2]()
+                comptime SPLITS = get_defined_int["TUNE_SPLITS", 2]()
 
                 comptime SMALL_SHAPE_H100_BF16_TUNING_CONFIG_SPLITK = MatmulConfig[
                     a_type,

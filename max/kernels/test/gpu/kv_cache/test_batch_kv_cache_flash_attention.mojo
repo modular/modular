@@ -40,11 +40,11 @@ def execute_flash_attention[
     num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     batch_size: Int,
-    valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
+    valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
     max_seq_len: Int,
     num_layers: Int,
     layer_idx: Int,
-    cache_valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)],
+    cache_valid_length: LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), _],
     ctx: DeviceContext,
 ) raises:
     comptime num_blocks = 32

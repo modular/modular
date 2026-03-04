@@ -234,6 +234,7 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "manual",
         "no-sandbox",
         "requires-network",
     ],

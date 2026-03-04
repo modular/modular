@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-import time
+import std.time
 
 from conditional_context_mgr import ConditionalTimer, flaky_identity
 from std.testing import assert_raises, TestSuite

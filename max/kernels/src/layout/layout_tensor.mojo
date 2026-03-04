@@ -5231,7 +5231,7 @@ struct LayoutTensor[
     ](
         self,
         src: LayoutTensor[
-            Self.dtype, _layout, address_space = Self.address_space
+            Self.dtype, _layout, address_space = Self.address_space, ...
         ],
     ) -> Scalar[_uint_dtype]:
         """Calculate the element-wise distance between this tensor and another

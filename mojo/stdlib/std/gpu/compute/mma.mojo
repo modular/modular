@@ -354,7 +354,7 @@ fn st_matrix[
     dtype: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
     ptr: UnsafePointer[
-        mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
+        mut=True, Scalar[dtype], _, address_space = AddressSpace.SHARED
     ],
     d: SIMD[DType.float32, simd_width],
 ):

@@ -68,11 +68,11 @@ _ALLOWED_CAST_ENCODINGS = {
 
 
 class MAXModelConfigBase(ConfigFileModel):
-    """Abstract base class for all (required) MAX model configs.
+    """Abstract base class for MAX model configuration.
 
-    This base class is used to configure a model to use for a pipeline, but also
-    handy to sidestep the need to pass in optional fields when subclassing
-    MAXModelConfig.
+    Configures the model used by a pipeline. Subclass this when creating
+    specialized model configurations that do not require all fields defined
+    in :class:`MAXModelConfig`.
     """
 
     # Allow arbitrary types (like DeviceRef, AutoConfig) to avoid schema generation errors.
@@ -80,6 +80,8 @@ class MAXModelConfigBase(ConfigFileModel):
 
 
 class MAXModelConfig(MAXModelConfigBase):
+    """Configuration for a pipeline model."""
+
     use_subgraphs: bool = Field(
         default=True,
         description=(
@@ -88,6 +90,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "blocks. Default is true."
         ),
     )
+    """Whether to use subgraphs for the model."""
 
     data_parallel_degree: int = Field(
         default=1,
@@ -96,10 +99,12 @@ class MAXModelConfig(MAXModelConfigBase):
             "replicated is dependent on the model type."
         ),
     )
+    """The degree of data parallelism for replicating the model."""
 
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."
     )
+    """Whether to pool embedding outputs."""
 
     max_length: int | None = Field(
         default=None,
@@ -109,6 +114,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "during resolution based on available memory."
         ),
     )
+    """The maximum sequence length the model can process."""
 
     @field_validator("max_length")
     @classmethod
@@ -128,6 +134,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "The `--model` option also works as an alias."
         ),
     )
+    """The repository ID of a Hugging Face model to use."""
 
     served_model_name: str | None = Field(
         default=None,
@@ -136,17 +143,20 @@ class MAXModelConfig(MAXModelConfigBase):
             "model_path."
         ),
     )
+    """An optional override for the client-facing model name."""
 
     weight_path: list[Path] = Field(
         default_factory=list,
         description="Optional path or url of the model weights to use.",
     )
+    """The path or URL of the model weights to use."""
 
     # TODO(zheng): Move this under QuantizationConfig.
     quantization_encoding: SupportedEncoding | None = Field(
         default=None,
         description="Weight encoding type.",
     )
+    """The weight encoding type."""
 
     allow_safetensors_weights_fp32_bf6_bidirectional_cast: bool = Field(
         default=False,
@@ -156,6 +166,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "Llama3 models."
         ),
     )
+    """Whether to allow automatic float32 to/from bfloat16 safetensors weight type casting."""
 
     # Tuck "huggingface_revision" and "trust_remote_code" under a separate
     # HuggingFaceConfig class.
@@ -165,6 +176,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "Branch or Git revision of Hugging Face model repository to use."
         ),
     )
+    """The branch or Git revision of the Hugging Face model repository."""
 
     huggingface_weight_revision: str = Field(
         default=hf_hub_constants.DEFAULT_REVISION,
@@ -172,6 +184,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "Branch or Git revision of Hugging Face model repository to use."
         ),
     )
+    """The branch or Git revision of the Hugging Face weights repository."""
 
     trust_remote_code: bool = Field(
         default=False,
@@ -179,6 +192,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "Whether or not to allow for custom modelling files on Hugging Face."
         ),
     )
+    """Whether to allow custom modelling files from Hugging Face."""
 
     device_specs: list[DeviceSpec] = Field(
         default_factory=scan_available_devices,
@@ -187,6 +201,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "directly via the CLI entrypoint."
         ),
     )
+    """The devices to run inference on."""
 
     @field_validator("device_specs", mode="before")
     @classmethod
@@ -200,6 +215,7 @@ class MAXModelConfig(MAXModelConfigBase):
             "the local cache."
         ),
     )
+    """Whether to force download a file even if it's already in the local cache."""
 
     vision_config_overrides: dict[str, Any] = Field(
         default_factory=dict,
@@ -208,6 +224,7 @@ class MAXModelConfig(MAXModelConfigBase):
             'InternVL: {"max_dynamic_patch": 24}.'
         ),
     )
+    """Model-specific vision configuration overrides."""
 
     rope_type: RopeType | None = Field(
         default=None,
@@ -216,11 +233,13 @@ class MAXModelConfig(MAXModelConfigBase):
             "matters for GGUF weights."
         ),
     )
+    """The RoPE type to use, forced regardless of model defaults."""
 
     enable_echo: bool = Field(
         default=False,
         description="Whether the model should be built with echo capabilities.",
     )
+    """Whether the model should be built with echo capabilities."""
 
     chat_template: Path | None = Field(
         default=None,
@@ -231,11 +250,13 @@ class MAXModelConfig(MAXModelConfigBase):
             "None, the model's default chat template is used."
         ),
     )
+    """An optional custom chat template to override the one shipped with the model."""
 
     kv_cache: KVCacheConfig = Field(
         default_factory=KVCacheConfig,
         description="The KVCache config.",
     )
+    """The KV cache configuration."""
 
     _applied_dtype_cast_from: SupportedEncoding | None = PrivateAttr(
         default=None
@@ -416,15 +437,14 @@ class MAXModelConfig(MAXModelConfigBase):
     def resolve(self) -> None:
         """Validates and resolves the config.
 
-        This method is called after the model config is initialized, to ensure that all
-        config fields have been initialized to a valid state. It will also set
-        and update other fields which may not be determined / initialized in the
-        default factory.
+        Called after initialization to ensure all fields are in a valid state
+        and to set fields that can't be determined in the default factory.
 
-        In order:
-        1. Resolve chat_template if it's a Path
-        2. Validate that the device_specs provided are available
-        3. Parse the weight path(s) and initialize the _weights_repo_id
+        Resolves fields in this order:
+
+        1. Resolves ``chat_template`` if it's a path.
+        2. Validates that the provided ``device_specs`` are available.
+        3. Parses the weight path and initializes ``_weights_repo_id``.
         """
         # Resolve chat_template if it's a Path
         self._resolve_chat_template()
@@ -516,13 +536,13 @@ class MAXModelConfig(MAXModelConfigBase):
             The total size of all weight files in bytes.
 
         Raises:
-            FileNotFoundError: If `repo_type` is ``"local"`` and a file
-                specified in `weight_path` is not found within the local repo
+            FileNotFoundError: If ``repo_type`` is ``"local"`` and a file
+                specified in ``weight_path`` is not found within the local repo
                 directory.
             ValueError: If :obj:`HuggingFaceRepo.size_of()` fails to retrieve the
-                file size from the Hugging Face Hub API (e.g., file metadata
+                file size from the Hugging Face Hub API (for example, file metadata
                 not available or API error).
-            RuntimeError: If the determined `repo_type` is unexpected.
+            RuntimeError: If the determined ``repo_type`` is unexpected.
         """
         total_weights_size = 0
         repo = self.huggingface_weight_repo
@@ -617,13 +637,16 @@ class MAXModelConfig(MAXModelConfigBase):
     def diffusers_config(self) -> dict[str, Any] | None:
         """Retrieve the diffusers config for diffusion pipelines.
 
-        Note: For multiprocessing, __getstate__ clears _diffusers_config
-        before pickling. Each worker process will reload the config fresh.
+        .. note::
+
+           For multiprocessing, ``__getstate__`` clears ``_diffusers_config``
+           before pickling. Each worker process reloads the config fresh.
 
         Returns:
-            The diffusers config dict if this is a diffusion pipeline, None otherwise.
-            The dict will have a structure with "_class_name" and "components" keys,
-            where each component includes "class_name" and "config_dict" fields.
+            The diffusers config dict if this is a diffusion pipeline, ``None``
+            otherwise. The dict has a ``"_class_name"`` key and a
+            ``"components"`` key, where each component includes
+            ``"class_name"`` and ``"config_dict"`` fields.
         """
         if self._diffusers_config is None:
             model_index = PIPELINE_REGISTRY.get_active_diffusers_config(
@@ -733,15 +756,15 @@ class MAXModelConfig(MAXModelConfigBase):
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
     def generation_config(self) -> GenerationConfig:
-        """Retrieve the Hugging Face GenerationConfig for this model.
+        """Retrieves the Hugging Face ``GenerationConfig`` for this model.
 
-        This property lazily loads the GenerationConfig from the model repository
+        Lazily loads the ``GenerationConfig`` from the model repository
         and caches it to avoid repeated remote fetches.
 
         Returns:
-            The GenerationConfig for the model, containing generation parameters
-            like max_length, temperature, top_p, etc. If loading fails, returns
-            a default GenerationConfig.
+            The ``GenerationConfig`` for the model, containing generation parameters
+            including ``max_length``, ``temperature``, and ``top_p``. If loading
+            fails, returns a default ``GenerationConfig``.
         """
         try:
             return GenerationConfig.from_pretrained(
@@ -1240,12 +1263,12 @@ class MAXModelConfig(MAXModelConfigBase):
     def create_kv_cache_config(self, **kv_cache_kwargs) -> None:
         """Create and set the KV cache configuration with the given parameters.
 
-        This method creates a new KVCacheConfig from the provided keyword arguments
+        Creates a new :class:`~max.pipelines.lib.config.KVCacheConfig` from the provided keyword arguments
         and automatically sets the cache_dtype based on the model's quantization
         encoding (or any explicit override in kv_cache_kwargs).
 
         Args:
-            **kv_cache_kwargs: Keyword arguments to pass to KVCacheConfig constructor.
+            **kv_cache_kwargs: Keyword arguments to pass to the :class:`~max.pipelines.lib.config.KVCacheConfig` constructor.
                 Common options include:
                 - kv_cache_page_size: Number of tokens per page for paged cache
                 - enable_prefix_caching: Whether to enable prefix caching
@@ -1260,17 +1283,13 @@ class MAXModelConfig(MAXModelConfigBase):
     def set_cache_dtype_given_quantization_encoding(
         self,
     ) -> None:
-        """Determine the KV cache dtype based on quantization encoding configuration.
+        """Determines the KV cache dtype based on quantization encoding configuration.
 
         The dtype is determined in the following priority order:
-        1. Explicit override from kv_cache.kv_cache_format (if set)
-        2. Derived from the model's quantization_encoding
-        3. Falls back to float32 if no encoding is specified
 
-        Returns:
-            The DType to use for the KV cache. Typical values are:
-            - DType.float32 for float32, q4_k, q4_0, q6_k encodings
-            - DType.bfloat16 for bfloat16, float8_e4m3fn, float4_e2m1fnx2, gptq encodings
+        1. Explicit override from ``kv_cache.kv_cache_format`` (if set).
+        2. Derived from the model's ``quantization_encoding``.
+        3. Falls back to ``float32`` if no encoding is specified.
         """
         # First check for an explicit override.
         if self.kv_cache.kv_cache_format is not None:

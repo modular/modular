@@ -196,7 +196,7 @@ trait ImplicitlyDestructible:
 
 comptime __SomeImpl[Trait: __TypeOfAllTypes, T: Trait] = T
 
-comptime Some[Trait: __TypeOfAllTypes] = __SomeImpl[Trait]
+comptime Some[Trait: __TypeOfAllTypes] = __SomeImpl[Trait, ...]
 """An alias allowing users to tersely express that a function argument is an
 instance of a type that implements a trait or trait composition.
 

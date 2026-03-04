@@ -19,8 +19,6 @@ Functions
 =========
 
 * :code_link:`/max/api/python/kv_cache/registry|load_kv_manager`: Load and initialize a KV cache manager.
-* :code_link:`/max/api/python/kv_cache/registry|estimate_kv_cache_size`: Estimate KV cache memory requirements.
-* :code_link:`/max/api/python/kv_cache/registry|infer_optimal_batch_size`: Infer optimal batch size based on available cache memory.
 * :code_link:`/max/api/python/kv_cache/paged_kv_cache/transfer_engine|available_port`: Find an available TCP port for transfer engine communication.
 
 Modules

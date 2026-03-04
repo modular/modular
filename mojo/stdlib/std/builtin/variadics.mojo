@@ -145,7 +145,7 @@ struct Variadic:
     comptime reverse[
         T: type_of(AnyType), //, *element_types: T
     ] = _MapVariadicAndIdxToType[
-        To=T, VariadicType=element_types, Mapper = _ReversedVariadic[T]
+        To=T, VariadicType=element_types, Mapper = _ReversedVariadic[T, ...]
     ]
     """A wrapper to reverse a variadic sequence of types.
 
@@ -196,7 +196,7 @@ struct Variadic:
         BaseVal = Variadic.values[False],
         VariadicType=element_types,
         #  Curry `_ContainsMapper` to fit the reducer signature
-        Reducer = _ContainsReducer[Trait=Trait, Type=type],
+        Reducer = _ContainsReducer[Trait=Trait, Type=type, ...],
     ][
         0
     ]
@@ -218,7 +218,7 @@ struct Variadic:
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal = Variadic.empty_of_trait[To],
         VariadicType=element_types,
-        Reducer = _MapTypeToTypeReducer[From, To, Mapper],
+        Reducer = _MapTypeToTypeReducer[From, To, Mapper, ...],
     ]
     """Map a variadic of types to a new variadic of types using a mapper.
 
@@ -272,7 +272,7 @@ struct Variadic:
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal = Variadic.empty_of_trait[T],
         VariadicType=element_types,
-        Reducer = _SliceReducer[T, start, end],
+        Reducer = _SliceReducer[T, start, end, ...],
     ]
     """Extract a contiguous subsequence from a variadic sequence.
 
@@ -344,7 +344,7 @@ struct Variadic:
     ] = _ReduceVariadicAndIdxToVariadic[
         BaseVal = Variadic.empty_of_trait[T],
         VariadicType=element_types,
-        Reducer = _FilterReducer[T, predicate],
+        Reducer = _FilterReducer[T, predicate, ...],
     ]
     """Filter types from a variadic sequence based on a predicate function.
 
@@ -1246,7 +1246,7 @@ comptime _ReduceVariadicAndIdxToVariadic[
     `,`,
     VariadicType,
     `,`,
-    _IndexToIntWrap[From, Variadic.TypesOfTrait[To], Reducer],
+    _IndexToIntWrap[From, Variadic.TypesOfTrait[To], Reducer, ...],
     `> : `,
     type_of(BaseVal),
 ]
@@ -1306,7 +1306,7 @@ comptime _ReduceValueAndIdxToVariadic[
     `,`,
     VariadicType,
     `,`,
-    _IndexToIntValueWrap[From, Variadic.TypesOfTrait[To], Reducer],
+    _IndexToIntValueWrap[From, Variadic.TypesOfTrait[To], Reducer, ...],
     `> : `,
     type_of(BaseVal),
 ]
@@ -1338,7 +1338,7 @@ comptime _ReduceVariadicAndIdxToValue[
     `,`,
     VariadicType,
     `,`,
-    _IndexToIntWrap[From, Variadic.ValuesOfType[To], Reducer],
+    _IndexToIntWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
     `> : `,
     type_of(BaseVal),
 ]
@@ -1400,7 +1400,7 @@ comptime _MapVariadicAndIdxToType[
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal = Variadic.empty_of_trait[To],  # reduce from a empty variadic
     VariadicType=VariadicType,
-    Reducer = _WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper],
+    Reducer = _WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper, ...],
 ]
 """Construct a new variadic of types using a type-to-type mapper.
 

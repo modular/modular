@@ -22,7 +22,7 @@ import sys
 from typing import Any, Literal, cast, get_type_hints
 
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec, load_devices
+from max.driver import DeviceSpec, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.pipelines.lib.hf_utils import is_diffusion_pipeline
@@ -56,15 +56,24 @@ from .speculative_config import SpeculativeConfig
 
 logger = logging.getLogger("max.pipelines")
 
+_AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
+    "LlamaForCausalLM",
+    "DeepseekV2ForCausalLM",
+    "DeepseekV3ForCausalLM",
+    "DeepseekV32ForCausalLM",
+    "DeepseekV3ForCausalLMNextN",
+)
+
+_AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = ("LlamaForCausalLM",)
+
 
 class PipelineConfig(ConfigFileModel):
     """Configuration for a pipeline.
 
-    WIP - Once a PipelineConfig is fully initialized, it should be as immutable
-    as possible (frozen=True). All underlying dataclass fields should have been
-    initialized to their default values, be it user specified via some CLI
-    flag, config file, environment variable, or internally set to a reasonable
-    default.
+    Contains settings for model selection, batch sizing, sampling, profiling,
+    LoRA adapters, and speculative decoding. Once initialized, all fields are
+    resolved to their final values from CLI flags, config files, environment
+    variables, or internal defaults.
     """
 
     # PipelineConfig intentionally accepts kwargs that belong to sub-configs
@@ -75,17 +84,6 @@ class PipelineConfig(ConfigFileModel):
     # the weird monkeypatching to instantiate MAXModelConfig, KVCacheConfig, etc.
     model_config = ConfigDict(extra="ignore")
 
-    max_batch_size: int | None = Field(
-        default=None,
-        description=(
-            "Maximum batch size to execute with the model. When not specified "
-            "(None), this value is determined dynamically. For server launches, "
-            "set this higher based on server capacity. When "
-            "device_graph_capture is enabled, overlap pre-captures decode "
-            "graph entries for batch sizes [1..max_batch_size]."
-        ),
-    )
-
     debug_verify_replay: bool = Field(
         default=False,
         description=(
@@ -93,35 +91,43 @@ class PipelineConfig(ConfigFileModel):
             "verification before replay. Intended for debugging only."
         ),
     )
+    """Whether to run eager verification before device graph replay."""
 
     model: MAXModelConfig = Field(
         default_factory=MAXModelConfig, description="The model config."
     )
+    """The model configuration."""
 
     draft_model: MAXModelConfig | None = Field(
         default=None, description="The draft model config."
     )
+    """The draft model configuration for speculative decoding."""
 
     sampling: SamplingConfig = Field(
         default_factory=SamplingConfig, description="The sampling config."
     )
+    """The sampling configuration."""
 
     profiling: ProfilingConfig = Field(
         default_factory=ProfilingConfig, description="The profiling config."
     )
+    """The profiling configuration."""
 
     lora: LoRAConfig | None = Field(
         default=None, description="The LoRA config."
     )
+    """The LoRA configuration."""
 
     speculative: SpeculativeConfig | None = Field(
         default=None, description="The SpeculativeConfig."
     )
+    """The speculative decoding configuration."""
 
     runtime: PipelineRuntimeConfig = Field(
         default_factory=PipelineRuntimeConfig,
         description="Model-agnostic runtime settings for pipeline execution.",
     )
+    """The model-agnostic runtime settings for pipeline execution."""
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
@@ -133,7 +139,7 @@ class PipelineConfig(ConfigFileModel):
     This is used to pass unmatched kwargs from the before validator to the after validator."""
 
     def configure_session(self, session: InferenceSession) -> None:
-        """Configure an InferenceSession with standard pipeline settings."""
+        """Configures a :class:`~max.engine.InferenceSession` with standard pipeline settings."""
         session.gpu_profiling(self.profiling.gpu_profiling)
         session._use_experimental_kernels(self.runtime.use_experimental_kernels)
         session._use_vendor_blas(self.runtime.use_vendor_blas)
@@ -151,7 +157,7 @@ class PipelineConfig(ConfigFileModel):
         Args:
             kwargs: Source kwargs dictionary (modified in place)
             config_class: The ConfigFileModel dataclass to match fields against
-            key_prefix: Optional prefix to filter keys (e.g., "draft_")
+            key_prefix: Optional prefix to filter keys (for example, ``"draft_"``)
             strip_prefix: Whether to strip the prefix from extracted keys
 
         Returns:
@@ -309,7 +315,7 @@ class PipelineConfig(ConfigFileModel):
         """Creates and sets a config object with special handling for config types.
 
         Args:
-            config_name: Name of the config attribute (e.g., "model")
+            config_name: Name of the config attribute (for example, ``"model"``)
             config_class: The config class to instantiate
             matched_kwargs: kwargs that matched the config class fields
             kv_cache_kwargs: kwargs for KVCache config (model config only)
@@ -595,6 +601,29 @@ class PipelineConfig(ConfigFileModel):
         self._validate_and_resolve_overlap_scheduler()
 
     def _validate_and_resolve_overlap_scheduler(self) -> None:
+        arch: SupportedArchitecture | None = None
+        if not self.runtime.force:
+            arch = PIPELINE_REGISTRY.retrieve_architecture(
+                huggingface_repo=self.model.huggingface_model_repo,
+                prefer_module_v3=self.runtime.prefer_module_v3,
+            )
+            max_batch_size = self.runtime.max_batch_size
+            if (
+                not self.runtime.device_graph_capture
+                and arch is not None
+                and arch.name in _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
+                and max_batch_size is not None
+                and accelerator_api() == "cuda"
+                and self._is_eligible_for_overlap_serve_optimizations()
+            ):
+                self.runtime.device_graph_capture = True
+                logger.info(
+                    "Automatically enabling device graph capture for %s with max_batch_size=%d. "
+                    "You can manually disable this by setting --no-device-graph-capture --force.",
+                    arch.name,
+                    max_batch_size,
+                )
+
         self._validate_and_resolve_device_graph_capture()
 
         if self.runtime.force:
@@ -602,26 +631,10 @@ class PipelineConfig(ConfigFileModel):
 
         # Automatically enable overlap scheduling for select architectures.
         if not self.runtime.enable_overlap_scheduler:
-            arch = PIPELINE_REGISTRY.retrieve_architecture(
-                huggingface_repo=self.model.huggingface_model_repo,
-                prefer_module_v3=self.runtime.prefer_module_v3,
-            )
             if (
                 arch is not None
-                and arch.name
-                in (
-                    "LlamaForCausalLM",
-                    "DeepseekV2ForCausalLM",
-                    "DeepseekV3ForCausalLM",
-                    "DeepseekV32ForCausalLM",
-                    "DeepseekV3ForCausalLMNextN",
-                )
-                and self.runtime.pipeline_role == "prefill_and_decode"
-                and not self.sampling.enable_structured_output
-                and not self.sampling.enable_variable_logits
-                and not self.speculative
-                and not self.lora
-                and self.model.device_specs[0].device_type != "cpu"
+                and arch.name in _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES
+                and self._is_eligible_for_overlap_serve_optimizations()
             ):
                 self.runtime.enable_overlap_scheduler = True
                 self.runtime.max_num_steps = 1
@@ -663,11 +676,21 @@ class PipelineConfig(ConfigFileModel):
                     "Overlap scheduler is not supported with CPU models."
                 )
 
+    def _is_eligible_for_overlap_serve_optimizations(self) -> bool:
+        return (
+            self.runtime.pipeline_role == "prefill_and_decode"
+            and not self.sampling.enable_structured_output
+            and not self.sampling.enable_variable_logits
+            and not self.speculative
+            and not self.lora
+            and self.model.device_specs[0].device_type != "cpu"
+        )
+
     def _validate_and_resolve_device_graph_capture(self) -> None:
         if not self.runtime.device_graph_capture:
             return
 
-        if self.max_batch_size is None:
+        if self.runtime.max_batch_size is None:
             raise ValueError(
                 "device_graph_capture requires max_batch_size to be set."
             )
@@ -1058,7 +1081,7 @@ class PipelineConfig(ConfigFileModel):
 
         pipeline_entries: list[tuple[str, Any]] = [
             ("max_seq_len", self.model.max_length),
-            ("max_batch_size", self.max_batch_size),
+            ("max_batch_size", self.runtime.max_batch_size),
             ("chunked_prefill", self.runtime.enable_chunked_prefill),
             ("max_batch_input_tokens", self.runtime.max_batch_input_tokens),
             (
@@ -1096,7 +1119,7 @@ class PipelineConfig(ConfigFileModel):
     def log_basic_config(self) -> None:
         """Log minimal pipeline configuration information.
 
-        Logs basic PipelineConfig options including model name, pipeline task,
+        Logs basic :class:`~max.pipelines.lib.config.PipelineConfig` options including model name, pipeline task,
         weight path, max_batch_size, max_seq_len, and reserved memory.
         """
         # Retrieve architecture - this should always exist after config resolution
@@ -1145,7 +1168,7 @@ class PipelineConfig(ConfigFileModel):
                 ("architecture", arch.name),
                 ("pipeline", pipeline_class.__name__),
                 ("devices", devices_str),
-                ("max_batch_size", self.max_batch_size),
+                ("max_batch_size", self.runtime.max_batch_size),
                 ("max_seq_len", self.model.max_length),
             ]
             + [("cache_memory", memory_str)]
@@ -1271,15 +1294,19 @@ PrometheusMetricsMode = Literal[
 
 
 class AudioGenerationConfig(PipelineConfig):
+    """Configuration for an audio generation pipeline."""
+
     # TODO: Make these flags more discoverable.
     audio_decoder: str = Field(
         default="",
         description="The name of the audio decoder model architecture.",
     )
+    """The name of the audio decoder model architecture."""
 
     audio_decoder_weights: str = Field(
         default="", description="The path to the audio decoder weights file."
     )
+    """The path to the audio decoder weights file."""
 
     chunk_size: list[int] | None = Field(
         default=None,
@@ -1289,6 +1316,7 @@ class AudioGenerationConfig(PipelineConfig):
             "chunk sizes are used."
         ),
     )
+    """The chunk sizes to use for streaming."""
 
     buffer: int = Field(
         default=0,
@@ -1297,6 +1325,7 @@ class AudioGenerationConfig(PipelineConfig):
             "on each generation step."
         ),
     )
+    """The number of previous speech tokens to pass to the audio decoder on each generation step."""
 
     block_causal: bool = Field(
         default=False,
@@ -1305,6 +1334,7 @@ class AudioGenerationConfig(PipelineConfig):
             "current block. Has no effect if buffer is not set."
         ),
     )
+    """Whether prior buffered tokens attend to tokens in the current block."""
 
     prepend_prompt_speech_tokens: PrependPromptSpeechTokens = Field(
         default="once",
@@ -1313,6 +1343,7 @@ class AudioGenerationConfig(PipelineConfig):
             "decoder. Options: never, once, rolling."
         ),
     )
+    """Whether the prompt speech tokens are forwarded to the audio decoder."""
 
     prepend_prompt_speech_tokens_causal: bool = Field(
         default=False,
@@ -1322,16 +1353,19 @@ class AudioGenerationConfig(PipelineConfig):
             "prepend_prompt_speech_tokens is never."
         ),
     )
+    """Whether the prompt speech tokens attend to tokens in the current audio block."""
 
     audio_decoder_config: dict[str, Any] = Field(
         default_factory=dict,
         description="Parameters to pass to the audio decoder model.",
     )
+    """Parameters to pass to the audio decoder model."""
 
     prometheus_metrics_mode: PrometheusMetricsMode = Field(
         default="instrument_only",
         description="The mode to use for Prometheus metrics.",
     )
+    """The mode to use for Prometheus metrics."""
 
     _run_model_test_mode: bool = PrivateAttr(default=False)
     """Test-only flag that indicates that test parameters have been passed to
@@ -1377,7 +1411,7 @@ class AudioGenerationConfig(PipelineConfig):
     def from_flags(
         cls, audio_flags: dict[str, str], **config_flags: Any
     ) -> AudioGenerationConfig:
-        """Builds an AudioGenerationConfig from audio CLI flags and config kwargs."""
+        """Builds an :class:`~max.pipelines.lib.config.AudioGenerationConfig` from audio CLI flags and config kwargs."""
         audio_decoder = audio_flags.pop("audio_decoder", "")
         if not audio_decoder:
             raise ValueError(

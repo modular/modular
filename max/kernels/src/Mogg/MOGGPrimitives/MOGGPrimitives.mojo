@@ -1080,7 +1080,7 @@ fn reshape_contiguous_buffer[
 @register_internal("get_simd_width_for_dtypes")
 @always_inline
 fn get_simd_width_for_dtypes[
-    dtypes: StaticTuple[DType], target: StaticString
+    dtypes: StaticTuple[DType, _], target: StaticString
 ]() -> Int:
     comptime assert dtypes.size > 0
 
@@ -1148,7 +1148,7 @@ fn to_managed_tensor_slice[
 @always_inline
 fn _get_scalar_from_managed_tensor_slice[
     dtype: DType,
-](tensor: ManagedTensorSlice[dtype=dtype]) -> Scalar[dtype]:
+](tensor: ManagedTensorSlice[dtype=dtype, ...]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
@@ -1174,31 +1174,6 @@ fn get_int_from_shape[
     param_index: Int, rank: Int
 ](shape: IndexList[rank]) -> Int:
     return shape[param_index]
-
-
-@register_internal("rebuild_static_tensor_specs_with_output_compute_lambda")
-@no_inline
-fn rebuild_static_tensor_specs_with_output_compute_lambda[
-    func_type: __TypeOfAllTypes,
-    //,
-    dtype: DType,
-    rank: Int,
-](
-    spec: StaticTensorSpec[dtype, rank],
-    out_compute_lambda: func_type,
-) -> StaticTensorSpec[dtype, rank]:
-    return StaticTensorSpec[dtype, rank](
-        shape=spec.shape,
-        strides=spec.strides,
-        alignment=spec.alignment,
-        address_space=spec.address_space,
-        exclusive=spec.exclusive,
-        in_lambda=None,
-        out_lambda=None,
-        out_compute_lambda=rebind[spec.out_compute_lambda_t](
-            out_compute_lambda
-        ),
-    )
 
 
 @always_inline

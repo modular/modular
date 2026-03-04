@@ -111,7 +111,15 @@ def supported_encoding_quantization(
 def parse_supported_encoding_from_file_name(
     name: str,
 ) -> SupportedEncoding | None:
-    """Infers a SupportedEncoding from a file name string."""
+    """Infers a SupportedEncoding from a file name string.
+
+    Args:
+        name: The file name to parse.
+
+    Returns:
+        The :obj:`SupportedEncoding` value inferred from the file name, or
+        ``None`` if no known encoding pattern is found.
+    """
     # TODO(AITLIB-127): Robustify detection of quantization encoding
     name = name.lower()
     if "f32" in name or "fp32" in name or "float32" in name:

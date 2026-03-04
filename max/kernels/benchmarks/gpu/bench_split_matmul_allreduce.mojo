@@ -12,7 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.random
-from std.sys import env_get_bool, env_get_dtype, env_get_int, size_of
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    size_of,
+)
 
 from std.benchmark import (
     Bench,
@@ -39,24 +44,23 @@ fn _get_run_name[
     overlap_with_dpl: Bool,
 ](m: ValOrDim, n: ValOrDim, k: ValOrDim,) -> String:
     var vendor_str = "matmul_allreduce"
-    var type_str = String(t"({dtype}) : ")
-    var m_str = String(t"{m.value}_dynamic") if m.dim.is_dynamic() else String(
+    var type_str = String("(", dtype, ") : ")
+    var m_str = String(m.value, "_dynamic") if m.dim.is_dynamic() else String(
         m.dim
     )
-    var n_str = String(t"{n.value}_dynamic") if n.dim.is_dynamic() else String(
+    var n_str = String(n.value, "_dynamic") if n.dim.is_dynamic() else String(
         n.dim
     )
-    var k_str = String(t"{k.value}_dynamic") if k.dim.is_dynamic() else String(
+    var k_str = String(k.value, "_dynamic") if k.dim.is_dynamic() else String(
         k.dim
     )
 
-    var ngpus_str = String(t"/ngpus={ngpus}")
+    var ngpus_str = String("/ngpus=", ngpus)
     var num_partitions_str = (
-        String(t"/num_partitions={num_partitions}") if num_partitions
-        > 1 else ""
+        String("/num_partitions=", num_partitions) if num_partitions > 1 else ""
     )
     var partition_dim_str = (
-        String(t"/partition_dim={partition_dim}") if num_partitions > 1 else ""
+        String("/partition_dim=", partition_dim) if num_partitions > 1 else ""
     )
     var overlap_str = "/overlap" if overlap_with_dpl else ""
     return String(
@@ -257,15 +261,15 @@ fn bench_matmul_all_reduce[
 
 
 def main() raises:
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 8192))
-    comptime N = env_get_int["N", 8192]()
-    comptime K = env_get_int["K", 2048]()
-    comptime num_gpus = env_get_int["NUM_GPUS", 4]()
-    comptime partition_dim = env_get_int["DIM", 1]()
-    comptime num_partitions = env_get_int["PARTITIONS", 1]()
-    comptime overlap_with_dpl = env_get_bool["OVERLAP", False]()
+    comptime N = get_defined_int["N", 8192]()
+    comptime K = get_defined_int["K", 2048]()
+    comptime num_gpus = get_defined_int["NUM_GPUS", 4]()
+    comptime partition_dim = get_defined_int["DIM", 1]()
+    comptime num_partitions = get_defined_int["PARTITIONS", 1]()
+    comptime overlap_with_dpl = get_defined_bool["OVERLAP", False]()
 
     var m = Bench()
 

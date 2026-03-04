@@ -25,7 +25,7 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule, TileScheduler
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
+from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
 from .matmul_kernels import find_K_alignment_upto_16B, HopperMatmulSM90Kernel

@@ -267,6 +267,15 @@ what we publish.
   or `write_repr_to()`, however, you can manually implement these to get custom
   output.
 
+- The `env_get_bool()`, `env_get_int()`, `env_get_string()`, and
+  `env_get_dtype()` functions in the `sys.param_env` module have been renamed to
+  `get_defined_bool()`, `get_defined_int()`, `get_defined_string()`, and
+  `get_defined_dtype()` in the new `sys.defines` module. The new names better
+  reflect that these functions read compile-time defines (set via `-D`), not
+  runtime environment variables. The `is_defined()` function has also moved to
+  `sys.defines` without renaming. The old names in `sys.param_env` are
+  deprecated but still available.
+
 - `TString.write_to()` now uses a compact encoding for format strings. The
   format string is flattened at compile time into NUL-terminated literal
   segments, producing considerably smaller static data and faster runtime than

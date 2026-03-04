@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _accelerator_arch
-from std.sys.param_env import env_get_string, is_defined
+from std.sys.defines import get_defined_string, is_defined
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import GPUInfo
@@ -20,7 +20,7 @@ from std.gpu.host.info import GPUInfo
 
 fn api() -> String:
     comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        comptime api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+        comptime api = get_defined_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
         comptime if api == "gpu":
             return String(GPUInfo.from_name[_accelerator_arch()]().api)

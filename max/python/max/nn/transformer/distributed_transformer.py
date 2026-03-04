@@ -33,10 +33,10 @@ from max.nn.comm.allreduce import Allreduce
 
 from ..embedding import VocabParallelEmbedding
 from ..kv_cache import (
+    AttentionDispatchMetadata,
     KVCacheParams,
-    MHADecodeDispatchMetadata,
     PagedCacheValues,
-    mha_decode_dispatch_metadata_list,
+    attention_dispatch_metadata_list,
 )
 from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear
@@ -290,7 +290,7 @@ class DistributedTransformerBlock(Module):
                 cache_lengths=cache_lengths,
                 lookup_table=lookup_table,
                 max_lengths=max_lengths,
-                dispatch_metadata=MHADecodeDispatchMetadata(dispatch_metadata),
+                dispatch_metadata=AttentionDispatchMetadata(dispatch_metadata),
             )
             for kv_block, cache_lengths, lookup_table, max_lengths, dispatch_metadata in zip(
                 kv_blocks,
@@ -385,7 +385,7 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
 
         dispatch_metadata_tensors = [
             cast(TensorValue, metadata.tensor)
-            for metadata in mha_decode_dispatch_metadata_list(kv_collections)
+            for metadata in attention_dispatch_metadata_list(kv_collections)
         ]
 
         kv_blocks = [
