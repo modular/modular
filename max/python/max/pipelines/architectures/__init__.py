@@ -42,7 +42,7 @@ def register_all_models() -> None:
     from .exaone import exaone_arch
     from .exaone_modulev3 import exaone_modulev3_arch
     from .flux1 import flux1_arch
-    from .flux2 import flux2_arch
+    from .flux2 import flux2_arch, flux2_klein_arch
     from .gemma3 import gemma3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
     from .gpt_oss import gpt_oss_arch
@@ -70,6 +70,7 @@ def register_all_models() -> None:
     from .qwen3 import qwen3_arch, qwen3_moe_arch
     from .qwen3_embedding import qwen3_embedding_arch
     from .qwen3vl_moe import qwen3vl_arch, qwen3vl_moe_arch
+    from .z_image import z_image_arch
 
     architectures = [
         exaone_arch,
@@ -81,6 +82,7 @@ def register_all_models() -> None:
         eagle_llama_arch,
         flux1_arch,
         flux2_arch,
+        flux2_klein_arch,
         gemma3_arch,
         gemma3_multimodal_arch,
         granite_arch,
@@ -111,6 +113,7 @@ def register_all_models() -> None:
         qwen3_embedding_arch,
         qwen3vl_arch,
         qwen3vl_moe_arch,
+        z_image_arch,
     ]
 
     for arch in architectures:

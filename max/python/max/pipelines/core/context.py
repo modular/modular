@@ -676,6 +676,9 @@ class PixelContext:
     negative_tokens: TokenBuffer | None = field(default=None)
     """Negative tokens for primary encoder."""
 
+    negative_mask: npt.NDArray[np.bool_] | None = field(default=None)
+    """Mask for negative text encoder tokens."""
+
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
 
@@ -705,6 +708,9 @@ class PixelContext:
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=3.5)
     true_cfg_scale: float = field(default=1.0)
+    strength: float = field(default=0.6)
+    cfg_normalization: bool = field(default=False)
+    cfg_truncation: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
