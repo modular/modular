@@ -906,6 +906,8 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
     if (paramValues.size() == genAttr.getInputParamTypes().size()) {
       GeneratorAttr specializedGenerator =
           genAttr.getSpecializedGenerator(paramValues, evalContext);
+      if (!specializedGenerator)
+        return TypedAttr();
       return specializedGenerator.isFullyBound()
                  ? specializedGenerator.getInstantiatedValue()
                  : cast<TypedAttr>(specializedGenerator);
@@ -923,7 +925,7 @@ static TypedAttr simplifyBindParams(TypedAttr generator,
 
     GeneratorAttr specializedGenerator =
         genAttr.getSpecializedGenerator(partialParamValues, evalContext);
-    return cast<TypedAttr>(specializedGenerator);
+    return cast_if_present<TypedAttr>(specializedGenerator);
   }
 
   // If the actual generator is a SymbolConstantAttr, then we can simplify by
@@ -1322,11 +1324,17 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
       PartiallySpecializedInputParams::from(getInputParamTypes(), paramBindings,
                                             evaluationContext, emitErrorFn);
   if (!specializationOpt)
-    return {};
+    return {}; // Error already emitted to emitErrorFn.
   PartiallySpecializedInputParams &specialization = *specializationOpt;
 
   TypedAttr newBody =
       cast<TypedAttr>(specialization.evaluator.getReboundAttribute(getBody()));
+  // Propagate null back to the caller. This only happens in materialization
+  // contexts. It either indicates a failure (in which case errors must have
+  // already been emitted to the evaluation context) or an async materialization
+  // currently in-progress.
+  if (!newBody)
+    return {};
 
   // Create specialized metadata if needed
   GeneratorMetadataAttrInterface genMetadata = getMetadata();
@@ -1334,7 +1342,7 @@ GeneratorAttr GeneratorAttr::getSpecializedGenerator(
     genMetadata = genMetadata.getSpecializedMetadata(
         specialization.evaluator, specialization.boundParams, emitErrorFn);
     if (!genMetadata)
-      return {};
+      return {}; // Error already emitted to emitErrorFn.
   }
 
   return GeneratorAttr::get(newBody.getContext(), newBody,

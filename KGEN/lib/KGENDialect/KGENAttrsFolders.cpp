@@ -38,8 +38,10 @@ FailureOr<TypedAttr> VariadicReduceAttr::evaluateWithContext(
     IntegerAttr vaIdx = IntegerAttr::get(IndexType::get(va.getContext()), i);
     GeneratorAttr spGen =
         reducer.getSpecializedGenerator({reducedVal, va, vaIdx}, &context);
+    if (!spGen)
+      return TypedAttr();
     // This should never happen, we should have verified VariadicMapAttr.
-    assert(spGen && spGen.isFullyBound() && "invalid form of variadic map");
+    assert(spGen.isFullyBound() && "invalid form of variadic map");
     reducedVal = spGen.getInstantiatedValue();
   }
 
