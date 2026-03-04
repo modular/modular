@@ -25,7 +25,6 @@ from max.pipelines.core import PixelContext
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.diffusion_pipeline import max_compile
 from max.profiler import Tracer, traced
-from tqdm import tqdm
 
 from ..autoencoders import AutoencoderKLFlux2Model
 from ..mistral3.text_encoder import Mistral3TextEncoderModel
@@ -704,9 +703,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         is_img2img = image_latents is not None
         with Tracer("denoising_loop"):
-            for i in tqdm(
-                range(model_inputs.num_inference_steps), desc="Denoising"
-            ):
+            for i in range(model_inputs.num_inference_steps):
                 with Tracer(f"denoising_step_{i}"):
                     timestep = timesteps_seq[i : i + 1]
                     dt = dts_seq[i : i + 1]
