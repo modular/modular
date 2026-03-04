@@ -10,12 +10,23 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/MojoParser/StabilityMarkers.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 
 using namespace M::KGEN::LIT;
 using namespace M::KGEN;
 using namespace mlir;
 using M::SourceRange;
+
+bool M::KGEN::LIT::isPackageOptedIntoStabilityMarkers(StringRef packageName) {
+  // Currently only the standard library is opted into stability markers.
+  // In the future, this could be extended to support third-party packages
+  // that declare their opt-in via package manifest configuration.
+  //
+  // "test_std_mock" is a test-only package name that allows writing tests
+  // for stability markers without depending on the real standard library.
+  return packageName == "std" || packageName == "test_std_mock";
+}
 
 /// Returns the name of the declaration. Asserts if the name is not available.
 static StringRef getDeclName(Operation *op) {
@@ -35,17 +46,6 @@ static bool hasStableDecorator(ASTDecl &decl) {
           decl.getIfOperation()))
     return stabilityIface.isStable();
   return false;
-}
-
-/// Returns true if the given package has opted into stability markers.
-static bool isPackageOptedIntoStabilityMarkers(StringRef packageName) {
-  // Currently only the standard library is opted into stability markers.
-  // In the future, this could be extended to support third-party packages
-  // that declare their opt-in via package manifest configuration.
-  //
-  // "test_std_mock" is a test-only package name that allows writing tests
-  // for stability markers without depending on the real standard library.
-  return packageName == "std" || packageName == "test_std_mock";
 }
 
 /// Find the nearest ancestor PackageOp that has opted into stability markers.

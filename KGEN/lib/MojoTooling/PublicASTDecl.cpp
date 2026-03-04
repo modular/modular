@@ -15,6 +15,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/DocString.h"
+#include "KGEN/MojoParser/StabilityMarkers.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/TypeExtractionUtils.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -31,11 +32,26 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Returns true if the operation is nested inside a package that has opted into
+/// stability tracking.
+static bool isInStabilityOptedPackage(mlir::Operation *op) {
+  for (mlir::Operation *cur = op->getParentOp(); cur;
+       cur = cur->getParentOp()) {
+    if (auto pkgOp = dyn_cast<PackageOp>(cur))
+      if (isPackageOptedIntoStabilityMarkers(pkgOp.getSymName()))
+        return true;
+  }
+  return false;
+}
+
 /// Extract @stable decorator information from an op into a StableInfo struct.
 static StableInfo computeStableInfo(StabilityDecoratorInterface itf) {
+  bool tracked = isInStabilityOptedPackage(itf.getOperation());
   if (!itf.getHasStableDecorator())
-    return {};
-  return {/*isStable=*/true, itf.getSinceVersion().str()};
+    return {/*isStable=*/false, /*isStabilityTracked=*/tracked,
+            /*sinceVersion=*/{}};
+  return {/*isStable=*/true, /*isStabilityTracked=*/tracked,
+          itf.getSinceVersion().str()};
 }
 
 /// Parses compound trait types like "Representable & Copyable & Movable" into
@@ -980,6 +996,7 @@ llvm::json::Object PublicAliasDecl::toJSON(MojoParserContext &ctx) const {
                          {"kind", getKindAsString()},
                          {"name", getName().str()},
                          {"isStable", stableInfo.isStable},
+                         {"isStabilityTracked", stableInfo.isStabilityTracked},
                          {"sinceVersion", stableInfo.sinceVersion},
                          {"summary", summary},
                          {"parameters", toJSONArray(ctx, parameters)},
@@ -1267,6 +1284,7 @@ llvm::json::Object PublicFunctionDecl::toJSON(MojoParserContext &ctx) const {
       {"raisesDoc", raisesDoc},
       {"signature", getSignature(ctx)},
       {"isStable", stableInfo.isStable},
+      {"isStabilityTracked", stableInfo.isStabilityTracked},
       {"sinceVersion", stableInfo.sinceVersion},
       {"summary", summary},
   };
@@ -1692,6 +1710,7 @@ llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
       {"name", getName().str()},
       {"parentTraits", std::move(parentTraitsWithMetadata)},
       {"isStable", stableInfo.isStable},
+      {"isStabilityTracked", stableInfo.isStabilityTracked},
       {"sinceVersion", stableInfo.sinceVersion},
       {"summary", summary},
   };
@@ -1830,6 +1849,7 @@ llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
       {"parentTraits", std::move(parentTraitsWithMetadata)},
       {"signature", getSignature(ctx)},
       {"isStable", stableInfo.isStable},
+      {"isStabilityTracked", stableInfo.isStabilityTracked},
       {"sinceVersion", stableInfo.sinceVersion},
       {"summary", summary},
       {"convention", toString(convention)},
