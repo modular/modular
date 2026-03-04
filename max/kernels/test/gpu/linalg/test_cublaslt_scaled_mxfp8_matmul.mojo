@@ -35,7 +35,6 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     MXFP8_SF_VECTOR_SIZE,
     MXFP8_SF_DTYPE,
-    # convert_ref_scales_to_mxfp8_format,
     set_scale_factor,
 )
 from linalg.fp4_quantization import naive_block_scaled_matmul

@@ -653,8 +653,13 @@ struct BlockScaledMatmulConfig[
             * Self.sf_block_atom_size
             * size_of[Self.sfb_dtype]()
         )
+
+        # right now we only need 8 bytes (one barrier only for producer) but when we seperate the sfb tma load and sfb tmem load, we will need 16 bytes.
+        var sfb_tmem_load_mbars_size = 16
         var sf_smem_per_stage = (
-            a_scales_smem_bytes_per_stage + b_scales_smem_bytes_per_stage
+            a_scales_smem_bytes_per_stage
+            + b_scales_smem_bytes_per_stage
+            + sfb_tmem_load_mbars_size
         )
 
         self.num_pipeline_stages = _maximize_pipeline_stages[
