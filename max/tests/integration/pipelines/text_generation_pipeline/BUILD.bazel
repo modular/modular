@@ -95,7 +95,6 @@ modular_py_test(
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
-        "//max/tests/integration/test_common",
         requirement("numpy"),
         requirement("pytest-asyncio"),
     ],

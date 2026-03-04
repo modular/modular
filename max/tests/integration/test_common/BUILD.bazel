@@ -19,7 +19,10 @@ modular_py_library(
     testonly = True,
     srcs = ["__init__.py"],
     imports = [".."],
-    tags = ["no-pydeps"],  # This is a meta-target, which sort of goes against the point of the pydeps test
+    tags = [
+        "maybe-unused",  # Temporary, this should be deleted
+        "no-pydeps",  # This is a meta-target, which sort of goes against the point of the pydeps test
+    ],
     deps = [
         requirement("pytest"),
         requirement("numpy"),
@@ -185,6 +188,9 @@ modular_py_library(
     testonly = True,
     srcs = ["pipeline_cli_utils.py"],
     imports = [".."],
+    tags = [
+        "maybe-unused",  # Temporary, this should be deleted
+    ],
     deps = [
         "//max/python/max/driver",
     ],

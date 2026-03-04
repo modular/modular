@@ -66,7 +66,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/serve",
-        "//max/tests/integration/test_common",
         requirement("numpy"),
         requirement("pillow"),
         requirement("pytest-asyncio"),
@@ -103,7 +102,9 @@ modular_py_library(
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        "//max/tests/integration/test_common",
+        "//max/tests/integration/test_common:storage",
+        "//max/tests/integration/test_common:test_data",
+        "//max/tests/integration/test_common:torch_utils",
         requirement("numpy"),
         requirement("pillow"),
         requirement("requests"),
