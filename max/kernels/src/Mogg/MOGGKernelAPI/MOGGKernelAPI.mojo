@@ -10195,11 +10195,11 @@ struct DistributedAllGather:
 struct DistributedBroadcast:
     """Distributed broadcast: copy tensor from root GPU to all GPUs.
 
-    This op is called once per target GPU. Each instance receives:
+    A single instance of this op handles all participating GPUs. It receives:
     - input: The source tensor from the root GPU (P2P accessible)
-    - output: The destination tensor on this GPU
+    - outputs: Destination tensors, one per GPU
     - signal_buffers: Synchronization buffers for all participating GPUs
-    - device_ctx: Device context for this GPU
+    - dev_ctxs_input: Device contexts for all participating GPUs
     """
 
     @staticmethod
@@ -10210,12 +10210,12 @@ struct DistributedBroadcast:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
         ],
-        device_ctx: DeviceContextPtr,
+        dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
         """Execute distributed broadcast operation.
 
@@ -10227,21 +10227,19 @@ struct DistributedBroadcast:
             _trace_name: Trace name for profiling.
 
         Args:
-            output: Output tensor for this GPU.
+            outputs: Output tensors (one per GPU) to store broadcast results.
             input: Input tensor from root GPU (P2P accessible from all GPUs).
             signal_buffers: Synchronization buffers for cross-GPU coordination.
-            device_ctx: Device context for this GPU.
-
-        Implementation Notes:
-            1. This op is called once per target GPU by the graph compiler.
-            2. All GPUs receive the same input tensor (from root) via P2P access.
-            3. Each op instance only writes to its assigned output tensor.
+            dev_ctxs_input: Device contexts for participating GPUs.
 
         Limitations:
             - Maximum of 8 GPUs supported (MAX_GPUS).
             - Requires P2P access between GPUs (NVLink or PCIe P2P).
         """
-        comptime num_devices = signal_buffers.size
+        comptime num_devices = outputs.size
+        comptime assert (
+            signal_buffers.size == num_devices
+        ), "expected 1 signal buffer per device"
         comptime assert (
             root >= 0 and root < num_devices
         ), "root GPU index must be in range [0, ngpus)"
@@ -10254,7 +10252,6 @@ struct DistributedBroadcast:
         _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
 
         var in_buf = managed_tensor_slice_to_ndbuffer(input)
-        var out_buf = managed_tensor_slice_to_ndbuffer(output)
 
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
@@ -10263,13 +10260,29 @@ struct DistributedBroadcast:
         comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
-        with Trace[TraceLevel.OP, target=target](_trace_name):
+        @always_inline
+        fn launch_broadcast[
+            index: Int
+        ]() raises unified {
+            read in_buf,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            var out_buf = managed_tensor_slice_to_ndbuffer(
+                outputs[index]
+            ).make_dims_unknown()
             broadcast[ngpus=num_devices](
                 in_buf.make_dims_unknown(),
-                out_buf.make_dims_unknown(),
+                out_buf,
                 rank_sigs,
-                device_ctx[],
+                dev_ctxs_input[index],
                 root,
+            )
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            _launch_device_collective[num_devices](
+                launch_broadcast, dev_ctxs_input
             )
 
 
