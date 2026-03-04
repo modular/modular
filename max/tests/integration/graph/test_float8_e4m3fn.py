@@ -26,7 +26,7 @@ from test_common.graph_utils import is_h100_h200
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 @pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
 def test_f8_upcast(cast_dtype: DType) -> None:
-    x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float8_e4m3fn)
+    x = Tensor([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float8_e4m3fn)
     result = x.cast(cast_dtype)
     asyncio.run(result.realize)
     assert list(result._values()) == [1.0, 2.0, 3.0, 4.0]
@@ -35,7 +35,7 @@ def test_f8_upcast(cast_dtype: DType) -> None:
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 @pytest.mark.parametrize("cast_dtype", [DType.float32, DType.bfloat16])
 def test_f8_downcast(cast_dtype: DType) -> None:
-    x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], dtype=cast_dtype)
+    x = Tensor([[1.0, 2.0], [3.0, 4.0]], dtype=cast_dtype)
     result = x.cast(DType.float8_e4m3fn)
     asyncio.run(result.realize)
     assert list(result._values()) == [1.0, 2.0, 3.0, 4.0]
@@ -43,10 +43,10 @@ def test_f8_downcast(cast_dtype: DType) -> None:
 
 @pytest.mark.skipif(not is_h100_h200(), reason="float8 requires H100 or H200")
 def test_f8_matmul(session: InferenceSession) -> None:
-    input = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float8_e4m3fn)
+    input = Tensor([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float8_e4m3fn)
     with Graph("f8", input_types=[input.type]) as graph:
         x = graph.inputs[0].tensor
-        y = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float8_e4m3fn)
+        y = Tensor([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float8_e4m3fn)
         graph.output(x @ y)
 
     print(graph)

@@ -17,7 +17,7 @@ from max.dtype import DType
 from max.experimental.tensor import Tensor
 
 # Create a float32 tensor
-x = Tensor.constant([1.7, 2.3, 3.9], dtype=DType.float32, device=CPU())
+x = Tensor([1.7, 2.3, 3.9], dtype=DType.float32, device=CPU())
 print(f"Original dtype: {x.dtype}")  # DType.float32
 
 # Cast to int32 (truncates decimal values)

@@ -107,7 +107,7 @@ class Module(Generic[_P, _R]):
 
         linear = Linear(Tensor.zeros([5, 4]))
         print(linear)
-        print(linear(Tensor.constant([1, 2, 3, 4])))
+        print(linear(Tensor([1, 2, 3, 4])))
     """
 
     def forward(self, *args: _P.args, **kwargs: _P.kwargs) -> _R:

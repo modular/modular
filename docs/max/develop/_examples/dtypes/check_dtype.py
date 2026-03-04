@@ -18,7 +18,7 @@ from max.experimental.tensor import Tensor
 
 # Create tensors of different types
 weights = Tensor.ones([3, 3], dtype=DType.float32, device=CPU())
-indices = Tensor.constant([0, 1, 2], dtype=DType.int64, device=CPU())
+indices = Tensor([0, 1, 2], dtype=DType.int64, device=CPU())
 
 # Check the dtype of each tensor
 print(f"Weights dtype: {weights.dtype}")  # DType.float32

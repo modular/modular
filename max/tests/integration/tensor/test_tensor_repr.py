@@ -76,28 +76,28 @@ def _strip_device(r: str) -> str:
 
 def test_repr_scalar() -> None:
     """Test repr for scalar (0D) tensor - exact match."""
-    t = Tensor.constant(42.5, dtype=DType.float32)
+    t = Tensor(42.5, dtype=DType.float32)
     r = _strip_device(repr(t))
     assert r == "Tensor(42.5, dtype=DType.float32)"
 
 
 def test_repr_1d() -> None:
     """Test repr for 1D tensor (vector) - exact match."""
-    t = Tensor.constant([1.0, 2.0, 3.0], dtype=DType.float32)
+    t = Tensor([1.0, 2.0, 3.0], dtype=DType.float32)
     r = _strip_device(repr(t))
     assert r == "Tensor([1 2 3], dtype=DType.float32)"
 
 
 def test_repr_1d_integers() -> None:
     """Test repr for 1D integer tensor - exact match."""
-    t = Tensor.constant([10, 20, 30], dtype=DType.int32)
+    t = Tensor([10, 20, 30], dtype=DType.int32)
     r = _strip_device(repr(t))
     assert r == "Tensor([10 20 30], dtype=DType.int32)"
 
 
 def test_repr_2d_integers() -> None:
     """Test repr for 2D integer tensor with zeros."""
-    t = Tensor.constant([[0, 1], [2, 0]], dtype=DType.int32)
+    t = Tensor([[0, 1], [2, 0]], dtype=DType.int32)
     r = _strip_device(repr(t))
     expected = "Tensor([0 1\n 2 0], dtype=DType.int32)"
     assert r == expected, f"Got:\n{r}\nExpected:\n{expected}"
@@ -105,7 +105,7 @@ def test_repr_2d_integers() -> None:
 
 def test_repr_int64() -> None:
     """Test repr for int64 tensor - large values formatted correctly."""
-    t = Tensor.constant([1000000, 2000000, 3000000], dtype=DType.int64)
+    t = Tensor([1000000, 2000000, 3000000], dtype=DType.int64)
     r = _strip_device(repr(t))
     expected = "Tensor([1000000 2000000 3000000], dtype=DType.int64)"
     assert r == expected, f"Got:\n{r}\nExpected:\n{expected}"
@@ -113,7 +113,7 @@ def test_repr_int64() -> None:
 
 def test_repr_2d() -> None:
     """Test repr for 2D tensor (matrix) - exact multi-line match."""
-    t = Tensor.constant([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32)
+    t = Tensor([[1.0, 2.0], [3.0, 4.0]], dtype=DType.float32)
     r = _strip_device(repr(t))
     expected = "Tensor([1 2\n 3 4], dtype=DType.float32)"
     assert r == expected, f"Got:\n{r}\nExpected:\n{expected}"
@@ -121,7 +121,7 @@ def test_repr_2d() -> None:
 
 def test_repr_2d_3x3() -> None:
     """Test repr for 3x3 matrix - exact multi-line match."""
-    t = Tensor.constant([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=DType.int32)
+    t = Tensor([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=DType.int32)
     r = _strip_device(repr(t))
     expected = "Tensor([1 2 3\n 4 5 6\n 7 8 9], dtype=DType.int32)"
     assert r == expected, f"Got:\n{r}\nExpected:\n{expected}"
@@ -129,7 +129,7 @@ def test_repr_2d_3x3() -> None:
 
 def test_repr_3d() -> None:
     """Test repr for 3D tensor - exact matrix-of-matrices match."""
-    t = Tensor.constant(
+    t = Tensor(
         [[[1, 2], [3, 4]], [[5, 6], [7, 8]]],
         dtype=DType.int32,
     )
@@ -141,7 +141,7 @@ def test_repr_3d() -> None:
 
 def test_repr_3d_shape_2x2x3() -> None:
     """Test repr for shape [2,2,3] tensor - exact match."""
-    t = Tensor.constant(
+    t = Tensor(
         [[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]],
         dtype=DType.int32,
     )
@@ -163,7 +163,7 @@ def test_repr_bool_tensor() -> None:
 
 def test_repr_bool_mixed() -> None:
     """Test repr for mixed boolean tensor - exact match."""
-    t = Tensor.constant([[True, False], [False, True]], dtype=DType.bool)
+    t = Tensor([[True, False], [False, True]], dtype=DType.bool)
     r = _strip_device(repr(t))
     expected = "Tensor([ True False\n False  True], dtype=DType.bool)"
     assert r == expected, f"Got:\n{r}\nExpected:\n{expected}"
@@ -178,7 +178,7 @@ def test_repr_empty_tensor() -> None:
 
 def test_repr_float_precision() -> None:
     """Test repr for float with precision - values formatted correctly."""
-    t = Tensor.constant([1.2345, 2.5, 100.0], dtype=DType.float32)
+    t = Tensor([1.2345, 2.5, 100.0], dtype=DType.float32)
     r = _strip_device(repr(t))
     # Precision is 4 sig digits; cell width aligned to widest element
     expected = "Tensor([1.235   2.5   100], dtype=DType.float32)"
@@ -187,7 +187,7 @@ def test_repr_float_precision() -> None:
 
 def test_repr_negative_numbers() -> None:
     """Test repr with negative numbers - alignment preserved."""
-    t = Tensor.constant([[-1, 2], [3, -4]], dtype=DType.int32)
+    t = Tensor([[-1, 2], [3, -4]], dtype=DType.int32)
     r = _strip_device(repr(t))
     expected = "Tensor([-1  2\n  3 -4], dtype=DType.int32)"
     assert r == expected, f"Got:\n{r}\nExpected:\n{expected}"

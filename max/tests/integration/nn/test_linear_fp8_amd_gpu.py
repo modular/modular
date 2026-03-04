@@ -50,7 +50,7 @@ def test_linear_fp8_amd_conversion_static_scale(
     )
 
     weights = [1.0, 2.0, -1.0, 0.0, -0.0]
-    input = Tensor.constant([weights], dtype=DType.bfloat16)
+    input = Tensor([weights], dtype=DType.bfloat16)
 
     fp8_graph = Graph(
         "linear_test",
@@ -68,9 +68,9 @@ def test_linear_fp8_amd_conversion_static_scale(
     fp8_model = gpu_session.load(
         fp8_graph,
         weights_registry={
-            "linear.weight_scale": Tensor.constant([1.0], device=CPU()),
-            "linear.input_scale": Tensor.constant([1.0], device=CPU()),
-            "linear.weight": Tensor.constant(
+            "linear.weight_scale": Tensor([1.0], device=CPU()),
+            "linear.input_scale": Tensor([1.0], device=CPU()),
+            "linear.weight": Tensor(
                 weights,
                 dtype=DType.float8_e4m3fn,
                 device=CPU(),
@@ -93,7 +93,7 @@ def test_linear_fp8_amd_conversion_static_scale(
     bf16_model = gpu_session.load(
         bf16_graph,
         weights_registry={
-            "linear.weight": Tensor.constant(
+            "linear.weight": Tensor(
                 weights, dtype=DType.bfloat16, device=CPU()
             ),
         },
@@ -135,8 +135,8 @@ def test_linear_fp8_amd_conversion_dynamic_scale(
         attn_qkv_in_float8=set(),
     )
 
-    weight_scale = Tensor.constant([1.0], dtype=DType.float8_e4m3fn)
-    base_values = Tensor.constant(
+    weight_scale = Tensor([1.0], dtype=DType.float8_e4m3fn)
+    base_values = Tensor(
         [[1.0, 2.0, -1.0, 0.0, -0.0]], dtype=DType.float8_e4m3fn
     )
     weights = F.tile(base_values, (16, 7))[:16, :32]

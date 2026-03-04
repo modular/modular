@@ -90,5 +90,5 @@ def test_call() -> None:
             TestModule(4),
         ),
     )
-    t = Tensor.constant(0)
+    t = Tensor(0)
     assert s(t).item() == 10

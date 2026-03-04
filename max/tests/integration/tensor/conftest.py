@@ -24,7 +24,7 @@ def assert_all_close(
     rtol: float = 1e-6,
 ) -> None:
     if not isinstance(t1, Tensor):
-        t1 = Tensor.constant(t1, dtype=t2.dtype, device=t2.device)
+        t1 = Tensor(t1, dtype=t2.dtype, device=t2.device)
 
     absolute_difference = abs(t1 - t2)
     # TODO: div0

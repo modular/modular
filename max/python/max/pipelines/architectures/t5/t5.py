@@ -293,7 +293,7 @@ class T5Attention(
         Returns:
             TensorValue: Relative position buckets.
         """
-        relative_buckets = Tensor.constant(
+        relative_buckets = Tensor(
             0, dtype=DType.int32, device=relative_position.device
         )
 

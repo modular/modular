@@ -47,8 +47,8 @@ You can use standard Python operators for basic arithmetic on tensors. The `+`,
 ```python
 from max.experimental.tensor import Tensor
 
-a = Tensor.constant([1.0, 2.0, 3.0])
-b = Tensor.constant([4.0, 5.0, 6.0])
+a = Tensor([1.0, 2.0, 3.0])
+b = Tensor([4.0, 5.0, 6.0])
 
 # Element-wise operations
 addition = a + b
@@ -79,7 +79,7 @@ root:
 import max.experimental.functional as F
 from max.experimental.tensor import Tensor
 
-x = Tensor.constant([1.0, -4.0, 9.0, -16.0])
+x = Tensor([1.0, -4.0, 9.0, -16.0])
 
 # Built-in functions using dunder methods
 absolute = abs(x)  # Uses __abs__
@@ -129,7 +129,7 @@ total number of elements remains constant across all shapes:
 from max.experimental.tensor import Tensor
 
 # Create a 1-D tensor with 12 elements
-x = Tensor.constant([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+x = Tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
 print(f"Original shape: {x.shape}")
 
 # Reshape to 3x4 matrix
@@ -161,7 +161,7 @@ swaps two dimensions of a tensor:
 from max.experimental.tensor import Tensor
 
 # Create a 2x3 matrix
-x = Tensor.constant([[1, 2, 3], [4, 5, 6]])
+x = Tensor([[1, 2, 3], [4, 5, 6]])
 print(f"Original shape: {x.shape}")
 print(x)
 
@@ -191,7 +191,7 @@ For the common case of transposing the last two dimensions, you can use the
 from max.experimental.tensor import Tensor
 
 # Create a 2x3 matrix
-x = Tensor.constant([[1, 2, 3], [4, 5, 6]])
+x = Tensor([[1, 2, 3], [4, 5, 6]])
 
 # Transpose last two dimensions using .T
 y = x.T
@@ -222,7 +222,7 @@ position 1, and dimension 1 moves to position 2:
 from max.experimental.tensor import Tensor
 
 # Create a 3D tensor (batch_size=2, channels=3, length=4)
-x = Tensor.constant([[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
+x = Tensor([[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
                       [[13, 14, 15, 16], [17, 18, 19, 20], [21, 22, 23, 24]]])
 print(f"Original shape: {x.shape}")
 
@@ -249,8 +249,8 @@ functional API since it operates on multiple tensors:
 import max.experimental.functional as F
 from max.experimental.tensor import Tensor
 
-a = Tensor.constant([[1, 2], [3, 4]])
-b = Tensor.constant([[5, 6], [7, 8]])
+a = Tensor([[1, 2], [3, 4]])
+b = Tensor([[5, 6], [7, 8]])
 
 # Concatenate along axis 0 (rows)
 vertical = F.concat([a, b], axis=0)
@@ -287,7 +287,7 @@ producing smaller tensors or scalars. Use tensor methods for reductions:
 import max.experimental.functional as F
 from max.experimental.tensor import Tensor
 
-x = Tensor.constant([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+x = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
 
 # Reduce along different dimensions
 sum_all = x.sum()  # Sum all elements
@@ -355,8 +355,8 @@ multiplication:
 from max.experimental.tensor import Tensor
 
 # Create two matrices
-x = Tensor.constant([[1.0, 2.0], [3.0, 4.0]])  # 2x2
-w = Tensor.constant([[5.0, 6.0], [7.0, 8.0]])  # 2x2
+x = Tensor([[1.0, 2.0], [3.0, 4.0]])  # 2x2
+w = Tensor([[5.0, 6.0], [7.0, 8.0]])  # 2x2
 
 # Matrix multiply using @ operator
 result = x @ w
@@ -395,7 +395,7 @@ maps values to (-1, 1):
 import max.experimental.functional as F
 from max.experimental.tensor import Tensor
 
-x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
+x = Tensor([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
 
 # Apply activation functions
 relu_output = F.relu(x)
@@ -520,7 +520,7 @@ def linear_layer(x: Tensor, weights: Tensor, bias: Tensor) -> Tensor:
 
 
 # Create input (batch_size=2, input_features=4)
-x = Tensor.constant([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
+x = Tensor([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])
 
 # Initialize weights (input_features=4, output_features=3)
 weights = random.xavier_uniform([4, 3])

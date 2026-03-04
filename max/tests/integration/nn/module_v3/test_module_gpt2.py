@@ -44,7 +44,7 @@ def causal_mask(  # noqa: ANN201
     device: Device | None = None,
 ):
     n = Dim(sequence_length) + num_tokens
-    mask = Tensor.constant(float("-inf"), dtype=dtype, device=device)
+    mask = Tensor(float("-inf"), dtype=dtype, device=device)
     mask = F.broadcast_to(mask, shape=(sequence_length, n))
     return F.band_part(mask, num_lower=None, num_upper=0, exclude=True)
 

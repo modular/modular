@@ -884,7 +884,7 @@ class DiagonalGaussianDistribution:
             Tensor containing KL divergence values.
         """
         if self.deterministic:
-            return Tensor.constant([0.0], dtype=DType.float32)
+            return Tensor([0.0], dtype=DType.float32)
 
         if other is None:
             kl_term = F.pow(self.mean, 2) + self.var - 1.0 - self.logvar
@@ -919,7 +919,7 @@ class DiagonalGaussianDistribution:
             Tensor containing negative log-likelihood values.
         """
         if self.deterministic:
-            return Tensor.constant([0.0], dtype=DType.float32)
+            return Tensor([0.0], dtype=DType.float32)
 
         logtwopi = np.log(2.0 * np.pi)
         nll_term = (
