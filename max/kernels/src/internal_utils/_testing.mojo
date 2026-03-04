@@ -15,7 +15,7 @@
 from std.collections import Optional
 from std.math import exp2
 
-import testing
+import std.testing
 from std.reflection import call_location, SourceLocation
 from std.testing.testing import _assert_cmp_error
 
@@ -38,7 +38,7 @@ fn _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
         A string representation of the N-dimensional index, e.g., "[2, 3, 4]".
     """
     if len(shape) == 0:
-        return String("i=", flat_idx)
+        return t"i={flat_idx}"
 
     # Compute N-dimensional indices from flat index (row-major order)
     var indices = List[Int](capacity=len(shape))
@@ -72,7 +72,7 @@ fn _format_index(i: Int, shape: List[Int]) -> String:
     if len(shape) > 0:
         return _flat_to_nd_index(i, shape)
     else:
-        return String("i=", i)
+        return t"i={i}"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -133,7 +133,7 @@ fn assert_almost_equal[
         testing.assert_almost_equal(
             x[i],
             y[i],
-            msg=String(msg, " at ", _format_index(i, shape)),
+            msg=t"{msg} at {_format_index(i, shape)}",
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
@@ -190,7 +190,7 @@ fn assert_equal[
         testing.assert_equal(
             x[i],
             y[i],
-            msg=String(msg, " at ", _format_index(i, shape)),
+            msg=t"{msg} at {_format_index(i, shape)}",
             location=location.or_else(call_location()),
         )
 

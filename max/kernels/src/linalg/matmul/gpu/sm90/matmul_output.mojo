@@ -44,7 +44,7 @@ from .tile_writer import (
     TileCoordinates,
     RegTileWriter,
 )
-import itertools
+import std.itertools
 
 
 struct MatmulTileWriter[

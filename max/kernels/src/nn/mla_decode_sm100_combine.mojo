@@ -29,7 +29,7 @@ Algorithm:
 from std.math import ceildiv, exp2, log2, max, min
 from std.sys import size_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.gpu import (
     WARP_SIZE,
     barrier,

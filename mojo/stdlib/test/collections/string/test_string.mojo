@@ -30,24 +30,6 @@ from std.testing import (
 from std.testing import TestSuite
 
 
-@fieldwise_init
-struct AString(Stringable):
-    fn __str__(self) -> String:
-        return "a string"
-
-
-def test_stringable() raises:
-    assert_equal("hello", String("hello"))
-    assert_equal("0", String(0))
-    assert_equal("AAA", String(StringSlice("AAA")))
-    assert_equal("a string", String(AString()))
-
-    # Should not produce an exclusivity error.
-    # Incorrect exclusivity error when printing a StringSlice
-    # https://github.com/modular/modular/issues/4790
-    print(String("test").removeprefix(""))
-
-
 def test_constructors() raises:
     # Default construction
     assert_equal(0, len(String()))
@@ -179,10 +161,6 @@ def test_add() raises:
 
     assert_equal("abcdef", s2 + "def")
     assert_equal("123abc", "123" + s2)
-
-    var s8 = "abc is "
-    var s9 = AString()
-    assert_equal("abc is a string", String(s8) + String(s9))
 
 
 def test_add_string_slice() raises:
@@ -1112,7 +1090,7 @@ def test_string_mul() raises:
 
 def test_indexing() raises:
     a = "abc"
-    assert_equal(a[byte=False], "a")
+    assert_equal(a[byte=0], "a")
     assert_equal(a[byte = Int(1)], "b")
     assert_equal(a[byte=2], "c")
 

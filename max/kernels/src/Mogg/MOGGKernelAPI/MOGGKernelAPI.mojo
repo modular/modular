@@ -56,6 +56,8 @@ from buffer.dimlist import Dim, DimList
 from std.builtin.simd import _pow
 from comm.allgather import allgather
 from comm.allreduce import allreduce
+
+from nn.allreduce_residual_rmsnorm_fp8 import allreduce_residual_rmsnorm_fp8
 from comm.reducescatter import reducescatter
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
@@ -208,6 +210,7 @@ from nn.mha import (
     MHADecodeDispatchMetadata,
     flash_attention,
     flash_attention_ragged,
+    get_mha_decoding_num_partitions,
 )
 from nn.mha_mask import MHAMask
 from nn.mha_utils import as_dynamic_row_major_1d, dispatch_mask
@@ -281,8 +284,13 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from std.runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
-from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from runtime.asyncrt import (
+    DeviceContextPtr,
+    DeviceContextPtrList,
+    TaskGroup,
+    parallelism_level,
+)
+from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor import (
     DynamicTensor,
     ElementwiseBinaryComparisonOp,
@@ -7046,6 +7054,47 @@ fn _unmarshal_mha_decode_dispatch_metadata(
     )
 
 
+@compiler.register("mo.mha.decode.get_num_partitions")
+struct Struct_get_mha_decode_num_partitions:
+    @always_inline
+    @staticmethod
+    fn execute[
+        *, n_kv_heads: Int
+    ](
+        num_partitions: OutputTensor[dtype = DType.int64, rank=1],
+        decode_num_partitions_request: InputTensor[dtype = DType.int64, rank=1],
+        context: DeviceContextPtr,
+    ) raises:
+        if decode_num_partitions_request.dim_size[0]() != 2:
+            raise Error(
+                "Expected decode_num_partitions_request to have shape [2]."
+            )
+
+        var request_ptr = decode_num_partitions_request.unsafe_ptr()
+        var batch_size = Int(request_ptr[0])
+        var max_cache_valid_length = Int(request_ptr[1])
+
+        if batch_size < 1:
+            raise Error(
+                "decode_num_partitions_request[0] (batch size) must be "
+                "positive."
+            )
+
+        if max_cache_valid_length < 0:
+            raise Error(
+                "decode_num_partitions_request[1] (max cache length) must be "
+                "non-negative."
+            )
+
+        num_partitions[0] = Int64(
+            get_mha_decoding_num_partitions[n_kv_heads, 1](
+                batch_size,
+                max_cache_valid_length,
+                context.get_device_context(),
+            )
+        )
+
+
 @always_inline
 fn _execute_mha_ragged_paged_scalar_args[
     dtype: DType,
@@ -7591,6 +7640,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
         q: InputTensor[dtype = DType.bfloat16, rank=3],
+        kv: InputTensor[dtype = DType.bfloat16, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
@@ -7629,6 +7679,7 @@ struct Struct_mla_prefill_graph_bf16_paged:
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
+                kv.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
                 freqs_cis.to_tile_tensor[DType.int64](),
                 kv_norm_gamma.to_tile_tensor[DType.int64](),
@@ -7659,6 +7710,7 @@ struct Struct_mla_decode_graph_bf16_paged:
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
         q: InputTensor[dtype = DType.bfloat16, rank=3],
+        kv: InputTensor[dtype = DType.bfloat16, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
@@ -7694,6 +7746,7 @@ struct Struct_mla_decode_graph_bf16_paged:
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
+                kv.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
                 freqs_cis.to_tile_tensor[DType.int64](),
                 kv_norm_gamma.to_tile_tensor[DType.int64](),
@@ -7807,6 +7860,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
     ](
         output: OutputTensor[dtype = DType.bfloat16, rank=3],
         q: InputTensor[dtype = DType.bfloat16, rank=3],
+        kv: InputTensor[dtype = DType.bfloat16, rank=2],
         input_row_offsets: InputTensor[dtype = DType.uint32, rank=1],
         freqs_cis: InputTensor[dtype=freq_dtype, rank=2],
         kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1],
@@ -7846,6 +7900,7 @@ struct Struct_mla_prefill_graph_decode_bf16_paged:
             ](
                 output.to_tile_tensor[DType.int64](),
                 q.to_tile_tensor[DType.int64](),
+                kv.to_tile_tensor[DType.int64](),
                 input_row_offsets.to_tile_tensor[DType.int64](),
                 freqs_cis.to_tile_tensor[DType.int64](),
                 kv_norm_gamma.to_tile_tensor[DType.int64](),
@@ -9397,6 +9452,58 @@ fn _check_signal_buffer_size(
         )
 
 
+@always_inline("nodebug")
+fn task_id_for_device(device_id: Int, num_workers: Int) -> Int:
+    # Map from device ID to task ID for CPU affinity.
+    # Note: Keep in sync with taskIdForDevice() in MGPPrimitives.cpp
+    if num_workers <= 1:
+        return -1
+    return 1 + (device_id % (num_workers - 1))
+
+
+@always_inline
+fn _launch_device_collective[
+    num_devices: Int,
+    F: fn[Int]() raises unified -> None,
+](func: F, dev_ctxs: DeviceContextPtrList) raises:
+    """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
+
+    comptime assert (
+        dev_ctxs.size == num_devices
+    ), "expected dev_ctxs to have the same number of elements as num_devices"
+
+    # One Optional[Error] slot per device; None means no error.
+    # Each task writes only to its own index, so there is no data race.
+    var errors = InlineArray[Optional[Error], num_devices](
+        fill=Optional[Error]()
+    )
+
+    # Wrap the launch function in a Mojo async function which does not raise.
+    @always_inline
+    @parameter
+    async fn wrapper[index: Int]() -> None:
+        try:
+            func[index]()
+        except e:
+            errors[index] = e^
+
+    # Set up a task group to launch the tasks in parallel.
+    var tg = TaskGroup()
+    var num_workers = parallelism_level()
+    comptime for i in range(num_devices):
+        # Dispatch to the worker thread that has affinity for this device.
+        var worker_id = task_id_for_device(Int(dev_ctxs[i].id()), num_workers)
+        tg._create_task(wrapper[i](), desired_worker_id=worker_id)
+
+    # Wait for all tasks to complete.
+    tg.wait()
+
+    # Re-raise the first error encountered.
+    comptime for i in range(num_devices):
+        if errors[i]:
+            raise errors[i].take()
+
+
 @compiler.register("mo.distributed.allreduce.sum")
 struct DistributedAllReduceSum:
     @staticmethod
@@ -9406,29 +9513,20 @@ struct DistributedAllReduceSum:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank],
+        outputs: FusedOutputVariadicTensors[dtype, rank, ...],
         inputs: InputVariadicTensors[dtype, rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype = DType.uint8, rank=1, ...
         ],
-        device_ctx: DeviceContextPtr,
+        dev_ctxs_input: DeviceContextPtrList,
     ) capturing raises:
         """Distributed allreduce operation implementation for sum reduction.
 
-        This executes on a single device specified by device_ctx.
-        The Python API creates multiple instances of this op (one per device) to
-        enable multi-threaded execution.
-
         Args:
-            output: Output tensor for this device to store reduced result.
+            outputs: Output tensors (one per GPU) to store reduced results.
             inputs: Input tensors (one per GPU) containing values to reduce.
             signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
-            device_ctx: The device context for this specific op instance.
-
-        Implementation Notes:
-            1. Each op instance only launches kernels on its assigned device.
-            2. Still requires all inputs/signal_buffers for coordination.
-            3. The output is only for the assigned device.
+            dev_ctxs_input: Device contexts for participating GPUs.
 
         Limitations:
             - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo)
@@ -9444,44 +9542,66 @@ struct DistributedAllReduceSum:
         var input_size_bytes = inputs[0].size() * size_of[dtype]()
         _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
 
-        # Marshal input tensors into the expected format.
+        # Marshal input tensors, output tensors, and signal buffers into the expected format.
         var in_bufs = InlineArray[
-            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
+            NDBuffer[dtype, rank, ImmutAnyOrigin], num_devices
         ](fill={})
-
-        comptime for i in range(inputs.size):
-            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
-                inputs[i]
-            ).make_dims_unknown()
-
-        # Marshal output tensor
-        var out_buf = managed_tensor_slice_to_ndbuffer(output)
-
-        # Marshal signal buffers.
+        var out_bufs = InlineArray[
+            NDBuffer[dtype, rank, MutAnyOrigin], num_devices
+        ](fill={})
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
         ](fill={})
 
-        comptime for i in range(signal_buffers.size):
+        comptime for i in range(num_devices):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+            out_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                outputs[i]
+            ).make_dims_unknown()
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
-        @parameter
-        fn output_lambda[
-            _dtype: DType,
-            _rank: Int,
-            _width: Int,
-            *,
-            _alignment: Int,
-        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
-            output._lambda_store[width=_width, element_alignment=_alignment](
-                rebind[IndexList[rank]](coords),
-                rebind[SIMD[dtype, _width]](val),
+        fn launch_allreduce[
+            index: Int
+        ]() raises unified {
+            read in_bufs,
+            read out_bufs,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            @always_inline
+            @parameter
+            fn output_lambda[
+                output_index: Int,
+                _dtype: DType,
+                _rank: Int,
+                _width: Int,
+                *,
+                _alignment: Int,
+            ](coords: IndexList[_rank], val: SIMD[_dtype, _width]) -> None:
+                outputs[output_index]._lambda_store[
+                    width=_width, element_alignment=_alignment
+                ](
+                    rebind[IndexList[rank]](coords),
+                    rebind[SIMD[dtype, _width]](val),
+                )
+
+            allreduce[
+                ngpus=num_devices,
+                output_lambda = output_lambda[output_index=index],
+            ](
+                in_bufs,
+                out_bufs[index].make_dims_unknown(),
+                rank_sigs,
+                dev_ctxs_input[index],
             )
 
         with Trace[TraceLevel.OP, target=target](_trace_name):
-            allreduce[ngpus=num_devices, output_lambda=output_lambda](
-                in_bufs, out_buf.make_dims_unknown(), rank_sigs, device_ctx[]
+            _launch_device_collective[num_devices](
+                launch_allreduce, dev_ctxs_input
             )
 
 
@@ -9869,6 +9989,87 @@ struct DistributedMatmulAllReduce:
                 ngpus=num_devices,
                 outputs_lambda=outputs_lambda,
             ](in_bufs, weight_bufs, c_temp_bufs, out_bufs, rank_sigs, dev_ctxs)
+
+
+@compiler.register("mo.distributed.allreduce_add_rms_norm_quant_fp8")
+struct DistributedAllReduceAddRMSNormQuantFP8:
+    @staticmethod
+    fn execute[
+        dtype: DType,
+        output_type: DType,
+        scales_type: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=rank],
+        output_scales: OutputTensor[dtype=scales_type, rank=rank],
+        output_residual: OutputTensor[dtype=dtype, rank=rank],
+        inputs: InputVariadicTensors[dtype, rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype = DType.uint8, rank=1, ...
+        ],
+        residual: InputTensor[dtype=dtype, rank=rank],
+        gamma: InputTensor[dtype=dtype, rank=1],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        scale_ub: Float32,
+        device_ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        # Marshal input tensors into the expected format.
+        var in_bufs = InlineArray[
+            NDBuffer[dtype, rank, ImmutAnyOrigin], inputs.size
+        ](fill={})
+
+        comptime for i in range(inputs.size):
+            in_bufs[i] = managed_tensor_slice_to_ndbuffer(
+                inputs[i]
+            ).make_dims_unknown()
+
+        # Marshal output tensors
+        var out_buf = managed_tensor_slice_to_ndbuffer(output)
+        var out_scales_buf = managed_tensor_slice_to_ndbuffer(output_scales)
+        var out_residual_buf = managed_tensor_slice_to_ndbuffer(output_residual)
+
+        # Marshal signal buffers.
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](fill={})
+
+        comptime for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        # Marshal gamma
+        var gamma_tensor = gamma.to_tile_tensor[DType.int64]()
+
+        # Marshal residual
+        var residual_buf = managed_tensor_slice_to_ndbuffer(
+            residual
+        ).make_dims_unknown()
+
+        with Trace[TraceLevel.OP, target=target](_trace_name):
+            allreduce_residual_rmsnorm_fp8(
+                in_bufs,
+                residual_buf,
+                out_buf,
+                out_residual_buf,
+                gamma_tensor,
+                epsilon,
+                weight_offset,
+                scale_ub,
+                out_scales_buf,
+                rank_sigs,
+                device_ctx[],
+            )
 
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather

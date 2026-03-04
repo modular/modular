@@ -483,7 +483,7 @@ fn hipblasLtMatmul(
 @always_inline
 fn _check_hipblas_error(status: Status) raises:
     if status != Status.SUCCESS:
-        raise Error(String("HIPBLASLT ERROR:", status))
+        raise Error(t"HIPBLASLT ERROR:{status}")
 
 
 @always_inline

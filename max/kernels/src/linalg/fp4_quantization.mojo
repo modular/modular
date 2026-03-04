@@ -99,6 +99,7 @@ fn quantize_dynamic_scaled_fp4fp8[
     *,
     SF_VECTOR_SIZE: Int = 16,
     num_max_threads: Int = 512,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     ctx: DeviceContext,
     output: LayoutTensor[out_dtype, output_layout, MutAnyOrigin],
@@ -176,7 +177,7 @@ fn quantize_dynamic_scaled_fp4fp8[
         tensor_sf,
         block_dim=block_dim,
         grid_dim=grid_dim,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -676,6 +677,7 @@ fn quantize_dynamic_block_scaled[
     *,
     SF_VECTOR_SIZE: Int,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     output_device: NDBuffer[mut=True, out_dtype, 2, MutAnyOrigin, _],
     scales_device: NDBuffer[mut=True, scales_dtype, 5, MutAnyOrigin, _],
@@ -734,7 +736,9 @@ fn quantize_dynamic_block_scaled[
         )
 
     comptime if is_fp4 and static_N % 32 == 0:
-        quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+        quantize_dynamic_scaled_fp4_async[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE, pdl_level=pdl_level
+        ](
             ctx,
             output_tensor,
             scales_tensor,
@@ -749,6 +753,7 @@ fn quantize_dynamic_block_scaled[
         quantize_dynamic_scaled_fp4fp8[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             num_max_threads=512,
+            pdl_level=pdl_level,
         ](
             ctx,
             output_tensor,
@@ -1057,6 +1062,7 @@ fn quantize_dynamic_scaled_fp4_async[
     scales_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     ctx: DeviceContext,
     output_tensor: LayoutTensor[output_dtype, output_layout, MutAnyOrigin],
@@ -1193,7 +1199,7 @@ fn quantize_dynamic_scaled_fp4_async[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 

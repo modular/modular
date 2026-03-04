@@ -85,7 +85,7 @@ fn _get_run_name[
     has_epilogue: Bool = False,
 ](num_active_experts: Int, total_num_tokens: Int, N: Int, K: Int) -> String:
     var vendor_str = "vendor_gmm" if use_vendor_blas else "gmm"
-    var type_str = String("(", in_type, " -> ", out_type, ") : ")
+    var type_str = String(t"({in_type} -> {out_type}) : ")
     # num_active_experts
     var num_active_experts_str = String(num_active_experts)
     # total_num_tokens
@@ -145,6 +145,7 @@ fn bench_grouped_matmul[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     AB_swapped: Bool = False,
+    cta_group: Int = 1,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -406,7 +407,9 @@ fn bench_grouped_matmul[
                     pass
 
                 else:
-                    comptime umma_shape = Index(128, 128, 32)
+                    comptime umma_shape = Index(
+                        128 * cta_group, 128 * cta_group, 32
+                    )
                     comptime transpose_b = True
                     comptime config = BlockScaledMatmulConfig[
                         a_type,
@@ -417,13 +420,15 @@ fn bench_grouped_matmul[
                         transpose_b,
                     ](
                         scaling_kind=UMMAKind.KIND_MXF4NVF4,
-                        cluster_shape=Index(1, 1, 1),
+                        cluster_shape=Index(cta_group, 1, 1),
                         mma_shape=umma_shape,
                         block_swizzle_size=8,
-                        cta_group=1,
+                        cta_group=cta_group,
                         AB_swapped=AB_swapped,
                         k_group_size=1,
-                        num_accum_pipeline_stages=2,
+                        num_accum_pipeline_stages=1 if umma_shape[1]
+                        == 256 else 2,
+                        is_gmm=True,
                     )
                     grouped_matmul_1d1d_nvfp4[
                         transpose_b=transpose_b,
@@ -692,6 +697,7 @@ fn create_grouped_matmul_bench[
     has_epilogue: Bool = False,
     scaling_kind_str: String = "1d2d",
     AB_swapped: Bool = False,
+    cta_group: Int = 1,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -709,6 +715,7 @@ fn create_grouped_matmul_bench[
         has_epilogue=has_epilogue,
         scaling_kind_str=scaling_kind_str,
         AB_swapped=AB_swapped,
+        cta_group=cta_group,
     ](
         ctx,
         bench,
@@ -752,7 +759,14 @@ def main() raises:
     )
     comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
     comptime has_epilogue = env_get_bool["has_epilogue", False]()
-    comptime AB_swapped = env_get_bool["AB_swapped", False]()
+    comptime config_str = env_get_string["config", "noswap_1sm"]()
+    comptime AB_swapped = config_str == "swapped_2sm" or config_str == "swapped_1sm"
+    comptime cta_group = 2 if config_str == "swapped_2sm" else 1
+    comptime assert (
+        config_str == "swapped_2sm"
+        or config_str == "swapped_1sm"
+        or config_str == "noswap_1sm"
+    ), "config must be one of: swapped_2sm, swapped_1sm, noswap_1sm"
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -767,6 +781,7 @@ def main() raises:
             has_epilogue=has_epilogue,
             scaling_kind_str=scaling_kind_str,
             AB_swapped=AB_swapped,
+            cta_group=cta_group,
         ](
             ctx,
             b,

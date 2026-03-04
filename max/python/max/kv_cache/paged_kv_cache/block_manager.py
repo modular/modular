@@ -543,6 +543,16 @@ class BlockManager:
         elif delta < 0:
             ctx.tokens.skip_processing(-delta)
 
+    def register_dummy_request(
+        self, request_id: RequestID, sentinel_request_id: RequestID
+    ) -> None:
+        """Maps a dummy request to the sentinel's block via ref-count sharing."""
+        sentinel_blocks = self.req_to_blocks[sentinel_request_id]
+        assert len(sentinel_blocks) == 1
+        sentinel_block = sentinel_blocks[0]
+        self.device_block_pool.touch(sentinel_block)
+        self.req_to_blocks[request_id] = [sentinel_block]
+
     @traced
     def get_req_blocks(self, request_id: RequestID) -> list[int]:
         """Get the block ids for a request."""

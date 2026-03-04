@@ -88,7 +88,7 @@ struct Element[
     layout: Layout,
     /,
     index_type: DType = _get_index_type(layout),
-](Stringable, Writable):
+](Writable):
     """A wrapper around SIMD types that provides layout-driven vectorized operations.
 
     The `Element` struct extends SIMD types with layout-aware load and store
@@ -568,6 +568,7 @@ struct Element[
                 )
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns a string representation of the element.
 

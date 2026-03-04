@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
@@ -61,10 +61,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct Dummy(Defaultable, Movable, Representable):
-    fn __repr__(self) -> String:
-        return "Dummy()"
-
+struct Dummy(Defaultable, Movable, Writable):
     @staticmethod
     fn takes_zero_raises_returns() raises -> PythonObject:
         var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")

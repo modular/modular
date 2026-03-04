@@ -68,7 +68,7 @@ fn _init_rocshmem_dylib() -> OwnedDLHandle:
             flags=RTLD.NOW | RTLD.GLOBAL | RTLD.NODELETE,
         )
     except e:
-        abort(String("failed to load ROCSHMEM library: ", e))
+        abort(t"failed to load ROCSHMEM library: {e}")
 
 
 @always_inline

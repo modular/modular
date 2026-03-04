@@ -21,7 +21,6 @@ Understanding the relationship between tensor shapes, strides, and
 memory layout is essential for effective use.
 
 Key components:
-- `LayoutTrait`: Core trait defining the interface for all layout types
 - `Layout`: Primary struct implementing memory layout with shape and stride information
 - Layout algebra: Functions for composing, dividing, and transforming layouts
 - Tiling operations: Functions for hierarchical decomposition of layouts
@@ -55,7 +54,7 @@ var tiled = blocked_product(layout^, Layout([2, 2]))
 ```
 """
 
-import sys
+import std.sys
 from std.collections.string.string import _calc_initial_buffer_size_int32
 from std.os import abort
 
@@ -85,71 +84,6 @@ from .int_tuple import (
     to_unknown,
     tuple_min,
 )
-
-# ===-----------------------------------------------------------------------===#
-# Layout Trait                                                                 #
-# ===-----------------------------------------------------------------------===#
-
-
-trait LayoutTrait(Copyable, ImplicitlyDestructible):
-    """Defines the interface for mapping between logical coordinates and memory indices.
-
-    The `LayoutTrait` provides a common interface for all layout types, including
-    basic layouts, swizzles, and composed layouts. It enables mapping from
-    multi-dimensional logical coordinates to linear memory indices, which is
-    essential for tensor operations.
-
-    Implementations of this trait must provide methods for:
-    1. Mapping coordinates to indices via the `__call__` method
-    2. Calculating the total size of the layout's domain
-    3. Calculating the size of the layout's codomain (memory footprint)
-    4. Indicating whether the layout has a valid shape
-
-    This trait serves as the foundation for the layout system, allowing
-    different layout implementations to be used interchangeably in algorithms.
-    """
-
-    comptime has_shape: Bool
-    """Indicates whether the layout has a valid shape.
-
-    Layouts and ComposedLayouts with at least one Layout have valid shapes
-    and can be used in layout algebra. Swizzles don't have shapes and
-    should be excluded from layout algebra.
-    """
-
-    fn __call__(self, index: IntTuple) -> Int:
-        """Maps a logical coordinate to a linear memory index.
-
-        Args:
-            index: An IntTuple representing the logical coordinates to map.
-
-        Returns:
-            The linear memory index corresponding to the given coordinates.
-        """
-        ...
-
-    fn size(self) -> Int:
-        """Returns the total number of elements in the layout's domain.
-
-        For a layout with shape (m, n), this returns m * n, representing
-        the total number of valid coordinates in the layout.
-
-        Returns:
-            The total number of elements in the layout.
-        """
-        ...
-
-    fn cosize(self) -> Int:
-        """Returns the size of the memory region spanned by the layout.
-
-        For a layout with shape `(m, n)` and stride `(r, s)`, this returns
-        `(m-1)*r + (n-1)*s + 1`, representing the memory footprint.
-
-        Returns:
-            The size of the memory region required by the layout.
-        """
-        ...
-
 
 # ===-----------------------------------------------------------------------===#
 # Layout                                                                       #
@@ -311,15 +245,12 @@ struct Layout(
     Defaultable,
     Equatable,
     Iterable,
-    LayoutTrait,
     Sized,
-    Stringable,
     Writable,
 ):
     """Represents a memory layout for multi-dimensional data.
 
-    The Layout struct is the primary implementation of the LayoutTrait,
-    providing a concrete representation of memory layouts using shape and
+    Layout provides a concrete representation of memory layouts using shape and
     stride information. It maps between logical coordinates and linear
     memory indices, enabling efficient access to multi-dimensional data.
 
@@ -803,6 +734,7 @@ struct Layout(
     # ===------------------------------------------------------------------===#
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the layout to a string representation.
 

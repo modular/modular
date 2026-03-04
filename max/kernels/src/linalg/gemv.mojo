@@ -14,7 +14,7 @@ from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -69,7 +69,7 @@ comptime logger = Logger()
 
 
 @fieldwise_init
-struct GEMVAlgorithm(ImplicitlyCopyable, Stringable, Writable):
+struct GEMVAlgorithm(ImplicitlyCopyable, Writable):
     var _value: Int
 
     comptime GEMV_KERNEL = Self(0)
@@ -91,6 +91,7 @@ struct GEMVAlgorithm(ImplicitlyCopyable, Stringable, Writable):
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Returns the string representation of this algorithm.
 
@@ -110,7 +111,7 @@ struct GEMVAlgorithm(ImplicitlyCopyable, Stringable, Writable):
         elif self is Self.MATMUL_NAIVE:
             return "MATMUL_NAIVE"
         else:
-            return String("UNKNOWN_GEMV_ALGORITHM(", self._value, ")")
+            return t"UNKNOWN_GEMV_ALGORITHM({self._value})"
 
     fn write_to(self, mut writer: Some[Writer]):
         writer.write(String(self))

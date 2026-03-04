@@ -11,14 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
+from std.math import sqrt
 
 
 struct Complex(
     Boolable,
     Equatable,
-    Representable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -51,12 +49,6 @@ struct Complex(
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __repr__(self) -> String:
-        return String("Complex(re = ", self.re, ", im = ", self.im, ")")
-
-    fn __str__(self) -> String:
-        return String.write(self)
-
     fn write_to(self, mut writer: Some[Writer]):
         writer.write("(", self.re)
         if self.im < 0:
@@ -64,6 +56,9 @@ struct Complex(
         else:
             writer.write(" + ", self.im)
         writer.write("i)")
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        t"Complex(re = {self.re}, im = {self.im})".write_to(writer)
 
     fn __bool__(self) -> Bool:
         return self != 0

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
+import std.math
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList

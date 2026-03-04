@@ -98,7 +98,7 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
         assert_equal(
             host[Int(i)],
             expected,
-            String("unexpected value on PE: ", mype, " at idx: ", i),
+            t"unexpected value on PE: {mype} at idx: {i}",
         )
 
     print("[", mype, "of", npes, "] run complete. use_nbi=", use_nbi)

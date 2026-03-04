@@ -30,6 +30,7 @@ from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
 from std.gpu.host.info import is_gpu
 from std.gpu.memory import (
     AddressSpace,
+    async_copy,
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
@@ -238,7 +239,17 @@ fn multistage_mma_q[
                             1, async_copy_scales_veclen
                         ]().distribute[async_copy_scales_layout](UInt(tid))
 
-                        dst_fragments.copy_from_async[](src_fragments)
+                        comptime element_size_bytes = size_of[
+                            scales_type
+                        ]() * async_copy_scales_veclen
+                        async_copy[element_size_bytes](
+                            src_fragments.ptr.address_space_cast[
+                                AddressSpace.GLOBAL
+                            ](),
+                            dst_fragments.ptr.address_space_cast[
+                                AddressSpace.SHARED
+                            ]().mut_cast[True](),
+                        )
 
                     scales_iter._incr()
 
@@ -463,8 +474,16 @@ fn multistage_mma_q[
                                     UInt(tid)
                                 )
 
-                                dst_fragments.copy_from_async[](
-                                    src_fragments, base_offset=0
+                                comptime element_size_bytes = size_of[
+                                    scales_type
+                                ]() * async_copy_scales_veclen
+                                async_copy[element_size_bytes](
+                                    src_fragments.ptr.address_space_cast[
+                                        AddressSpace.GLOBAL
+                                    ](),
+                                    dst_fragments.ptr.address_space_cast[
+                                        AddressSpace.SHARED
+                                    ]().mut_cast[True](),
                                 )
 
                             scales_iter._incr()

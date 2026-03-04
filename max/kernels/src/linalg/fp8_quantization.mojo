@@ -15,7 +15,7 @@ from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of
-import gpu.primitives.block
+import std.gpu.primitives.block
 from std.algorithm.functional import _elementwise_impl_gpu
 from buffer import Dim, NDBuffer
 from buffer.dimlist import DimList
@@ -57,7 +57,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 from .fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
-
+from std.gpu.primitives.grid_controls import PDLLevel
 
 comptime logger = Logger()
 
@@ -129,6 +129,7 @@ fn quantize_dynamic_scaled_fp8[
     ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
     num_cols: Int,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     scaled_output: NDBuffer[mut=True, out_dtype, 2, _],
     scales: NDBuffer[mut=True, scales_dtype, 2, _],
@@ -186,7 +187,7 @@ fn quantize_dynamic_scaled_fp8[
             scale_ub.cast[scales_dtype](),
             grid_dim=(num_rows, num_cols // group_size, 1),
             block_dim=num_threads,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(pdl_level),
         )
 
 
@@ -282,6 +283,7 @@ fn batched_quantize_dynamic_scaled_fp8[
     ) capturing -> SIMD[in_dtype, width],
     group_size_or_per_token: Int,
     num_cols: Int,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     scaled_output: NDBuffer[mut=True, out_dtype, 3, _],
     scales: NDBuffer[mut=True, scales_dtype, 3, _],
@@ -331,7 +333,7 @@ fn batched_quantize_dynamic_scaled_fp8[
         scale_ub.cast[scales_dtype](),
         grid_dim=(num_rows, num_cols // group_size, batch_size),
         block_dim=num_threads,
-        attributes=pdl_launch_attributes(),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 

@@ -15,7 +15,7 @@ from std.math import isclose
 from std.random import rand
 from std.sys import simd_width_of, size_of
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
 from buffer.dimlist import Dim
 from linalg.gemv import gemv, naive_gemv

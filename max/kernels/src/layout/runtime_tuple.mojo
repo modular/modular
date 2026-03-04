@@ -68,7 +68,7 @@ fn _get_returned_type[bitwidth: Int, unsigned: Bool]() -> DType:
 
 struct RuntimeTuple[
     S: IntTuple = UNKNOWN_VALUE, /, *, element_type: DType = DType.int64
-](Defaultable, Intable, Sized, Stringable, TrivialRegisterPassable, Writable):
+](Defaultable, Intable, Sized, TrivialRegisterPassable, Writable):
     """A struct representing tuple-like data with compile-time and runtime elements.
     RuntimeTuple combines static (compile-time) and dynamic (runtime) handling of
     tuple-like data structures, typically used for tensor shapes, indices, and coordinates
@@ -200,6 +200,7 @@ struct RuntimeTuple[
             res.value[i] = self.value[i + offset]
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the RuntimeTuple to its string representation.
 
@@ -666,7 +667,7 @@ fn shape_div[
             var vb = Int(b)
 
             if not (va % vb == 0 or vb % va == 0):
-                abort(String("Incompatible shape values: ", va, " ", vb))
+                abort(t"Incompatible shape values: {va} {vb}")
 
             return {va // vb if va % vb == 0 else signum(va * vb)}
 

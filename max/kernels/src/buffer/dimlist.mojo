@@ -37,7 +37,6 @@ struct Dim(
     Equatable,
     Indexer,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -241,6 +240,7 @@ struct Dim(
             return self.get() == rhs.get()
         return (not self) == (not rhs)
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Converts the Dim to a String. If the value is unknown, then the
@@ -285,7 +285,7 @@ struct Dim(
 # ===-----------------------------------------------------------------------===#
 
 
-struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
+struct DimList(ImplicitlyCopyable, Sized, Writable):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
 
@@ -582,6 +582,7 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         comptime assert length > 0, "length must be positive"
         return Self(Variadic.splat_value[Dim(), length])
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Converts the DimList to a String. The String is a comma separated
         list of the string representation of Dim.
@@ -591,13 +592,16 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         """
         return String.write(self)
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """Converts the DimList to a readable String representation.
 
         Returns:
             The string representation of the type.
         """
-        return String("DimList(", self, ")")
+        var string = String()
+        self.write_repr_to(string)
+        return string^
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: DimList) -> Bool:
@@ -622,21 +626,28 @@ struct DimList(ImplicitlyCopyable, Representable, Sized, Stringable, Writable):
         return True
 
     fn write_to(self, mut writer: Some[Writer]):
-        """
-        Formats this DimList to the provided Writer.
+        """Write this DimList to the provided Writer.
 
         Args:
             writer: The object to write to.
         """
 
-        writer.write("[")
+        writer.write_string("[")
 
         for i in range(len(self)):
             if i:
-                writer.write(", ")
+                writer.write_string(", ")
             writer.write(self.value[i])
 
-        writer.write("]")
+        writer.write_string("]")
+
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write this DimList to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        t"DimList({self})".write_to(writer)
 
 
 @always_inline

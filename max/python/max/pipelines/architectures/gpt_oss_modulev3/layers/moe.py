@@ -25,12 +25,12 @@ from max.experimental.tensor import Tensor
 from max.graph.type import DeviceRef
 from max.graph.weight import ShardingStrategy
 from max.nn.module_v3 import Linear
-from max.nn.module_v3.sequential import ModuleList
-
-from ...common_layers.functional_kernels import (
+from max.nn.module_v3.common_layers.functional_kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
 )
+from max.nn.module_v3.sequential import ModuleList
+
 from ..model_config import GptOssConfig
 from .moe_base import MoE, MoEGate
 

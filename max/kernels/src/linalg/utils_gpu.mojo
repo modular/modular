@@ -107,7 +107,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](Stringable, TrivialRegisterPassable, Writable):
+](TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -250,6 +250,7 @@ struct MatmulConfig[
         else:
             return False
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -271,6 +272,7 @@ struct MatmulConfig[
         # transpose B
         writer.write("T" if Self.transpose_b else "N")
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         return String.write(self)
 
@@ -575,7 +577,7 @@ fn get_hilbert_lut_with_cache(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
     """Get Hilbert lookup table using global cache (no struct needed)."""
-    var key_str = String("hilbert_lut_", grid_x, "_", grid_y)
+    var key_str = String(t"hilbert_lut_{grid_x}_{grid_y}")
 
     # use runtime lookup since key is computed at runtime
     var cached_ptr = external_call[

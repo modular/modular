@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
+import std.math
 from std.collections.string import StaticString
 from std.random import rand
 from std.sys import align_of, simd_width_of
 
-import benchmark
+import std.benchmark
 from std.algorithm import Static2DTileUnitFunc as Tile2DFunc
 from std.algorithm import sync_parallelize, vectorize
 from layout import *

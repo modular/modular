@@ -19,7 +19,7 @@ from std.memory import stack_allocation
 from std.os.atomic import Atomic
 from std.sys.info import simd_width_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from std.bit import pop_count, log2_floor
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

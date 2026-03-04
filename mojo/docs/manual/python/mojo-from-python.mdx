@@ -157,12 +157,9 @@ For example:
 
 ```mojo
 @fieldwise_init
-struct Person(Movable, Representable):
+struct Person(Movable, Writable):
     var name: String
     var age: Int
-
-    fn __repr__(self) -> String:
-        return String("Person(", self.name, ", ", self.age, ")")
 
 @export
 fn PyInit_person_module() -> PythonObject:
@@ -222,12 +219,9 @@ fn PyInit_person_module() -> PythonObject:
         abort(String("error creating Python Mojo module:", e))
 
 @fieldwise_init
-struct Person(Movable, Representable):
+struct Person(Movable, Writable):
     var name: String
     var age: Int
-
-    fn __repr__(self) -> String:
-        return String("Person(", self.name, ", ", self.age, ")")
 
     # highlight-start
     @staticmethod
@@ -254,7 +248,7 @@ print(person)
 ```
 
 ```output
-Person(Sarah, 32)
+Person(name=Sarah, age=32)
 ```
 
 For types that support default construction, you can use the simpler

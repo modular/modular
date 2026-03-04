@@ -76,6 +76,7 @@ def dump_kv_cache_to_torch(
     device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
     device_buffer_torch = from_dlpack(device_buffer).to(torch_dtype).cpu()
     device_buffer_torch = device_buffer_torch[:, key_or_value, :, :, :, :]
+    page_size = cache.params.page_size
 
     results = []
     for ctx in batch:
@@ -89,13 +90,13 @@ def dump_kv_cache_to_torch(
             dtype=torch_dtype,
         )
 
-        for start_idx in range(0, seq_len, cache.page_size):
-            end_idx = min(start_idx + cache.page_size, seq_len)
-            block_id = req_blocks[start_idx // cache.page_size]
+        for start_idx in range(0, seq_len, page_size):
+            end_idx = min(start_idx + page_size, seq_len)
+            block_id = req_blocks[start_idx // page_size]
             block_torch = device_buffer_torch[block_id, 0]
 
             for token_idx in range(start_idx, end_idx):
-                result[token_idx] = block_torch[token_idx % cache.page_size]
+                result[token_idx] = block_torch[token_idx % page_size]
 
         results.append(result.reshape(seq_len, -1))
 

@@ -57,7 +57,7 @@ from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
 from std.utils.index import IndexList
 from std.sys import align_of, size_of
 from layout.layout_tensor import copy_local_to_dram
-import itertools
+import std.itertools
 from std.memory.pointer import _GPUAddressSpace
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle
 from std.bit import log2_floor

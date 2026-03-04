@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
+from std.os import abort
 
-from python import Python, PythonObject
-from python._cpython import PyObjectPtr
-from python.bindings import (
+from std.python import Python, PythonObject
+from std.python._cpython import PyObjectPtr
+from std.python.bindings import (
     PythonModuleBuilder,
     check_and_get_arg,
     check_and_get_or_convert_arg,
@@ -129,22 +129,13 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Defaultable, ImplicitlyCopyable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Writable):
     var name: String
     var age: Int
 
     fn __init__(out self):
         self.name = "John Smith"
         self.age = 123
-
-    fn __repr__(self) -> String:
-        return String(
-            "Person(",
-            repr(self.name),
-            ", ",
-            repr(self.age),
-            ")",
-        )
 
     @staticmethod
     fn obj_name(self_: PythonObject) raises -> PythonObject:
@@ -173,15 +164,12 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct FailToInitialize(Defaultable, Movable, Representable):
+struct FailToInitialize(Defaultable, Movable, Writable):
     fn __init__(out self):
         pass
 
     fn __del__(deinit self):
         abort("FailToInitialize should never be deinitialized.")
-
-    fn __repr__(self) -> String:
-        return "FailToInitialize()"
 
 
 # ===----------------------------------------------------------------------=== #

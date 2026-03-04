@@ -32,6 +32,7 @@ from max.profiler import traced
 from max.serve.telemetry.metrics import METRICS
 
 from ..config import TokenGenerationSchedulerConfig
+from ..dp_padding import DPBatchPadder, DPPaddingInfo
 from ..lora_scheduler_utils import (
     can_allocate_lora_request,
     is_active_lora,
@@ -402,6 +403,7 @@ class TextBatchConstructor:
         ],
         kv_cache: PagedKVCacheManager,
         batch_scheduling_strategy: BatchSchedulingStrategy = BatchSchedulingStrategy.PER_REPLICA,
+        dp_padder: DPBatchPadder | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -425,6 +427,10 @@ class TextBatchConstructor:
         self.total_preemption_count: int = 0
         self.last_preemption_logging_time: float = time.monotonic()
 
+        self._dp_padder = dp_padder
+        self._prev_dp_padding: DPPaddingInfo | None = None
+        self._current_dp_padding: DPPaddingInfo | None = None
+
     def _create_new_token_budget(self) -> TokenBudgetCollection:
         token_budgets: list[TokenBudget] = [
             ActiveTokenBudget(
@@ -443,7 +449,7 @@ class TextBatchConstructor:
                         RequestType.CE,
                         RequestType.MIXED,
                     ],
-                    cost_alignment=self.kv_cache.page_size,
+                    cost_alignment=self.kv_cache.params.page_size,
                 )
             )
 
@@ -519,9 +525,14 @@ class TextBatchConstructor:
         is chunked and still requires additional CE work, it is moved back to the CE
         queue for that replica.
 
+        As a side effect, releases DP padding dummies from the previous
+        batch.
+
         Args:
             inputs: the inputs for the batch.
         """
+        self._release_data_parallel_padding()
+
         for per_replica_batch, replica in zip(
             inputs.batches, self.replicas, strict=True
         ):
@@ -529,16 +540,32 @@ class TextBatchConstructor:
             if len(per_replica_batch) == 0:
                 continue
 
-            # Move the requests from CE to TG
+            # Move the requests from CE to TG, skipping dummy padding contexts.
             for context in per_replica_batch:
+                if not self.contains(context.request_id):
+                    continue
                 replica.tg_reqs[context.request_id] = context
 
-            # Move Chunked requests back to the CE request queue
+            # Move Chunked requests back to the CE request queue.
+            # Skip if the last request is a dummy padding context.
             last_request = per_replica_batch[-1]
-            if last_request.tokens.generated_length == 0:
+            if (
+                self.contains(last_request.request_id)
+                and last_request.tokens.generated_length == 0
+            ):
                 del replica.tg_reqs[last_request.request_id]
                 replica.ce_reqs[last_request.request_id] = last_request
                 replica.ce_reqs.move_to_end(last_request.request_id, last=False)
+
+    def _release_data_parallel_padding(self) -> None:
+        """Releases dummy KV and pipeline entries from the previous batch's DP padding."""
+        if self._prev_dp_padding is not None:
+            for req_id, replica_idx in self._prev_dp_padding.dummies:
+                if self.kv_cache.contains(req_id, replica_idx=replica_idx):
+                    self.kv_cache.release(req_id, replica_idx=replica_idx)
+                self.pipeline.release(req_id)
+        self._prev_dp_padding = self._current_dp_padding
+        self._current_dp_padding = None
 
     def contains(self, request_id: RequestID) -> bool:
         """Checks if a request is in the batch constructor for any replica."""
@@ -985,7 +1012,7 @@ class TextBatchConstructor:
             for replica_idx in range(self.num_replicas)
         ]
 
-        return TextGenerationInputs[TextContext](
+        inputs = TextGenerationInputs[TextContext](
             batches=[
                 list(batch.batch.values()) for batch in batches_per_replica
             ],
@@ -1001,3 +1028,10 @@ class TextBatchConstructor:
                 default=0,
             ),
         )
+
+        # Pad short replicas for device graph capture when DP > 1.
+        if self._dp_padder is not None:
+            inputs, info = self._dp_padder.pad_batch(inputs)
+            self._current_dp_padding = info
+
+        return inputs

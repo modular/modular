@@ -114,7 +114,6 @@ def test_span_array_str() raises:
 def test_indexing() raises:
     var l: InlineArray[Int, 7] = [1, 2, 3, 4, 5, 6, 7]
     var s = Span[Int](array=l)
-    assert_equal(s[True], 2)
     assert_equal(s[Int(0)], 1)
     assert_equal(s[3], 4)
 

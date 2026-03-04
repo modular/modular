@@ -3247,6 +3247,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     from std.gpu import thread_idx
 
     fn kernel():
+        # `print()` does not work on Apple Silicon from GPU kernels
         print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
 
     with DeviceContext() as ctx:
@@ -4130,6 +4131,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -4228,6 +4230,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -4325,6 +4328,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         fn kernel(x: Int):
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("Value:", x)
 
         with DeviceContext() as ctx:
@@ -4635,6 +4639,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -4886,6 +4891,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -4995,6 +5001,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         fn kernel():
+            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -6510,7 +6517,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
         # P2P access is automatically enabled when devices are constructed.
         # Check if it was successful for all pairs.

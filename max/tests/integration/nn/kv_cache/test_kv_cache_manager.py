@@ -194,7 +194,7 @@ async def test_reserve_claims_and_releases() -> None:
         create_text_context(np.zeros(1, dtype=np.int64)) for _ in range(2)
     ]
 
-    with kv_manager.reserve(contexts, replica_idx=0, num_steps=1):
+    with kv_manager.reserve([contexts], num_steps=1):
         for context in contexts:
             assert kv_manager.contains(context.request_id, replica_idx=0)
 

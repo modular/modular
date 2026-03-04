@@ -48,7 +48,7 @@ fn bench_func[
 
     if Mode.BENCHMARK == mode:
         m.bench_function[bench_iter](
-            BenchId(name, input_id=String("1st-metric (pe_rank=", pe_rank, ")"))
+            BenchId(name, input_id=t"1st-metric (pe_rank={pe_rank})")
         )
         # TODO: enable the following line after adding support for multi-output to kplot and kprofile.
         # m.bench_function[bench_iter](BenchId(name, input_id=String("2nd-metric (pe_rank=",pe_rank,")")))
