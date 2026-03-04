@@ -8,7 +8,7 @@
 # RUN: not mojo build -elaboration-max-depth=128 --elaboration-error-verbose=no-params %s 2>&1 | FileCheck %s
 
 from std.collections.string.string_slice import _get_kgen_string
-from std.sys import env_get_bool
+from std.sys import get_defined_bool
 
 
 # expected-note @below {{function instantiation failed}}

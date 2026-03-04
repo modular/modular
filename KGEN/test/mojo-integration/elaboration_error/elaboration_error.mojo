@@ -9,7 +9,7 @@
 # RUN: not kgen -elaborate  -D TEST_RECURSION3=1 %s 2>&1 | FileCheck %s --check-prefix=CHECK-RECURSION3
 
 from std.collections.string.string_slice import StaticString, _get_kgen_string
-from std.sys import env_get_bool
+from std.sys import get_defined_bool
 
 
 # expected-error @+2{{function instantiation failed}}
@@ -97,7 +97,7 @@ fn foo[D: Int]() -> Int:
 
 
 fn test_recursion2():
-    comptime run_test = env_get_bool["TEST_RECURSION2", False]()
+    comptime run_test = get_defined_bool["TEST_RECURSION2", False]()
 
     comptime if run_test:
         # CHECK-RECURSION2: call expansion failed with parameter value(s): ("D": 2)
@@ -120,7 +120,7 @@ fn foo1[D: Int]() -> Int:
 
 
 fn test_recursion3():
-    comptime run_test = env_get_bool["TEST_RECURSION3", False]()
+    comptime run_test = get_defined_bool["TEST_RECURSION3", False]()
 
     comptime if run_test:
         # CHECK-RECURSION3: call expansion failed with parameter value(s): ("D": 1)

@@ -6,9 +6,9 @@
 # RUN: %mojo -DVAR=1 %s | FileCheck %s
 # RUN: %mojo -D VAR=1 %s | FileCheck %s
 
-from std.sys import env_get_bool
+from std.sys import get_defined_bool
 
 
 def main() raises:
     # CHECK: True
-    print(env_get_bool["VAR", False]())
+    print(get_defined_bool["VAR", False]())
