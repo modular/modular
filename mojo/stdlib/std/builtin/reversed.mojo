@@ -230,7 +230,7 @@ fn reversed[
 @always_inline
 fn reversed[
     T: Copyable
-](value: Span[T]) -> _SpanIter[T, value.origin, forward=False]:
+](value: Span[T, _]) -> _SpanIter[T, value.origin, forward=False]:
     """Get a reversed iterator of the input Span.
 
     **Note**: iterators are currently non-raising.

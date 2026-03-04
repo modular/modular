@@ -33,7 +33,7 @@ def my_fn3(mt: MyType[_, _, _, _]) raises:
 
 
 # Partially-bound with omitted parameters
-def my_fn4(mt: MyType["Hi there!"]) raises:
+def my_fn4(mt: MyType["Hi there!", ...]) raises:
     pass
 
 
@@ -51,7 +51,7 @@ fn my_func1(t: MyComplicatedType):
     pass
 
 
-fn my_func2(t: MyComplicatedType[1]):
+fn my_func2(t: MyComplicatedType[1, ...]):
     pass
 
 

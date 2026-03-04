@@ -46,7 +46,7 @@ from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
 from .kv_cache import (
     KVCacheParams,
     PagedCacheValues,
-    mha_decode_dispatch_metadata,
+    attention_dispatch_metadata,
 )
 from .no_opaque_kernels import PagedKVCacheTensorsNoOpaque
 
@@ -1829,7 +1829,7 @@ def flash_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    dispatch_metadata = mha_decode_dispatch_metadata(kv_collection)
+    dispatch_metadata = attention_dispatch_metadata(kv_collection)
 
     if sink_weights is not None:
         if sink_weights.rank != 1:
@@ -1986,6 +1986,8 @@ def flare_mla_decode_ragged(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    scalar_args: TensorValue | None = None,
+    *,
     qk_rope_dim: int = 64,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
@@ -2032,17 +2034,24 @@ def flare_mla_decode_ragged(
         DType.bfloat16 if input.dtype == DType.float8_e4m3fn else input.dtype
     )
 
+    input_values: MutableSequence[Value[Any]] = [
+        input,
+        input_row_offsets,
+        *kv_collection,
+        layer_idx,
+        # NOTE: The scale argument to flash attention is constrained to float32.
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+
+    op_name = "mo.mla.decode.ragged.paged"
+    if scalar_args is not None:
+        op_name += ".capturable"
+        input_values.append(scalar_args)
+
     return ops.inplace_custom(
-        "mo.mla.decode.ragged.paged",
+        op_name,
         device=input.device,
-        values=[
-            input,
-            input_row_offsets,
-            *kv_collection,
-            layer_idx,
-            # NOTE: The scale argument to flash attention is constrained to float32.
-            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-        ],
+        values=input_values,
         out_types=[
             TensorType(
                 dtype=output_dtype,
@@ -2383,6 +2392,41 @@ def mla_prefill_graph(
     )[0].tensor
 
 
+def compute_mla_dispatch_args_scalar(
+    batch_size: TensorValue,
+    max_cache_valid_length: TensorValue,
+    q_max_seq_len: TensorValue,
+    num_heads: int,
+    device: DeviceRef,
+) -> TensorValue:
+    """Pre-compute MLA decode dispatch scalar args via Mojo heuristic.
+
+    Calls into the Mojo ``compute_mla_dispatch_scalar_args`` function.
+
+    Args:
+        batch_size: Rank-1 int64 tensor of shape `[1]` on CPU.
+        max_cache_valid_length: Rank-1 int64 tensor of shape `[1]` on CPU.
+        q_max_seq_len: Rank-1 int64 tensor of shape `[1]` on CPU.
+            Number of query tokens per sequence (1 for standard decode,
+            >1 for MTP).
+        num_heads: Number of Q attention heads.
+        device: GPU device for the output buffer.
+
+    Returns:
+        GPU tensor of shape `[4]` int64.
+    """
+    results = ops.custom(
+        "mo.mla.compute_dispatch_args.scalar",
+        device=device,
+        values=[batch_size, max_cache_valid_length, q_max_seq_len],
+        out_types=[
+            TensorType(shape=[4], dtype=DType.int64, device=device),
+        ],
+        parameters={"num_heads": num_heads},
+    )
+    return results[0].tensor
+
+
 def mla_decode_graph(
     q: TensorValue,
     input_row_offsets: TensorValue,
@@ -2397,6 +2441,7 @@ def mla_decode_graph(
     scale: float,
     epsilon: float,
     v_head_dim: int,
+    scalar_args: TensorValue | None = None,
     *,
     kv: TensorValue | None = None,
     w_uk_scale: TensorValue | None = None,
@@ -2438,6 +2483,8 @@ def mla_decode_graph(
         kv: KV latent tensor from the first projection. Shape:
             [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
             qk_rope_head_dim. Required when float8_config is None.
+        scalar_args: Optional pre-computed dispatch scalar args (GPU buffer).
+            When provided, uses the capturable op variant for CUDA graph capture.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         float8_config: Optional FP8 config. When set, FP8 scales are required.
@@ -2487,6 +2534,10 @@ def mla_decode_graph(
         op_name += ".fp8"
         input_values += [w_uk_scale, w_uv_scale]
 
+    if scalar_args is not None:
+        op_name += ".capturable"
+        input_values.append(scalar_args)
+
     return ops.inplace_custom(
         op_name,
         device=q.device,
@@ -2514,6 +2565,7 @@ def mla_prefill_decode_graph(
     scale: float,
     epsilon: float,
     v_head_dim: int,
+    scalar_args: TensorValue | None = None,
     *,
     kv: TensorValue | None = None,
     w_k_scale: TensorValue | None = None,
@@ -2548,6 +2600,8 @@ def mla_prefill_decode_graph(
         kv: KV latent tensor from the first projection. Shape:
             [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
             qk_rope_head_dim. Required when float8_config is None.
+        scalar_args: Optional pre-computed dispatch scalar args (GPU buffer).
+            When provided, uses the capturable op variant for CUDA graph capture.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
@@ -2605,6 +2659,10 @@ def mla_prefill_decode_graph(
         )
         op_name += ".fp8"
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
+
+    if scalar_args is not None:
+        op_name += ".capturable"
+        input_values.append(scalar_args)
 
     return ops.inplace_custom(
         op_name,

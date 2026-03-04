@@ -29,10 +29,8 @@ from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.float8_config import (
-    Float8Config,
-)
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_mha_decode_inputs
+from max.nn.float8_config import Float8Config
+from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
@@ -259,7 +257,7 @@ def generate_max_outputs_fp4(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = unflatten_ragged_mha_decode_inputs(
+        kv_collection = unflatten_ragged_attention_inputs(
             kv_cache, n_devices=1
         )[0]
 
@@ -285,8 +283,8 @@ def generate_max_outputs_fp4(
     kv_manager.alloc(batch[0], replica_idx=0)
     kv_runtime_inputs = kv_manager.runtime_inputs(
         cast(list[list[TextGenerationContext]], [batch])
-    )[0]
-    assert kv_runtime_inputs.mha_decode_dispatch_metadata is not None
+    ).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     # Prepare inputs - flatten batch and sequence dimensions
     input_tensor_flat = input_tensor[0].reshape(-1, config.hidden_size)
@@ -299,7 +297,7 @@ def generate_max_outputs_fp4(
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
         kv_runtime_inputs.max_lengths,
-        kv_runtime_inputs.mha_decode_dispatch_metadata,
+        kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
     return from_dlpack(out).to(torch.bfloat16)
 

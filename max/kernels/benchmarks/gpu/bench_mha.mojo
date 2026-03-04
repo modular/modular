@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import isclose, rsqrt
-from std.sys import env_get_bool, env_get_dtype, env_get_int
+from std.sys import get_defined_bool, get_defined_dtype, get_defined_int
 
 from std.benchmark import (
     Bench,
@@ -343,12 +343,12 @@ struct MHA_cfg(ImplicitlyCopyable):
 
 
 def main() raises:
-    comptime qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
-    comptime mask_type = env_get_dtype["mask_type", DType.float32]()
-    comptime depth = env_get_int["depth", 128]()
-    comptime num_heads = env_get_int["num_heads", 32]()
-    comptime group = env_get_int["group", 1]()
-    comptime cache_busting = env_get_bool["cache_busting", True]()
+    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
+    comptime mask_type = get_defined_dtype["mask_type", DType.float32]()
+    comptime depth = get_defined_int["depth", 128]()
+    comptime num_heads = get_defined_int["num_heads", 32]()
+    comptime group = get_defined_int["group", 1]()
+    comptime cache_busting = get_defined_bool["cache_busting", True]()
 
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))

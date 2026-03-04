@@ -18,13 +18,13 @@ warp-specialized blockwise FP8 kernel with register-based accumulation.
 """
 
 from std.math import align_up, ceildiv
-from std.sys import env_get_bool, size_of
+from std.sys import get_defined_bool, size_of
 
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from layout import Layout as LegacyLayout, TileTensor
-from ..structured_kernels.tile_types import create_tma_tile, lt_to_tt
+from structured_kernels.tile_types import create_tma_tile, lt_to_tt
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -77,7 +77,7 @@ fn blockwise_fp8_matmul[
 
     # Legacy kernel path disabled -- incompatible with TileTensor API.
     # To re-enable, update sm100_warp_specialized_blockwise_fp8 to accept TileTensor.
-    comptime assert not env_get_bool[
+    comptime assert not get_defined_bool[
         "USE_LEGACY_BLOCKWISE_FP8", False
     ](), "Legacy blockwise FP8 kernel not supported with TileTensor API"
 

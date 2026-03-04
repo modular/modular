@@ -25,6 +25,7 @@ from nn.mha import _naive_attention_with_transpose, mha_gpu_naive
 from nn.mha_mask import CausalMask, MaterializedMask
 from nn.mha_operand import LayoutTensorMHAOperand
 from nn.mla import flare_mla_decoding, flare_mla_prefill
+from nn.mla_decode_sm100_dispatch import MLADispatchScalarArgs
 from tensor import IOUnknown, ManagedTensorSlice
 from tensor.managed_tensor_slice import StaticTensorSpec
 from std.testing import assert_almost_equal
@@ -236,9 +237,22 @@ fn test[
     comptime q_tile_num_rows = 32
     comptime k_tile_num_rows = 128
 
+    var mla_args = MLADispatchScalarArgs[
+        num_heads=num_heads,
+        _is_cache_length_accurate=True,
+    ](batch_size, num_keys, seq_len, ctx)
+    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, mask3d, mask4d, output_device)
+    @__copy_capture(
+        q_device,
+        k_device,
+        mask3d,
+        mask4d,
+        output_device,
+        scalar_args_buf_lt,
+    )
     fn kernel_launch(ctx: DeviceContext) raises:
         comptime if use_causal_mask:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -248,7 +262,8 @@ fn test[
                 CausalMask(),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
         elif mask_rank == 3:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -258,7 +273,8 @@ fn test[
                 MaterializedMask(mask3d),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
         else:
             flare_mla_decoding[decoding_warp_split_k=decoding_warp_split_k](
@@ -268,7 +284,8 @@ fn test[
                 MaterializedMask(mask4d),
                 scale,
                 ctx,
-                num_partitions,
+                scalar_args_buf_lt,
+                num_partitions=num_partitions,
             )
 
     if is_benchmark():
@@ -394,6 +411,7 @@ fn test[
                         print(b, h, s, d, actual, expect)
                     assert_almost_equal(actual, expect, atol=1e-1, rtol=rtol)
 
+    _ = mla_args
     _ = q_device_ptr
     _ = k_device_ptr
     _ = mask_device_ptr

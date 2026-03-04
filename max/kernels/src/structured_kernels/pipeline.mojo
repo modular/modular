@@ -79,6 +79,7 @@ Direct API (for special cases):
 
 from std.sys import size_of
 
+from std.gpu.memory import AddressSpace
 from layout.tma_async import SharedMemBarrier
 from std.memory import LegacyUnsafePointer
 

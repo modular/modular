@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import sys
 import tempfile
@@ -213,6 +214,7 @@ def generate_llm_logits(
     log_hf_downloads: bool = False,
     mini: bool = False,
     generate_logprobs: bool = False,
+    config_params_override: dict[str, Any] | None = None,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
@@ -231,6 +233,15 @@ def generate_llm_logits(
         pipeline_oracle = GenericOracle(
             model_path=pipeline_name,
         )
+
+    if config_params_override is not None and hasattr(
+        pipeline_oracle, "config_params"
+    ):
+        pipeline_oracle = copy.copy(pipeline_oracle)
+        pipeline_oracle.config_params = {
+            **pipeline_oracle.config_params,
+            **config_params_override,
+        }
 
     if mini:
         inputs = pipeline_oracle.inputs[:1]

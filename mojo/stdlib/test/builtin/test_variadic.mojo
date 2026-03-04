@@ -139,7 +139,7 @@ def test_variadic_splatted_zero() raises:
 def test_variadic_contains() raises:
     comptime variadic = Variadic.types[T=Writable, Int, String, Float32]
     assert_equal(Variadic.size(variadic), 3)
-    comptime ContainsWritable = Variadic.contains[Trait=Writable]
+    comptime ContainsWritable = Variadic.contains[Trait=Writable, ...]
     assert_true(ContainsWritable[Int, variadic])
     assert_true(ContainsWritable[String, variadic])
     assert_true(ContainsWritable[Float32, variadic])
@@ -151,7 +151,7 @@ def test_variadic_contains_empty() raises:
         T=Writable, *Variadic.empty_of_trait[Writable]
     ]
     assert_equal(Variadic.size(variadic), 0)
-    comptime ContainsWritable = Variadic.contains[Trait=Writable]
+    comptime ContainsWritable = Variadic.contains[Trait=Writable, ...]
     assert_false(ContainsWritable[Bool, variadic])
 
 

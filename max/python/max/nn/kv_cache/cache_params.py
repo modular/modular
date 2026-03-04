@@ -29,8 +29,8 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import (
+    AttentionDispatchMetadata,
     FlattenableInputSymbols,
-    MHADecodeDispatchMetadata,
     MultiKVCacheInputSymbols,
     PagedCacheInputSymbols,
     PagedCacheInputSymbolsByReplica,
@@ -203,6 +203,14 @@ class KVCacheParams(KVCacheParamInterface):
     is_mla: bool = False
     """Whether the model uses Multi-Latent Attention (MLA) architecture."""
 
+    num_q_heads: int | None = None
+    """Number of query attention heads. Required when ``is_mla`` is True so
+    that the attention dispatch resolver can call the MLA-specific kernel."""
+
+    q_max_seq_len: int = 1
+    """Number of query tokens per sequence during decode.  1 for standard
+    auto-regressive decode, >1 for Multi-Token Prediction (MTP)."""
+
     data_parallel_degree: int = 1
     """Degree of data parallelism. Must be 1 or equal to n_devices (DP+TP not yet supported)."""
 
@@ -247,6 +255,11 @@ class KVCacheParams(KVCacheParamInterface):
         elif self.is_mla:
             # MLA always caches one latent vector per device.
             self.n_kv_heads_per_device = 1
+            if self.num_q_heads is None:
+                raise ValueError(
+                    "num_q_heads is required when is_mla=True so the "
+                    "attention dispatch resolver can use the MLA kernel."
+                )
         else:
             # Tensor parallel mode: shard by heads, keep all layers per device
             if self.n_kv_heads % self.n_devices != 0:
@@ -420,6 +433,8 @@ class KVCacheParams(KVCacheParamInterface):
             page_size=self.page_size,
             devices=devices_per_replica[replica_idx],
             is_mla=self.is_mla,
+            num_q_heads=self.num_q_heads,
+            q_max_seq_len=self.q_max_seq_len,
             data_parallel_degree=1,
             kvcache_quant_config=self.kvcache_quant_config,
             disk_offload_dir=os.path.join(
@@ -480,8 +495,14 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if self.quantized_kv_cache
                 else None,
-                dispatch_metadata=MHADecodeDispatchMetadata(
-                    TensorType(DType.int64, shape=[4], device=DeviceRef.CPU())
+                dispatch_metadata=AttentionDispatchMetadata(
+                    TensorType(
+                        DType.int64,
+                        shape=[4],
+                        # MLA kernels consume dispatch metadata on GPU;
+                        # MHA reads it on CPU.
+                        device=device if self.is_mla else DeviceRef.CPU(),
+                    )
                 ),
             )
             for device in devices

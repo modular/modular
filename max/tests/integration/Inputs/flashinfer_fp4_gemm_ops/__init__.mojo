@@ -13,15 +13,15 @@
 """FlashInfer FP4 GEMM custom op for loading TVM FFI modules."""
 
 import compiler_internal as compiler
-import format
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUstream
-from memory import Span, stack_allocation
-from os import abort
-from runtime.asyncrt import DeviceContextPtr
-from ffi import OwnedDLHandle
+import std.format
+from std.gpu.host import DeviceContext
+from std.gpu.host._nvidia_cuda import CUstream
+from std.memory import Span, stack_allocation
+from std.os import abort
+from std.runtime.asyncrt import DeviceContextPtr
+from std.ffi import OwnedDLHandle
 from tensor import InputTensor, OutputTensor, ManagedTensorSlice
-from utils import IndexList
+from std.utils import IndexList
 
 from .dlpack import DLTensor
 from .tvm_ffi import SafeFunction, TVMFFIAny, take_latest_error
@@ -99,13 +99,13 @@ struct FlashInferFP4Gemm[lib_path: StaticString]:
     def execute[
         target: StaticString
     ](
-        out_tensor: OutputTensor[dtype = DType.bfloat16, rank=2],
-        mat1: InputTensor[dtype = DType.uint8, rank=2],
-        mat2: InputTensor[dtype = DType.uint8, rank=2],
-        mat1_scale: InputTensor[dtype = DType.uint8, rank=1],
-        mat2_scale: InputTensor[dtype = DType.uint8, rank=1],
-        global_scale: InputTensor[dtype = DType.float32, rank=1],
-        workspace: InputTensor[dtype = DType.int8, rank=1],
+        out_tensor: OutputTensor[dtype = DType.bfloat16, rank=2, ...],
+        mat1: InputTensor[dtype = DType.uint8, rank=2, ...],
+        mat2: InputTensor[dtype = DType.uint8, rank=2, ...],
+        mat1_scale: InputTensor[dtype = DType.uint8, rank=1, ...],
+        mat2_scale: InputTensor[dtype = DType.uint8, rank=1, ...],
+        global_scale: InputTensor[dtype = DType.float32, rank=1, ...],
+        workspace: InputTensor[dtype = DType.int8, rank=1, ...],
         ctx: DeviceContextPtr,
     ):
         """Execute the FP4 GEMM operation by calling FlashInfer."""

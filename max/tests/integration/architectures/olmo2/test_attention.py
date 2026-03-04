@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_mha_decode_inputs
+from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import (
     Olmo2Attention as MaxOlmo2Attention,
@@ -185,7 +185,7 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = unflatten_ragged_mha_decode_inputs(
+        kv_collection = unflatten_ragged_attention_inputs(
             kv_cache, n_devices=1
         )[0]
 
@@ -205,8 +205,8 @@ def generate_max_outputs(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
-    assert kv_runtime_inputs.mha_decode_dispatch_metadata is not None
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     output = compiled.execute(
         Buffer.from_dlpack(input_tensor[0]).to(device),
@@ -217,7 +217,7 @@ def generate_max_outputs(
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
         kv_runtime_inputs.max_lengths,
-        kv_runtime_inputs.mha_decode_dispatch_metadata,
+        kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
 
     return output

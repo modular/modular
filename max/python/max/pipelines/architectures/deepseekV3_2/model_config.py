@@ -72,6 +72,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             # Set to True because there is only a key-cache, and one KV head.
             is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
             kvcache_quant_config=indexer_kvcache_quant_config,
         )
         assert isinstance(indexer_kv_params, KVCacheParams)

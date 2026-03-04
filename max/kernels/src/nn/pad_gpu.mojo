@@ -58,8 +58,8 @@ fn get_row_offset[
 fn scalar_copy_row[
     dtype: DType,
 ](
-    input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    input_ptr: UnsafePointer[Scalar[dtype], _],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     row_length: Int,
     threads_per_row: Int,
 ):
@@ -73,8 +73,8 @@ fn vector_copy_row[
     dtype: DType,
     simd_width: Int,
 ](
-    input_ptr: UnsafePointer[Scalar[dtype]],
-    output_ptr: UnsafePointer[mut=True, Scalar[dtype]],
+    input_ptr: UnsafePointer[Scalar[dtype], _],
+    output_ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     scaled_row_length: Int,
     row_length: Int,
     threads_per_row: Int,
@@ -203,11 +203,11 @@ fn _pad_constant_impl[
 fn pad_constant[
     rank: Int, dtype: DType, padding_type: DType
 ](
-    output: UnsafePointer[mut=True, Scalar[dtype]],
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
     output_shape: IndexList[rank],
-    input: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype], _],
     input_shape: IndexList[rank],
-    paddings: UnsafePointer[Scalar[padding_type]],
+    paddings: UnsafePointer[Scalar[padding_type], _],
     constant: Scalar[dtype],
     ctx: DeviceContext,
 ) raises:

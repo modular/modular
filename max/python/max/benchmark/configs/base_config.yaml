@@ -39,3 +39,4 @@ benchmark_config:
   # Control flags
   disable_tqdm: false
   print_inputs_and_outputs: false
+  print_workload_stats: false
