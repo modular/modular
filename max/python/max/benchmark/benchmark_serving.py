@@ -2159,7 +2159,6 @@ def main_with_parsed_args(args: ServingBenchmarkConfig) -> None:
         )
         logger.info(f"Tracing enabled, output: {trace_path}")
 
-
     # Auto-default skip counts to max_concurrency when not explicitly set
     skip_first_n_requests = args.skip_first_n_requests
     skip_last_n_requests = args.skip_last_n_requests
