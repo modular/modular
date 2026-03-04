@@ -743,6 +743,7 @@ dependencies = [
     { name = "sentencepiece", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "setuptools", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "simpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
+    { name = "slack-sdk", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "soundfile", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "sphinx", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
     { name = "sqlalchemy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-cpu') or (extra == 'group-15-bazel-pyproject-amd' and extra == 'group-15-bazel-pyproject-nvidia') or (extra == 'group-15-bazel-pyproject-cpu' and extra == 'group-15-bazel-pyproject-nvidia')" },
@@ -937,6 +938,7 @@ requires-dist = [
     { name = "sentencepiece" },
     { name = "setuptools" },
     { name = "simpy" },
+    { name = "slack-sdk" },
     { name = "soundfile", specifier = "==0.12.1" },
     { name = "sphinx", specifier = "==7.4.7" },
     { name = "sqlalchemy", specifier = ">=2.0.29" },
@@ -8852,6 +8854,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/71/39/171f1c67cd00715f190ba0b100d606d440a28c93c7714febeca8b79af85e/six-1.16.0.tar.gz", hash = "sha256:1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926", size = 34041, upload-time = "2021-05-05T14:18:18.379Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d9/5a/e7c31adbe875f2abbb91bd84cf2dc52d792b5a01506781dbcf25c91daf11/six-1.16.0-py2.py3-none-any.whl", hash = "sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254", size = 11053, upload-time = "2021-05-05T14:18:17.237Z" },
+]
+
+[[package]]
+name = "slack-sdk"
+version = "3.40.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3a/18/784859b33a3f9c8cdaa1eda4115eb9fe72a0a37304718887d12991eeb2fd/slack_sdk-3.40.1.tar.gz", hash = "sha256:a215333bc251bc90abf5f5110899497bf61a3b5184b6d9ee35d73ebf09ec3fd0", size = 250379, upload-time = "2026-02-18T22:11:01.819Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6e/e1/bb81f93c9f403e3b573c429dd4838ec9b44e4ef35f3b0759eb49557ab6e3/slack_sdk-3.40.1-py2.py3-none-any.whl", hash = "sha256:cd8902252979aa248092b0d77f3a9ea3cc605bc5d53663ad728e892e26e14a65", size = 313687, upload-time = "2026-02-18T22:11:00.027Z" },
 ]
 
 [[package]]

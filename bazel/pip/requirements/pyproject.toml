@@ -83,6 +83,7 @@ dependencies = [
   "safetensors",
   "sentencepiece",
   "setuptools",
+  "slack-sdk",
   "simpy",
   "sphinx==7.4.7",
   "sse-starlette",
