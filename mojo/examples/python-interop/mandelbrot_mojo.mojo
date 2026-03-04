@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os import abort
-from sys import has_accelerator
+from std.math import ceildiv
+from std.os import abort
+from std.sys import has_accelerator
 
-from complex import ComplexSIMD, ComplexScalar
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.complex import ComplexSIMD, ComplexScalar
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 comptime GRID_WIDTH = 60
 comptime GRID_HEIGHT = 25
@@ -117,8 +117,8 @@ fn mandelbrot(
 
 
 def draw_mandelbrot(
-    tensor: LayoutTensor[int_dtype, layout], iterations: Int32
-) -> String:
+    tensor: LayoutTensor[int_dtype, layout, ...], iterations: Int32
+) raises -> String:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
     var buffer = String()

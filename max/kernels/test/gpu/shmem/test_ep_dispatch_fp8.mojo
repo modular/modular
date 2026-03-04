@@ -15,21 +15,21 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-import time
-from io.io import _printf
-from math import sqrt
-from os.path import dirname
-from pathlib import Path
-from random import randint, randn, seed
-from sys import align_of, argv, simd_width_of, size_of
-from sys.param_env import env_get_string
+import std.time
+from std.io.io import _printf
+from std.math import sqrt
+from std.os.path import dirname
+from std.pathlib import Path
+from std.random import randint, randn, seed
+from std.sys import align_of, argv, simd_width_of, size_of
+from std.sys.defines import get_defined_string
 
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from layout import UNKNOWN_VALUE, Layout, LayoutTensor
 from layout.runtime_layout import RuntimeLayout
-from memory import UnsafePointer
+from std.memory import UnsafePointer
 from shmem import *
 from shmem.ep_comm import (
     BlockwiseFP8TokenFormat,
@@ -39,9 +39,9 @@ from shmem.ep_comm import (
     dispatch_async_kernel,
 )
 from shmem._mpi import MPI_Finalize
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn is_benchmark() -> Bool:
@@ -72,7 +72,7 @@ fn welford_update(
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32], n_tokens: Int):
+](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -546,7 +546,7 @@ fn test_dispatch[
     shmem_free(recv_count)
 
 
-def main():
+def main() raises:
     comptime test_gpu_counts = (2, 4, 8)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):

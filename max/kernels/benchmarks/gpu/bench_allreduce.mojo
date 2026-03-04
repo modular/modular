@@ -11,11 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
-from utils.numerics import get_accum_type
+from std.collections import InlineArray
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    size_of,
+    simd_width_of,
+)
+from std.utils.numerics import get_accum_type
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -28,13 +34,13 @@ from comm.sync import enable_p2p
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from gpu.host import (
+from std.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
     get_gpu_target,
 )
-from gpu.primitives.grid_controls import PDLLevel
+from std.gpu.primitives.grid_controls import PDLLevel
 from internal_utils import (
     CacheBustingBuffer,
     InitializationType,
@@ -43,9 +49,9 @@ from internal_utils import (
     human_readable_size,
 )
 
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
-from utils.index import IndexList, StaticTuple
+from std.utils.index import IndexList, StaticTuple
 
 
 @always_inline
@@ -175,7 +181,7 @@ fn bench_reduce[
         # All GPUs use the same multicast pointer
         in_bufs[0] = NDBuffer[dtype, rank](
             multicast_buf.multicast_buffer_for(list_of_ctx[0]).unsafe_ptr(),
-            DimList(length),
+            IndexList[rank](length),
         )
         multi_ptr = multicast_buf.multicast_buffer_for(
             list_of_ctx[0]
@@ -183,12 +189,12 @@ fn bench_reduce[
     else:
         comptime for i in range(ngpus):
             in_bufs[i] = NDBuffer[dtype, rank](
-                cb_inputs[i].unsafe_ptr(), DimList(length)
+                cb_inputs[i].unsafe_ptr(), IndexList[rank](length)
             )
 
     for i in range(ngpus):
         out_bufs[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(length)
+            out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
         # Ensure setup has propagated.
         list_of_ctx[i].synchronize()
@@ -205,7 +211,7 @@ fn bench_reduce[
 
     comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, rank](
-            out_bufs_list[i].unsafe_ptr(), DimList(length)
+            out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
         )
 
     # Pre-initialize vendor CCL communicators from the main thread.
@@ -226,12 +232,12 @@ fn bench_reduce[
                 comptime for i in range(ngpus):
                     in_bufs[i] = NDBuffer[dtype, rank](
                         cb_inputs[i].offset_ptr(cache_iter),
-                        DimList(length),
+                        IndexList[rank](length),
                     )
             else:
                 in_bufs[0] = NDBuffer[dtype, rank](
                     multi_ptr + cb_template.offset(cache_iter),
-                    DimList(length),
+                    IndexList[rank](length),
                 )
             # Run allreduce
             comptime allreduce_kernel = vendor_ccl.allreduce if use_vendor_ccl else allreduce
@@ -336,20 +342,20 @@ fn _get_test_str[
     )
 
 
-def main():
+def main() raises:
     var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
-    comptime num_gpus = env_get_int["num_gpus", 2]()
-    comptime rank = env_get_int["rank", 1]()
-    comptime ragged = env_get_bool["ragged", False]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime num_gpus = get_defined_int["num_gpus", 2]()
+    comptime rank = get_defined_int["rank", 1]()
+    comptime ragged = get_defined_bool["ragged", False]()
     # Force passing `max_num_blocks` explicitly.
-    var max_nb = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
+    var max_nb = get_defined_int["TUNE_MAX_NUM_BLOCKS", -1]()
     var max_num_blocks: Optional[Int] = Optional[Int]()
     if max_nb > 0:
         max_num_blocks = Optional[Int](max_nb)
-    comptime use_multimem = env_get_bool["use_multimem", False]()
-    comptime use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
+    comptime use_multimem = get_defined_bool["use_multimem", False]()
+    comptime use_vendor_ccl = get_defined_bool["use_vendor_ccl", False]()
     comptime cache_busting = True
 
     # When ragged, add (ngpus/2) * simd_width elements to create uneven partitions

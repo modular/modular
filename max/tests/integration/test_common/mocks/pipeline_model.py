@@ -53,7 +53,7 @@ class MockModelInputs(ModelInputs):
             np.array([0, max(active_batch_size, 1)], dtype=np.uint32)
         )
         self.signal_buffers: list[Buffer] = []
-        self.kv_cache_inputs = kv_cache_inputs
+        self.kv_cache_inputs: KVCacheInputs | None = kv_cache_inputs
         if isinstance(return_n_logits, Buffer):
             self.return_n_logits = return_n_logits
         else:
@@ -63,13 +63,12 @@ class MockModelInputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
         return (
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
-            *kv_cache_inputs,
+            *(self.kv_cache_inputs or ()),
         )
 
 
@@ -160,7 +159,6 @@ class MockPipelineModel(PipelineModelWithKVCache):
             head_dim=1,
             num_layers=1,
             enable_prefix_caching=False,
-            cache_strategy="paged",
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )

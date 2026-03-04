@@ -24,12 +24,12 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from math import iota, ceildiv
-from sys import llvm_intrinsic
+from std.math import iota, ceildiv
+from std.sys import llvm_intrinsic
 
-from memory import Span, bitcast, memcpy
+from std.memory import Span, bitcast, memcpy
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime Bytes = SIMD[DType.uint8, _]
 
@@ -194,7 +194,7 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign
 fn load_incomplete_simd[
     width: Int
 ](
-    pointer: UnsafePointer[mut=False, UInt8], nb_of_elements_to_load: Int
+    pointer: UnsafePointer[mut=False, UInt8, _], nb_of_elements_to_load: Int
 ) -> SIMD[DType.uint8, width]:
     var result = SIMD[DType.uint8, width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
@@ -203,7 +203,7 @@ fn load_incomplete_simd[
 
 
 @no_inline
-fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
+fn _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
     comptime simd_width = sys.simd_byte_width()
     comptime input_simd_width = simd_width * 3 // 4
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))

@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import itertools
+import std.itertools
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from gpu.host.info import B200
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import B200
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.lora import shrink_qkv_permute_3mn_sm100 as shrink_qkv_permute_3mn
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 fn test[
@@ -86,6 +86,7 @@ fn test[
     var lora_c_size = 3 * total_num_tokens * N
 
     comptime static_b_shape = DimList(num_experts, 3 * N, K)
+    var dynamic_b_shape = IndexList[3](num_experts, 3 * N, K)
     var b_size = num_experts * 3 * N * K
 
     comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
@@ -148,27 +149,27 @@ fn test[
 
     var a_dev = NDBuffer[a_type, 2, _, static_a_shape](
         a_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, K),
+        IndexList[2](total_num_tokens, K),
     )
     var b_dev = NDBuffer[b_type, 3, _, static_b_shape](
         b_dev_buffer.unsafe_ptr(),
-        static_b_shape,
+        dynamic_b_shape,
     )
     var c_dev = NDBuffer[c_type, 3, _, static_lora_c_shape](
         c_dev_buffer.unsafe_ptr(),
-        DimList(3, total_num_tokens, N),
+        IndexList[3](3, total_num_tokens, N),
     )
     var c_ref_dev = NDBuffer[c_type, 2, _, static_c_ref_shape](
         c_ref_dev_buffer.unsafe_ptr(),
-        DimList(total_num_tokens, actual_N),
+        IndexList[2](total_num_tokens, actual_N),
     )
     var a_offsets_dev = NDBuffer[DType.uint32, 1](
         a_offsets_dev_buffer.unsafe_ptr(),
-        num_experts + 1,
+        IndexList[1](num_experts + 1),
     )
     var expert_ids_dev = NDBuffer[DType.int32, 1](
         expert_ids_dev_buffer.unsafe_ptr(),
-        num_experts,
+        IndexList[1](num_experts),
     )
 
     # Move inputs to device
@@ -217,17 +218,9 @@ fn test[
         assert_almost_equal(
             actual,
             expect,
-            msg=String(
-                "qkv_idx: ",
-                qkv_idx,
-                " m: ",
-                m,
-                " n: ",
-                n,
-                " ref: ",
-                expect,
-                " actual: ",
-                actual,
+            msg=(
+                t"qkv_idx: {qkv_idx} m: {m} n: {n} ref: {expect} actual:"
+                t" {actual}"
             ),
             rtol=rtol,
         )
@@ -247,7 +240,7 @@ fn test[
     _ = expert_ids_dev_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # QKV perm dim test
 

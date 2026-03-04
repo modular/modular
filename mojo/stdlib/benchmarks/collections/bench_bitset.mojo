@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import BitSet
-from random import *
+from std.collections import BitSet
+from std.random import *
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 comptime INIT_LOOP_SIZE = 1000000
 """Bench loop size for BitSet init tests."""
@@ -176,7 +176,7 @@ fn bench_bitset_difference[width: Int](mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-def main():
+def main() raises:
     seed()
     comptime widths = (1, 2, 4, 8, 16)
     comptime sizes = (10, 30, 50, 100, 1000)

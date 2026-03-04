@@ -10,34 +10,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Test tpool_patch_merger kernel against Python reference behavior.
+"""Test tpool_patch_merger kernel against CPU reference behavior.
 
 Python reference: tpool_path_merger.py
   - x: (total_tokens, D), grid_thws: (n_videos, 3) [T,H,W], merge (kH,kW)
-  - Output: list of tensors, each (new_H*new_W, kH*kW, D) with temporal mean.
+  - Output: contiguous tensor (total_output_patches, D) with temporal mean.
 This test implements the same logic in Mojo (CPU reference) and compares
 GPU kernel output to it.
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu.host import DeviceContext
-from layout._coord import Coord, Idx
+from std.gpu.host import DeviceContext
+from layout.coord import Coord, Idx
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor
 from nn.tpool_patch_merger import (
     tpool_patch_merger,
 )
-from random import rand, seed
-from testing import assert_almost_equal
+from std.random import rand, seed
+from std.testing import assert_almost_equal
 
 
 fn cpu_reference_one_video[
     dtype: DType,
 ](
-    x: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
     in_offset: Int,
-    out_base: UnsafePointer[mut=True, Scalar[dtype]],
+    out_base: UnsafePointer[mut=True, Scalar[dtype], _],
     t: Int,
     h: Int,
     w: Int,
@@ -89,46 +89,42 @@ fn test_tpool_patch_merger(ctx: DeviceContext) raises:
     var total_in = len0 + len1
     var n_videos: Int = 2
 
-    var out0_rows = (h0 // kH) * (w0 // kW) * kH * kW
-    var out1_rows = (h1 // kH) * (w1 // kW) * kH * kW
+    # Each video outputs H*W rows (temporal dim averaged out).
+    var out0_rows = h0 * w0
+    var out1_rows = h1 * w1
+    var total_out = out0_rows + out1_rows
 
     # Host buffers for input and grid_thws
     var x_host = ctx.enqueue_create_host_buffer[dtype](total_in * D)
-    var bounds_host = ctx.enqueue_create_host_buffer[DType.int32](n_videos * 3)
+    var bounds_host = ctx.enqueue_create_host_buffer[DType.int64](n_videos * 3)
     ctx.synchronize()
 
     seed(42)
     rand[dtype](x_host.unsafe_ptr(), total_in * D, min=0.0, max=1.0)
 
-    bounds_host[0] = Int32(t0)
-    bounds_host[1] = Int32(h0)
-    bounds_host[2] = Int32(w0)
-    bounds_host[3] = Int32(t1)
-    bounds_host[4] = Int32(h1)
-    bounds_host[5] = Int32(w1)
+    bounds_host[0] = Int64(t0)
+    bounds_host[1] = Int64(h0)
+    bounds_host[2] = Int64(w0)
+    bounds_host[3] = Int64(t1)
+    bounds_host[4] = Int64(h1)
+    bounds_host[5] = Int64(w1)
 
     # Device buffers
     var x_dev = ctx.enqueue_create_buffer[dtype](total_in * D)
-    var out0_dev = ctx.enqueue_create_buffer[dtype](out0_rows * D)
-    var out1_dev = ctx.enqueue_create_buffer[dtype](out1_rows * D)
-    var bounds = ctx.enqueue_create_buffer[DType.int32](n_videos * 3)
+    var out_dev = ctx.enqueue_create_buffer[dtype](total_out * D)
+    var bounds = ctx.enqueue_create_buffer[DType.int64](n_videos * 3)
     ctx.enqueue_copy(x_dev, x_host)
     ctx.enqueue_copy(bounds, bounds_host)
-    ctx.enqueue_memset(out0_dev, 0)
-    ctx.enqueue_memset(out1_dev, 0)
+    ctx.enqueue_memset(out_dev, 0)
     ctx.synchronize()
 
-    # CPU reference (same math as Python tpool_patch_merger): write to host buffers
-    var ref0_host = ctx.enqueue_create_host_buffer[dtype](out0_rows * D)
-    var ref1_host = ctx.enqueue_create_host_buffer[dtype](out1_rows * D)
-
-    # Video 0: (T, H, W) = (2, 4, 4) → len0 = 32 tokens in x. in_offset = 0
-    # Video 1: (T, H, W) = (3, 6, 6) → len1 = 108 tokens in x. in_offset = len0
+    # CPU reference: write to host buffers
+    var ref_host = ctx.enqueue_create_host_buffer[dtype](total_out * D)
 
     cpu_reference_one_video[dtype](
         x_host.unsafe_ptr(),
         0,
-        ref0_host.unsafe_ptr(),
+        ref_host.unsafe_ptr(),
         t0,
         h0,
         w0,
@@ -139,7 +135,7 @@ fn test_tpool_patch_merger(ctx: DeviceContext) raises:
     cpu_reference_one_video[dtype](
         x_host.unsafe_ptr(),
         len0,
-        ref1_host.unsafe_ptr(),
+        ref_host.unsafe_ptr() + out0_rows * D,
         t1,
         h1,
         w1,
@@ -148,30 +144,22 @@ fn test_tpool_patch_merger(ctx: DeviceContext) raises:
         D,
     )
 
-    # GPU kernel: out_ptrs device array
-    var host_out_ptrs = ctx.enqueue_create_host_buffer[DType.uint64](n_videos)
-    host_out_ptrs[0] = UInt64(Int(out0_dev.unsafe_ptr()))
-    host_out_ptrs[1] = UInt64(Int(out1_dev.unsafe_ptr()))
-    var out_ptrs_dev = ctx.enqueue_create_buffer[DType.uint64](n_videos)
-    ctx.enqueue_copy(out_ptrs_dev, host_out_ptrs)
-    ctx.synchronize()
-
-    var max_pat = out0_rows if out0_rows > out1_rows else out1_rows
+    # GPU kernel: contiguous output
     var x_tile = TileTensor(
-        x_dev.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
+        x_dev.unsafe_ptr().as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
         row_major(Coord(Idx(total_in), Idx(D))),
     )
-    var out_ptrs_tensor = TileTensor(
-        out_ptrs_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
-        row_major(Coord(Idx(n_videos))),
+    var out_tile = TileTensor(
+        out_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+        row_major(Coord(Idx(total_out), Idx(D))),
     )
     var bounds_tensor = TileTensor(
-        bounds.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+        bounds.unsafe_ptr().as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
         row_major(Coord(Idx(n_videos), Idx(3))),
     )
 
     tpool_patch_merger(
-        out_ptrs_tensor,
+        out_tile,
         x_tile,
         bounds_tensor,
         kH,
@@ -183,23 +171,19 @@ fn test_tpool_patch_merger(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    # Copy GPU outputs back
-    var out0_host = ctx.enqueue_create_host_buffer[dtype](out0_rows * D)
-    var out1_host = ctx.enqueue_create_host_buffer[dtype](out1_rows * D)
-    ctx.enqueue_copy(out0_host, out0_dev)
-    ctx.enqueue_copy(out1_host, out1_dev)
+    # Copy GPU output back
+    var out_host = ctx.enqueue_create_host_buffer[dtype](total_out * D)
+    ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
-    # Compare to CPU reference (Python-equivalent); relax for bfloat16 precision
+    # Compare to CPU reference; relax for bfloat16 precision
     var atol = 1e-2
-    for i in range(out0_rows * D):
-        assert_almost_equal(out0_host[i], ref0_host[i], atol=atol)
-    for i in range(out1_rows * D):
-        assert_almost_equal(out1_host[i], ref1_host[i], atol=atol)
+    for i in range(total_out * D):
+        assert_almost_equal(out_host[i], ref_host[i], atol=atol)
 
     print("test_tpool_patch_merger: PASSED")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_tpool_patch_merger(ctx)

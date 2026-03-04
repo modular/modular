@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from utils import IndexList
+from std.utils import IndexList
 
 
 trait BaseT(TrivialRegisterPassable):
@@ -29,15 +29,15 @@ struct ImplT(BaseT):
 
     def __init__(
         out self,
-        buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE)],
-    ):
+        buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE), _],
+    ) raises:
         self.values = buf.as_any_origin()
 
     fn get_val(self, idx: Int) -> Float32:
         return self.values[idx][0]
 
 
-def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
+def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
     @parameter
     @__copy_capture(thing)
     fn kernel_fn():
@@ -48,7 +48,7 @@ def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
     ctx.enqueue_function_experimental[kernel](grid_dim=(1,), block_dim=(size))
 
 
-def trait_repro(ctx: DeviceContext):
+def trait_repro(ctx: DeviceContext) raises:
     comptime size = 5
     var managed_buf = ManagedLayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
@@ -66,6 +66,6 @@ def trait_repro(ctx: DeviceContext):
         print(host_buf[i])
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         trait_repro(ctx)

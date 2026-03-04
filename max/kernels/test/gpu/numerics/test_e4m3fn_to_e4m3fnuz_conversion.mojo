@@ -13,11 +13,11 @@
 
 """Test FP8 E4M3FN to E4M3FNUZ conversion kernel."""
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from linalg.fp8_quantization import convert_e4m3fn_to_e4m3fnuz
-from testing import assert_equal
-from utils import IndexList
+from std.testing import assert_equal
+from std.utils import IndexList
 
 
 # CHECK-LABEL: test_convert_e4m3fn_to_e4m3fnuz_basic
@@ -89,5 +89,5 @@ fn test_convert_e4m3fn_to_e4m3fnuz_basic() raises:
         )
 
 
-def main():
+def main() raises:
     test_convert_e4m3fn_to_e4m3fnuz_basic()

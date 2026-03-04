@@ -22,14 +22,10 @@ import numpy as np
 from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, Value
+from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -88,7 +84,6 @@ class Llama3Inputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
         if self.data_parallel_splits is not None:
             if isinstance(self.data_parallel_splits, Buffer):
                 splits_tensor = self.data_parallel_splits
@@ -107,7 +102,7 @@ class Llama3Inputs(ModelInputs):
                 self.input_row_offsets,
                 self.return_n_logits,
                 splits_tensor,
-                *kv_cache_inputs,
+                *(self.kv_cache_inputs or ()),
             )
 
         return (
@@ -115,7 +110,7 @@ class Llama3Inputs(ModelInputs):
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
-            *kv_cache_inputs,
+            *(self.kv_cache_inputs or ()),
         )
 
 
@@ -188,11 +183,10 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, Llama3Inputs)
-
+        assert model_inputs.kv_cache_inputs is not None
         if self.pipeline_config.model.data_parallel_degree > 1:
             model_outputs = self.model.execute(*model_inputs.buffers)
         elif self._lora_manager:
-            curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
             model_outputs = self.model.execute(
                 model_inputs.tokens,
                 model_inputs.input_row_offsets,
@@ -206,7 +200,7 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
                 model_inputs.lora_ids_kv,  # type: ignore
                 model_inputs.lora_grouped_offsets_kv,  # type: ignore
                 *model_inputs.signal_buffers,
-                *curr_kv_cache_inputs,
+                *model_inputs.kv_cache_inputs,
             )
         else:
             model_outputs = self.model.execute(*model_inputs.buffers)
@@ -431,11 +425,13 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
     def load_model(self, session: InferenceSession) -> Model:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1, dtype=np.uint32
+            )
         ).to(self.devices[0])
 
         timer = CompilationTimer("model")
@@ -453,32 +449,6 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
             DeviceRef.from_device(self.logprobs_device), levels=3
         )
         return session.load(graph)
-
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        kv_params = Llama3Config.construct_kv_params(
-            huggingface_config=self.huggingface_config,
-            pipeline_config=self.pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
-        )
-        n_devices = kv_params.n_devices
-        fetch_types = kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     def _get_state_dict(
         self,
@@ -619,15 +589,10 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
                         return_n_logits,
                         *kv_cache_inputs,
                     ) = graph.inputs
-                kv_collection = PagedCacheValues(
-                    kv_blocks=kv_cache_inputs[0].buffer,
-                    cache_lengths=kv_cache_inputs[1].tensor,
-                    lookup_table=kv_cache_inputs[2].tensor,
-                    max_lengths=kv_cache_inputs[3].tensor,
-                )
+                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
                 outputs = single_model(
                     tokens.tensor,
-                    kv_collection,
+                    kv_collections[0],
                     return_n_logits.tensor,
                     input_row_offsets.tensor,
                 )

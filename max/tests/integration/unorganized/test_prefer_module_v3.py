@@ -19,6 +19,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
 from test_common.pipeline_model_dummy import (
@@ -42,7 +43,7 @@ def test_registry__retrieve_architecture_default() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -59,7 +60,7 @@ def test_registry__retrieve_architecture_default() -> None:
             quantization_encoding="float32",
             max_length=128,
         ),
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -80,7 +81,7 @@ def test_registry__retrieve_architecture_v3_falls_back_to_v2() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -97,7 +98,7 @@ def test_registry__retrieve_architecture_v3_falls_back_to_v2() -> None:
             quantization_encoding="float32",
             max_length=128,
         ),
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
     # When prefer_module_v3=True but only ModuleV2 exists, should fall back
@@ -120,7 +121,7 @@ def test_registry__retrieve_architecture_module_v3() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -138,7 +139,7 @@ def test_registry__retrieve_architecture_module_v3() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -155,7 +156,7 @@ def test_registry__retrieve_architecture_module_v3() -> None:
             quantization_encoding="float32",
             max_length=128,
         ),
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
     arch_v3 = PIPELINE_REGISTRY.retrieve_architecture(
@@ -182,7 +183,7 @@ def test_config__prefer_module_v3_default_is_false() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -199,10 +200,10 @@ def test_config__prefer_module_v3_default_is_false() -> None:
             quantization_encoding="float32",
             max_length=128,
         ),
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
-    assert config.prefer_module_v3 is False
+    assert config.runtime.prefer_module_v3 is False
 
 
 @prepare_registry
@@ -218,7 +219,7 @@ def test_config__prefer_module_v3_can_be_set_to_true() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -235,11 +236,10 @@ def test_config__prefer_module_v3_can_be_set_to_true() -> None:
             quantization_encoding="float32",
             max_length=128,
         ),
-        max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(max_batch_size=1, prefer_module_v3=True),
     )
 
-    assert config.prefer_module_v3 is True
+    assert config.runtime.prefer_module_v3 is True
 
 
 @prepare_registry
@@ -252,7 +252,7 @@ def test_config__prefer_module_v3_true_falls_back_to_v2_arch() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -271,10 +271,9 @@ def test_config__prefer_module_v3_true_falls_back_to_v2_arch() -> None:
             quantization_encoding="float32",
             max_length=128,
         ),
-        max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(max_batch_size=1, prefer_module_v3=True),
     )
-    assert config.prefer_module_v3 is True
+    assert config.runtime.prefer_module_v3 is True
 
 
 @prepare_registry
@@ -287,7 +286,7 @@ def test_registry__retrieve_architecture_falls_back_to_v3() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -304,7 +303,7 @@ def test_registry__retrieve_architecture_falls_back_to_v3() -> None:
             quantization_encoding="float32",
             max_length=128,
         ),
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
     # Default prefer_module_v3=False, but only ModuleV3 exists — should fall back
@@ -329,7 +328,7 @@ def test_config__prefer_module_v3_with_draft_model() -> None:
         example_repo_ids=["trl-internal-testing/tiny-random-LlamaForCausalLM"],
         default_encoding="float32",
         supported_encodings={
-            "float32": ["paged"],
+            "float32",
         },
         pipeline_model=DummyLlamaPipelineModel,
         config=DummyLlamaArchConfig,
@@ -345,15 +344,14 @@ def test_config__prefer_module_v3_with_draft_model() -> None:
             quantization_encoding="float32",
             max_length=128,
         ),
-        max_batch_size=1,
-        prefer_module_v3=True,
+        runtime=PipelineRuntimeConfig(max_batch_size=1, prefer_module_v3=True),
     )
 
-    assert config.prefer_module_v3 is True
+    assert config.runtime.prefer_module_v3 is True
 
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         huggingface_repo=config.model.huggingface_model_repo,
-        prefer_module_v3=config.prefer_module_v3,
+        prefer_module_v3=config.runtime.prefer_module_v3,
     )
 
     assert arch is v3_arch

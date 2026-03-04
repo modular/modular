@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import Optional
+from std.collections.optional import Optional
 from layout import LayoutTensor, Layout
-from math import fma
-from sys import align_of, prefetch
-from sys.info import CompilationTarget
-from sys.intrinsics import PrefetchOptions
+from std.math import fma
+from std.sys import align_of, prefetch
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import PrefetchOptions
 
-from algorithm.functional import tile
+from std.algorithm.functional import tile
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -620,7 +620,7 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
+            DType.int32, Layout.row_major(Self.num_rows), ...
         ],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
@@ -855,7 +855,7 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
+            DType.int32, Layout.row_major(Self.num_rows), ...
         ],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
@@ -997,7 +997,7 @@ struct _Accumulator[
                 b_ptr = b_ptr + b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
     @always_inline
     fn _accumulate_neon[
@@ -1054,7 +1054,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
     @always_inline
     fn _accumulate_neon[
@@ -1068,7 +1068,7 @@ struct _Accumulator[
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
         a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
+            DType.int32, Layout.row_major(Self.num_rows), ...
         ],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
@@ -1113,7 +1113,7 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
 
 @always_inline

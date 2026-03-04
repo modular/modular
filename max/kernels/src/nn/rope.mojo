@@ -11,20 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import gcd
-from sys.info import _current_target, simd_width_of
+from std.collections import OptionalReg
+from std.math import gcd
+from std.sys.info import _current_target, simd_width_of
 
-from algorithm.functional import elementwise
-from complex import ComplexSIMD
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
-from layout._coord import Coord, CoordLike, ComptimeInt, RuntimeInt, Idx, coord
+from std.algorithm.functional import elementwise
+from std.complex import ComplexSIMD
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
+from layout import (
+    ComptimeInt,
+    Coord,
+    CoordLike,
+    Idx,
+    RuntimeInt,
+    TileTensor,
+    coord,
+)
 from layout._layout import Layout, _RowMajor
-from layout._tile_tensor import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
@@ -87,15 +94,15 @@ fn apply_rope[
     comptime if interleaved:
         var coord = Coord(idx)
         comptime assert coord.flat_rank == x.flat_rank
-        val = x.load[width=width](coord)
+        val = x.load[width=width, alignment=1](coord)
     else:
         var re_coord = Coord(pos_re)
         comptime assert re_coord.flat_rank == x.flat_rank
         var im_coord = Coord(pos_im)
         comptime assert im_coord.flat_rank == x.flat_rank
         val = rebind[SIMD[dtype, width]](
-            x.load[width=width_2](re_coord).interleave(
-                x.load[width=width_2](im_coord)
+            x.load[width=width_2, alignment=1](re_coord).interleave(
+                x.load[width=width_2, alignment=1](im_coord)
             )
         )
 
@@ -222,13 +229,13 @@ fn rope_ragged[
                 if is_unroped_region:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
-                    f_c_temp = freqs_cis.load[width=width](
+                    f_c_temp = freqs_cis.load[width=width, alignment=1](
                         coord[freqs_cis.linear_idx_type](
                             (position_ids_idx, head_dim_idx - unroped_dim)
                         )
                     )
             else:
-                f_c_temp = freqs_cis.load[width=width](
+                f_c_temp = freqs_cis.load[width=width, alignment=1](
                     coord[freqs_cis.linear_idx_type](
                         (position_ids_idx, head_dim_idx)
                     )

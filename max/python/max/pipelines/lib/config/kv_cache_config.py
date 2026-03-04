@@ -20,30 +20,24 @@ from max.graph import DeviceRef
 from max.nn.kv_cache.cache_params import (
     KVCacheParams,
     KVCacheQuantizationConfig,
-    KVCacheStrategy,
 )
 from pydantic import Field, PrivateAttr
 
 
 class KVCacheConfig(ConfigFileModel):
-    cache_strategy: KVCacheStrategy = Field(
-        default="model_default",
-        description=(
-            "The cache strategy to use. This defaults to model_default, which "
-            "selects the default strategy for the requested architecture. You "
-            "can also force a specific strategy: continuous or paged."
-        ),
-    )
+    """Configuration for the paged KV cache."""
 
     kv_cache_page_size: int = Field(
         default=128,
         description="The number of tokens in a single page in the paged KVCache.",
     )
+    """The number of tokens in a single page in the paged KV cache."""
 
     enable_prefix_caching: bool = Field(
         default=True,
         description="Whether to enable prefix caching for the paged KVCache.",
     )
+    """Whether to enable prefix caching for the paged KV cache."""
 
     enable_kvcache_swapping_to_host: bool = Field(
         default=False,
@@ -52,6 +46,7 @@ class KVCacheConfig(ConfigFileModel):
             "blocks are evicted."
         ),
     )
+    """Whether to swap paged KV cache blocks to host memory when device blocks are evicted."""
 
     device_memory_utilization: float = Field(
         default=0.9,
@@ -62,6 +57,7 @@ class KVCacheConfig(ConfigFileModel):
             "- model_weights_size."
         ),
     )
+    """The fraction of available device memory the process should consume."""
 
     host_kvcache_swap_space_gb: float = Field(
         default=50.0,
@@ -71,6 +67,7 @@ class KVCacheConfig(ConfigFileModel):
             "enabled."
         ),
     )
+    """The amount of host memory to use for the host KV cache, in GiB."""
 
     _cache_dtype: DType = PrivateAttr(default=DType.float32)
     "The data type of the KV cache. The cache dtype is determined by the model's quantization encoding, and can be overridden from CLI by the kv_cache_format parameter."
@@ -82,6 +79,7 @@ class KVCacheConfig(ConfigFileModel):
             "Supported values: float32, bfloat16, float8_e4m3fn."
         ),
     )
+    """An override for the default data type of the KV cache."""
 
     disk_offload_dir: str | None = Field(
         default=None,
@@ -91,11 +89,13 @@ class KVCacheConfig(ConfigFileModel):
             "CPU to disk for persistence across restarts."
         ),
     )
+    """The directory for disk-based KV cache offloading."""
 
     disk_offload_max_gb: float = Field(
         default=50.0,
         description="Maximum disk space (GB) for KV cache offloading.",
     )
+    """The maximum disk space in GB for KV cache offloading."""
 
     disk_offload_direct_io: bool = Field(
         default=False,
@@ -105,6 +105,7 @@ class KVCacheConfig(ConfigFileModel):
             "Falls back to buffered I/O if alignment is not met."
         ),
     )
+    """Whether to use ``O_DIRECT`` for disk I/O, bypassing the OS page cache."""
 
     lmcache_config_file: str | None = Field(
         default=None,
@@ -113,6 +114,7 @@ class KVCacheConfig(ConfigFileModel):
             "LMCache-based external KV cache tiering (CPU, disk, remote)."
         ),
     )
+    """The path to an LMCache YAML configuration file."""
 
     # Need to use `Optional` here to support `click` with 3.9.
     _available_cache_memory: int | None = PrivateAttr(default=None)
@@ -137,9 +139,11 @@ class KVCacheConfig(ConfigFileModel):
         devices: Sequence[DeviceRef],
         data_parallel_degree: int = 1,
         is_mla: bool = False,
+        num_q_heads: int | None = None,
+        q_max_seq_len: int = 1,
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
     ) -> KVCacheParams:
-        """Return KVCacheParams built from this config.
+        """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
         Args:
             dtype: Data type for KV cache storage.
@@ -149,6 +153,10 @@ class KVCacheConfig(ConfigFileModel):
             devices: Devices that host the KV cache.
             data_parallel_degree: Degree of data parallelism.
             is_mla: Whether the model uses Multi-Latent Attention.
+            num_q_heads: Number of query attention heads. Required when
+                ``is_mla`` is True.
+            q_max_seq_len: Query tokens per sequence during decode (1 for
+                standard decode, >1 for MTP).
             kvcache_quant_config: KV cache quantization configuration.
 
         Returns:
@@ -160,12 +168,13 @@ class KVCacheConfig(ConfigFileModel):
             head_dim=head_dim,
             num_layers=num_layers,
             page_size=self.kv_cache_page_size,
-            cache_strategy=self.cache_strategy,
             enable_prefix_caching=self.enable_prefix_caching,
             enable_kvcache_swapping_to_host=self.enable_kvcache_swapping_to_host,
             host_kvcache_swap_space_gb=self.host_kvcache_swap_space_gb,
             devices=devices,
             is_mla=is_mla,
+            num_q_heads=num_q_heads,
+            q_max_seq_len=q_max_seq_len,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
             disk_offload_dir=self.disk_offload_dir,

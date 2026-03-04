@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from __future__ import annotations
 
 """Token sampling algorithms."""
+
+from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops

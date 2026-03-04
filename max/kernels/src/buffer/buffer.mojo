@@ -19,23 +19,28 @@ from buffer import NDBuffer
 ```
 """
 
-from math import align_down, fma, iota
-from pathlib import Path
-from sys.info import align_of, is_gpu, is_nvidia_gpu, simd_width_of, size_of
-from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
+from std.math import align_down, fma, iota
+from std.pathlib import Path
+from std.sys.info import align_of, is_gpu, is_nvidia_gpu, simd_width_of, size_of
+from std.sys.intrinsics import (
+    PrefetchOptions,
+    masked_load,
+    masked_store,
+    prefetch,
+)
 
-from buffer.dimlist import Dim, DimList, _make_tuple
-from builtin.device_passable import DevicePassable
-from memory import (
+from buffer.dimlist import Dim, DimList
+from std.builtin.device_passable import DevicePassable
+from std.memory import (
     # Keep LegacyOpaquePointer for DevicePassable trait compatibility
     LegacyOpaquePointer,
     memset_zero,
     stack_allocation,
 )
 
-from utils._serialize import _serialize
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils._serialize import _serialize
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 comptime _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
@@ -87,7 +92,7 @@ fn _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
 @always_inline
 fn _compute_ndbuffer_offset(
     buf: NDBuffer,
-    index: VariadicList[Int],
+    index: VariadicList[Int, is_owned=False],
 ) -> Int:
     """Computes the NDBuffer's offset using the index positions provided.
 
@@ -229,7 +234,6 @@ struct NDBuffer[
     DevicePassable,
     ImplicitlyCopyable,
     Sized,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -261,9 +265,9 @@ struct NDBuffer[
     ]
     """The underlying data for the buffer. The pointer is not owned by the
     NDBuffer."""
-    var dynamic_shape: IndexList[Self.rank, element_type = DType.uint64]
+    var dynamic_shape: IndexList[Self.rank]
     """The dynamic value of the shape."""
-    var dynamic_stride: IndexList[Self.rank, element_type = DType.uint64]
+    var dynamic_stride: IndexList[Self.rank]
     """The dynamic stride of the buffer."""
 
     @staticmethod
@@ -302,9 +306,8 @@ struct NDBuffer[
         ](), "dimensions must all be known"
 
         self.data = ptr
-        self.dynamic_shape = _make_tuple[
-            Self.rank, element_type = DType.uint64
-        ](Self.shape)
+        self.dynamic_shape = comptime (Self.shape.into_index_list[Self.rank]())
+
         self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
             self.dynamic_shape
         )
@@ -410,52 +413,6 @@ struct NDBuffer[
             Self.origin,
             address_space = Self.address_space,
         ],
-        dynamic_shape: DimList,
-    ):
-        """Constructs an NDBuffer with statically known rank, but dynamic
-        shapes and type.
-
-        Constraints:
-            The rank is known.
-
-        Args:
-            ptr: Pointer to the data.
-            dynamic_shape: A static tuple of size 'rank' representing shapes.
-        """
-        self = Self(ptr, _make_tuple[Self.rank](dynamic_shape))
-
-    @always_inline
-    fn __init__(
-        out self: Self.OriginCastType[MutAnyOrigin],
-        ptr: UnsafePointer[Scalar[Self.dtype], ...],
-        dynamic_shape: DimList,
-    ):
-        """Constructs an NDBuffer with MutAnyOrigin from any pointer.
-
-        This overload allows origin erasure when constructing an NDBuffer with
-        MutAnyOrigin, accepting pointers with any origin.
-
-        Args:
-            ptr: Pointer to the data.
-            dynamic_shape: A DimList of size 'rank' representing shapes.
-        """
-        var shape_tuple = _make_tuple[Self.rank](dynamic_shape)
-        self.data = rebind[type_of(self.data)](ptr)
-        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
-            shape_tuple.cast[type_of(self.dynamic_shape).element_type]()
-        )
-        self.dynamic_stride = _compute_ndbuffer_stride[Self.rank](
-            self.dynamic_shape
-        )
-
-    @always_inline
-    fn __init__(
-        out self,
-        ptr: UnsafePointer[
-            Scalar[Self.dtype],
-            Self.origin,
-            address_space = Self.address_space,
-        ],
         dynamic_shape: IndexList[Self.rank, ...],
         dynamic_stride: IndexList[Self.rank, ...],
     ):
@@ -511,51 +468,16 @@ struct NDBuffer[
             Self.origin,
             address_space = Self.address_space,
         ],
-        dynamic_shape: DimList,
-        dynamic_stride: IndexList[Self.rank, ...],
+        one_d_size: Int,
     ):
-        """Constructs a strided NDBuffer with statically known rank, but
-        dynamic shapes and type.
-
-        Constraints:
-            The rank is known.
+        """Constructs an NDBuffer with statically known rank, but dynamic
+        shapes and type.
 
         Args:
             ptr: Pointer to the data.
-            dynamic_shape: A DimList of size 'rank' representing shapes.
-            dynamic_stride: A static tuple of size 'rank' representing strides.
+            one_d_size: The size of the buffer broadcasted across the shape.
         """
-        self = Self(
-            ptr=ptr,
-            dynamic_shape=_make_tuple[Self.rank](dynamic_shape),
-            dynamic_stride=dynamic_stride,
-        )
-
-    @always_inline
-    fn __init__(
-        out self: Self.OriginCastType[MutAnyOrigin],
-        ptr: UnsafePointer[Scalar[Self.dtype], ...],
-        dynamic_shape: DimList,
-        dynamic_stride: IndexList[Self.rank, ...],
-    ):
-        """Constructs a strided NDBuffer with MutAnyOrigin from any pointer.
-
-        This overload allows origin erasure when constructing an NDBuffer with
-        MutAnyOrigin, accepting pointers with any origin.
-
-        Args:
-            ptr: Pointer to the data.
-            dynamic_shape: A DimList of size 'rank' representing shapes.
-            dynamic_stride: A static tuple of size 'rank' representing strides.
-        """
-        var shape_tuple = _make_tuple[Self.rank](dynamic_shape)
-        self.data = rebind[type_of(self.data)](ptr)
-        self.dynamic_shape = rebind[type_of(self.dynamic_shape)](
-            shape_tuple.cast[type_of(self.dynamic_shape).element_type]()
-        )
-        self.dynamic_stride = rebind[type_of(self.dynamic_stride)](
-            dynamic_stride.cast[type_of(self.dynamic_shape).element_type]()
-        )
+        self = Self(ptr, IndexList[Self.rank](one_d_size))
 
     comptime OriginCastType[target_origin: Origin] = NDBuffer[
         Self.dtype,
@@ -710,6 +632,7 @@ struct NDBuffer[
 
         return product
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Gets the buffer as a string.
@@ -742,6 +665,7 @@ struct NDBuffer[
 
         writer.write(")")
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
     fn __repr__(self) -> String:
         """Gets the buffer as a string.
@@ -749,11 +673,11 @@ struct NDBuffer[
         Returns:
           A compact string representation of the buffer.
         """
-        return self.__str__()
+        return String.write(self)
 
     @always_inline
     fn _offset(
-        self, idx: VariadicList[Int]
+        self, idx: VariadicList[Int, is_owned=False]
     ) -> UnsafePointer[
         Scalar[Self.dtype],
         Self.origin,
@@ -912,7 +836,7 @@ struct NDBuffer[
     @always_inline("nodebug")
     fn load[
         *, width: Int = 1, alignment: Int = Self._default_alignment[width]()
-    ](self, idx: VariadicList[Int]) -> SIMD[Self.dtype, width]:
+    ](self, idx: VariadicList[Int, is_owned=False]) -> SIMD[Self.dtype, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -1209,7 +1133,7 @@ struct NDBuffer[
         debug_assert(
             self.is_contiguous(), "Function requires contiguous buffer."
         )
-        return {self.data, self.size()}
+        return {self.data, IndexList[1](self.size())}
 
     @always_inline
     fn make_dims_unknown(

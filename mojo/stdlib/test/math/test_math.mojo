@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import (
+from std.math import (
     acos,
     align_down,
     align_up,
@@ -46,13 +46,18 @@ from math import (
     trunc,
     ulp,
 )
-from math.math import _call_libm
-from sys import CompilationTarget
+from std.math.math import _call_libm
+from std.sys import CompilationTarget
 
-from testing import TestSuite
-from testing import assert_almost_equal, assert_equal, assert_false, assert_true
+from std.testing import TestSuite
+from std.testing import (
+    assert_almost_equal,
+    assert_equal,
+    assert_false,
+    assert_true,
+)
 
-from utils.numerics import inf, isinf, isnan, nan, neg_inf
+from std.utils.numerics import inf, isinf, isnan, nan, neg_inf
 
 
 fn test_sin() raises:
@@ -102,7 +107,7 @@ fn test_factorial() raises:
     assert_equal(factorial(20), 2432902008176640000)
 
 
-def test_copysign():
+def test_copysign() raises:
     var x = Int32(2)
     assert_equal(x, copysign(x, x))
     assert_equal(-x, copysign(x, -x))
@@ -193,7 +198,7 @@ fn _test_isclose_numerics[*, symm: Bool]() raises:
         assert_false(any(res))
 
 
-def test_isclose():
+def test_isclose() raises:
     # floating-point
     comptime dtype = DType.float32
     comptime S = Scalar[dtype]
@@ -217,7 +222,7 @@ def test_isclose():
     _test_isclose_numerics[symm=True]()
 
 
-def test_ceil():
+def test_ceil() raises:
     # We just test that the `ceil` function resolves correctly for a few common
     # types. Types should test their own `__ceil__` implementation explicitly.
     assert_equal(ceil(0), 0)
@@ -227,7 +232,7 @@ def test_ceil():
     assert_equal(ceil(Float64(-3.6)), -3.0)
 
 
-def test_floor():
+def test_floor() raises:
     # We just test that the `floor` function resolves correctly for a few common
     # types. Types should test their own `__floor__` implementation explicitly.
     assert_equal(floor(0), 0)
@@ -237,7 +242,7 @@ def test_floor():
     assert_equal(floor(Float64(-3.4)), -4.0)
 
 
-def test_trunc():
+def test_trunc() raises:
     # We just test that the `trunc` function resolves correctly for a few common
     # types. Types should test their own `__trunc__` implementation explicitly.
     assert_equal(trunc(0), 0)
@@ -247,7 +252,7 @@ def test_trunc():
     assert_equal(trunc(Float64(-3.4)), -3.0)
 
 
-def test_exp2():
+def test_exp2() raises:
     assert_equal(exp2(Float32(1)), 2.0)
     assert_almost_equal(exp2(Float32(0.2)), 1.148696)
     assert_equal(exp2(Float32(0)), 1.0)
@@ -267,7 +272,7 @@ def test_exp2():
     assert_almost_equal(exp2(Float64(1023)), 8.98846567431158e307)
 
 
-def test_iota():
+def test_iota() raises:
     comptime length = 103
     var offset = 2
 
@@ -293,7 +298,7 @@ comptime F32x4 = SIMD[DType.float32, 4]
 comptime F64x4 = SIMD[DType.float64, 4]
 
 
-def test_sqrt():
+def test_sqrt() raises:
     assert_equal(sqrt(-1), 0)
     assert_equal(sqrt(0), 0)
     assert_equal(sqrt(1), 1)
@@ -336,7 +341,7 @@ def test_sqrt():
     assert_almost_equal(s2_f64[3], 0.86602)
 
 
-def test_rsqrt():
+def test_rsqrt() raises:
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0) + 1
 
     var s1_f32 = rsqrt(f32x4)
@@ -366,7 +371,7 @@ def test_rsqrt():
     assert_almost_equal(s2_f64[3], 0.89442)
 
 
-def _test_frexp_impl[dtype: DType](*, atol: Float64, rtol: Float64):
+def _test_frexp_impl[dtype: DType](*, atol: Float64, rtol: Float64) raises:
     var res0 = frexp(Scalar[dtype](123.45))
     assert_almost_equal(
         res0[0].cast[DType.float32](), 0.964453, atol=atol, rtol=rtol
@@ -408,7 +413,7 @@ def _test_frexp_impl[dtype: DType](*, atol: Float64, rtol: Float64):
 
 def _test_log_impl[
     dtype: DType
-](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
+](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
     var res0 = log(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 4.8158, atol=atol, rtol=rtol
@@ -436,7 +441,7 @@ def _test_log_impl[
 
 def _test_log2_impl[
     dtype: DType
-](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
+](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
     var res0 = log2(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 6.9477, atol=atol, rtol=rtol
@@ -458,7 +463,7 @@ def _test_log2_impl[
 
 def _test_log1p_impl[
     dtype: DType
-](*, atol: Float64, rtol: Float64) where dtype.is_floating_point():
+](*, atol: Float64, rtol: Float64) raises where dtype.is_floating_point():
     var res0 = log1p(Scalar[dtype](123.45))
     assert_almost_equal(
         res0.cast[DType.float32](), 4.8239, atol=atol, rtol=rtol
@@ -494,28 +499,28 @@ def _test_log1p_impl[
     )
 
 
-def test_frexp():
+def test_frexp() raises:
     _test_frexp_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_frexp_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
     _test_frexp_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
-def test_log():
+def test_log() raises:
     _test_log_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
     _test_log_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
-def test_log2():
+def test_log2() raises:
     _test_log2_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log2_impl[DType.float16](atol=1e-2, rtol=1e-5)
 
     _test_log2_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
-def test_log1p():
+def test_log1p() raises:
     _test_log1p_impl[DType.float64](atol=1e-4, rtol=1e-5)
     _test_log1p_impl[DType.float32](atol=1e-4, rtol=1e-5)
     _test_log1p_impl[DType.float16](atol=1e-2, rtol=1e-5)
@@ -523,7 +528,82 @@ def test_log1p():
     _test_log1p_impl[DType.bfloat16](atol=1e-1, rtol=1e-5)
 
 
-def test_gcd():
+def test_log1p_accuracy() raises:
+    # Compare log1p against libm across several regimes.
+
+    # Small values near zero (critical regime where log1p matters).
+    var small_vals: InlineArray[Float64, 14] = [
+        1e-15,
+        1e-12,
+        1e-10,
+        1e-8,
+        1e-6,
+        1e-4,
+        1e-2,
+        -1e-15,
+        -1e-12,
+        -1e-10,
+        -1e-8,
+        -1e-6,
+        -1e-4,
+        -1e-2,
+    ]
+    for val in small_vals:
+        assert_almost_equal(
+            log1p(val),
+            _call_libm["log1p"](val),
+            msg=String("f64 small mismatch for the value = ", val),
+        )
+
+    # Float32 small values.
+    var small_vals_f32: InlineArray[Float32, 6] = [
+        1e-7,
+        1e-5,
+        1e-3,
+        -1e-7,
+        -1e-5,
+        -1e-3,
+    ]
+    for val in small_vals_f32:
+        assert_almost_equal(
+            log1p(val),
+            _call_libm["log1p"](val),
+            msg=String("f32 small mismatch for the value = ", val),
+        )
+
+    # Moderate values.
+    comptime n = 1_000
+    for i in range(n):
+        var val = Float64(i) / (n / 10.5) - 0.5
+        assert_almost_equal(
+            log1p(val),
+            _call_libm["log1p"](val),
+            msg=String("f64 moderate mismatch for the value = ", val),
+        )
+
+    # Values near the singularity at x = -1.
+    var near_neg1: InlineArray[Float64, 5] = [
+        -0.9,
+        -0.99,
+        -0.999,
+        -0.9999,
+        -0.99999,
+    ]
+    for val in near_neg1:
+        assert_almost_equal(
+            log1p(val),
+            _call_libm["log1p"](val),
+            msg=String("f64 near-singularity mismatch for the value = ", val),
+        )
+
+    # Edge cases.
+    assert_true(isnan(log1p(nan[DType.float64]())))
+    assert_equal(log1p(Float64(0)), Float64(0))
+    assert_true(isinf(log1p(Float64(-1))))
+    assert_true(isnan(log1p(Float64(-2))))
+
+
+def test_gcd() raises:
     var l = [2, 4, 6, 8, 16]
     var il: InlineArray[Int, 5] = [4, 16, 2, 8, 6]
     assert_equal(gcd(Span[Int](il)), 2)
@@ -545,7 +625,7 @@ def test_gcd():
     assert_equal(gcd([16]), 16)
 
 
-def test_lcm():
+def test_lcm() raises:
     assert_equal(lcm(-2, 4), 4)
     assert_equal(lcm(2345, 23452), 54994940)
     var l = [4, 6, 7, 3]
@@ -564,7 +644,7 @@ def test_lcm():
     assert_equal(lcm(0, 0), 0)
 
 
-def test_ulp():
+def test_ulp() raises:
     assert_true(isnan(ulp(nan[DType.float32]())))
     assert_true(isinf(ulp(inf[DType.float32]())))
     assert_true(isinf(ulp(-inf[DType.float32]())))
@@ -574,7 +654,7 @@ def test_ulp():
     assert_equal(ulp(Float64(-5)), 8.881784197001252e-16)
 
 
-def test_ceildiv():
+def test_ceildiv() raises:
     # NOTE: these tests are here mostly to ensure the ceildiv method exists.
     # Types that opt in to CeilDivable, should test their own dunder methods for
     # correctness.
@@ -602,7 +682,7 @@ def test_ceildiv():
     assert_equal(ceildiv(UInt32(5), UInt32(2)), ceildiv(5, 2))
 
 
-def test_align_down():
+def test_align_down() raises:
     assert_equal(align_down(1, 7), 0)
     assert_equal(align_down(548, -7), 553)
     assert_equal(align_down(-548, -7), -546)
@@ -613,7 +693,7 @@ def test_align_down():
     assert_equal(align_down(UInt(546), UInt(7)), UInt(546))
 
 
-def test_align_up():
+def test_align_up() raises:
     assert_equal(align_up(1, 7), 7)
     assert_equal(align_up(548, -7), 546)
     assert_equal(align_up(-548, -7), -553)
@@ -624,7 +704,7 @@ def test_align_up():
     assert_equal(align_up(UInt(546), UInt(7)), UInt(546))
 
 
-def test_clamp():
+def test_clamp() raises:
     assert_equal(clamp(Int(1), 0, 1), 1)
     assert_equal(clamp(Int(2), 0, 1), 1)
     assert_equal(clamp(Int(-2), 0, 1), 0)
@@ -639,7 +719,7 @@ def test_clamp():
     )
 
 
-def test_fma():
+def test_fma() raises:
     # Test Int overload
     assert_equal(fma(5, 3, 2), 17)  # 5*3 + 2 = 17
     assert_equal(fma(-2, 3, 4), -2)  # -2*3 + 4 = -2
@@ -662,7 +742,7 @@ def test_fma():
     )
 
 
-def test_atanh():
+def test_atanh() raises:
     assert_equal(atanh(Float32(1)), inf[DType.float32]())
     assert_equal(atanh(Float32(-1)), -inf[DType.float32]())
     assert_true(isnan(atanh(Float32(2))))
@@ -717,7 +797,7 @@ def test_atanh():
     )
 
 
-def test_sinh():
+def test_sinh() raises:
     comptime n = 1_000
     for i in range(n):
         var val = Float32(i) / (n * 2) - 1
@@ -728,7 +808,7 @@ def test_sinh():
         )
 
 
-def test_cosh():
+def test_cosh() raises:
     comptime n = 1_000
     for i in range(n):
         var val = Float32(i) / (n * 2) - 1
@@ -739,7 +819,7 @@ def test_cosh():
         )
 
 
-def test_expm1():
+def test_expm1() raises:
     comptime n = 1_000
     for i in range(n):
         var val = Float32(i) / (n * 2) - 1
@@ -750,7 +830,7 @@ def test_expm1():
         )
 
 
-def test_asin():
+def test_asin() raises:
     comptime n = 1_000
     for i in range(n):
         var val = Float32(i) / (n * 2) - 1
@@ -760,8 +840,23 @@ def test_asin():
             msg=String("mismatch for the value = ", val),
         )
 
+    # Float64 accuracy across [-1, 1].
+    for i in range(n):
+        var val = Float64(i) / (n * 2) - 1
+        assert_almost_equal(
+            asin(val),
+            _call_libm["asin"](val),
+            msg=String("f64 mismatch for the value = ", val),
+        )
 
-def test_erfc():
+    # Edge cases.
+    assert_equal(asin(Float64(0)), Float64(0))
+    assert_almost_equal(asin(Float64(1)), pi / 2.0)
+    assert_almost_equal(asin(Float64(-1)), -(pi / 2.0))
+    assert_true(isnan(asin(nan[DType.float64]())))
+
+
+def test_erfc() raises:
     comptime n = 10_000
     for i in range(n):
         var val = Float32(i) / (n * Float32(2) / 10) - 10
@@ -771,7 +866,7 @@ def test_erfc():
         )
 
 
-def test_cbrt():
+def test_cbrt() raises:
     comptime n = 1_0000
     for i in range(n):
         var val = Float32(i) / (n * Float32(2) / 10) - 10
@@ -782,7 +877,7 @@ def test_cbrt():
         )
 
 
-def test_acos():
+def test_acos() raises:
     comptime n = 1_000
     for i in range(n):
         var val = Float32(i) / (n * 2) - 1
@@ -792,6 +887,21 @@ def test_acos():
             msg=String("mismatch for the value = ", val),
         )
 
+    # Float64 accuracy across [-1, 1].
+    for i in range(n):
+        var val = Float64(i) / (n * 2) - 1
+        assert_almost_equal(
+            acos(val),
+            _call_libm["acos"](val),
+            msg=String("f64 mismatch for the value = ", val),
+        )
 
-def main():
+    # Edge cases.
+    assert_almost_equal(acos(Float64(1)), Float64(0))
+    assert_almost_equal(acos(Float64(-1)), pi)
+    assert_almost_equal(acos(Float64(0)), pi / 2.0)
+    assert_true(isnan(acos(nan[DType.float64]())))
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

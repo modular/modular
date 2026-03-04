@@ -33,22 +33,22 @@ Usage:
             process_tile(current)
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, block_id_in_cluster, grid_dim, thread_idx
-from gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
-from gpu.memory import fence_async_view_proxy
+from std.gpu import block_idx, block_id_in_cluster, grid_dim, thread_idx
+from std.gpu.primitives.cluster import block_rank_in_cluster, elect_one_sync
+from std.gpu.memory import fence_async_view_proxy
 from layout import Layout, LayoutTensor
 from layout.tma_async import PipelineState, SharedMemBarrier
 from .grouped_block_scaled_matmul_kernel import _ProblemSizesTile
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.structuring import SMemPtr, SMemArray
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
-from ..structured_kernels.pipeline import ProducerConsumerPipeline
+from structured_kernels.pipeline import ProducerConsumerPipeline
 
 
 # =============================================================================
@@ -108,7 +108,7 @@ struct GroupedAdvanceContext[
 
 @fieldwise_init
 struct GroupedWorkInfo(
-    ImplicitlyCopyable, Movable, Stringable, TrivialRegisterPassable, Writable
+    ImplicitlyCopyable, Movable, TrivialRegisterPassable, Writable
 ):
     """Work info for grouped GEMM with group-specific metadata.
 
@@ -157,6 +157,7 @@ struct GroupedWorkInfo(
         """Get (m, n) tile coordinates as a tuple."""
         return (UInt(self.m), UInt(self.n))
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

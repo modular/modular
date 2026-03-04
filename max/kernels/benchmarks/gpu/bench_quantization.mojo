@@ -11,9 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_dtype, env_get_int, size_of, env_get_bool
-from math import ceildiv
-from benchmark import (
+from std.sys import (
+    get_defined_dtype,
+    get_defined_int,
+    size_of,
+    get_defined_bool,
+)
+from std.math import ceildiv
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -21,8 +26,8 @@ from benchmark import (
     ThroughputMeasure,
     BenchMetric,
 )
-from gpu.host import DeviceContext
-from internal_utils import env_get_shape, int_list_to_tuple
+from std.gpu.host import DeviceContext
+from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -30,12 +35,12 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 from layout._fillers import random
-from gpu.host.info import B200
+from std.gpu.host.info import B200
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import IndexList
+from std.utils.index import IndexList
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -181,13 +186,13 @@ fn bench_1d1d_quantization[
     ctx.synchronize()
 
 
-def main():
-    comptime in_dtype = env_get_dtype["dtype", DType.bfloat16]()
+def main() raises:
+    comptime in_dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
     var rows = Int(arg_parse("M", 1))
-    comptime cols = env_get_int["N", 1024]()
-    comptime use_async = env_get_bool["use_async", True]()
-    comptime is_fp4 = env_get_bool["is_fp4", True]()
+    comptime cols = get_defined_int["N", 1024]()
+    comptime use_async = get_defined_bool["use_async", True]()
+    comptime is_fp4 = get_defined_bool["is_fp4", True]()
 
     with DeviceContext() as ctx:
         comptime if ctx.default_device_info.compute == B200.compute:

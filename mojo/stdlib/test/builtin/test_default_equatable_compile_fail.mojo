@@ -28,7 +28,7 @@ struct HasBadField(Equatable):
 
 
 # CHECK: Could not derive Equatable for HasBadField - member field `field: NotEquatable` does not implement Equatable
-def main():
+def main() raises:
     var a = HasBadField(NotEquatable(1))
     var b = HasBadField(NotEquatable(1))
     _ = a == b

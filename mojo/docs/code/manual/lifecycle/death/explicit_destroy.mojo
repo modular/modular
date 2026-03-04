@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
-from tempfile import gettempdir
+from std.pathlib import Path
+from std.tempfile import gettempdir
 
 
 fn write_to_disk(path: String, data: String) raises:

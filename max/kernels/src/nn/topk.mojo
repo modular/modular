@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp, iota
-from memory import alloc
-from sys import align_of, simd_width_of, size_of, env_get_bool
+from std.math import ceildiv, exp, iota
+from std.memory import alloc
+from std.sys import align_of, simd_width_of, size_of, get_defined_bool
 
-import gpu.primitives.warp as warp
-from algorithm.functional import parallelize_over_rows
-from algorithm.reduction import _get_nd_indices_from_flat_index
-from bit import log2_floor
-from builtin.sort import _quicksort
-from gpu import (
+import std.gpu.primitives.warp as warp
+from std.algorithm.functional import parallelize_over_rows
+from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from std.bit import log2_floor
+from std.builtin.sort import _quicksort
+from std.gpu import (
     WARP_SIZE,
     barrier,
     block_dim,
@@ -30,12 +30,12 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.primitives.grid_controls import PDL, pdl_launch_attributes
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.info import is_cpu
-from gpu.memory import AddressSpace, external_memory
-from random import Random
-from layout._coord import (
+from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host.info import is_cpu
+from std.gpu.memory import AddressSpace, external_memory
+from std.random import Random
+from layout.coord import (
     ComptimeInt,
     Coord,
     CoordLike,
@@ -45,18 +45,18 @@ from layout._coord import (
     coord_to_index_list,
 )
 from layout._layout import TensorLayout, Layout, RowMajorLayout, row_major
-from layout._tile_tensor import TileTensor
-from math import log2
-from memory import stack_allocation
+from layout import TileTensor
+from std.math import log2
+from std.memory import stack_allocation
 from nn.gather_scatter import normalize_neg_index
 from nn.reshape import reshape
 from nn.softmax import softmax_with_temperature
 from nn.topk_fi import topk_topp_sampling_from_prob
-from os.env import getenv
-from runtime.asyncrt import DeviceContextPtr
+from std.os.env import getenv
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList, StaticTuple, product
-from utils.numerics import max_or_inf, min_or_neg_inf
+from std.utils.index import IndexList, StaticTuple, product
+from std.utils.numerics import max_or_inf, min_or_neg_inf
 
 
 @always_inline
@@ -102,7 +102,7 @@ fn _adjust_top_p[
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](
     top_p: Scalar[T],
-    values: UnsafePointer[Scalar[T], address_space=address_space],
+    values: UnsafePointer[Scalar[T], _, address_space=address_space],
     k: Int,
     total_sum: Scalar[T],
 ) -> Scalar[T]:
@@ -1330,7 +1330,7 @@ fn _topk_gpu[
     var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
 
     # Enqueue the first kernel (stage 1)
-    comptime if env_get_bool[
+    comptime if get_defined_bool[
         "USE_OLD_TOP_K_KERNEL", False
     ]() or _force_old_impl:
         comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]
@@ -1676,6 +1676,7 @@ fn topk_gpu[
 fn _topk_topp_sampling_fi[
     dtype: DType,
     out_idx_type: DType,
+    KLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
     TemperatureLayoutType: TensorLayout = RowMajorLayout[
         RuntimeInt[DType.int64]
     ],
@@ -1687,6 +1688,7 @@ fn _topk_topp_sampling_fi[
     min_top_p: Float32,
     input: TileTensor[dtype, ...],
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
+    k: Optional[TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]] = None,
     temperature: Optional[
         TileTensor[DType.float32, TemperatureLayoutType, ImmutAnyOrigin]
     ] = None,
@@ -1732,6 +1734,7 @@ fn _topk_topp_sampling_fi[
         out_1d,
         max_k,
         top_p_val=min_top_p,
+        top_k_arr=k,
         top_p_arr=top_p,
         rng_seed=rng_seed,
     )
@@ -1791,18 +1794,24 @@ fn fused_token_sampling_gpu[
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
 
-    var bound_max_k = 255 if max_k == -1 else max_k
+    comptime assert input.flat_rank == 2
+
+    var vocab_size = input.layout.shape[1]().value()
+    var adjusted_max_k = vocab_size if max_k == -1 else max_k
 
     # softmax with temperature, then top-k+top-p
     # rejection sampling. Enabled via compile-time env var.
-    @parameter
-    if env_get_bool["USE_FI_TOPK_KERNEL", False]():
+
+    if adjusted_max_k >= 75:
         _topk_topp_sampling_fi[dtype, out_idx_type](
             ctx,
-            bound_max_k,
+            adjusted_max_k,
             min_top_p,
             input,
             out_idxs,
+            k=rebind[
+                Optional[TileTensor[out_idx_type, KLayoutType, ImmutAnyOrigin]]
+            ](k),
             temperature=temperature,
             top_p=top_p,
             rng_seed=seed,
@@ -1810,7 +1819,7 @@ fn fused_token_sampling_gpu[
         return
 
     var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
-    out_vals_shape[input.rank - 1] = bound_max_k
+    out_vals_shape[input.rank - 1] = adjusted_max_k
     var out_vals_buf = ctx.enqueue_create_buffer[dtype](
         out_vals_shape.flattened_length()
     )
@@ -1821,7 +1830,7 @@ fn fused_token_sampling_gpu[
 
     topk_gpu[sampling=True, largest=True](
         ctx,
-        bound_max_k,
+        adjusted_max_k,
         input,
         out_vals,
         out_idxs,

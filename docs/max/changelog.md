@@ -11,6 +11,8 @@ what we publish.
 
 ### Documentation {#26-2-docs}
 
+- Removed `--cache-strategy` cli flag.
+
 ### MAX models {#26-2-models}
 
 - Add support for Olmo3ForCausalLM architecture.
@@ -42,6 +44,14 @@ what we publish.
   at creation time and provides a clear error message when the driver version
   is too old, matching the behavior of the Python `Accelerator()` API.
 
+- Runtime GPU errors now include a **Python source traceback** showing where
+  the failing operation was defined in your graph-building code. Build with
+  `MODULAR_MAX_DEBUG=True` to enable source note collection; when source notes
+  are not available, error messages include a hint about how to enable them.
+
+- Fixed Mojo and MAX compatibility with NVIDIA unified memory systems, like
+  the Jetson series or the DGX Spark.
+
 #### Inference server {#26-2-max-serve}
 
 - Enabled overlap scheduling for select model architectures like
@@ -54,6 +64,12 @@ what we publish.
 #### `max` CLI {#26-2-max-cli}
 
 #### Python API {#26-2-max-python}
+
+- `Tensor.constant()` is deprecated. Use the `Tensor(data, dtype=...,
+  device=...)` constructor directly, matching PyTorch's `torch.tensor()`
+  semantics. For example, replace `Tensor.constant([1.0, 2.0])` with
+  `Tensor([1.0, 2.0])`. `Tensor.constant()` will be removed in a future
+  release.
 
 - `DeviceEvent` now accepts an `enable_timing=True` parameter to enable GPU
   event timing. Use `start.elapsed_time(end)` to measure elapsed GPU time in

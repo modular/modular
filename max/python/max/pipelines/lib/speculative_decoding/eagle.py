@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
@@ -31,7 +30,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import (
     ModelInputs,
@@ -111,7 +110,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             hidden_dim=hidden_dim,
             dtype=DType.bfloat16,
             devices=self.target_devices,
-            max_batch_size=self.pipeline_config.max_batch_size or 128,
+            max_batch_size=self.pipeline_config.runtime.max_batch_size or 128,
             num_draft_steps=self._num_draft_steps,
             session=self._target_session,
         )
@@ -148,7 +147,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             device=self.target_devices[0],
         )
 
-        graph_inputs = [
+        graph_inputs: list[Buffer] = [
             target_outputs.logits,
             prev_tokens,
             top_k,
@@ -159,6 +158,16 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             seed,
             prev_logits,
         ]
+
+        penalty_inputs = self._create_penalty_inputs(
+            context_batch, self.target_devices[0]
+        )
+        if penalty_inputs is not None:
+            freq_data, freq_pen, pres_pen, rep_pen = penalty_inputs
+            for fd in freq_data:
+                graph_inputs.extend([fd.data, fd.offsets])
+            graph_inputs.extend([freq_pen, pres_pen, rep_pen])
+
         sampled_tokens, _, _ = self._target_sampler(*graph_inputs)[:3]
         assert isinstance(sampled_tokens, Buffer)
 
@@ -300,9 +309,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         base_inputs = model.prepare_initial_token_inputs(
             replica_batches=replica_batches,
-            kv_cache_inputs=KVCacheInputsSequence(
-                kv_cache_inputs=kv_cache_inputs
-            ),
+            kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
 
@@ -390,9 +397,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         inputs = model.prepare_initial_token_inputs(
             replica_batches=replica_batches,
-            kv_cache_inputs=KVCacheInputsSequence(
-                kv_cache_inputs=kv_cache_inputs
-            ),
+            kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
 
@@ -409,7 +414,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_tokens: Buffer | None,
         merged_offsets: Buffer | None,
         host_merged_offsets: Buffer | None = None,
-        kv_cache_inputs: KVCacheInputs | Sequence[KVCacheInputs] | None = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> tuple[ModelInputs, int]:
         """Prepare batch for target model verification of draft tokens.
 
@@ -444,18 +449,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 replica_batches, num_steps
             )
 
-        kv_cache_updated_inputs: KVCacheInputs
-        if isinstance(kv_cache_inputs, Sequence):
-            kv_cache_updated_inputs = KVCacheInputsSequence(
-                kv_cache_inputs=kv_cache_inputs,
-            )
-        else:
-            assert isinstance(kv_cache_inputs, KVCacheInputs)
-            kv_cache_updated_inputs = kv_cache_inputs
-
         inputs = model.prepare_initial_token_inputs(
             replica_batches=replica_batches,
-            kv_cache_inputs=kv_cache_updated_inputs,
+            kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
 
@@ -480,7 +476,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_offsets: Buffer | None = None,
         hidden_states: list[Buffer] | None = None,
         host_merged_offsets: Buffer | None = None,
-        kv_cache_inputs: KVCacheInputs | Sequence[KVCacheInputs] | None = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
         shift_next_tokens: npt.NDArray[np.int64] | None = None,
     ) -> tuple[ModelInputs, int]:
         """Prepare batch for model execution.
@@ -536,6 +532,20 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             self._create_sampling_parameters(batch, self.draft_devices[0])
         )
 
+        # Build penalty inputs once for the entire draft generation loop
+        penalty_inputs = self._create_penalty_inputs(
+            batch, self.draft_devices[0], num_steps=num_steps
+        )
+        penalty_kwargs: dict[str, Any] = {}
+        if penalty_inputs is not None:
+            freq_data, freq_pen, pres_pen, rep_pen = penalty_inputs
+            penalty_kwargs = {
+                "frequency_data": freq_data,
+                "frequency_penalty": freq_pen,
+                "presence_penalty": pres_pen,
+                "repetition_penalty": rep_pen,
+            }
+
         generated_tokens = Buffer.zeros(
             (len(batch), 0), dtype=DType.int64, device=self.draft_devices[0]
         )
@@ -571,22 +581,17 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                     top_p,
                     min_top_p,
                     seed,
+                    **penalty_kwargs,
                 )
             )
 
             generated_tokens = new_generated_tokens
             generated_logits = new_generated_logits
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
+
+            assert curr_step_inputs.kv_cache_inputs is not None
+            curr_step_inputs.kv_cache_inputs = (
                 self._draft_kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
+                    curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
             )
@@ -679,7 +684,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         assert target_outputs.logit_offsets is not None
         first_rejected_tokens, recovered_tokens, bonus_tokens = (
-            self._rejection_sampler(
+            self._call_rejection_sampler(
                 draft_tokens,
                 draft_logits,
                 target_outputs.logits,
@@ -687,8 +692,6 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 all_draft_logits,
             )
         )
-        assert isinstance(first_rejected_tokens, Buffer)
-        assert isinstance(recovered_tokens, Buffer)
 
         first_rejected_tokens_np = first_rejected_tokens.to_numpy()
         recovered_tokens_np = recovered_tokens.to_numpy()
@@ -815,17 +818,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         target_outputs = self._target_model.execute(model_inputs=target_inputs)
 
-        assert isinstance(
-            target_inputs.kv_cache_inputs, KVCacheInputsSequence
-        ), (
-            "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-        )
-        assert isinstance(
-            target_inputs.kv_cache_inputs.kv_cache_inputs, list
-        ), "increment_cache_lengths instantiates and passes this as a list"
-        target_inputs.kv_cache_inputs.kv_cache_inputs = (
+        assert target_inputs.kv_cache_inputs is not None
+        target_inputs.kv_cache_inputs = (
             self._target_kv_manager.increment_cache_lengths(
-                target_inputs.kv_cache_inputs.kv_cache_inputs,
+                target_inputs.kv_cache_inputs,
                 target_inputs,
             )
         )
@@ -917,13 +913,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
         draft_outputs = self._draft_model.execute(model_inputs=draft_ce_inputs)
 
-        assert isinstance(
-            draft_ce_inputs.kv_cache_inputs, KVCacheInputsSequence
-        )
-        assert isinstance(draft_ce_inputs.kv_cache_inputs.kv_cache_inputs, list)
-        draft_ce_inputs.kv_cache_inputs.kv_cache_inputs = (
+        assert draft_ce_inputs.kv_cache_inputs is not None
+        draft_ce_inputs.kv_cache_inputs = (
             self._draft_kv_manager.increment_cache_lengths(
-                draft_ce_inputs.kv_cache_inputs.kv_cache_inputs,
+                draft_ce_inputs.kv_cache_inputs,
                 draft_ce_inputs,
             )
         )

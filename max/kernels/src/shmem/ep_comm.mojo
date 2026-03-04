@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from os.atomic import Atomic, Consistency
-from sys import is_amd_gpu, is_nvidia_gpu
-from sys.info import CompilationTarget, align_of, simd_width_of, size_of
+from std.math import align_up, ceildiv
+from std.os.atomic import Atomic, Consistency
+from std.sys import is_amd_gpu, is_nvidia_gpu
+from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 
 from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
@@ -24,9 +24,9 @@ from linalg.fp4_utils import (
     set_scale_factor,
 )
 
-import gpu.primitives.warp as warp
-from collections import OptionalReg
-from gpu import (
+import std.gpu.primitives.warp as warp
+from std.collections import OptionalReg
+from std.gpu import (
     PDL,
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -36,9 +36,9 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import get_gpu_target
-from gpu.intrinsics import Scope, load_acquire, store_release, threadfence
-from gpu.sync import syncwarp
+from std.gpu.host import get_gpu_target
+from std.gpu.intrinsics import Scope, load_acquire, store_release, threadfence
+from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.int_tuple import (
     UNKNOWN_VALUE,
@@ -46,15 +46,15 @@ from layout.int_tuple import (
     _get_index_type,
     _get_layout_type,
 )
-from math import exp, recip
-from memory import stack_allocation
-from memory.unsafe import bitcast
+from std.math import exp, recip
+from std.memory import stack_allocation
+from std.memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 
-from utils.index import IndexList, StaticTuple
-from utils.numerics import get_accum_type
+from std.utils.index import IndexList, StaticTuple
+from std.utils.numerics import get_accum_type
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 comptime RtTuple_2 = RuntimeTuple[
     IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), element_type = DType.int32
@@ -124,8 +124,8 @@ fn block_memcpy[
     num_bytes: Int,
     block_size: Int,
 ](
-    dst_p: UnsafePointer[mut=True, UInt8, address_space=dst_addr_space],
-    src_p: UnsafePointer[mut=False, UInt8, address_space=src_addr_space],
+    dst_p: UnsafePointer[mut=True, UInt8, _, address_space=dst_addr_space],
+    src_p: UnsafePointer[mut=False, UInt8, _, address_space=src_addr_space],
     thread_idx: UInt,
 ) -> None:
     """
@@ -331,8 +331,8 @@ trait TokenFormat(DevicePassable, TrivialRegisterPassable):
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
-        src_p: UnsafePointer[mut=False, Scalar[src_type]],
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], _],
         input_scale: Float32,
     ) -> None:
         "Copy the token to the send buffer. This function needs to be called by all threads in the block."
@@ -343,7 +343,7 @@ trait TokenFormat(DevicePassable, TrivialRegisterPassable):
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
+        buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
         expert_id: Int,
         expert_token_index: Int,
@@ -407,8 +407,8 @@ struct BF16TokenFormat[
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
-        src_p: UnsafePointer[mut=False, Scalar[src_type]],
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], _],
         input_scale: Float32,
     ) -> None:
         block_memcpy[Self.hid_dim * size_of[BFloat16](), Int(block_size)](
@@ -422,7 +422,7 @@ struct BF16TokenFormat[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
+        buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
         expert_id: Int,
         expert_token_index: Int,
@@ -572,8 +572,8 @@ struct BlockwiseFP8TokenFormat[
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
-        src_p: UnsafePointer[mut=False, Scalar[src_type]],
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], _],
         input_scale: Float32,
     ) -> None:
         comptime src_width = simd_width_of[src_type]()
@@ -624,7 +624,7 @@ struct BlockwiseFP8TokenFormat[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
+        buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
         expert_id: Int,
         expert_token_index: Int,
@@ -877,8 +877,8 @@ struct NVFP4TokenFormat[
         block_size: UInt,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
-        buf_p: UnsafePointer[mut=True, UInt8, address_space=buf_addr_space],
-        src_p: UnsafePointer[mut=False, Scalar[src_type]],
+        buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
+        src_p: UnsafePointer[mut=False, Scalar[src_type], _],
         input_scale: Float32,
     ) -> None:
         comptime src_width = 8
@@ -931,7 +931,7 @@ struct NVFP4TokenFormat[
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
-        buf_p: UnsafePointer[mut=False, UInt8, address_space=buf_addr_space],
+        buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
         expert_id: Int,
         expert_token_index: Int,
@@ -1034,7 +1034,7 @@ struct EPLocalSyncCounters[n_experts: Int](
     comptime device_type: AnyType = Self
 
     @always_inline
-    fn __init__(out self, ptr: UnsafePointer[Int32]):
+    fn __init__(out self, ptr: UnsafePointer[Int32, _]):
         self.ptr = UnsafePointer[Int32, MutExternalOrigin](ptr)
 
     fn _to_device_type(self, target: MutOpaquePointer[_]):
@@ -1048,7 +1048,7 @@ struct EPLocalSyncCounters[n_experts: Int](
 
     @staticmethod
     fn get_type_name() -> String:
-        return String("EPLocalSyncCounters[n_experts=", Self.n_experts, "]")
+        return t"EPLocalSyncCounters[n_experts={Self.n_experts}]"
 
     @always_inline
     @staticmethod

@@ -11,25 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of, simd_width_of, size_of
+from std.sys import align_of, simd_width_of, size_of
 
-from gpu import lane_id, thread_idx, block_idx
-from gpu import warp_id as get_warp_id, WARP_SIZE
+from std.gpu import lane_id, thread_idx, block_idx
+from std.gpu import warp_id as get_warp_id, WARP_SIZE
 from layout import IntTuple, Layout, LayoutTensor
 from layout._utils import idx2crd, make_amd_buffer_resource
 from layout.element import Element
 from layout.layout_tensor import ThreadScope
 from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core import num_matrix_reg
-from memory import AddressSpace as BaseAddressSpace
-from memory import stack_allocation
+from std.memory import AddressSpace as BaseAddressSpace
+from std.memory import stack_allocation
 
-from utils import IndexList
-from utils.numerics import get_accum_type
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
 from layout.swizzle import Swizzle
-from gpu._utils import to_i32, to_llvm_shared_mem_ptr, to_i64
-from itertools import product
-from sys._assembly import inlined_assembly
+from std.gpu._utils import to_i32, to_llvm_shared_mem_ptr, to_i64
+from std.itertools import product
+from std.sys._assembly import inlined_assembly
 
 
 @always_inline

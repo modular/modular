@@ -46,7 +46,7 @@ MAX supports all standard NumPy and PyTorch dtypes:
 | `DType.int8`     | 1 byte  | 8-bit signed integer                   | Quantized models, extreme compression |
 
 For the complete list including float8 variants and all integer types, see the
-[DType API reference](/max/api/python/dtype#DType).
+[DType API reference](/max/api/python/dtype#max.dtype.DType).
 
 ## Specify dtype when creating tensors
 
@@ -63,7 +63,7 @@ float_tensor = Tensor.ones([2, 3], dtype=DType.float32, device=CPU())
 print(f"Float tensor dtype: {float_tensor.dtype}")
 
 # Create a tensor with int32 for indices or counts
-int_tensor = Tensor.constant([1, 2, 3], dtype=DType.int32, device=CPU())
+int_tensor = Tensor([1, 2, 3], dtype=DType.int32, device=CPU())
 print(f"Int tensor dtype: {int_tensor.dtype}")
 ```
 
@@ -74,8 +74,8 @@ Float tensor dtype: DType.float32
 Int tensor dtype: DType.int32
 ```
 
-In this example, the [`ones()`](/max/api/python/tensor#max.experimental.tensor.Tensor.ones) function creates a tensor filled with ones, and
-the [`constant()`](/max/api/python/tensor#max.experimental.tensor.Tensor.constant) function creates a tensor filled with the given values. The
+In this example, the [`ones()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.ones) function creates a tensor filled with ones, and
+the [`Tensor()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor) constructor creates a tensor from the given values. The
 `dtype` parameter is used to specify the dtype of the tensor.
 
 If you don't specify a dtype, MAX uses:
@@ -85,7 +85,7 @@ If you don't specify a dtype, MAX uses:
 
 ## Check tensor dtype
 
-Every tensor has a [`dtype`](/max/api/python/tensor#max.experimental.tensor.Tensor.dtype) property that returns its data type:
+Every tensor has a [`dtype`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.dtype) property that returns its data type:
 
 {/* @sync: _examples/dtypes/check_dtype.py */}
 ```python
@@ -95,7 +95,7 @@ from max.experimental.tensor import Tensor
 
 # Create tensors of different types
 weights = Tensor.ones([3, 3], dtype=DType.float32, device=CPU())
-indices = Tensor.constant([0, 1, 2], dtype=DType.int64, device=CPU())
+indices = Tensor([0, 1, 2], dtype=DType.int64, device=CPU())
 
 # Check the dtype of each tensor
 print(f"Weights dtype: {weights.dtype}")  # DType.float32
@@ -119,7 +119,7 @@ is a `int64` tensor.
 
 ## Convert between dtypes
 
-The [`cast()`](/max/api/python/tensor#max.experimental.tensor.Tensor.cast) method is used to convert a tensor from one dtype to another. This
+The [`cast()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.cast) method is used to convert a tensor from one dtype to another. This
 is useful when you need to convert a tensor from a floating-point type to an
 integer type, or from a higher precision type to a lower precision type. For
 example:
@@ -131,7 +131,7 @@ from max.dtype import DType
 from max.experimental.tensor import Tensor
 
 # Create a float32 tensor
-x = Tensor.constant([1.7, 2.3, 3.9], dtype=DType.float32, device=CPU())
+x = Tensor([1.7, 2.3, 3.9], dtype=DType.float32, device=CPU())
 print(f"Original dtype: {x.dtype}")  # DType.float32
 
 # Cast to int32 (truncates decimal values)
@@ -179,7 +179,7 @@ int32.is_integral(): True
 float8_e4m3fn.is_float8(): True
 ```
 
-For more information, see the [DType API reference](/max/api/python/dtype#DType).
+For more information, see the [DType API reference](/max/api/python/dtype#max.dtype.DType).
 
 ## Interoperability with NumPy and PyTorch tensors
 
@@ -219,7 +219,7 @@ MAX tensor dtype: DType.float32
 MAX tensor shape: [Dim(2), Dim(2)]
 ```
 
-In this example, the [`from_dlpack()`](/max/api/python/tensor#max.experimental.tensor.Tensor.from_dlpack) method converts the NumPy array to a MAX tensor.
+In this example, the [`from_dlpack()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.from_dlpack) method converts the NumPy array to a MAX tensor.
 You can use this method when converting data from other libraries to MAX.
 
 :::note NumPy compatibility

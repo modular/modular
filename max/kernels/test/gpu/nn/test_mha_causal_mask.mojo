@@ -11,26 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import isclose
-from random import rand
-from sys import argv, size_of
+from std.math import isclose
+from std.random import rand
+from std.sys import argv, size_of
 
-from bit import count_trailing_zeros
-from gpu import *
-from gpu.host import DeviceContext
-from gpu.host.info import A100, B200, H100
+from std.bit import count_trailing_zeros
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import A100, B200, H100
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
-from nn.mha_score_mod import IdentityScoreMod
 from nn.mha_utils import FlashAttentionAlgorithm, MHAConfig
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils.index import Index
-from utils.numerics import min_or_neg_inf
+from std.utils.index import Index
+from std.utils.numerics import min_or_neg_inf
 
 
 fn is_benchmark() -> Bool:
@@ -192,7 +191,6 @@ fn test[
             k_device,
             v_device,
             mask,
-            IdentityScoreMod(),
             scale,
             ctx,
             num_partitions=num_partitions,
@@ -301,7 +299,6 @@ fn test[
             k_device,
             v_device,
             mask,
-            IdentityScoreMod(),
             scale,
             ctx,
             num_partitions=num_partitions,
@@ -343,7 +340,7 @@ fn construct_depths(is_sm90orsm100: Bool) -> List[Int]:
     return depths^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime is_sm90orsm100 = ctx.default_device_info == H100 or ctx.default_device_info == B200
         comptime depths = construct_depths(is_sm90orsm100)

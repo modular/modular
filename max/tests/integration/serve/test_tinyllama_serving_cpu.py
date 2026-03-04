@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     CreateCompletionResponse,
@@ -38,10 +39,10 @@ pipeline_config = PipelineConfig(
         device_specs=[DeviceSpec.cpu()],
         quantization_encoding="float32",
         allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-        kv_cache=KVCacheConfig(cache_strategy="paged"),
+        kv_cache=KVCacheConfig(),
         max_length=512,
     ),
-    max_batch_size=16,
+    runtime=PipelineRuntimeConfig(max_batch_size=16),
 )
 
 

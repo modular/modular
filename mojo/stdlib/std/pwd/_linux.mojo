@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import c_char, external_call
+from std.ffi import c_char, external_call
 
 from .pwd import Passwd
 
@@ -31,7 +31,7 @@ struct _C_Passwd(TrivialRegisterPassable):
 
 
 fn _build_pw_struct(
-    passwd_ptr: UnsafePointer[mut=False, _C_Passwd]
+    passwd_ptr: UnsafePointer[mut=False, _C_Passwd, _]
 ) raises -> Passwd:
     var c_pwuid = passwd_ptr[]
     return Passwd(

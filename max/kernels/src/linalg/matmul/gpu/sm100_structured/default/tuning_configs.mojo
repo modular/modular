@@ -68,8 +68,17 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
         self.num_split_k = num_split_k
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
-        return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
+        return String.write(self)
+
+    fn write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
 
     fn __init__(
         out self,
@@ -350,6 +359,28 @@ fn _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             num_accum_pipeline_stages=2,
             num_clc_pipeline_stages=2,
             k_group_size=2,
+        ),
+        TuningConfigSM100(
+            M=4608,
+            M_end=4608 + 64,
+            N=6144,
+            K=24576,
+            mma_shape=Index(256, 256, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+        ),
+        TuningConfigSM100(
+            M=4608,
+            M_end=4608 + 64,
+            N=6144,
+            K=18432,
+            mma_shape=Index(256, 256, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=8,
+            rasterize_order=RasterOrder(1),
         ),
     ]
 

@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the block_scaled_matmul_with_epilogue public API."""
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
 from linalg.fp4_quantization import block_scaled_matmul_with_epilogue
 from linalg.fp4_utils import (
@@ -24,7 +24,7 @@ from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
 )
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 fn test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
@@ -129,7 +129,7 @@ fn test_block_scaled_matmul_zero_rows(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_block_scaled_matmul_zero_rows(ctx)
     print("\n=== ALL TESTS PASSED ===\n")

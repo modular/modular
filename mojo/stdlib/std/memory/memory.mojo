@@ -15,19 +15,19 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory import memcmp
+from std.memory import memcmp
 ```
 """
 
 
-from collections.string.string_slice import _get_kgen_string
-from math import iota
-from sys import _libc as libc
-from ffi import external_call
-from sys import (
+from std.collections.string.string_slice import _get_kgen_string
+from std.math import iota
+from std.sys import _libc as libc
+from std.ffi import external_call
+from std.sys import (
     align_of,
     codegen_unreachable,
-    env_get_string,
+    get_defined_string,
     is_compile_time,
     is_gpu,
     llvm_intrinsic,
@@ -36,7 +36,7 @@ from sys import (
     size_of,
 )
 
-from algorithm import vectorize
+from std.algorithm import vectorize
 
 # ===-----------------------------------------------------------------------===#
 # memcmp
@@ -123,8 +123,8 @@ fn _memcmp_impl[
 fn memcmp[
     type: AnyType, address_space: AddressSpace
 ](
-    s1: UnsafePointer[mut=False, type, address_space=address_space],
-    s2: UnsafePointer[mut=False, type, address_space=address_space],
+    s1: UnsafePointer[mut=False, type, _, address_space=address_space],
+    s2: UnsafePointer[mut=False, type, _, address_space=address_space],
     count: Int,
 ) -> Int:
     """Compares two buffers. Both strings are assumed to be of the same length.
@@ -238,8 +238,8 @@ fn memcpy[
     T: AnyType
 ](
     *,
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=False, T],
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=False, T, _],
     count: Int,
 ):
     """Copy `count * size_of[T]()` bytes from src to dest.
@@ -277,8 +277,8 @@ fn memmove[
     T: AnyType
 ](
     *,
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=False, T],
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=False, T, _],
     count: Int,
 ):
     """Copy `count * size_of[T]()` bytes from src to dest.
@@ -324,7 +324,7 @@ fn _memset_impl(
 
 
 @always_inline
-fn memset(ptr: UnsafePointer[mut=True, _, ...], value: Byte, count: Int):
+fn memset(ptr: UnsafePointer[mut=True, ...], value: Byte, count: Int):
     """Fills memory with the given value.
 
     Args:
@@ -341,7 +341,7 @@ fn memset(ptr: UnsafePointer[mut=True, _, ...], value: Byte, count: Int):
 
 
 @always_inline
-fn memset_zero(ptr: UnsafePointer[mut=True, _, ...], count: Int):
+fn memset_zero(ptr: UnsafePointer[mut=True, ...], count: Int):
     """Fills memory with zeros.
 
     Args:
@@ -508,7 +508,7 @@ fn _malloc[
     ],
 ):
     comptime if is_gpu():
-        comptime enable_gpu_malloc = env_get_string[
+        comptime enable_gpu_malloc = get_defined_string[
             "ENABLE_GPU_MALLOC", "true"
         ]()
         # no runtime allocation on GPU
@@ -556,8 +556,8 @@ fn uninit_move_n[
     overlapping: Bool,
 ](
     *,
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=True, T],
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=True, T, _],
     count: Int,
 ):
     """Move `count` values from `src` into memory at `dest`.
@@ -619,8 +619,8 @@ fn uninit_copy_n[
     overlapping: Bool,
 ](
     *,
-    dest: UnsafePointer[mut=True, T],
-    src: UnsafePointer[mut=False, T],
+    dest: UnsafePointer[mut=True, T, _],
+    src: UnsafePointer[mut=False, T, _],
     count: Int,
 ):
     """Copy `count` values from `src` into memory at `dest`.
@@ -676,7 +676,7 @@ fn uninit_copy_n[
 @always_inline
 fn destroy_n[
     T: ImplicitlyDestructible
-](pointer: UnsafePointer[mut=True, T], count: Int):
+](pointer: UnsafePointer[mut=True, T, _], count: Int):
     """Destroy `count` initialized values at `pointer`.
 
     This function runs the destructor for each of the `count` values, leaving

@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from layout._coord import Coord, Idx, coord_to_index_list
+from std.algorithm.functional import elementwise
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from tensor._indexing import _row_major_strides
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn _collapse_dims_around_axis(

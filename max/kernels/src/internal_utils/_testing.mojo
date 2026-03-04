@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import Optional
-from math import exp2
+from std.collections import Optional
+from std.math import exp2
 
-import testing
-from reflection import call_location, SourceLocation
-from testing.testing import _assert_cmp_error
+import std.testing
+from std.reflection import call_location, SourceLocation
+from std.testing.testing import _assert_cmp_error
 
-from utils.numerics import FPUtils
+from std.utils.numerics import FPUtils
 
 
 # ===----------------------------------------------------------------------=== #
@@ -38,7 +38,7 @@ fn _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
         A string representation of the N-dimensional index, e.g., "[2, 3, 4]".
     """
     if len(shape) == 0:
-        return String("i=", flat_idx)
+        return t"i={flat_idx}"
 
     # Compute N-dimensional indices from flat index (row-major order)
     var indices = List[Int](capacity=len(shape))
@@ -72,7 +72,7 @@ fn _format_index(i: Int, shape: List[Int]) -> String:
     if len(shape) > 0:
         return _flat_to_nd_index(i, shape)
     else:
-        return String("i=", i)
+        return t"i={i}"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -85,8 +85,8 @@ fn assert_almost_equal[
     dtype: DType,
     //,
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     msg: String = "",
     *,
@@ -133,7 +133,7 @@ fn assert_almost_equal[
         testing.assert_almost_equal(
             x[i],
             y[i],
-            msg=String(msg, " at ", _format_index(i, shape)),
+            msg=t"{msg} at {_format_index(i, shape)}",
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
@@ -151,8 +151,8 @@ fn assert_equal[
     dtype: DType,
     //,
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     msg: String = "",
     *,
@@ -190,7 +190,7 @@ fn assert_equal[
         testing.assert_equal(
             x[i],
             y[i],
-            msg=String(msg, " at ", _format_index(i, shape)),
+            msg=t"{msg} at {_format_index(i, shape)}",
             location=location.or_else(call_location()),
         )
 
@@ -210,8 +210,8 @@ fn assert_with_measure[
         Int,
     ) -> Float64,
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     msg: String = "",
     *,
@@ -303,3 +303,34 @@ fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
         return (1e-7, 1e-7)
     else:
         return (0.0, 0.0)
+
+
+# ===----------------------------------------------------------------------=== #
+# test_value_for_gpu_element
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+@parameter
+fn test_value_for_gpu_element[
+    dtype: DType,
+](gpu_rank: Int, element_idx: Int) -> Scalar[dtype]:
+    """Generates unique deterministic test values per GPU and element index.
+
+    Creates predictable values for testing multi-GPU operations where each
+    GPU's contribution needs to be distinguishable. Uses prime modulus to
+    avoid power-of-two aliasing patterns.
+
+    Args:
+        gpu_rank: The rank/ID of the GPU (0-indexed).
+        element_idx: The element index within the buffer.
+
+    Returns:
+        A unique scalar value for this GPU and element combination.
+
+    Examples:
+        `test_value_for_gpu_element[DType.float32](0, 0)` !=
+        `test_value_for_gpu_element[DType.float32](1, 0)`.
+    """
+    # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
+    return Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % 251)

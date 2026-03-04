@@ -20,6 +20,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
 from test_common.mocks import mock_pipeline_config_hf_dependencies
@@ -56,7 +57,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
                 trust_remote_code=True,
                 max_length=1,
             ),
-            max_batch_size=1,
+            runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
 
 
@@ -77,7 +78,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
                 trust_remote_code=True,
                 max_length=1,
             ),
-            max_batch_size=1,
+            runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
 
     @prepare_registry
@@ -88,7 +89,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
             model=MAXModelConfig(
                 model_path="some-model", trust_remote_code=True, max_length=1
             ),
-            max_batch_size=1,
+            runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
         task = PIPELINE_REGISTRY.retrieve_pipeline_task(config)
         assert task == PipelineTask.TEXT_GENERATION
@@ -107,8 +108,8 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
-            "q4_k": ["paged"],
+            "bfloat16",
+            "q4_k",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -130,8 +131,8 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
-            "q4_k": ["paged"],
+            "bfloat16",
+            "q4_k",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -166,7 +167,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -183,7 +184,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["different/repo"],  # Different repo IDs
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -200,7 +201,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="q4_k",  # Different encoding
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -217,7 +218,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
             # Missing q4_k encoding
         },
         pipeline_model=DummyPipelineModel,
@@ -235,7 +236,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DUMMY_GEMMA_ARCH.pipeline_model,  # Different model
         config=DummyLlamaArchConfig,
@@ -252,7 +253,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -269,7 +270,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -286,7 +287,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -303,7 +304,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -324,7 +325,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -344,7 +345,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -361,7 +362,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -379,7 +380,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,
@@ -394,7 +395,7 @@ def test_supported_architecture__eq__method() -> None:
         example_repo_ids=["test/repo1", "test/repo2"],
         default_encoding="bfloat16",
         supported_encodings={
-            "bfloat16": ["paged"],
+            "bfloat16",
         },
         pipeline_model=DummyPipelineModel,
         config=DummyLlamaArchConfig,

@@ -26,23 +26,23 @@ Uses a pull-based approach: each GPU reads its chunk from root via P2P.
 """
 
 from buffer import NDBuffer
-from collections import InlineArray
-from gpu.host import DeviceContext, get_gpu_target
-from gpu import (
+from std.collections import InlineArray
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     global_idx,
     grid_dim,
 )
-from gpu.primitives.grid_controls import (
+from std.gpu.primitives.grid_controls import (
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
 
-from math import ceildiv
-from sys import simd_width_of, size_of
-from utils import StaticTuple
+from std.math import ceildiv
+from std.sys import simd_width_of, size_of
+from std.utils import StaticTuple
 
 from .sync import (
     MAX_GPUS,
@@ -68,7 +68,7 @@ fn scatter_pull_kernel[
 ](
     output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     input_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], dp_size
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
     ],
     chunk_num_elems: InlineArray[Int, dp_size],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -84,12 +84,10 @@ fn scatter_pull_kernel[
     var global_tid = Int(global_idx.x)
     var stride = Int(grid_dim.x) * BLOCK_SIZE
 
-    @parameter
-    if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+    comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
         launch_dependent_grids()
 
-    @parameter
-    if pdl_level > PDLLevel.OFF:
+    comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
     _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -131,7 +129,7 @@ fn scatter[
     dp_size: Int,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    input_buffers: InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], dp_size],
+    input_buffers: InlineArray[NDBuffer[dtype, rank, ImmutAnyOrigin], dp_size],
     output_buffer: NDBuffer[dtype, rank, MutAnyOrigin],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
     ctx: DeviceContext,
@@ -150,7 +148,7 @@ fn scatter[
 
     # Extract raw pointers and sizes from NDBuffers for the kernel.
     var input_ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype], MutAnyOrigin], dp_size
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
     ](fill={})
     var chunk_num_elems = InlineArray[Int, dp_size](fill=0)
     for i in range(dp_size):

@@ -90,7 +90,7 @@ prelude include:
   - *Examples:* `bitcast`, `simd_width_of`, `external_call`
 - **Language machinery**
   - *Examples:*
-    - `VariadicListMem`, `VariadicPack`
+    - `VariadicList`, `VariadicPack`
       - Note that although we aim to remove these from the prelude eventually,
         they may stay for some time due to missing language features (e.g. kwarg
         splatting) that would eventually obsolete them.

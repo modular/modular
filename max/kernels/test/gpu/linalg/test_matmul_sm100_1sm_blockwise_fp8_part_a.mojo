@@ -12,27 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 """Blockwise FP8 1SM tests - Part A (mma_m_scale=1, 64xN MMA shapes)."""
 
-from math import ceildiv
-from sys import argv, size_of
+from std.math import ceildiv
+from std.sys import argv, size_of
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
 )
-from random import rand
+from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
@@ -40,8 +40,8 @@ from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul impor
     blockwise_fp8_matmul,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 
 fn simple_init() -> Bool:
@@ -110,11 +110,11 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         k.dim, n.dim
     )
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
 
     comptime static_a_scales_shape = DimList(
         ceildiv(Int(k.dim), BLOCK_SCALE_K), m.dim
@@ -123,10 +123,10 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         ceildiv(Int(n.dim), BLOCK_SCALE_K), ceildiv(Int(k.dim), BLOCK_SCALE_K)
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[2](
         ceildiv(k.value, BLOCK_SCALE_K), m.value
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[2](
         ceildiv(n.value, BLOCK_SCALE_K), ceildiv(k.value, BLOCK_SCALE_K)
     )
 
@@ -308,7 +308,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     _ = b_scales_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime in_dtype = DType.float8_e4m3fn

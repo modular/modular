@@ -17,7 +17,7 @@
 # REQUIRES: avx2
 # RUN: %mojo-no-debug %s
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 
 from buffer import NDBuffer
 from linalg.arch.cpu.vnni_intrinsics import (
@@ -26,11 +26,11 @@ from linalg.arch.cpu.vnni_intrinsics import (
     dot_i16_to_i32_AVX2,
     dot_i16_to_i32_x86,
 )
-from memory import bitcast
-from testing import assert_equal
+from std.memory import bitcast
+from std.testing import assert_equal
 
 
-def test_i8_to_i32():
+def test_i8_to_i32() raises:
     var a = NDBuffer[DType.uint8, 1, MutAnyOrigin, 16 * 64].stack_allocation[
         alignment=64
     ]()
@@ -164,8 +164,8 @@ def test_i8_to_i32():
     assert_equal(cv4s, SIMD[DType.int32, 4](-33138, -34049, -34832, -35487))
 
 
-def test_i16_to_i32():
-    def test_simd_width[width: Int]():
+def test_i16_to_i32() raises:
+    def test_simd_width[width: Int]() raises:
         var a = SIMD[DType.int16, width * 2]()
         var b = SIMD[DType.int16, width * 2]()
         var c_start = SIMD[DType.int32, width]()
@@ -199,6 +199,6 @@ def test_i16_to_i32():
     test_simd_width[4]()
 
 
-def main():
+def main() raises:
     test_i8_to_i32()
     test_i16_to_i32()

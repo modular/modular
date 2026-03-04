@@ -11,28 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_float64
-from sys import env_get_bool, env_get_dtype
+from std.random import random_float64
+from std.sys import get_defined_bool, get_defined_dtype
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
-from gpu.host import DeviceContext
-from internal_utils import env_get_shape, int_list_to_tuple, CacheBustingBuffer
-from runtime.asyncrt import DeviceContextPtr
-from layout._coord import Coord, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.gpu.host import DeviceContext
+from internal_utils import (
+    get_defined_shape,
+    int_list_to_tuple,
+    CacheBustingBuffer,
+)
+from std.runtime.asyncrt import DeviceContextPtr
 from layout import (
-    UNKNOWN_VALUE,
+    Coord,
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
 )
+from layout._layout import row_major
 from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
 from buffer import NDBuffer
 from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
-from memory import LegacyUnsafePointer
-from utils.index import Index, IndexList
+from std.memory import LegacyUnsafePointer
+from std.utils.index import Index, IndexList
 
 
 fn bench_rms_norm_fused_fp8[
@@ -432,7 +437,7 @@ fn bench_rms_norm_fused_fp8[
     ctx.synchronize()
 
     # Compare outputs
-    from testing import assert_almost_equal
+    from std.testing import assert_almost_equal
 
     var max_diff = Float32(0.0)
     var max_rel_diff = Float32(0.0)
@@ -540,13 +545,13 @@ fn bench_rms_norm_fused_fp8[
     gamma_h.free()
 
 
-def main():
-    comptime in_dtype = env_get_dtype["in_dtype", DType.bfloat16]()
-    comptime out_dtype = env_get_dtype["out_dtype", DType.float8_e4m3fn]()
+def main() raises:
+    comptime in_dtype = get_defined_dtype["in_dtype", DType.bfloat16]()
+    comptime out_dtype = get_defined_dtype["out_dtype", DType.float8_e4m3fn]()
     comptime shape = int_list_to_tuple[
-        env_get_shape["shape", "1x4096x16384"]()
+        get_defined_shape["shape", "1x4096x16384"]()
     ]()
-    comptime cache_busting = env_get_bool["cache_busting", True]()
+    comptime cache_busting = get_defined_bool["cache_busting", True]()
 
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:

@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     ListModelsResponse,
@@ -39,10 +40,10 @@ assert SMOLLM_135M_REVISION is not None
                 huggingface_model_revision=SMOLLM_135M_REVISION,
                 device_specs=[DeviceSpec.cpu()],
                 quantization_encoding="float32",
-                kv_cache=KVCacheConfig(cache_strategy="paged"),
+                kv_cache=KVCacheConfig(),
                 max_length=512,
             ),
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -77,10 +78,10 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
                 served_model_name=MODEL_ALIAS,
                 device_specs=[DeviceSpec.cpu()],
                 quantization_encoding="float32",
-                kv_cache=KVCacheConfig(cache_strategy="paged"),
+                kv_cache=KVCacheConfig(),
                 max_length=512,
             ),
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,

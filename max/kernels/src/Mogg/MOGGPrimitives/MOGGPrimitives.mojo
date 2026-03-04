@@ -11,25 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import fma
-from ffi import external_call
-from sys import size_of, align_of
+from std.math import fma
+from std.ffi import external_call
+from std.sys import size_of, align_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from compiler_internal import StaticTensorSpec
-from collections import InlineArray
-from gpu.host import DeviceBuffer
-from gpu.host.info import is_cpu, is_gpu
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
-from layout._coord import Coord, Idx
+from std.collections import InlineArray
+from std.gpu.host import DeviceBuffer
+from std.gpu.host.info import is_cpu, is_gpu
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from std.memory import memcpy
 
 from nn.concat import concat
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import (
     DynamicTensor,
     InputTensor,
@@ -40,9 +46,7 @@ from tensor.io_spec import IO
 from tensor.managed_tensor_slice import get_kernel_simd_width
 from weights_registry import WeightsRegistry
 
-from utils import Index, IndexList, StaticTuple
-
-from .MOGGIntList import IntList
+from std.utils import Index, IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # Helper Structures
@@ -498,7 +502,7 @@ fn mgp_tensor_extract_buffer[
 ]:
     # Unwrap the tensor into a size-less buffer pointer.
     return NDBuffer[DType.int8, 1](
-        buffer.data.bitcast[Int8](), buffer.bytecount()
+        buffer.data.bitcast[Int8](), IndexList[1](buffer.bytecount())
     )
 
 
@@ -530,7 +534,7 @@ fn mgp_buffer_constant(
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
     return NDBuffer[DType.int8, 1](
-        resource_ptr.bitcast[Int8](), resource_bytecount
+        resource_ptr.bitcast[Int8](), IndexList[1](resource_bytecount)
     )
 
 
@@ -558,13 +562,18 @@ fn mgp_buffer_constant_external(
             align,
         )
 
-    return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(size))
+    return NDBuffer[DType.int8, 1](
+        weight_ptr.bitcast[Int8](), IndexList[1](Int(size))
+    )
 
 
 @no_inline
 fn fill_buffer[
     dtype: DType
-](buf: NDBuffer[DType.int8, 1, MutAnyOrigin], vals: VariadicList[Int]):
+](
+    buf: NDBuffer[DType.int8, 1, MutAnyOrigin],
+    vals: VariadicList[Int, is_owned=False],
+):
     var ptr = buf.data.bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
@@ -812,16 +821,16 @@ fn mgp_tensor_spec_create[
     aRawDims: DimList,
     aRawDimsRank: Int,
 ](*runtimeDims: Int) -> IndexList[aRawDimsRank]:
-    var static_shape = IntList[aRawDims]()
     var shape = IndexList[aRawDimsRank]()
     var runtimeIndex = 0
     # Update Shape with runtime elements.
-    for i in range(aRawDimsRank):
-        if static_shape[i] > -1:
-            shape[i] = static_shape[i]
+    comptime for i in range(aRawDimsRank):
+        var dim = aRawDims.at[i]()
+        if dim.get() > -1:
+            shape[i] = dim.get()
         else:
             shape[i] = runtimeDims[runtimeIndex]
-            runtimeIndex = runtimeIndex + 1
+            runtimeIndex += 1
     return shape
 
 
@@ -1071,7 +1080,7 @@ fn reshape_contiguous_buffer[
 @register_internal("get_simd_width_for_dtypes")
 @always_inline
 fn get_simd_width_for_dtypes[
-    dtypes: StaticTuple[DType], target: StaticString
+    dtypes: StaticTuple[DType, _], target: StaticString
 ]() -> Int:
     comptime assert dtypes.size > 0
 
@@ -1107,19 +1116,6 @@ fn build_static_tensor_specs[
     )
 
 
-# Build the tuple of StaticTensorSpecs for DPS kernels
-@register_internal("build_static_tensor_specs_tuple")
-fn build_static_tensor_specs_tuple[
-    dtype: DType,
-    rank: Int,
-    size: Int,
-](
-    array_of_specs: VariadicList[StaticTensorSpec[dtype, rank]],
-    out result: StaticTuple[StaticTensorSpec[dtype, rank], size],
-):
-    return {array_of_specs}
-
-
 # TODO: this should take IOSpec as a param -- will require graph compiler changes
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
 @register_internal("to_managed_tensor_slice")
@@ -1152,7 +1148,7 @@ fn to_managed_tensor_slice[
 @always_inline
 fn _get_scalar_from_managed_tensor_slice[
     dtype: DType,
-](tensor: ManagedTensorSlice[dtype=dtype]) -> Scalar[dtype]:
+](tensor: ManagedTensorSlice[dtype=dtype, ...]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
@@ -1178,31 +1174,6 @@ fn get_int_from_shape[
     param_index: Int, rank: Int
 ](shape: IndexList[rank]) -> Int:
     return shape[param_index]
-
-
-@register_internal("rebuild_static_tensor_specs_with_output_compute_lambda")
-@no_inline
-fn rebuild_static_tensor_specs_with_output_compute_lambda[
-    func_type: __TypeOfAllTypes,
-    //,
-    dtype: DType,
-    rank: Int,
-](
-    spec: StaticTensorSpec[dtype, rank],
-    out_compute_lambda: func_type,
-) -> StaticTensorSpec[dtype, rank]:
-    return StaticTensorSpec[dtype, rank](
-        shape=spec.shape,
-        strides=spec.strides,
-        alignment=spec.alignment,
-        address_space=spec.address_space,
-        exclusive=spec.exclusive,
-        in_lambda=None,
-        out_lambda=None,
-        out_compute_lambda=rebind[spec.out_compute_lambda_t](
-            out_compute_lambda
-        ),
-    )
 
 
 @always_inline
@@ -1599,9 +1570,22 @@ fn mogg_async_ready(async_ptr: AnyAsyncValueRefPtr):
 
 @register_internal("mogg.async.error")
 @no_inline
-fn mogg_async_error(async_ptr: AnyAsyncValueRefPtr, err: Error):
-    """Indicates to the C++ runtime that the kernel has failed."""
+fn mogg_async_error(
+    async_ptr: AnyAsyncValueRefPtr,
+    err: Error,
+    source_notes: String = "",
+):
+    """Indicates to the C++ runtime that the kernel has failed.
+
+    When source_notes is non-empty it is prepended to the error message as a
+    Python stack trace so users can locate the failing op in their code.
+    See GEX-2678.
+    """
     var error_message = String(err)
+    if source_notes:
+        error_message = (
+            "\nSource Traceback:\n" + source_notes + "\n\n" + error_message
+        )
     external_call["MGP_RT_AsyncRT_CreateAsync_Error", NoneType](
         async_ptr,
         error_message.as_c_string_slice().unsafe_ptr(),

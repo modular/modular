@@ -15,9 +15,9 @@
 You can import these APIs from the `testing` package. For example:
 
 ```mojo
-from testing import assert_true
+from std.testing import assert_true
 
-def main():
+def main() raises:
     x = 1
     y = 2
     try:
@@ -31,12 +31,12 @@ def main():
 ```
 """
 
-from math import isclose
+from std.math import isclose
 
-from reflection import call_location, SourceLocation
-from memory import memcmp
-from python import PythonObject, ConvertibleToPython
-from utils._ansi import Color, Text
+from std.reflection import call_location, SourceLocation
+from std.memory import memcmp
+from std.python import PythonObject, ConvertibleToPython
+from std.utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #
 # Assertions
@@ -45,7 +45,7 @@ from utils._ansi import Color, Text
 
 @always_inline
 fn _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
-    return Error(loc.prefix(String("AssertionError: ", msg)))
+    return Error(loc.prefix(t"AssertionError: {msg}"))
 
 
 @always_inline
@@ -102,43 +102,8 @@ fn assert_false[
 
 @always_inline
 fn assert_equal[
-    T: Equatable & Stringable, //
-](
-    lhs: T,
-    rhs: T,
-    msg: String = "",
-    *,
-    location: Optional[SourceLocation] = None,
-) raises:
-    """Asserts that the input values are equal. If it is not then an Error
-    is raised.
-
-    Parameters:
-        T: The type of the input values.
-
-    Args:
-        lhs: The lhs of the equality.
-        rhs: The rhs of the equality.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs != rhs:
-        raise _assert_cmp_error["`left == right` comparison"](
-            String(lhs),
-            String(rhs),
-            msg=msg,
-            loc=location.or_else(call_location()),
-        )
-
-
-@always_inline
-fn assert_equal[
     T: Equatable & Writable,
     //,
-    __disambiguate: NoneType = None,
 ](
     lhs: T,
     rhs: T,
@@ -151,8 +116,6 @@ fn assert_equal[
 
     Parameters:
         T: The type of the input values.
-        __disambiguate: A temporary dummy parameter to disambiguate the function
-            from the other `assert_equal` function.
 
     Args:
         lhs: The lhs of the equality.
@@ -221,8 +184,8 @@ fn assert_equal[
 
 @always_inline
 fn assert_equal(
-    lhs: StringSlice[mut=False],
-    rhs: StringSlice[mut=False],
+    lhs: StringSlice[mut=False, _],
+    rhs: StringSlice[mut=False, _],
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
@@ -322,40 +285,6 @@ fn assert_equal_pyobj[
 
 @always_inline
 fn assert_not_equal[
-    T: Equatable & Stringable, //
-](
-    lhs: T,
-    rhs: T,
-    msg: String = "",
-    *,
-    location: Optional[SourceLocation] = None,
-) raises:
-    """Asserts that the input values are not equal. If it is not then an
-    Error is raised.
-
-    Parameters:
-        T: The type of the input values.
-
-    Args:
-        lhs: The lhs of the inequality.
-        rhs: The rhs of the inequality.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs == rhs:
-        raise _assert_cmp_error["`left != right` comparison"](
-            String(lhs),
-            String(rhs),
-            msg=msg,
-            loc=location.or_else(call_location()),
-        )
-
-
-@always_inline
-fn assert_not_equal[
     lhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
     rhs_types: Variadic.TypesOfTrait[Movable & Equatable & Writable],
 ](
@@ -393,7 +322,6 @@ fn assert_not_equal[
 fn assert_not_equal[
     T: Equatable & Writable,
     //,
-    __disambiguate: NoneType = None,
 ](
     lhs: T,
     rhs: T,
@@ -406,8 +334,6 @@ fn assert_not_equal[
 
     Parameters:
         T: The type of the input values.
-        __disambiguate: A temporary dummy parameter to disambiguate the function
-            from the other `assert_not_equal` function.
 
     Args:
         lhs: The lhs of the inequality.
@@ -489,7 +415,7 @@ fn assert_almost_equal[
 
 @always_inline
 fn assert_is[
-    T: Stringable & Identifiable
+    T: Identifiable & Writable, //
 ](
     lhs: T,
     rhs: T,
@@ -523,7 +449,7 @@ fn assert_is[
 
 @always_inline
 fn assert_is_not[
-    T: Stringable & Identifiable
+    T: Identifiable & Writable, //
 ](
     lhs: T,
     rhs: T,
@@ -621,7 +547,7 @@ struct assert_raises:
     errors are raised. For instance:
 
     ```mojo
-    from testing import assert_raises
+    from std.testing import assert_raises
 
     # Good! Caught the raised error, test passes
     with assert_raises():

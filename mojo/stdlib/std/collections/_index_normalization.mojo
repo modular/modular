@@ -13,7 +13,7 @@
 """The utilities provided in this module help normalize the access
 to data elements in arrays."""
 
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
 
 @always_inline

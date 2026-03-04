@@ -11,28 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of, env_get_int, env_get_string, simd_width_of
-from sys.info import _TargetType
+from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
+from std.sys.info import _TargetType
 
-from algorithm._gpu.reduction import reduce_launch
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm._gpu.reduction import reduce_launch
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from layout import LayoutTensor, Layout, RuntimeLayout
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
-    env_get_shape,
+    get_defined_shape,
     int_list_to_tuple,
     update_bench_config_args,
 )
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList, StaticTuple
-from utils.index import product
+from std.utils import IndexList, StaticTuple
+from std.utils.index import product
 
 
 fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
@@ -176,12 +182,14 @@ fn reduce_add[
     return x + y
 
 
-def main():
-    comptime dtype = DType._from_str(env_get_string["dtype", "DType.float16"]())
+def main() raises:
+    comptime dtype = DType._from_str(
+        get_defined_string["dtype", "DType.float16"]()
+    )
 
-    comptime shape_in_list = env_get_shape["shape", "1x1x4096"]()
+    comptime shape_in_list = get_defined_shape["shape", "1x1x4096"]()
     comptime shape = int_list_to_tuple[shape_in_list]()
-    comptime axis = env_get_int["axis", 1]()
+    comptime axis = get_defined_int["axis", 1]()
     comptime cache_busting = True
 
     var m = Bench()

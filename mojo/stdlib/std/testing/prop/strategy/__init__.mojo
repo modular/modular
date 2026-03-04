@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing.prop.random import Rng
+from std.testing.prop.random import Rng
 from .simd_strategy import *
 from .list_strategy import *
 from .string_strategy import *

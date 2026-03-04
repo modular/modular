@@ -10,16 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections.string import atol
-from collections.string.string_slice import get_static_string
-from gpu.host import DeviceContext
-from gpu.host._amdgpu_hip import hipStream_t, HIP
-from gpu.host._nvidia_cuda import CUmodule, CUstream
-from os import abort, getenv
-from pathlib import Path
-from sys import argv, size_of, has_amd_gpu_accelerator
-from sys.info import CompilationTarget, is_nvidia_gpu, is_amd_gpu
-from ffi import (
+from std.collections.string import atol
+from std.collections.string.string_slice import get_static_string
+from std.gpu.host import DeviceContext
+from std.gpu.host._amdgpu_hip import hipStream_t, HIP
+from std.gpu.host._nvidia_cuda import CUmodule, CUstream
+from std.os import abort, getenv
+from std.pathlib import Path
+from std.sys import argv, size_of, has_amd_gpu_accelerator
+from std.sys.info import CompilationTarget, is_nvidia_gpu, is_amd_gpu
+from std.ffi import (
     _find_dylib,
     _get_dylib_function,
     _Global,
@@ -68,7 +68,7 @@ fn _init_rocshmem_dylib() -> OwnedDLHandle:
             flags=RTLD.NOW | RTLD.GLOBAL | RTLD.NODELETE,
         )
     except e:
-        abort(String("failed to load ROCSHMEM library: ", e))
+        abort(t"failed to load ROCSHMEM library: {e}")
 
 
 @always_inline
@@ -533,8 +533,8 @@ fn rocshmem_put[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -546,8 +546,8 @@ fn rocshmem_put_nbi[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -594,8 +594,8 @@ fn rocshmem_get_nbi[
     dtype: DType,
     //,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -605,7 +605,7 @@ fn rocshmem_get_nbi[
 
 fn rocshmem_g[
     dtype: DType
-](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
+](source: UnsafePointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
     comptime symbol = _dtype_to_rocshmem_type["rocshmem_", dtype, "_g"]()
     return external_call[symbol, Scalar[dtype]](source, pe)
 
@@ -618,10 +618,10 @@ fn rocshmem_g[
 fn rocshmem_put_signal_nbi[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: Int,
-    sig_addr: UnsafePointer[UInt64],
+    sig_addr: UnsafePointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -635,7 +635,7 @@ fn rocshmem_put_signal_nbi[
 
 
 fn rocshmemx_signal_op(
-    sig_addr: UnsafePointer[UInt64],
+    sig_addr: UnsafePointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -693,7 +693,11 @@ fn rocshmem_barrier_all_on_stream(stream: hipStream_t):
 
 fn rocshmem_signal_wait_until[
     dtype: DType
-](sig_addr: UnsafePointer[Scalar[dtype]], cmp: c_int, cmp_value: Scalar[dtype]):
+](
+    sig_addr: UnsafePointer[Scalar[dtype], _],
+    cmp: c_int,
+    cmp_value: Scalar[dtype],
+):
     comptime symbol = _dtype_to_rocshmem_type[
         "rocshmem_", dtype, "_wait_until"
     ]()

@@ -12,15 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import iota
+from std.math import iota
 
-from random import random_float64
-from layout._coord import Coord, Idx, coord_to_index_list
+from std.random import random_float64
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.softmax import softmax
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
@@ -153,7 +152,7 @@ fn _topp_minp_sampling[
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
-        sorted_probs.to_layout_tensor(),
+        sorted_probs,
         axis=input_logits.rank - 1,
     )
 

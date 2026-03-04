@@ -11,27 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
-from memory import UnsafePointer as RealUnsafePointer
-from sys import has_amd_gpu_accelerator
-from pathlib import Path
-from ffi import _get_global_or_null, external_call
-from ffi import _find_dylib
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import OwnedDLHandle, _Global
-from collections.optional import Optional
+from std.memory import UnsafePointer as RealUnsafePointer
+from std.sys import has_amd_gpu_accelerator
+from std.pathlib import Path
+from std.ffi import _get_global_or_null, external_call
+from std.ffi import _find_dylib
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import OwnedDLHandle, _Global
+from std.collections.optional import Optional
 from buffer import NDBuffer
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host._amdgpu_hip import HIP
-from gpu.host._nvidia_cuda import CUDA
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.host._amdgpu_hip import HIP
+from std.gpu.host._nvidia_cuda import CUDA
 from comm import MAX_GPUS
 from comm.allreduce import elementwise_epilogue_type
-from gpu.primitives.grid_controls import PDLLevel
+from std.gpu.primitives.grid_controls import PDLLevel
 
 comptime ncclComm_t = OpaquePointer
 
@@ -252,7 +252,7 @@ fn _check_ccl_ok(status: ncclResult_t) raises:
 
 
 fn _get_global_comms(ngpus: Int) raises -> Communicators:
-    var NAME = String("COMM_VENDOR_CCL_", ngpus)
+    var NAME = String(t"COMM_VENDOR_CCL_{ngpus}")
     if global_ptr := _get_global_or_null(NAME).bitcast[Communicators]():
         return global_ptr[]
 

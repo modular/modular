@@ -19,15 +19,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kernels import (
-    store_k_cache_padded,
-    store_k_cache_ragged,
-)
+from max.nn.kernels import store_k_cache_padded, store_k_cache_ragged
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParams,
     KVCacheQuantizationConfig,
     PagedCacheValues,
-    RaggedKVCacheInputs,
 )
 from max.nn.no_opaque_kernels import (
     PagedKVCacheTensorsNoOpaque,
@@ -44,7 +41,6 @@ def _make_session_and_kv_manager() -> tuple[Accelerator, PagedKVCacheManager]:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy="paged",
         page_size=32,
         devices=[DeviceRef.GPU()],
     )
@@ -59,14 +55,14 @@ def _make_session_and_kv_manager() -> tuple[Accelerator, PagedKVCacheManager]:
 
 def _allocate_batch(
     kv_manager: PagedKVCacheManager, prompt_lens: list[int]
-) -> RaggedKVCacheInputs:
+) -> KVCacheInputsPerDevice:
     batch = []
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len, dtype=np.int64))
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
-    return kv_manager.runtime_inputs([batch])[0]
+    return kv_manager.runtime_inputs([batch]).inputs[0]
 
 
 def test_kv_cache_store_ragged_executes() -> None:
@@ -87,9 +83,11 @@ def test_kv_cache_store_ragged_executes() -> None:
         [batch_size + 1],
         device=DeviceRef.GPU(),
     )
-    blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    max_lengths_type = kv_symbolic_inputs.max_lengths
 
     with Graph(
         "kv_cache_store_ragged",
@@ -170,9 +168,11 @@ def test_kv_cache_store_padded_executes() -> None:
         [batch_size],
         device=DeviceRef.GPU(),
     )
-    blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    max_lengths_type = kv_symbolic_inputs.max_lengths
 
     with Graph(
         "kv_cache_store_padded",
@@ -245,7 +245,6 @@ def _make_session_and_kv_manager_fp8() -> tuple[
         n_kv_heads=1,
         head_dim=128,
         num_layers=1,
-        cache_strategy="paged",
         page_size=128,
         devices=[DeviceRef.GPU()],
         is_mla=False,
@@ -289,13 +288,12 @@ def test_store_k_scale_cache_executes() -> None:
         device=DeviceRef.GPU(),
     )
 
-    (
-        blocks_type,
-        cache_lengths_type,
-        lookup_table_type,
-        max_lengths_type,
-        kv_scales_type,
-    ) = kv_params.get_symbolic_inputs()[0]
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    max_lengths_type = kv_symbolic_inputs.max_lengths
+    kv_scales_type = kv_symbolic_inputs.kv_scales
 
     input_types = [
         x_k_scale_type,

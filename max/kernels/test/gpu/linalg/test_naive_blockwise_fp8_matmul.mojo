@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn test_naive_blockwise_fp8_matmul[
@@ -74,17 +74,17 @@ fn test_naive_blockwise_fp8_matmul[
         ceildiv(k.dim, BLOCK_SCALE_K), ceildiv(n.dim, BLOCK_SCALE_N)
     )
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scale_shape = DimList(
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
+    var dynamic_a_scale_shape = IndexList[2](
         ceildiv(k.value, BLOCK_SCALE_K), ceildiv(m.value, BLOCK_SCALE_M)
     )
-    var dynamic_b_scale_shape = DimList(
+    var dynamic_b_scale_shape = IndexList[2](
         ceildiv(n.value, BLOCK_SCALE_N), ceildiv(k.value, BLOCK_SCALE_K)
-    ) if transpose_b else DimList(
+    ) if transpose_b else IndexList[2](
         ceildiv(k.value, BLOCK_SCALE_K), ceildiv(n.value, BLOCK_SCALE_N)
     )
 
@@ -249,7 +249,7 @@ fn test_naive_blockwise_fp8_matmul[
     _ = b_scale_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime for transpose_b in range(0, 2):
             test_naive_blockwise_fp8_matmul[

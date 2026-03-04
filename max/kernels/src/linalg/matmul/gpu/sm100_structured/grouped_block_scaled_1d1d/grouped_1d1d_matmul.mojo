@@ -31,21 +31,27 @@ Usage:
     )
 """
 
-from collections import Optional
-from math import ceildiv
-from sys import size_of
+from std.collections import Optional
+from std.math import ceildiv
+from std.sys import size_of
 
-from gpu.host import DeviceContext, Dim, FuncAttribute
-from gpu.host.info import B200
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
+from std.gpu.host import DeviceContext, Dim, FuncAttribute
+from std.gpu.host.info import B200
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from layout import (
+    Coord,
+    Idx,
+    Layout as LegacyLayout,
+    LayoutTensor,
+    RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+)
 from layout._layout import Layout as TileLayout, row_major
-from layout._coord import Coord, Idx, RuntimeInt
-from layout._tile_tensor import TileTensor
-from ..structured_kernels.tile_types import create_tma_tile
+from structured_kernels.tile_types import create_tma_tile
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
@@ -55,7 +61,7 @@ from linalg.fp4_utils import (
     NVFP4_SF_VECTOR_SIZE,
     MXFP8_SF_DTYPE,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
 
@@ -270,8 +276,8 @@ fn grouped_matmul_1d1d_nvfp4[
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
     # LayoutType (from _DimsToCoordLike) than the kernel's GMEMLayout1D.
-    from memory import UnsafePointer as Ptr
-    from ..structured_kernels.tile_types import GMEMLayout1D
+    from std.memory import UnsafePointer as Ptr
+    from structured_kernels.tile_types import GMEMLayout1D
 
     fn _to_1d[
         target_type: DType,

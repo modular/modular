@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from os.atomic import Atomic
+from std.os.atomic import Atomic
 
-import gpu.primitives.warp as warp
-from builtin.device_passable import DevicePassable
-from gpu.host.info import H100
-from gpu import block_idx, thread_idx
-from gpu.sync import barrier, named_barrier
+import std.gpu.primitives.warp as warp
+from std.builtin.device_passable import DevicePassable
+from std.gpu.host.info import H100
+from std.gpu import block_idx, thread_idx
+from std.gpu.sync import barrier, named_barrier
 from nn.mha_fa3_utils import NullPointer, OptionalPointer
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # (query_offset, head_idx, sequence idx in batch)
     var prompt_offset: UInt32
     var head_idx: UInt32
@@ -43,6 +43,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
         return self.is_valid_tile
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 

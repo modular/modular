@@ -19,14 +19,12 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.nn.attention import num_heads_for_device
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.float8_config import Float8Config
 from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
-from max.pipelines.architectures.internvl.layers.attention import (
-    compute_heads_per_device,
-)
 
 
 class DistributedVisionWindowAttention(Module, Shardable):
@@ -259,8 +257,8 @@ class DistributedVisionWindowAttention(Module, Shardable):
         shards = []
         for shard_idx, device in enumerate(devices):
             # Calculate sharded dimensions - handle uneven head distribution
-            sharded_num_heads = compute_heads_per_device(
-                total_heads=self.n_heads,
+            sharded_num_heads = num_heads_for_device(
+                num_heads=self.n_heads,
                 device_idx=shard_idx,
                 num_devices=self.sharding_strategy.num_devices,
             )

@@ -15,12 +15,12 @@
 You can import these APIs from the `base64` package. For example:
 
 ```mojo
-from base64 import b64encode
+from std.base64 import b64encode
 ```
 """
 
 
-from memory import Span
+from std.memory import Span
 
 from ._b64encode import _b64encode
 
@@ -79,7 +79,7 @@ fn _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
 
 
 @always_inline
-fn b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
+fn b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
     """Performs base64 encoding on the input string.
 
     Args:
@@ -94,7 +94,7 @@ fn b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
 
 
 @always_inline
-fn b64encode(input_string: StringSlice[mut=False]) -> String:
+fn b64encode(input_string: StringSlice[mut=False, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
@@ -107,7 +107,7 @@ fn b64encode(input_string: StringSlice[mut=False]) -> String:
 
 
 @always_inline
-fn b64encode(input_bytes: Span[mut=False, Byte]) -> String:
+fn b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
@@ -128,7 +128,7 @@ fn b64encode(input_bytes: Span[mut=False, Byte]) -> String:
 
 fn b64decode[
     *, validate: Bool = False
-](str: StringSlice[mut=False]) raises -> String:
+](str: StringSlice[mut=False, _]) raises -> String:
     """Performs base64 decoding on the input string.
 
     Parameters:
@@ -178,7 +178,7 @@ fn b64decode[
 # ===-----------------------------------------------------------------------===#
 
 
-fn b16encode(str: StringSlice[mut=False]) -> String:
+fn b16encode(str: StringSlice[mut=False, _]) -> String:
     """Performs base16 encoding on the input string slice.
 
     Args:
@@ -209,7 +209,7 @@ fn b16encode(str: StringSlice[mut=False]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn b16decode(str: StringSlice[mut=False]) -> String:
+fn b16decode(str: StringSlice[mut=False, _]) -> String:
     """Performs base16 decoding on the input string.
 
     Args:

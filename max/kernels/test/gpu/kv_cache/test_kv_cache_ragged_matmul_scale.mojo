@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_ui64, seed
+from std.math import ceildiv
+from std.random import random_ui64, seed
 
 from buffer import NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
@@ -24,15 +24,15 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from memory import memcpy, legacy_unsafe_pointer
+from std.memory import memcpy, legacy_unsafe_pointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.kv_cache_ragged import (
     _matmul_k_cache_ragged_scale_impl,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
@@ -50,7 +50,7 @@ def _initialize_ragged_inputs[
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
-) -> Tuple[
+) raises -> Tuple[
     DeviceBuffer[DType.uint32],
     DeviceBuffer[dtype],
     DeviceBuffer[dtype],
@@ -150,7 +150,7 @@ def execute_matmul_k_cache_ragged_scale[
     num_layers: Int,
     layer_idx: Int,
     ctx: DeviceContext,
-):
+) raises:
     """Tests the scaled KV cache matmul for key projections.
 
     This test follows the same pattern as execute_matmul_k_cache_ragged but
@@ -414,7 +414,7 @@ def execute_matmul_k_cache_ragged_scale[
     _ = paged_lut^
 
 
-def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext):
+def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext) raises:
     """Test suite specifically for FP8 scaled matmul operations."""
     comptime dtype = DType.float8_e4m3fn
     comptime rtol = 1e-2
@@ -454,7 +454,7 @@ def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext):
         ](tg_seq_lens, 1024, tg_cache_sizes, 4, 3, ctx)
 
 
-def main():
+def main() raises:
     seed(42)
     with DeviceContext() as ctx:
         execute_fused_matmul_suite_float8_e4m3fn(ctx)

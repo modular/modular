@@ -75,6 +75,7 @@ def dump_kv_cache_to_torch(
     device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
     device_buffer_torch = from_dlpack(device_buffer).to(torch_dtype).cpu()
     device_buffer_torch = device_buffer_torch[:, key_or_value, :, :, :, :]
+    page_size = cache.params.page_size
 
     results = []
     for ctx in batch:
@@ -88,13 +89,13 @@ def dump_kv_cache_to_torch(
             dtype=torch_dtype,
         )
 
-        for start_idx in range(0, seq_len, cache.page_size):
-            end_idx = min(start_idx + cache.page_size, seq_len)
-            block_id = req_blocks[start_idx // cache.page_size]
+        for start_idx in range(0, seq_len, page_size):
+            end_idx = min(start_idx + page_size, seq_len)
+            block_id = req_blocks[start_idx // page_size]
             block_torch = device_buffer_torch[block_id, 0]
 
             for token_idx in range(start_idx, end_idx):
-                result[token_idx] = block_torch[token_idx % cache.page_size]
+                result[token_idx] = block_torch[token_idx % page_size]
 
         results.append(result.reshape(seq_len, -1))
 
@@ -136,7 +137,6 @@ def run_kv_cache_2m_iadd(
         n_kv_heads=n_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         page_size=page_size,
         devices=[device_ref],
     )
@@ -207,7 +207,7 @@ def run_kv_cache_2m_iadd(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     compiled.execute(
         to_max_tensor(kv_lora_output, device),

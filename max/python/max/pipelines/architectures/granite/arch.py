@@ -33,8 +33,8 @@ granite_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.gguf,
     default_encoding="float32",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=Llama3Model,
     multi_gpu_supported=False,

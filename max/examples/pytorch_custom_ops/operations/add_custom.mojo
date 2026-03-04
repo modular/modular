@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, foreach
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @compiler.register("add_constant_custom")

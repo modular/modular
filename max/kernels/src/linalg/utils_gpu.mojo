@@ -11,27 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.hashlib.hasher import Hasher
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
 
-from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
-from ffi import external_call
+from std.sys import (
+    get_defined_int,
+    get_defined_bool,
+    has_nvidia_gpu_accelerator,
+    size_of,
+)
+from std.ffi import external_call
 
-from gpu import WARP_SIZE
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext
-from gpu.host.device_context import DeviceBuffer
-from gpu.host.info import A100
+from std.gpu import WARP_SIZE
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext
+from std.gpu.host.device_context import DeviceBuffer
+from std.gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
@@ -102,7 +107,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](Stringable, TrivialRegisterPassable, Writable):
+](TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -135,7 +140,7 @@ struct MatmulConfig[
     # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
     # by default to be safe. TODO: set via env var KERN-1002.
 
-    comptime split_k_reduction_scheme = env_get_int[
+    comptime split_k_reduction_scheme = get_defined_int[
         "SPLITK_REDUCTION_SCHEME", 2
     ]()
 
@@ -245,6 +250,7 @@ struct MatmulConfig[
         else:
             return False
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -266,6 +272,7 @@ struct MatmulConfig[
         # transpose B
         writer.write("T" if Self.transpose_b else "N")
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         return String.write(self)
 
@@ -372,19 +379,19 @@ struct MatmulKernels[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
         block_tile_shape=Index(
-            env_get_int["TUNE_BM", 128](),
-            env_get_int["TUNE_BN", 128](),
-            env_get_int["TUNE_BK", 32](),
+            get_defined_int["TUNE_BM", 128](),
+            get_defined_int["TUNE_BN", 128](),
+            get_defined_int["TUNE_BK", 32](),
         ),
         warp_tile_shape=Index(
-            env_get_int["TUNE_WM", 64](),
-            env_get_int["TUNE_WN", 64](),
-            env_get_int["TUNE_BK", 32](),
+            get_defined_int["TUNE_WM", 64](),
+            get_defined_int["TUNE_WN", 64](),
+            get_defined_int["TUNE_BK", 32](),
         ),
-        num_pipeline_stages=UInt(env_get_int["TUNE_NUM_STAGES", 4]()),
-        num_k_partitions=UInt(env_get_int["TUNE_NUM_K_PARTITIONS", 1]()),
+        num_pipeline_stages=UInt(get_defined_int["TUNE_NUM_STAGES", 4]()),
+        num_k_partitions=UInt(get_defined_int["TUNE_NUM_K_PARTITIONS", 1]()),
         num_warp_k_partitions=UInt(
-            env_get_int["TUNE_NUM_WARP_K_PARTITIONS", 1]()
+            get_defined_int["TUNE_NUM_WARP_K_PARTITIONS", 1]()
         ),
     )
 
@@ -504,10 +511,10 @@ fn _vendor_blas_fallback_disabled() -> Bool:
         - benchmark has specifically requested mojo kernel
     else returns False.
     """
-    comptime globally_disabled = env_get_bool[
+    comptime globally_disabled = get_defined_bool[
         "MODULAR_DISABLE_VENDOR_FALLBACK", False
     ]()
-    comptime bench_disabled = not env_get_bool["use_vendor_blas", True]()
+    comptime bench_disabled = not get_defined_bool["use_vendor_blas", True]()
     return globally_disabled or bench_disabled
 
 

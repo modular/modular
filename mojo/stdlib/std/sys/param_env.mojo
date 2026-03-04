@@ -10,108 +10,55 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements functions for retrieving compile-time defines.
+"""Deprecated: Use `sys.defines` instead.
 
-You can use these functions to set parameter values or runtime constants based on
-name-value pairs defined on the command line. For example:
-
-```mojo
-  from sys import is_defined
-
-  comptime float_type = DType.float32 if is_defined["FLOAT32"]() else DType.float64
-
-  # Use `float_type` as a constant.
-```
-
-And on the command line:
-
-```
-  mojo -D FLOAT_32 main.mojo
-```
-
-For more information, see the [Mojo build docs](https://docs.modular.com/mojo/cli/build.html#d-keyvalue).
-The `mojo run` command also supports the `-D` option.
-
-
-You can import these APIs from the `sys` package. For example:
-
-```mojo
-from sys import is_defined
-```
+This module provides backwards-compatible aliases for the functions that have
+been moved to `sys.defines`. The `env_get_*` functions have been renamed to
+`get_defined_*` to better reflect that they read compile-time defines (set
+via `-D`), not runtime environment variables.
 """
 
-from collections.string.string_slice import _get_kgen_string
+from .defines import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    get_defined_string,
+    is_defined,
+)
 
 
-fn is_defined[name: StaticString]() -> Bool:
-    """Return true if the named value is defined.
-
-    Parameters:
-        name: The name to test.
-
-    Returns:
-        True if the name is defined.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<get_env, `,
-        _get_kgen_string[name](),
-        `> : i1`,
-    ]
-
-
-fn _is_bool_like[val: StaticString]() -> Bool:
-    comptime lower_val = val.lower()
-    return (
-        lower_val == "true"
-        or lower_val == "1"
-        or lower_val == "on"
-        or lower_val == "false"
-        or lower_val == "0"
-        or lower_val == "off"
-    )
-
-
+@deprecated("use `get_defined_bool` from `sys.defines` instead")
 fn env_get_bool[name: StaticString]() -> Bool:
-    """Try to get an boolean-valued define. Compilation fails if the
-    name is not defined or the value is neither `True` or `False`.
+    """Try to get a boolean-valued define. Compilation fails if the
+    name is not defined or the value is not a recognized boolean
+    (`True`, `False`, `1`, `0`, `on`, `off`).
 
     Parameters:
         name: The name of the define.
 
     Returns:
-        An boolean parameter value.
+        A boolean parameter value.
     """
-    comptime val = env_get_string[name]().lower()
-
-    comptime assert _is_bool_like[val](), String(
-        "the boolean environment value of `",
-        name,
-        "` with value `",
-        env_get_string[name](),
-        "` is not recognized",
-    )
-
-    return val == "true" or val == "1" or val == "on"
+    return get_defined_bool[name]()
 
 
+@deprecated("use `get_defined_bool` from `sys.defines` instead")
 fn env_get_bool[name: StaticString, default: Bool]() -> Bool:
-    """Try to get an bool-valued define. If the name is not defined, return
-    a default value instead. The boolean must be either `True` or `False`.
+    """Try to get a boolean-valued define. If the name is not defined,
+    return a default value instead. The value must be a recognized boolean
+    (`True`, `False`, `1`, `0`, `on`, `off`).
 
     Parameters:
         name: The name of the define.
         default: The default value to use.
 
     Returns:
-        An bool parameter value.
+        A boolean parameter value.
     """
-
-    comptime if is_defined[name]():
-        return env_get_bool[name]()
-    else:
-        return default
+    return get_defined_bool[name, default]()
 
 
+@deprecated("use `get_defined_int` from `sys.defines` instead")
 fn env_get_int[name: StaticString]() -> Int:
     """Try to get an integer-valued define. Compilation fails if the
     name is not defined.
@@ -122,18 +69,13 @@ fn env_get_int[name: StaticString]() -> Int:
     Returns:
         An integer parameter value.
     """
-    return Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param.expr<get_env, `,
-            _get_kgen_string[name](),
-            `> : index`,
-        ]
-    )
+    return get_defined_int[name]()
 
 
+@deprecated("use `get_defined_int` from `sys.defines` instead")
 fn env_get_int[name: StaticString, default: Int]() -> Int:
-    """Try to get an integer-valued define. If the name is not defined, return
-    a default value instead.
+    """Try to get an integer-valued define. If the name is not defined,
+    return a default value instead.
 
     Parameters:
         name: The name of the define.
@@ -141,35 +83,11 @@ fn env_get_int[name: StaticString, default: Int]() -> Int:
 
     Returns:
         An integer parameter value.
-
-    Example:
-    ```mojo
-    from sys.param_env import env_get_int
-
-    def main():
-        comptime number = env_get_int[
-            "favorite_number",
-            1 # Default value
-        ]()
-        parametrized[number]()
-
-    fn parametrized[num: Int]():
-        print(num)
-    ```
-
-    If the program is `app.mojo`:
-    - `mojo run -D favorite_number=2 app.mojo`
-    - `mojo run -D app.mojo`
-
-    Note: useful for parameterizing SIMD vector sizes.
     """
-
-    comptime if is_defined[name]():
-        return env_get_int[name]()
-    else:
-        return default
+    return get_defined_int[name, default]()
 
 
+@deprecated("use `get_defined_string` from `sys.defines` instead")
 fn env_get_string[name: StaticString]() -> StaticString:
     """Try to get a string-valued define. Compilation fails if the
     name is not defined.
@@ -180,17 +98,13 @@ fn env_get_string[name: StaticString]() -> StaticString:
     Returns:
         A string parameter value.
     """
-    var res = __mlir_attr[
-        `#kgen.param.expr<get_env, `,
-        _get_kgen_string[name](),
-        `> : !kgen.string`,
-    ]
-    return StaticString(res)
+    return get_defined_string[name]()
 
 
+@deprecated("use `get_defined_string` from `sys.defines` instead")
 fn env_get_string[name: StaticString, default: StaticString]() -> StaticString:
-    """Try to get a string-valued define. If the name is not defined, return
-    a default value instead.
+    """Try to get a string-valued define. If the name is not defined,
+    return a default value instead.
 
     Parameters:
         name: The name of the define.
@@ -199,26 +113,19 @@ fn env_get_string[name: StaticString, default: StaticString]() -> StaticString:
     Returns:
         A string parameter value.
     """
-
-    comptime if is_defined[name]():
-        return env_get_string[name]()
-    else:
-        return default
+    return get_defined_string[name, default]()
 
 
+@deprecated("use `get_defined_dtype` from `sys.defines` instead")
 fn env_get_dtype[name: StaticString, default: DType]() -> DType:
-    """Try to get an DType-valued define. If the name is not defined, return
-    a default value instead.
+    """Try to get a DType-valued define. If the name is not defined,
+    return a default value instead.
 
     Parameters:
         name: The name of the define.
         default: The default value to use.
 
     Returns:
-        An DType parameter value.
+        A DType parameter value.
     """
-
-    comptime if is_defined[name]():
-        return DType._from_str(env_get_string[name]())
-    else:
-        return default
+    return get_defined_dtype[name, default]()

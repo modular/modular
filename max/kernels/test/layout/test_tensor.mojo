@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import align_of
+from std.math import ceildiv
+from std.sys import align_of
 
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import UNKNOWN_VALUE, product
 from layout.layout import Layout
 from layout.layout_tensor import *
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 fn print_raw_major_tensor(tensor: LayoutTensor):
@@ -2030,7 +2030,7 @@ fn test_merge():
     print(a)
 
 
-def main():
+def main() raises:
     test_basic_tensor_ops()
     test_tesnsor_fragments()
     test_tensor_tile_and_distribute()

@@ -36,7 +36,7 @@ Ring Buffer Configuration:
 - Can be changed to SplitCounterSync in the RingBuffer type aliases for reduced contention
 - The trait-based design allows easy experimentation with different sync strategies
 """
-from gpu import (
+from std.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
@@ -44,7 +44,7 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.intrinsics import inlined_assembly
+from std.gpu.intrinsics import inlined_assembly
 from layout import Layout, LayoutTensor
 from layout.layout import blocked_product
 from layout.layout_tensor import (
@@ -55,7 +55,7 @@ from layout.layout_tensor import (
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
 from linalg.structuring import ScatterGatherAmd, SMemArray
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # Unified implementation with configurable sync strategies
 from .ring_buffer import RingBuffer
@@ -593,12 +593,9 @@ fn warp_specialized_matmul[
     consumer_warps: Int,
     pipeline_stages: Int = 1,
 ](
-    a_device_tensor: LayoutTensor[
-        DType.bfloat16,
-        Layout.row_major(M, K),
-    ],
-    b_device_tensor: LayoutTensor[DType.bfloat16, Layout.row_major(N, K)],
-    c_device_tensor: LayoutTensor[DType.float32, Layout.row_major(M, N)],
+    a_device_tensor: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), ...],
+    b_device_tensor: LayoutTensor[DType.bfloat16, Layout.row_major(N, K), ...],
+    c_device_tensor: LayoutTensor[DType.float32, Layout.row_major(M, N), ...],
     ctx: DeviceContext,
 ) raises:
     comptime kernel = warp_specialized_matmul_kernel[

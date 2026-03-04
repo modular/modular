@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp
-from os import abort
-from sys import align_of, is_defined, simd_width_of
+from std.math import ceildiv, exp
+from std.os import abort
+from std.sys import align_of, is_defined, simd_width_of
 
-import gpu.primitives.warp as warp
+import std.gpu.primitives.warp as warp
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -27,9 +27,9 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import A100, is_gpu
-from gpu.memory import (
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.info import A100, is_gpu
+from std.gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
@@ -48,14 +48,14 @@ from layout.runtime_layout import RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
-from memory import memset_zero, stack_allocation
+from std.memory import memset_zero, stack_allocation
 from register import register_internal
-from runtime.asyncrt import DeviceContextPtr
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
-from utils import StaticTuple
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 from .utils import GemmShape, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, MatmulKernels, _bk_base, block_swizzle
@@ -543,6 +543,7 @@ fn multistage_dual_gemm_kernel[
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
+        _,
         address_space = a_smem.address_space,
         alignment=alignment,
         circular=True,
@@ -560,6 +561,7 @@ fn multistage_dual_gemm_kernel[
     comptime IteratorTypeB = LayoutTensorIter[
         b_type,
         b_smem_layout,
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -801,10 +803,10 @@ fn multistage_dual_gemm[
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout],
-    a: LayoutTensor[a_type, a_layout],
-    b0: LayoutTensor[b_type, b_layout],
-    b1: LayoutTensor[b_type, b_layout],
+    c: LayoutTensor[c_type, c_layout, ...],
+    a: LayoutTensor[a_type, a_layout, ...],
+    b0: LayoutTensor[b_type, b_layout, ...],
+    b1: LayoutTensor[b_type, b_layout, ...],
     ctx: DeviceContext,
 ) raises:
     var M = c.dim[0]()

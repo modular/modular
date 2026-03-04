@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from runtime.asyncrt import create_task
+from std.runtime.asyncrt import create_task
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: test_runtime_task
-def test_runtime_task():
+def test_runtime_task() raises:
     print("== test_runtime_task")
 
     @parameter
@@ -36,7 +36,7 @@ def test_runtime_task():
 
 
 # CHECK-LABEL: test_runtime_taskgroup
-def test_runtime_taskgroup():
+def test_runtime_taskgroup() raises:
     print("== test_runtime_taskgroup")
 
     @parameter
@@ -55,5 +55,5 @@ def test_runtime_taskgroup():
     print(t0.wait() + t1.wait())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

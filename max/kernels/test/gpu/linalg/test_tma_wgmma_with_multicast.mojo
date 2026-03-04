@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import size_of
+from std.math import ceildiv
+from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import barrier
-from gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from gpu.host import DeviceContext, Dim
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import fence_mbarrier_init
+from std.gpu import barrier
+from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from std.gpu.host import DeviceContext, Dim
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, thread_idx
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
@@ -33,11 +33,11 @@ from layout.tensor_core_async import (
     warpgroup_fence,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from memory import stack_allocation
-from testing import assert_almost_equal
+from std.memory import stack_allocation
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
@@ -288,7 +288,7 @@ def test_multicast_tma_wgmma[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     partitioned_multicast: Bool = False,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -441,7 +441,7 @@ def test_multicast_tma_wgmma[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # 2x1 cluster tests
         test_multicast_tma_wgmma[

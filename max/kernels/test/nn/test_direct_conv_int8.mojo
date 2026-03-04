@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import rand
-from sys.info import num_physical_cores, simd_width_of
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import num_physical_cores, simd_width_of
 
 from layout import Layout, LayoutTensor, RuntimeLayout
 from nn.conv import (
@@ -33,7 +33,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime input_type = DType.uint8
 comptime filter_type = DType.int8
@@ -234,7 +234,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     """It only includes shapes where F is multiple simd_size."""
 
     # likely partition in n_ho_wo or sequential

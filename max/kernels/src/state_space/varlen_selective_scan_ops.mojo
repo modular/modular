@@ -17,14 +17,14 @@ This module registers operations for variable-length selective scan:
 - varlen_selective_state_update: State update for decode/autoregressive inference
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
 import compiler_internal as compiler
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import is_cpu, is_gpu
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
@@ -77,19 +77,19 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
         dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2],
-        ssm_states: OutputTensor[dtype=dtype, rank=3],
-        z: OutputTensor[dtype=dtype, rank=2],
-        u: InputTensor[dtype=dtype, rank=2],
-        delta: InputTensor[dtype=dtype, rank=2],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=3],
-        C: InputTensor[dtype=dtype, rank=3],
-        D: InputTensor[dtype=dtype, rank=1],
-        delta_bias: InputTensor[dtype=dtype, rank=1],
-        query_start_loc: InputTensor[dtype = DType.int32, rank=1],
-        cache_indices: InputTensor[dtype = DType.int32, rank=1],
-        has_initial_state: InputTensor[dtype = DType.bool, rank=1],
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        ssm_states: OutputTensor[dtype=dtype, rank=3, ...],
+        z: OutputTensor[dtype=dtype, rank=2, ...],
+        u: InputTensor[dtype=dtype, rank=2, ...],
+        delta: InputTensor[dtype=dtype, rank=2, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=3, ...],
+        C: InputTensor[dtype=dtype, rank=3, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+        query_start_loc: InputTensor[dtype = DType.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype = DType.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype = DType.bool, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var dim = u.dim_size(0)
@@ -516,16 +516,16 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
     fn shape[
         dtype: DType,
     ](
-        u: InputTensor[dtype=dtype, rank=2],
-        delta: InputTensor[dtype=dtype, rank=2],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=3],
-        C: InputTensor[dtype=dtype, rank=3],
-        D: InputTensor[dtype=dtype, rank=1],
-        delta_bias: InputTensor[dtype=dtype, rank=1],
-        query_start_loc: InputTensor[dtype = DType.int32, rank=1],
-        cache_indices: InputTensor[dtype = DType.int32, rank=1],
-        has_initial_state: InputTensor[dtype = DType.bool, rank=1],
+        u: InputTensor[dtype=dtype, rank=2, ...],
+        delta: InputTensor[dtype=dtype, rank=2, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=3, ...],
+        C: InputTensor[dtype=dtype, rank=3, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
+        query_start_loc: InputTensor[dtype = DType.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype = DType.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype = DType.bool, rank=1, ...],
     ) -> IndexList[2]:
         return u.shape()
 
@@ -564,17 +564,17 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
         dtype: DType,
         target: StaticString,
     ](
-        state: OutputTensor[dtype=dtype, rank=4],
-        output: OutputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=3],
-        dt: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=3],
-        B: InputTensor[dtype=dtype, rank=3],
-        C: InputTensor[dtype=dtype, rank=3],
-        D: InputTensor[dtype=dtype, rank=2],
-        z: InputTensor[dtype=dtype, rank=3],
-        dt_bias: InputTensor[dtype=dtype, rank=2],
-        state_batch_indices: InputTensor[dtype = DType.int32, rank=1],
+        state: OutputTensor[dtype=dtype, rank=4, ...],
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=3, ...],
+        dt: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=3, ...],
+        B: InputTensor[dtype=dtype, rank=3, ...],
+        C: InputTensor[dtype=dtype, rank=3, ...],
+        D: InputTensor[dtype=dtype, rank=2, ...],
+        z: InputTensor[dtype=dtype, rank=3, ...],
+        dt_bias: InputTensor[dtype=dtype, rank=2, ...],
+        state_batch_indices: InputTensor[dtype = DType.int32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = x.dim_size(0)
@@ -1000,15 +1000,15 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
     fn shape[
         dtype: DType,
     ](
-        x: InputTensor[dtype=dtype, rank=3],
-        dt: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=3],
-        B: InputTensor[dtype=dtype, rank=3],
-        C: InputTensor[dtype=dtype, rank=3],
-        D: InputTensor[dtype=dtype, rank=2],
-        z: InputTensor[dtype=dtype, rank=3],
-        dt_bias: InputTensor[dtype=dtype, rank=2],
-        state_batch_indices: InputTensor[dtype = DType.int32, rank=1],
+        x: InputTensor[dtype=dtype, rank=3, ...],
+        dt: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=3, ...],
+        B: InputTensor[dtype=dtype, rank=3, ...],
+        C: InputTensor[dtype=dtype, rank=3, ...],
+        D: InputTensor[dtype=dtype, rank=2, ...],
+        z: InputTensor[dtype=dtype, rank=3, ...],
+        dt_bias: InputTensor[dtype=dtype, rank=2, ...],
+        state_batch_indices: InputTensor[dtype = DType.int32, rank=1, ...],
     ) -> Tuple[IndexList[4], IndexList[3]]:
         var batch = x.dim_size(0)
         var nheads = x.dim_size(1)

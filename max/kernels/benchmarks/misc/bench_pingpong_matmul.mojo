@@ -11,21 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
+from std.collections import Optional
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
     has_nvidia_gpu_accelerator,
     align_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils._utils import (
@@ -36,7 +42,7 @@ from internal_utils._utils import (
 )
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
-from utils import IndexList
+from std.utils import IndexList
 from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 
@@ -175,10 +181,12 @@ fn bench_matmul[
                     transpose_b=transpose_b,
                 )
             else:
-                comptime use_ping_pong_matmul = env_get_bool[
+                comptime use_ping_pong_matmul = get_defined_bool[
                     "use_ping_pong_matmul", True
                 ]()
-                comptime enable_swizzle = env_get_bool["enable_swizzle", True]()
+                comptime enable_swizzle = get_defined_bool[
+                    "enable_swizzle", True
+                ]()
 
                 comptime if use_ping_pong_matmul:
                     ping_pong_matmul[enable_swizzle=enable_swizzle](
@@ -268,20 +276,20 @@ fn create_matmul_bench[
     )
 
 
-def main():
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+def main() raises:
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int["K", 1]()
+    comptime N = get_defined_int["N", 1]()
+    comptime K = get_defined_int["K", 1]()
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
     comptime cache_busting = True
     comptime transpose_b = True
-    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
-    comptime epilogue = env_get_bool["epilogue", False]()
-    comptime register_based_epilogue = env_get_bool[
+    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
+    comptime epilogue = get_defined_bool["epilogue", False]()
+    comptime register_based_epilogue = get_defined_bool[
         "register_based_epilogue", True
     ]()
 

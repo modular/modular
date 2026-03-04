@@ -15,16 +15,16 @@
 You can import these APIs from the `complex` package. For example:
 
 ```mojo
-from complex import ComplexSIMD
+from std.complex import ComplexSIMD
 ```
 """
 
-import math
-from math.math import _Expable
-from sys import llvm_intrinsic
-from format._utils import FormatStruct
+import std.math
+from std.math.math import _Expable
+from std.sys import llvm_intrinsic
+from std.format._utils import FormatStruct
 
-comptime ComplexScalar = ComplexSIMD[size=1]
+comptime ComplexScalar = ComplexSIMD[..., size=1]
 """Represents a scalar complex value."""
 comptime ComplexFloat32 = ComplexScalar[DType.float32]
 """A complex number with 32-bit floating point components."""

@@ -27,11 +27,7 @@ from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -65,7 +61,6 @@ class Llama3Inputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
         if isinstance(self.input_row_offsets, np.ndarray):
             input_row_offsets = Buffer.from_numpy(self.input_row_offsets).to(
                 self.tokens.device
@@ -76,7 +71,7 @@ class Llama3Inputs(ModelInputs):
             self.tokens,
             self.return_n_logits,
             input_row_offsets,
-            *kv_cache_inputs,
+            *(self.kv_cache_inputs or ()),
         )
 
 
@@ -138,11 +133,13 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
         )
 
     def load_model(self) -> Callable[..., Any]:
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1, dtype=np.uint32
+            )
         ).to(self.devices[0])
 
         timer = CompilationTimer("model")
@@ -256,7 +253,6 @@ class Llama3Model(PipelineModelWithKVCache[TextContext]):
 
         context_batch = replica_batches[0]
         assert kv_cache_inputs is not None
-        kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
 
         input_row_offsets = np.cumsum(
             [0] + [ctx.tokens.active_length for ctx in context_batch],

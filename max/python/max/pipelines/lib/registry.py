@@ -34,7 +34,6 @@ from max.interfaces import (
     TextGenerationContext,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextAndVisionContext, TextContext
 from transformers import (
     AutoConfig,
@@ -124,7 +123,7 @@ def get_pipeline_for_task(
     ):
         spec_method = pipeline_config.speculative.speculative_method
         assert spec_method is not None
-        if pipeline_config.enable_overlap_scheduler:
+        if pipeline_config.runtime.enable_overlap_scheduler:
             raise ValueError(
                 "Overlap scheduler is not supported with speculative decoding yet."
             )
@@ -138,8 +137,8 @@ def get_pipeline_for_task(
             return EAGLESpeculativeDecodingPipeline
         else:
             raise ValueError(f"Unsupported speculative method: {spec_method}")
-    elif pipeline_config.enable_overlap_scheduler:
-        role = pipeline_config.pipeline_role
+    elif pipeline_config.runtime.enable_overlap_scheduler:
+        role = pipeline_config.runtime.pipeline_role
         if (
             task == PipelineTask.TEXT_GENERATION
             and role == "prefill_and_decode"
@@ -183,8 +182,8 @@ class SupportedArchitecture:
                 ],
                 default_encoding="q4_k",
                 supported_encodings={
-                    "q4_k": ["paged"],
-                    "bfloat16": ["paged"],
+                    "q4_k",
+                    "bfloat16",
                     # Add other encodings your model supports
                 },
                 pipeline_model=MyModel,
@@ -212,8 +211,9 @@ class SupportedArchitecture:
     default_encoding: SupportedEncoding
     """The default quantization encoding to use when no specific encoding is requested."""
 
-    supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]]
-    """A dictionary mapping supported quantization encodings to their compatible KV cache strategies."""
+    # TODO: This should be a set[SupportedEncoding] once we remove the sentinal None value.
+    supported_encodings: set[SupportedEncoding]
+    """A dictionary of supported quantization encodings."""
 
     pipeline_model: type[PipelineModel[Any]]
     """The `PipelineModel` class that defines the model graph structure and execution logic."""
@@ -398,9 +398,10 @@ class PipelineRegistry:
 
         Args:
             huggingface_repo: The Hugging Face repository to match against.
-            prefer_module_v3: Whether to prefer ModuleV3 architecture (default=False).
-                When False, uses the standard Hugging Face architecture name for ModuleV2.
-                When True, appends "_ModuleV3" suffix to find ModuleV3 architecture.
+            prefer_module_v3: Whether to use the eager API architecture variant.
+                When ``False`` (default), uses the standard graph API architecture name.
+                When ``True``, appends the ``_ModuleV3`` suffix to look up the
+                eager API architecture.
             task: Optional task to disambiguate when multiple architectures share the same name.
                   If not provided and multiple architectures share the same name, the task will
                   be inferred from the Hugging Face Hub's pipeline_tag.
@@ -659,7 +660,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                prefer_module_v3=pipeline_config.prefer_module_v3,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
                 task=task,
             )
 
@@ -730,7 +731,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                prefer_module_v3=pipeline_config.prefer_module_v3,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
                 task=task,
             )
 
@@ -856,7 +857,7 @@ class PipelineRegistry:
         if pipeline_config.draft_model is not None:
             draft_arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.draft_model.huggingface_weight_repo,
-                prefer_module_v3=pipeline_config.prefer_module_v3,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
                 task=task,
             )
             if draft_arch is None:
@@ -913,7 +914,7 @@ class PipelineRegistry:
         else:
             arch = self.retrieve_architecture(
                 huggingface_repo=pipeline_config.model.huggingface_model_repo,
-                prefer_module_v3=pipeline_config.prefer_module_v3,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
                 task=task,
             )
 
@@ -940,7 +941,7 @@ class PipelineRegistry:
         """
         if arch := self.retrieve_architecture(
             huggingface_repo=pipeline_config.model.huggingface_model_repo,
-            prefer_module_v3=pipeline_config.prefer_module_v3,
+            prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
         ):
             return arch.task
 

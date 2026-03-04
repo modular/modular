@@ -23,13 +23,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from pathlib import Path
-from ffi import _find_dylib
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import _find_dylib
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle
 
-from gpu.host._nvidia_cuda import CUstream
+from std.gpu.host._nvidia_cuda import CUstream
 
 from .dtype import DataType, Property
 from .result import Result
@@ -98,13 +98,13 @@ fn _get_dylib_function[
 @always_inline
 fn check_cublas_error(stat: Result) raises:
     if stat != Result.SUCCESS:
-        raise Error(String("failed to operate on CUBLAS due to error: ", stat))
+        raise Error(t"failed to operate on CUBLAS due to error: {stat}")
 
 
 @always_inline
 fn check_cublas_error(stat: Result, msg: StringSlice) raises:
     if stat != Result.SUCCESS:
-        raise Error(String(msg, ". Got a CUBLAS error: ", stat))
+        raise Error(t"{msg}. Got a CUBLAS error: {stat}")
 
 
 @always_inline

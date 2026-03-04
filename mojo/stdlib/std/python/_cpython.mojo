@@ -17,13 +17,13 @@ Documentation for these functions can be found online at:
   <https://docs.python.org/3/c-api/stable.html#contents-of-limited-api>
 """
 
-from collections import InlineArray
-from memory import OpaquePointer, alloc
-from os import abort, getenv, setenv
-from os.path import dirname
-from pathlib import Path
-from sys.arg import argv
-from ffi import (
+from std.collections import InlineArray
+from std.memory import OpaquePointer, alloc
+from std.os import abort, getenv, setenv
+from std.os.path import dirname
+from std.pathlib import Path
+from std.sys.arg import argv
+from std.ffi import (
     external_call,
     _DLHandle,
     OwnedDLHandle,
@@ -37,7 +37,8 @@ from ffi import (
     c_ulong,
 )
 
-from utils import Variant
+import std.format._utils as fmt
+from std.utils import Variant
 
 comptime Py_ssize_t = c_ssize_t
 comptime Py_hash_t = Py_ssize_t
@@ -225,6 +226,17 @@ struct PyObjectPtr(
             writer: The object to write to.
         """
         writer.write(self._unsized_obj_ptr)
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `PyObjectPtr` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "PyObjectPtr").fields(
+            self._unsized_obj_ptr,
+        )
 
 
 @fieldwise_init
@@ -522,7 +534,9 @@ struct PyObject(
         Returns:
             A string representation.
         """
-        return String(self)
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -539,6 +553,18 @@ struct PyObject(
         writer.write("object_ref_count=", self.object_ref_count, ",")
         writer.write("object_type=", self.object_type)
         writer.write(")")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `PyObject` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "PyObject").fields(
+            fmt.Named("object_ref_count", self.object_ref_count),
+            fmt.Named("object_type", self.object_type),
+        )
 
 
 # Mojo doesn't have macros, so we define it here for ease.
@@ -599,7 +625,9 @@ struct PyModuleDef_Base(Defaultable, Movable, Writable):
         Returns:
             A string representation.
         """
-        return String(self)
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -618,6 +646,19 @@ struct PyModuleDef_Base(Defaultable, Movable, Writable):
         writer.write("index=", self.index, ",")
         writer.write("dict_copy=", self.dict_copy)
         writer.write(")")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `PyModuleDef_Base` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "PyModuleDef_Base").fields(
+            fmt.Named("object_base", fmt.Repr(self.object_base)),
+            fmt.Named("index", self.index),
+            fmt.Named("dict_copy", fmt.Repr(self.dict_copy)),
+        )
 
 
 @fieldwise_init
@@ -718,7 +759,9 @@ struct PyModuleDef(Movable, Writable):
         Returns:
             A string representation.
         """
-        return String(self)
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -742,6 +785,20 @@ struct PyModuleDef(Movable, Writable):
         writer.write("clear_fn=<unprintable>", ",")
         writer.write("free_fn=<unprintable>")
         writer.write(")")
+
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `PyModuleDef` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "PyModuleDef").fields(
+            fmt.Named("name", self.name),
+            fmt.Named("size", self.size),
+            fmt.Named("methods", self.methods),
+            fmt.Named("slots", self.slots),
+        )
 
 
 # ===-------------------------------------------------------------------===#
@@ -1445,7 +1502,7 @@ struct CPython(Defaultable, Movable):
             if file_dir == "" and not python_path:
                 file_dir = ":"
             if python_path:
-                _ = setenv("PYTHONPATH", String(file_dir, ":", python_path))
+                _ = setenv("PYTHONPATH", t"{file_dir}:{python_path}")
             else:
                 _ = setenv("PYTHONPATH", file_dir)
 
@@ -1475,7 +1532,7 @@ struct CPython(Defaultable, Movable):
                 # If the library is not present in the current process, try to load it from the environment variable.
                 self.lib = OwnedDLHandle(python_lib)
         except e:
-            abort(String("Failed to load libpython from", python_lib, ":\n", e))
+            abort(t"Failed to load libpython from {python_lib}:\n{e}")
 
         if not self.init_error:
             if not self.lib.check_symbol("Py_Initialize"):

@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
-from gpu.host import DeviceContext, Dim
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.gpu.host import DeviceContext, Dim
 from layout import *
 
 comptime NUM_KERNELS_PER_ITERATION = 128
@@ -119,7 +119,7 @@ fn bench_gpu_kernel_enqueue_caller(mut m: Bench, ctx: DeviceContext) raises:
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         var m = Bench(
             BenchConfig(

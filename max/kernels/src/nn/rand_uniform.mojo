@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import elementwise
-from random import Random
-from runtime.asyncrt import DeviceContextPtr
+from std.algorithm.functional import elementwise
+from std.random import Random
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor._indexing import _dot_prod, _row_major_strides
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn random_uniform[

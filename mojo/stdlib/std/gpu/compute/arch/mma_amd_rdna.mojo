@@ -18,10 +18,10 @@ using the WMMA (Wave Matrix Multiply Accumulate) instructions.
 Reference: https://gpuopen.com/learn/wmma_on_rdna3/
 """
 
-from sys import llvm_intrinsic
-from sys.info import _is_amd_rdna3, _is_amd_rdna4
-from memory import bitcast
-from gpu import lane_id
+from std.sys import llvm_intrinsic
+from std.sys.info import _is_amd_rdna3, _is_amd_rdna4
+from std.memory import bitcast
+from std.gpu import lane_id
 
 # Import helper functions from parent module
 from ..mma import _has_type, _has_shape, _unsupported_mma_op
@@ -36,7 +36,7 @@ from ..mma import _has_type, _has_shape, _unsupported_mma_op
 fn _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[Float16],
+    a_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -58,7 +58,7 @@ fn _load_matrix_a_amd_rdna[
 fn _load_matrix_a_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[BFloat16],
+    a_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -80,7 +80,7 @@ fn _load_matrix_a_amd_rdna[
 fn _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[Float16],
+    b_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -102,7 +102,7 @@ fn _load_matrix_b_amd_rdna[
 fn _load_matrix_b_amd_rdna[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -122,7 +122,7 @@ fn _load_matrix_b_amd_rdna[
 
 @always_inline
 fn load_matrix_a_amd_rdna16x16x16(
-    a_ptr: UnsafePointer[Float16],
+    a_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -152,7 +152,7 @@ fn load_matrix_a_amd_rdna16x16x16(
 
 @always_inline
 fn load_matrix_a_amd_rdna16x16x16(
-    a_ptr: UnsafePointer[BFloat16],
+    a_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -182,7 +182,7 @@ fn load_matrix_a_amd_rdna16x16x16(
 
 @always_inline
 fn load_matrix_b_amd_rdna16x16x16(
-    b_ptr: UnsafePointer[Float16],
+    b_ptr: UnsafePointer[Float16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -212,7 +212,7 @@ fn load_matrix_b_amd_rdna16x16x16(
 
 @always_inline
 fn load_matrix_b_amd_rdna16x16x16(
-    b_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[BFloat16, _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,

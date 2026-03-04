@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -23,15 +24,28 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
+from max.interfaces.request import RequestID
+from max.kv_cache import PagedKVCacheManager
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheParamInterface
-from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParamInterface,
+    MultiKVCacheParams,
+)
+from max.pipelines.core import TextContext
+from max.pipelines.lib import (
+    CompilationTimer,
+    KVCacheConfig,
+    ModelInputs,
+    ModelOutputs,
+    PipelineConfig,
+)
 from max.pipelines.lib.config.config_enums import is_float4_encoding
 from max.pipelines.lib.float8 import parse_float8_config
 from transformers import AutoConfig
 from typing_extensions import override
 
-from ..deepseekV3.model import DeepseekV3Model
+from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
 from .deepseekV3_2 import DeepseekV3_2
 from .model_config import DeepseekV3_2Config
 
@@ -40,6 +54,19 @@ logger = logging.getLogger("max.pipelines")
 
 class DeepseekV3_2Model(DeepseekV3Model):
     """A DeepseekV3.2 model."""
+
+    # Set by pipeline for extra KV cache managers
+    extra_kv_managers: list[PagedKVCacheManager]
+    # Stored for step() call in execute()
+    _current_batches: Sequence[Sequence[TextContext]]
+
+    @property
+    def indexer_kv_manager(self) -> PagedKVCacheManager:
+        """Returns the indexer KV cache manager (the single extra manager)."""
+        assert len(self.extra_kv_managers) == 1, (
+            "Expected exactly one extra KV manager (indexer cache)"
+        )
+        return self.extra_kv_managers[0]
 
     @classmethod
     def get_kv_params(
@@ -67,13 +94,15 @@ class DeepseekV3_2Model(DeepseekV3Model):
         """Create model configuration from huggingface config."""
         config = self.huggingface_config
 
-        max_batch_total_tokens = self.pipeline_config.max_batch_total_tokens
+        max_batch_total_tokens = (
+            self.pipeline_config.runtime.max_batch_total_tokens
+        )
         # PipelineConfig would automatically resolve it if not set by user.
         assert max_batch_total_tokens is not None, "max_length must be set"
 
-        if self.pipeline_config.pipeline_role == "prefill_only":
+        if self.pipeline_config.runtime.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif self.pipeline_config.pipeline_role == "decode_only":
+        elif self.pipeline_config.runtime.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"
@@ -84,22 +113,22 @@ class DeepseekV3_2Model(DeepseekV3Model):
         else:
             float8_config = None
 
-        if self.pipeline_config.ep_size == 1:
+        if self.pipeline_config.runtime.ep_size == 1:
             ep_config = None
         else:
-            if self.pipeline_config.ep_size % len(self.devices) != 0:
+            if self.pipeline_config.runtime.ep_size % len(self.devices) != 0:
                 raise ValueError(
                     "If you are running with expert parallelism, ep_size must"
                     " be set to the total number of GPUs across nodes."
                 )
-            n_nodes = self.pipeline_config.ep_size // len(self.devices)
+            n_nodes = self.pipeline_config.runtime.ep_size // len(self.devices)
             ep_kwargs: dict[str, Any] = dict(
                 dispatch_dtype=dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
                 n_experts=config.n_routed_experts,
-                max_tokens_per_rank=self.pipeline_config.max_batch_input_tokens,
+                max_tokens_per_rank=self.pipeline_config.runtime.max_batch_input_tokens,
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_fp8_config=None,
@@ -152,7 +181,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Load the model with the given weights."""
 
-        max_batch_size = self.pipeline_config.max_batch_size
+        max_batch_size = self.pipeline_config.runtime.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
@@ -221,10 +250,24 @@ class DeepseekV3_2Model(DeepseekV3Model):
             ]
 
             # Unmarshal the KV cache arguments.
-            fetch_types = self.kv_params.get_symbolic_inputs()[0]
-            len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
-            kv_caches_per_dev = self._unflatten_kv_inputs(
-                [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
+            assert isinstance(self.kv_params, MultiKVCacheParams)
+            len_of_mla_kv_inputs = len(
+                self.kv_params.get_symbolic_inputs()[0].flatten()
+            )
+            mla_kv_caches_per_dev = self._unflatten_kv_inputs(
+                [next(variadic_args_iter) for _ in range(len_of_mla_kv_inputs)],
+                self.kv_params.params[0],
+            )
+
+            len_of_indexer_kv_inputs = len(
+                self.kv_params.get_symbolic_inputs()[1].flatten()
+            )
+            indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
+                [
+                    next(variadic_args_iter)
+                    for _ in range(len_of_indexer_kv_inputs)
+                ],
+                self.kv_params.params[1],
             )
 
             # Unmarshal the batch context lengths
@@ -239,7 +282,8 @@ class DeepseekV3_2Model(DeepseekV3Model):
             outputs = nn_model(
                 tokens.tensor,
                 signal_buffers,
-                kv_caches_per_dev,
+                mla_kv_caches_per_dev,
+                indexer_kv_caches_per_dev,
                 return_n_logits.tensor,
                 devices_input_row_offsets.tensor,
                 host_input_row_offsets.tensor,
@@ -255,3 +299,92 @@ class DeepseekV3_2Model(DeepseekV3Model):
         timer.done()
 
         return model
+
+    @override
+    def prepare_initial_token_inputs(
+        self,
+        replica_batches: Sequence[Sequence[TextContext]],
+        kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
+    ) -> DeepseekV3Inputs:
+        # Store batches for step() call in execute()
+        self._current_batches = replica_batches
+
+        # Get base inputs from parent (contains MLA KV cache inputs)
+        model_inputs = super().prepare_initial_token_inputs(
+            replica_batches, kv_cache_inputs, return_n_logits
+        )
+
+        # Claim and allocate blocks for indexer KV cache
+        for replica_idx, batch in enumerate(replica_batches):
+            for ctx in batch:
+                if not self.indexer_kv_manager.contains(
+                    ctx.request_id, replica_idx=replica_idx
+                ):
+                    self.indexer_kv_manager.claim(
+                        ctx.request_id, replica_idx=replica_idx
+                    )
+                self.indexer_kv_manager.alloc(
+                    ctx, replica_idx=replica_idx, num_steps=1
+                )
+
+        # Combine primary (MLA) and indexer KV cache inputs
+        indexer_kv_inputs = self.indexer_kv_manager.runtime_inputs(
+            replica_batches
+        )
+        kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert kv_cache_inputs is not None
+        combined_inputs = list(kv_cache_inputs.inputs) + list(
+            indexer_kv_inputs.inputs
+        )
+        model_inputs.kv_cache_inputs = KVCacheInputs(inputs=combined_inputs)
+
+        return model_inputs
+
+    @override
+    def prepare_next_token_inputs(
+        self,
+        next_tokens: Buffer,
+        prev_model_inputs: ModelInputs,
+    ) -> DeepseekV3Inputs:
+        model_inputs = super().prepare_next_token_inputs(
+            next_tokens, prev_model_inputs
+        )
+
+        # Allocate blocks for indexer KV cache for next step
+        for replica_idx, batch in enumerate(self._current_batches):
+            for ctx in batch:
+                self.indexer_kv_manager.alloc(
+                    ctx, replica_idx=replica_idx, num_steps=1
+                )
+
+        # Get updated indexer KV inputs
+        indexer_kv_inputs = self.indexer_kv_manager.runtime_inputs(
+            self._current_batches
+        )
+
+        # Extract MLA inputs from previous inputs and combine with new indexer inputs
+        assert isinstance(prev_model_inputs.kv_cache_inputs, KVCacheInputs)
+        prev_kv_inputs = prev_model_inputs.kv_cache_inputs.inputs
+        # MLA inputs are at the beginning, indexer inputs are at the end
+        num_indexer_inputs = len(indexer_kv_inputs.inputs)
+        mla_kv_inputs = prev_kv_inputs[:-num_indexer_inputs]
+        combined_inputs = list(mla_kv_inputs) + list(indexer_kv_inputs.inputs)
+        model_inputs.kv_cache_inputs = KVCacheInputs(inputs=combined_inputs)
+
+        return model_inputs
+
+    @override
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        outputs = super().execute(model_inputs)
+
+        # Step indexer KV manager (commit new tokens)
+        self.indexer_kv_manager.step(self._current_batches)
+
+        return outputs
+
+    def release(self, request_id: RequestID) -> None:
+        """Release indexer KV cache resources for the request."""
+        for replica_idx in range(len(self.devices)):
+            if self.indexer_kv_manager.contains(request_id, replica_idx):
+                self.indexer_kv_manager.release(request_id, replica_idx)

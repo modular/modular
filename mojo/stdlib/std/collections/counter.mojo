@@ -15,7 +15,7 @@
 Import these APIs from the `collections` package:
 
 ```mojo
-from collections import Counter
+from std.collections import Counter
 
 ```
 
@@ -25,11 +25,17 @@ counted sets, also called bags or multisets, and extend that model by
 supporting negative counts.
 
 """
-from builtin.constrained import _constrained_conforms_to
-from collections.dict import Dict, _DictEntryIter, _DictKeyIter, _DictValueIter
-from hashlib import Hasher, default_hasher
+from std.builtin.constrained import _constrained_conforms_to
+from std.collections.dict import (
+    Dict,
+    _DictEntryIter,
+    _DictKeyIter,
+    _DictValueIter,
+)
+import std.format._utils as fmt
+from std.hashlib import Hasher, default_hasher
 
-from utils import Variant
+from std.utils import Variant
 
 
 @fieldwise_init
@@ -59,7 +65,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Example:
 
     ```mojo
-    from collections import Counter
+    from std.collections import Counter
 
     var counter = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
     print(counter["a"]) # prints 3
@@ -101,7 +107,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
         print(counter["a"])  # print 3
@@ -126,7 +132,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String](["a", "a", "a", "b", "b", "c", "d", "c", "c"])
         print(counter["a"]) # prints 3
@@ -148,7 +154,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter["a"]) # output: 1
@@ -237,7 +243,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A string representation of the Counter.
         """
-        return String.write(self)
+        var output = String()
+        self.write_repr_to(output)
+        return output^
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
@@ -250,22 +258,50 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
 
         var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
         var counter_as_string = String(c)
         print(counter_as_string)
-        # prints "Counter({'a': 3, 'c': 3, 'b': 2, 'd': 1})"
+        # prints "{a: 3, c: 3, b: 2, d: 1}"
         ```
         """
         var output = String()
         self.write_to(output)
         return output^
 
+    fn _write_counter_body[
+        f_key: fn(Self.V, mut Some[Writer]),
+        f_val: fn(Int, mut Some[Writer]),
+    ](self, mut writer: Some[Writer]):
+        """Write the counter's key-value pairs to a writer.
+
+        Parameters:
+            f_key: The function to format keys.
+            f_val: The function to format values.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.constrained_conforms_to_writable[Self.V, Parent=Self]()
+
+        writer.write_string("{")
+
+        var items = self.most_common(UInt(len(self)))
+        for i in range(len(items)):
+            if i > 0:
+                writer.write_string(", ")
+            ref item = items[i]
+            f_key(item._value, writer)
+            writer.write_string(": ")
+            f_val(item._count, writer)
+
+        writer.write_string("}")
+
     @no_inline
     fn write_to(self, mut writer: Some[Writer]):
-        """Write `my_counter.__str__()` to a `Writer`.
+        """Write this `Counter` to a writer.
 
         Constraints:
             `V` must conform to `Writable`.
@@ -273,27 +309,32 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.V, Writable),
-            Parent=Self,
-            Element = Self.V,
-            ParentConformsTo="Writable",
-            ElementConformsTo="Writable",
-        ]()
+        self._write_counter_body[
+            f_key = fmt.write_to[Self.V],
+            f_val = fmt.write_to[Int],
+        ](writer)
 
-        writer.write("Counter({")
+    @no_inline
+    fn write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Counter` to a writer.
 
-        var items = self.most_common(UInt(len(self)))
-        for i in range(len(items)):
-            ref item = items[i]
-            # Access the value and count from CountTuple
-            ref value = item._value
-            ref key = trait_downcast[Writable](value)
-            var count = item._count
-            writer.write(repr(key), ": ", repr(count))
-            if i < len(items) - 1:
-                writer.write(", ")
-        writer.write("})")
+        Constraints:
+            `V` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        fn write_fields(mut w: Some[Writer]):
+            self._write_counter_body[
+                f_key = fmt.write_repr_to[Self.V],
+                f_val = fmt.write_repr_to[Int],
+            ](w)
+
+        fmt.FormatStruct(writer, "Counter").params(
+            fmt.TypeNames[Self.V](),
+        ).fields[FieldsFn=write_fields]()
 
     # ===------------------------------------------------------------------=== #
     # Comparison operators
@@ -311,7 +352,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_eq(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
+        fn is_eq(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
             for e in keys:
                 if self.get(e, 0) != other.get(e, 0):
                     return False
@@ -336,7 +377,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 10)
@@ -348,7 +389,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_le(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
+        fn is_le(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
             for e in keys:
                 if self.get(e, 0) > other.get(e, 0):
                     return False
@@ -372,7 +413,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 3)
@@ -384,7 +425,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_lt(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
+        fn is_lt(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
             for e in keys:
                 if self.get(e, 0) >= other.get(e, 0):
                     return False
@@ -408,7 +449,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 3)
@@ -436,7 +477,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 10)
@@ -628,7 +669,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter.get("a").or_else(0)) # output: 1
@@ -650,7 +691,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter.get("a", default=0)) # output: 1
@@ -674,7 +715,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter.get("b").or_else(0)) # output: 1
@@ -703,7 +744,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
@@ -726,7 +767,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["d", "b", "a", "c"], 1)
         var key_list = List[String]()
@@ -749,7 +790,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         # Construct `counter`
         var counter = Counter[Int]([1, 2, 3, 1, 2, 1, 1, 1, 2, 5, 2, 9])
@@ -777,7 +818,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
         for count in counter.items():
@@ -794,7 +835,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
         print(counter.total()) # output: 9 (5 ones + 4 twos)
@@ -818,7 +859,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 5)
         try:
@@ -843,7 +884,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
         print(counter.total()) # output: 9 (5 ones + 4 twos)
@@ -869,7 +910,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
         for tuple in counter.most_common(2):
@@ -901,7 +942,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
         print(counter.elements())
@@ -924,7 +965,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 10)
@@ -947,7 +988,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 10)

@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from hashlib import default_comp_time_hasher
+from std.hashlib import default_comp_time_hasher
 
-from utils import IndexList
+from std.utils import IndexList
 
 from ....utils_gpu import MatmulConfig
 

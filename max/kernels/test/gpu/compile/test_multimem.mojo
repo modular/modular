@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host.compile import _compile_code
-from gpu.host.info import H100
-from gpu.memory import *
-from gpu.intrinsics import Scope
-from testing import *
+from std.gpu.host.compile import _compile_code
+from std.gpu.host.info import H100
+from std.gpu.memory import *
+from std.gpu.intrinsics import Scope
+from std.testing import *
 
 
-def test_multimem_ld_reduce():
+def test_multimem_ld_reduce() raises:
     print("== test_multimem_ld_reduce")
     assert_true(
         "multimem.ld_reduce.weak.gpu.global.max.v2.bf16 "
@@ -226,7 +226,7 @@ def test_multimem_ld_reduce():
     )
 
 
-def test_multimem_st():
+def test_multimem_st() raises:
     print("== test_multimem_st")
 
     assert_true(
@@ -356,6 +356,6 @@ def test_multimem_st():
     )
 
 
-def main():
+def main() raises:
     test_multimem_ld_reduce()
     test_multimem_st()

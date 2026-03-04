@@ -13,7 +13,7 @@
 
 # DOC: mojo/docs/manual/layout/tensors.mdx
 
-from gpu import (
+from std.gpu import (
     thread_idx,
     block_idx,
     global_idx,
@@ -23,25 +23,25 @@ from gpu import (
     lane_id,
     WARP_SIZE,
 )
-from gpu.memory import async_copy_wait_all
-from gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from std.gpu.memory import async_copy_wait_all
+from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Layout, LayoutTensor, print_layout
 from layout.layout_tensor import copy_sram_to_local
-from memory import UnsafePointer
-from sys import has_accelerator
-from sys.info import (
+from std.memory import UnsafePointer
+from std.sys import has_accelerator
+from std.sys.info import (
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_apple_gpu,
     is_nvidia_gpu,
     simd_width_of,
 )
-from testing import assert_equal, assert_false, assert_true
-from sys import exit
+from std.testing import assert_equal, assert_false, assert_true
+from std.sys import exit
 
 
 # start-initialize-tensor-from-cpu-example
-def initialize_tensor_from_cpu_example():
+def initialize_tensor_from_cpu_example() raises:
     comptime dtype = DType.float32
     comptime rows = 32
     comptime cols = 8
@@ -95,7 +95,7 @@ def initialize_tensor_from_cpu_example():
 # end-initialize-tensor-from-cpu-example
 
 
-def shared_memory_alloc_example():
+def shared_memory_alloc_example() raises:
     comptime dtype = DType.float32
     comptime in_size = 128
     comptime block_size = 16
@@ -161,14 +161,14 @@ def shared_memory_alloc_example():
 
 fn simd_width_example():
     # start-simd-width-example
-    from sys.info import simd_width_of
-    from gpu.host.compile import get_gpu_target
+    from std.sys.info import simd_width_of
+    from std.gpu.host.compile import get_gpu_target
 
     comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]
     # end-simd-width-example
 
 
-def layout_tensor_vectorized_example():
+def layout_tensor_vectorized_example() raises:
     comptime dtype = DType.int32
     comptime vector_width = 4
 
@@ -291,8 +291,7 @@ fn simple_copy_example():
 # TODO: improve thread layout example and explanations
 # start-copy-from-async-example
 fn copy_from_async_example():
-    @parameter
-    if not has_apple_gpu_accelerator():
+    comptime if not has_apple_gpu_accelerator():
         comptime dtype = DType.float32
         comptime rows = 128
         comptime cols = 128
@@ -328,8 +327,7 @@ fn copy_from_async_example():
 
             shared_fragment.copy_from_async(global_fragment)
 
-            @parameter
-            if is_nvidia_gpu():
+            comptime if is_nvidia_gpu():
                 async_copy_wait_all()
             barrier()
 
@@ -372,7 +370,7 @@ fn copy_from_async_example():
 # TODO: Currently doesn't run on Apple silicon GPU
 
 
-def main():
+def main() raises:
     if has_accelerator():
         initialize_tensor_from_cpu_example()
         shared_memory_alloc_example()

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     message = "Hello"  # type = String
     comptime name = " Pat"  # type = StringLiteral
     greeting = " good Day!"  # type = String

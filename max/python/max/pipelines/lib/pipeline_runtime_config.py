@@ -187,7 +187,11 @@ class PipelineRuntimeConfig(ConfigFileModel):
 
     device_graph_capture: bool = Field(
         default=False,
-        description="Enable device graph capture/replay for graph execution.",
+        description=(
+            "Enable device graph capture/replay for graph execution. "
+            "This feature will be enabled by default for some selected architectures. "
+            "You can forcibly disable this by setting --no-device-graph-capture --force."
+        ),
     )
 
     force: bool = Field(
@@ -222,9 +226,10 @@ class PipelineRuntimeConfig(ConfigFileModel):
     prefer_module_v3: bool = Field(
         default=False,
         description=(
-            "Whether to prefer the ModuleV3 architecture (default=False for backward "
-            "compatibility). When False, tries the ModuleV2 architecture first and falls back "
-            "to ModuleV3. When True, tries ModuleV3 first and falls back to ModuleV2."
+            "Whether to prefer the eager API architecture over the graph API architecture. "
+            "When ``False`` (default), the inference server uses the graph API architecture. "
+            "When ``True``, the server uses the eager API architecture when available and "
+            "falls back to the graph API architecture."
         ),
     )
 

@@ -13,13 +13,13 @@
 
 # Meant to be run on an AVX512 system
 
-from math import align_up
-from sys import align_of, prefetch, simd_width_of
-from sys.intrinsics import PrefetchOptions
+from std.math import align_up
+from std.sys import align_of, prefetch, simd_width_of
+from std.sys.intrinsics import PrefetchOptions
 
-import benchmark
+import std.benchmark
 from buffer import NDBuffer
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from linalg.utils import (
@@ -27,7 +27,7 @@ from linalg.utils import (
     get_matmul_prefetch_b_distance_k,
 )
 
-from utils.index import Index
+from std.utils.index import Index
 
 comptime dtype = DType.float32
 comptime simd_size = simd_width_of[dtype]()
@@ -166,7 +166,7 @@ fn gemm(
                         )
 
 
-def main():
+def main() raises:
     var m = align_up(1024, MR)
     var n = align_up(1024, NR)
     var k: Int = 1024

@@ -2,6 +2,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MLIR Pass Management Bindings"""
+
 import enum
 from collections.abc import Callable
 from typing import overload

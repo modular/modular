@@ -10,29 +10,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from sys import (
+from std.math import ceildiv
+from std.sys import (
     align_of,
-    env_get_bool,
-    env_get_int,
+    get_defined_bool,
+    get_defined_int,
     simd_width_of,
     size_of,
     has_nvidia_gpu_accelerator,
 )
 
-from algorithm import elementwise
+from std.algorithm import elementwise
 from buffer.buffer import NDBuffer
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from layout.tile_tensor import TileTensor
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
-from logger import Logger
+from std.logger import Logger
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .....utils import (
     GemmShape,
@@ -50,6 +51,7 @@ from ....vendor.matmul import matmul as matmul_vendor
 from ...tile_scheduler import RasterOrder
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
+    blackwell_batched_matmul_tma_umma_warp_specialized,
     matmul_sm100_fallback,
 )
 from internal_utils import Table
@@ -90,30 +92,30 @@ fn matmul_dispatch_sm100[
     comptime static_N = c.shape.get[1]()
     comptime static_K = a.shape.get[1]()
 
-    comptime if env_get_bool["AUTOTUNING_MODE", False]():
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
         var c_tensor = lt_to_tt(from_ndbuffer_row_major(c))
         var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
         var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
 
-        comptime BM = env_get_int["TUNE_BM", 128]()
-        comptime BN = env_get_int["TUNE_BN", 64]()
+        comptime BM = get_defined_int["TUNE_BM", 128]()
+        comptime BN = get_defined_int["TUNE_BN", 64]()
         comptime BK = (
             TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
         )
         comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
-        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        comptime CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
+        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
         comptime CLUSTER_DIM = Index(
             CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
         )
-        comptime BLOCK_SWIZZLE_SIZE = env_get_int[
+        comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
             "TUNE_BLOCK_SWIZZLE_SIZE", 0
         ]()
-        comptime RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
-        comptime CTA_GROUP = env_get_int["TUNE_CTA_GROUP", 2]()
-        comptime K_GROUP_SIZE = env_get_int["TUNE_K_GROUP_SIZE", 1]()
-        comptime AB_SWAPPED = env_get_bool["TUNE_AB_SWAPPED", False]()
+        comptime RASTERIZE_ORDER = get_defined_int["TUNE_RASTER_ORDER", 1]()
+        comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
+        comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
+        comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
 
         comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
@@ -1402,6 +1404,9 @@ fn heuristic_and_outliers_dispatch[
                 k_group_size=Int(tuning_config.k_group_size),
                 num_split_k=tuning_config.num_split_k,
             )
+
+            logger.info("dispatching to outlier config: ", matmul_config)
+
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=matmul_config,
@@ -1421,6 +1426,8 @@ fn heuristic_and_outliers_dispatch[
 
     comptime for config in configs:
         if config_runtime == config:
+            logger.info("dispatching to config: ", config)
+
             _matmul_dispatch_sm100[
                 transpose_b=transpose_b,
                 config=config,
@@ -1474,11 +1481,26 @@ fn matmul_dispatch_sm100_bf16[
 
     comptime DeepSeek_NK = [
         Index(16384, 512),
+        Index(256, 7168),
+        Index(1536, 7168),
+        Index(576, 7168),
+        Index(2112, 7168),
+        Index(24576, 1536),
     ]
 
     comptime miscellaneous_NK = [
         Index(1536, 4096),
         Index(4096, 1536),
+    ]
+
+    comptime FLUX2_NK = [
+        Index(6144, 24576),
+        Index(55296, 6144),
+        Index(6144, 6144),
+        Index(36864, 6144),
+        Index(6144, 18432),
+        Index(1024, 5120),
+        Index(32768, 5120),
     ]
 
     comptime static_NK = Index(static_N, static_K)
@@ -1488,7 +1510,7 @@ fn matmul_dispatch_sm100_bf16[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level = PDLLevel(1),
+            pdl_level=pdl_level,
         ](c, a, b, ctx)
 
     comptime if static_NK in miscellaneous_NK:
@@ -1496,7 +1518,15 @@ fn matmul_dispatch_sm100_bf16[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level = PDLLevel(1),
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
+    comptime if static_NK in FLUX2_NK:
+        return heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
         ](c, a, b, ctx)
 
     comptime if Index(static_N, static_K) in llama3_8b_NK:
@@ -2164,3 +2194,40 @@ fn _matmul_dispatch_sm100[
         ](c_tmp, a, b, ctx)
 
         _ = tmp_device_buffer^
+
+
+@always_inline
+fn batched_matmul_dispatch_sm100_bf16[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    transpose_b: Bool,
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Dispatch batched BF16 matmul to SM100 kernel with a default config.
+
+    Uses a reasonable default config (256x256x16 MMA, 2x1x1 cluster, cta_group=2)
+    which works well for a variety of batched matmul shapes.
+    """
+    comptime MMA_K = 16
+    comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+
+    comptime block_tile_shape = Index(128, 128, BK)
+    comptime umma_shape = Index(
+        block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
+    )
+    comptime cluster_shape = Index(2, 1, 1)
+    comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        mma_shape=umma_shape,
+        cluster_shape=cluster_shape,
+        block_swizzle_size=0,
+    )
+
+    blackwell_batched_matmul_tma_umma_warp_specialized[
+        transpose_b=transpose_b,
+        config=config,
+    ](c, a, b, ctx)

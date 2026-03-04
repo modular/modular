@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
+import std.time
 
 from gridv2 import Grid
-from python import Python
+from std.python import Python
 
 
 def run_display(
@@ -24,7 +24,7 @@ def run_display(
     background_color: String = "black",
     cell_color: String = "green",
     pause: Float64 = 0.1,
-) -> None:
+) raises -> None:
     # Import the pygame Python package
     pygame = Python.import_module("pygame")
 
@@ -83,6 +83,6 @@ def run_display(
     pygame.quit()
 
 
-def main():
+def main() raises:
     start = Grid[128, 128].random()
     run_display(start^)

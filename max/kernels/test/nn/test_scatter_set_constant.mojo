@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 from nn.gather_scatter import scatter_set_constant
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
 
 fn test_scatter_set_constant() raises:
@@ -64,5 +64,5 @@ fn test_scatter_set_constant() raises:
                 )
 
 
-def main():
+def main() raises:
     test_scatter_set_constant()

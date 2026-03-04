@@ -25,7 +25,7 @@ The main components are:
 Example:
 
 ```mojo
-from logger import Logger
+from std.logger import Logger
 
 var logger = Logger()  # Uses default level from LOGGING_LEVEL env var
 logger.info("Starting process")
@@ -37,20 +37,20 @@ The logger can be configured to write to different file descriptors (default
 stdout). Messages below the configured level will be silently ignored.
 """
 
-import sys
-from format._utils import _WriteBufferStack
-from os import abort
-from sys.param_env import env_get_string
-from utils._ansi import Text, Color
+import std.sys
+from std.format._utils import _WriteBufferStack
+from std.os import abort
+from std.sys.defines import get_defined_string
+from std.utils._ansi import Text, Color
 
-from reflection import call_location, SourceLocation
+from std.reflection import call_location, SourceLocation
 
 # ===-----------------------------------------------------------------------===#
 # DEFAULT_LEVEL
 # ===-----------------------------------------------------------------------===#
 
 comptime DEFAULT_LEVEL = Level._from_str(
-    env_get_string["LOGGING_LEVEL", "NOTSET"]()
+    get_defined_string["LOGGING_LEVEL", "NOTSET"]()
 )
 """The default logging level, determined by the LOGGING_LEVEL environment variable."""
 
@@ -207,7 +207,7 @@ struct Level(
             String: A string representation including the type name and level
                 value (e.g., "Level.DEBUG").
         """
-        return String("Level.", self)
+        return t"Level.{self}"
 
 
 # ===-----------------------------------------------------------------------===#
@@ -461,7 +461,7 @@ struct Logger[level: Level = DEFAULT_LEVEL](ImplicitlyCopyable):
         _level: Level
     ](
         self,
-        values: VariadicPack[element_trait=Writable],
+        values: VariadicPack[element_trait=Writable, ...],
         *,
         location: SourceLocation,
         sep: StaticString = " ",

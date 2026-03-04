@@ -40,7 +40,6 @@ from max.kv_cache.connectors.lmcache_connector import (
     MAXGPUConnector,
 )
 from max.kv_cache.paged_kv_cache.cache_manager import PagedKVCacheManager
-from max.kv_cache.paged_kv_cache.tp_cache_manager import _TPPagedKVCacheManager
 from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 from max.pipelines.core import TextContext
 from test_common.context_utils import create_text_context
@@ -268,13 +267,6 @@ def make_dummy_context() -> TextContext:
     return create_text_context(np.array([1, 2, 3], dtype=np.int64))
 
 
-def get_tp_manager(
-    manager: PagedKVCacheManager,
-) -> _TPPagedKVCacheManager:
-    """Get the underlying _TPPagedKVCacheManager from a PagedKVCacheManager."""
-    return manager._replica_managers[0]
-
-
 # --- Config templates ---
 
 LMCACHE_TEST_CONFIG = """
@@ -315,7 +307,6 @@ def _make_kv_cache_manager(
         num_layers=2,
         n_kv_heads=4,
         head_dim=64,
-        cache_strategy="paged",
         enable_prefix_caching=True,
         enable_kvcache_swapping_to_host=False,
         page_size=INTEGRATION_PAGE_SIZE,
@@ -388,7 +379,7 @@ def lmcache_disk_config_file(
 @pytest.fixture(scope="module")
 def kv_cache_manager(
     lmcache_config_file: str,
-) -> Generator[tuple[PagedKVCacheManager, _TPPagedKVCacheManager], None, None]:
+) -> Generator[PagedKVCacheManager, None, None]:
     """Module-scoped PagedKVCacheManager backed by LMCache (CPU-only).
 
     Yields:
@@ -403,19 +394,19 @@ def kv_cache_manager(
     manager = _make_kv_cache_manager(
         session, lmcache_config_file=lmcache_config_file
     )
-    tp_mgr = get_tp_manager(manager)
 
-    yield manager, tp_mgr
+    yield manager
 
-    if isinstance(tp_mgr.connector, LMCacheConnector):
-        shutdown_connector_with_timeout(tp_mgr.connector)
+    for replica in manager._replica:
+        if isinstance(replica.connector, LMCacheConnector):
+            shutdown_connector_with_timeout(replica.connector)
 
 
 @pytest.fixture(scope="function")
 def kv_cache_manager_with_disk(
     lmcache_disk_config_file: tuple[str, str],
-) -> Generator[_TPPagedKVCacheManager, None, None]:
-    """Function-scoped _TPPagedKVCacheManager backed by LMCache (CPU + Disk)."""
+) -> Generator[PagedKVCacheManager, None, None]:
+    """Function-scoped PagedKVCacheManager backed by LMCache (CPU + Disk)."""
     if accelerator_count() == 0:
         pytest.skip("No GPU available")
 
@@ -424,12 +415,12 @@ def kv_cache_manager_with_disk(
     device = Accelerator()
     session = InferenceSession(devices=[device])
     manager = _make_kv_cache_manager(session, lmcache_config_file=config_path)
-    tp_mgr = get_tp_manager(manager)
 
-    yield tp_mgr
+    yield manager
 
-    if isinstance(tp_mgr.connector, LMCacheConnector):
-        shutdown_connector_with_timeout(tp_mgr.connector)
+    for replica in manager._replica:
+        if isinstance(replica.connector, LMCacheConnector):
+            shutdown_connector_with_timeout(replica.connector)
 
 
 # --- Session hooks ---

@@ -45,7 +45,7 @@ from ..linear import Linear
 from ..norm import RMSNorm
 from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
-from .multi_latent_attention import MLAPrefillMetadata
+from .multi_latent_attention import MLADecodeMetadata, MLAPrefillMetadata
 
 
 class LatentAttentionWithRopeFp8(Module, Shardable):
@@ -75,6 +75,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         v_head_dim: int = 128,
         buffer_size: int = 16384,
         graph_mode: str | None = None,
+        norm_dtype: DType = DType.bfloat16,
     ) -> None:
         """Initializes the latent attention layer.
 
@@ -182,7 +183,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.q_a_layernorm = RMSNorm(
             dim=self.q_lora_rank,
-            dtype=DType.bfloat16,
+            dtype=norm_dtype,
             eps=1e-6,
             multiply_before_cast=False,
         )
@@ -211,7 +212,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.kv_a_proj_layernorm = Weight(
             name="kv_a_layernorm.weight",
-            dtype=DType.bfloat16,
+            dtype=norm_dtype,
             shape=(self.kv_lora_rank,),
             device=self.devices[0],
         )
@@ -598,6 +599,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         freqs_cis: TensorValue,
         kv_a_proj_layernorm: TensorValue,
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
+        mla_decode_metadata: MLADecodeMetadata | None = None,
     ) -> TensorValue:
         # Prepare the inputs and weights for the prefill and decode branches.
         attn_kwargs: dict[str, Any] = {
@@ -643,6 +645,8 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             attn_kwargs["w_uk_scale"] = w_uk_scale
             attn_kwargs["w_uv"] = w_uv
             attn_kwargs["w_uv_scale"] = w_uv_scale
+            if mla_decode_metadata is not None:
+                attn_kwargs["scalar_args"] = mla_decode_metadata.scalar_args
 
         if self.graph_mode == "prefill":
             result = mla_prefill_graph(**attn_kwargs)
@@ -661,6 +665,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
+        mla_decode_metadata: MLADecodeMetadata | None = None,
     ) -> TensorValue:
         # Get attributes from input.
         total_seq_len = x.shape[0]
@@ -716,6 +721,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             freqs_cis,
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
+            mla_decode_metadata=mla_decode_metadata,
         )
 
         return self.o_proj(attn_out)
@@ -772,6 +778,7 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         freqs_cis: list[TensorValue],
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
+        mla_decode_metadata: list[MLADecodeMetadata] | None = None,
     ) -> list[TensorValue]:
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -807,6 +814,14 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                     or len(mla_prefill_metadata) == 0
                 )
                 mla_prefill_metadata_i = None
+            mla_decode_metadata_i: MLADecodeMetadata | None
+            if (
+                mla_decode_metadata is not None
+                and len(mla_decode_metadata) == n
+            ):
+                mla_decode_metadata_i = mla_decode_metadata[i]
+            else:
+                mla_decode_metadata_i = None
 
             outs.append(
                 self.list_of_attentions[i](
@@ -816,6 +831,7 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                     freqs_cis=freqs_cis[i],
                     input_row_offsets=input_row_offsets[i],
                     mla_prefill_metadata=mla_prefill_metadata_i,
+                    mla_decode_metadata=mla_decode_metadata_i,
                 )
             )
         return outs

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
 import compiler_internal as compiler
 from buffer.dimlist import DimList
 from register import register_internal
 from tensor import ManagedTensorSlice, InputTensor, OutputTensor
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 struct Counter[stride: Int](Movable):
@@ -49,7 +49,7 @@ struct MakeCounterFromTensor:
     @staticmethod
     fn execute[
         stride: Int,
-    ](init: InputTensor[dtype = DType.int32, rank=1]) -> Counter[stride]:
+    ](init: InputTensor[dtype = DType.int32, rank=1, ...]) -> Counter[stride]:
         print("making. init:", init[0], init[1])
         return Counter[stride](Int(init[0]), Int(init[1]))
 
@@ -77,6 +77,9 @@ struct ReadCounter:
     @staticmethod
     fn execute[
         stride: Int
-    ](output: OutputTensor[dtype = DType.int32, rank=1], c: Counter[stride]):
+    ](
+        output: OutputTensor[dtype = DType.int32, rank=1, ...],
+        c: Counter[stride],
+    ):
         output[0] = Int32(c.a)
         output[1] = Int32(c.b)

@@ -17,7 +17,6 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -25,7 +24,7 @@ from max._core.engine import Model
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -37,7 +36,6 @@ from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParams,
-    PagedCacheValues,
 )
 from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
@@ -202,27 +200,6 @@ class Qwen2_5VLModel(
             cache_dtype,
         )
 
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        """Unflatten KV cache inputs from flat list to per-device structure."""
-        fetch_types = self.kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        n_devices = len(self.devices)
-
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
-
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Qwen2.5VL models into the MAX Engine session.
 
@@ -230,11 +207,14 @@ class Qwen2_5VLModel(
             A tuple of (vision_model, language_model).
         """
         # Pre-allocation for multi-step execution
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         ).to(self.devices)
 
         # Get LLM weights dictionary. Needed before model config generation

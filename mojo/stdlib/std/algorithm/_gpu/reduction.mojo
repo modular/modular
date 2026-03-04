@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
+from std.math import align_up
 
-from algorithm.reduction import _get_nd_indices_from_flat_index
-from gpu import (
+from std.algorithm.reduction import _get_nd_indices_from_flat_index
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -30,16 +30,18 @@ from gpu import (
     wait_on_dependent_grids,
     AddressSpace,
 )
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.primitives import warp
-from gpu.primitives.grid_controls import pdl_launch_attributes  # @doc_private
-from memory import stack_allocation
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.primitives import warp
+from std.gpu.primitives.grid_controls import (
+    pdl_launch_attributes,
+)  # @doc_private
+from std.memory import stack_allocation
 
-from utils import IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
-from sys import env_get_int
-from sys.info import simd_width_of
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
+from std.sys import get_defined_int
+from std.sys.info import simd_width_of
 
 
 @always_inline
@@ -149,7 +151,9 @@ fn block_reduce[
     var result = StaticTuple[Scalar[dtype], num_reductions]()
 
     comptime for i in range(num_reductions):
-        result[i] = result_packed[i].reduce[reduce_fn[dtype, reduction_idx=i]]()
+        result[i] = result_packed[i].reduce[
+            reduce_fn[dtype, reduction_idx=i, ...]
+        ]()
 
     return result
 
@@ -554,7 +558,7 @@ fn reduce_launch[
         # TODO: a shape which *only just* saturates the device might be
         # more performant without SIMD, but the dispatch is more complicated
         comptime simd_packing_factor = simd_width_of[dtype, get_gpu_target()]()
-        comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
+        comptime BLOCK_SIZE = get_defined_int["MOJO_REDUCTION_BLOCK_SIZE", 32]()
 
         comptime for ax in range(rank):
             if axis == ax:
@@ -580,7 +584,9 @@ fn reduce_launch[
     # When the row size is smaller than the warp so we can use
     # multiple warps within a block to reduce rows and save shared memory sync
     else:
-        comptime BLOCK_SIZE = env_get_int["MOJO_REDUCTION_BLOCK_SIZE", 128]()
+        comptime BLOCK_SIZE = get_defined_int[
+            "MOJO_REDUCTION_BLOCK_SIZE", 128
+        ]()
         if shape[axis] < WARP_SIZE:
             comptime for ax in range(rank):
                 if axis == ax:

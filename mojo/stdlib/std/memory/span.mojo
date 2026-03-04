@@ -16,23 +16,23 @@
 You can import these APIs from the `memory` module. For example:
 
 ```mojo
-from memory import Span
+from std.memory import Span
 ```
 """
-from builtin.builtin_slice import ContiguousSlice
-from reflection import call_location
-from bit._mask import splat
-from bit import pop_count
-from memory import pack_bits, uninit_copy_n
-from collections._index_normalization import normalize_index
-from builtin.rebind import downcast
-from sys import align_of
-from sys.info import simd_width_of
+from std.builtin.builtin_slice import ContiguousSlice
+from std.reflection import call_location
+from std.bit._mask import splat
+from std.bit import pop_count
+from std.memory import pack_bits, uninit_copy_n
+from std.collections._index_normalization import normalize_index
+from std.builtin.rebind import downcast
+from std.sys import align_of
+from std.sys.info import simd_width_of
 
-from algorithm import vectorize
-from builtin.device_passable import DevicePassable
-from compile import get_type_name
-import format._utils as fmt
+from std.algorithm import vectorize
+from std.builtin.device_passable import DevicePassable
+from std.compile import get_type_name
+import std.format._utils as fmt
 
 
 # ===-----------------------------------------------------------------------===#
@@ -344,7 +344,7 @@ struct Span[
 
     fn __contains__[
         dtype: DType, //
-    ](self: Span[Scalar[dtype]], value: Scalar[dtype]) -> Bool:
+    ](self: Span[Scalar[dtype], _], value: Scalar[dtype]) -> Bool:
         """Verify if a given value is present in the Span.
 
         Parameters:
@@ -378,7 +378,7 @@ struct Span[
 
     @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
-    fn __str__[U: Representable, //](self: Span[U]) -> String:
+    fn __str__[U: Writable, //](self: Span[U, _]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
@@ -456,12 +456,12 @@ struct Span[
 
     @deprecated("Representable is deprecated. Use Writable instead.")
     @no_inline
-    fn __repr__[U: Representable, //](self: Span[U]) -> String:
+    fn __repr__[U: Writable, //](self: Span[U, _]) -> String:
         """Returns a string representation of a `Span`.
 
         Parameters:
             U: The type of the elements in the span. Must implement the
-              trait `Representable`.
+              trait `Writable`.
 
         Returns:
             A string representation of the span.
@@ -616,7 +616,7 @@ struct Span[
     @always_inline
     fn __ne__[
         _T: Equatable, //
-    ](self: Span[_T, Self.origin], rhs: Span[_T]) -> Bool:
+    ](self: Span[_T, Self.origin], rhs: Span[_T, _]) -> Bool:
         """Verify if span is not equal to another span.
 
         Parameters:
@@ -633,7 +633,7 @@ struct Span[
 
     fn fill[
         _T: Copyable & ImplicitlyDestructible, //
-    ](self: Span[mut=True, _T], value: _T):
+    ](self: Span[mut=True, _T, _], value: _T):
         """
         Fill the memory that a span references with a given value.
 
@@ -649,7 +649,7 @@ struct Span[
     @always_inline
     fn unsafe_swap_elements[
         U: Movable
-    ](self: Span[mut=True, U], a: Int, b: Int):
+    ](self: Span[mut=True, U, _], a: Int, b: Int):
         """Swap the values at indices `a` and `b` without performing bounds checking.
 
         Parameters:
@@ -680,7 +680,7 @@ struct Span[
 
     fn swap_elements[
         U: Movable
-    ](self: Span[mut=True, U], a: Int, b: Int) raises:
+    ](self: Span[mut=True, U, _], a: Int, b: Int) raises:
         """
         Swap the values at indices `a` and `b`.
 
@@ -734,7 +734,7 @@ struct Span[
             length = self._len,
         }
 
-    fn reverse[dtype: DType, //](self: Span[mut=True, Scalar[dtype]]):
+    fn reverse[dtype: DType, //](self: Span[mut=True, Scalar[dtype], _]):
         """Reverse the elements of the `Span` inplace.
 
         Parameters:
@@ -774,7 +774,7 @@ struct Span[
         dtype: DType,
         //,
         func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
-    ](self: Span[mut=True, Scalar[dtype]]):
+    ](self: Span[mut=True, Scalar[dtype], _]):
         """Apply the function to the `Span` inplace.
 
         Parameters:
@@ -805,7 +805,7 @@ struct Span[
         func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[dtype, w],
         *,
         cond: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
-    ](self: Span[mut=True, Scalar[dtype]]):
+    ](self: Span[mut=True, Scalar[dtype], _]):
         """Apply the function to the `Span` inplace where the condition is
         `True`.
 
@@ -838,13 +838,16 @@ struct Span[
     fn count[
         dtype: DType,
         //,
-        func: fn[w: Int](SIMD[dtype, w]) capturing -> SIMD[DType.bool, w],
-    ](self: Span[Scalar[dtype]]) -> UInt:
+        F: fn[w: Int](v: SIMD[dtype, w]) unified -> SIMD[DType.bool, w],
+    ](self: Span[Scalar[dtype], _], func: F) -> UInt:
         """Count the amount of times the function returns `True`.
 
         Parameters:
             dtype: The DType.
-            func: The function to evaluate.
+            F: The function type to evaluate.
+
+        Args:
+            func: The function value to evaluate.
 
         Returns:
             The amount of times the function returns `True`.
@@ -855,8 +858,10 @@ struct Span[
         var length = len(self)
         var count = 0
 
-        fn do_count[width: Int](idx: Int) unified {mut count, read ptr}:
-            var mask = func(ptr.load[width=width](idx))
+        fn do_count[
+            width: Int
+        ](idx: Int) unified {mut count, read ptr, read func}:
+            var mask = func[width](ptr.load[width=width](idx))
             count += mask.reduce_bit_count()
 
         vectorize[simdwidth](length, do_count)
@@ -891,7 +896,7 @@ struct Span[
     fn _binary_search_index[
         dtype: DType,
         //,
-    ](self: Span[Scalar[dtype]], needle: Scalar[dtype]) -> Optional[UInt]:
+    ](self: Span[Scalar[dtype], _], needle: Scalar[dtype]) -> Optional[UInt]:
         """Finds the index of `needle` with binary search.
         Args:
             needle: The value to binary search for.

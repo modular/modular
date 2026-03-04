@@ -16,28 +16,20 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-from typing import Any
 from unittest.mock import MagicMock, Mock
 
-from max.driver import Device, is_virtual_device_mode
+from max.driver import is_virtual_device_mode
 from max.engine import InferenceSession
 from max.nn.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     MultiKVCacheParams,
     compute_num_device_blocks,
-    estimated_memory_size,
+    compute_num_host_blocks,
 )
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
 
 from .paged_kv_cache import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
-
-CACHE_MANAGER_REGISTRY: dict[KVCacheStrategy, type[PagedKVCacheManager]] = {
-    "paged": PagedKVCacheManager,
-}
 
 
 def _load_single_kv_manager(
@@ -54,11 +46,6 @@ def _load_single_kv_manager(
             "Detected compile-only mode, Use fake KVCache to avoid GPU allocation"
         )
         return Mock()
-
-    if params.cache_strategy != "paged":
-        raise ValueError(
-            f"Found unsupported KVCache strategy: {params.cache_strategy}"
-        )
 
     # TODO(KERN-1308) remove this validation as we generalize page_size
     if params.page_size % 128 != 0 or params.page_size < 128:
@@ -108,7 +95,7 @@ def load_kv_manager(
         max_seq_len=max_seq_len,
     )
 
-    total_num_host_pages = params.compute_num_host_blocks()
+    total_num_host_pages = compute_num_host_blocks(params)
 
     return _load_single_kv_manager(
         params=params,
@@ -152,8 +139,7 @@ def load_multi_kv_managers(
         max_seq_len=max_seq_len,
     )
 
-    # assume all params have the same number of host pages
-    total_num_host_pages = params.params[0].compute_num_host_blocks()
+    total_num_host_pages = compute_num_host_blocks(params)
 
     return [
         _load_single_kv_manager(
@@ -165,39 +151,3 @@ def load_multi_kv_managers(
         )
         for params in params.params
     ]
-
-
-def estimate_kv_cache_size(
-    params: KVCacheParamInterface,
-    max_batch_size: int,
-    max_seq_len: int,
-    available_cache_memory: int,
-) -> int:
-    """Estimates the KV cache size in bytes for the given params and constraints."""
-    assert max_batch_size > 0, "max_batch_size must be greater than 0"
-
-    return estimated_memory_size(
-        params=params,
-        available_cache_memory=available_cache_memory,
-        max_batch_size=max_batch_size,
-        max_seq_len=max_seq_len,
-    )
-
-
-def infer_optimal_batch_size(
-    params: KVCacheParamInterface,
-    max_seq_len: int,
-    available_cache_memory: int,
-    devices: Sequence[Device],
-    **kwargs: Any,
-) -> int:
-    """Infers the optimal batch size for the cache strategy and constraints."""
-    return CACHE_MANAGER_REGISTRY[
-        params.cache_strategy
-    ].infer_optimal_batch_size(
-        params=params,
-        max_seq_len=max_seq_len,
-        available_cache_memory=available_cache_memory,
-        devices=devices,
-        **kwargs,
-    )

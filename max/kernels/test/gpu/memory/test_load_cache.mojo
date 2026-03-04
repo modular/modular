@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host.compile import _compile_code
-from gpu.memory import CacheEviction, CacheOperation, load
-from memory import LegacyUnsafePointer
+from std.gpu.host.compile import _compile_code
+from std.gpu.memory import CacheEviction, CacheOperation, load
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
 
 fn load_value[
@@ -38,7 +38,7 @@ fn load_value[
     ](ptr)
 
 
-def test_load():
+def test_load() raises:
     assert_true(
         "ld.global "
         in _compile_code[
@@ -98,5 +98,5 @@ def test_load():
     )
 
 
-def main():
+def main() raises:
     test_load()

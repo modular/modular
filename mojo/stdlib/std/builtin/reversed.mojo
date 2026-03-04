@@ -15,14 +15,14 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import Deque
-from collections.deque import _DequeIter
-from collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
-from collections.list import _ListIter
-from collections.inline_array import _InlineArrayIter
-from hashlib import Hasher
+from std.collections import Deque
+from std.collections.deque import _DequeIter
+from std.collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
+from std.collections.list import _ListIter
+from std.collections.inline_array import _InlineArrayIter
+from std.hashlib import Hasher
 
-from memory.span import Span, _SpanIter
+from std.memory.span import Span, _SpanIter
 
 from .range import _StridedRange
 
@@ -230,7 +230,7 @@ fn reversed[
 @always_inline
 fn reversed[
     T: Copyable
-](value: Span[T]) -> _SpanIter[T, value.origin, forward=False]:
+](value: Span[T, _]) -> _SpanIter[T, value.origin, forward=False]:
     """Get a reversed iterator of the input Span.
 
     **Note**: iterators are currently non-raising.

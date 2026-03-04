@@ -31,21 +31,21 @@ Usage:
 For full validation, run the comprehensive tests in CI.
 """
 
-from sys import size_of
+from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import assert_almost_equal
-from random import rand
+from std.random import rand
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
@@ -55,8 +55,8 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 
 def test_blackwell_matmul[
@@ -72,7 +72,7 @@ def test_blackwell_matmul[
     swapAB: Bool = False,
     k_group_size: Int = 1,
     num_split_k: Int = 1,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
+](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     """Generic test function for SM100 matmul kernel variants."""
     var M = m.value
     var N = n.value
@@ -113,11 +113,11 @@ def test_blackwell_matmul[
         k.dim, n.dim
     )
     comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var dynamic_a_shape = IndexList[2](m.value, k.value)
+    var dynamic_b_shape = IndexList[2](
+        n.value, k.value
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape = IndexList[2](m.value, n.value)
     var a_size = m.value * k.value
     var b_size = n.value * k.value if transpose_b else k.value * n.value
     var c_size = m.value * n.value
@@ -225,7 +225,7 @@ def test_blackwell_matmul[
     _ = b_device
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("SM100 MATMUL SMOKE TEST")
     print("=" * 60)

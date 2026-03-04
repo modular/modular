@@ -21,18 +21,18 @@
 # - Add bounds checking for input dimensions
 # - Add test cases for odd sizes, likely broken
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor, IntTuple, RuntimeLayout, UNKNOWN_VALUE
 from layout.int_tuple import product
 from layout._fillers import random
 from nn.conv import conv_gpu
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
-from utils.index import IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import IndexList
+from std.utils.numerics import get_accum_type
 
 
 @always_inline
@@ -525,7 +525,7 @@ fn test_winograd_conv_gpu[
                 )
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
 
     with DeviceContext() as ctx:

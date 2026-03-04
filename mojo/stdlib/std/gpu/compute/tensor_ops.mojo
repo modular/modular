@@ -31,8 +31,8 @@ Note:
     Operations are optimized for warp-level execution.
 """
 
-from gpu.compute.mma import mma
-from gpu.primitives.warp import shuffle_down
+from std.gpu.compute.mma import mma
+from std.gpu.primitives.warp import shuffle_down
 
 
 @always_inline

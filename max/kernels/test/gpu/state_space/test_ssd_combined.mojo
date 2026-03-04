@@ -11,25 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
     UNKNOWN_VALUE,
     Layout,
     LayoutTensor,
     RuntimeLayout,
 )
-from math import exp, exp2, log
-from random import rand
+from std.math import exp, exp2, log
+from std.random import rand
 from state_space.selective_scan import (
     ssd_combined_cpu,
     ssd_combined_gpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
@@ -382,7 +382,7 @@ fn run_ssd_combined_gpu[
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
-    from math import ceildiv
+    from std.math import ceildiv
 
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
@@ -697,5 +697,5 @@ fn test_ssd_combined_gpu_larger_shapes() raises:
     ](batch=4, dim=8, seqlen=16, n_groups=1, ctx=ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

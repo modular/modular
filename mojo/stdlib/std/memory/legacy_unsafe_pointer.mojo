@@ -15,27 +15,27 @@
 These APIs are imported automatically, just like builtins.
 """
 
-from sys import align_of, is_gpu, is_nvidia_gpu, size_of
-from sys.intrinsics import gather, scatter, strided_load, strided_store
+from std.sys import align_of, is_gpu, is_nvidia_gpu, size_of
+from std.sys.intrinsics import gather, scatter, strided_load, strided_store
 
-from builtin.type_aliases import _lit_origin_type_of_mut
-from builtin.rebind import downcast
-from builtin.simd import _simd_construction_checks
-from builtin.variadics import Variadic
-from format._utils import (
+from std.builtin.type_aliases import _lit_origin_type_of_mut
+from std.builtin.rebind import downcast
+from std.builtin.simd import _simd_construction_checks
+from std.builtin.variadics import Variadic
+from std.format._utils import (
     FormatStruct,
     Named,
     TypeNames,
     constrained_conforms_to_writable,
 )
-from memory import memcpy
-from memory.memory import _free, _malloc
-from memory import UnsafeMaybeUninit
-from os import abort
-from python import PythonObject
+from std.memory import memcpy
+from std.memory.memory import _free, _malloc
+from std.memory import UnsafeMaybeUninit
+from std.os import abort
+from std.python import PythonObject
 
-from builtin.device_passable import DevicePassable
-from compile import get_type_name
+from std.builtin.device_passable import DevicePassable
+from std.compile import get_type_name
 
 # ===----------------------------------------------------------------------=== #
 # LegacyUnsafePointer
@@ -446,8 +446,8 @@ struct LegacyUnsafePointer[
         other_type: type_of(
             LegacyUnsafePointer[
                 Self.type,
+                ...,
                 address_space = Self.address_space,
-                origin=_,
             ]
         ),
     ](self) -> LegacyUnsafePointer[
@@ -1188,9 +1188,7 @@ struct LegacyUnsafePointer[
     @always_inline("nodebug")
     fn mut_cast[
         target_mut: Bool
-    ](self) -> Self._OriginCastType[
-        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
-    ]:
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
         """Changes the mutability of a pointer.
 
         This is a safe way to change the mutability of a pointer with an
@@ -1212,9 +1210,7 @@ struct LegacyUnsafePointer[
     @always_inline("builtin")
     fn unsafe_mut_cast[
         target_mut: Bool
-    ](self) -> Self._OriginCastType[
-        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
-    ]:
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
         """Changes the mutability of a pointer.
 
         Parameters:
@@ -1238,7 +1234,7 @@ struct LegacyUnsafePointer[
         """
         return __mlir_op.`pop.pointer.bitcast`[
             _type = Self._OriginCastType[
-                Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
+                Self.origin.unsafe_mut_cast[target_mut]()
             ]._mlir_type,
         ](self.address)
 

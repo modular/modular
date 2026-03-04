@@ -21,20 +21,20 @@ For new code, use sm100_structured directly:
 - Import matmul from: linalg.matmul.gpu.sm100_structured.matmul
 """
 
-from sys import simd_width_of, size_of
+from std.sys import simd_width_of, size_of
 
-from gpu import WARP_SIZE, lane_id, thread_idx, warp_id
-from gpu.primitives.cluster import elect_one_sync
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.mma import st_matrix
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.sync import (
+from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
+from std.gpu.primitives.cluster import elect_one_sync
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.mma import st_matrix
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.sync import (
     named_barrier,
     syncwarp,
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -48,9 +48,9 @@ from layout.swizzle import Swizzle, make_swizzle
 from layout.tensor_core_async import st_matrix_n_layout
 from layout.tma_async import TMATensorTile
 
-from utils.fast_div import FastDiv
-from utils.index import IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_SS
 from ....utils import elementwise_compute_lambda_type

@@ -29,6 +29,7 @@ from max.nn import (
 from max.nn.attention.attention_with_rope import AttentionWithRope
 from max.nn.float8_config import Float8WeightScaleSpec
 from max.nn.kv_cache import (
+    AttentionDispatchMetadata,
     KVCacheParams,
     PagedCacheValues,
 )
@@ -91,7 +92,6 @@ def _create_kv_manager(
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy="paged",
         devices=[DeviceRef.GPU()],
     )
 
@@ -184,9 +184,14 @@ def _build_and_execute_attention_graph(
     graph_name: str,
 ) -> torch.Tensor:
     """Build graph, execute model, and return results."""
-    blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    blocks_type = kv_symbolic_inputs.kv_blocks
+    cache_lengths_type = kv_symbolic_inputs.cache_lengths
+    lookup_table_type = kv_symbolic_inputs.lookup_table
+    max_lengths_type = kv_symbolic_inputs.max_lengths
+    dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
+    assert dispatch_metadata_symbol is not None
+    attention_dispatch_metadata_type = dispatch_metadata_symbol.tensor
 
     # Prepare input data
     np.random.seed(42)
@@ -218,6 +223,7 @@ def _build_and_execute_attention_graph(
             cache_lengths_type,
             lookup_table_type,
             max_lengths_type,
+            attention_dispatch_metadata_type,
         ],
     ) as graph:
         freqs_cis = rope.freqs_cis
@@ -230,6 +236,7 @@ def _build_and_execute_attention_graph(
             cache_lengths,
             lookup_table,
             max_lengths,
+            attention_dispatch_metadata,
         ) = graph.inputs
 
         kv_collection = PagedCacheValues(
@@ -237,6 +244,9 @@ def _build_and_execute_attention_graph(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
+            dispatch_metadata=AttentionDispatchMetadata(
+                attention_dispatch_metadata.tensor
+            ),
         )
         output = attention(
             layer_idx=layer_idx.tensor,
@@ -265,19 +275,17 @@ def _build_and_execute_attention_graph(
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
-    fetch_result = kv_manager.runtime_inputs([batch])[0]
-    blocks_tensor = fetch_result[0]
-    cache_lengths_tensor = fetch_result[1]
-    lookup_table_tensor = fetch_result[2]
-    max_lengths_tensor = fetch_result[3]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     result = model.execute(
         input_tensor,
         input_row_offsets_tensor,
-        blocks_tensor,
-        cache_lengths_tensor,
-        lookup_table_tensor,
-        max_lengths_tensor,
+        kv_runtime_inputs.blocks,
+        kv_runtime_inputs.cache_lengths,
+        kv_runtime_inputs.lookup_table,
+        kv_runtime_inputs.max_lengths,
+        kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
 
     return torch.from_dlpack(result)

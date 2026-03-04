@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.intrinsics import ldg
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.intrinsics import ldg
 from layout import Layout, LayoutTensor
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_true
+from std.testing import assert_true
 
 
 fn ldg_kernel(i8: UnsafePointer[Int8]):
@@ -26,13 +26,13 @@ fn ldg_kernel(i8: UnsafePointer[Int8]):
 
 
 fn layout_kernel(
-    a: LayoutTensor[mut=False, DType.int8, Layout.row_major(1)],
+    a: LayoutTensor[mut=False, DType.int8, Layout.row_major(1), _],
     mut b: type_of(a[0]),
 ):
     b = a[0]
 
 
-def test_ldg_kernel[emission_kind: StaticString]() -> String:
+def test_ldg_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         ldg_kernel,
         emission_kind=emission_kind,
@@ -40,14 +40,14 @@ def test_ldg_kernel[emission_kind: StaticString]() -> String:
     ]().asm
 
 
-def test_ldg_kernel():
+def test_ldg_kernel() raises:
     var llvm = test_ldg_kernel["llvm"]()
     assert_true("!invariant.load !1" in llvm)
     var asm = test_ldg_kernel["asm"]()
     assert_true("ld.global.nc.b8" in asm)
 
 
-def test_layout_kernel[emission_kind: StaticString]() -> String:
+def test_layout_kernel[emission_kind: StaticString]() raises -> String:
     return _compile_code[
         layout_kernel,
         emission_kind=emission_kind,
@@ -55,13 +55,13 @@ def test_layout_kernel[emission_kind: StaticString]() -> String:
     ]().asm
 
 
-def test_layout_kernel():
+def test_layout_kernel() raises:
     var llvm = test_layout_kernel["llvm"]()
     assert_true("!invariant.load !1" in llvm)
     var asm = test_layout_kernel["asm"]()
     assert_true("ld.global.nc.b8" in asm)
 
 
-def main():
+def main() raises:
     test_ldg_kernel()
     test_layout_kernel()

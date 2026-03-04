@@ -11,17 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simd_width_of
+from std.sys.info import simd_width_of
 
-from algorithm import stencil, stencil_gpu
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
-from layout._coord import Coord, coord_to_index_list
-from layout._tile_tensor import TileTensor
-from runtime.asyncrt import DeviceContextPtr
+from std.algorithm import stencil, stencil_gpu
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import is_cpu, is_gpu
+from layout import Coord, TileTensor, coord_to_index_list
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils.index import IndexList
+from std.utils.numerics import min_or_neg_inf
 
 from .shapes import get_sliding_window_out_dim
 

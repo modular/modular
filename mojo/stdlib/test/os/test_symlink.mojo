@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os import remove
-from os.path import exists
-from pathlib import Path
-from tempfile import gettempdir
-from testing import TestSuite, assert_equal
+import std.os
+from std.os import remove
+from std.os.path import exists
+from std.pathlib import Path
+from std.tempfile import gettempdir
+from std.testing import TestSuite, assert_equal
 
 
-def test_create_symlink():
+def test_create_symlink() raises:
     var tempdir = Path(gettempdir().value())
     var src = tempdir / "test_create_symlink"
     var link = tempdir / "test_create_symlink_symlink"
@@ -41,5 +41,5 @@ def test_create_symlink():
         assert_equal(f.read(), "test_create_symlink")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

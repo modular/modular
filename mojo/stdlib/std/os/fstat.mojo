@@ -15,12 +15,12 @@
 You can import these APIs from the `os` package. For example:
 
 ```mojo
-from os import stat
+from std.os import stat
 ```
 """
 
-from sys import CompilationTarget
-from time.time import _CTimeSpec
+from std.sys import CompilationTarget
+from std.time.time import _CTimeSpec
 
 from . import PathLike
 from ._linux_aarch64 import _lstat as _lstat_linux_arm

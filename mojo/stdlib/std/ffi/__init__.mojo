@@ -26,7 +26,7 @@ foreign code. It includes:
 Example:
 
 ```mojo
-from ffi import c_int, external_call
+from std.ffi import c_int, external_call
 
 fn get_random() -> c_int:
     return external_call["rand", c_int]()
@@ -35,7 +35,7 @@ fn get_random() -> c_int:
 For loading dynamic libraries:
 
 ```mojo
-from ffi import OwnedDLHandle
+from std.ffi import OwnedDLHandle
 
 fn main() raises:
     var lib = OwnedDLHandle("libm.so")
@@ -44,16 +44,19 @@ fn main() raises:
 ```
 """
 
-from collections.string.string_slice import _get_kgen_string, get_static_string
-from os import PathLike, abort
-from pathlib import Path
-from sys._libc import dlclose, dlerror, dlopen, dlsym
-from sys._libc_errno import ErrNo, get_errno, set_errno
+from std.collections.string.string_slice import (
+    _get_kgen_string,
+    get_static_string,
+)
+from std.os import PathLike, abort
+from std.pathlib import Path
+from std.sys._libc import dlclose, dlerror, dlopen, dlsym
+from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
-from memory import OwnedPointer
+from std.memory import OwnedPointer
 
-from sys.info import CompilationTarget, is_32bit, is_64bit
-from sys.intrinsics import _mlirtype_is_eq
+from std.sys.info import CompilationTarget, is_32bit, is_64bit
+from std.sys.intrinsics import _mlirtype_is_eq
 from .cstring import CStringSlice
 from .unsafe_union import UnsafeUnion
 
@@ -199,7 +202,7 @@ struct OwnedDLHandle(Movable):
 
     Example usage:
     ```mojo
-    from ffi import OwnedDLHandle
+    from std.ffi import OwnedDLHandle
 
     fn main() raises:
         var lib = OwnedDLHandle("libm.so")
@@ -328,7 +331,7 @@ struct OwnedDLHandle(Movable):
     @always_inline
     fn _get_function[
         result_type: __TypeOfAllTypes
-    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -362,7 +365,7 @@ struct OwnedDLHandle(Movable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
         result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -402,7 +405,7 @@ struct OwnedDLHandle(Movable):
 
     fn call[
         name: StaticString, return_type: __TypeOfAllTypes = NoneType
-    ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
+    ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
 
         Parameters:
@@ -477,7 +480,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     @staticmethod
     fn _dlopen(
-        file: UnsafePointer[mut=False, c_char], flags: Int
+        file: UnsafePointer[mut=False, c_char, _], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
         if not handle:
@@ -568,7 +571,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
     @always_inline
     fn _get_function[
         result_type: __TypeOfAllTypes
-    ](self, *, cstr_name: UnsafePointer[mut=False, c_char]) -> result_type:
+    ](self, *, cstr_name: UnsafePointer[mut=False, c_char, _]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -607,7 +610,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     fn get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8]) -> UnsafePointer[
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
         result_type, MutAnyOrigin
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -661,9 +664,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
             # Check if an error occurred during the 2nd `dlsym` call.
             var err = dlerror()
             if err:
-                abort(
-                    String("dlsym failed: ", String(unsafe_from_utf8_ptr=err))
-                )
+                abort(t"dlsym failed: {String(unsafe_from_utf8_ptr=err)}")
 
         return res
 
@@ -690,7 +691,7 @@ struct _DLHandle(Boolable, Copyable, TrivialRegisterPassable):
 
     fn call[
         name: StaticString, return_type: __TypeOfAllTypes = NoneType
-    ](self, args: VariadicPack[element_trait=AnyType]) -> return_type:
+    ](self, args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
         """Call a function with any amount of arguments.
 
         Parameters:
@@ -719,7 +720,7 @@ fn _get_dylib_function[
     func_name: StaticString,
     result_type: __TypeOfAllTypes,
 ]() raises -> result_type:
-    var func_cache_name = String(dylib_global.name, "/", func_name)
+    var func_cache_name = String(t"{dylib_global.name}/{func_name}")
     var func_ptr = _get_global_or_null(func_cache_name)
     if func_ptr:
         var result = UnsafePointer(to=func_ptr).bitcast[result_type]()[]
@@ -985,7 +986,7 @@ fn external_call[
 fn external_call[
     callee: StaticString,
     return_type: __TypeOfAllTypes,
-](args: VariadicPack[element_trait=AnyType]) -> return_type:
+](args: VariadicPack[element_trait=AnyType, ...]) -> return_type:
     """Calls an external function.
 
     Parameters:

@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from python import Python
+from std.python import Python
 
 
-def main():
+def main() raises:
     states = [String("California"), "Hawaii", "Oregon"]
     for state in states:
         print(state)

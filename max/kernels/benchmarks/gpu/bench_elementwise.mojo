@@ -11,24 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
-from math import erf, exp, rsqrt, log, sin, sqrt, tanh
-from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
-from sys.intrinsics import strided_load
+from std.collections.string import StaticString
+from std.math import erf, exp, rsqrt, log, sin, sqrt, tanh
+from std.sys import (
+    align_of,
+    get_defined_int,
+    get_defined_string,
+    simd_width_of,
+    size_of,
+)
+from std.sys.intrinsics import strided_load
 
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import NDBuffer
 from buffer.buffer import _compute_ndbuffer_offset
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import B200
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import B200
 from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils import IndexList
-from utils.index import product
+from std.utils import IndexList
+from std.utils.index import product
 
 
 fn add_const_fn(x: SIMD) -> type_of(x):
@@ -232,18 +244,18 @@ fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
     return t
 
 
-def main():
+def main() raises:
     var op = arg_parse("op", "sqrt")
     comptime dtype = DType._from_str(
-        env_get_string["dtype", "DType.bfloat16"]()
+        get_defined_string["dtype", "DType.bfloat16"]()
     )
-    comptime rank = env_get_int["rank", 3]()
-    comptime dims_str = env_get_string["dims", "1x1024x3072"]()
+    comptime rank = get_defined_int["rank", 3]()
+    comptime dims_str = get_defined_string["dims", "1x1024x3072"]()
     comptime dims = list_to_static_tuple[parse_shape[dims_str]()]()
-    comptime aligned_memory_config = env_get_int[
+    comptime aligned_memory_config = get_defined_int[
         "aligned_memory_config", 0
     ]()  # bool
-    comptime emulate_graph_compiler = env_get_int[
+    comptime emulate_graph_compiler = get_defined_int[
         "emulate_graph_compiler", 0
     ]()  # bool
 

@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, ceildiv, sqrt
-from sys._build import is_debug_build
-from sys.info import CompilationTarget, simd_width_of, size_of
+from std.math import align_down, ceildiv, sqrt
+from std.sys._build import is_debug_build
+from std.sys.info import CompilationTarget, simd_width_of, size_of
 
-from layout import Layout, LayoutTensor, IntTuple, UNKNOWN_VALUE
-from layout._tile_tensor import TileTensor
+from layout import IntTuple, Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from linalg.utils import partition_work
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .image import Image2DLayout
 

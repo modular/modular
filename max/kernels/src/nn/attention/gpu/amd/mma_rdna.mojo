@@ -19,11 +19,11 @@ This module provides MMA operations optimized for RDNA GPUs with:
 - Wave32 execution model
 """
 
-from collections import OptionalReg
-from math import ceildiv
+from std.collections import OptionalReg
+from std.math import ceildiv
 
-from gpu import barrier
-from gpu.compute.mma import mma as _mma_intrinsic
+from std.gpu import barrier
+from std.gpu.compute.mma import mma as _mma_intrinsic
 from layout import IntTuple, Layout
 from layout.tensor_core import TiledTensorCore
 

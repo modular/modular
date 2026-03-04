@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from hashlib import default_comp_time_hasher
-from sys import align_of, size_of
+from std.collections import Optional
+from std.hashlib import default_comp_time_hasher
+from std.sys import align_of, size_of
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -28,7 +28,7 @@ from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
 )
-from random import rand
+from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
@@ -40,6 +40,7 @@ from layout import (
     RuntimeTuple,
     UNKNOWN_VALUE,
 )
+from layout._utils import ManagedLayoutTensor
 from linalg.bmm import (
     bmm_sm100_blockwise_scaled_fp8,
     batched_matmul_dynamic_scaled_fp8_naive,
@@ -47,7 +48,7 @@ from linalg.bmm import (
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def test_batched_matmul_sm100_blockwise_scaled_fp8[
@@ -64,7 +65,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     n: ValOrDim,
     k: ValOrDim,
     batch_size: ValOrDim,
-):
+) raises:
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
@@ -121,13 +122,13 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         batch_size.dim, n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
     )
 
-    var dynamic_a_shape = DimList(bs, M, K)
-    var dynamic_b_shape = DimList(bs, N, K) if transpose_b else DimList(
-        bs, K, N
-    )
-    var dynamic_c_shape = DimList(bs, M, N)
-    var dynamic_a_scales_shape = DimList(bs, K // BLOCK_SCALE_K, M)
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[3](bs, M, K)
+    var dynamic_b_shape = IndexList[3](bs, N, K) if transpose_b else IndexList[
+        3
+    ](bs, K, N)
+    var dynamic_c_shape = IndexList[3](bs, M, N)
+    var dynamic_a_scales_shape = IndexList[3](bs, K // BLOCK_SCALE_K, M)
+    var dynamic_b_scales_shape = IndexList[3](
         bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
@@ -142,13 +143,15 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         n.dim // BLOCK_SCALE_K, k.dim // BLOCK_SCALE_K
     )
 
-    var dynamic_a_shape_2D = DimList(m.value, k.value)
-    var dynamic_b_shape_2D = DimList(
+    var dynamic_a_shape_2D = IndexList[2](m.value, k.value)
+    var dynamic_b_shape_2D = IndexList[2](
         n.value, k.value
-    ) if transpose_b else DimList(k.value, n.value)
-    var dynamic_c_shape_2D = DimList(m.value, n.value)
-    var dynamic_a_scales_shape_2D = DimList(k.value // BLOCK_SCALE_K, m.value)
-    var dynamic_b_scales_shape_2D = DimList(
+    ) if transpose_b else IndexList[2](k.value, n.value)
+    var dynamic_c_shape_2D = IndexList[2](m.value, n.value)
+    var dynamic_a_scales_shape_2D = IndexList[2](
+        k.value // BLOCK_SCALE_K, m.value
+    )
+    var dynamic_b_scales_shape_2D = IndexList[2](
         n.value // BLOCK_SCALE_K, k.value // BLOCK_SCALE_K
     )
 
@@ -166,13 +169,19 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var b_host = NDBuffer[b_type, 3, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 3, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
+    var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host = NDBuffer[c_type, 3, _, static_c_shape](
+        c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
+    )
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
     var c_host_ref = NDBuffer[c_type, 3, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
+        c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -245,7 +254,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device, c_host.data)
 
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
@@ -285,8 +294,8 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host_ptr, c_device)
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.enqueue_copy(c_host.data, c_device)
+    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
@@ -304,16 +313,8 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     # Cleanup
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
-    _ = a_scales_device^
-    _ = b_scales_device^
 
     _ = a
     _ = b
@@ -330,7 +331,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     K: Int,
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
-](ctx: DeviceContext, m: Int,):
+](ctx: DeviceContext, m: Int,) raises:
     comptime BLOCK_SCALE_K = 128
     comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], 128)
 
@@ -382,15 +383,15 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
         B, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
-    var dynamic_a_shape = DimList(bs, M, K)
-    var dynamic_b_shape = DimList(bs, N, K) if transpose_b else DimList(
-        bs, K, N
-    )
-    var dynamic_c_shape = DimList(bs, M, N)
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_shape = IndexList[3](bs, M, K)
+    var dynamic_b_shape = IndexList[3](bs, N, K) if transpose_b else IndexList[
+        3
+    ](bs, K, N)
+    var dynamic_c_shape = IndexList[3](bs, M, N)
+    var dynamic_a_scales_shape = IndexList[3](
         bs, K // BLOCK_SCALE_K, M_aligned_for_scales
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[3](
         bs, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
     )
 
@@ -408,13 +409,19 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     var b_host = NDBuffer[b_type, 3, _, static_b_shape](
         b_host_ptr, dynamic_b_shape
     )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 3, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
+    var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
     )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
+    var c_host = NDBuffer[c_type, 3, _, static_c_shape](
+        c_host_managed.tensor[update=False]().ptr, dynamic_c_shape
+    )
+    var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
+        ctx,
+    )
     var c_host_ref = NDBuffer[c_type, 3, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
+        c_host_ref_managed.tensor[update=False]().ptr, dynamic_c_shape
     )
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -470,7 +477,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device, c_host.data)
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
@@ -519,8 +526,8 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host_ptr, c_device)
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.enqueue_copy(c_host.data, c_device)
+    ctx.enqueue_copy(c_host_ref.data, c_device_ref)
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
@@ -537,19 +544,11 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     a_host_ptr.free()
     b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
-    _ = a_scales_device^
-    _ = b_scales_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_batched_matmul_sm100_blockwise_scaled_fp8[
             DType.float8_e4m3fn,

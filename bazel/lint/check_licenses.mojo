@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import sys
-from collections import Set
-from pathlib import Path
-from subprocess import run
+import std.sys
+from std.collections import Set
+from std.pathlib import Path
+from std.subprocess import run
 
 # We can't check much more than this at the moment, because the license year
 # changes and the language is not mature enough to do regex yet.
@@ -90,7 +90,7 @@ fn check_path(path: Path, mut files_without_license: List[Path]) raises:
         files_without_license.append(path)
 
 
-def main():
+def main() raises:
     target_paths = sys.argv()
 
     fix = False

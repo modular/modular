@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import size_of
-from itertools import product
+from std.math import ceildiv
+from std.sys import size_of
+from std.itertools import product
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from testing import assert_true
-from utils import IndexList
+from std.testing import assert_true
+from std.utils import IndexList
 
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast
@@ -96,7 +96,7 @@ fn broadcast_test[
     )
     var input_dev = input.device_data.value()
     var in_buf = NDBuffer[dtype, rank, ImmutAnyOrigin](
-        input_dev.unsafe_ptr(), DimList(length)
+        input_dev.unsafe_ptr(), IndexList[rank](length)
     )
 
     # Initialize input buffer with position-based test data on host and copy to device
@@ -123,7 +123,7 @@ fn broadcast_test[
             out_dev_list.append(input_dev)
             out_bufs[i] = NDBuffer[dtype, rank, MutAnyOrigin](
                 input_dev.unsafe_ptr(),
-                DimList(length),
+                IndexList[rank](length),
             )
             continue
 
@@ -131,7 +131,7 @@ fn broadcast_test[
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
         out_dev_list.append(out_ptr)
         out_bufs[i] = NDBuffer[dtype, rank, MutAnyOrigin](
-            out_ptr.unsafe_ptr(), DimList(length)
+            out_ptr.unsafe_ptr(), IndexList[rank](length)
         )
 
     # Signal buffers need payload space for 2-stage broadcast
@@ -226,11 +226,9 @@ fn run_broadcast_sweep[]() raises:
                 raise e^
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
-    if not enable_p2p():
-        print("P2P not enabled, skipping test.")
-        return
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
     run_broadcast_sweep[]()

@@ -29,20 +29,32 @@ Usage:
     mojo -D store_width=8 -D direction=0 bench_p2p_copy.mojo   # custom width
 """
 
-from math import ceildiv
-from sys import env_get_int, env_get_dtype, is_amd_gpu, size_of, simd_width_of
+from std.math import ceildiv
+from std.sys import (
+    get_defined_int,
+    get_defined_dtype,
+    is_amd_gpu,
+    size_of,
+    simd_width_of,
+)
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from comm.sync import enable_p2p
-from gpu import global_idx, grid_dim, MAX_THREADS_PER_BLOCK_METADATA
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu import global_idx, grid_dim, MAX_THREADS_PER_BLOCK_METADATA
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import arg_parse, human_readable_size
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 comptime BLOCK_SIZE = 256
-comptime store_width = env_get_int["store_width", 0]()
+comptime store_width = get_defined_int["store_width", 0]()
 # direction: 0 = unidir push, 1 = unidir pull, 2 = bidir push, 3 = bidir pull
-comptime direction = env_get_int["direction", 0]()
+comptime direction = get_defined_int["direction", 0]()
 comptime _target_address_space = (
     AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 )
@@ -333,7 +345,7 @@ fn _verify[
 
 fn main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
     comptime simd_width = (
         simd_width_of[dtype, target = get_gpu_target()]() if store_width
         == 0 else store_width

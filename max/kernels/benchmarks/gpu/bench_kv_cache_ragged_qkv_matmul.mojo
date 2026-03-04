@@ -11,13 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv
-from random import random_ui64, seed
-from sys import env_get_dtype, env_get_int
+from std.collections import Set
+from std.math import ceildiv
+from std.random import random_ui64, seed
+from std.sys import get_defined_dtype, get_defined_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -26,7 +32,7 @@ from kv_cache.types import (
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from nn.kv_cache_ragged import _fused_qkv_matmul_kv_cache_ragged_impl
-from utils import IndexList
+from std.utils import IndexList
 
 
 fn _get_run_name[
@@ -59,7 +65,7 @@ def execute_kv_cache_ragged_matmul[
     batch_size: Int,
     seq_len: Int,
     use_random_lengths: Bool,
-):
+) raises:
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(
@@ -304,11 +310,11 @@ def execute_kv_cache_ragged_matmul[
     )
 
 
-def main():
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
-    comptime head_dim = env_get_int["head_dim", 128]()
-    comptime num_q_heads = env_get_int["num_q_heads", 128]()
-    comptime num_kv_heads = env_get_int["num_kv_heads", 128]()
+def main() raises:
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime head_dim = get_defined_int["head_dim", 128]()
+    comptime num_q_heads = get_defined_int["num_q_heads", 128]()
+    comptime num_kv_heads = get_defined_int["num_kv_heads", 128]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_lengths = arg_parse("use_random_lengths", False)

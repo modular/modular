@@ -15,14 +15,14 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from comm.allreduce import allreduce
 from comm import MAX_GPUS, Signal, group_start, group_end
-from gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
-from gpu.host import DeviceContext
+from std.gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH, PDLLevel
+from std.gpu.host import DeviceContext
 from internal_utils._utils import ValOrDim, dynamic, static
 
-from utils import IndexList
+from std.utils import IndexList
 from .matmul.gpu import _matmul_gpu
 
-from memory import UnsafePointer
+from std.memory import UnsafePointer
 
 comptime elementwise_epilogue_type = fn[
     input_index: Int, dtype: DType, rank: Int, width: Int, *, alignment: Int
@@ -72,7 +72,9 @@ fn _matmul_allreduce[
     group_start()
 
     comptime for i in range(ngpus):
-        allreduce[ngpus=ngpus, output_lambda = outputs_lambda[input_index=i]](
+        allreduce[
+            ngpus=ngpus, output_lambda = outputs_lambda[input_index=i, ...]
+        ](
             rebind[InlineArray[NDBuffer[out_dtype, 2, ImmutAnyOrigin], ngpus]](
                 c_temp_buffers
             ),
@@ -147,19 +149,19 @@ fn _matmul_allreduce_split_m[
                 a_dtype, 2, ImmutAnyOrigin, a_part_static_shape
             ](
                 a_buffers[i].data + stage * m_part * k,
-                DimList(curr_m, k),
+                IndexList[2](curr_m, k),
             )
             C_parts[i] = NDBuffer[
                 out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 c_temp_buffers[i].data + stage * length,
-                DimList(curr_m, n),
+                IndexList[2](curr_m, n),
             )
             Out_parts[i] = NDBuffer[
                 out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 output_buffers[i].data + stage * length,
-                DimList(curr_m, n),
+                IndexList[2](curr_m, n),
             )
             if stage == 0:
                 _matmul_gpu[
@@ -211,7 +213,7 @@ fn _matmul_allreduce_split_m[
         comptime for i in range(ngpus):
             allreduce[
                 ngpus=ngpus,
-                output_lambda = outputs_lambda_wrapper[input_index=i],
+                output_lambda = outputs_lambda_wrapper[input_index=i, ...],
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
                 rebind[
@@ -293,19 +295,19 @@ fn _matmul_allreduce_split_n[
                 b_dtype, 2, ImmutAnyOrigin, b_part_static_shape
             ](
                 b_buffers[i].data + stage * n_part * k,
-                DimList(n_part, k),
+                IndexList[2](n_part, k),
             )
             C_parts[i] = NDBuffer[
                 out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 c_temp_buffers[i].data + stage * length,
-                DimList(m, n_part),
+                IndexList[2](m, n_part),
             )
             Out_parts[i] = NDBuffer[
                 out_dtype, 2, MutAnyOrigin, c_part_static_shape
             ](
                 output_buffers[i].data + stage * length,
-                DimList(m, n_part),
+                IndexList[2](m, n_part),
             )
             _matmul_gpu[
                 use_tensor_core=True,
@@ -345,7 +347,7 @@ fn _matmul_allreduce_split_n[
         comptime for i in range(ngpus):
             allreduce[
                 ngpus=ngpus,
-                output_lambda = outputs_lambda_wrapper[input_index=i],
+                output_lambda = outputs_lambda_wrapper[input_index=i, ...],
                 pdl_level = PDLLevel.OVERLAP_AT_BEGINNING if overlap_with_dpl else PDLLevel(),
             ](
                 rebind[

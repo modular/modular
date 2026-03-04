@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import source_location
-from gpu.host import DeviceContext
+from std.reflection import source_location
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: == test_gpu_print_formattable
@@ -92,5 +92,5 @@ fn test_gpu_print_formattable() raises:
         ctx.synchronize()
 
 
-def main():
+def main() raises:
     test_gpu_print_formattable()

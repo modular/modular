@@ -24,6 +24,7 @@ from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from PIL import Image
 
 pipeline_config = PipelineConfig(
@@ -33,9 +34,9 @@ pipeline_config = PipelineConfig(
         quantization_encoding="bfloat16",
         trust_remote_code=True,
         max_length=512,
-        kv_cache=KVCacheConfig(cache_strategy="paged"),
+        kv_cache=KVCacheConfig(),
     ),
-    max_batch_size=1,
+    runtime=PipelineRuntimeConfig(max_batch_size=1),
 )
 
 

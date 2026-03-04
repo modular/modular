@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from sys import align_of, is_nvidia_gpu, simd_width_of, size_of
+from std.sys import align_of, is_nvidia_gpu, simd_width_of, size_of
 
-from bit import log2_floor
-from collections import OptionalReg
-from gpu import (
+from std.bit import log2_floor
+from std.collections import OptionalReg
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -26,10 +26,11 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
-from gpu.host.info import is_gpu
-from gpu.memory import (
+from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host.info import is_gpu
+from std.gpu.memory import (
     AddressSpace,
+    async_copy,
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
@@ -52,11 +53,11 @@ from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import warp_split_k_reduction
 from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, block_swizzle
-from memory.unsafe import bitcast
-from runtime.asyncrt import DeviceContextPtr
+from std.memory.unsafe import bitcast
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import Index
-from utils.numerics import get_accum_type
+from std.utils.index import Index
+from std.utils.numerics import get_accum_type
 
 
 @always_inline
@@ -103,7 +104,7 @@ fn multistage_mma_q[
     next_op_b_iter_alignment: Int = align_of[b_type](),
 ](
     c: LayoutTensor[
-        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL
+        mut=True, c_type, c_layout, address_space = AddressSpace.LOCAL, ...
     ],
     a_iter_arg: LayoutTensorIter[_, a_layout, ...],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
@@ -238,7 +239,17 @@ fn multistage_mma_q[
                             1, async_copy_scales_veclen
                         ]().distribute[async_copy_scales_layout](UInt(tid))
 
-                        dst_fragments.copy_from_async[](src_fragments)
+                        comptime element_size_bytes = size_of[
+                            scales_type
+                        ]() * async_copy_scales_veclen
+                        async_copy[element_size_bytes](
+                            src_fragments.ptr.address_space_cast[
+                                AddressSpace.GLOBAL
+                            ](),
+                            dst_fragments.ptr.address_space_cast[
+                                AddressSpace.SHARED
+                            ]().mut_cast[True](),
+                        )
 
                     scales_iter._incr()
 
@@ -463,8 +474,16 @@ fn multistage_mma_q[
                                     UInt(tid)
                                 )
 
-                                dst_fragments.copy_from_async[](
-                                    src_fragments, base_offset=0
+                                comptime element_size_bytes = size_of[
+                                    scales_type
+                                ]() * async_copy_scales_veclen
+                                async_copy[element_size_bytes](
+                                    src_fragments.ptr.address_space_cast[
+                                        AddressSpace.GLOBAL
+                                    ](),
+                                    dst_fragments.ptr.address_space_cast[
+                                        AddressSpace.SHARED
+                                    ]().mut_cast[True](),
                                 )
 
                             scales_iter._incr()
@@ -564,6 +583,7 @@ fn multistage_qgemm_kernel[
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
         circular=True,
@@ -587,6 +607,7 @@ fn multistage_qgemm_kernel[
     comptime IteratorTypeB = LayoutTensorIter[
         b_type,
         b_smem_layout,
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -610,6 +631,7 @@ fn multistage_qgemm_kernel[
     comptime IteratorTypeScales = LayoutTensorIter[
         scales_type,
         scales_smem_layout,
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]

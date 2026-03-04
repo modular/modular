@@ -21,12 +21,12 @@ Note: These are low-level primitives that correspond directly to PTX/NVVM instru
 with careful consideration of the underlying hardware synchronization mechanisms.
 """
 
-from sys import _RegisterPackType, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
+from std.sys import _RegisterPackType, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
 
 
-from utils.index import IndexList, product
+from std.utils.index import IndexList, product
 
 # ===-----------------------------------------------------------------------===#
 #  1D ctaid in a cluster
@@ -216,7 +216,7 @@ fn cluster_sync_release():
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_is_canceled(
     result: UnsafePointer[
-        mut=True, UInt128, address_space = AddressSpace.SHARED
+        mut=True, UInt128, _, address_space = AddressSpace.SHARED
     ]
 ) -> UInt32:
     """Decodes the cancellation request.
@@ -255,7 +255,7 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
     id: String
 ](
     result: UnsafePointer[
-        mut=True, UInt128, address_space = AddressSpace.SHARED
+        mut=True, UInt128, _, address_space = AddressSpace.SHARED
     ]
 ) -> UInt32:
     """Decodes the cancellation request.
@@ -302,7 +302,7 @@ fn clusterlaunchcontrol_query_cancel_get_first_ctaid[
 @always_inline("nodebug")
 fn clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
     result: UnsafePointer[
-        mut=True, UInt128, address_space = AddressSpace.SHARED
+        mut=True, UInt128, _, address_space = AddressSpace.SHARED
     ],
 ) -> Tuple[UInt32, UInt32, UInt32]:
     """Decodes the cancellation request.
@@ -344,9 +344,11 @@ fn clusterlaunchcontrol_try_cancel[
     multicast: Bool = False
 ](
     result: UnsafePointer[
-        mut=True, UInt128, address_space = AddressSpace.SHARED
+        mut=True, UInt128, _, address_space = AddressSpace.SHARED
     ],
-    mbar: UnsafePointer[mut=True, Int64, address_space = AddressSpace.SHARED],
+    mbar: UnsafePointer[
+        mut=True, Int64, _, address_space = AddressSpace.SHARED
+    ],
 ):
     """Requests to atomically cancel the cluster launch if it has not started running yet.
 

@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from pathlib import Path
-from sys import size_of
+from std.pathlib import Path
+from std.sys import size_of
 
 from layout import Layout, LayoutTensor
 from layout.swizzle import Swizzle

@@ -20,6 +20,7 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
+import transformers
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -28,10 +29,8 @@ from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.float8_config import (
-    Float8Config,
-)
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.float8_config import Float8Config
+from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
@@ -40,6 +39,9 @@ from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack
 from transformers.models.llama.configuration_llama import LlamaConfig
+
+# This version is detached from the one pulled from rules_pycross, assert that the override is working.
+assert transformers.__version__ == "4.57.6"
 
 RTOL = 0.006
 ATOL = 0.006
@@ -233,10 +235,7 @@ def generate_max_outputs_fp4(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    kv_cache_args = kv_params.get_symbolic_inputs()
-    flattened_kv_types = [
-        kv_type for sublist in kv_cache_args for kv_type in sublist
-    ]
+    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
 
     session = InferenceSession(devices=[Accelerator()])
 
@@ -258,13 +257,9 @@ def generate_max_outputs_fp4(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        # Unflatten KV cache inputs
-        kv_collection = PagedCacheValues(
-            kv_blocks=kv_cache[0].buffer,
-            cache_lengths=kv_cache[1].tensor,
-            lookup_table=kv_cache[2].tensor,
-            max_lengths=kv_cache[3].tensor,
-        )
+        kv_collection = unflatten_ragged_attention_inputs(
+            kv_cache, n_devices=1
+        )[0]
 
         # Create layer_idx constant
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
@@ -286,11 +281,10 @@ def generate_max_outputs_fp4(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0)
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.runtime_inputs(
-            cast(list[list[TextGenerationContext]], [batch])
-        )[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs(
+        cast(list[list[TextGenerationContext]], [batch])
+    ).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     # Prepare inputs - flatten batch and sequence dimensions
     input_tensor_flat = input_tensor[0].reshape(-1, config.hidden_size)
@@ -299,10 +293,11 @@ def generate_max_outputs_fp4(
     out = compiled.execute(
         Buffer.from_dlpack(input_tensor_flat).to(device),
         Buffer.from_numpy(input_row_offsets_input).to(device),
-        blocks.to(device),
-        cache_lengths.to(device),
-        lookup_table_tensor.to(device),
-        is_cache_empty_buf,
+        kv_runtime_inputs.blocks.to(device),
+        kv_runtime_inputs.cache_lengths.to(device),
+        kv_runtime_inputs.lookup_table.to(device),
+        kv_runtime_inputs.max_lengths,
+        kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
     return from_dlpack(out).to(torch.bfloat16)
 

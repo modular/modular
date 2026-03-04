@@ -13,9 +13,9 @@
 
 """Shared utilities for MO interpreter Mojo kernel wrappers."""
 
-from python import PythonObject
-from memory import OpaquePointer
-from algorithm.functional import IndexList
+from std.python import PythonObject
+from std.memory import OpaquePointer
+from std.algorithm.functional import IndexList
 
 
 comptime MAX_RANK = 5

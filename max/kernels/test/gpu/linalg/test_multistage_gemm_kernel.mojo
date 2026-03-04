@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host import DeviceContext, FuncAttribute
 from layout import Layout
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
@@ -60,7 +60,7 @@ fn multistage_gemm_simple[
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         multistage_gemm_simple[
             1024,

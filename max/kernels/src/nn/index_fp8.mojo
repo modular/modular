@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys import size_of, simd_width_of
-from math import ceildiv
+from std.sys import size_of, simd_width_of
+from std.math import ceildiv
 from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout.layout_tensor import (
     LayoutTensor,
@@ -21,15 +21,15 @@ from layout.layout_tensor import (
     copy_local_to_shared,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile, SharedMemBarrier
-from gpu import block_idx, thread_idx, MAX_THREADS_PER_BLOCK_METADATA
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.sync import barrier
-from gpu.memory import external_memory
+from std.gpu import block_idx, thread_idx, MAX_THREADS_PER_BLOCK_METADATA
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.sync import barrier
+from std.gpu.memory import external_memory
 from nn.mha_operand import RaggedMHAOperand, MHAOperand
 from nn.mha_fa3_utils import q_tma
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
@@ -93,8 +93,7 @@ fn fp8_index_kernel[
 
     var num_keys = k_operand.cache_length(Int(batch_idx))
 
-    @parameter
-    if not _is_cache_length_accurate:
+    comptime if not _is_cache_length_accurate:
         num_keys += Int(seq_len)
 
     if seq_offset >= UInt(seq_len) or key_offset >= UInt(num_keys):

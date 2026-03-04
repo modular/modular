@@ -30,6 +30,7 @@ def mock_pipeline_config(
 ) -> NonCallableMock:
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
+    pipeline_config.runtime = MagicMock()
     pipeline_config.model.quantization_encoding = quantization_encoding
     pipeline_config.model.kv_cache.cache_dtype = DType.bfloat16
     pipeline_config.model.data_parallel_degree = NUM_RANKS
@@ -38,11 +39,11 @@ def mock_pipeline_config(
     ]
 
     # Pipeline config attributes
-    pipeline_config.pipeline_role = pipeline_role
+    pipeline_config.runtime.pipeline_role = pipeline_role
     pipeline_config.model.max_length = 1024 * 1024  # ~million tokens
-    pipeline_config.max_batch_total_tokens = None
-    pipeline_config.ep_size = NUM_RANKS
-    pipeline_config.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
+    pipeline_config.runtime.max_batch_total_tokens = None
+    pipeline_config.runtime.ep_size = NUM_RANKS
+    pipeline_config.runtime.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
 
     return pipeline_config
 
@@ -128,6 +129,7 @@ def mock_weights_pipeline_config(
 
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
+    pipeline_config.runtime = MagicMock()
     pipeline_config.model.quantization_encoding = "float8_e4m3fn"
     pipeline_config.model.data_parallel_degree = dp_degree
     pipeline_config.model.device_specs = [
@@ -137,7 +139,7 @@ def mock_weights_pipeline_config(
     # Use a large enough weights size to account for the algorithm's subtractions.
     # DeepSeek-V3 has ~671B parameters, ~700GB at FP8.
     pipeline_config.model.weights_size.return_value = 700 * 1024**3
-    pipeline_config.ep_size = ep_size
+    pipeline_config.runtime.ep_size = ep_size
 
     return pipeline_config
 

@@ -14,11 +14,11 @@
 
 from buffer import Dim, DimList
 from layout import Layout, LayoutTensor, RuntimeLayout
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
-from testing import assert_equal
-from utils.index import Index
+from std.testing import assert_equal
+from std.utils.index import Index
 
 
 fn test_static_layout() raises:
@@ -39,7 +39,7 @@ fn test_static_layout() raises:
 fn test_dynamic_layout() raises:
     """Dynamic 2D layout: first dim unknown at compile time."""
     print("--- test_dynamic_layout ---")
-    comptime dynamic_layout = Layout.row_major[2](DimList(Dim(), Dim(8)))
+    comptime dynamic_layout = Layout.row_major[dims = DimList(Dim(), Dim(8))]()
 
     var array = InlineArray[Float32, 32](fill=2.0)
     var lt = LayoutTensor[DType.float32, dynamic_layout](
@@ -57,7 +57,7 @@ fn test_dynamic_layout() raises:
 fn test_fully_dynamic_layout() raises:
     """Fully dynamic 2D layout: both dims unknown at compile time."""
     print("--- test_fully_dynamic_layout ---")
-    comptime dynamic_layout = Layout.row_major[2](DimList(Dim(), Dim()))
+    comptime dynamic_layout = Layout.row_major[dims = DimList(Dim(), Dim())]()
 
     var array = InlineArray[Float32, 24](fill=3.0)
     var lt = LayoutTensor[DType.float32, dynamic_layout](
@@ -72,7 +72,7 @@ fn test_fully_dynamic_layout() raises:
     print("  PASSED")
 
 
-def main():
+def main() raises:
     test_static_layout()
     test_dynamic_layout()
     test_fully_dynamic_layout()

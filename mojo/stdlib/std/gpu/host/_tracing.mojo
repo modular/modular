@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from pathlib import Path
-from sys import (
+from std.os import abort
+from std.pathlib import Path
+from std.sys import (
     has_accelerator,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     size_of,
 )
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle, _try_find_dylib
-from sys.param_env import env_get_int
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle, _try_find_dylib
+from std.sys.defines import get_defined_int
 
-from utils.variant import Variant
+from std.utils.variant import Variant
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -414,13 +414,13 @@ struct _RangePop:
 fn _is_enabled_details() -> Bool:
     return (
         has_accelerator()
-        and env_get_int["MODULAR_ENABLE_GPU_PROFILING_DETAILED", 0]() == 1
+        and get_defined_int["MODULAR_ENABLE_GPU_PROFILING_DETAILED", 0]() == 1
     )
 
 
 fn _is_enabled() -> Bool:
     return has_accelerator() and (
-        env_get_int["MODULAR_ENABLE_GPU_PROFILING", 0]() == 1
+        get_defined_int["MODULAR_ENABLE_GPU_PROFILING", 0]() == 1
         or _is_enabled_details()
     )
 

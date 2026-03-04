@@ -10,7 +10,7 @@ They represent multi-dimensional arrays of numbers used for model inputs,
 outputs, and parameters.
 
 If you're coming from NumPy, think of a MAX
-[`Tensor`](/max/api/python/tensor#max.experimental.tensor.Tensor) like
+[`Tensor`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor) like
 a NumPy [`ndarray`](https://numpy.org/devdocs/reference/arrays.ndarray.html#arrays-ndarray).
 
 A tensor is a multi-dimensional array of numbers. You can think of tensors as:
@@ -23,31 +23,29 @@ A tensor is a multi-dimensional array of numbers. You can think of tensors as:
 :::tip Coming from PyTorch or NumPy?
 
 There are some key differences between tensors in MAX and tensors in PyTorch or
-NumPy. For example, tensors in MAX are created using the `Tensor.constant()`
-function instead of direct construction, many math operations use the functional
-API (`F.sqrt()` instead of `.sqrt()`), and reduction operations keep dimensions
-by default.
+NumPy. For example, many math operations use the functional API (`F.sqrt()`
+instead of `.sqrt()`), and reduction operations keep dimensions by default.
 
 :::
 
 ## Create a tensor
 
-You can create a tensor from a Python list using the [`Tensor.constant()`](/max/api/python/tensor#max.experimental.tensor.Tensor.constant) function:
+You can create a tensor from a Python list using the [`Tensor()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor) constructor:
 
 {/* @sync: _examples/tensors/create_first_tensor.py */}
 ```python
 from max.experimental.tensor import Tensor
 
 # Create a simple 1-D tensor (a vector)
-x = Tensor.constant([1, 2, 3, 4, 5])
+x = Tensor([1, 2, 3, 4, 5])
 
 print(x)
 ```
 
-This imports the [`Tensor`](/max/api/python/tensor#max.experimental.tensor.Tensor) class and
+This imports the [`Tensor`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor) class and
 creates a 1-D tensor (a vector) with the values `[1, 2, 3, 4, 5]`. The
-`constant()` function creates a tensor from a tensor-like object; meaning, it
-can be a list, a NumPy array, or a PyTorch tensor.
+`Tensor()` constructor creates a tensor from a tensor-like object—it can be a
+list, a NumPy array, or a PyTorch tensor.
 
 The expected output is:
 
@@ -57,7 +55,7 @@ TensorType(dtype=float32, shape=[Dim(5)], device=cpu:0): [1.0, 2.0, 3.0, 4.0, 5.
 
 :::note Performance note
 
-`Tensor.constant()` performance optimizations are still being improved. In the
+`Tensor(data)` performance optimizations are still being improved. In the
 meantime, if you need better performance when creating tensors on accelerators,
 use:
 
@@ -89,11 +87,11 @@ You can also create tensors with any number of dimensions by nesting lists:
 from max.experimental.tensor import Tensor
 
 # Create a 2-D tensor (a matrix)
-matrix = Tensor.constant([[1, 2, 3], [4, 5, 6]])
+matrix = Tensor([[1, 2, 3], [4, 5, 6]])
 print(matrix)
 
 # Create a 3-D tensor (a cube of numbers)
-cube = Tensor.constant([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
+cube = Tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
 print(cube)
 ```
 
@@ -105,8 +103,8 @@ TensorType(dtype=float32, shape=[Dim(2), Dim(2), Dim(2)], device=cpu:0): [1.0, 2
 ```
 
 MAX provides convenient functions for creating tensors with specific patterns,
-such as [`ones()`](/max/api/python/tensor#max.experimental.tensor.Tensor.ones)
-and [`zeros()`](/max/api/python/tensor#max.experimental.tensor.Tensor.zeros):
+such as [`ones()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.ones)
+and [`zeros()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.zeros):
 
 {/* @sync: _examples/tensors/create_factory.py */}
 ```python
@@ -130,8 +128,8 @@ TensorType(dtype=float32, shape=[Dim(3), Dim(4)], device=cpu:0): [1.0, 1.0, 1.0,
 TensorType(dtype=float32, shape=[Dim(2), Dim(3)], device=cpu:0): [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 ```
 
-For random data, you can use one of several functions from the [`random`](/max/api/python/random) module,
-such as [`random.normal()`](/max/api/python/random#max.experimental.random.normal):
+For random data, you can use one of several functions from the [`random`](/max/api/python/experimental/random) module,
+such as [`random.normal()`](/max/api/python/experimental/random#max.experimental.random.normal):
 
 {/* @sync: _examples/tensors/create_random.py */}
 ```python
@@ -183,15 +181,15 @@ where each number represents the size along that dimension:
 from max.experimental.tensor import Tensor
 
 # 1-D tensor
-x = Tensor.constant([1, 2, 3, 4])
+x = Tensor([1, 2, 3, 4])
 print(x.shape)
 
 # 2-D tensor
-matrix = Tensor.constant([[1, 2, 3], [4, 5, 6]])
+matrix = Tensor([[1, 2, 3], [4, 5, 6]])
 print(matrix.shape)
 
 # 3-D tensor
-cube = Tensor.constant([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
+cube = Tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
 print(cube.shape)
 ```
 
@@ -203,7 +201,7 @@ The expected output is:
 [Dim(2), Dim(2), Dim(2)]
 ```
 
-In this example, the [`shape`](/max/api/python/tensor#max.experimental.tensor.Tensor.shape)
+In this example, the [`shape`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.shape)
 property returns a list of `Dim` objects representing the size of each dimension.
 
 ### Rank
@@ -215,10 +213,10 @@ tensor has:
 ```python
 from max.experimental.tensor import Tensor
 
-scalar = Tensor.constant([42])  # Rank 1 (it's a 1-element vector)
-vector = Tensor.constant([1, 2, 3])  # Rank 1
-matrix = Tensor.constant([[1, 2], [3, 4]])  # Rank 2
-cube = Tensor.constant([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])  # Rank 3
+scalar = Tensor([42])  # Rank 1 (it's a 1-element vector)
+vector = Tensor([1, 2, 3])  # Rank 1
+matrix = Tensor([[1, 2], [3, 4]])  # Rank 2
+cube = Tensor([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])  # Rank 3
 
 print(vector.rank)  # 1
 print(matrix.rank)  # 2
@@ -272,7 +270,7 @@ You can check how many numbers are stored in the tensor:
 ```python
 from max.experimental.tensor import Tensor
 
-t = Tensor.constant([[1, 2, 3], [4, 5, 6]])
+t = Tensor([[1, 2, 3], [4, 5, 6]])
 print(t.num_elements())  # 6 (2 rows × 3 columns)
 ```
 
@@ -282,7 +280,7 @@ In this example, the expected output is:
 6
 ```
 
-The [`num_elements()`](/max/api/python/tensor#max.experimental.tensor.Tensor.num_elements) function returns the total number of elements in the
+The [`num_elements()`](/max/api/python/experimental/tensor#max.experimental.tensor.Tensor.num_elements) function returns the total number of elements in the
 tensor, which is the product of the dimensions.
 
 ## Next steps

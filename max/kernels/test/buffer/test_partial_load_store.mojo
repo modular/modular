@@ -13,13 +13,13 @@
 
 from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.dimlist import DimList
-from testing import TestSuite
+from std.testing import TestSuite
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # CHECK-LABEL: test_partial_load_store
-def test_partial_load_store():
+def test_partial_load_store() raises:
     print("== test_partial_load_store")
     # The total amount of data to allocate
     comptime total_buffer_size: Int = 32
@@ -100,5 +100,5 @@ def test_partial_load_store():
     print(nd_partial_store_data)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

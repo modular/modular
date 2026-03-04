@@ -11,12 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import global_perf_counter_ns, perf_counter_ns, sleep, time_function
+from std.time import (
+    global_perf_counter_ns,
+    perf_counter_ns,
+    sleep,
+    time_function,
+)
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.intrinsics import *
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.intrinsics import *
+from std.testing import *
 
 
 fn clock_functions():
@@ -35,28 +40,28 @@ fn _verify_clock_functions_amd(asm: StringSlice) raises -> None:
     assert_true("s_memtime" in asm)
 
 
-def test_clock_functions_sm80():
+def test_clock_functions_sm80() raises:
     var asm = _compile_code[
         clock_functions, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_clock_functions_nvidia(asm)
 
 
-def test_clock_functions_sm90():
+def test_clock_functions_sm90() raises:
     var asm = _compile_code[
         clock_functions, target = get_gpu_target["sm_90"]()
     ]().asm
     _verify_clock_functions_nvidia(asm)
 
 
-def test_clock_functions_gfx942():
+def test_clock_functions_gfx942() raises:
     var asm = _compile_code[
         clock_functions, target = get_gpu_target["gfx942"]()
     ]().asm
     _verify_clock_functions_amd(asm)
 
 
-def test_clock_functions_gfx950():
+def test_clock_functions_gfx950() raises:
     var asm = _compile_code[
         clock_functions, target = get_gpu_target["gfx950"]()
     ]().asm
@@ -79,28 +84,28 @@ fn _verify_global_clock_functions_amd(asm: StringSlice) raises -> None:
     assert_true("s_memrealtime" in asm)
 
 
-def test_global_clock_functions_sm80():
+def test_global_clock_functions_sm80() raises:
     var asm = _compile_code[
         global_clock_functions, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_global_clock_functions_nvidia(asm)
 
 
-def test_global_clock_functions_sm90():
+def test_global_clock_functions_sm90() raises:
     var asm = _compile_code[
         global_clock_functions, target = get_gpu_target["sm_90"]()
     ]().asm
     _verify_global_clock_functions_nvidia(asm)
 
 
-def test_global_clock_functions_gfx942():
+def test_global_clock_functions_gfx942() raises:
     var asm = _compile_code[
         global_clock_functions, target = get_gpu_target["gfx942"]()
     ]().asm
     _verify_global_clock_functions_amd(asm)
 
 
-def test_global_clock_functions_gfx950():
+def test_global_clock_functions_gfx950() raises:
     var asm = _compile_code[
         global_clock_functions, target = get_gpu_target["gfx950"]()
     ]().asm
@@ -126,14 +131,14 @@ fn _verify_time_functions(asm: StringSlice) raises -> None:
     assert_true("add.s64" in asm)
 
 
-def test_time_functions_sm80():
+def test_time_functions_sm80() raises:
     var asm = _compile_code[
         time_functions, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_time_functions(asm)
 
 
-def test_time_functions_sm90():
+def test_time_functions_sm90() raises:
     var asm = _compile_code[
         time_functions, target = get_gpu_target["sm_90"]()
     ]().asm
@@ -170,33 +175,33 @@ fn _verify_sleep_function_amd(asm: StringSlice) raises -> None:
     assert_true("s_sleep" in asm, "Expected s_sleep instruction")
 
 
-def test_sleep_function_sm80():
+def test_sleep_function_sm80() raises:
     var asm = _compile_code[
         sleep_function, target = get_gpu_target["sm_80"]()
     ]().asm
     _verify_sleep_function_nvidia(asm)
 
 
-def test_sleep_function_sm90():
+def test_sleep_function_sm90() raises:
     var asm = _compile_code[
         sleep_function, target = get_gpu_target["sm_90"]()
     ]().asm
     _verify_sleep_function_nvidia(asm)
 
 
-def test_sleep_function_gfx942():
+def test_sleep_function_gfx942() raises:
     var asm = _compile_code[
         sleep_function, target = get_gpu_target["gfx942"]()
     ]().asm
     _verify_sleep_function_amd(asm)
 
 
-def test_sleep_function_gfx950():
+def test_sleep_function_gfx950() raises:
     var asm = _compile_code[
         sleep_function, target = get_gpu_target["gfx950"]()
     ]().asm
     _verify_sleep_function_amd(asm)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

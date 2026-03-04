@@ -16,18 +16,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Generic,
-    Protocol,
-    TypeAlias,
-    TypeGuard,
-    overload,
-    runtime_checkable,
-)
+from typing import Any, Generic, Protocol, TypeAlias, cast, runtime_checkable
 
 from max.driver import Buffer
-from max.graph import BufferType, BufferValue, TensorType, TensorValue
+from max.dtype import DType
+from max.graph import BufferType, BufferValue, TensorType, TensorValue, Value
 from typing_extensions import TypeVar
 
 logger = logging.getLogger("max.pipelines")
@@ -76,6 +69,29 @@ IterableInputSymbols: TypeAlias = NestedIterableDataclass[
 ]
 
 
+_DispatchMetadataT = TypeVar("_DispatchMetadataT", TensorType, TensorValue)
+
+
+@dataclass
+class AttentionDispatchMetadata(
+    NestedIterableDataclass[_DispatchMetadataT],
+    Generic[_DispatchMetadataT],
+):
+    tensor: _DispatchMetadataT
+
+    def __post_init__(self) -> None:
+        if self.tensor.dtype != DType.int64:
+            raise ValueError(
+                "expected attention_dispatch_metadata dtype int64, got "
+                f"{self.tensor.dtype}"
+            )
+        if self.tensor.rank != 1:
+            raise ValueError(
+                "expected attention_dispatch_metadata rank 1, got "
+                f"{self.tensor.rank}"
+            )
+
+
 @dataclass
 class PagedCacheInputSymbols(IterableInputSymbols):
     kv_blocks: BufferType
@@ -83,6 +99,7 @@ class PagedCacheInputSymbols(IterableInputSymbols):
     lookup_table: TensorType
     max_lengths: TensorType
     kv_scales: BufferType | None = None  # KV scales for FP8 quantization
+    dispatch_metadata: AttentionDispatchMetadata[TensorType] | None = None
 
 
 @dataclass
@@ -92,6 +109,104 @@ class PagedCacheValues(NestedIterableDataclass[BufferValue | TensorValue]):
     lookup_table: TensorValue
     max_lengths: TensorValue
     kv_scales: BufferValue | None = None  # KV scales for FP8 quantization
+    dispatch_metadata: AttentionDispatchMetadata[TensorValue] | None = None
+
+    def __iter__(self) -> Iterator[BufferValue | TensorValue]:
+        # Canonical paged KV ABI order.
+        yield self.kv_blocks
+        yield self.cache_lengths
+        yield self.lookup_table
+        yield self.max_lengths
+        if self.kv_scales is not None:
+            yield self.kv_scales
+
+
+def unflatten_ragged_attention_inputs(
+    kv_inputs_flat: Sequence[Any], *, n_devices: int
+) -> list[PagedCacheValues]:
+    """Unmarshals flattened KV graph inputs into typed cache values.
+
+    Args:
+        kv_inputs_flat: Flattened graph values for all KV inputs.
+            Elements may be ``Value`` instances or ``Tensor``-like objects
+            with a ``_graph_value`` attribute.
+        n_devices: Number of devices represented in ``kv_inputs_flat``.
+    """
+    # Extract graph values from Tensor-like objects.
+    kv_inputs_flat = [
+        v._graph_value if hasattr(v, "_graph_value") else v
+        for v in kv_inputs_flat
+    ]
+
+    if n_devices <= 0:
+        raise ValueError(f"n_devices must be positive, got {n_devices}")
+
+    if len(kv_inputs_flat) % n_devices != 0:
+        raise ValueError(
+            "unexpected flattened KV input length: expected a multiple of "
+            f"{n_devices}, got {len(kv_inputs_flat)}"
+        )
+
+    if any(not isinstance(value, Value) for value in kv_inputs_flat):
+        raise TypeError("kv_inputs_flat must contain max.graph.Value instances")
+
+    fields_per_device = len(kv_inputs_flat) // n_devices
+    if fields_per_device not in (5, 6):
+        raise ValueError(
+            f"fields_per_device must be 5 or 6, got {fields_per_device}"
+        )
+
+    has_kv_scales = fields_per_device == 6
+    kv_caches_per_dev: list[PagedCacheValues] = []
+    for i in range(n_devices):
+        start_idx = i * fields_per_device
+        next_idx = start_idx + 4
+        kv_scales = None
+        if has_kv_scales:
+            kv_scales = kv_inputs_flat[next_idx].buffer
+            next_idx += 1
+
+        metadata = AttentionDispatchMetadata(
+            cast(TensorValue, kv_inputs_flat[next_idx].tensor)
+        )
+
+        kv_caches_per_dev.append(
+            PagedCacheValues(
+                kv_blocks=kv_inputs_flat[start_idx].buffer,
+                cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
+                lookup_table=kv_inputs_flat[start_idx + 2].tensor,
+                max_lengths=kv_inputs_flat[start_idx + 3].tensor,
+                kv_scales=kv_scales,
+                dispatch_metadata=metadata,
+            )
+        )
+
+    return kv_caches_per_dev
+
+
+def attention_dispatch_metadata(
+    kv_collection: PagedCacheValues,
+    *,
+    device_idx: int | None = None,
+) -> AttentionDispatchMetadata[TensorValue]:
+    dispatch_metadata = kv_collection.dispatch_metadata
+    if dispatch_metadata is not None:
+        return dispatch_metadata
+
+    location = "" if device_idx is None else f" for device {device_idx}"
+    raise ValueError(
+        "Expected AttentionDispatchMetadata in kv_collection.dispatch_metadata"
+        f"{location}."
+    )
+
+
+def attention_dispatch_metadata_list(
+    kv_collections: Sequence[PagedCacheValues],
+) -> list[AttentionDispatchMetadata[TensorValue]]:
+    return [
+        attention_dispatch_metadata(kv_collection, device_idx=i)
+        for i, kv_collection in enumerate(kv_collections)
+    ]
 
 
 @runtime_checkable
@@ -106,16 +221,16 @@ class FlattenableInputSymbols(Protocol):
 
 @dataclass
 class PagedCacheInputSymbolsByReplica(
-    Sequence[PagedCacheInputSymbols], FlattenableInputSymbols
+    Sequence[IterableInputSymbols], FlattenableInputSymbols
 ):
     """A class that holds the symbolic inputs for the paged ache for all replicas.
 
     This is separate from `MultiKVCacheInputSymbols` for more convenient typing.
     """
 
-    values: list[PagedCacheInputSymbols]
+    values: Sequence[IterableInputSymbols]
 
-    def __iter__(self) -> Iterator[PagedCacheInputSymbols]:
+    def __iter__(self) -> Iterator[IterableInputSymbols]:
         return iter(self.values)
 
     def __getitem__(self, index: int | slice) -> Any:
@@ -153,72 +268,10 @@ class MultiKVCacheInputSymbols(
         return items
 
 
-_T = TypeVar("_T")
-
-
-def _is_sequence_of(x: Any, ty: type[_T]) -> TypeGuard[Sequence[_T]]:
-    return isinstance(x, Sequence) and all(isinstance(item, ty) for item in x)
-
-
 @dataclass
-class KVCacheInputs:
-    """A base class that holds KV cache related (Tensor) inputs.
-
-    It is meant to be subclassed by concrete KV cache input types.
-    For example, here's a derived class for a text KV cache manager:
-
-    .. code-block:: python
-
-        @dataclass
-        class RaggedKVCacheInputs(KVCacheInputs):
-            blocks: Buffer
-            cache_lengths: Buffer
-            lookup_table: Buffer
-            max_lengths: Buffer
-    """
-
-    def __iter__(self) -> Iterator[Buffer]:
-        """Iterates through each Type in order."""
-        for field in self.__dataclass_fields__:
-            value = getattr(self, field)
-            if value is None:
-                continue
-            if isinstance(value, KVCacheInputs):
-                yield from value
-            elif _is_sequence_of(value, KVCacheInputs):
-                for item in value:
-                    yield from item
-            else:
-                assert isinstance(value, Buffer)
-                yield value
-
-    @overload
-    def __getitem__(self, index: int) -> Buffer: ...
-
-    @overload
-    def __getitem__(self, index: slice) -> Sequence[Buffer]: ...
-
-    def __getitem__(self, index: Any) -> Any:
-        return list(self)[index]
-
-    def __len__(self) -> int:
-        count = 0
-        # Iterate over all fields in the dataclass. If we run into a sequence of
-        # KVCacheInputs, we expand and recursively call `len` on the KVCacheInputs
-        # elements.
-        for field in self.__dataclass_fields__:
-            value = getattr(self, field)
-            if _is_sequence_of(value, KVCacheInputs):
-                count += sum(len(x) for x in value)
-            else:
-                count += 1
-        return count
-
-
-@dataclass
-class RaggedKVCacheInputs(KVCacheInputs):
-    """``RaggedKVCacheInputs`` is a class that holds the inputs for
-    KV cache when used together with ragged tensors.
+class KVCacheInputsPerDevice:
+    """``KVCacheInputsPerDevice`` is a class that holds the KV cache inputs for
+    a single device.
     """
 
     blocks: Buffer
@@ -226,14 +279,37 @@ class RaggedKVCacheInputs(KVCacheInputs):
     lookup_table: Buffer
     max_lengths: Buffer
     kv_scales: Buffer | None = None  # Scale tensor for FP8 quantization
+    attention_dispatch_metadata: Buffer | None = None
+
+    def __iter__(self) -> Iterator[Buffer]:
+        yield from self.as_list()
+
+    def as_list(self) -> list[Buffer]:
+        return [
+            self.blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_lengths,
+            *((self.kv_scales,) if self.kv_scales else ()),
+            *(
+                (self.attention_dispatch_metadata,)
+                if self.attention_dispatch_metadata
+                else ()
+            ),
+        ]
 
 
 @dataclass
-class KVCacheInputsSequence(KVCacheInputs):
-    """``KVCacheInputsSequence`` is a sequence of :obj:`KVCacheInputs`.
+class KVCacheInputs:
+    """``KVCacheInputs`` is a sequence of :obj:`KVCacheInputsPerDevice`.
 
-    It is primarily used in our multistep execution to represent batched
-    KVCacheInputs.
+    The number of `KVCacheInputsPerDevice` in the sequence is equal to the
+    number of devices used to run the model. For example, if the model is run
+    with DP=2 + TP=4 then there will be 8 items in the list.
     """
 
-    kv_cache_inputs: Sequence[KVCacheInputs]
+    inputs: Sequence[KVCacheInputsPerDevice]
+
+    def __iter__(self) -> Iterator[Buffer]:
+        for input in self.inputs:
+            yield from input

@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from pathlib import Path
-from ffi import _find_dylib
-from ffi import _get_dylib_function as _ffi_get_dylib_function
-from ffi import _Global, OwnedDLHandle
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import _find_dylib
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle
 
-from gpu.host._amdgpu_hip import hipStream_t
+from std.gpu.host._amdgpu_hip import hipStream_t
 
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 comptime OpaquePointer = LegacyUnsafePointer[
     mut=True, NoneType, origin=MutAnyOrigin
 ]
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 comptime hipblasLtHandle_t = OpaquePointer
 comptime hipblasLtMatmulDesc_t = OpaquePointer
@@ -483,7 +483,7 @@ fn hipblasLtMatmul(
 @always_inline
 fn _check_hipblas_error(status: Status) raises:
     if status != Status.SUCCESS:
-        raise Error(String("HIPBLASLT ERROR:", status))
+        raise Error(t"HIPBLASLT ERROR:{status}")
 
 
 @always_inline

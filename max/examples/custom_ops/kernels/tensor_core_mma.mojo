@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys.info import (
+from std.math import ceildiv
+from std.sys.info import (
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     simd_width_of,
 )
 
 from compiler_internal import register
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -29,11 +29,11 @@ from gpu import (
     thread_idx,
     warp_id,
 )
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import AddressSpace, async_copy_wait_all
-from gpu.sync import AMDScheduleBarrierMask
-from gpu.sync import schedule_barrier as amd_schedule_barrier
-from gpu.sync import schedule_group_barrier
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.memory import AddressSpace, async_copy_wait_all
+from std.gpu.sync import AMDScheduleBarrierMask
+from std.gpu.sync import schedule_barrier as amd_schedule_barrier
+from std.gpu.sync import schedule_group_barrier
 
 # Import AMD helper functions and structs from the kernels subdirectory
 
@@ -61,11 +61,11 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-from utils import StaticTuple
-from utils.index import Index, IndexList
+from std.utils import StaticTuple
+from std.utils.index import Index, IndexList
 
 
 @compiler.register("tensor_core_mma")

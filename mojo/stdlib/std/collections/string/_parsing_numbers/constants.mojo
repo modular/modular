@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
+from std.collections import InlineArray
 
-from builtin.globals import global_constant
+from std.builtin.globals import global_constant
 
 # TODO: Generate those at compile-time when the interpreter
 # is able to do so.

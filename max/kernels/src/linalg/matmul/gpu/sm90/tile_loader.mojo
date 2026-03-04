@@ -27,20 +27,20 @@ interface for the matmul kernel's producer threads.
 """
 from layout.tma_async import TMATensorTile
 from layout.layout_tensor import LayoutTensor
-from gpu.memory import (
+from std.gpu.memory import (
     AddressSpace,
     async_copy,
 )
 from ....structuring import SharedMemBarrier, SMemBarrier, SMemTile
 from layout.swizzle import make_swizzle
-from gpu import thread_idx
-from gpu.globals import WARPGROUP_SIZE
-from gpu.sync import async_copy_arrive
-from ..sm100_structured.structured_kernels.pipeline import (
+from std.gpu import thread_idx
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.sync import async_copy_arrive
+from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
-from sys import simd_width_of
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.sys import simd_width_of
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.layout import coalesce
 
 
@@ -247,7 +247,10 @@ struct TileLoaderTMA[
             (k_elements, row/col_elements) for TMA's K-major ordering.
         """
         # Switch coordinates to k-minor and multiply k by BK to match the CPAsync API.
-        var coords = (_coords[1] * Self.BK, _coords[0])  # (m/n, k) -> (k, m/n)
+        var coords = (
+            Int(_coords[1] * Self.BK),
+            Int(_coords[0]),
+        )  # (m/n, k) -> (k, m/n)
 
         comptime tma_load_size = Self.desc_layout.size()
         comptime tma_rows = Self.desc_layout.shape[0].value()
@@ -284,7 +287,7 @@ struct TileLoaderTMA[
             self.tma_op[].async_copy(
                 dst,
                 mem_barrier[],
-                (Int(coords[0]), Int(coords[1])),
+                (coords[0], coords[1]),
             )
 
 

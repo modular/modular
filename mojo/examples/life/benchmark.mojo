@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import perf_counter_ns
+from std.time import perf_counter_ns
 
 import gridv1
 import gridv2
 import gridv3
 
 
-def main():
+def main() raises:
     comptime warmup_iterations = 10
     comptime benchmark_iterations = 1000
     comptime rows = 1024

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import align_up, ceildiv, recip
+from std.collections import OptionalReg
+from std.math import align_up, ceildiv, recip
 from nn.mha_utils import DynamicInt
-from math.constants import log2e
-from sys import (
+from std.math.constants import log2e
+from std.sys import (
     align_of,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
@@ -23,19 +23,19 @@ from sys import (
     size_of,
     is_nvidia_gpu,
     is_amd_gpu,
-    env_get_int,
+    get_defined_int,
     CompilationTarget,
 )
 
 from nn.mha import q_num_matrix_view_rows
-import gpu.primitives.warp as warp
-from algorithm.functional import (
+import std.gpu.primitives.warp as warp
+from std.algorithm.functional import (
     _elementwise_impl_gpu,
     tile_and_unswitch,
     unswitch,
     vectorize,
 )
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
@@ -45,15 +45,15 @@ from gpu import (
     lane_id,
     thread_idx,
 )
-from gpu.host import (
+from std.gpu.host import (
     DeviceContext,
     FuncAttribute,
     get_gpu_target,
     DeviceBuffer,
     Dim as LaunchDim,
 )
-from gpu.host.info import A100, H100, B200
-from gpu.memory import (
+from std.gpu.host.info import A100, H100, B200
+from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_all,
@@ -76,7 +76,7 @@ from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
-from memory import stack_allocation
+from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.mha_mask import MHAMask, TileMaskStatus
 from nn.mha_operand import (
@@ -85,7 +85,6 @@ from nn.mha_operand import (
     LayoutTensorMHAOperand,
     RaggedMHAOperand,
 )
-from nn.mha_score_mod import ScoreModTrait
 from nn.mha_utils import (
     FlashAttentionAlgorithm,
     MHAConfig,
@@ -95,18 +94,21 @@ from nn.mha_utils import (
 )
 from nn.softmax import _exp2_concrete
 from nn.mha_fa3_utils import NonNullPointer, NullPointer
-from runtime.tracing import Trace, TraceLevel, trace_arg
+from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
+from std.utils.static_tuple import StaticTuple
 
 from .mha_utils import get_start_and_end_for_partitions
 from .softmax import _online_softmax_iter_for_mma_output
 from .attention.gpu.amd.mla import Attention, MLAAttentionConfig
 from .mla_prefill_sm100 import mla_sm100_prefill
-from gpu.host.info import B200, GPUInfo
-from nn.mla_decode_sm100_dispatch import mla_decode_sm100_dispatch
+from std.gpu.host.info import B200, GPUInfo
+from nn.mla_decode_sm100_dispatch import (
+    MLADispatchScalarArgs,
+    mla_decode_sm100_dispatch,
+)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -120,11 +122,9 @@ fn flare_mla_decoding[
     rank: Int,
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     q_layout: Layout,
     //,
-    use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[rank - 2])),
         UInt(Int(q_layout.shape[rank - 1])),
@@ -138,12 +138,14 @@ fn flare_mla_decoding[
     q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
     k: cache_t,
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
     scale: Float32,
     ctx: DeviceContext,
+    scalar_args_buf: LayoutTensor[
+        DType.int64, Layout.row_major(4), MutAnyOrigin
+    ],
     q_max_seq_len: OptionalReg[Int] = None,
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
@@ -173,9 +175,14 @@ fn flare_mla_decoding[
     comptime assert (
         not ragged or rank == 3
     ), "only support rank 3 inputs for ragged inputs."
-    comptime assert (
-        q.dtype == output.dtype
-    ), "Q, K, V, output should have same type."
+    # Q and output may differ for native FP8 path: Q is float8_e4m3fn,
+    # output is bfloat16. Both half-float Q (bfloat16) and FP8 Q are valid.
+    comptime assert q.dtype == output.dtype or (
+        q.dtype == DType.float8_e4m3fn and output.dtype == DType.bfloat16
+    ), (
+        "Q and output must have same type, or Q=float8_e4m3fn with"
+        " output=bfloat16."
+    )
 
     @always_inline
     @parameter
@@ -210,7 +217,6 @@ fn flare_mla_decoding[
 
         flare_mla_decoding_dispatch[
             kv_num_heads = Int(kv_num_heads),
-            use_score_mod=use_score_mod,
             config=config,
             ragged=ragged,
             decoding_warp_split_k=decoding_warp_split_k,
@@ -219,12 +225,12 @@ fn flare_mla_decoding[
             q,
             k_operand,
             mask_functor,
-            score_mod_functor,
             valid_length,
             max_prompt_len,
             num_keys,
             scale,
             ctx,
+            scalar_args_buf,
             kv_input_row_offsets,
             num_partitions,
         )
@@ -233,11 +239,9 @@ fn flare_mla_decoding[
 # entrypoint for LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]as K input, used by tests.
 fn flare_mla_decoding[
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     q_layout: Layout,
     //,
-    use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[2])),
         UInt(Int(q_layout.shape[3])),
@@ -250,9 +254,11 @@ fn flare_mla_decoding[
     q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
     k: LayoutTensor[address_space = AddressSpace.GENERIC, ...],
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     scale: Float32,
     ctx: DeviceContext,
+    scalar_args_buf: LayoutTensor[
+        DType.int64, Layout.row_major(4), MutAnyOrigin
+    ],
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
 ) raises:
@@ -281,7 +287,6 @@ fn flare_mla_decoding[
 
     flare_mla_decoding_dispatch[
         kv_num_heads=kv_num_heads,
-        use_score_mod=use_score_mod,
         config=config,
         ragged=False,
         _is_cache_length_accurate=True,
@@ -292,14 +297,14 @@ fn flare_mla_decoding[
         q,
         k_operand,
         mask_functor,
-        score_mod_functor,
         valid_length,
         q.dim[1](),
         num_keys,
         scale,
         ctx,
-        None,
-        num_partitions,
+        scalar_args_buf,
+        kv_input_row_offsets=None,
+        num_partitions=num_partitions,
     )
 
 
@@ -307,12 +312,10 @@ fn flare_mla_decoding[
 fn flare_mla_decoding_dispatch[
     k_t: MHAOperand,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     q_layout: Layout,
     //,
     kv_num_heads: Int,
-    use_score_mod: Bool = False,
     config: MHAConfig[dtype] = {
         UInt(Int(q_layout.shape[q_layout.rank() - 2])),
         UInt(Int(q_layout.shape[q_layout.rank() - 1])),
@@ -332,7 +335,6 @@ fn flare_mla_decoding_dispatch[
     q: LayoutTensor[dtype, q_layout, address_space = AddressSpace.GENERIC, ...],
     k: k_t,
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -340,6 +342,9 @@ fn flare_mla_decoding_dispatch[
     max_cache_valid_length: Int,
     scale: Float32,
     ctx: DeviceContext,
+    scalar_args_buf: LayoutTensor[
+        DType.int64, Layout.row_major(4), MutAnyOrigin
+    ],
     kv_input_row_offsets: OptionalReg[
         LayoutTensor[
             DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -365,7 +370,9 @@ fn flare_mla_decoding_dispatch[
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
-    comptime assert q.dtype.is_half_float(), "Only support half precision."
+    comptime assert (
+        q.dtype.is_half_float() or q.dtype == DType.float8_e4m3fn
+    ), "Only support half precision or float8_e4m3fn Q."
 
     # Whether head and depth are static. With BSHD, B and S are dynamic.
     # H and D are always known for opaque KVCache types, we only check Q.
@@ -373,51 +380,102 @@ fn flare_mla_decoding_dispatch[
         q.rank - 2, q.rank
     ](), "Need num_heads and head_dim to be static for Q."
 
-    var batch_size: Int
-
-    comptime if ragged:
-        batch_size = valid_length.dim[0]() - 1
-    # This branch holds for both KVCache and LayoutTensor[mut=True, , Layout.row_major[3](), MutAnyOrigin]inputs.
-    # Q is BSHD, S is either homogeneous or padded to same length.
-    else:
-        batch_size = q.dim[0]()
-
-    if batch_size == 0:
-        return
-
     comptime if ctx.default_device_info == B200:
-        mla_decode_sm100_dispatch[
-            q.dtype,
-            q.layout,
-            k_t,
-            output.dtype,
-            output.layout,
-            mask_t,
-            score_mod_t,
-            valid_length.layout,
-            config=config,
-            depth = Int(depth),
-            num_heads = Int(num_heads),
-            group = Int(group),
-            use_score_mod=use_score_mod,
-            ragged=ragged,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            decoding_warp_split_k=decoding_warp_split_k,
-        ](
-            q,
-            k,
-            output,
-            scale,
-            batch_size,
-            max_cache_valid_length,
-            max_prompt_len,
-            valid_length,
-            mask_functor,
-            score_mod_functor,
-            ctx,
-        )
+        if scalar_args_buf.ptr:
+            # Capturable path: GPU buffer is pre-computed, compute host-side
+            # dispatch args from inputs.
+            var batch_size: Int
+            comptime if ragged:
+                batch_size = valid_length.dim[0]() - 1
+            else:
+                batch_size = q.dim[0]()
+            if batch_size == 0:
+                return
+            mla_decode_sm100_dispatch[
+                q.dtype,
+                q.layout,
+                k_t,
+                output.dtype,
+                output.layout,
+                mask_t,
+                valid_length.layout,
+                config=config,
+                depth = Int(depth),
+                num_heads = Int(num_heads),
+                group = Int(group),
+                ragged=ragged,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q,
+                k,
+                output,
+                scale,
+                valid_length,
+                mask_functor,
+                scalar_args_buf,
+                batch_size,
+                max_prompt_len,
+                max_cache_valid_length,
+                ctx,
+            )
+        else:
+            # Legacy path: compute dispatch params and GPU buffer from inputs.
+            var batch_size: Int
+            comptime if ragged:
+                batch_size = valid_length.dim[0]() - 1
+            else:
+                batch_size = q.dim[0]()
+            if batch_size == 0:
+                return
+
+            comptime num_heads_val = Int(q.layout.shape[q.rank - 2])
+            comptime _is_fp8_kv = (k_t.dtype == DType.float8_e4m3fn)
+            var local_args = MLADispatchScalarArgs[
+                num_heads=num_heads_val,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                is_fp8_kv=_is_fp8_kv,
+            ](batch_size, max_cache_valid_length, max_prompt_len, ctx)
+            mla_decode_sm100_dispatch[
+                q.dtype,
+                q.layout,
+                k_t,
+                output.dtype,
+                output.layout,
+                mask_t,
+                valid_length.layout,
+                config=config,
+                depth = Int(depth),
+                num_heads = Int(num_heads),
+                group = Int(group),
+                ragged=ragged,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                q,
+                k,
+                output,
+                scale,
+                valid_length,
+                mask_functor,
+                local_args.gpu_layout_tensor(),
+                local_args.batch_size,
+                local_args.q_max_seq_len,
+                local_args.max_cache_valid_length,
+                ctx,
+            )
+            _ = local_args^
 
     else:
+        var batch_size: Int
+        comptime if ragged:
+            batch_size = valid_length.dim[0]() - 1
+        else:
+            batch_size = q.dim[0]()
+
+        if batch_size == 0:
+            return
+
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
@@ -460,7 +518,6 @@ fn flare_mla_decoding_dispatch[
             k_t,
             output.dtype,
             mask_t,
-            score_mod_t,
             valid_length.layout,
             BM = UInt(BM),
             BN = UInt(BN),
@@ -472,7 +529,6 @@ fn flare_mla_decoding_dispatch[
             num_threads = UInt(num_threads),
             num_pipeline_stages = UInt(num_pipeline_stages),
             group=group,
-            use_score_mod=use_score_mod,
             ragged=ragged,
             _use_valid_length=_use_valid_length,
             _is_cache_length_accurate=_is_cache_length_accurate,
@@ -504,7 +560,6 @@ fn flare_mla_decoding_dispatch[
             max_cache_valid_length,
             valid_length,
             mask_functor,
-            score_mod_functor,
             grid_dim=(1, Int(num_blocks_y), batch_size),
             block_dim=(num_threads, 1, 1),
             shared_mem_bytes=shared_mem_bytes,
@@ -525,7 +580,6 @@ fn mla_decoding[
     k_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     valid_layout: Layout,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
@@ -537,7 +591,6 @@ fn mla_decoding[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
-    use_score_mod: Bool = False,
     ragged: Bool = False,
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
@@ -558,7 +611,6 @@ fn mla_decoding[
         MutAnyOrigin,
     ],  # valid length per batch
     mask: mask_t,
-    score_mod: score_mod_t,
 ):
     var batch_idx = block_idx.z
 
@@ -619,7 +671,6 @@ fn mla_decoding[
             num_threads=num_threads,
             num_pipeline_stages=num_pipeline_stages,
             group=group,
-            use_score_mod=use_score_mod,
             decoding_warp_split_k=decoding_warp_split_k,
         ](
             q_ptr + q_batch_offset,
@@ -632,7 +683,6 @@ fn mla_decoding[
             UInt(num_partitions),
             UInt(max_cache_valid_length),
             mask,
-            score_mod,
             Int(batch_idx),
         )
     elif is_amd_gpu():
@@ -688,7 +738,6 @@ fn mla_decoding_single_batch[
     k_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     *,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
@@ -701,7 +750,6 @@ fn mla_decoding_single_batch[
     num_threads: UInt,
     num_pipeline_stages: UInt,
     group: UInt = 1,
-    use_score_mod: Bool = False,
     decoding_warp_split_k: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
@@ -714,7 +762,6 @@ fn mla_decoding_single_batch[
     num_partitions: UInt,
     max_cache_valid_length: UInt,  # longest KV cache entry
     mask: mask_t,
-    score_mod: score_mod_t,
     batch_idx: Int,
 ):
     """Flash attention v2 algorithm."""
@@ -756,6 +803,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -787,6 +835,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeKV = LayoutTensorIter[
         k_type,
         Layout(IntTuple(Int(BN), Int(BK)), IntTuple(Int(nope_dim), 1)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -800,6 +849,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeV = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BK), Int(nope_dim)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -812,6 +862,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -872,6 +923,7 @@ fn mla_decoding_single_batch[
     comptime IteratorTypeP = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
     ]
     var p_smem_iter = IteratorTypeP(
@@ -1055,8 +1107,11 @@ fn mla_decoding_single_batch[
         @parameter
         fn _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
-                scale.cast[accum_type]() if use_score_mod
-                or mask_t.apply_log2e_after_mask else scale.cast[accum_type]()
+                scale.cast[
+                    accum_type
+                ]() if mask_t.apply_log2e_after_mask else scale.cast[
+                    accum_type
+                ]()
                 * log2e
             )
 
@@ -1101,21 +1156,7 @@ fn mla_decoding_single_batch[
                                 p_reg_vec2[mma_id, i] * scale_log2e
                             )
 
-                        comptime if use_score_mod:
-                            p_reg_vec2[mma_id, i] = (
-                                score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32](
-                                        Int(block_idx.z),
-                                        Int(score_head_idx),
-                                        Int(score_row_with_start_pos),
-                                        Int(score_col),
-                                    ),
-                                    p_reg_vec2[mma_id, i],
-                                    1,
-                                )
-                                * log2e
-                            )
-                        elif mask_t.apply_log2e_after_mask:
+                        comptime if mask_t.apply_log2e_after_mask:
                             p_reg_vec2[mma_id, i] = (
                                 p_reg_vec2[mma_id, i] * log2e
                             )
@@ -1208,7 +1249,7 @@ fn mla_decoding_single_batch[
 
         barrier()
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](Int(BN))](start, end)
+    tile_and_unswitch[loop_over_kvcache, [Int(BN)]](start, end)
 
     # Apply softmax denumerator.
     comptime for m_mma in range(num_m_mmas):
@@ -1293,12 +1334,10 @@ fn flare_mla_prefill[
     rank: Int,
     cache_t: KVCacheT,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     output_type: DType,
     q_layout: Layout,
     //,
-    use_score_mod: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, output_type, address_space = AddressSpace.GENERIC, ...
@@ -1310,7 +1349,6 @@ fn flare_mla_prefill[
     v: LayoutTensor[mut=False, _, address_space = AddressSpace.GENERIC, ...],
     k_rope: cache_t,
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
         mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -1345,12 +1383,26 @@ fn flare_mla_prefill[
     padding). Such lengths are passed in valid_length argument.
     """
     comptime assert rank == 3, "only support ragged inputs"
-    comptime assert (
-        q.dtype == output.dtype
-    ), "Q, K, V, output should have same type."
-    comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
-    ), "Only support single and half precision."
+
+    comptime if q.dtype == DType.bfloat16 and cache_t.dtype == DType.bfloat16:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == cache_t.dtype == output.dtype
+        ), "Q, K, V, output should have same type if q.dtype is bfloat16"
+    elif q.dtype == DType.bfloat16 and cache_t.dtype == DType.float8_e4m3fn:
+        comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
+            "Q, K, V, output should have same type if q.dtype is bfloat16 and"
+            " k_rope.dtype is float8_e4m3fn"
+        )
+    elif q.dtype == DType.float8_e4m3fn and cache_t.dtype == DType.float8_e4m3fn:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == cache_t.dtype
+            and output.dtype == DType.bfloat16
+        ), (
+            "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
+            " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
+        )
+    else:
+        comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
     @parameter
@@ -1448,7 +1500,6 @@ fn flare_mla_prefill[
             v_operand,
             k_rope_operand,
             mask_functor,
-            score_mod_functor,
             valid_length,
             max_prompt_len,
             scale,
@@ -1462,11 +1513,9 @@ fn flare_mla_prefill[
 fn flare_mla_prefill[
     rank: Int,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     q_layout: Layout,
     //,
-    use_score_mod: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, ...
@@ -1480,7 +1529,6 @@ fn flare_mla_prefill[
         mut=False, _, address_space = AddressSpace.GENERIC, ...
     ],
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
         mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -1497,17 +1545,26 @@ fn flare_mla_prefill[
     ] = None,
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
-    comptime assert (
-        q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
-    ) if k_rope.dtype == DType.bfloat16 else (
-        q.dtype == k.dtype == v.dtype == output.dtype
-    ), (
-        "Q, K, V, output should have same type if k_rope.dtype is bfloat16,"
-        " otherwise only Q, K, V should have same type."
-    )
-    comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
-    ), "Only support single and half precision."
+
+    comptime if q.dtype == DType.bfloat16 and k_rope.dtype == DType.bfloat16:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == k_rope.dtype == output.dtype
+        ), "Q, K, V, output should have same type if q.dtype is bfloat16"
+    elif q.dtype == DType.bfloat16 and k_rope.dtype == DType.float8_e4m3fn:
+        comptime assert q.dtype == k.dtype == v.dtype == output.dtype, (
+            "Q, K, V, output should have same type if q.dtype is bfloat16 and"
+            " k_rope.dtype is float8_e4m3fn"
+        )
+    elif q.dtype == DType.float8_e4m3fn and k_rope.dtype == DType.float8_e4m3fn:
+        comptime assert (
+            q.dtype == k.dtype == v.dtype == k_rope.dtype
+            and output.dtype == DType.bfloat16
+        ), (
+            "Q, K, V, output should have same type if q.dtype is float8_e4m3fn"
+            " and k_rope.dtype is float8_e4m3fn and output.dtype is bfloat16"
+        )
+    else:
+        comptime assert False, "Q, K, V, output dtype combination not supported"
 
     @always_inline
     @parameter
@@ -1600,7 +1657,6 @@ fn flare_mla_prefill[
             v_operand,
             k_rope_operand,
             mask_functor,
-            score_mod_functor,
             valid_length,
             max_prompt_len,
             scale,
@@ -1614,11 +1670,9 @@ fn flare_mla_prefill[
 fn flare_mla_prefill[
     rank: Int,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     q_layout: Layout,
     //,
-    use_score_mod: Bool = False,
 ](
     output: LayoutTensor[
         mut=True, _, address_space = AddressSpace.GENERIC, ...
@@ -1635,7 +1689,6 @@ fn flare_mla_prefill[
         mut=False, _, address_space = AddressSpace.GENERIC, ...
     ],
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
         mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -1763,7 +1816,6 @@ fn flare_mla_prefill[
             v_operand,
             k_rope_operand,
             mask_functor,
-            score_mod_functor,
             valid_length,
             max_prompt_len,
             scale,
@@ -1778,13 +1830,11 @@ fn flare_mla_prefill_dispatch[
     v_t: MHAOperand,
     k_rope_t: MHAOperand,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     dtype: DType,
     output_type: DType,
     q_layout: Layout,
     //,
     kv_num_heads: Int,
-    use_score_mod: Bool = False,
     q_depth: Int = 192,
     cache_depth: Int = 576,
     config: MHAConfig[dtype] = {
@@ -1803,7 +1853,6 @@ fn flare_mla_prefill_dispatch[
     v: v_t,
     k_rope: k_rope_t,
     mask_functor: mask_t,
-    score_mod_functor: score_mod_t,
     valid_length: LayoutTensor[
         mut=False, DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -1862,7 +1911,6 @@ fn flare_mla_prefill_dispatch[
             group = Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
-            use_score_mod=use_score_mod,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](
             output,
@@ -1871,7 +1919,6 @@ fn flare_mla_prefill_dispatch[
             rebind[type_of(k)](v),
             k_rope,
             mask_functor,
-            score_mod_functor,
             valid_length,
             DynamicInt(max_prompt_len),
             scale,
@@ -1891,11 +1938,9 @@ fn flare_mla_prefill_dispatch[
             k_rope_t,
             output.dtype,
             mask_t,
-            score_mod_t,
             valid_length.layout,
             config,
             group = Int(group),
-            use_score_mod=use_score_mod,
             q_depth=q_depth,
             cache_depth=cache_depth,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
@@ -1921,7 +1966,6 @@ fn flare_mla_prefill_dispatch[
             valid_length,
             cache_offsets,
             mask_functor,
-            score_mod_functor,
             grid_dim=grid_dim,
             block_dim=(Int(config.num_threads()), 1, 1),
             shared_mem_bytes=Int(smem_use),
@@ -1943,13 +1987,11 @@ fn mla_prefill[
     k_rope_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     valid_layout: Layout,
     config: MHAConfig,
     group: Int = 128,
     q_depth: Int = 192,
     cache_depth: Int = 576,
-    use_score_mod: Bool = False,
     _ndbuffer_mha_operand: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type], MutAnyOrigin],
@@ -1971,7 +2013,6 @@ fn mla_prefill[
         ]
     ],
     mask: mask_t,
-    score_mod: score_mod_t,
 ):
     comptime depth = config.depth
     var batch_idx = block_idx.z
@@ -2020,7 +2061,6 @@ fn mla_prefill[
             group=group,
             q_depth=q_depth,
             cache_depth=cache_depth,
-            use_score_mod=use_score_mod,
         ](
             q_ptr + q_batch_offset,
             k,
@@ -2034,7 +2074,6 @@ fn mla_prefill[
             cache_start_pos,
             num_keys,
             mask,
-            score_mod,
             Int(batch_idx),
         )
     elif is_amd_gpu():
@@ -2071,15 +2110,13 @@ fn mla_prefill_single_batch[
     k_rope_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    score_mod_t: ScoreModTrait,
     *,
     config: MHAConfig,
     group: Int = 1,
     q_depth: Int = 192,
     cache_depth: Int = 576,
-    use_score_mod: Bool = False,
 ](
-    q_ptr: UnsafePointer[mut=True, Scalar[q_type]],
+    q_ptr: UnsafePointer[mut=True, Scalar[q_type], _],
     k: k_t,
     v: v_t,
     k_rope: k_rope_t,
@@ -2091,7 +2128,6 @@ fn mla_prefill_single_batch[
     cache_start_pos: UInt32,
     num_keys: Int,
     mask: mask_t,
-    score_mod: score_mod_t,
     batch_idx: Int,
 ):
     """MLA for encoding where seqlen > 1."""
@@ -2140,6 +2176,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeQ = LayoutTensorIter[
         q_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         alignment=alignment,
     ]
@@ -2164,6 +2201,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeK = LayoutTensorIter[
         k_type,
         Layout.row_major(Int(BN), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -2176,6 +2214,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeV = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BK), Int(depth)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -2278,6 +2317,7 @@ fn mla_prefill_single_batch[
     comptime IteratorTypeP = LayoutTensorIter[
         v_type,
         Layout.row_major(Int(BM), Int(BK)),
+        _,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]
@@ -2540,8 +2580,11 @@ fn mla_prefill_single_batch[
         @parameter
         fn _apply_mask[masked: Bool]():
             var scale_log2e: Scalar[accum_type] = (
-                scale.cast[accum_type]() if use_score_mod
-                or mask_t.apply_log2e_after_mask else scale.cast[accum_type]()
+                scale.cast[
+                    accum_type
+                ]() if mask_t.apply_log2e_after_mask else scale.cast[
+                    accum_type
+                ]()
                 * log2e
             )
 
@@ -2593,21 +2636,7 @@ fn mla_prefill_single_batch[
                                 p_reg_vec2[mma_id, i] * scale_log2e
                             )
 
-                        comptime if use_score_mod:
-                            p_reg_vec2[mma_id, i] = (
-                                score_mod.score_mod(
-                                    IndexList[4, element_type = DType.uint32](
-                                        Int(block_idx.z),
-                                        Int(block_idx.y),
-                                        Int(score_row_with_start_pos),
-                                        Int(score_col_with_cache_start_pos),
-                                    ),
-                                    p_reg_vec2[mma_id, i],
-                                    max_seq_len,
-                                )
-                                * log2e
-                            )
-                        elif mask_t.apply_log2e_after_mask:
+                        comptime if mask_t.apply_log2e_after_mask:
                             p_reg_vec2[mma_id, i] = (
                                 p_reg_vec2[mma_id, i] * log2e
                             )
@@ -2770,9 +2799,7 @@ fn mla_prefill_single_batch[
                 Int(BN // BK),
             )
 
-    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](Int(BN))](
-        0, num_keys
-    )
+    tile_and_unswitch[loop_over_kvcache, [Int(BN)]](0, num_keys)
 
     comptime output_gmem_layout = Layout(
         IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)

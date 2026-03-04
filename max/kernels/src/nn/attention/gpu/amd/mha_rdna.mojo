@@ -21,15 +21,13 @@ Key features:
 - Optimized shared memory management with K/P reuse
 """
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-from gpu import barrier, block_idx, lane_id
-from layout import LayoutTensor
-from layout.swizzle import Swizzle
+from std.gpu import barrier, block_idx, lane_id
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
-from utils import IndexList
-from utils.numerics import get_accum_type
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type
 
 from .attention import AttentionConfig
 from .attention_rdna import AttentionRDNA

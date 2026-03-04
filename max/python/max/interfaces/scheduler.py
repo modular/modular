@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines the :class:`Scheduler` abstract base class and :class:`SchedulerResult` data structure."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

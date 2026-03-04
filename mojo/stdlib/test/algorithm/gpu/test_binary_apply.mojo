@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import *
-from gpu.host import DeviceContext
-from testing import assert_equal, TestSuite
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, TestSuite
 
 
 fn vec_func[
@@ -92,12 +92,12 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
             assert_equal(out_host[i], expected[i])
 
 
-def test_binary_apply():
+def test_binary_apply() raises:
     with DeviceContext() as ctx:
         run_binary_add(ctx, 2.5)
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

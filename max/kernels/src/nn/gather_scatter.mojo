@@ -11,27 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import get_static_string
-from math import align_down, ceildiv
-from sys import simd_width_of, size_of
-from sys.info import CompilationTarget, _current_target
-from sys.intrinsics import PrefetchOptions
+from std.collections.string.string_slice import get_static_string
+from std.math import align_down, ceildiv
+from std.sys import simd_width_of, size_of
+from std.sys.info import CompilationTarget, _current_target
+from std.sys.intrinsics import PrefetchOptions
 
-from algorithm import elementwise, parallel_memcpy, sync_parallelize
-from algorithm.functional import tile
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu, is_gpu
-from layout import UNKNOWN_VALUE
-from layout._coord import Coord, Idx, coord_to_index_list
+from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
+from std.algorithm.functional import tile
+from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu, is_gpu
+from layout import Coord, Idx, TileTensor, UNKNOWN_VALUE, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from memory import memcpy
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
-from runtime.tracing import Trace, TraceLevel, get_safe_task_id
+from std.memory import memcpy
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from tensor import ManagedTensorSlice
 
-from utils import Index, IndexList, StaticTuple
-from collections import OptionalReg
+from std.utils import Index, IndexList, StaticTuple
+from std.collections import OptionalReg
 
 
 @always_inline
@@ -198,11 +196,16 @@ fn gather_reduce[
         )
 
         # For multi-hot embeddings reduction, k is the embedding dim and j is the multi-hot dim
-        comptime k_tile_sizes = VariadicList[Int](
-            2 * simd_width, 1
-        ) if CompilationTarget.has_neon() else VariadicList[Int](
-            8 * simd_width, 4 * simd_width, 2 * simd_width, simd_width, 1
-        )
+        comptime k_tile_sizes = [
+            2 * simd_width,
+            1,
+        ] if CompilationTarget.has_neon() else [
+            8 * simd_width,
+            4 * simd_width,
+            2 * simd_width,
+            simd_width,
+            1,
+        ]
         # unroll the j loop on neon because it benefits from vectorized
         # blend instructions and avoids conditional flag dependencies
         # does not appear to help on other archs
@@ -231,9 +234,9 @@ fn gather_reduce[
                     )
 
                     comptime for unroll_idx in range(0, unroll_factor):
-                        var gather_chunk = input.load[width=simd_width](
-                            (Idx(Int(idxs[unroll_idx])), Idx(k))
-                        )
+                        var gather_chunk = input.load[
+                            width=simd_width, alignment=1
+                        ]((Idx(Int(idxs[unroll_idx])), Idx(k)))
                         out[unroll_idx] = reduce_fn[dtype, simd_width](
                             accums[unroll_idx], gather_chunk
                         )
@@ -260,7 +263,7 @@ fn gather_reduce[
                     )[0]
 
                 var out_idx = Coord(Idx(i), Idx(k))
-                output.store[width=simd_width](out_idx, accum)
+                output.store[width=simd_width, alignment=1](out_idx, accum)
 
             tile[
                 gather_k_tile,
@@ -340,7 +343,7 @@ fn gather[
     ](index: IndexList[_rank]) -> SIMD[dtype, width]:
         var coords = Coord(index)
         comptime assert coords.flat_rank == input.flat_rank
-        return input.load[width=width](coords)
+        return input.load[width=width, alignment=1](coords)
 
     @parameter
     @always_inline
@@ -349,7 +352,7 @@ fn gather[
     ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
         var coords = Coord(index)
         comptime assert coords.flat_rank == indices.flat_rank
-        return indices.load[width=width](coords)
+        return indices.load[width=width, alignment=1](coords)
 
     @parameter
     @always_inline
@@ -358,7 +361,9 @@ fn gather[
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
         comptime assert coords.flat_rank == output.flat_rank
-        output.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        output.store[width=width, alignment=1](
+            coords, rebind[SIMD[dtype, width]](val)
+        )
 
     gather[
         dtype=dtype,
@@ -444,7 +449,7 @@ fn gather[
     ](index: IndexList[_rank]) -> SIMD[dtype, width]:
         var coords = Coord(index)
         comptime assert coords.flat_rank == input.flat_rank
-        return input.load[width=width](coords)
+        return input.load[width=width, alignment=1](coords)
 
     @parameter
     @always_inline
@@ -453,7 +458,7 @@ fn gather[
     ](index: IndexList[_rank]) -> SIMD[indices_type, width]:
         var coords = Coord(index)
         comptime assert coords.flat_rank == indices.flat_rank
-        return indices.load[width=width](coords)
+        return indices.load[width=width, alignment=1](coords)
 
     @parameter
     @always_inline
@@ -462,7 +467,9 @@ fn gather[
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
         comptime assert coords.flat_rank == output.flat_rank
-        output.store[width=width](coords, rebind[SIMD[dtype, width]](val))
+        output.store[width=width, alignment=1](
+            coords, rebind[SIMD[dtype, width]](val)
+        )
 
     gather[
         dtype=dtype,
@@ -1274,11 +1281,11 @@ fn scatter_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: ManagedTensorSlice[dtype=input_type, rank=rank],
-    indices: ManagedTensorSlice[dtype=indices_type, rank=rank],
-    updates: ManagedTensorSlice[dtype=input_type, rank=rank],
+    input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
+    indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
+    updates: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     _axis: Int,
-    output: ManagedTensorSlice[dtype=input_type, rank=rank],
+    output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1645,8 +1652,8 @@ fn _gather_nd_impl[
         var output_coord = Coord(output_idx)
         comptime assert data_coord.flat_rank == data.flat_rank
         comptime assert output_coord.flat_rank == output.flat_rank
-        output.store[width=simd_width](
-            output_coord, data.load[width=simd_width](data_coord)
+        output.store[width=simd_width, alignment=1](
+            output_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
     comptime compile_target = _current_target() if is_cpu[

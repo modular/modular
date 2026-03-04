@@ -70,11 +70,11 @@ methods.
 """
 
 
-from builtin.globals import global_constant
-from builtin.variadics import Variadic
-from collections.string.string_slice import get_static_string
-from compile import get_type_name
-from utils import Variant
+from std.builtin.globals import global_constant
+from std.builtin.variadics import Variadic
+from std.collections.string.string_slice import get_static_string
+from std.compile import get_type_name
+from std.utils import Variant
 
 # ===-----------------------------------------------------------------------===#
 # Formatter
@@ -170,7 +170,7 @@ struct _FormatUtils:
 
         @always_inline
         fn _build_slice(
-            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
+            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 
@@ -522,7 +522,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     ) raises -> Bool:
         @always_inline("nodebug")
         fn _build_slice(
-            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
+            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 

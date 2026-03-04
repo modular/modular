@@ -22,12 +22,12 @@ The reference implementation used was the one in C# and can be found here:
 - https://github.com/CarlVerret/csFastFloat
 """
 
-from collections import InlineArray
+from std.collections import InlineArray
 
-import bit
-import memory
+import std.bit
+import std.memory
 
-from builtin.globals import global_constant
+from std.builtin.globals import global_constant
 
 from .constants import (
     CONTAINER_SIZE,
@@ -53,7 +53,7 @@ struct UInt128Decomposed(ImplicitlyCopyable, RegisterPassable):
 
 
 fn _get_w_and_q_from_float_string(
-    input_string: StringSlice[mut=False],
+    input_string: StringSlice[mut=False, _],
 ) raises -> Tuple[UInt64, Int64]:
     """We suppose the number is in the form '123.2481' or '123' or '123e-2' or '12.3e2'.
 
@@ -155,11 +155,11 @@ fn _get_w_and_q_from_float_string(
     return (significand_as_integer, Int64(exponent_as_integer))
 
 
-fn strip_unused_characters(x: StringSlice[mut=False]) -> type_of(x):
+fn strip_unused_characters(x: StringSlice[mut=False, _]) -> type_of(x):
     return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
 
 
-fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, type_of(x)]:
+fn get_sign(x: StringSlice[mut=False, _]) -> Tuple[Float64, type_of(x)]:
     if x.startswith("-"):
         return (-1.0, x[1:])
     return (1.0, x)

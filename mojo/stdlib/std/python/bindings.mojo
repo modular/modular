@@ -20,14 +20,14 @@ conversion. This enables seamless bidirectional interoperability between Mojo
 and Python code.
 """
 
-from ffi import _Global, c_int
-from sys.info import size_of
+from std.ffi import _Global, c_int
+from std.sys.info import size_of
 
-from builtin._startup import _ensure_current_or_global_runtime_init
-from reflection import get_type_name
-from memory import OpaquePointer, stack_allocation
-from python import Python, PythonObject
-from python._cpython import (
+from std.builtin._startup import _ensure_current_or_global_runtime_init
+from std.reflection import get_type_name
+from std.memory import OpaquePointer, stack_allocation
+from std.python import Python, PythonObject
+from std.python._cpython import (
     GILAcquired,
     Py_TPFLAGS_DEFAULT,
     PyCFunction,
@@ -40,10 +40,10 @@ from python._cpython import (
     PyTypeObject,
     PyTypeObjectPtr,
 )
-from python._python_func import PyObjectFunction
-from python.python_object import _unsafe_alloc, _unsafe_init
+from std.python._python_func import PyObjectFunction
+from std.python.python_object import _unsafe_alloc, _unsafe_init
 
-from utils import Variant
+from std.utils import Variant
 
 # ===-----------------------------------------------------------------------===#
 # Global `PyTypeObject` Registration
@@ -221,15 +221,12 @@ fn _tp_repr_wrapper[
     if self.is_initialized:
         comptime if conforms_to(T, Writable):
             trait_downcast[Writable](self.mojo_value).write_repr_to(repr_str)
-        elif conforms_to(T, Representable):
-            repr_str = trait_downcast[Representable](self.mojo_value).__repr__()
         else:
-            comptime assert False, (
-                "_tp_repr_wrapper requires conformance to either Writable or"
-                " Representable"
-            )
+            comptime assert (
+                False
+            ), "_tp_repr_wrapper requires conformance to Writable."
     else:
-        repr_str = String("<uninitialized ", get_type_name[T](), ">")
+        repr_str = t"<uninitialized {get_type_name[T]()}>"
 
     return cpython.PyUnicode_DecodeUTF8(repr_str)
 
@@ -280,7 +277,7 @@ struct PythonModuleBuilder:
 
     Example:
         ```mojo
-        from python.bindings import PythonModuleBuilder
+        from std.python.bindings import PythonModuleBuilder
 
         var builder = PythonModuleBuilder("my_module")
         builder.def_function[my_func]("my_func", "Documentation for my_func")

@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from os import Atomic
-from sys.intrinsics import (
+from std.collections import InlineArray
+from std.os import Atomic
+from std.sys.intrinsics import (
     ballot,
     implicitarg_ptr,
     llvm_intrinsic,
@@ -21,8 +21,8 @@ from sys.intrinsics import (
     sendmsg,
 )
 
-from gpu.primitives.id import lane_id
-from memory import Span
+from std.gpu.primitives.id import lane_id
+from std.memory import Span
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -153,7 +153,7 @@ fn msg_set_end_flag(pd: UInt64) -> UInt64:
 fn append_bytes(
     service_id: UInt32,
     msg_desc: UInt64,
-    mut data: Span[UInt8],
+    mut data: Span[UInt8, _],
 ) -> Tuple[UInt64, UInt64]:
     var msg_desc_ = msg_set_len(msg_desc, UInt32((len(data) + 7) // 8))
 
@@ -194,7 +194,7 @@ fn append_bytes(
 
 @no_inline
 fn message_append_bytes(
-    service_id: UInt32, msg_desc: UInt64, data: Span[UInt8]
+    service_id: UInt32, msg_desc: UInt64, data: Span[UInt8, _]
 ) -> Tuple[UInt64, UInt64]:
     """
     Append an array of bytes to a message.
@@ -416,7 +416,7 @@ fn fprintf_append_args(
 
 @always_inline
 fn fprintf_append_string_n(
-    msg_desc: UInt64, data: Span[UInt8], is_last: Bool
+    msg_desc: UInt64, data: Span[UInt8, _], is_last: Bool
 ) -> UInt64:
     """
     Append a null-terminated string to the fprintf message.
@@ -509,7 +509,7 @@ fn printf_append_args(
 
 @always_inline
 fn printf_append_string_n(
-    msg_desc: UInt64, data: Span[UInt8], is_last: Bool
+    msg_desc: UInt64, data: Span[UInt8, _], is_last: Bool
 ) -> UInt64:
     return fprintf_append_string_n(msg_desc, data, is_last)
 

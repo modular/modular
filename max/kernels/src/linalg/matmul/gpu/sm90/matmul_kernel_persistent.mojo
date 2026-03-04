@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import MAX_THREADS_PER_BLOCK_METADATA
-from gpu.globals import WARPGROUP_SIZE
-from gpu import thread_idx, block_idx
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu import thread_idx, block_idx
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from layout import Layout, LayoutTensor
 from layout.tma_async import TMATensorTile
-from gpu.memory import external_memory, AddressSpace
+from std.gpu.memory import external_memory, AddressSpace
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule, TileScheduler
-from linalg.matmul.gpu.sm100_structured.structured_kernels.pipeline import (
+from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )
 from .matmul_kernels import find_K_alignment_upto_16B, HopperMatmulSM90Kernel

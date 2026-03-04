@@ -39,24 +39,24 @@ Note: This implementation currently supports:
 - BF16/FP16 data types
 """
 
-from collections import Optional
-from math import align_up, ceildiv
+from std.collections import Optional
+from std.math import align_up, ceildiv
 
-from sys import size_of
+from std.sys import size_of
 
 from buffer.buffer import NDBuffer
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import B200
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.info import B200
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import create_tensor_tile_im2col
 
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     create_tma_tile,
 )
 from layout import Layout as LegacyLayout, LayoutTensor, RuntimeLayout
 from linalg.utils import elementwise_compute_lambda_type
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from .conv_config import Conv2dConfig, Conv2dProblemShape
 from .conv_smem import Conv2dSmem
@@ -80,9 +80,9 @@ fn conv2d_fprop[
     ] = None,
     register_based_epilogue: Bool = True,
 ](
-    output: NDBuffer[out_type, 4],  # NHWC
-    activation: NDBuffer[act_type, 4],  # NHWC
-    filter: NDBuffer[filter_type, 4],  # KRSC (out_ch, R, S, in_ch)
+    output: NDBuffer[out_type, 4, _],  # NHWC
+    activation: NDBuffer[act_type, 4, _],  # NHWC
+    filter: NDBuffer[filter_type, 4, _],  # KRSC (out_ch, R, S, in_ch)
     problem: Conv2dProblemShape,
     ctx: DeviceContext,
 ) raises:
@@ -351,10 +351,10 @@ fn conv2d_fprop_with_residual[
     register_based_epilogue: Bool = True,
     has_residual: Bool = False,
 ](
-    output: NDBuffer[out_type, 4],  # NHWC - D = Conv(A,B) + beta*C
-    activation: NDBuffer[act_type, 4],  # NHWC - A
-    filter: NDBuffer[filter_type, 4],  # KRSC - B
-    source: NDBuffer[out_type, 4],  # NHWC - C (residual input)
+    output: NDBuffer[out_type, 4, _],  # NHWC - D = Conv(A,B) + beta*C
+    activation: NDBuffer[act_type, 4, _],  # NHWC - A
+    filter: NDBuffer[filter_type, 4, _],  # KRSC - B
+    source: NDBuffer[out_type, 4, _],  # NHWC - C (residual input)
     beta: Float32,  # Residual scale factor
     problem: Conv2dProblemShape,
     ctx: DeviceContext,

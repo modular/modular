@@ -30,70 +30,72 @@ This is a port of grouped_matmul_sm100_1d1d.mojo to the structured kernels
 architecture.
 """
 
-from collections import Optional
-from math import ceildiv
-from memory import UnsafePointer, Pointer
-from sys import size_of
+from std.collections import Optional
+from std.math import ceildiv
+from std.memory import Pointer
+from std.sys import size_of
 
-from gpu import (
+from std.gpu import (
     WARP_SIZE,
     block_id_in_cluster,
-    block_idx,
-    grid_dim,
-    lane_id,
     thread_idx,
-    warp_id,
 )
-from gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
-from gpu.primitives.cluster import (
+from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.sync import named_barrier, syncwarp
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout as LegacyLayout, LayoutTensor
+from std.gpu.sync import syncwarp
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from layout import TileTensor
 from layout._layout import TensorLayout
-from layout._tile_tensor import TileTensor
-from ..structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     GMEMLayout1D,
-    GMEMTile,
     TMATile,
-    TmaOpType,
-    lt_to_tt,
-    lt_to_tt_1d,
     static_row_major,
     tma_desc_layout_3d,
     tma_desc_layout_4d,
 )
-from layout._coord import CoordLike, ComptimeInt, RuntimeInt
 from layout._layout import RowMajorLayout, _IntToComptimeInt
-from layout.tma_async import SharedMemBarrier, TMATensorTile
 from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
-    tile_sf_layout_k_major,
 )
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.fp4_utils import SF_MN_GROUP_SIZE, SF_ATOM_M, SF_ATOM_K
 from linalg.utils import elementwise_compute_lambda_type
 
-from ..structured_kernels.config import BlockScaledMatmulConfig
-from ..structured_kernels.kernel_common import KernelContext
+from ..structured_kernels.config import (
+    BlockScaledMatmulConfig,
+    OutputPipelineConfig,
+)
+from structured_kernels.kernel_common import (
+    KernelContext,
+    WarpRole1D1D,
+    compute_tma_tile_dims,
+    compute_accum_barrier_counts,
+    compute_input_consumer_count,
+    init_core_barriers,
+)
 from ..structured_kernels.tile_pipeline import (
     InputTilePipeline,
-    InputProducerStage,
-    InputConsumerStage,
+    ProducerTiles,
+    ConsumerTiles,
     OutputTilePipeline,
     BlockScaledTilePayload,
 )
-from ..structured_kernels.tmem import BlockScaledTmem, TmemAllocation
-from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from ..structured_kernels.tmem import (
+    BlockScaledTmem,
+    TmemAllocation,
+    TmemDeallocBarrier,
+)
+from structured_kernels.barriers import WarpGroupBarrier
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,
@@ -105,58 +107,6 @@ from .grouped_1d1d_tile_scheduler import (
     GroupedWorkContext1D1D,
 )
 from ..structured_kernels.output_writer import TileWriter
-
-
-# =============================================================================
-# Warp Role for 3-warp specialization (no scheduler)
-# =============================================================================
-
-
-struct WarpRole1D1D(TrivialRegisterPassable):
-    """Warp role for 1D-1D kernel with 3-warp specialization.
-
-    Thread layout (192 threads total) - matches original kernel:
-    - Warps 0-3 (threads 0-127): Epilogue (4 warps)
-    - Warp 4 (threads 128-159): TMA Load
-    - Warp 5 (threads 160-191): MMA
-
-    This layout matches the original grouped_matmul_sm100_1d1d.mojo kernel
-    which uses WarpRole[has_scheduler=False]. The epilogue warps being at
-    0-3 is important because TMAStoreCoords uses `warp_id == 0` for election.
-
-    No scheduler warp - work distribution uses linear grid traversal.
-    """
-
-    comptime EPILOGUE_WARP_START = 0
-    comptime LOAD_WARP_START = 128
-    comptime MMA_WARP_START = 160
-
-    comptime NUM_EPILOGUE_THREADS = 128  # 4 warps
-    comptime NUM_LOAD_THREADS = 32
-    comptime NUM_MMA_THREADS = 32
-
-    comptime TOTAL_THREADS = 192
-
-    @staticmethod
-    @always_inline
-    fn is_epilogue() -> Bool:
-        """Returns True if current thread is in an epilogue warp (warps 0-3)."""
-        return thread_idx.x < Self.LOAD_WARP_START
-
-    @staticmethod
-    @always_inline
-    fn is_load() -> Bool:
-        """Returns True if current thread is in the TMA load warp (warp 4)."""
-        return (
-            thread_idx.x >= Self.LOAD_WARP_START
-            and thread_idx.x < Self.MMA_WARP_START
-        )
-
-    @staticmethod
-    @always_inline
-    fn is_mma() -> Bool:
-        """Returns True if current thread is in the MMA warp (warp 5)."""
-        return thread_idx.x >= Self.MMA_WARP_START
 
 
 # =============================================================================
@@ -228,18 +178,26 @@ struct Grouped1D1DMatmulKernel[
     comptime num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages
     comptime num_output_stages: Int = Self.config.num_output_stages
 
-    # TMEM configuration
+    # TMEM configuration — stride matches MMA output width for scaled kernels.
     comptime NUM_TMEM_COLS = 512
     comptime SFA_NUM_COLS = Self.config.num_sf_k_tiles * (Self.BM // 32)
     comptime SFB_NUM_COLS = Self.config.num_sf_k_tiles * (Self.MMA_N // 32)
     comptime stage_stride_cols = Self.MMA_N
 
+    # Output pipeline config (bundles accum stages, stride, and cta_group)
+    comptime opc = OutputPipelineConfig(
+        Self.num_accum_pipeline_stages,
+        Self.stage_stride_cols,
+        Self.cta_group,
+    )
+
     # ========== Barrier Arrival Counts ==========
 
-    comptime accum_pipeline_producer_arv_count = 1
-    comptime accum_pipeline_consumer_arv_count = (
-        Self.cta_group * WarpRole1D1D.NUM_EPILOGUE_THREADS
-    )
+    comptime _accum_barrier_counts = compute_accum_barrier_counts[
+        WarpRole1D1D.NUM_EPILOGUE_THREADS, Self.cta_group
+    ]()
+    comptime accum_pipeline_producer_arv_count = Self._accum_barrier_counts[0]
+    comptime accum_pipeline_consumer_arv_count = Self._accum_barrier_counts[1]
 
     # ========== Shared Memory Type ==========
 
@@ -280,30 +238,30 @@ struct Grouped1D1DMatmulKernel[
         Self.b_type,
         Self.sfa_dtype,
         Self.sfb_dtype,
-        # A tile dimensions (BM x BK)
-        Self.SmemType.BM,
-        Self.SmemType.BK,
-        # B tile dimensions (BN x BK)
-        Self.SmemType.BN,
-        Self.SmemType.BK,
-        # SFA tile dimensions
-        Self.SmemType.SFA_DIM0,
-        Self.SmemType.SFA_DIM1,
-        # SFB tile dimensions
-        Self.SmemType.SFB_DIM0,
-        Self.SmemType.SFB_DIM1,
-        Self.SmemType.num_pipeline_stages,
+        IndexList[2](
+            Self.SmemType.Core.BM, Self.SmemType.Core.BK
+        ),  # A tile shape
+        IndexList[2](
+            Self.SmemType.Core.BN, Self.SmemType.Core.BK
+        ),  # B tile shape
+        IndexList[2](
+            Self.SmemType.Core.SFA_DIM0, Self.SmemType.Core.SFA_DIM1
+        ),  # SFA shape
+        IndexList[2](
+            Self.SmemType.Core.SFB_DIM0, Self.SmemType.Core.SFB_DIM1
+        ),  # SFB shape
+        Self.SmemType.Core.num_pipeline_stages,
     ]
 
     comptime InputTilePipelineType = InputTilePipeline[
         Self.TilePayload,
-        Self.SmemType.num_group_pipeline_stages,
+        Self.SmemType.Core.num_group_pipeline_stages,
         Self.config.k_group_size,
     ]
 
     # ========== TMEM and Output Pipeline Types ==========
 
-    comptime Tmem = TmemAllocation[Self.cta_group]
+    comptime Tmem = TmemAllocation[Self.opc.cta_group]
 
     comptime TmemRegion = BlockScaledTmem[
         Self.accum_type,
@@ -317,13 +275,9 @@ struct Grouped1D1DMatmulKernel[
         num_sf_k_tiles = Self.config.num_sf_k_tiles,
     ]
 
-    comptime OutputPipeline = OutputTilePipeline[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
-    ]
+    comptime OutputPipeline = OutputTilePipeline[Self.opc]
 
-    comptime TmemDealloc = TmemDeallocBarrier[Self.cta_group]
+    comptime TmemDealloc = TmemDeallocBarrier[Self.opc.cta_group]
 
     # ========== Warp Context Types ==========
 
@@ -332,17 +286,13 @@ struct Grouped1D1DMatmulKernel[
     ]
 
     comptime MmaCtx = MmaWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         WarpRole1D1D.NUM_MMA_THREADS,
         WarpRole1D1D.NUM_EPILOGUE_THREADS,
     ]
 
     comptime EpilogueCtx = EpilogueWarpContext[
-        Self.config.num_accum_pipeline_stages,
-        Self.stage_stride_cols,
-        Self.cta_group,
+        Self.opc,
         WarpRole1D1D.NUM_MMA_THREADS,
         WarpRole1D1D.NUM_EPILOGUE_THREADS,
     ]
@@ -354,14 +304,12 @@ struct Grouped1D1DMatmulKernel[
         accum_type = Self.accum_type,
         block_tile_shape = Self.config.block_tile_shape,
         mma_shape = Self.config.mma_shape,
-        cta_group = Self.cta_group,
-        num_accum_pipeline_stages = Self.config.num_accum_pipeline_stages,
+        opc = Self.opc,
         c_swizzle = Self.config.c_swizzle,
         transpose_c = Self.config.AB_swapped,
-        c_smem_dim0 = Self.SmemType.OutputM,
-        c_smem_dim1 = Self.SmemType.OutputN,
+        c_smem_dim0 = Self.SmemType.Core.OutputM,
+        c_smem_dim1 = Self.SmemType.Core.OutputN,
         num_output_stages = Self.config.num_output_stages,
-        stage_stride_cols = Self.stage_stride_cols,
         num_output_warps = Self.num_output_warps,
         batched=False,  # 1D-1D uses 2D coordinates with bounds checking
     ]
@@ -377,16 +325,16 @@ struct Grouped1D1DMatmulKernel[
 
     # ========== TMA Load Size Constants ==========
 
-    comptime a_expected_bytes = Self.SmemType.a_smem_layout.size() * size_of[
+    comptime a_expected_bytes = Self.SmemType.Core.a_smem_layout.size() * size_of[
         Self.a_type
     ]()
-    comptime b_expected_bytes = Self.SmemType.b_smem_layout.size() * size_of[
+    comptime b_expected_bytes = Self.SmemType.Core.b_smem_layout.size() * size_of[
         Self.b_type
     ]()
-    comptime sfa_expected_bytes = Self.SmemType.sfa_smem_layout.size() * size_of[
+    comptime sfa_expected_bytes = Self.SmemType.Core.sfa_smem_layout.size() * size_of[
         Self.sfa_dtype
     ]()
-    comptime sfb_expected_bytes = Self.SmemType.sfb_smem_layout.size() * size_of[
+    comptime sfb_expected_bytes = Self.SmemType.Core.sfb_smem_layout.size() * size_of[
         Self.sfb_dtype
     ]()
 
@@ -399,8 +347,18 @@ struct Grouped1D1DMatmulKernel[
 
     # ========== TMA Layouts (computed from config, new Layout types) ==========
 
-    comptime a_tile_dim0 = Self.BM // Self.CLUSTER_N
-    comptime b_tile_dim0 = Self.BN // (Self.CLUSTER_M // Self.cta_group)
+    comptime _tma_tile_dims = compute_tma_tile_dims[
+        Self.BM,
+        Self.BN,
+        Self.MMA_M,
+        Self.OutputM,
+        Self.CLUSTER_M,
+        Self.CLUSTER_N,
+        Self.cta_group,
+        AB_swapped = Self.config.AB_swapped,
+    ]()
+    comptime a_tile_dim0 = Self._tma_tile_dims[0]
+    comptime b_tile_dim0 = Self._tma_tile_dims[1]
     comptime a_swizzle_elems = Self.config.a_swizzle.bytes() // size_of[
         Self.a_type
     ]()
@@ -412,9 +370,7 @@ struct Grouped1D1DMatmulKernel[
     ]()
 
     # C tile shape -- same logic as default/block_scaled kernels
-    comptime c_tile_dim0 = Self.OutputM if (
-        Self.MMA_M == 256 or Self.cta_group == 1 or Self.config.AB_swapped
-    ) else 64
+    comptime c_tile_dim0 = Self._tma_tile_dims[2]
     comptime c_tile_dim1 = Self.c_swizzle_elems if (
         Self.config.AB_swapped
     ) else Self.OutputN
@@ -519,6 +475,50 @@ struct Grouped1D1DMatmulKernel[
         ), "Only support cta_group == 1 or 2"
         comptime assert Self.transpose_b, "Only support transposed B"
 
+    # ========== Static Helper Methods ==========
+
+    @staticmethod
+    @always_inline
+    fn init_barriers(
+        elect_one_warp: Bool,
+        elect_one_thread: Bool,
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_op: Self.CTmaOp,
+        sfa_tma_op: Self.SFATmaOp,
+        sfb_tma_op: Self.SFBTmaOp,
+        input_barriers: Self.SmemType.Pipelines.InputBarriers,
+        accum_barriers: Self.SmemType.Pipelines.AccumBarriers,
+        tmem_dealloc: Self.SmemType.Pipelines.TmemDealloc,
+    ):
+        """Initialize barriers and prefetch TMA descriptors."""
+        if elect_one_warp and elect_one_thread:
+            a_tma_op.prefetch_descriptor()
+            b_tma_op.prefetch_descriptor()
+            c_tma_op.prefetch_descriptor()
+            sfa_tma_op.prefetch_descriptor()
+            sfb_tma_op.prefetch_descriptor()
+
+            init_core_barriers[
+                Self.num_group_pipeline_stages,
+                Self.num_accum_pipeline_stages,
+            ](
+                input_barriers.ptr,
+                Int32(
+                    compute_input_consumer_count[
+                        Self.CLUSTER_M, Self.CLUSTER_N, Self.cta_group
+                    ]()
+                ),
+                accum_barriers.ptr,
+                Int32(Self.accum_pipeline_producer_arv_count),
+                Int32(Self.accum_pipeline_consumer_arv_count),
+                tmem_dealloc.ptr,
+                Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group),
+            )
+
+        fence_mbarrier_init()
+        cluster_sync()
+
     # ========== Kernel Entry Point ==========
 
     @staticmethod
@@ -592,11 +592,11 @@ struct Grouped1D1DMatmulKernel[
         var rank_m = UInt(block_id_in_cluster.x)
         var rank_n = UInt(block_id_in_cluster.y)
 
-        # Peer CTA coordinates: (peer_m_rank, mma_coord_m, rank_n)
-        # load_input_tiles unpacks as: peer_rank_n=[0], peer_rank_m=[1],
-        # peer_m_rank=[2].  With this ordering the SMEM offsets
-        # (peer_m_rank * a_tma_load_size, peer_rank_m * b_tma_load_size)
-        # are always 0 for both CTAs, avoiding buffer overflow.
+        # Peer CTA coordinates: (peer_id, mma_coord_m, mma_coord_n)
+        # Following KernelContext convention:
+        #   [0] = rank_m % cta_group  (peer ID within CTA group)
+        #   [1] = rank_m // cta_group (MMA coordinate in M)
+        #   [2] = rank_n              (MMA coordinate in N)
         var peer_cta_coord = (
             rank_m % UInt(Self.cta_group),
             rank_m // UInt(Self.cta_group),
@@ -606,15 +606,13 @@ struct Grouped1D1DMatmulKernel[
         # Per-CTA multicast masks (following KernelContext)
         var a_multicast_mask = UInt16(0)
 
-        @parameter
-        for i in range(Self.CLUSTER_N):
+        comptime for i in range(Self.CLUSTER_N):
             a_multicast_mask |= UInt16(1 << (i * Self.CLUSTER_M))
         a_multicast_mask <<= UInt16(rank_m)
 
         var b_multicast_mask = UInt16(0)
 
-        @parameter
-        for i in range(Self.CLUSTER_M // Self.cta_group):
+        comptime for i in range(Self.CLUSTER_M // Self.cta_group):
             b_multicast_mask |= UInt16(1 << (i * Self.cta_group))
         b_multicast_mask <<= UInt16(rank_m % UInt(Self.cta_group))
         b_multicast_mask <<= UInt16(rank_n * UInt(Self.CLUSTER_M))
@@ -625,38 +623,18 @@ struct Grouped1D1DMatmulKernel[
         var num_k_iters = Int(ceildiv(Int(K), Self.BK))
 
         # ===== Barrier Initialization =====
-        if elect_one_warp and elect_one_thread:
-            a_tma_op.prefetch_descriptor()
-            b_tma_op.prefetch_descriptor()
-            c_tma_op.prefetch_descriptor()
-            sfa_tma_op.prefetch_descriptor()
-            sfb_tma_op.prefetch_descriptor()
-
-            # Initialize input pipeline barriers
-            Self.InputTilePipelineType.init_barriers(
-                input_barriers.ptr,
-                Int32(1),
-                Int32(
-                    Self.config.cluster_shape[0] // Self.cta_group
-                    + Self.config.cluster_shape[1]
-                    - 1
-                ),
-            )
-
-            # Initialize output pipeline barriers
-            Self.OutputPipeline.init_barriers(
-                accum_barriers.ptr,
-                Self.accum_pipeline_producer_arv_count,
-                Int32(Self.accum_pipeline_consumer_arv_count),
-            )
-
-            # Initialize TMEM deallocation barrier
-            smem.pipelines.tmem_dealloc().ptr[].init(
-                Int32(WarpRole1D1D.NUM_EPILOGUE_THREADS * Self.cta_group)
-            )
-
-        fence_mbarrier_init()
-        cluster_sync()
+        Self.init_barriers(
+            elect_one_warp,
+            elect_one_thread,
+            a_tma_op,
+            b_tma_op,
+            c_tma_op,
+            sfa_tma_op,
+            sfb_tma_op,
+            input_barriers,
+            accum_barriers,
+            smem.pipelines.tmem_dealloc(),
+        )
 
         var mma_op = Self.MmaOp()
 
@@ -717,7 +695,9 @@ struct Grouped1D1DMatmulKernel[
             var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
-                Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
+                Self.OutputPipeline(
+                    accum_barriers.ptr, tmem, mma_complete_mask
+                ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
@@ -763,7 +743,9 @@ struct Grouped1D1DMatmulKernel[
             var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
             var epi_ctx = Self.EpilogueCtx(
                 tmem,
-                Self.OutputPipeline(accum_barriers, tmem, mma_complete_mask),
+                Self.OutputPipeline(
+                    accum_barriers.ptr, tmem, mma_complete_mask
+                ),
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
@@ -817,10 +799,10 @@ struct Grouped1D1DMatmulKernel[
         b_tma_op: Self.BTmaOp,
         sfa_tma_op: Self.SFATmaOp,
         sfb_tma_op: Self.SFBTmaOp,
-        tiles: InputProducerStage[
+        tiles: ProducerTiles[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         peer_cta_coord: Tuple[UInt, UInt, UInt],
@@ -832,9 +814,9 @@ struct Grouped1D1DMatmulKernel[
         b_multicast_mask: UInt16,
     ):
         """Load A, B, SFA, SFB tiles using TMA."""
-        var peer_rank_n = peer_cta_coord[0]
-        var peer_rank_m = peer_cta_coord[1]
-        var peer_m_rank = peer_cta_coord[2]
+        var peer_rank_n = Int(peer_cta_coord[0])
+        var peer_rank_m = Int(peer_cta_coord[1])
+        var peer_m_rank = Int(peer_cta_coord[2])
 
         # M coordinate in contiguous token space
         var m_coord = work_ctx.m()
@@ -842,30 +824,30 @@ struct Grouped1D1DMatmulKernel[
         var expert_id = work_ctx.expert_id()
         var group_idx = work_ctx.group_idx()
 
-        var a_gmem_m_coord: UInt
-        var b_gmem_n_coord: UInt
+        var a_gmem_m_coord: Int
+        var b_gmem_n_coord: Int
 
         comptime if Self.config.AB_swapped:
             # A loads weights (b_device): use weight coordinate
             a_gmem_m_coord = (
-                peer_m_rank * UInt(Self.a_tma_rows)
-                + UInt(n_coord)
-                + UInt(expert_id) * UInt(Self.static_N)
+                peer_m_rank * Self.a_tma_rows
+                + Int(n_coord)
+                + Int(expert_id) * Self.static_N
             )
             # B loads tokens (a_device): use token coordinate
             b_gmem_n_coord = (
-                peer_rank_m * UInt(Self.b_tma_rows)
-                + peer_rank_n * UInt(Self.BN)
-                + UInt(m_coord)
+                peer_rank_m * Self.b_tma_rows
+                + peer_rank_n * Self.BN
+                + Int(m_coord)
             )
         else:
             # Normal: A loads tokens, B loads weights
-            a_gmem_m_coord = peer_m_rank * UInt(Self.a_tma_rows) + UInt(m_coord)
+            a_gmem_m_coord = peer_m_rank * Self.a_tma_rows + Int(m_coord)
             b_gmem_n_coord = (
-                peer_rank_m * UInt(Self.b_tma_rows)
-                + peer_rank_n * UInt(Self.BN)
-                + UInt(n_coord)
-                + UInt(expert_id) * UInt(Self.static_N)
+                peer_rank_m * Self.b_tma_rows
+                + peer_rank_n * Self.BN
+                + Int(n_coord)
+                + Int(expert_id) * Self.static_N
             )
 
         if elect_one_sync():
@@ -884,15 +866,15 @@ struct Grouped1D1DMatmulKernel[
 
                 # Peer CTA slice using TileTensor pattern (ptr + layout)
                 var a_peer_tt = type_of(a_tt)(
-                    a_tt.ptr + peer_m_rank * UInt(Self.a_tma_load_size),
+                    a_tt.ptr + peer_m_rank * Self.a_tma_load_size,
                     a_tt.layout,
                 )
                 var b_peer_tt = type_of(b_tt)(
-                    b_tt.ptr + peer_rank_m * UInt(Self.b_tma_load_size),
+                    b_tt.ptr + peer_rank_m * Self.b_tma_load_size,
                     b_tt.layout,
                 )
 
-                var k_coord = UInt(iter_idx + j) * UInt(Self.BK)
+                var k_coord = Int(iter_idx + j) * Self.BK
 
                 # TileTensor directly to TMA (uses TileTensor overload)
                 a_tma_op.async_multicast_load[Self.cta_group](
@@ -957,10 +939,10 @@ struct Grouped1D1DMatmulKernel[
         tiles_origin: MutOrigin,
         //,
     ](
-        tiles: InputConsumerStage[
+        tiles: ConsumerTiles[
             tiles_origin,
             Self.TilePayload,
-            Self.SmemType.num_group_pipeline_stages,
+            Self.SmemType.Core.num_group_pipeline_stages,
             Self.config.k_group_size,
         ],
         mma_op: Self.MmaOp,
@@ -1008,7 +990,7 @@ struct Grouped1D1DMatmulKernel[
     @staticmethod
     @always_inline
     fn epilogue(
-        c_tiles: Self.SmemType.CTileArray,
+        c_tiles: Self.SmemType.Core.CTileArray,
         c_tma_op: Self.CTmaOp,
         c_device: Self.CDeviceTile,
         stage: Self.TileWriterType.Stage,

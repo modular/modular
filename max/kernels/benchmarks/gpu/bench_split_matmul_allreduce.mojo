@@ -11,18 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import random
-from sys import env_get_bool, env_get_dtype, env_get_int, size_of
+import std.random
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    size_of,
+)
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import DimList, NDBuffer
 from comm import MAX_GPUS, Signal
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.distributed_matmul import matmul_allreduce
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 fn _get_run_name[
@@ -160,16 +171,16 @@ fn bench_matmul_all_reduce[
     # Setup the kernel NDBuffers
     comptime for i in range(ngpus):
         As[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, A_static_shape](
-            A_list[i].unsafe_ptr(), DimList(m.value, k.value)
+            A_list[i].unsafe_ptr(), IndexList[2](m.value, k.value)
         )
         Bs[i] = NDBuffer[dtype, 2, ImmutAnyOrigin, B_static_shape](
-            B_list[i].unsafe_ptr(), DimList(n.value, k.value)
+            B_list[i].unsafe_ptr(), IndexList[2](n.value, k.value)
         )
         Cs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
         out_bufs[i] = NDBuffer[dtype, 2, MutAnyOrigin, C_static_shape](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Copy-capture in registers since the lambda will be used on GPU.
@@ -179,7 +190,7 @@ fn bench_matmul_all_reduce[
 
     comptime for i in range(ngpus):
         out_bufs_capture[i] = NDBuffer[dtype, 2](
-            C_reduced_list[i].unsafe_ptr(), DimList(m.value, n.value)
+            C_reduced_list[i].unsafe_ptr(), IndexList[2](m.value, n.value)
         )
 
     # Prepare the output lambda
@@ -249,16 +260,16 @@ fn bench_matmul_all_reduce[
     _ = C_reduced_list^
 
 
-def main():
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+def main() raises:
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 8192))
-    comptime N = env_get_int["N", 8192]()
-    comptime K = env_get_int["K", 2048]()
-    comptime num_gpus = env_get_int["NUM_GPUS", 4]()
-    comptime partition_dim = env_get_int["DIM", 1]()
-    comptime num_partitions = env_get_int["PARTITIONS", 1]()
-    comptime overlap_with_dpl = env_get_bool["OVERLAP", False]()
+    comptime N = get_defined_int["N", 8192]()
+    comptime K = get_defined_int["K", 2048]()
+    comptime num_gpus = get_defined_int["NUM_GPUS", 4]()
+    comptime partition_dim = get_defined_int["DIM", 1]()
+    comptime num_partitions = get_defined_int["PARTITIONS", 1]()
+    comptime overlap_with_dpl = get_defined_bool["OVERLAP", False]()
 
     var m = Bench()
 

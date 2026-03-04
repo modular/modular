@@ -11,11 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from math import ceildiv
-from sys import env_get_bool, env_get_dtype, env_get_int, size_of, simd_width_of
+from std.collections import InlineArray
+from std.math import ceildiv
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    size_of,
+    simd_width_of,
+)
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -28,15 +34,15 @@ from comm.sync import enable_p2p
 from comm.broadcast import broadcast
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
-from gpu.host import (
+from std.gpu.host import (
     DeviceBuffer,
     DeviceContext,
     DeviceMulticastBuffer,
     get_gpu_target,
 )
 from internal_utils import arg_parse, human_readable_size, CacheBustingBuffer
-
-from testing import assert_true
+from std.utils.index import IndexList
+from std.testing import assert_true
 
 
 @always_inline
@@ -183,13 +189,13 @@ fn bench_broadcast[
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
             out_bufs[i] = NDBuffer[dtype, rank](
-                out_multicast_ptr, DimList(length)
+                out_multicast_ptr, IndexList[rank](length)
             )
             list_of_ctx[i].synchronize()
     else:
         for i in range(ngpus):
             out_bufs[i] = NDBuffer[dtype, rank](
-                out_bufs_list[i].unsafe_ptr(), DimList(length)
+                out_bufs_list[i].unsafe_ptr(), IndexList[rank](length)
             )
             # Ensure setup has propagated.
             list_of_ctx[i].synchronize()
@@ -217,7 +223,7 @@ fn bench_broadcast[
         fn call_fn(ctx_inner: DeviceContext, cache_iter: Int) raises:
             var in_buf_offset = NDBuffer[dtype, rank, MutAnyOrigin](
                 cb_in.offset_ptr(cache_iter),
-                DimList(length),
+                IndexList[rank](length),
             )
 
             # Run broadcast - root's input goes to all outputs
@@ -272,7 +278,7 @@ fn bench_broadcast[
     # Create input buffer for verification (no cache offset)
     var in_buf_verify = NDBuffer[dtype, rank, MutAnyOrigin](
         cb_in.unsafe_ptr(),
-        DimList(length),
+        IndexList[rank](length),
     )
 
     # Run one broadcast for verification
@@ -307,19 +313,19 @@ fn bench_broadcast[
     _ = cb_in^
 
 
-def main():
+def main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
     var root = arg_parse("root", 0)
 
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
-    comptime num_gpus = env_get_int["num_gpus", 2]()
-    comptime rank = env_get_int["rank", 1]()
-    comptime use_multimem = env_get_bool["use_multimem", False]()
-    comptime use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime num_gpus = get_defined_int["num_gpus", 2]()
+    comptime rank = get_defined_int["rank", 1]()
+    comptime use_multimem = get_defined_bool["use_multimem", False]()
+    comptime use_vendor_ccl = get_defined_bool["use_vendor_ccl", False]()
     comptime cache_busting = True
 
     # Allow overriding max_num_blocks from command line for tuning.
-    var max_nb = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
+    var max_nb = get_defined_int["TUNE_MAX_NUM_BLOCKS", -1]()
     var max_num_blocks: Optional[Int] = Optional[Int]()
     if max_nb > 0:
         max_num_blocks = Optional[Int](max_nb)

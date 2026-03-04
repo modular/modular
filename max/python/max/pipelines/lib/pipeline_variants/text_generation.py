@@ -51,7 +51,7 @@ from max.interfaces import (
 )
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
 from max.nn import ReturnLogits
-from max.nn.kv_cache import KVCacheInputsSequence, KVCacheParams
+from max.nn.kv_cache import KVCacheParams
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 from transformers import PreTrainedTokenizerFast
@@ -181,7 +181,7 @@ class TextGenerationPipeline(
             )
 
         # Initialize Session.
-        session = InferenceSession(devices=self._devices)
+        session = InferenceSession(devices=[*self._devices])
         self.session = session
 
         # Configure session with pipeline settings.
@@ -214,7 +214,7 @@ class TextGenerationPipeline(
         assert isinstance(kv_params, KVCacheParams)
         self._kv_manager: PagedKVCacheManager = load_kv_manager(
             params=kv_params,
-            max_batch_size=pipeline_config.max_batch_size,
+            max_batch_size=pipeline_config.runtime.max_batch_size,
             max_seq_len=self._pipeline_model.max_seq_len,
             session=session,
             available_cache_memory=model_config.kv_cache._available_cache_memory,
@@ -405,9 +405,7 @@ class TextGenerationPipeline(
         return (
             self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=replica_batches,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
-                ),
+                kv_cache_inputs=kv_cache_inputs,
             ),
             num_steps,
             bitmask,
@@ -595,17 +593,9 @@ class TextGenerationPipeline(
             if i == num_steps - 1:
                 break
 
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
+            curr_step_inputs.kv_cache_inputs = (
                 self._kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
+                    curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
             )
@@ -658,11 +648,14 @@ class TextGenerationPipeline(
     def release(self, request_id: RequestID) -> None:
         """Mark the context as complete, releasing the cache slot from the KV manager.
 
-        Note: KV cache lifecycle is now managed by the scheduler. This method
-        is kept for interface compatibility but is a no-op for regular pipelines.
+        Note: Primary KV cache lifecycle is managed by the scheduler. This method
+        handles extra KV caches managed by the pipeline model (e.g., indexer cache
+        for DeepSeekV3.2).
         """
-        # KV cache release is handled by the scheduler via batch_constructor
-        pass
+        # Primary KV cache release is handled by the scheduler via batch_constructor.
+        # Pipeline model may have extra KV caches to release.
+        if hasattr(self._pipeline_model, "release"):
+            self._pipeline_model.release(request_id)
 
     @property
     def kv_manager(self) -> PagedKVCacheManager:

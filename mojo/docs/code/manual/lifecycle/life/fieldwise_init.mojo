@@ -24,7 +24,7 @@ struct MyPet(Copyable):
         self.age = 0
 
 
-def main():
+def main() raises:
     spot = MyPet("Spot")  # Use new constructor
     willow = MyPet("Willow", 4)  # Use the field-wise constructor
     # end-fieldwise-init-example

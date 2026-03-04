@@ -11,19 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import simd_width_of
-from sys.info import _current_target
+from std.math import ceildiv
+from std.sys import simd_width_of
+from std.sys.info import _current_target
 
-from algorithm import elementwise, sync_parallelize
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
-from layout._coord import Coord, Idx, coord_to_index_list
+from std.algorithm import elementwise, sync_parallelize
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
+from layout import Coord, Idx, TileTensor, coord_to_index_list
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
@@ -326,8 +325,8 @@ fn _index_tensor_impl[
         comptime assert data_coord.flat_rank == data.flat_rank
         var out_coord = Coord(output_idx)
         comptime assert out_coord.flat_rank == output.flat_rank
-        output.store[width=simd_width](
-            out_coord, data.load[width=simd_width](data_coord)
+        output.store[width=simd_width, alignment=1](
+            out_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
     comptime compile_target = _current_target() if is_cpu[
@@ -534,7 +533,7 @@ fn advanced_indexing_getitem[
 
         var out_coord = Coord(output_index)
         comptime assert out_coord.flat_rank == out_tensor.flat_rank
-        out_tensor.store[width=width](
+        out_tensor.store[width=width, alignment=1](
             out_coord,
             input_tensor_fn[width=width](input_index),
         )
@@ -753,7 +752,7 @@ fn advanced_indexing_setitem_inplace[
 
         var input_tensor_coord = Coord(input_tensor_indices)
         comptime assert input_tensor_coord.flat_rank == input_tensor.flat_rank
-        input_tensor.store[width=width](
+        input_tensor.store[width=width, alignment=1](
             input_tensor_coord,
             updates_tensor_fn[width=width](
                 rebind[IndexList[updates_rank]](iteration_indices)

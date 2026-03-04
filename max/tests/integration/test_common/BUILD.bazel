@@ -1,5 +1,6 @@
 # Common code shared by different pipeline tests.
 
+load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
 load(
     "//bazel:api.bzl",
     "modular_py_library",
@@ -229,6 +230,11 @@ modular_py_library(
     ],
 )
 
+pycross_wheel_library(
+    name = "transformers_v4",
+    wheel = "@transformers_v4_wheel//file",
+)
+
 modular_py_library(
     name = "vllm_utils",
     testonly = True,
@@ -243,6 +249,11 @@ modular_py_library(
     ],
     imports = [".."],
     deps = [
+        # HACK:
+        ":transformers_v4",
+        # Don't sort the above dep ^^^, we're forcing a specific version of transformers.
+        # We rely on Python import order to make sure this one gets picked up instead of
+        # the normal one pulled from rules_pycross transitively.
         ":test_data",
         requirement("numpy"),
     ] + select({
@@ -356,5 +367,21 @@ modular_py_library(
     deps = [
         requirement("boto3"),
         requirement("pillow"),
+    ],
+)
+
+modular_py_library(
+    name = "build_graph_helpers",
+    testonly = True,
+    srcs = ["build_graph_helpers.py"],
+    imports = [".."],
+    deps = [
+        ":mocks",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )

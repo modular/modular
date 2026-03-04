@@ -16,8 +16,10 @@ import copy
 import csv
 import functools
 import glob
+import json
 import logging
 import math
+import multiprocessing
 import os
 import shutil
 import string
@@ -101,6 +103,18 @@ def _run_cmdline(
             f"Unable to run command {list2cmdline(cmd)}: {exc}",
             os.EX_OSERR,
         )
+
+
+def _init_gpu_worker(
+    gpu_queue: multiprocessing.Queue, visible_device_prefix: str
+) -> None:
+    """Worker initializer that assigns a dedicated GPU to each pool worker."""
+    gpu_id = gpu_queue.get()
+    if visible_device_prefix:
+        os.environ[visible_device_prefix] = str(gpu_id)
+    logging.debug(
+        f"Worker pid={os.getpid()} assigned {visible_device_prefix}={gpu_id}"
+    )
 
 
 @dataclass(frozen=True)
@@ -787,6 +801,17 @@ class BuildItem:
     exec_benchmark_time: float = 0
 
 
+@dataclass
+class ExecTaskArgs:
+    """Arguments for a single benchmark execution task."""
+
+    build_item: BuildItem
+    profile: str
+    exec_prefix: list[str]
+    exec_suffix: list[str]
+    timeout_secs: int | None
+
+
 def _get_similar_files(path: Path) -> list[Path]:
     """Returns a list of files that belong to the same benchmark but are
     created by different processes, e.g. due to using mpirun
@@ -1061,13 +1086,11 @@ class Scheduler:
         profile,  # noqa: ANN001
         exec_prefix,  # noqa: ANN001
         exec_suffix,  # noqa: ANN001
-        env: dict[str, str] | None = None,
         timeout_secs: int | None = None,
     ) -> BuildItem:
         """Execute all the items in the scheduler"""
 
-        if env is None:
-            env = {}
+        env: dict[str, str] = {}
         bin_name = build_item.spec_instance.hash(with_variables=False)
 
         exec_prefix_item = copy.deepcopy(exec_prefix)
@@ -1108,17 +1131,44 @@ class Scheduler:
 
     @staticmethod
     def _pool_execute_item_wrapper(
-        args: tuple[
-            BuildItem, str, list[str], list[str], dict[str, str], int | None
-        ],
+        args: ExecTaskArgs,
     ) -> BuildItem:
-        return Scheduler.execute_item(*args)
+        return Scheduler.execute_item(
+            build_item=args.build_item,
+            profile=args.profile,
+            exec_prefix=args.exec_prefix,
+            exec_suffix=args.exec_suffix,
+            timeout_secs=args.timeout_secs,
+        )
 
     def setup_build_pool(self) -> None:
         self.build_pool = Pool(self.num_cpu)
 
-    def setup_execution_pool(self) -> None:
-        self.execution_pool = Pool(self.num_gpu)
+    def setup_execution_pool(
+        self,
+        visible_device_prefix: str = "",
+        use_mpirun: bool = False,
+    ) -> None:
+        if visible_device_prefix and self.num_gpu > 1 and not use_mpirun:
+            gpu_queue: multiprocessing.Queue = multiprocessing.Queue()
+            # Respect any pre-set device visibility env var
+            existing = os.environ.get(visible_device_prefix, "")
+            if existing.strip():
+                visible_ids = list(
+                    dict.fromkeys(v.strip() for v in existing.split(","))
+                )
+                for gpu_id in visible_ids[: self.num_gpu]:
+                    gpu_queue.put(gpu_id)
+            else:
+                for i in range(self.num_gpu):
+                    gpu_queue.put(i)
+            self.execution_pool = Pool(
+                self.num_gpu,
+                initializer=_init_gpu_worker,
+                initargs=(gpu_queue, visible_device_prefix),
+            )
+        else:
+            self.execution_pool = Pool(self.num_gpu)
 
     def close_build_pool(self) -> None:
         self.build_pool.close()
@@ -1256,6 +1306,8 @@ class Scheduler:
         num_invalid_specs = len(invalid_specs)
         num_valid_specs = len(valid_specs)
 
+        # Build structured failure records for all invalid specs
+        failure_records = []
         if num_invalid_specs:
             output_lines += [utils.LINE]
             output_lines += [
@@ -1265,6 +1317,21 @@ class Scheduler:
             for idx in invalid_specs:
                 s = bi_list[idx].spec_instance
                 build_output = bi_list[idx].build_output
+                # Determine failure type
+                if (
+                    build_output.return_code != os.EX_OK
+                    and not bi_list[idx].bin_path
+                ):
+                    failure_type = "build"
+                else:
+                    failure_type = "execution"
+                failure_records.append(
+                    {
+                        "mesh_idx": idx,
+                        "params": s.to_obj(),
+                        "failure_type": failure_type,
+                    }
+                )
                 # check build failure
                 if build_output.stdout or build_output.stderr:
                     output_lines += [utils.LINE]
@@ -1340,6 +1407,22 @@ class Scheduler:
 
             with open(txt_path, "w") as f:
                 f.write(output_str + "\n")
+
+            # Write structured failure data for downstream reporting
+            failures_json_path = output_path.with_suffix(
+                output_suffix + ".failures.json"
+            )
+            failures_data = {
+                "spec_name": spec.name,
+                "spec_file": str(spec.file),
+                "num_valid": num_valid_specs,
+                "num_total": len(spec),
+                "failures": failure_records,
+            }
+            with open(failures_json_path, "w") as f:
+                json.dump(failures_data, f, indent=2, default=str)
+
             logging.info(f"wrote results to [{txt_path}]")
             logging.info(f"wrote results to [{csv_path}]")
             logging.info(f"wrote results to [{pkl_path}]")
+            logging.info(f"wrote results to [{failures_json_path}]")

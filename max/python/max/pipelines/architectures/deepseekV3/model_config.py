@@ -136,7 +136,6 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-
         kvcache_quant_config = None
         if kv_cache_config.cache_dtype in (
             DType.float8_e4m3fn,
@@ -146,6 +145,12 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             kvcache_quant_config = KVCacheQuantizationConfig(
                 scale_dtype=DType.float32, quantization_granularity=32
             )
+        # Determine q_max_seq_len from speculative decoding config (MTP).
+        q_max_seq_len = 1
+        spec_cfg = pipeline_config.speculative
+        if spec_cfg is not None and spec_cfg.is_mtp():
+            q_max_seq_len = spec_cfg.num_speculative_tokens + 1
+
         return kv_cache_config.to_params(
             dtype=cache_dtype,
             # n_kv_heads should always be 1 because we only cache a single latent vector
@@ -157,6 +162,8 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
+            q_max_seq_len=q_max_seq_len,
             kvcache_quant_config=kvcache_quant_config,
         )
 

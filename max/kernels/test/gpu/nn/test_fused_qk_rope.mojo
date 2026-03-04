@@ -11,16 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+)
 from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from std.memory import memcpy
 
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
@@ -31,10 +36,10 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
-def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
+def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -295,6 +300,6 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
     _ = valid_lengths_device^
 
 
-def main() -> None:
+def main() raises -> None:
     with DeviceContext() as ctx:
         test_fused_qk_rope[DType.float32](ctx)

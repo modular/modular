@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import ulp_distance
-from testing import assert_true, TestSuite
+from std.testing import assert_true, TestSuite
 
 
 fn test_ulp_distance() raises:
@@ -57,5 +57,5 @@ fn test_ulp_distance() raises:
     assert_true(ulp == 13)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -15,19 +15,19 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import List, Set
-from hashlib.hasher import Hasher
+from std.collections import List, Set
+from std.hashlib.hasher import Hasher
 
-from python import (
+from std.python import (
     ConvertibleFromPython,
     ConvertibleToPython,
     Python,
     PythonObject,
 )
 
-from builtin.rebind import trait_downcast
-from utils._select import _select_register_value as select
-from utils._visualizers import lldb_formatter_wrapping_type
+from std.builtin.rebind import trait_downcast
+from std.utils._select import _select_register_value as select
+from std.utils._visualizers import lldb_formatter_wrapping_type
 
 # ===----------------------------------------------------------------------=== #
 #  Boolable
@@ -74,7 +74,6 @@ struct Bool(
     Floatable,
     Hashable,
     ImplicitlyCopyable,
-    Indexer,
     Intable,
     TrivialRegisterPassable,
     Writable,
@@ -256,15 +255,6 @@ struct Bool(
             The integral representation of the value.
         """
         return self.__int__()
-
-    @always_inline("builtin")
-    fn __mlir_index__(self) -> __mlir_type.index:
-        """Convert to index.
-
-        Returns:
-            1 if the Bool is True, 0 otherwise.
-        """
-        return self.__int__()._mlir_value
 
     @always_inline("nodebug")
     fn __float__(self) -> Float64:

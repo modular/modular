@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os.atomic import Atomic, Consistency
+from std.math import ceildiv
+from std.os.atomic import Atomic, Consistency
 
-from gpu import *
-from gpu.host import DeviceContext
-from testing import assert_equal, TestSuite
-from sys import is_apple_gpu, has_apple_gpu_accelerator
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, TestSuite
+from std.sys import is_apple_gpu, has_apple_gpu_accelerator
 
 
 @fieldwise_init
@@ -108,8 +108,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     var res_min = Float32(0)
     var res_max = Float32(0)
 
-    @parameter
-    if not has_apple_gpu_accelerator():
+    comptime if not has_apple_gpu_accelerator():
         var res_min_device = ctx.enqueue_create_buffer[F32](1)
         res_min_device.enqueue_fill(0)
 
@@ -158,7 +157,7 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     _ = vec_device
 
 
-def test_reduce_atomic():
+def test_reduce_atomic() raises:
     with DeviceContext() as ctx:
         run_reduce(FillStrategy.LINSPACE, ctx)
         run_reduce(FillStrategy.NEG_LINSPACE, ctx)
@@ -167,7 +166,7 @@ def test_reduce_atomic():
         run_reduce(FillStrategy.ONES, ctx)
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

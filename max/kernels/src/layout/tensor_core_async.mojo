@@ -34,11 +34,11 @@ Performance features:
 
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
-from sys import size_of, bit_width_of
-from sys._assembly import inlined_assembly
+from std.sys import size_of, bit_width_of
+from std.sys._assembly import inlined_assembly
 
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.mma import (
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
@@ -58,7 +58,7 @@ from layout.layout import (
     upcast,
 )
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #

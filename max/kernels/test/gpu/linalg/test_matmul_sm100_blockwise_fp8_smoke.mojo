@@ -19,25 +19,25 @@ Covers:
 Target: < 1 minute compile + run for debugging purposes.
 """
 
-from math import align_up, ceildiv
-from sys import size_of
+from std.math import align_up, ceildiv
+from std.sys import size_of
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
 )
-from random import rand
+from std.random import rand
 from internal_utils._measure import relative_difference
 from internal_utils._utils import ValOrDim, dynamic, static
 from layout._ndbuffer_stub import from_ndbuffer_row_major
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
@@ -45,9 +45,9 @@ from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul impor
     blockwise_fp8_matmul,
 )
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 
 fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
@@ -263,7 +263,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     print("PASSED")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime in_dtype = DType.float8_e4m3fn

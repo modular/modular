@@ -13,12 +13,12 @@
 
 # DOC: mojo/docs/manual/get-started.mdx
 
-import random
-from collections import Optional
+import std.random
+from std.collections import Optional
 
 
 @fieldwise_init
-struct Grid(Copyable, Stringable):
+struct Grid(Copyable, Writable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -34,28 +34,27 @@ struct Grid(Copyable, Stringable):
     fn __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
-    def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
+    def __setitem__(mut self, row: Int, col: Int, value: Int) raises -> None:
         self.data[row][col] = value
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __str__(self) -> String:
-        # Create an empty String
-        str = String()
-
+    fn write_to(self, mut writer: Some[Writer]):
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
                 if self[row, col] == 1:
-                    str += "*"  # If cell is populated, append an asterisk
+                    # If cell is populated, write an asterisk
+                    writer.write_string("*")
                 else:
-                    str += " "  # If cell is not populated, append a space
+                    # If cell is not populated, write a space
+                    writer.write_string(" ")
             if row != self.rows - 1:
-                str += "\n"  # Add a newline between rows, but not at the end
-        return str
+                # Add a newline between rows, but not at the end
+                writer.write_string("\n")
 
     # ===-------------------------------------------------------------------===#
     # Factory methods

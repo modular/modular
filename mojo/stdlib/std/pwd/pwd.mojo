@@ -21,7 +21,7 @@ Constraints:
     Available on Linux and macOS only.
 """
 
-from sys import CompilationTarget
+from std.sys import CompilationTarget
 
 # ===----------------------------------------------------------------------=== #
 # Passwd

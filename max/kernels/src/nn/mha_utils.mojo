@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from collections import OptionalReg
-from sys import (
+from std.math import align_up, ceildiv
+from std.collections import OptionalReg
+from std.sys import (
     CompilationTarget,
     align_of,
-    env_get_int,
-    env_get_bool,
+    get_defined_int,
+    get_defined_bool,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -25,14 +25,16 @@ from sys import (
     simd_width_of,
     size_of,
 )
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
-from bit import prev_power_of_two
-from gpu import WARP_SIZE, lane_id
-from gpu.host.nvidia.tma import TensorMapSwizzle
+from std.bit import prev_power_of_two
+from std.gpu import WARP_SIZE, lane_id
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import AddressSpace
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
+from layout.runtime_layout import RuntimeLayout
 from layout.swizzle import make_ldmatrix_swizzle
 from nn.mha_mask import (
     CausalMask,
@@ -44,10 +46,9 @@ from nn.mha_mask import (
     NullMask,
     SlidingWindowCausalMask,
 )
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 
-from utils.index import Index, IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils.index import Index, IndexList
+from std.utils.numerics import min_or_neg_inf
 
 # ===-----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -59,9 +60,23 @@ comptime is_sm100 = "sm_100" in _accelerator_arch()
 comptime is_sm90or100 = is_sm90 or is_sm100
 
 
-struct FlashAttentionAlgorithm(
-    Defaultable, Stringable, TrivialRegisterPassable, Writable
-):
+@always_inline
+fn as_dynamic_row_major_1d[
+    dtype: DType
+](
+    tensor: LayoutTensor[
+        mut=False, dtype, address_space = AddressSpace.GENERIC, ...
+    ],
+) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
+    return LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin](
+        tensor.ptr,
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            tensor.get_shape()
+        ),
+    )
+
+
+struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     var _value: Int32
 
     comptime NAIVE = Self(0)
@@ -88,6 +103,7 @@ struct FlashAttentionAlgorithm(
         return self._value != other._value
 
     @always_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -211,7 +227,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             return 0
 
         comptime persistent = (
-            env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
+            get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
         ) and sm_90
         sm_90_fa3 = sm_90 and (self.algorithm == 3)
 
@@ -286,7 +302,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 # BN <= (4*reg_per - 2*depth - 16)//3
                 reg_upper_bound = (4 * reg_per - 2 * Int(depth) - 16) // 3
                 comptime persistent = (
-                    env_get_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
+                    get_defined_int["USE_EXPERIMENTAL_KERNELS", 0]() != 0
                 )
                 smem_total = 227000
                 # smem_total >= 2*(BN * depth * pipeline_stages + BM*depth*(1+persistent))
@@ -316,7 +332,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             self.BK = BK.or_else(64)
             self.WN = WN.or_else(min(self.num_keys_per_block, 256))
         else:
-            comptime use_experimental_cdna4_kernel = env_get_bool[
+            comptime use_experimental_cdna4_kernel = get_defined_bool[
                 "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
             ]()
             # BN
@@ -406,7 +422,7 @@ fn _copy_frag_to_smem_nvidia[
         type0, layout0, address_space = AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space = AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -505,7 +521,7 @@ fn _copy_frag_to_smem_amd[
         type0, layout0, address_space = AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space = AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -585,7 +601,7 @@ fn _copy_frag_to_smem[
         type0, layout0, address_space = AddressSpace.SHARED, ...
     ],
     p_reg_tile: LayoutTensor[
-        type1, layout1, address_space = AddressSpace.LOCAL
+        type1, layout1, _, address_space = AddressSpace.LOCAL
     ],
     warp_x: UInt32,
     warp_y: UInt32,
@@ -639,28 +655,21 @@ fn get_start_and_end_for_partitions[
     # return (start, end)
 
 
-comptime callback_fn_type = fn[mask_t: MHAMask, score_mod_t: ScoreModTrait](
-    mask: mask_t, score_mod: score_mod_t
+comptime callback_fn_type = fn[mask_t: MHAMask](
+    mask: mask_t
 ) raises capturing -> None
 
 
 @always_inline
-fn dispatch_mask_and_score_mod[
+fn dispatch_mask[
     mask_type: String,
-    score_mod_type: String,
     callback_fn: callback_fn_type,
     local_window_size: Int = -1,
-    num_heads: Int = -1,
 ]() raises -> None:
     @always_inline
     @parameter
     fn outer_wrapper[mask_t: MHAMask](mask: mask_t) raises:
-        @always_inline
-        @parameter
-        fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
-            return callback_fn(mask, score_mod)
-
-        return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
+        return callback_fn(mask)
 
     # TODO: attach string constants to mask types themselves.
     comptime if MaskName.CAUSAL == mask_type:
@@ -687,13 +696,11 @@ fn dispatch_mask_and_score_mod[
 
 
 @always_inline
-fn dispatch_materialized_mask_and_score_mod[
+fn dispatch_materialized_mask[
     dtype: DType,
     layout: Layout,
     //,
-    score_mod_type: String,
     callback_fn: callback_fn_type,
-    num_heads: Int = -1,
 ](
     mask_nd: LayoutTensor[dtype, layout, MutAnyOrigin],
     start_pos_nd: OptionalReg[
@@ -703,38 +710,7 @@ fn dispatch_materialized_mask_and_score_mod[
     ] = None,
 ) raises -> None:
     var mask = MaterializedMask(mask_nd, start_pos_nd)
-
-    @always_inline
-    @__copy_capture(mask)
-    @parameter
-    fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
-        return callback_fn(mask, score_mod)
-
-    return _dispatch_score_mod[score_mod_type, wrapper, num_heads]()
-
-
-@always_inline
-fn _dispatch_score_mod[
-    score_mod_type: String,
-    callback_fn: fn[score_mod_t: ScoreModTrait](
-        score_mod: score_mod_t
-    ) raises capturing -> None,
-    num_heads: Int = -1,
-]() raises -> None:
-    @always_inline
-    @parameter
-    fn wrapper[score_mod_t: ScoreModTrait](score_mod: score_mod_t) raises:
-        return callback_fn(score_mod)
-
-    comptime if score_mod_type == AlibiScoreMod.name_str:
-        comptime assert (
-            num_heads > 0
-        ), "You must specify num_heads for AlibiScoreMod"
-        return wrapper(AlibiScoreMod[num_heads]())
-    elif score_mod_type == IdentityScoreMod.name_str:
-        return wrapper(IdentityScoreMod())
-    else:
-        comptime assert False, "Unsupported score mod type: " + score_mod_type
+    return callback_fn(mask)
 
 
 # The motivation here is to be able to pass `StaticInt[1]()`

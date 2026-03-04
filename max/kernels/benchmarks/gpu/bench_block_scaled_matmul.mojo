@@ -11,22 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
-    env_get_string,
+from std.math import align_up, ceildiv
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    get_defined_string,
     has_nvidia_gpu_accelerator,
     size_of,
     align_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from buffer import Dim, DimList, NDBuffer
-from gpu import global_idx, grid_dim, block_dim
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu import global_idx, grid_dim, block_dim
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
@@ -35,11 +41,11 @@ from internal_utils import (
     pytorch_like_tolerances_for,
 )
 from internal_utils._measure import relative_difference
-from memory import LegacyUnsafePointer, bitcast
+from std.memory import LegacyUnsafePointer, bitcast
 from linalg.fp4_quantization import block_scaled_matmul
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from random import rand, Random
+from std.random import rand, Random
 from internal_utils._utils import (
     InitializationType,
     ValOrDim,
@@ -59,8 +65,8 @@ from linalg.fp4_utils import (
 )
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
-from utils import IndexList
-from gpu.host.info import B200
+from std.utils import IndexList
+from std.gpu.host.info import B200
 
 
 # GPU kernel to initialize MXFP8 scale buffers with random exponents.
@@ -209,31 +215,31 @@ fn bench_matmul[
     comptime static_a_scales_shape = DimList(
         ceildiv(shape_a.at[0](), SF_MN_GROUP_SIZE),
         ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
     comptime static_b_scales_shape = DimList(
         ceildiv(shape_b.at[0](), SF_MN_GROUP_SIZE),
         ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
-    var dynamic_a_scales_shape = DimList(
+    var dynamic_a_scales_shape = IndexList[5](
         ceildiv(M, SF_MN_GROUP_SIZE),
-        ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(K.get(), SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
-    var dynamic_b_scales_shape = DimList(
+    var dynamic_b_scales_shape = IndexList[5](
         ceildiv(N, SF_MN_GROUP_SIZE),
-        ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+        ceildiv(K.get(), SF_VECTOR_SIZE * SF_ATOM_K),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
     )
 
     var a_scales_size = (
@@ -585,15 +591,15 @@ fn get_dtype[micro_scaling_mode: StaticString]() -> DType:
         return DType.uint8
 
 
-def main():
-    comptime micro_scaling_mode = env_get_string["scaling_mode", "nvfp4"]()
+def main() raises:
+    comptime micro_scaling_mode = get_defined_string["scaling_mode", "nvfp4"]()
     comptime dtype = get_dtype[micro_scaling_mode]()
 
     var M = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int[
+    comptime N = get_defined_int["N", 1]()
+    comptime K = get_defined_int[
         "K", 2
-    ]() // 2 if micro_scaling_mode == "nvfp4" else env_get_int["K", 1]()
+    ]() // 2 if micro_scaling_mode == "nvfp4" else get_defined_int["K", 1]()
 
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
@@ -601,9 +607,9 @@ def main():
     var verify = arg_parse("verify", False)
     comptime cache_busting = True
     comptime transpose_b = True
-    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
-    comptime epilogue = env_get_bool["epilogue", False]()
-    comptime register_based_epilogue = env_get_bool[
+    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
+    comptime epilogue = get_defined_bool["epilogue", False]()
+    comptime register_based_epilogue = get_defined_bool[
         "register_based_epilogue", True
     ]()
 

@@ -19,13 +19,13 @@ These tests verify:
 4. K-tile count is correct for each group
 """
 
-from gpu import barrier, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext
+from std.gpu import barrier, block_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
-from memory import stack_allocation
+from std.memory import stack_allocation
 
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul_kernel import (
@@ -36,7 +36,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_schedu
     GroupedWorkInfo,
     GroupedWorkIterator,
 )
-from utils.index import Index
+from std.utils.index import Index
 
 
 # =============================================================================
@@ -75,7 +75,7 @@ fn test_scheduler_kernel[
 ):
     """Kernel that iterates over all tiles and records their coordinates."""
     # Convert LayoutTensor to TileTensor for the scheduler
-    from memory import UnsafePointer as NewPtr
+    from std.memory import UnsafePointer as NewPtr
     from layout._layout import row_major as new_row_major
 
     var problem_sizes_tt = _ProblemSizesTile[max_groups](
@@ -112,7 +112,7 @@ fn test_scheduler_kernel[
         tile_count[0, 0] = Int32(scheduler.total_tiles())
 
 
-def test_single_group(ctx: DeviceContext):
+def test_single_group(ctx: DeviceContext) raises:
     """Test scheduler with a single group."""
     print("  Test: Single group (64x64x128)")
 
@@ -216,7 +216,7 @@ def test_single_group(ctx: DeviceContext):
     _ = tile_count^
 
 
-def test_two_groups(ctx: DeviceContext):
+def test_two_groups(ctx: DeviceContext) raises:
     """Test scheduler with two groups of different sizes."""
     print("  Test: Two groups (32x32x64, 48x48x96)")
 
@@ -356,7 +356,7 @@ def test_two_groups(ctx: DeviceContext):
     _ = tile_count^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("=" * 60)
         print("Test: GroupedTileScheduler")

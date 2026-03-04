@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
+from std.hashlib.hasher import Hasher
 
-from collections.set import Set
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host.info import H100
-from utils.index import Index, IndexList
+from std.collections.set import Set
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host.info import H100
+from std.utils.index import Index, IndexList
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
-from collections import Optional
+from std.collections import Optional
 
 
 struct MatmulConfig[
@@ -26,7 +26,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, Stringable, TrivialRegisterPassable, Writable):
+](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
     """Static configuration of SM90 GPU matmul."""
 
     # Mandatory parameters
@@ -249,6 +249,7 @@ struct MatmulConfig[
             and self.k_group_size == other.k_group_size
         )
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         return String.write(self)
 
@@ -294,6 +295,7 @@ struct MatmulConfig[
         writer.write("  transpose_b: ", "K" if Self.transpose_b else "MN", "\n")
         writer.write(")")
 
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         return String.write(self)
 

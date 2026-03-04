@@ -16,9 +16,9 @@ This module provides TMA descriptor creation and management for efficient memory
 transfers on NVIDIA Blackwell (SM100) GPUs using the Tensor Memory Accelerator.
 """
 
-from utils.index import IndexList
-from gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
-from gpu.memory import (
+from std.utils.index import IndexList
+from std.gpu.host._tensormap import TensorMap, SwizzleMode, create_tensormap
+from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
 )
@@ -28,12 +28,12 @@ from layout.layout_tensor import LayoutTensor
 from layout.layout import Layout, zipped_divide, blocked_product
 from layout.copy import CopyPolicy
 from layout.tma_async import SharedMemBarrier
-from gpu.host import DeviceBuffer, DeviceContext
-from sys import size_of
-from memory.pointer import AddressSpace as _AddressSpace
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.sys import size_of
+from std.memory.pointer import AddressSpace as _AddressSpace
 from layout.swizzle import Swizzle
-from bit import log2_floor
-from builtin.device_passable import DevicePassable
+from std.bit import log2_floor
+from std.builtin.device_passable import DevicePassable
 
 
 struct TMADescriptor[
@@ -236,7 +236,7 @@ struct TMALoad[
 
 comptime UInt32Indices[rank: Int] = IndexList[rank, element_type = DType.uint32]
 comptime MBarPtr = UnsafePointer[
-    SharedMemBarrier, address_space = AddressSpace.SHARED
+    SharedMemBarrier, _, address_space = AddressSpace.SHARED
 ]
 
 

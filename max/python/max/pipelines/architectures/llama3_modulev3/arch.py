@@ -14,10 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from . import weight_adapters
 from .model import Llama3Model
@@ -36,8 +33,8 @@ llama_modulev3_arch = SupportedArchitecture(
     ],
     default_encoding="bfloat16",
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,

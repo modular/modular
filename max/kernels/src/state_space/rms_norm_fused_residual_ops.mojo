@@ -13,10 +13,10 @@
 """RMSNorm fused residual op registration for state space models."""
 
 import compiler_internal as compiler
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual
 
@@ -59,11 +59,11 @@ struct RMSNormFusedResidual:
         target: StaticString,
         multiply_before_cast: Bool = True,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        residual_output: OutputTensor[dtype=dtype, rank=rank],
-        input: InputTensor[dtype=dtype, rank=rank],
-        residual_input: InputTensor[dtype=dtype, rank=rank],
-        gamma: InputTensor[dtype=dtype, rank=1],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        residual_output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        residual_input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
         dropout_p: Scalar[dtype=dtype],
@@ -139,9 +139,9 @@ struct RMSNormFusedResidual:
         dtype: DType,
         rank: Int,
     ](
-        input: InputTensor[dtype=dtype, rank=rank],
-        residual_input: InputTensor[dtype=dtype, rank=rank],
-        gamma: InputTensor[dtype=dtype, rank=1],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        residual_input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
         dropout_p: Scalar[dtype=dtype],

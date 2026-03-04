@@ -30,6 +30,7 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib.config.kv_cache_config import KVCacheConfig
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.speculative_decoding import (
     StandaloneSpeculativeDecodingPipeline,
 )
@@ -54,7 +55,6 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
     """Fixture to set up a speculative decoding pipeline with common configuration."""
     model_name = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     kv_cache_config = KVCacheConfig(
-        cache_strategy="paged",
         kv_cache_page_size=128,
         device_memory_utilization=0.3,
     )
@@ -74,7 +74,7 @@ def setup_speculative_decoding_pipeline(num_steps: int = 10):  # noqa: ANN201
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
+        runtime=PipelineRuntimeConfig(max_batch_size=4),
     )
 
     tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
@@ -197,7 +197,9 @@ def test_speculative_decoding_no_rejection(
         context_batch=context_batch,
         first_rejected_tokens=first_rejected_tokens.to_numpy(),
         recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy(),
+        bonus_tokens=bonus_tokens.to_numpy()
+        if bonus_tokens is not None
+        else None,
         draft_tokens=draft_tokens.to_numpy(),
         num_draft_tokens_generated=num_steps,
     )
@@ -295,7 +297,9 @@ def test_speculative_decoding_partial_rejection(
         context_batch=context_batch,
         first_rejected_tokens=first_rejected_tokens_host,
         recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy(),
+        bonus_tokens=bonus_tokens.to_numpy()
+        if bonus_tokens is not None
+        else None,
         draft_tokens=draft_tokens_host,
         num_draft_tokens_generated=num_steps,
     )

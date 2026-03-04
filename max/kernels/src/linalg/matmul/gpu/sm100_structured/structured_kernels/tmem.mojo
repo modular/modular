@@ -23,8 +23,8 @@ shared memory. This module provides type-safe abstractions:
 
 from layout import Layout
 
-from gpu import syncwarp
-from gpu.compute.arch.tcgen05 import (
+from std.gpu import syncwarp
+from std.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
     tcgen05_ld,
@@ -34,7 +34,10 @@ from gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from layout.tma_async import SharedMemBarrier
 from linalg.structuring import SMemArray
+from .config import OutputPipelineConfig
 
 
 struct TmemAllocation[
@@ -813,9 +816,7 @@ struct BlockScaledTmem[
 
 
 struct TmemStage[
-    num_stages: Int,
-    stage_stride: Int,
-    cta_group: Int,
+    opc: OutputPipelineConfig,
 ](TrivialRegisterPassable):
     """A pipeline stage within TMEM for accumulator buffering.
 
@@ -828,10 +829,12 @@ struct TmemStage[
       - tensor[layout](): Get typed TmemTensor view
 
     Parameters:
-        num_stages: Pipeline stages (typically 2-4).
-        stage_stride: Columns per stage (512 / num_stages).
-        cta_group: Cooperating CTAs (1 or 2).
+        opc: Output pipeline configuration (stages, stride, cta_group).
     """
+
+    comptime num_stages = Self.opc.num_stages
+    comptime stage_stride = Self.opc.stage_stride_cols
+    comptime cta_group = Self.opc.cta_group
 
     var base_addr: Int
     var index: Int
@@ -939,3 +942,63 @@ struct TmemStage[
     fn wait_load():
         """Wait for TMEM load operations to complete."""
         TmemAddress.wait_load()
+
+
+# =============================================================================
+# TmemDeallocBarrier - TMEM deallocation synchronization
+# =============================================================================
+
+
+struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
+    """TMEM deallocation synchronization barrier.
+
+    Handles cluster-aware synchronization patterns for TMEM deallocation,
+    supporting both single-CTA and multi-CTA (cta_group=2) configurations.
+    """
+
+    comptime BarrierStorage = SMemArray[SharedMemBarrier, 1]
+
+    var barrier: Self.BarrierStorage
+
+    fn __init__(out self, barrier: Self.BarrierStorage):
+        """Initialize with shared memory barrier array."""
+        self.barrier = barrier
+
+    @always_inline
+    fn signal_peer(self):
+        """Signal peer CTA in cluster (cta_group=2 only)."""
+
+        comptime if Self.cta_group == 2:
+            _ = self.barrier.ptr[].arrive_cluster(block_rank_in_cluster() ^ 1)
+
+    @always_inline
+    fn signal_self(self):
+        """Signal own arrival at barrier."""
+        _ = self.barrier.ptr[].arrive()
+
+    @always_inline
+    fn wait(self):
+        """Wait for barrier completion."""
+        self.barrier.ptr[].wait()
+
+    @always_inline
+    fn complete_dealloc[
+        max_cols: Int = 512
+    ](self, tmem: TmemAllocation[Self.cta_group, max_cols]):
+        """Complete TMEM deallocation sequence (MMA warp side).
+
+        Releases the allocation lock, waits for epilogue completion,
+        then deallocates the TMEM.
+        """
+        tmem.release_lock()
+        self.wait()
+        tmem.deallocate()
+
+    @always_inline
+    fn signal_complete(self):
+        """Signal TMEM consumption complete (Epilogue warp side).
+
+        For cta_group=2, signals peer CTA first, then signals self.
+        """
+        self.signal_peer()
+        self.signal_self()

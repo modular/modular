@@ -56,16 +56,16 @@ var total_size = size(shape)  # Results in 120
 ```
 """
 
-from os import abort
+from std.os import abort
 
 from buffer import DimList
-from builtin.range import _StridedRange
-from memory import memcpy
-from sys.compile import is_compile_time
-from sys.intrinsics import _type_is_eq_parse_time
+from std.builtin.range import _StridedRange
+from std.memory import memcpy
+from std.sys.compile import is_compile_time
+from std.sys.intrinsics import _type_is_eq_parse_time
 
-from utils.numerics import max_finite
-from utils import IndexList
+from std.utils.numerics import max_finite
+from std.utils import IndexList
 
 
 fn _get_index_type(address_space: AddressSpace) -> DType:
@@ -336,7 +336,6 @@ struct IntTuple(
     Intable,
     Iterable,
     Sized,
-    Stringable,
     Writable,
 ):
     """A hierarchical, nested tuple of integers with efficient memory management.
@@ -374,7 +373,7 @@ struct IntTuple(
 
     @staticmethod
     @always_inline("nodebug")
-    fn elements_size(elements: VariadicListMem[IntTuple]) -> Int:
+    fn elements_size(elements: VariadicList[IntTuple, ...]) -> Int:
         """Calculate the total storage size needed for a list of IntTuples.
 
         Computes the sum of sizes for all elements, accounting for both direct
@@ -463,7 +462,37 @@ struct IntTuple(
         self = Self(elements)
 
     @always_inline
-    fn __init__(out self, elements: VariadicList[Int]):
+    fn __init__(out self, elements: VariadicList[Int, is_owned=False]):
+        """Initialize an `IntTuple` with a list of integers.
+
+        Creates an `IntTuple` containing the provided integer values.
+
+        Args:
+            elements: List of integer values to store in the tuple.
+
+        Notes:
+
+            - Pre-allocates exact memory needed for efficiency.
+            - Validates that all values are above `MinimumValue`. If any value is
+              less than `MinimumValue`, assertion fails with an error message.
+            - Structure validation performed when assertions are enabled.
+        """
+        var size = len(elements)
+        self._store = IntArray(size + 1)
+        self._store[0] = size
+        for i in range(size):
+            var value = elements[i]
+            debug_assert(
+                value >= Self.MinimumValue,
+                "IntTuple value must be >= MinimumValue: ",
+                value,
+            )
+            self._store[i + 1] = value
+
+        self.validate_structure()
+
+    @always_inline
+    fn __init__(out self, elements: VariadicParamList[Int]):
         """Initialize an `IntTuple` with a list of integers.
 
         Creates an `IntTuple` containing the provided integer values.
@@ -1303,6 +1332,7 @@ struct IntTuple(
                     writer.write(", ")
             writer.write(")")
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """
         Returns a string representation of this `IntTuple`.
@@ -1377,6 +1407,7 @@ struct IntTuple(
         return not Self.is_equal(self, other)
 
     @always_inline("nodebug")
+    @deprecated("Representable is deprecated. Use Writable instead.")
     fn __repr__(self) -> String:
         """
         Returns a string representation of this `IntTuple` for debugging.
@@ -1384,7 +1415,7 @@ struct IntTuple(
         Returns:
             A string representation of the `IntTuple`, same as `__str__`.
         """
-        return self.__str__()
+        return String.write(self)
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:

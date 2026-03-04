@@ -16,13 +16,13 @@
 # _argn
 # ===-----------------------------------------------------------------------===#
 
-from math import align_down, ceildiv, iota
-from sys.info import simd_width_of
+from std.math import align_down, ceildiv, iota
+from std.sys.info import simd_width_of
 
-from algorithm import sync_parallelize
-from algorithm.functional import _get_num_workers
-from math.math import min as _min
-from layout._tile_tensor import TileTensor
+from std.algorithm import sync_parallelize
+from std.algorithm.functional import _get_num_workers
+from std.math.math import min as _min
+from layout import TileTensor
 
 
 fn _argn[

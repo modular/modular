@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the low level concurrency library."""
 
-from os import abort
-from os.atomic import Atomic
-from ffi import external_call
+from std.os import abort
+from std.os.atomic import Atomic
+from std.ffi import external_call
 
-from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
-from gpu.host import DeviceContext
+from std.builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
+from std.gpu.host import DeviceContext
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext
@@ -58,7 +58,7 @@ struct _AsyncContext(TrivialRegisterPassable):
 
     @staticmethod
     fn get_chain(
-        ctx: UnsafePointer[mut=True, _AsyncContext]
+        ctx: UnsafePointer[mut=True, _AsyncContext, _]
     ) -> UnsafePointer[_Chain, origin_of(ctx[].chain)]:
         return UnsafePointer(to=ctx[].chain)
 
@@ -73,19 +73,21 @@ struct _AsyncContext(TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
-fn _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain]):
+fn _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         chain.address
     )
 
 
-fn _del_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain]):
+fn _del_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
     external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
         chain.address
     )
 
 
-fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[mut=True, _Chain]):
+fn _async_and_then(
+    hdl: AnyCoroutine, chain: UnsafePointer[mut=True, _Chain, _]
+):
     external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
         _coro_resume_fn, chain.address, hdl
     )
@@ -97,16 +99,16 @@ fn _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
     )
 
 
-fn _async_wait(chain: UnsafePointer[mut=True, _Chain]):
+fn _async_wait(chain: UnsafePointer[mut=True, _Chain, _]):
     external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
 
 
-fn _async_complete(chain: UnsafePointer[mut=True, _Chain]):
+fn _async_complete(chain: UnsafePointer[mut=True, _Chain, _]):
     external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
 
 
 fn _async_wait_timeout(
-    chain: UnsafePointer[mut=True, _Chain], timeout: Int
+    chain: UnsafePointer[mut=True, _Chain, _], timeout: Int
 ) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
         chain.address, timeout
@@ -301,7 +303,7 @@ struct _TaskGroupBox(Copyable, RegisterPassable):
 
     fn __init__[
         type: ImplicitlyDestructible
-    ](out self, var coro: Coroutine[type]):
+    ](out self, var coro: Coroutine[type, ...]):
         self.handle = coro^._take_handle()
 
     fn __del__(deinit self):
@@ -358,7 +360,7 @@ struct TaskGroup(Defaultable):
     fn create_task(
         mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
-        var task: Coroutine[NoneType._mlir_type],
+        var task: Coroutine[NoneType._mlir_type, ...],
     ):
         """Add a new task to the TaskGroup for execution.
 
@@ -372,7 +374,7 @@ struct TaskGroup(Defaultable):
     fn _create_task(
         mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
-        var task: Coroutine[NoneType._mlir_type],
+        var task: Coroutine[NoneType._mlir_type, ...],
         desired_worker_id: Int = -1,
     ):
         # TODO(MOCO-771): Enforce that `task.origins` is a subset of

@@ -11,33 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.math import ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import _RegisterPackType, size_of
-from sys._assembly import inlined_assembly
+from std.sys import _RegisterPackType, size_of
+from std.sys._assembly import inlined_assembly
 
-from gpu.primitives.cluster import (
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     clusterlaunchcontrol_query_cancel_get_first_ctaid_v4,
     clusterlaunchcontrol_query_cancel_is_canceled,
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from gpu import block_id_in_cluster, block_idx, lane_id, warp_id
-from gpu.memory import fence_async_view_proxy
+from std.gpu import block_id_in_cluster, block_idx, lane_id, warp_id
+from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ..tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -50,6 +50,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     fn is_valid(self) -> Bool:
         return self.is_valid_tile
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

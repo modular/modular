@@ -11,27 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import rsqrt
+from std.math import rsqrt
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from memory import memcpy
+from std.memory import memcpy
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
-from nn.mha_score_mod import IdentityScoreMod
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
 
 def execute_ragged_flash_attention(
     ctx: DeviceContext,
-):
+) raises:
     comptime num_q_heads = 32
     comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
     comptime type = DType.float32
@@ -208,7 +207,6 @@ def execute_ragged_flash_attention(
         true_ce_kv_collection_device.get_key_cache(layer_idx),
         true_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
-        IdentityScoreMod(),
         true_ce_cache_lengths_table.input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -222,7 +220,6 @@ def execute_ragged_flash_attention(
         mixed_ce_kv_collection_device.get_key_cache(layer_idx),
         mixed_ce_kv_collection_device.get_value_cache(layer_idx),
         CausalMask(),
-        IdentityScoreMod(),
         mixed_ce_cache_lengths_table.input_row_offsets.device_tensor(),
         rsqrt(Float32(kv_params.head_size)),
         ctx,
@@ -268,6 +265,6 @@ def execute_ragged_flash_attention(
     _ = paged_lut^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         execute_ragged_flash_attention(ctx)

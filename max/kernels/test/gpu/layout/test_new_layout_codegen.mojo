@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 """Test for MixedLayout GPU memory codegen with runtime indices."""
 
-import sys
+import std.sys
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from gpu.host.compile import _compile_code, get_gpu_target
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.host.compile import _compile_code, get_gpu_target
 from layout._layout import Layout
-from layout._coord import Idx, Coord
+from layout import Idx, Coord
 from layout.int_tuple import IntTuple
-from memory import LegacyUnsafePointer
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
 
 fn test_codegen_memory[
@@ -71,6 +71,6 @@ fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
     )
 
 
-def main():
+def main() raises:
     test_codegen_memory[kernel_mixed_dimensions]()
     test_codegen_memory[kernel_thread_idx]()

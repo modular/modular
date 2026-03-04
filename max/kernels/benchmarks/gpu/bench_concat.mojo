@@ -11,20 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from random import randn
-from sys import env_get_int, size_of
+from std.os import abort
+from std.random import randn
+from std.sys import get_defined_int, size_of
 
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from builtin._closure import __ownership_keepalive
-from gpu.host import DeviceContext, HostBuffer
-from layout._coord import Coord, Idx
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.builtin._closure import __ownership_keepalive
+from std.gpu.host import DeviceContext, HostBuffer
+from layout import Coord, Idx, TileTensor
 from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
 from nn.concat import _concat_gpu_elementwise
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
 fn bench_concat[
@@ -175,18 +180,18 @@ fn bench_concat[
     _ = output_device_buffer
 
 
-def main():
-    comptime num_inputs = env_get_int["num_inputs", 2]()
-    comptime axis = env_get_int["axis", 0]()
-    comptime W0 = env_get_int["W0", 1]()
-    comptime X0 = env_get_int["X0", 1]()
-    comptime Y0 = env_get_int["Y0", 1]()
-    comptime Z0 = env_get_int["Z0", 1]()
+def main() raises:
+    comptime num_inputs = get_defined_int["num_inputs", 2]()
+    comptime axis = get_defined_int["axis", 0]()
+    comptime W0 = get_defined_int["W0", 1]()
+    comptime X0 = get_defined_int["X0", 1]()
+    comptime Y0 = get_defined_int["Y0", 1]()
+    comptime Z0 = get_defined_int["Z0", 1]()
 
-    comptime W1 = env_get_int["W1", 1]()
-    comptime X1 = env_get_int["X1", 1]()
-    comptime Y1 = env_get_int["Y1", 1]()
-    comptime Z1 = env_get_int["Z1", 1]()
+    comptime W1 = get_defined_int["W1", 1]()
+    comptime X1 = get_defined_int["X1", 1]()
+    comptime Y1 = get_defined_int["Y1", 1]()
+    comptime Z1 = get_defined_int["Z1", 1]()
 
     var b = Bench()
     with DeviceContext() as ctx:

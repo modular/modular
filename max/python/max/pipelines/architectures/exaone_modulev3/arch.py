@@ -14,10 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from transformers import AutoConfig, PretrainedConfig
 
 from ..llama3_modulev3 import weight_adapters
@@ -51,8 +48,8 @@ exaone_modulev3_arch = SupportedArchitecture(
     default_encoding="float32",
     task=PipelineTask.TEXT_GENERATION,
     supported_encodings={
-        "float32": ["paged"],
-        "bfloat16": ["paged"],
+        "float32",
+        "bfloat16",
     },
     example_repo_ids=[
         "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",

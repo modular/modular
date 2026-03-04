@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys._build import is_debug_build, is_release_build
+from std.sys._build import is_debug_build, is_release_build
 
-from testing import assert_false, assert_true
-from testing import TestSuite
+from std.testing import assert_false, assert_true
+from std.testing import TestSuite
 
 
-def test_is_debug():
+def test_is_debug() raises:
     assert_true(is_debug_build())
     assert_false(is_release_build())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

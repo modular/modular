@@ -23,15 +23,15 @@ f.close()
 ```
 
 """
-from os import abort
-from sys import (
+from std.os import abort
+from std.sys import (
     CompilationTarget,
     is_amd_gpu,
     is_compile_time,
     is_gpu,
     is_nvidia_gpu,
 )
-from ffi import (
+from std.ffi import (
     c_ssize_t,
     c_int,
     external_call,
@@ -39,7 +39,7 @@ from ffi import (
     get_errno,
 )
 
-from memory import Span
+from std.memory import Span
 
 
 struct FileDescriptor(TrivialRegisterPassable, Writer):
@@ -92,7 +92,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         self.write_bytes(string.as_bytes())
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+    fn read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from the file into a buffer.
 
         Args:

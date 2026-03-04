@@ -15,13 +15,13 @@
 You can import these APIs from the `python` package. For example:
 
 ```mojo
-from python import Python
+from std.python import Python
 ```
 """
 
-from collections.dict import OwnedKwargsDict
-from os import abort
-from ffi import _Global
+from std.collections.dict import OwnedKwargsDict
+from std.os import abort
+from std.ffi import _Global
 
 from ._cpython import (
     CPython,
@@ -186,7 +186,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         For example:
 
         ```mojo
-        from python import Python
+        from std.python import Python
 
         # Specify path to `mypython.py` module
         Python.add_to_path("path/to/module")
@@ -216,7 +216,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         in Python. For example:
 
         ```mojo
-        from python import Python
+        from std.python import Python
 
         # This is equivalent to Python's `import numpy as np`
         np = Python.import_module("numpy")
@@ -402,7 +402,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     fn dict[
         K: ConvertibleToPython & Copyable = PythonObject,
         V: ConvertibleToPython & Copyable = PythonObject,
-    ](tuples: Span[Tuple[K, V]]) raises -> PythonObject:
+    ](tuples: Span[Tuple[K, V], _]) raises -> PythonObject:
         """Construct an Python dictionary from a list of key-value tuples.
 
         Parameters:
@@ -437,7 +437,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
     @staticmethod
     fn list[
         T: ConvertibleToPython & Copyable
-    ](values: Span[T]) raises -> PythonObject:
+    ](values: Span[T, _]) raises -> PythonObject:
         """Initialize the object from a list of values.
 
         Parameters:

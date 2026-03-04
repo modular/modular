@@ -10,28 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from gpu.memory import AddressSpace
+from std.gpu.memory import AddressSpace
 from .tile_scheduler import TileScheduler as B200TileScheduler
 from .tile_scheduler import WorkInfo as B200WorkInfo
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from layout._layout import TensorLayout, row_major
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
+from layout import Coord, Idx, TileTensor
 from layout.tma_async import SharedMemBarrier, PipelineState
-from utils.static_tuple import StaticTuple
-from .tile_types import static_row_major, _StridedLayout, _strided_layout
-from gpu import (
+from std.utils.static_tuple import StaticTuple
+from structured_kernels.tile_types import (
+    static_row_major,
+    _StridedLayout,
+    _strided_layout,
+)
+from std.gpu import (
     grid_dim,
     thread_idx,
     lane_id,
     NamedBarrierSemaphore,
     WARP_SIZE,
 )
-from gpu.primitives.cluster import elect_one_sync
-from gpu.globals import WARPGROUP_SIZE
-from gpu.compute.arch.tcgen05 import *
-from gpu.sync import named_barrier
-from memory import LegacyUnsafePointer
+from std.gpu.primitives.cluster import elect_one_sync
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.compute.arch.tcgen05 import *
+from std.gpu.sync import named_barrier
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.bit import prev_power_of_two
@@ -41,7 +44,7 @@ from .tmem import TmemAddress, TmemTensor
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -61,6 +64,7 @@ struct WorkInfo(Stringable, TrivialRegisterPassable, Writable):
     fn is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)

@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for RMSNorm with fused residual connection."""
 
-from math import sqrt
-from sys.info import CompilationTarget
+from std.math import sqrt
+from std.sys.info import CompilationTarget
 
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import alloc
-from random import Random
+from std.memory import alloc
+from std.random import Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_cpu
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 fn compute_rms_ref[
@@ -279,5 +279,5 @@ fn test_rms_norm_fused_residual_dropout_bfloat16() raises:
         )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

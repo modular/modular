@@ -13,11 +13,11 @@
 
 # DOC: mojo/docs/manual/gpu/intro-tutorial.mdx
 
-from math import ceildiv
-from sys import has_accelerator
+from std.math import ceildiv
+from std.sys import has_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
 
 # Vector data type and size
@@ -46,9 +46,8 @@ fn vector_addition(
         out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
 
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
         # Get the context for the attached GPU

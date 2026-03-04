@@ -12,19 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from nn.mha_operand import MHAOperand
-from nn.mha_score_mod import ScoreModTrait
 from nn.mha_utils import (
     MHAConfig,
     OptionallyStaticInt,
     DynamicInt,
 )
 from nn.mha_mask import MHAMask
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout.layout_tensor import LayoutTensor
 from layout.layout import Layout
-from gpu.memory import AddressSpace
-from .mla_prefill_sm100_bf16 import mla_sm100_prefill_bf16
-from .mla_prefill_sm100_fp8 import mla_sm100_prefill_fp8
+from std.gpu.memory import AddressSpace
+from .mla_prefill_sm100_generic import mla_sm100_prefill_generic
+from .mla_prefill_sm100_blockscale import mla_sm100_prefill_blockscale
 
 
 @always_inline
@@ -34,14 +33,12 @@ fn mla_sm100_prefill[
     KVType: MHAOperand,
     KRopeType: MHAOperand,
     MaskType: MHAMask,
-    ScoreModType: ScoreModTrait,
     MaxPromptLenType: OptionallyStaticInt,
     //,
     config: MHAConfig,
     group: Int,
     q_depth: Int,
     cache_depth: Int,
-    use_score_mod: Bool,
     _ndbuffer_mha_operand: Bool,
     blockwise_scale: Int = 0,
 ](
@@ -53,7 +50,6 @@ fn mla_sm100_prefill[
     v: KVType,
     k_rope: KRopeType,
     mask_functor: MaskType,
-    score_mod_functor: ScoreModType,
     valid_length: LayoutTensor[
         DType.uint32, address_space = AddressSpace.GENERIC, ...
     ],
@@ -62,16 +58,21 @@ fn mla_sm100_prefill[
     batch_size: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime if KRopeType.dtype == DType.bfloat16:
+    comptime assert (
+        output_type == DType.bfloat16
+    ), "Only support bfloat16 output for SM100 MLA prefill"
+
+    comptime if blockwise_scale == 0 and (
+        KRopeType.dtype == KVType.dtype == q.dtype
+    ):
         comptime assert (
             blockwise_scale == 0
-        ), "blockwise_scale is not supported for bfloat16"
-        mla_sm100_prefill_bf16[
+        ), "blockwise_scale is not supported for generic MLA prefill"
+        mla_sm100_prefill_generic[
             config=config,
             group = Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
-            use_score_mod=use_score_mod,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
         ](
             output,
@@ -80,7 +81,6 @@ fn mla_sm100_prefill[
             rebind[type_of(k)](v),
             k_rope,
             mask_functor,
-            score_mod_functor,
             valid_length,
             max_prompt_len,
             scale,
@@ -88,12 +88,11 @@ fn mla_sm100_prefill[
             ctx,
         )
     else:
-        mla_sm100_prefill_fp8[
+        mla_sm100_prefill_blockscale[
             config=config,
             group = Int(group),
             q_depth=q_depth,
             cache_depth=cache_depth,
-            use_score_mod=use_score_mod,
             _ndbuffer_mha_operand=_ndbuffer_mha_operand,
             blockwise_scale=blockwise_scale,
         ](
@@ -103,7 +102,6 @@ fn mla_sm100_prefill[
             rebind[type_of(k)](v),
             k_rope,
             mask_functor,
-            score_mod_functor,
             valid_length,
             max_prompt_len,
             scale,

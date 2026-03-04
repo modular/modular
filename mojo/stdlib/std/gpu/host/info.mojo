@@ -556,9 +556,9 @@ See real-world examples by searching for these functions:
 Each example demonstrates the complete target configuration for that GPU family.
 """
 
-from math import ceildiv, floor
-from os import abort
-from sys.info import CompilationTarget, _accelerator_arch, _TargetType
+from std.math import ceildiv, floor
+from std.os import abort
+from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
 comptime _KB = 1024
 comptime _K = 1024
@@ -1994,7 +1994,7 @@ comptime Radeon860m = GPUInfo.from_family(
 
 
 @fieldwise_init
-struct GPUInfo(Equatable, RegisterPassable, Stringable, Writable):
+struct GPUInfo(Equatable, RegisterPassable, Writable):
     """Comprehensive information about a GPU architecture.
 
     This struct contains detailed specifications about GPU capabilities,
@@ -2230,6 +2230,7 @@ struct GPUInfo(Equatable, RegisterPassable, Stringable, Writable):
             "max_thread_block_size: ", self.max_thread_block_size, "\n"
         )
 
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     @no_inline
     fn __str__(self) -> String:
         """Returns a string representation of the GPU information.

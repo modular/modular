@@ -20,22 +20,22 @@ low-level memory operations, interfacing with C code, and building custom data
 structures.
 """
 
-from sys import align_of, is_gpu, is_nvidia_gpu, size_of
-from sys.intrinsics import gather, scatter, strided_load, strided_store
+from std.sys import align_of, is_gpu, is_nvidia_gpu, size_of
+from std.sys.intrinsics import gather, scatter, strided_load, strided_store
 
-from builtin.rebind import downcast
-from builtin.format_int import _write_int
-from builtin.simd import _simd_construction_checks
-from builtin.variadics import Variadic
-from compile import get_type_name
-from format._utils import FormatStruct, Named, TypeNames
-from memory import memcpy
-from memory.memory import _free, _malloc
-from memory import UnsafeMaybeUninit
-from os import abort
-from python import PythonObject
+from std.builtin.rebind import downcast
+from std.builtin.format_int import _write_int
+from std.builtin.simd import _simd_construction_checks
+from std.builtin.variadics import Variadic
+from std.compile import get_type_name
+from std.format._utils import FormatStruct, Named, TypeNames
+from std.memory import memcpy
+from std.memory.memory import _free, _malloc
+from std.memory import UnsafeMaybeUninit
+from std.os import abort
+from std.python import PythonObject
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 
 from .legacy_unsafe_pointer import _default_invariant
@@ -872,8 +872,8 @@ struct UnsafePointer[
         other_type: type_of(
             LegacyUnsafePointer[
                 Self.type,
-                origin=_,
                 address_space = Self.address_space,
+                ...,
             ]
         ),
     ](self) -> LegacyUnsafePointer[
@@ -987,8 +987,8 @@ struct UnsafePointer[
     fn swap_pointees[
         U: Movable, //
     ](
-        self: UnsafePointer[U],
-        other: UnsafePointer[U],
+        self: UnsafePointer[U, _],
+        other: UnsafePointer[U, _],
     ) where (
         type_of(self).mut
     ) and (type_of(other).mut):
@@ -1417,6 +1417,7 @@ struct UnsafePointer[
     fn free(
         self: UnsafePointer[
             Self.type,
+            _,
             address_space = AddressSpace.GENERIC,
         ]
     ) where type_of(self).mut:
@@ -1453,9 +1454,7 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn mut_cast[
         target_mut: Bool
-    ](self) -> Self._OriginCastType[
-        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
-    ]:
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
         """Changes the mutability of a pointer.
 
         This is a safe way to change the mutability of a pointer with an
@@ -1474,9 +1473,7 @@ struct UnsafePointer[
     @always_inline("builtin")
     fn unsafe_mut_cast[
         target_mut: Bool
-    ](self) -> Self._OriginCastType[
-        Origin[mut=target_mut](unsafe_mut_cast=Self.origin)
-    ]:
+    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
         """Changes the mutability of a pointer.
 
         Parameters:
@@ -1586,7 +1583,7 @@ struct UnsafePointer[
     @always_inline
     fn destroy_pointee[
         T: ImplicitlyDestructible, //
-    ](self: UnsafePointer[T]) where type_of(self).mut:
+    ](self: UnsafePointer[T, _]) where type_of(self).mut:
         """Destroy the pointed-to value.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1606,6 +1603,7 @@ struct UnsafePointer[
     fn destroy_pointee_with(
         self: UnsafePointer[
             Self.type,
+            _,
             address_space = AddressSpace.GENERIC,
         ],
         destroy_func: fn(var Self.type),
@@ -1625,7 +1623,7 @@ struct UnsafePointer[
     fn take_pointee[
         T: Movable,
         //,
-    ](self: UnsafePointer[T]) -> T where type_of(self).mut:
+    ](self: UnsafePointer[T, _]) -> T where type_of(self).mut:
         """Move the value at the pointer out, leaving it uninitialized.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1648,7 +1646,7 @@ struct UnsafePointer[
     fn init_pointee_move[
         T: Movable,
         //,
-    ](self: UnsafePointer[T], var value: T) where type_of(self).mut:
+    ](self: UnsafePointer[T, _], var value: T) where type_of(self).mut:
         """Emplace a new value into the pointer location, moving from `value`.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -1671,7 +1669,7 @@ struct UnsafePointer[
     fn init_pointee_copy[
         T: Copyable,
         //,
-    ](self: UnsafePointer[T], value: T) where type_of(self).mut:
+    ](self: UnsafePointer[T, _], value: T) where type_of(self).mut:
         """Emplace a copy of `value` into the pointer location.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -1694,7 +1692,7 @@ struct UnsafePointer[
     fn init_pointee_move_from[
         T: Movable,
         //,
-    ](self: UnsafePointer[T], src: UnsafePointer[T]) where (
+    ](self: UnsafePointer[T, _], src: UnsafePointer[T, _]) where (
         type_of(self).mut
     ) and (type_of(src).mut):
         """Moves the value `src` points to into the memory location pointed to

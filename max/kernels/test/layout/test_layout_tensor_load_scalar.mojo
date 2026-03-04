@@ -20,10 +20,10 @@ which can be surprising in generic contexts when element_size > 1.
 from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout._fillers import arange
 from layout.int_tuple import UNKNOWN_VALUE
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 

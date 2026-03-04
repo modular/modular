@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import align_up, ceildiv
-from memory import LegacyUnsafePointer
+from std.collections import OptionalReg
+from std.math import align_up, ceildiv
+from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import align_of, env_get_bool, simd_width_of, size_of
+from std.sys import align_of, get_defined_bool, simd_width_of, size_of
 
-from bit import next_power_of_two, prev_power_of_two
+from std.bit import next_power_of_two, prev_power_of_two
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
-from gpu.primitives.cluster import (
+from std.gpu import WARP_SIZE, barrier
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
@@ -30,32 +30,38 @@ from gpu.primitives.cluster import (
     cluster_wait,
     cluster_arrive_relaxed,
 )
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from gpu import block_id_in_cluster, block_idx, lane_id, thread_idx, block_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import (
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from std.gpu import (
+    block_id_in_cluster,
+    block_idx,
+    lane_id,
+    thread_idx,
+    block_idx,
+)
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import (
     AddressSpace,
     external_memory,
     fence_async_view_proxy,
     fence_mbarrier_init,
 )
-from gpu.compute.arch.mma_nvidia_sm100 import *
-from gpu.primitives.grid_controls import (
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.primitives.grid_controls import (
     launch_dependent_grids,
     pdl_launch_attributes,
     PDLLevel,
     wait_on_dependent_grids,
 )
-from gpu.sync import (
+from std.gpu.sync import (
     named_barrier,
     named_barrier_arrive,
     syncwarp,
     umma_arrive_leader_cta,
     mbarrier_arrive,
 )
-from gpu.compute.arch.tcgen05 import *
+from std.gpu.compute.arch.tcgen05 import *
 from layout import (
     UNKNOWN_VALUE,
     Layout,
@@ -83,10 +89,10 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 from ....arch.sm100 import MmaOpSM100_BlockScaled_SS
 from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
@@ -309,15 +315,15 @@ fn load_AB_SFA_SFB[
 
     var stage = load_mma_pipeline.producer_stage()
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
-    var a_gmem_slice_coord = peer_cta_coord[2] * UInt(
-        a_tma_rows
-    ) + work_tile_coord[0] * UInt(BM)
-    var b_gmem_slice_coord = (
-        peer_cta_coord[1] * UInt(b_tma_rows)
-        + peer_cta_coord[0] * UInt(BN)
-        + work_tile_coord[1] * UInt(MMA_N)
+    var a_gmem_slice_coord = (
+        Int(peer_cta_coord[2]) * a_tma_rows + Int(work_tile_coord[0]) * BM
     )
-    var batch_coord = work_tile_coord[2]
+    var b_gmem_slice_coord = (
+        Int(peer_cta_coord[1]) * b_tma_rows
+        + Int(peer_cta_coord[0]) * BN
+        + Int(work_tile_coord[1]) * MMA_N
+    )
+    var batch_coord = Int(work_tile_coord[2])
 
     # Wait until MMA (consumer) has used the buffer.
     load_mma_pipeline.wait_consumer()
@@ -345,9 +351,9 @@ fn load_AB_SFA_SFB[
                 a_smem_slice,
                 tma_mbar[0],
                 (
-                    UInt(iter_idx + j) * UInt(BK),
-                    UInt(a_gmem_slice_coord),
-                    UInt(batch_coord),
+                    Int(iter_idx + j) * BK,
+                    a_gmem_slice_coord,
+                    batch_coord,
                 ),
                 a_multicast_mask,
             )
@@ -356,9 +362,9 @@ fn load_AB_SFA_SFB[
                 b_smem_slice,
                 tma_mbar[0],
                 (
-                    UInt(iter_idx + j) * UInt(BK),
-                    UInt(b_gmem_slice_coord),
-                    UInt(batch_coord),
+                    Int(iter_idx + j) * BK,
+                    b_gmem_slice_coord,
+                    batch_coord,
                 ),
                 b_multicast_mask,
             )
@@ -370,7 +376,7 @@ fn load_AB_SFA_SFB[
                     0,
                     Int(iter_idx + j) * num_sf_k_tiles,
                     Int(work_tile_coord[0]) * (BM // SF_MN_GROUP_SIZE),
-                    Int(batch_coord),
+                    batch_coord,
                 ),
             )
 
@@ -382,7 +388,7 @@ fn load_AB_SFA_SFB[
                     0,
                     Int(iter_idx + j) * num_sf_k_tiles,
                     (Int(work_tile_coord[1]) * MMA_N) // SF_MN_GROUP_SIZE,
-                    Int(batch_coord),
+                    batch_coord,
                 ),
             )
 

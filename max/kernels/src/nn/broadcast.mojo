@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from layout import TileTensor
+from std.memory import memcpy
 
 
 # ===-----------------------------------------------------------------------===#

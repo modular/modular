@@ -14,14 +14,17 @@
 # Tested on T4 GPU 2 Dec 2025
 
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
 fn kernel():
-    print("Hello from the GPU")
+    # Does not work on Apple Silicon
+    # Can't test due to CI
+    # print("Hello from the GPU")
+    pass
 
 
-def main():
+def main() raises:
     # Launch GPU kernel
     with DeviceContext() as ctx:
         ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)

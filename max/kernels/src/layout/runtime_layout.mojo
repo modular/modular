@@ -23,7 +23,7 @@ from layout.runtime_layout import RuntimeLayout, make_layout
 """
 
 
-from utils import IndexList
+from std.utils import IndexList
 
 from . import IntTuple, Layout
 from .int_tuple import UNKNOWN_VALUE, flatten
@@ -47,7 +47,7 @@ struct RuntimeLayout[
     *,
     element_type: DType = DType.int64,
     linear_idx_type: DType = DType.int64,
-](Defaultable, Stringable, TrivialRegisterPassable, Writable):
+](Defaultable, TrivialRegisterPassable, Writable):
     """A runtime-configurable layout that uses `RuntimeTuple` for storage.
 
     This struct provides a layout implementation that can be modified at runtime,
@@ -233,6 +233,7 @@ struct RuntimeLayout[
         }
 
     @no_inline
+    @deprecated("Stringable is deprecated. Use Writable instead.")
     fn __str__(self) -> String:
         """Convert the layout to a string representation.
 

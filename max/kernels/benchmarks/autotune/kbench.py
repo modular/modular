@@ -23,7 +23,14 @@ from time import time
 import click
 import pandas as pd
 import rich
-from kbench_model import KBENCH_MODE, KbenchCache, Scheduler, Spec, SpecInstance
+from kbench_model import (
+    KBENCH_MODE,
+    ExecTaskArgs,
+    KbenchCache,
+    Scheduler,
+    Spec,
+    SpecInstance,
+)
 from rich import traceback
 from rich.console import Console
 from rich.logging import RichHandler
@@ -37,6 +44,7 @@ from terminal_viz import render_results
 from utils import (
     LINE,
     _get_core_count,
+    _get_gpu_count,
     _get_visible_device_prefix,
     _percentage,
     check_gpu_clock,
@@ -205,7 +213,10 @@ def run(
 
             t_benchmark_start = time()
             if mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]:
-                scheduler.setup_execution_pool()
+                scheduler.setup_execution_pool(
+                    visible_device_prefix=visible_device_prefix,
+                    use_mpirun="mpirun" in exec_prefix,
+                )
                 num_build_items = len(scheduler.build_items)
                 exec_progress = scheduler.progress.add_task(
                     "run",
@@ -220,42 +231,28 @@ def run(
                         lower_bound + Scheduler.EXEC_STRIDE, num_build_items
                     )
 
-                    tasks = []
+                    tasks: list[ExecTaskArgs] = []
                     for cnt in range(lower_bound, upper_bound):
-                        env = {}
-                        if visible_device_prefix and num_gpu > 1:
-                            env[visible_device_prefix] = str(cnt % num_gpu)
-
                         tasks.append(
-                            (
-                                scheduler.build_items[cnt],
-                                profile,
-                                exec_prefix,
-                                exec_suffix,
-                                env,
-                                timeout_secs,
+                            ExecTaskArgs(
+                                build_item=scheduler.build_items[cnt],
+                                profile=profile,
+                                exec_prefix=exec_prefix,
+                                exec_suffix=exec_suffix,
+                                timeout_secs=timeout_secs,
                             )
                         )
 
-                    # This is to further ensure at most `num-gpu` processes are
-                    # running at once, none of them sharing the same device context.
-                    for cnt in range(lower_bound, upper_bound, num_gpu):
-                        ub_gpu = min(upper_bound, cnt + num_gpu)
-                        current_cnt = ub_gpu - cnt
-                        for i, b in enumerate(
-                            scheduler.execution_pool.imap(
-                                scheduler._pool_execute_item_wrapper,
-                                tasks[cnt - lower_bound : ub_gpu - lower_bound],
-                                chunksize=1,
-                            )
-                        ):
-                            scheduler.build_items[cnt + i] = b
-                            logging.info(
-                                f"running binary [{b.idx}/{num_build_items - 1}] ({_percentage(b.idx + 1, num_build_items)}%)"
-                            )
-                        scheduler.progress.update(
-                            exec_progress, advance=current_cnt
+                    for b in scheduler.execution_pool.imap_unordered(
+                        scheduler._pool_execute_item_wrapper,
+                        tasks,
+                        chunksize=1,
+                    ):
+                        scheduler.build_items[b.idx] = b
+                        logging.info(
+                            f"running binary [{b.idx}/{num_build_items - 1}] ({_percentage(b.idx + 1, num_build_items)}%)"
                         )
+                        scheduler.progress.update(exec_progress, advance=1)
 
                     t_benchmark_total = time() - t_benchmark_start
                     t_elapsed_total = time() - t_start_total
@@ -669,6 +666,17 @@ def cli(
         raise ValueError(
             "Cannot use --num-gpu>1 and --mpirun-np>1 at the same time!"
         )
+
+    # Validate requested GPU count against available hardware
+    gpu_request = num_gpu if num_gpu > 1 else mpirun_np
+    if gpu_request > 1 and target_accelerator:
+        available = _get_gpu_count(target_accelerator)
+        if available is not None and gpu_request > available:
+            flag = "--num-gpu" if num_gpu > 1 else "--mpirun-np"
+            raise ValueError(
+                f"{flag}={gpu_request} exceeds the {available} GPUs"
+                " detected on this machine."
+            )
 
     exec_suffix = exec_suffix.split(" ") if exec_suffix else []
     exec_prefix = exec_prefix.split(" ") if exec_prefix else []
