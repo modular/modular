@@ -24,8 +24,6 @@ Key features:
 from std.collections import OptionalReg
 
 from std.gpu import barrier, block_idx, lane_id
-from layout import LayoutTensor
-from layout.swizzle import Swizzle
 from nn.mha_utils import MHAConfig, get_start_and_end_for_partitions
 
 from std.utils import IndexList

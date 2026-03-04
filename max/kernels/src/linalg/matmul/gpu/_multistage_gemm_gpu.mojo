@@ -70,8 +70,8 @@ from ...structuring import SMemTile
 fn distance[
     dtype: DType, //
 ](
-    arg0: UnsafePointer[Scalar[dtype]],
-    arg1: UnsafePointer[Scalar[dtype]],
+    arg0: UnsafePointer[Scalar[dtype], _],
+    arg1: UnsafePointer[Scalar[dtype], _],
 ) -> Int:
     return (Int(arg0) - Int(arg1)) // size_of[dtype]()
 
@@ -101,6 +101,7 @@ fn warp_split_k_reduction[
     smem: UnsafePointer[
         mut=True,
         Scalar[c_type],
+        _,
         address_space = AddressSpace.SHARED,
     ],
 ):
@@ -793,6 +794,7 @@ fn multistage_gemm_kernel[
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
+        _,
         address_space = a_smem.address_space,
         alignment=alignment,
         circular=True,
@@ -813,6 +815,7 @@ fn multistage_gemm_kernel[
     comptime IteratorTypeB = LayoutTensorIter[
         b_type,
         b_smem_layout,
+        MutAnyOrigin,
         address_space = AddressSpace.SHARED,
         circular=True,
     ]

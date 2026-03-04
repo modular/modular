@@ -49,9 +49,9 @@ from linalg.utils import elementwise_compute_lambda_type
 from std.utils.index import IndexList
 
 # TileTensor-based types for C tiles
-from .tile_types import SMemTileArray2DRowMajor
+from structured_kernels.tile_types import SMemTileArray2DRowMajor
 
-from .barriers import WarpGroupBarrier
+from structured_kernels.barriers import WarpGroupBarrier
 from .config import OutputPipelineConfig
 from .tile_pipeline import OutputStage
 from .tile_scheduler_splitk import TileScheduler, WorkInfo
@@ -89,6 +89,7 @@ struct TileWriter[
     c_smem_dim1: Int,
     num_output_stages: Int,
     num_output_warps: Int,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -303,15 +304,132 @@ struct TileWriter[
         c_shape: Tuple[UInt32, UInt32],
         alpha: Float32,
     ):
-        """TMEM → Registers → SMEM → GMEM pipeline (3D batched coords)."""
-        self._copy_to_gmem_impl(
-            c_tiles,
-            output_stage,
-            (c_coord[0], c_coord[1]),
+        """TMEM → Registers → GMEM (elementwise epilogue) pipeline (3D batched coords).
+           TMEM → Registers → SMEM → GMEM (compute epilogue) pipeline (3D batched coords).
+
+        If elementwise epilogue function is provided, it will be used to write the results to global memory.
+        Otherwise, the results will be written to global memory using the standard TMA based pipeline.
+        """
+        comptime if Self.elementwise_lambda_fn:
+            self._copy_to_gmem_with_elementwise_epilogue_impl(
+                c_tiles,
+                output_stage,
+                (c_coord[0], c_coord[1]),
+                c_shape,
+                alpha,
+                c_coord[2],
+            )
+        else:
+            self._copy_to_gmem_impl(
+                c_tiles,
+                output_stage,
+                (c_coord[0], c_coord[1]),
+                c_shape,
+                alpha,
+                c_coord[2],
+            )
+
+    @always_inline
+    fn _copy_to_gmem_with_elementwise_epilogue_impl(
+        self,
+        c_tiles: Self.CTileArray,
+        output_stage: Self.Stage,
+        c_coord: Tuple[UInt32, UInt32],
+        c_shape: Tuple[UInt32, UInt32],
+        alpha: Float32 = Float32(1.0),
+        batch_idx: UInt32 = 0,
+    ):
+        """Unified TMEM → Registers → GMEM (elementwise epilogue) pipeline.
+
+        Handles both standard (2D) and batched (3D) output paths.
+        Alpha scaling is applied to fragments (defaults to 1.0 = no-op).
+        Batch index is used for TMA store coordinates when batched=True.
+
+        In constrast to compute epilogue, elementwise epilogue input is casted to c_type, not epilogue_dtype.
+        This is because elementwise epilogue writes directly to global memory, not registers.
+        Therefore, we need to cast the input to c_type to match the output type.
+        """
+
+        comptime assert (
+            Self.elementwise_lambda_fn is not None
+        ), "Elementwise epilogue function is not provided"
+
+        var accum_tiles = Self.AccumTmemArray(output_stage.tmem.offset())
+
+        comptime simd_size = simd_width_of[Self.c_type]()
+        var warp_id = get_warp_id()
+        var lane = lane_id()
+
+        comptime EpilogueApplierType = EpilogueApplier[
+            Self.MMA_M,
+            Self.stageN,
+            Self.num_stages,
+            Self.rep,
+            Self.cta_group,
+            Self.transpose_c,
+        ]
+        var epilogue_applier = EpilogueApplierType(
+            UInt32(warp_id),
+            UInt32(lane),
             c_shape,
-            alpha,
-            c_coord[2],
         )
+        var c_row = c_coord[0] * UInt32(Self.BM)
+        var c_col = c_coord[1] * UInt32(Self.MMA_N)
+
+        var upper_frag_partial: SIMD[Self.accum_type, Self.rep_frag_size]
+        var lower_frag_partial = SIMD[Self.accum_type, Self.rep_frag_size]()
+        var upper_frag_casted: SIMD[Self.c_type, Self.rep_frag_size]
+        var lower_frag_casted = SIMD[Self.c_type, Self.rep_frag_size]()
+
+        comptime for stage in range(Self.num_stages):
+            # Load fragments from TMEM tile
+            var frags = accum_tiles[stage].load_fragments[Self.rep]()
+            Self.AccumTmemArray.Tile.wait_load()
+
+            # Extract fragments (rebind for type compatibility)
+            upper_frag_partial = rebind[
+                SIMD[Self.accum_type, Self.rep_frag_size]
+            ](frags.upper)
+
+            comptime if Self.is_lower_frag_required:
+                lower_frag_partial = rebind[
+                    SIMD[Self.accum_type, Self.rep_frag_size]
+                ](frags.lower)
+
+            comptime if stage == Self.num_stages - 1:
+                AccumBarrier[Self.cta_group].arrive(
+                    output_stage.pipeline, output_stage.index
+                )
+
+            # Apply tensor scale factor (alpha)
+            upper_frag_partial = (
+                upper_frag_partial * alpha.cast[Self.accum_type]()
+            )
+            if Self.is_lower_frag_required:
+                lower_frag_partial = (
+                    lower_frag_partial * alpha.cast[Self.accum_type]()
+                )
+
+            # Cast to epilogue dtype
+            upper_frag_casted = upper_frag_partial.cast[Self.c_type]()
+
+            comptime if Self.is_lower_frag_required:
+                lower_frag_casted = lower_frag_partial.cast[Self.c_type]()
+
+            epilogue_applier.apply_elementwise_epilogue_to_both_fragments[
+                Self.c_type,
+                Self.rep_frag_size,
+                Self.elementwise_lambda_fn.value(),
+                Self.is_lower_frag_required,
+            ](
+                upper_frag_casted,
+                lower_frag_casted,
+                UInt32(stage),
+                c_row,
+                c_col,
+            )
+
+            WarpGroupBarrier[Self.num_output_warps * WARP_SIZE].sync()
 
     @always_inline
     fn _copy_to_gmem_impl(
@@ -365,7 +483,9 @@ struct TileWriter[
             Self.transpose_c,
         ]
         var epilogue_applier = EpilogueApplierType(
-            UInt32(warp_id), UInt32(lane)
+            UInt32(warp_id),
+            UInt32(lane),
+            c_shape,
         )
         var c_row = c_coord[0] * UInt32(Self.BM)
         var c_col = c_coord[1] * UInt32(Self.MMA_N)
@@ -837,7 +957,7 @@ struct TileWriter[
         c_tensor_layout: Layout,
     ](
         c_smem_ptr: UnsafePointer[
-            Scalar[Self.c_type], address_space = AddressSpace.SHARED
+            Scalar[Self.c_type], _, address_space = AddressSpace.SHARED
         ],
         c_tensor: LayoutTensor[Self.c_type, c_tensor_layout, MutAnyOrigin],
         m_abs: UInt32,
@@ -1004,7 +1124,9 @@ struct TileWriter[
             Self.transpose_c,
         ]
         var epilogue_applier = EpilogueApplierType(
-            UInt32(warp_id), UInt32(lane)
+            UInt32(warp_id),
+            UInt32(lane),
+            c_shape,
         )
         var c_row = c_coord[0] * UInt32(Self.BM)
         var c_col = c_coord[1] * UInt32(Self.MMA_N)

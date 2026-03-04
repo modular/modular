@@ -51,7 +51,7 @@ from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import TileTensor
 from layout._layout import TensorLayout
-from ..structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     GMEMLayout1D,
     TMATile,
     static_row_major,
@@ -75,7 +75,7 @@ from ..structured_kernels.config import (
     BlockScaledMatmulConfig,
     OutputPipelineConfig,
 )
-from ..structured_kernels.kernel_common import (
+from structured_kernels.kernel_common import (
     KernelContext,
     WarpRole1D1D,
     compute_tma_tile_dims,
@@ -90,8 +90,12 @@ from ..structured_kernels.tile_pipeline import (
     OutputTilePipeline,
     BlockScaledTilePayload,
 )
-from ..structured_kernels.tmem import BlockScaledTmem, TmemAllocation
-from ..structured_kernels.barriers import TmemDeallocBarrier, WarpGroupBarrier
+from ..structured_kernels.tmem import (
+    BlockScaledTmem,
+    TmemAllocation,
+    TmemDeallocBarrier,
+)
+from structured_kernels.barriers import WarpGroupBarrier
 from ..structured_kernels.warp_context import (
     MmaWarpContext,
     EpilogueWarpContext,

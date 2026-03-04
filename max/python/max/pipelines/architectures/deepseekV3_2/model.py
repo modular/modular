@@ -29,7 +29,6 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheInputsSequence,
     KVCacheParamInterface,
     MultiKVCacheParams,
 )
@@ -182,7 +181,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Load the model with the given weights."""
 
-        max_batch_size = self.pipeline_config.max_batch_size
+        max_batch_size = self.pipeline_config.runtime.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         # `_host_input_row_offsets_prealloc` tensor needs to reserve space for
@@ -333,11 +332,12 @@ class DeepseekV3_2Model(DeepseekV3Model):
         indexer_kv_inputs = self.indexer_kv_manager.runtime_inputs(
             replica_batches
         )
-        assert model_inputs.kv_cache_inputs is not None
-        combined_inputs = [model_inputs.kv_cache_inputs] + indexer_kv_inputs
-        model_inputs.kv_cache_inputs = KVCacheInputsSequence(
-            kv_cache_inputs=combined_inputs
+        kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert kv_cache_inputs is not None
+        combined_inputs = list(kv_cache_inputs.inputs) + list(
+            indexer_kv_inputs.inputs
         )
+        model_inputs.kv_cache_inputs = KVCacheInputs(inputs=combined_inputs)
 
         return model_inputs
 
@@ -364,17 +364,13 @@ class DeepseekV3_2Model(DeepseekV3Model):
         )
 
         # Extract MLA inputs from previous inputs and combine with new indexer inputs
-        assert isinstance(
-            prev_model_inputs.kv_cache_inputs, KVCacheInputsSequence
-        )
-        prev_kv_inputs = prev_model_inputs.kv_cache_inputs.kv_cache_inputs
+        assert isinstance(prev_model_inputs.kv_cache_inputs, KVCacheInputs)
+        prev_kv_inputs = prev_model_inputs.kv_cache_inputs.inputs
         # MLA inputs are at the beginning, indexer inputs are at the end
-        num_indexer_inputs = len(indexer_kv_inputs)
+        num_indexer_inputs = len(indexer_kv_inputs.inputs)
         mla_kv_inputs = prev_kv_inputs[:-num_indexer_inputs]
-        combined_inputs = list(mla_kv_inputs) + indexer_kv_inputs
-        model_inputs.kv_cache_inputs = KVCacheInputsSequence(
-            kv_cache_inputs=combined_inputs
-        )
+        combined_inputs = list(mla_kv_inputs) + list(indexer_kv_inputs.inputs)
+        model_inputs.kv_cache_inputs = KVCacheInputs(inputs=combined_inputs)
 
         return model_inputs
 

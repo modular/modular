@@ -26,7 +26,7 @@ fn test_gettempdir() raises:
 
 fn test_mkdtemp() raises:
     from std.tempfile import mkdtemp
-    import os
+    import std.os
 
     dir_path = mkdtemp()
     assert_true(os.path.exists(dir_path))
@@ -37,7 +37,7 @@ fn test_mkdtemp() raises:
 
 fn test_rmtree() raises:
     from std.tempfile import mkdtemp
-    import os
+    import std.os
 
     dir_path = mkdtemp()
     assert_true(os.path.exists(dir_path))
@@ -48,7 +48,7 @@ fn test_rmtree() raises:
 
 fn test_temporary_directory_context_manager() raises:
     from std.tempfile import TemporaryDirectory
-    import os
+    import std.os
 
     var temp_dir_copy: String
     with TemporaryDirectory() as temp_dir:
@@ -74,7 +74,7 @@ fn test_named_temporary_file_context_manager() raises:
 
 fn test_file_close() raises:
     from std.tempfile import NamedTemporaryFile
-    import os
+    import std.os
 
     var temp_file = NamedTemporaryFile()  # delete=True by default
     temp_file.write("Temporary data")

@@ -17,13 +17,10 @@ improving code readability and reducing error potential.
 """
 
 from std.gpu.memory import AddressSpace
-from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.sync import named_barrier, named_barrier_arrive
 from layout.tma_async import SharedMemBarrier
 
-from linalg.structuring import SMemArray
-
-from .tmem import TmemAllocation
+from .smem_types import SMemArray
 
 
 # =============================================================================
@@ -154,58 +151,3 @@ struct WarpGroupBarrier[num_threads: Int, barrier_id: Int = 0](
     fn sync():
         """Full barrier: arrive and wait for all threads."""
         named_barrier[Int32(Self.num_threads)](Int32(Self.barrier_id))
-
-
-struct TmemDeallocBarrier[cta_group: Int](TrivialRegisterPassable):
-    """TMEM deallocation synchronization barrier.
-
-    Handles cluster-aware synchronization patterns for TMEM deallocation,
-    supporting both single-CTA and multi-CTA (cta_group=2) configurations.
-    """
-
-    comptime BarrierStorage = SMemArray[SharedMemBarrier, 1]
-
-    var barrier: Self.BarrierStorage
-
-    fn __init__(out self, barrier: Self.BarrierStorage):
-        """Initialize with shared memory barrier array."""
-        self.barrier = barrier
-
-    @always_inline
-    fn signal_peer(self):
-        """Signal peer CTA in cluster (cta_group=2 only)."""
-
-        comptime if Self.cta_group == 2:
-            _ = self.barrier.ptr[].arrive_cluster(block_rank_in_cluster() ^ 1)
-
-    @always_inline
-    fn signal_self(self):
-        """Signal own arrival at barrier."""
-        _ = self.barrier.ptr[].arrive()
-
-    @always_inline
-    fn wait(self):
-        """Wait for barrier completion."""
-        self.barrier.ptr[].wait()
-
-    @always_inline
-    fn complete_dealloc[
-        max_cols: Int = 512
-    ](self, tmem: TmemAllocation[Self.cta_group, max_cols]):
-        """Complete TMEM deallocation sequence (MMA warp side).
-
-        Releases the allocation lock, waits for epilogue completion,
-        then deallocates the TMEM.
-        """
-        tmem.release_lock()
-        self.wait()
-        tmem.deallocate()
-
-    @always_inline
-    fn signal_complete(self):
-        """Signal TMEM consumption complete (Epilogue warp side).
-
-        For cta_group=2, signals peer CTA first, then signals self.
-        """
-        self.signal_peer()
-        self.signal_self()

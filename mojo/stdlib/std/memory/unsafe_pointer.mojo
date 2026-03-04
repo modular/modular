@@ -872,8 +872,8 @@ struct UnsafePointer[
         other_type: type_of(
             LegacyUnsafePointer[
                 Self.type,
-                origin=_,
                 address_space = Self.address_space,
+                ...,
             ]
         ),
     ](self) -> LegacyUnsafePointer[
@@ -987,8 +987,8 @@ struct UnsafePointer[
     fn swap_pointees[
         U: Movable, //
     ](
-        self: UnsafePointer[U],
-        other: UnsafePointer[U],
+        self: UnsafePointer[U, _],
+        other: UnsafePointer[U, _],
     ) where (
         type_of(self).mut
     ) and (type_of(other).mut):
@@ -1417,6 +1417,7 @@ struct UnsafePointer[
     fn free(
         self: UnsafePointer[
             Self.type,
+            _,
             address_space = AddressSpace.GENERIC,
         ]
     ) where type_of(self).mut:
@@ -1582,7 +1583,7 @@ struct UnsafePointer[
     @always_inline
     fn destroy_pointee[
         T: ImplicitlyDestructible, //
-    ](self: UnsafePointer[T]) where type_of(self).mut:
+    ](self: UnsafePointer[T, _]) where type_of(self).mut:
         """Destroy the pointed-to value.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1602,6 +1603,7 @@ struct UnsafePointer[
     fn destroy_pointee_with(
         self: UnsafePointer[
             Self.type,
+            _,
             address_space = AddressSpace.GENERIC,
         ],
         destroy_func: fn(var Self.type),
@@ -1621,7 +1623,7 @@ struct UnsafePointer[
     fn take_pointee[
         T: Movable,
         //,
-    ](self: UnsafePointer[T]) -> T where type_of(self).mut:
+    ](self: UnsafePointer[T, _]) -> T where type_of(self).mut:
         """Move the value at the pointer out, leaving it uninitialized.
 
         The pointer must not be null, and the pointer memory location is assumed
@@ -1644,7 +1646,7 @@ struct UnsafePointer[
     fn init_pointee_move[
         T: Movable,
         //,
-    ](self: UnsafePointer[T], var value: T) where type_of(self).mut:
+    ](self: UnsafePointer[T, _], var value: T) where type_of(self).mut:
         """Emplace a new value into the pointer location, moving from `value`.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -1667,7 +1669,7 @@ struct UnsafePointer[
     fn init_pointee_copy[
         T: Copyable,
         //,
-    ](self: UnsafePointer[T], value: T) where type_of(self).mut:
+    ](self: UnsafePointer[T, _], value: T) where type_of(self).mut:
         """Emplace a copy of `value` into the pointer location.
 
         The pointer memory location is assumed to contain uninitialized data,
@@ -1690,7 +1692,7 @@ struct UnsafePointer[
     fn init_pointee_move_from[
         T: Movable,
         //,
-    ](self: UnsafePointer[T], src: UnsafePointer[T]) where (
+    ](self: UnsafePointer[T, _], src: UnsafePointer[T, _]) where (
         type_of(self).mut
     ) and (type_of(src).mut):
         """Moves the value `src` points to into the memory location pointed to

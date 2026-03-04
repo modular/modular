@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -27,7 +26,7 @@ from max.interfaces import (
     SamplingParams,
     TokenBuffer,
 )
-from max.nn.kv_cache import RaggedKVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
@@ -73,8 +72,9 @@ def setup_speculative_decoding_pipeline(num_steps: int = 1):  # noqa: ANN201
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
-        runtime=PipelineRuntimeConfig(max_num_steps=num_steps),
+        runtime=PipelineRuntimeConfig(
+            max_num_steps=num_steps, max_batch_size=4
+        ),
     )
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
@@ -237,8 +237,7 @@ def test_draft_model_encoding_selection() -> None:
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
-        runtime=PipelineRuntimeConfig(max_num_steps=1),
+        runtime=PipelineRuntimeConfig(max_num_steps=1, max_batch_size=4),
     )
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
@@ -267,8 +266,7 @@ def test_draft_model_encoding_selection() -> None:
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
-        runtime=PipelineRuntimeConfig(max_num_steps=1),
+        runtime=PipelineRuntimeConfig(max_num_steps=1, max_batch_size=4),
     )
     pipeline_config2.model.kv_cache.kv_cache_page_size = 128
     pipeline_config2.model.kv_cache.device_memory_utilization = 0.3
@@ -307,8 +305,7 @@ def test_kv_cache_claiming_protocol() -> None:
             speculative_method="standalone",
             num_speculative_tokens=10,
         ),
-        max_batch_size=4,
-        runtime=PipelineRuntimeConfig(max_num_steps=1),
+        runtime=PipelineRuntimeConfig(max_num_steps=1, max_batch_size=4),
     )
     pipeline_config.model.kv_cache.kv_cache_page_size = 128
     pipeline_config.model.kv_cache.device_memory_utilization = 0.3
@@ -341,10 +338,10 @@ def test_kv_cache_claiming_protocol() -> None:
 
     def track_runtime_inputs(
         batches: list[list[TextContext]], num_steps: int
-    ) -> Sequence[RaggedKVCacheInputs]:
+    ) -> KVCacheInputs:
         request_ids = [ctx.request_id for batch in batches for ctx in batch]
         call_order.append(("runtime_inputs", request_ids, num_steps))
-        return []
+        return KVCacheInputs(inputs=[])
 
     mock_kv_manager.claim.side_effect = track_claim
     mock_kv_manager.runtime_inputs.side_effect = track_runtime_inputs

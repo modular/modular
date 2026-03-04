@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import sys
-from collections import Set
-from pathlib import Path
-from subprocess import run
+import std.sys
+from std.collections import Set
+from std.pathlib import Path
+from std.subprocess import run
 
 # We can't check much more than this at the moment, because the license year
 # changes and the language is not mature enough to do regex yet.

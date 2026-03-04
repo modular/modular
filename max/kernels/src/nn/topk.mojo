@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, exp, iota
 from std.memory import alloc
-from std.sys import align_of, simd_width_of, size_of, env_get_bool
+from std.sys import align_of, simd_width_of, size_of, get_defined_bool
 
 import std.gpu.primitives.warp as warp
 from std.algorithm.functional import parallelize_over_rows
@@ -102,7 +102,7 @@ fn _adjust_top_p[
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](
     top_p: Scalar[T],
-    values: UnsafePointer[Scalar[T], address_space=address_space],
+    values: UnsafePointer[Scalar[T], _, address_space=address_space],
     k: Int,
     total_sum: Scalar[T],
 ) -> Scalar[T]:
@@ -1330,7 +1330,7 @@ fn _topk_gpu[
     var k_device = DeviceBuffer[DType.int64](ctx, k_ptr, k_size, owning=False)
 
     # Enqueue the first kernel (stage 1)
-    comptime if env_get_bool[
+    comptime if get_defined_bool[
         "USE_OLD_TOP_K_KERNEL", False
     ]() or _force_old_impl:
         comptime kernel_1 = _topk_stage1_old[dtype, out_idx_type, largest]

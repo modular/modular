@@ -333,9 +333,9 @@ fn _small_batched_matmul[
     c_type: DType,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank],
-    a_buf: NDBuffer[a_type, rank],
-    b_buf: NDBuffer[b_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank, ...],
+    a_buf: NDBuffer[a_type, rank, ...],
+    b_buf: NDBuffer[b_type, rank, ...],
 ) raises:
     comptime simd_width = simd_width_of[c_type]()
 
@@ -531,9 +531,9 @@ fn _batched_matmul_cpu[
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
-    c_buf: NDBuffer[mut=True, c_type, rank],
-    a_buf: NDBuffer[a_type, rank],
-    b_buf: NDBuffer[b_type, rank],
+    c_buf: NDBuffer[mut=True, c_type, rank, ...],
+    a_buf: NDBuffer[a_type, rank, ...],
+    b_buf: NDBuffer[b_type, rank, ...],
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
@@ -1157,8 +1157,8 @@ fn batched_matmul_shape[
     b_type: DType,
     single_thread_blocking_override: Bool,
 ](
-    a_buff: NDBuffer[a_type, rank],
-    b_buff: NDBuffer[b_type, rank],
+    a_buff: NDBuffer[a_type, rank, ...],
+    b_buff: NDBuffer[b_type, rank, ...],
 ) raises -> IndexList[rank]:
     """
     Compute the output shape of a `batch_matmul` operation, and assert the

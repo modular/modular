@@ -30,8 +30,8 @@ fn parallel_memcpy[
     dtype: DType
 ](
     *,
-    dest: UnsafePointer[mut=True, Scalar[dtype]],
-    src: UnsafePointer[mut=False, Scalar[dtype]],
+    dest: UnsafePointer[mut=True, Scalar[dtype], _],
+    src: UnsafePointer[mut=False, Scalar[dtype], _],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -73,8 +73,8 @@ fn parallel_memcpy[
     dtype: DType,
 ](
     *,
-    dest: UnsafePointer[mut=True, Scalar[dtype]],
-    src: UnsafePointer[mut=False, Scalar[dtype]],
+    dest: UnsafePointer[mut=True, Scalar[dtype], _],
+    src: UnsafePointer[mut=False, Scalar[dtype], _],
     count: Int,
 ):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.

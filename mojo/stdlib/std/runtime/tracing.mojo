@@ -17,7 +17,7 @@ from std.collections.list import List
 from std.collections.optional import Optional, OptionalReg
 from std.ffi import external_call
 from std.sys import stderr
-from std.sys.param_env import env_get_int, is_defined
+from std.sys.defines import get_defined_int, is_defined
 
 import std.gpu.host._tracing as gpu_tracing
 import std.logger.logger as logger
@@ -71,7 +71,7 @@ fn get_safe_task_id(ctx: DeviceContext) -> OptionalReg[Int]:
 fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
     comptime if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
         return None
-    return env_get_int["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]()
+    return get_defined_int["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]()
 
 
 # ===-----------------------------------------------------------------------===#

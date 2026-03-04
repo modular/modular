@@ -18,7 +18,6 @@ This module contains common components used by all SM100 matmul kernel variants:
 - KernelContext: Common kernel state (election vars, CTA coords, masks)
 - Barrier init helpers: compute_input_consumer_count, init_core_barriers, init_clc_barriers
 - _Batched3DLayout / _to_batched_3d: Reshape 2D TileTensor to 3D (batch=1)
-- consumer_main_loop: Legacy MMA consumer loop (deprecated but kept for compatibility)
 """
 
 from std.gpu import WARP_SIZE, thread_idx
@@ -29,7 +28,6 @@ from std.gpu.primitives.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout.tma_async import SharedMemBarrier
 from layout._layout import RowMajorLayout, TensorLayout, row_major
 from layout.coord import ComptimeInt, Coord, Idx
@@ -38,8 +36,7 @@ from layout.tile_tensor import TileTensor
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
-from linalg.arch.sm100 import MmaOpSM100_SS
-from linalg.structuring import SMemPtr, SMemArray, SMemTileIter
+from .smem_types import SMemPtr, SMemArray
 from .pipeline import ProducerConsumerPipeline
 
 comptime MbarPtr = SMemPtr[SharedMemBarrier]
@@ -402,81 +399,6 @@ fn init_clc_barriers[
     comptime for i in range(num_clc_stages):
         clc_full_ptr[i].init(clc_producer_arv_count)
         clc_empty_ptr[i].init(clc_consumer_arv_count)
-
-
-# =============================================================================
-# consumer_main_loop - MMA consumer loop (external API)
-# =============================================================================
-
-
-# DEPRECATED: Use InputTilePipeline with InputConsumerStage instead.
-# This legacy function uses raw SMemTileIter rather than encapsulated
-# stage access. Kept for backward compatibility with external callers.
-@always_inline
-fn consumer_main_loop[
-    accum_type: DType,
-    c_type: DType,
-    a_type: DType,
-    b_type: DType,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
-    a_swizzle: TensorMapSwizzle,
-    b_swizzle: TensorMapSwizzle,
-    transpose_b: Bool,
-    pipeline_stages: Int,
-    /,
-    *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cta_group: Int = 1,
-    cluster_shape: IndexList[3] = IndexList[3](1, 1, 1),
-    k_group_size: Int = 1,
-](
-    tmem_addr: Int,
-    a_smem_iter: SMemTileIter[a_type, a_smem_layout],
-    b_smem_iter: SMemTileIter[b_type, b_smem_layout],
-    load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
-    mma_op: MmaOpSM100_SS[
-        c_type,
-        a_type,
-        b_type,
-        block_tile_shape,
-        mma_shape,
-        accum_type=accum_type,
-        cta_group=cta_group,
-        cluster_shape=cluster_shape,
-        a_swizzle=a_swizzle,
-        b_swizzle=b_swizzle,
-        transpose_b=transpose_b,
-    ],
-    elect_one_warp: Bool,
-    iter_idx: UInt32,
-    k_start: UInt32,
-):
-    """DEPRECATED: Legacy MMA consumer loop for external callers.
-
-    Use InputTilePipeline with InputConsumerStage for new code.
-    This function is kept for backward compatibility.
-    """
-    var stage = load_mma_pipeline.consumer_stage()
-
-    load_mma_pipeline.wait_producer()
-
-    if elect_one_sync():
-        comptime for j in range(k_group_size):
-            var a_smem_tile = a_smem_iter.next(
-                stage * UInt32(k_group_size) + UInt32(j)
-            )[]
-            var b_smem_tile = b_smem_iter.next(
-                stage * UInt32(k_group_size) + UInt32(j)
-            )[]
-            mma_op.mma(
-                a_smem_tile,
-                b_smem_tile,
-                UInt32(tmem_addr),
-                init_c=(iter_idx + UInt32(j) == k_start),
-            )
-        mma_op.commit(load_mma_pipeline.consumer_mbar(stage))
 
 
 # =============================================================================

@@ -48,7 +48,7 @@ from layout import (
     TileTensor,
 )
 from layout._layout import Layout as TileLayout, row_major
-from ..structured_kernels.tile_types import create_tma_tile
+from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -277,7 +277,7 @@ fn grouped_matmul_1d1d_nvfp4[
     # expected types. The caller's TileTensors may have a different symbolic
     # LayoutType (from _DimsToCoordLike) than the kernel's GMEMLayout1D.
     from std.memory import UnsafePointer as Ptr
-    from ..structured_kernels.tile_types import GMEMLayout1D
+    from structured_kernels.tile_types import GMEMLayout1D
 
     fn _to_1d[
         target_type: DType,

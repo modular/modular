@@ -13,8 +13,8 @@
 from std.math import ceildiv
 from std.sys import (
     align_of,
-    env_get_bool,
-    env_get_int,
+    get_defined_bool,
+    get_defined_int,
     simd_width_of,
     size_of,
     has_nvidia_gpu_accelerator,
@@ -28,7 +28,7 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout.tile_tensor import TileTensor
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tile_types import (
+from structured_kernels.tile_types import (
     lt_to_tt,
 )
 from std.logger import Logger
@@ -92,30 +92,30 @@ fn matmul_dispatch_sm100[
     comptime static_N = c.shape.get[1]()
     comptime static_K = a.shape.get[1]()
 
-    comptime if env_get_bool["AUTOTUNING_MODE", False]():
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
         var c_tensor = lt_to_tt(from_ndbuffer_row_major(c))
         var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
         var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
 
-        comptime BM = env_get_int["TUNE_BM", 128]()
-        comptime BN = env_get_int["TUNE_BN", 64]()
+        comptime BM = get_defined_int["TUNE_BM", 128]()
+        comptime BN = get_defined_int["TUNE_BN", 64]()
         comptime BK = (
             TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
         )
         comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
-        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        comptime CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
+        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
         comptime CLUSTER_DIM = Index(
             CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
         )
-        comptime BLOCK_SWIZZLE_SIZE = env_get_int[
+        comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
             "TUNE_BLOCK_SWIZZLE_SIZE", 0
         ]()
-        comptime RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
-        comptime CTA_GROUP = env_get_int["TUNE_CTA_GROUP", 2]()
-        comptime K_GROUP_SIZE = env_get_int["TUNE_K_GROUP_SIZE", 1]()
-        comptime AB_SWAPPED = env_get_bool["TUNE_AB_SWAPPED", False]()
+        comptime RASTERIZE_ORDER = get_defined_int["TUNE_RASTER_ORDER", 1]()
+        comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
+        comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
+        comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
 
         comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
@@ -1493,6 +1493,16 @@ fn matmul_dispatch_sm100_bf16[
         Index(4096, 1536),
     ]
 
+    comptime FLUX2_NK = [
+        Index(6144, 24576),
+        Index(55296, 6144),
+        Index(6144, 6144),
+        Index(36864, 6144),
+        Index(6144, 18432),
+        Index(1024, 5120),
+        Index(32768, 5120),
+    ]
+
     comptime static_NK = Index(static_N, static_K)
 
     comptime if static_NK in DeepSeek_NK:
@@ -1504,6 +1514,14 @@ fn matmul_dispatch_sm100_bf16[
         ](c, a, b, ctx)
 
     comptime if static_NK in miscellaneous_NK:
+        return heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
+    comptime if static_NK in FLUX2_NK:
         return heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,

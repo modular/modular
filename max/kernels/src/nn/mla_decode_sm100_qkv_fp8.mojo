@@ -66,6 +66,7 @@ from layout.layout import Layout
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.swizzle import make_ldmatrix_swizzle
 from std.memory import bitcast
+from layout.layout_tensor import LayoutTensor
 from nn.mha_fa3_utils import (
     OptionalPointer,
     KVTMATile,
@@ -222,16 +223,21 @@ struct MLA_SM100_Decode_QKV_FP8[
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
-        batch_size: Int,
-        q_max_seq_len: Int,
-        num_partitions: Int,
         mla_decode_pack: MLA_Decode_Pack[
             ValidLengthType = Self.ValidLengthType,
             MaskType = Self.MaskType,
             SplitAccumType = Self.SplitAccumType,
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        scalar_args: LayoutTensor[
+            DType.int64, Layout.row_major(4), MutAnyOrigin
+        ],
     ):
+        # Extract scalar launch args from the stable device buffer.
+        var batch_size = Int(scalar_args.ptr[0])
+        var q_max_seq_len = Int(scalar_args.ptr[1])
+        var num_partitions = Int(scalar_args.ptr[2])
+
         # Register allocation: same as BF16 kernel (3 WGs)
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184

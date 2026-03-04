@@ -2511,7 +2511,7 @@ struct TMATensorTile[
     fn tensormap_cp_fence_release(
         self,
         smem_tma_descriptor_ptr: UnsafePointer[
-            TMADescriptor, address_space = AddressSpace.SHARED
+            TMADescriptor, _, address_space = AddressSpace.SHARED
         ],
     ):
         """
@@ -3334,7 +3334,7 @@ fn _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], _],
     dim0: Int,
     out ret: LayoutTensor[
         dtype,
@@ -3360,7 +3360,7 @@ fn _split_tma_gmem_tensor[
     shape: IndexList[rank],
     swizzle_mode: TensorMapSwizzle,
 ](
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], _],
     dim0: Int,
     dim1: Int,
     out ret: LayoutTensor[
@@ -3392,7 +3392,7 @@ fn create_split_tma[
     swizzle_mode: TensorMapSwizzle,
 ](
     ctx: DeviceContext,
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[Scalar[dtype], _],
     runtime_dim0: Int,
     out res: SplitLastDimTMATensorTile[
         dtype,
@@ -3715,7 +3715,7 @@ struct RaggedTMA3DTile[
         depth: Int = Self.BN,
     ](
         ctx: DeviceContext,
-        ptr: UnsafePointer[Scalar[Self.dtype]],
+        ptr: UnsafePointer[Scalar[Self.dtype], _],
         *,
         rows: Int,
         middle_dim: Int,
@@ -3767,7 +3767,7 @@ struct RaggedTMA3DTile[
     ](
         self,
         dst: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.SHARED
+            Scalar[Self.dtype], _, address_space = AddressSpace.SHARED
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
         *,
@@ -3816,7 +3816,7 @@ struct RaggedTMA3DTile[
     ](
         self,
         src: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.SHARED
+            Scalar[Self.dtype], _, address_space = AddressSpace.SHARED
         ],
         *,
         ragged_idx: UInt32,
@@ -3860,7 +3860,7 @@ struct RaggedTMA3DTile[
     ](
         self,
         src: UnsafePointer[
-            Scalar[Self.dtype], address_space = AddressSpace.SHARED
+            Scalar[Self.dtype], _, address_space = AddressSpace.SHARED
         ],
         *,
         ragged_idx: UInt32,
@@ -4047,7 +4047,7 @@ struct RaggedTensorMap[
     fn __init__(
         out self,
         ctx: DeviceContext,
-        global_ptr: UnsafePointer[Scalar[Self.dtype]],
+        global_ptr: UnsafePointer[Scalar[Self.dtype], _],
         max_length: Int,
         ragged_stride: Int,
         batch_size: Int,

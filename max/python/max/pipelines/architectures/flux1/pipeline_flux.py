@@ -267,10 +267,10 @@ class FluxPipeline(DiffusionPipeline):
         if tokens_2.array.ndim == 1:
             tokens_2.array = np.expand_dims(tokens_2.array, axis=0)
 
-        text_input_ids = Tensor.constant(
+        text_input_ids = Tensor(
             tokens.array, dtype=DType.int64, device=self.text_encoder.devices[0]
         )
-        text_input_ids_2 = Tensor.constant(
+        text_input_ids_2 = Tensor(
             tokens_2.array,
             dtype=DType.int64,
             device=self.text_encoder_2.devices[0],

@@ -21,8 +21,8 @@ comptime OpaquePointer = LegacyUnsafePointer[
 ]
 
 from std.sys import (
-    env_get_int,
-    env_get_bool,
+    get_defined_int,
+    get_defined_bool,
     has_nvidia_gpu_accelerator,
     size_of,
 )
@@ -140,7 +140,7 @@ struct MatmulConfig[
     # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
     # by default to be safe. TODO: set via env var KERN-1002.
 
-    comptime split_k_reduction_scheme = env_get_int[
+    comptime split_k_reduction_scheme = get_defined_int[
         "SPLITK_REDUCTION_SCHEME", 2
     ]()
 
@@ -379,19 +379,19 @@ struct MatmulKernels[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
         block_tile_shape=Index(
-            env_get_int["TUNE_BM", 128](),
-            env_get_int["TUNE_BN", 128](),
-            env_get_int["TUNE_BK", 32](),
+            get_defined_int["TUNE_BM", 128](),
+            get_defined_int["TUNE_BN", 128](),
+            get_defined_int["TUNE_BK", 32](),
         ),
         warp_tile_shape=Index(
-            env_get_int["TUNE_WM", 64](),
-            env_get_int["TUNE_WN", 64](),
-            env_get_int["TUNE_BK", 32](),
+            get_defined_int["TUNE_WM", 64](),
+            get_defined_int["TUNE_WN", 64](),
+            get_defined_int["TUNE_BK", 32](),
         ),
-        num_pipeline_stages=UInt(env_get_int["TUNE_NUM_STAGES", 4]()),
-        num_k_partitions=UInt(env_get_int["TUNE_NUM_K_PARTITIONS", 1]()),
+        num_pipeline_stages=UInt(get_defined_int["TUNE_NUM_STAGES", 4]()),
+        num_k_partitions=UInt(get_defined_int["TUNE_NUM_K_PARTITIONS", 1]()),
         num_warp_k_partitions=UInt(
-            env_get_int["TUNE_NUM_WARP_K_PARTITIONS", 1]()
+            get_defined_int["TUNE_NUM_WARP_K_PARTITIONS", 1]()
         ),
     )
 
@@ -511,10 +511,10 @@ fn _vendor_blas_fallback_disabled() -> Bool:
         - benchmark has specifically requested mojo kernel
     else returns False.
     """
-    comptime globally_disabled = env_get_bool[
+    comptime globally_disabled = get_defined_bool[
         "MODULAR_DISABLE_VENDOR_FALLBACK", False
     ]()
-    comptime bench_disabled = not env_get_bool["use_vendor_blas", True]()
+    comptime bench_disabled = not get_defined_bool["use_vendor_blas", True]()
     return globally_disabled or bench_disabled
 
 
@@ -577,7 +577,7 @@ fn get_hilbert_lut_with_cache(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
     """Get Hilbert lookup table using global cache (no struct needed)."""
-    var key_str = String(t"hilbert_lut_{grid_x}_{grid_y}")
+    var key_str = String("hilbert_lut_", grid_x, "_", grid_y)
 
     # use runtime lookup since key is computed at runtime
     var cached_ptr = external_call[

@@ -32,5 +32,5 @@ def debug_forward_pass(x: Tensor) -> Tensor:
     return h
 
 
-x = Tensor.constant([-1.0, 0.0, 1.0, 2.0], dtype=DType.float32, device=CPU())
+x = Tensor([-1.0, 0.0, 1.0, 2.0], dtype=DType.float32, device=CPU())
 result = debug_forward_pass(x)
