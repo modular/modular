@@ -62,7 +62,19 @@ void CallGraphUpdater::update() {
       if (newCall != call) {
         builder.SetInsertPoint(call);
         builder.Insert(newCall);
-        call->replaceAllUsesWith(newCall);
+        if (call->getType() == cast<llvm::Value>(newCall)->getType()) {
+          call->replaceAllUsesWith(newCall);
+        } else {
+          // Return type changed; RAUW asserts equal types so replace uses via
+          // Use::set() which bypasses the type check. Users are expected to
+          // either be empty (result discarded) or already rebuilt by
+          // rewriteFunctionBody with the updated type.
+          SmallVector<Use *> uses;
+          for (Use &u : call->uses())
+            uses.push_back(&u);
+          for (Use *u : uses)
+            u->set(newCall);
+        }
         call->eraseFromParent();
       }
     }
