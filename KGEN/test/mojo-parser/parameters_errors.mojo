@@ -455,7 +455,7 @@ struct MultiInferred[p: Int, q: Int, //, uP: ParamType[p], uQ: ParamType[q]]:
 
 
 struct BindStructField:
-    # expected-error @below {{failed to infer parameter 'p'}}
+    # expected-error @below {{'InferredParam' failed to infer parameter 'use', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
     var value: InferredParam[Int]
     # expected-error @below {{'InferredParam' failed to infer parameter 'T'}}
     var infer_keyword: InferredParam[p=1]
@@ -635,4 +635,3 @@ struct SomeStruct[a: Int, b: Int, c: Int]:
 
 # expected-error @+1 {{parameter after `...` must be passed by keyword}}
 comptime S = SomeStruct[..., 3]
-

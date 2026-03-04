@@ -46,6 +46,19 @@ class ParamInf;
 /// talking about and when inference is complete, so we keep a flag.
 class ParamBindings {
 public:
+  enum BindingKind {
+    // Following the standard binding rules: the parameter binding should
+    // produce the a concrete type. Every parameter must be bound explicitly
+    // (either with a concrete value or a `_`).
+    kStandard = 0,
+    // Allow producing partially instantiated type even in the absence of `...`
+    // or `_`, but STILL INSTALL default value unless unbound explicitly.
+    kContextual = 1,
+    // This typically means that there is explicit `...` in the parameter list.
+    // Allow producing partially bound type, also NOT install default values.
+    kWithEllipsis = 2,
+  };
+
   /// This is the declaration that we do name lookup against.
   ASTDecl &declScope;
   SharedState &shared;
@@ -67,12 +80,6 @@ public:
                                           const ExprNode *expr,
                                           Type optionalParentTraitType = {});
 
-  // Given a struct type, concretize it by using the existing bindings and
-  // applying the defaults for missing parameters.
-  static ParameterExprArrayAttr
-  concretizeStructTypeFromDefaults(ASTDecl &declScope, ASTType type,
-                                   const ExprNode *expr);
-
   /// The overall expression this was formed for.
   const ExprNode *getExpr() const { return parameters.callExpr; }
   SMLoc getExprLoc() const;
@@ -91,6 +98,11 @@ public:
   /// responsible for ensuring the keyword is not already present.
   void add(const ExprNode *expr, AnyValue value, StringAttr name);
 
+  /// Ensure the binding kind is at least the given kind.
+  void relaxBindingKindTo(BindingKind kind) {
+    this->bindingKind = std::max(this->bindingKind, kind);
+  }
+
   /// Describe how closely the given parameter bindings match the specified
   /// parameters and call operands.
   struct Fitness {
@@ -105,15 +117,13 @@ public:
   ///
   /// On failure, this returns null but does not emit a diagnostic.
   ParameterExprArrayAttr tryVerifyBindings(ArrayRef<Type> paramTypes,
-                                           PogListAttr paramList,
-                                           bool partial) const;
+                                           PogListAttr paramList) const;
 
   /// Verify the parameter bindings for the given struct. If the struct doesn't
   /// match, diagnostics will be emitted using the struct's location and the
   /// given expression location.
   ParameterExprArrayAttr verifyStructBindings(ASTDecl &structDecl,
-                                              TypeSignatureType sig,
-                                              bool partial) const;
+                                              TypeSignatureType sig) const;
 
   /// Verify the parameter bindings for the given generator. If the signature
   /// doesn't match, diagnostics will be emitted using the given baseName and
@@ -127,16 +137,12 @@ public:
   /// they don't.
   std::tuple<ParameterExprArrayAttr, Fitness, std::optional<MojoInflightDiag>>
   verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
-                         PogListAttr paramListAttr, ASTDecl *declIfKnown,
-                         bool partial) const;
+                         PogListAttr paramListAttr, ASTDecl *declIfKnown) const;
 
   /// Method for debugging.
   LLVM_DUMP_METHOD void dump() const;
 
-  /// This flag force-disables bindings of default parameter values, for use in
-  /// trait method resolution.  This is a really horrible hack - trait method
-  /// resolution should not need anything like this.
-  bool doNotApplyDefaults = false;
+  BindingKind bindingKind = kStandard;
 
 private:
   /// This contains the values that are bound into this parameter list.

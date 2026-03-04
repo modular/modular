@@ -40,7 +40,7 @@ fn test_unbound_pack():
     comptime first_bound = StructWithDefault[5, ...]
 
     # CHECK: lit.alias.decl *"last_bound_with_kw`{{.*}}": meta<!lit.struct<#StructWithDefaultKwOnly <:!Int {8}, :!Int ?, :!Int ?, :!Int ?>, <"b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>>>
-    comptime last_bound_with_kw = StructWithDefaultKwOnly[8, d=_, ...]
+    comptime last_bound_with_kw = StructWithDefaultKwOnly[8, d= ...]
 
     # CHECK: lit.alias.decl *"prev_bound_with_kw`{{.*}}: meta<!lit.struct<#StructWithDefaultKwOnly <:!Int {8}, :!Int ?, :!Int ?, :!Int ?>, <"b": !Int, "c": !Int = {{.*}}1{{.*}}, *, "d": !Int = {{.*}}2{{.*}}>>>
     comptime prev_bound_with_kw = StructWithDefaultKwOnly[8, ..., d=_]
@@ -57,7 +57,7 @@ fn test_unbound_pack():
     # CHECK: lit.alias.decl *"unbound_variadic`{{.*}}": meta<!lit.struct<#StructWithVariadic <:!Int ?, :variadic<!Int> ?>
     comptime unbound_variadic = StructWithVariadic[...]
 
-    # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.generator<<"a": variadic<!Int> pos_vararg>() -> !kgen.none> = <{{.*}}variadic_params{{.*}}<:variadic<!Int> ?>>
+    # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.generator<<"a": variadic<!Int> pos_vararg>() -> !kgen.none>
     comptime unpack_variadic = variadic_params[...]
 
     # CHECK: lit.call {{.*}}variadic_params{{.*}}<:variadic<!Int> []>()

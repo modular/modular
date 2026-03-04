@@ -35,7 +35,6 @@ public:
   ParamInf(
       const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
       PogListAttr declaredParamPogs, bool allowImplicitConversions,
-      bool partial,
       llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
       ASTDecl *declIfDirect);
 
@@ -179,8 +178,8 @@ private:
 
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
-  /// True if the inference can lead to unbound attribute.
-  const bool partial;
+
+  bool isInferForStruct = false;
 
   friend class ParamMatcher;
   friend class ParamBindings;

@@ -1112,7 +1112,7 @@ fn test_comptime_expression[nrm: NotRuntimeMaterializable]():
 
 struct TwoParamsType[a: Int, b: Int]:
     pass
-comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B]
+comptime TwoParamsTypeAlias[B: Int] = TwoParamsType[B, ...]
 # expected-note @+1 {{function declared here}}
 fn take_anytype[T: AnyType]():
   # expected-error @below {{'take_anytype' parameter 'T' has 'AnyType' type, but value has type '[B: Int] AnyStruct[TwoParamsType[B, ?]]'}}

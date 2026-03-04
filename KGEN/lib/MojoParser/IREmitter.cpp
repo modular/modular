@@ -808,8 +808,7 @@ SRValue IREmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
       // Try to fully bind the signature, in case it can be made concrete with
       // default values, etc.
       ParameterExprArrayAttr bindingAttr = paramBindings.tryVerifyBindings(
-          signature.getInputParamTypes(), signature.getMetadata(),
-          /*partial=*/true);
+          signature.getInputParamTypes(), signature.getMetadata());
 
       // Notice if there are any unbound parameters.
       bool anyUnbound = true;
@@ -1697,32 +1696,12 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
       return {};
     }
   }
+  if (llvm::any_of(type.getParamBindings(),
+                   [](TypedAttr attr) { return isa<UnboundAttr>(attr); })) {
+    emitError(value.expr->getLoc())
+        << type << " is not concrete, uses '[]' to bind missing parameters";
+  }
 
-  // Verify that all of the parameters for this type are bound.  We allow
-  // PValues to refer to parametric type, but anything calling `emitType`
-  // can only handle fully bound types.
-  auto *decl = type.getDecl(shared);
-  if (!decl) // MLIR types are never parameterized.
-    return type;
-
-  auto structDecl = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
-  if (!structDecl)
-    return type;
-
-  // Check the existing bindings against the full signature of the type and make
-  // sure it is fully bound.
-  // TODO: why do we need to call this? Shouldn't be defaulted parameters be
-  // installed already? This could probably be removed after we standardize the
-  // way we handle defaulted parameters.
-  ParameterExprArrayAttr bindingValuesAttr =
-      ParamBindings::concretizeStructTypeFromDefaults(*decl, type, value.expr);
-  if (!bindingValuesAttr)
-    return {};
-
-  // If verifyBindings changed the bindings set, then we may have had an
-  // empty varargs list or something.  Rebind the StructType.
-  if (bindingValuesAttr.getValue() != type.getParamBindings())
-    type = structDecl.bindReference(bindingValuesAttr);
   return type;
 }
 
@@ -1865,8 +1844,7 @@ ASTType IREmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   // Check the bindings.
   auto metaType = cast<StructMetaType>(tupleType.getMetaType());
   auto bindingsAttr =
-      bindings.verifyStructBindings(*typeDecl, metaType.getSignature(),
-                                    /*partial=*/false);
+      bindings.verifyStructBindings(*typeDecl, metaType.getSignature());
   if (!bindingsAttr)
     return {};
 

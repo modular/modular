@@ -98,15 +98,15 @@ fn test_inferred_params[x: Int, y: ParamType[x], z: DependentParam[x, y]]():
 
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: !lit.generator<<"x": !Int, +, "z": !lit.struct<#ParamType <:!Int *(0,0)>>
     # CHECK-SAME: inferred_partial_dependent{{.*}}<:!Int ?, :!Int {1}, :!lit.struct<#ParamType <:!Int ?>> ?>>
-    comptime partially_bound_dependent = inferred_partial_dependent[1]
+    comptime partially_bound_dependent = inferred_partial_dependent[1, ...]
     # CHECK-NEXT: !lit.generator<() -> !kgen.none> = <{{.*}}inferred_partial_dependent{{.*}}<:!Int x, :!Int {1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound = partially_bound_dependent[y]
 
     # CHECK: alias.decl [[PARTIALLY_BOUND:.*]]: meta<!lit.struct<#InferredStruct <:!Int ?, :!Int {1}, :!lit.struct<#ParamType <:!Int ?>> ?>,
     # CHECK-SAME: <"x": !Int, +, "z": !lit.struct<#ParamType <:!Int *(0,0)>>>>> = <{{.*}}@InferredStruct<:!Int ?, :!Int {1}, :!lit.struct<#ParamType <:!Int ?>> ?>>
-    comptime partially_bound_type = InferredStruct[1]
+    comptime partially_bound_type = InferredStruct[1, ...]
     # CHECK-NEXT: partially_bound_explicit_inferred{{.*}} = <@inferred::@InferredStruct<:!Int {1}, :!Int {2}, :!lit.struct<#ParamType <:!Int {1}>> ?>>
-    comptime partially_bound_explicit_inferred = InferredStruct[x=1, 2]
+    comptime partially_bound_explicit_inferred = InferredStruct[x=1, 2, ...]
     # CHECK-NEXT: fully_bound_type{{.*}}<@inferred::@InferredStruct<:!Int x, :!Int {1}, :!lit.struct<#ParamType <:!Int x>> y>>
     comptime fully_bound_type = partially_bound_type[y]
 

@@ -25,14 +25,13 @@ trait FooTrait:
         ...
 
 
-# expected-note @below {{'ParamType' declared here}}
 struct ParamType[x: Int](FooTrait):
     fn foo(self):
         pass
 
 
 fn invalid_trait_bind():
-    # expected-error @below {{'ParamType' failed to infer parameter 'x'}}
+    # expected-error @below {{'ParamType[?]' is not concrete, uses '[]' to bind missing parameters}}
     comptime Bound: FooTrait = ParamType
 
 

@@ -686,10 +686,10 @@ struct String(ImplicitlyCopyable, KeyElement):
     fn __len__(self) -> Int:
         return 0
 
-    fn __contains__(self, substr: StringSlice[mut=False]) -> Bool:
+    fn __contains__(self, substr: StringSlice[mut=False, ...]) -> Bool:
         return True
 
-    fn __iadd__(mut self, rhs: StringSlice[mut=False]):
+    fn __iadd__(mut self, rhs: StringSlice[mut=False, ...]):
         pass
 
     fn byte_length(self) -> Int:
@@ -1123,7 +1123,9 @@ struct Pointer[
 
     @__unsafe_disable_nested_origin_exclusivity
     @always_inline("nodebug")
-    fn __eq__(self, rhs: Pointer[Self.type, _, Self.address_space]) -> Bool:
+    fn __eq__(
+        self, rhs: Pointer[Self.type, _, Self.address_space, ...]
+    ) -> Bool:
         return True
 
     @always_inline("nodebug")
@@ -1224,7 +1226,7 @@ struct UnsafePointer[
     @always_inline
     fn take_pointee[
         T: Movable, //
-    ](self: UnsafePointer[T]) -> T where type_of(self).mut:
+    ](self: UnsafePointer[T, _]) -> T where type_of(self).mut:
         return __get_address_as_owned_value(self.address)
 
 

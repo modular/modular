@@ -28,7 +28,7 @@ struct MyPairPair:
         self.second = MyPair(c, d)
 
 
-fn use_address(ptr: UnsafePointer[Int]):
+fn use_address(ptr: UnsafePointer[Int, _]):
     print(ptr[])
 
 

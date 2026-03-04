@@ -3346,6 +3346,9 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
 
   auto bindings = ParamBindings::getForDeclaredType(
       emitter.getDeclScope(), structSelfType, syntheticNode);
+  // This could be a parametric function, we don't need to bind the parameter on
+  // the function to test the compatibility.
+  bindings.relaxBindingKindTo(ParamBindings::kWithEllipsis);
   OverloadSet ov(name, callDecls, std::move(bindings),
                  CallSyntax::kMethodCallSynthetic);
   /// Perform rebind on method that implements the trait function but with

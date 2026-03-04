@@ -805,8 +805,7 @@ std::pair<PValue, ASTDecl *> OverloadSet::filterOverloadSetForValueType(
     // may have unbound parameters that we are trying to match, e.g. when in a
     // parameter expression context.
     auto newBindings = paramBindings.tryVerifyBindings(
-        candidateType.getInputParamTypes(), candidateType.getMetadata(),
-        /*partial=*/true);
+        candidateType.getInputParamTypes(), candidateType.getMetadata());
     if (!newBindings)
       return {nullptr, nullptr}; // If there is an error, return the problem.
 

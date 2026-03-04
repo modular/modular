@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-# CHECK: 'get_linkage_name' function is not fully bound
-# CHECK-SAME: param_fn{{.*}} missing 1 parameter binding(s)
+# CHECK: failed to infer parameter 'y', specify the parameter or use '_' or '...' to unbind the parameter explicitly
 
 from std.compile import compile_info
 

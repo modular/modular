@@ -63,9 +63,13 @@ emitVariadicPackConstructor(ASTType variadicPackType, TypedAttr originToUse,
   AttributeRefNode isOwned(&origTypeExpr, expr->getLoc(), "is_owned");
   SyntheticNode unboundTypeExpr(expr->getLoc(),
                                 PValue(unboundVariadicPackType));
-  Operand subscriptOperand(&isOwned, expr->getLoc(), Operand::kKeyword,
-                           StringAttr::get(emitter.getContext(), "is_owned"));
-  SubscriptNode subscript(&unboundTypeExpr, expr->getLoc(), subscriptOperand,
+  SimpleLiteralNode ellipseLiteral(SimpleLiteralNode::kEllipsisLiteral,
+                                   expr->getLoc());
+  Operand isOwnedOperand(&isOwned, expr->getLoc(), Operand::kKeyword,
+                         StringAttr::get(emitter.getContext(), "is_owned"));
+  Operand ellipseOperand(&ellipseLiteral, expr->getLoc(), Operand::kPositional);
+  SmallVector<Operand> operands{isOwnedOperand, ellipseOperand};
+  SubscriptNode subscript(&unboundTypeExpr, expr->getLoc(), operands,
                           expr->getLoc());
   SyntheticNode refPackExpr(expr->getLoc(), refPackValue);
   Operand callOperand(&refPackExpr, expr->getLoc(), Operand::kPositional);
@@ -1175,8 +1179,8 @@ static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
   paramBinds.add(expr, origin);
 
   auto structOp = cast<StructDeclOp>(decl->getIfOperation());
-  ParameterExprArrayAttr bindings = paramBinds.verifyStructBindings(
-      *decl, structOp.getSignature(), /*partial=*/false);
+  ParameterExprArrayAttr bindings =
+      paramBinds.verifyStructBindings(*decl, structOp.getSignature());
   if (!bindings)
     return {};
 

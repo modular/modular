@@ -87,7 +87,7 @@ calculateRequiredPosOperandsForPacks(FnTypeGeneratorType signature,
 
 ParamInf::ParamInf(
     const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
-    PogListAttr declaredParamPogs, bool allowImplicitConversions, bool partial,
+    PogListAttr declaredParamPogs, bool allowImplicitConversions,
     llvm::function_ref<MojoInflightDiag &(std::optional<SMLoc> loc)> getDiag,
     ASTDecl *declIfDirect)
     : paramBindings(paramBinding), declIfKnown(declIfDirect),
@@ -95,7 +95,7 @@ ParamInf::ParamInf(
       evaluator(paramBinding.shared.getParameterEvaluator()),
       declaredParamTypes(declaredParamTypes),
       declaredParamPogs(declaredParamPogs),
-      allowImplicitConversions(allowImplicitConversions), partial(partial) {
+      allowImplicitConversions(allowImplicitConversions) {
 
   // Fills in with nullptr.
   for (size_t i = 0, e = declaredParamTypes.size(); i != e; ++i)
@@ -750,10 +750,12 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // NOTE: in a non-partial binding context, `_` can be also used as a place
   // holder, in this case we don't infer it to `_`
   if (isa_and_nonnull<UnboundAttr>(binding.ir.getIfPValue().get())) {
-    if (partial)
+    // `_` means different things when used in struct binding or call bindings,
+    // for struct binding, it is a concrete unknown value; for call binding, it
+    // means something to be inferred.
+    if (isInferForStruct)
       return TypedAttr(UnboundAttr::get(expectedType));
-    // TODO: should we even allow using `_` in a concrete binding context? maybe
-    // just raise an error here to be less ambiguous.
+
     return TypedAttr(); // Deferred
   }
 
@@ -879,30 +881,11 @@ LogicalResult ParamInf::setInferredValue(size_t paramIdx, TypedAttr paramVal) {
 ///
 /// On failure, this will emit a diagnostic through the 'getDiag' callback.
 LogicalResult ParamInf::inferFromParamList() {
-  // Notice, but strip out, the ellipsis if present.
-  bool hasEllipsis = false;
-  CallOperands tmpOperands(getGivenBindings().syntax,
-                           getGivenBindings().callExpr);
-  if (llvm::any_of(getGivenBindings().values, [](const OperandValue &binding) {
-        return isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get());
-      })) {
-    hasEllipsis = true;
-    // Rebuild the operands list without it.  We only do this if present as a
-    // micro-optimization.
-    for (auto binding : getGivenBindings().values) {
-      if (!isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get()))
-        tmpOperands.values.push_back(binding);
-      else if (!partial) {
-        getDiag(binding.expr->getLoc())
-            << "'...' is not allowed in concrete parameter bindings";
-        return failure();
-      }
-    }
-  }
+  bool hasEllipsis = paramBindings.bindingKind == ParamBindings::kWithEllipsis;
 
   // Use the temporary operands list if we had to remove an ellipsis, otherwise
   // use the original operands list.
-  auto &givenBindings = hasEllipsis ? tmpOperands : this->getGivenBindings();
+  const CallOperands &givenBindings = this->getGivenBindings();
 
   // Do basic validation of the argument list using shared logic.
   // TODO: Integrate this into the logic below.
@@ -1100,8 +1083,7 @@ LogicalResult ParamInf::inferFromParamList() {
       diag << "parametric value";
     emitWrongArgOrParamCount(diag, /*minRequired=*/numExpected,
                              /*maxAllowed=*/numExpected,
-                             paramBindings.getParameters().getNumPositional() -
-                                 hidden,
+                             givenBindings.getNumPositional() - hidden,
                              "positional parameter");
     return failure();
   }
@@ -1110,26 +1092,13 @@ LogicalResult ParamInf::inferFromParamList() {
 }
 
 LogicalResult ParamInf::inferForStruct() {
+  isInferForStruct = true;
+
   if (failed(inferFromParamList()))
     return failure();
 
-  // Check to see if we have ... and remove it from the parameter list.
-  bool hasEllipsis =
-      llvm::any_of(getGivenBindings().values, [](OperandValue binding) {
-        return isa_and_nonnull<EllipsisAttr>(binding.ir.getIfPValue().get());
-      });
-
-  // FIXME: we also allow using `_` (UnboundAttr) in a very unprincipled
-  // way: it can either be used to unbound a particular positional parameter or
-  // as a placeholder (unknown value to be inferred). This creates a lot of
-  // subtlety in the compiler, we should probably only allow `_` in partial
-  // binding context too?
-  //
-  // ParamInf should have already complained and returned.
-  //
-  // FIXME: according to the specification, we should only do this when all
-  // other parameter is bound.
-  if (!hasEllipsis && failed(inferFromDefaults())) {
+  if (paramBindings.bindingKind != ParamBindings::kWithEllipsis &&
+      failed(inferFromDefaults())) {
     return failure();
   }
 
@@ -1140,7 +1109,7 @@ LogicalResult ParamInf::inferForCall(FnTypeGeneratorType signature,
                                      const CallOperands &operands,
                                      const OperandValueList &variadicKwOperands,
                                      bool returnsSelf, bool hasCTADParams) {
-  assert(!partial && "overload resolution must be a full binding context");
+  isInferForStruct = false;
 
   // First try to infer parameters from the already provided bindings.
   if (failed(inferFromParamList()))
@@ -1482,10 +1451,6 @@ LogicalResult ParamInf::inferCTADParams(FnTypeGeneratorType signature,
 // invoked after both parameter list and argument list has been scanned).
 LogicalResult ParamInf::inferFromDefaults() {
 
-  // If we aren't applying default parameter values, just return success.
-  if (paramBindings.doNotApplyDefaults)
-    return success();
-
   // Lastly, See if we can fulfill any missing parameters with default values
   // for their type (variadic attr always have a default empty value if not
   // inferable).
@@ -1536,12 +1501,7 @@ LogicalResult ParamInf::inferFromDefaults() {
       }
     }
 
-    // The rest of this is only applies to complete parameter bindings.
-    if (partial)
-      continue;
-
-    // If not specified/inferrable, variadic always have a default empty
-    // value.
+    // If not specified/inferrable, variadic always have a default empty value.
     bool isInferableVA = [&]() -> bool {
       return declaredParamPogs.isPosVarArg(idx) ||
              (declaredParamPogs.getPogs()[idx].getPassingKind() ==
@@ -1549,7 +1509,7 @@ LogicalResult ParamInf::inferFromDefaults() {
               isa<VariadicType>(declaredParamTypes[idx]));
     }();
 
-    if (!partial && isInferableVA) {
+    if (isInferableVA) {
       // FIXME: This isn't rewriting the variadic list for dependent types.
       auto type = declaredParamTypes[idx];
       auto empty = VariadicAttr::get({}, sugarCast<VariadicType>(type));
@@ -1557,6 +1517,11 @@ LogicalResult ParamInf::inferFromDefaults() {
         return failure();
       continue;
     }
+
+    // TODO: move the special handling of Origin outside the default parameter
+    // inference.
+    if (isInferForStruct)
+      continue;
 
     // Otherwise, check to see if this is an singleton parameter like Origin. So
     // long as its type is fully resolved, we can go ahead and instantiate it.
@@ -1593,12 +1558,12 @@ LogicalResult ParamInf::inferFromDefaults() {
 // TODO: We probably don't have to do this? This is just to make sure we reached
 // the same end state as the old parameter inference. Understand why.
 LogicalResult ParamInf::finalizeWithUnbound() {
+  bool defaultToUnbound = paramBindings.bindingKind != ParamBindings::kStandard;
+
   // All kw-only parameter that is not inferrable.
   SmallVector<StringAttr> kwDiagNames;
 
   auto emitInferenceFailure = [&](size_t paramIdx) {
-    assert(!partial && "parameter deduction failure in a context that "
-                       "doesn't allow deduction");
     MojoInflightDiag &diag = getDiag(paramBindings.getExprLoc());
     if (declIfKnown && isa<StructDeclOp>(declIfKnown->getIfOperation()))
       diag << "'" << *declIfKnown->getUserNameIfOperation() << "' ";
@@ -1625,33 +1590,62 @@ LogicalResult ParamInf::finalizeWithUnbound() {
         }
       }
     }
+
+    if (isInferForStruct)
+      diag << ", specify the parameter or use '_' or '...' to unbind the "
+              "parameter explicitly";
   };
 
   // This is the end of parameter inference, replace any fail-to-infer parameter
   // to unboundAttr.
   for (auto [idx, pog] : llvm::enumerate(declaredParamPogs.getPogs())) {
     TypedAttr inferred = evaluator.getIndexBindings()[idx];
-    if (!inferred || sugarIsa<UnboundAttr>(inferred)) {
-      if (partial) {
-        Type targetType = evaluator.getReboundType(declaredParamTypes[idx]);
-        inferred = UnboundAttr::get(targetType);
-        evaluator.overwriteIndexBinding(idx, inferred);
-      } else {
-        // We don't allow any unbound parameter in a non-partial evaluation
-        // context.
-        if (pog.getPassingKind() != PassingKind::KwOnly) {
-          emitInferenceFailure(idx);
-          return failure();
-        }
+    if (inferred && !sugarIsa<UnboundAttr>(inferred))
+      continue;
 
-        // Collect all missing keyword-only and report.
-        kwDiagNames.push_back(pog.getName());
-      }
+    bool installUnbound = [&]() -> bool {
+      // Call must produce a concrete type
+      if (!isInferForStruct)
+        return false;
+
+      // There is a explicit unbound value provided and unbound is allowed.
+      if (inferred)
+        return true;
+
+      // `...` provides a default `_` value for any missing parameter. Besides,
+      // we always allow inferred-only/implicit auto-parameterized parameter to
+      // be defaulted to `_`. This is to allow:
+      //
+      // struct S[a: Int, //, b: Param[a]]:
+      //   pass
+      //
+      // comptime _ = S[_] # NOTE that we don't require `a = _` here.
+      //
+      return pog.getPassingKind() == PassingKind::Inferred ||
+             pog.getPassingKind() == PassingKind::Implicit || defaultToUnbound;
+    }();
+
+    if (installUnbound) {
+      Type targetType = evaluator.getReboundType(declaredParamTypes[idx]);
+      evaluator.overwriteIndexBinding(idx, UnboundAttr::get(targetType));
+      continue;
     }
+
+    if (pog.getPassingKind() != PassingKind::KwOnly) {
+      emitInferenceFailure(idx);
+      return failure();
+    }
+    // Collect all missing keyword-only and report.
+    kwDiagNames.push_back(pog.getName());
   }
 
   if (!kwDiagNames.empty()) {
-    emitMissing(getDiag({}), kwDiagNames, "keyword-only parameter");
+    MojoInflightDiag &diag = getDiag({});
+    emitMissing(diag, kwDiagNames, "keyword-only parameter");
+
+    if (isInferForStruct)
+      diag << ", specify the parameter or use '_' or '...' to unbind the "
+              "parameter explicitly";
     return failure();
   }
 
