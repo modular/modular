@@ -17,11 +17,11 @@
 
 from std.os.path import isdir, islink
 from std.pathlib import Path
-from std.sys import env_get_string
+from std.sys import get_defined_string
 
 from std.testing import TestSuite, assert_false, assert_true
 
-comptime TEMP_DIR = env_get_string["TEMP_DIR"]()
+comptime TEMP_DIR = get_defined_string["TEMP_DIR"]()
 
 
 def test_islink() raises:

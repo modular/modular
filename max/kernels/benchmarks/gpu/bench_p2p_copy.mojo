@@ -31,8 +31,8 @@ Usage:
 
 from std.math import ceildiv
 from std.sys import (
-    env_get_int,
-    env_get_dtype,
+    get_defined_int,
+    get_defined_dtype,
     is_amd_gpu,
     size_of,
     simd_width_of,
@@ -52,9 +52,9 @@ from internal_utils import arg_parse, human_readable_size
 from std.utils import StaticTuple
 
 comptime BLOCK_SIZE = 256
-comptime store_width = env_get_int["store_width", 0]()
+comptime store_width = get_defined_int["store_width", 0]()
 # direction: 0 = unidir push, 1 = unidir pull, 2 = bidir push, 3 = bidir pull
-comptime direction = env_get_int["direction", 0]()
+comptime direction = get_defined_int["direction", 0]()
 comptime _target_address_space = (
     AddressSpace.GLOBAL if is_amd_gpu() else AddressSpace.GENERIC
 )
@@ -345,7 +345,7 @@ fn _verify[
 
 fn main() raises:
     var num_bytes = arg_parse("num_bytes", 64 * 1024 * 1024)
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
     comptime simd_width = (
         simd_width_of[dtype, target = get_gpu_target()]() if store_width
         == 0 else store_width

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import env_get_dtype, env_get_int, env_get_bool
+from std.sys import get_defined_dtype, get_defined_int, get_defined_bool
 
 from std.benchmark import (
     Bench,
@@ -448,22 +448,22 @@ struct MLA_cfg(ImplicitlyCopyable):
 
 
 def main() raises:
-    comptime mask_rank = env_get_int["mask_rank", 3]()
-    comptime qkv_type = env_get_dtype["qkv_type", DType.bfloat16]()
-    comptime output_type = env_get_dtype["output_type", DType.bfloat16]()
-    comptime mask_type = env_get_dtype["mask_type", DType.float32]()
-    comptime depth = env_get_int["depth", 576]()
-    comptime prefill_depth = env_get_int["prefill_depth", 192]()
-    comptime num_heads = env_get_int["num_heads", 128]()
-    comptime group = env_get_int["group", 128]()
-    comptime use_causal_mask = env_get_bool["use_causal_mask", True]()
-    comptime decoding_warp_split_k = env_get_bool[
+    comptime mask_rank = get_defined_int["mask_rank", 3]()
+    comptime qkv_type = get_defined_dtype["qkv_type", DType.bfloat16]()
+    comptime output_type = get_defined_dtype["output_type", DType.bfloat16]()
+    comptime mask_type = get_defined_dtype["mask_type", DType.float32]()
+    comptime depth = get_defined_int["depth", 576]()
+    comptime prefill_depth = get_defined_int["prefill_depth", 192]()
+    comptime num_heads = get_defined_int["num_heads", 128]()
+    comptime group = get_defined_int["group", 128]()
+    comptime use_causal_mask = get_defined_bool["use_causal_mask", True]()
+    comptime decoding_warp_split_k = get_defined_bool[
         "decoding_warp_split_k", False
     ]()
-    comptime cache_busting = env_get_bool["cache_busting", True]()
-    comptime kv_depth = env_get_int["kv_depth", 128]()
-    comptime cache_depth = env_get_int["cache_depth", 576]()
-    comptime cache_num_heads = env_get_int["cache_num_heads", 1]()
+    comptime cache_busting = get_defined_bool["cache_busting", True]()
+    comptime kv_depth = get_defined_int["kv_depth", 128]()
+    comptime cache_depth = get_defined_int["cache_depth", 576]()
+    comptime cache_num_heads = get_defined_int["cache_num_heads", 1]()
 
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))

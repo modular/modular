@@ -17,7 +17,7 @@
 # Tests for generic types that constrain their own Writable implementation.
 
 from std.memory import ArcPointer, OwnedPointer
-from std.sys import env_get_int
+from std.sys import get_defined_int
 
 
 @fieldwise_init
@@ -28,11 +28,11 @@ struct NotWritable(ImplicitlyCopyable):
 def main() raises:
     var string = String()
 
-    comptime if env_get_int["test"]() == 1:
+    comptime if get_defined_int["test"]() == 1:
         # CHECK_1: constraint failed: {{.*}}ArcPointer{{.*}}(Writable) conformance requires {{.*}}NotWritable{{.*}} conformance, which is not satisfied.
         var ptr = ArcPointer[NotWritable](NotWritable())
         string.write(ptr)
-    elif env_get_int["test"]() == 2:
+    elif get_defined_int["test"]() == 2:
         # CHECK_2: constraint failed: {{.*}}OwnedPointer{{.*}}(Writable) conformance requires {{.*}}NotWritable{{.*}} conformance, which is not satisfied.
         var ptr = OwnedPointer[NotWritable](NotWritable())
         string.write(ptr)

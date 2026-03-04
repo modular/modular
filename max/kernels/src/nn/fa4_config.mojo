@@ -14,17 +14,17 @@
 
 from std.math import ceildiv, align_up, align_down, gcd
 from std.sys import size_of
-from std.sys import env_get_bool
+from std.sys import get_defined_bool
 from std.bit import prev_power_of_two
 from std.gpu.globals import WARP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 
 
-comptime EnableForcedOrdering = env_get_bool[
+comptime EnableForcedOrdering = get_defined_bool[
     "FA4ForcedSoftmaxOrdering", False
 ]()
-comptime EnableEarlyAdd = env_get_bool["FA4AddEarly", False]()
+comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
 
 
 struct FA4Config(TrivialRegisterPassable):

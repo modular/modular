@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Provides functions to examine build configuration."""
 
-from .param_env import env_get_string, is_defined
+from .defines import get_defined_string, is_defined
 
 
 @always_inline("nodebug")
 fn _build_type() -> StaticString:
     comptime assert is_defined["BUILD_TYPE"](), "the build type must be defined"
-    return env_get_string["BUILD_TYPE"]()
+    return get_defined_string["BUILD_TYPE"]()
 
 
 @always_inline("nodebug")

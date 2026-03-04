@@ -28,7 +28,7 @@ from std.os.atomic import Consistency, fence
 from std.sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
 from std.sys._assembly import inlined_assembly
 from std.sys.info import CompilationTarget, _is_amd_cdna
-from std.sys.param_env import env_get_bool
+from std.sys.defines import get_defined_bool
 
 from std.gpu.intrinsics import Scope
 
@@ -38,7 +38,7 @@ from .._utils import to_i32, to_llvm_shared_mem_ptr
 # barrier
 # ===-----------------------------------------------------------------------===#
 
-comptime _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
+comptime _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = get_defined_bool[
     "USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM", False
 ]()
 

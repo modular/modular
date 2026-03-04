@@ -13,9 +13,9 @@
 
 from std.collections import InlineArray
 from std.sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
     size_of,
     simd_width_of,
 )
@@ -345,17 +345,17 @@ fn _get_test_str[
 def main() raises:
     var num_bytes = arg_parse("num_bytes", 16 * 1024)
 
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
-    comptime num_gpus = env_get_int["num_gpus", 2]()
-    comptime rank = env_get_int["rank", 1]()
-    comptime ragged = env_get_bool["ragged", False]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime num_gpus = get_defined_int["num_gpus", 2]()
+    comptime rank = get_defined_int["rank", 1]()
+    comptime ragged = get_defined_bool["ragged", False]()
     # Force passing `max_num_blocks` explicitly.
-    var max_nb = env_get_int["TUNE_MAX_NUM_BLOCKS", -1]()
+    var max_nb = get_defined_int["TUNE_MAX_NUM_BLOCKS", -1]()
     var max_num_blocks: Optional[Int] = Optional[Int]()
     if max_nb > 0:
         max_num_blocks = Optional[Int](max_nb)
-    comptime use_multimem = env_get_bool["use_multimem", False]()
-    comptime use_vendor_ccl = env_get_bool["use_vendor_ccl", False]()
+    comptime use_multimem = get_defined_bool["use_multimem", False]()
+    comptime use_vendor_ccl = get_defined_bool["use_vendor_ccl", False]()
     comptime cache_busting = True
 
     # When ragged, add (ngpus/2) * simd_width elements to create uneven partitions

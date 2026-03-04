@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import env_get_int
+from std.sys import get_defined_int
 
 import compiler
 from std.logger import Logger
@@ -29,7 +29,7 @@ struct UseSplitkReductionScheme:
     fn execute(
         output: OutputTensor[dtype = DType.int32, rank=1],
     ):
-        comptime split_k_reduction_scheme = env_get_int[
+        comptime split_k_reduction_scheme = get_defined_int[
             "SPLITK_REDUCTION_SCHEME", 2
         ]()
         output[0] = Int32(split_k_reduction_scheme)

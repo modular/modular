@@ -27,7 +27,7 @@ from std.ffi import external_call
 from std.sys import (
     align_of,
     codegen_unreachable,
-    env_get_string,
+    get_defined_string,
     is_compile_time,
     is_gpu,
     llvm_intrinsic,
@@ -508,7 +508,7 @@ fn _malloc[
     ],
 ):
     comptime if is_gpu():
-        comptime enable_gpu_malloc = env_get_string[
+        comptime enable_gpu_malloc = get_defined_string[
             "ENABLE_GPU_MALLOC", "true"
         ]()
         # no runtime allocation on GPU

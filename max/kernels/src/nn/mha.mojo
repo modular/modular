@@ -17,7 +17,7 @@ from std.collections import OptionalReg
 from std.sys import (
     CompilationTarget,
     align_of,
-    env_get_bool,
+    get_defined_bool,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -592,7 +592,7 @@ fn flash_attention_dispatch[
                 else:
                     comptime assert is_sm100
 
-                    comptime if depth == 256 or not env_get_bool[
+                    comptime if depth == 256 or not get_defined_bool[
                         "ENABLE_FA4", True
                     ]():
                         mha_sm100_1q_dispatch[

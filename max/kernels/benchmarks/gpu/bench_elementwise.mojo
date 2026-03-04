@@ -15,8 +15,8 @@ from std.collections.string import StaticString
 from std.math import erf, exp, rsqrt, log, sin, sqrt, tanh
 from std.sys import (
     align_of,
-    env_get_int,
-    env_get_string,
+    get_defined_int,
+    get_defined_string,
     simd_width_of,
     size_of,
 )
@@ -247,15 +247,15 @@ fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
 def main() raises:
     var op = arg_parse("op", "sqrt")
     comptime dtype = DType._from_str(
-        env_get_string["dtype", "DType.bfloat16"]()
+        get_defined_string["dtype", "DType.bfloat16"]()
     )
-    comptime rank = env_get_int["rank", 3]()
-    comptime dims_str = env_get_string["dims", "1x1024x3072"]()
+    comptime rank = get_defined_int["rank", 3]()
+    comptime dims_str = get_defined_string["dims", "1x1024x3072"]()
     comptime dims = list_to_static_tuple[parse_shape[dims_str]()]()
-    comptime aligned_memory_config = env_get_int[
+    comptime aligned_memory_config = get_defined_int[
         "aligned_memory_config", 0
     ]()  # bool
-    comptime emulate_graph_compiler = env_get_int[
+    comptime emulate_graph_compiler = get_defined_int[
         "emulate_graph_compiler", 0
     ]()  # bool
 

@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: not %mojo -D my_false=blah %s 2>&1 | FileCheck %s -check-prefix=CHECK-FAIL
 
-from std.sys import env_get_bool
+from std.sys import get_defined_bool
 
 
-# CHECK-FAIL: constraint failed: the boolean environment value of `my_false` with value `blah` is not recognized
+# CHECK-FAIL: constraint failed: the boolean define value of `my_false` with value `blah` is not recognized
 fn main():
-    _ = env_get_bool["my_false"]()
+    _ = get_defined_bool["my_false"]()

@@ -26,7 +26,7 @@ Usage:
 
 from std.math import ceildiv
 from std.memory import LegacyUnsafePointer
-from std.sys import env_get_int, size_of
+from std.sys import get_defined_int, size_of
 from std.time import perf_counter_ns
 
 from std.benchmark import (
@@ -429,12 +429,12 @@ fn bench_grouped_block_scaled_gemm[
 
 def main() raises:
     # Compile-time parameters (from kbench YAML or defaults)
-    comptime N = env_get_int["N", 0]()
-    comptime K = env_get_int["K", 0]()
-    comptime num_groups = env_get_int["num_groups", 0]()
-    comptime cta_group = env_get_int["cta_group", 1]()
-    comptime k_group_size = env_get_int["k_group_size", 1]()
-    comptime block_swizzle_size = env_get_int["block_swizzle_size", 8]()
+    comptime N = get_defined_int["N", 0]()
+    comptime K = get_defined_int["K", 0]()
+    comptime num_groups = get_defined_int["num_groups", 0]()
+    comptime cta_group = get_defined_int["cta_group", 1]()
+    comptime k_group_size = get_defined_int["k_group_size", 1]()
+    comptime block_swizzle_size = get_defined_int["block_swizzle_size", 8]()
 
     # Runtime parameters (from kbench YAML $-prefixed or defaults)
     var M = Int(arg_parse("M", 0))

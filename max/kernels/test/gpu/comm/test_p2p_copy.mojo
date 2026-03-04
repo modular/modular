@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.sys import env_get_int
+from std.sys import get_defined_int
 
 from comm.sync import enable_p2p
 from std.gpu import block_dim, global_idx, grid_dim
@@ -56,7 +56,7 @@ fn launch_p2p_copy_kernel(
 
 
 def main() raises:
-    comptime log2_length = env_get_int["log2_length", 20]()
+    comptime log2_length = get_defined_int["log2_length", 20]()
     comptime assert log2_length > 0
     var length = 1 << log2_length
 

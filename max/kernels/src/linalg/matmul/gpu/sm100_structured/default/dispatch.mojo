@@ -13,8 +13,8 @@
 from std.math import ceildiv
 from std.sys import (
     align_of,
-    env_get_bool,
-    env_get_int,
+    get_defined_bool,
+    get_defined_int,
     simd_width_of,
     size_of,
     has_nvidia_gpu_accelerator,
@@ -92,30 +92,30 @@ fn matmul_dispatch_sm100[
     comptime static_N = c.shape.get[1]()
     comptime static_K = a.shape.get[1]()
 
-    comptime if env_get_bool["AUTOTUNING_MODE", False]():
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
         var c_tensor = lt_to_tt(from_ndbuffer_row_major(c))
         var a_tensor = lt_to_tt(from_ndbuffer_row_major(a))
         var b_tensor = lt_to_tt(from_ndbuffer_row_major(b))
 
-        comptime BM = env_get_int["TUNE_BM", 128]()
-        comptime BN = env_get_int["TUNE_BN", 64]()
+        comptime BM = get_defined_int["TUNE_BM", 128]()
+        comptime BN = get_defined_int["TUNE_BN", 64]()
         comptime BK = (
             TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
         )
         comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
-        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        comptime CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
+        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
         comptime CLUSTER_DIM = Index(
             CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
         )
-        comptime BLOCK_SWIZZLE_SIZE = env_get_int[
+        comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
             "TUNE_BLOCK_SWIZZLE_SIZE", 0
         ]()
-        comptime RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
-        comptime CTA_GROUP = env_get_int["TUNE_CTA_GROUP", 2]()
-        comptime K_GROUP_SIZE = env_get_int["TUNE_K_GROUP_SIZE", 1]()
-        comptime AB_SWAPPED = env_get_bool["TUNE_AB_SWAPPED", False]()
+        comptime RASTERIZE_ORDER = get_defined_int["TUNE_RASTER_ORDER", 1]()
+        comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
+        comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
+        comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
 
         comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 

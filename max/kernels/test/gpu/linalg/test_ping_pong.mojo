@@ -17,7 +17,7 @@ Supports both BF16 and FP8 via compile-time flag:
   mojo -D FP8=true test_ping_pong.mojo   # FP8
 """
 
-from std.sys import env_get_bool
+from std.sys import get_defined_bool
 
 from std.gpu import WARP_SIZE
 from layout import Layout, LayoutTensor
@@ -29,7 +29,7 @@ from std.random import random_si64
 from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
 
 # Compile-time dtype selection: -D FP8=true for FP8, otherwise BF16
-comptime USE_FP8 = env_get_bool["FP8", False]()
+comptime USE_FP8 = get_defined_bool["FP8", False]()
 comptime input_dtype = DType.float8_e4m3fn if USE_FP8 else DType.bfloat16
 
 comptime test_size = 4 * 1024

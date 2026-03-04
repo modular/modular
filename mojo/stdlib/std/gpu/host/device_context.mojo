@@ -26,8 +26,8 @@ from std.pathlib import Path
 from std.ffi import c_char, c_int, c_uint, external_call
 from std.sys import (
     bit_width_of,
-    env_get_bool,
-    env_get_string,
+    get_defined_bool,
+    get_defined_string,
     is_defined,
     is_gpu,
     size_of,
@@ -40,7 +40,7 @@ from std.sys.info import (
     is_triple,
 )
 from std.sys.intrinsics import _type_is_eq
-from std.sys.param_env import _is_bool_like
+from std.sys.defines import _is_bool_like
 
 from std.reflection import call_location, SourceLocation
 from std.builtin.device_passable import DevicePassable
@@ -2005,10 +2005,10 @@ struct DeviceFunction[
         comptime env_var = "DUMP_GPU_" + name.upper()
 
         comptime if is_defined[env_var]():
-            comptime env_val = env_get_string[env_var]()
+            comptime env_val = get_defined_string[env_var]()
 
             comptime if _is_bool_like[env_val]():
-                comptime env_bool_val = env_get_bool[env_var]()
+                comptime env_bool_val = get_defined_bool[env_var]()
                 return env_bool_val, _DumpPath(env_bool_val)
             elif _is_path_like(env_val):
                 return True, _DumpPath(Path(env_val))

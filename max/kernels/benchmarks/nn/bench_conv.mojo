@@ -17,7 +17,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.math import align_up, ceildiv
 from std.random import rand
 from std.sys import simd_width_of, size_of
-from std.sys.param_env import env_get_int, env_get_string
+from std.sys.defines import get_defined_int, get_defined_string
 
 from std.benchmark import *
 from std.benchmark import keep
@@ -84,7 +84,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     # Set the total buffer allocation to be 4x L3 cache.
     comptime MB = 1024 * 1024
-    comptime L3_cache = env_get_int["L3SIZE", 24]() * MB
+    comptime L3_cache = get_defined_int["L3SIZE", 24]() * MB
     var size_per_copy = (
         input_alloc_size * size_of[input_type]()
         + filter_alloc_size * size_of[filter_type]()
@@ -190,7 +190,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         b.iter[bench_fn]()
 
     m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
-        BenchId("Conv", String(spec)),
+        BenchId("Conv", String.write(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
         [ThroughputMeasure(BenchMetric.elements, spec.flops())],
@@ -229,11 +229,6 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Writable):
 
     # fmt: off
     fn write_to(self, mut writer: Some[Writer]):
-        """Writes a string representation of the conv spec.
-
-        Args:
-            writer: The writer to write to.
-        """
         writer.write(
             "n=", self.n,
             ";input=", self.input_dims,
@@ -362,7 +357,7 @@ def main() raises:
         return rebind[IndexList[3 * fp32_3d.rank]](idx)
 
     # 1D benchmarks for wavlm
-    comptime if env_get_string["model", "walvm"]() == "wavlm":
+    comptime if get_defined_string["model", "walvm"]() == "wavlm":
         bench_conv(m, spec1d(2, 16000, 1, 10, 512, 5, 1, Index(0, 0), 1))
         bench_conv(m, spec1d(2, 3199, 512, 3, 512, 2, 1, Index(0, 0), 1))
         bench_conv(m, spec1d(2, 1599, 512, 3, 512, 2, 1, Index(0, 0), 1))
@@ -373,7 +368,7 @@ def main() raises:
         bench_conv(m, spec1d(2, 49, 1024, 128, 1024, 1, 1, Index(64, 64), 16))
     # fmt: off
     # 2D benchmarks for resnet
-    elif env_get_string["model", "wavlm"]() == "resnet50":
+    elif get_defined_string["model", "wavlm"]() == "resnet50":
         bench_conv(m, spec2d(1, 14, 14, 256, 3, 3, 256, Index(1, 1), Index(1, 1), Index(1, 1, 1, 1), 1))
         bench_conv(m, spec2d(1, 56, 56,  64, 3, 3,  64, Index(1, 1), Index(1, 1), Index(1, 1, 1, 1), 1))
         bench_conv(m, spec2d(1, 28, 28, 128, 3, 3, 128, Index(1, 1), Index(1, 1), Index(1, 1, 1, 1), 1))

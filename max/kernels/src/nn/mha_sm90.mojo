@@ -13,7 +13,7 @@
 
 from std.math import ceildiv, exp2, recip
 from std.math.constants import log2e
-from std.sys import align_of, env_get_int, simd_width_of, size_of
+from std.sys import align_of, get_defined_int, simd_width_of, size_of
 
 import std.gpu.primitives.warp as warp
 from std.collections import OptionalReg
@@ -169,7 +169,7 @@ fn mha_sm90_dispatch[
     # implying we don't have enough to make them persistent.
     # This also requires some tricky control flow handling to support,
     # which we haven't added yet.
-    comptime persistent = 0 if PartitionType.do_partition else env_get_int[
+    comptime persistent = 0 if PartitionType.do_partition else get_defined_int[
         "USE_EXPERIMENTAL_KERNELS", 0
     ]()
     comptime assert new_config.algorithm == FlashAttentionAlgorithm(3)

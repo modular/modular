@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _cdna_4_or_newer
-from std.sys import env_get_bool
+from std.sys import get_defined_bool
 
 from std.gpu import barrier, block_idx, lane_id
 from layout import LayoutTensor
@@ -50,7 +50,7 @@ from .utils import (
 struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     AttentionConfig
 ):
-    comptime USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and env_get_bool[
+    comptime USE_EXPERIMENTAL_CDNA4_MHA_KERNEL = _cdna_4_or_newer() and get_defined_bool[
         "USE_EXPERIMENTAL_CDNA4_MHA_KERNEL", False
     ]() and not Self.token_gen
 

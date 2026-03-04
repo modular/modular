@@ -54,7 +54,7 @@ from std.collections import InlineArray, Optional
 from std.math import ceildiv, rsqrt
 from std.sys import (
     align_of,
-    env_get_int,
+    get_defined_int,
     has_amd_gpu_accelerator,
     simd_width_of,
     size_of,
@@ -947,7 +947,7 @@ fn _dispatch_fused_kernel[
     #   1 = force 1-stage for all sizes
     #   2 = force 2-stage for all sizes
     #   3 = force split (2-kernel) path for all sizes (residual only)
-    comptime force_stage = env_get_int["FORCE_ALLREDUCE_STAGE", 0]()
+    comptime force_stage = get_defined_int["FORCE_ALLREDUCE_STAGE", 0]()
 
     # Per-rank byte thresholds for switching to 2-stage allreduce.
     # Derived from empirical sweep data (bf16, per-rank crossover points):

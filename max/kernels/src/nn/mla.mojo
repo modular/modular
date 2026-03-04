@@ -23,7 +23,7 @@ from std.sys import (
     size_of,
     is_nvidia_gpu,
     is_amd_gpu,
-    env_get_int,
+    get_defined_int,
     CompilationTarget,
 )
 

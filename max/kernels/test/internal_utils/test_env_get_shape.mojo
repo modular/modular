@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from internal_utils import env_get_shape, parse_shape
+from internal_utils import get_defined_shape, parse_shape
 from std.testing import assert_true
 
 
@@ -28,7 +28,7 @@ def main() raises:
     comptime assert shape_mnk[1] == 20
     comptime assert shape_mnk[2] == 30
 
-    comptime shape = env_get_shape["shape", "1x2x3"]()
+    comptime shape = get_defined_shape["shape", "1x2x3"]()
     print_static_shape[shape]()
 
     comptime assert shape[0] == 1
