@@ -354,6 +354,8 @@ fn fp8_index[
     comptime smem_use = size_of[IndexSmemStorage[dtype, num_heads, depth, BN]]()
     comptime smem_available = ctx.default_device_info.shared_memory_per_multiprocessor - 1024
 
+    comptime assert num_heads % 8 == 0, "num_heads must be a multiple of 8"
+
     # RaggedMHAOperand.cache_length() returns full key length directly,
     # so _is_cache_length_accurate=True skips adding seq_len in the kernel.
     comptime kernel = fp8_index_kernel[
