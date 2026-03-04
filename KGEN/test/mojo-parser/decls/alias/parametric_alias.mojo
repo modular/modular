@@ -77,7 +77,7 @@ struct MyStruct[a: Int, b: Int](MyTrait):
 # CHECK: lit.alias.decl *"__SomeImpl{{.*}}": !lit.generator<<"Trait": !TrivialRegisterPassable, "T": !kgen.param<:!TrivialRegisterPassable *(0,0)>>!kgen.param<:!TrivialRegisterPassable *(0,0)>> = <#kgen.gen<*(0,1)>>
 comptime __SomeImpl[Trait: TrivialRegisterPassable, T: Trait] = T
 # CHECK: lit.alias.decl *"Some{{.*}}": !lit.generator<<"Trait": !TrivialRegisterPassable>!lit.generator<<"T": !kgen.param<:!TrivialRegisterPassable *(1,0)>>!kgen.param<:!TrivialRegisterPassable *(1,0)>>> = <#kgen.gen<#kgen.gen<*(0,0)>>>
-comptime Some[Trait: TrivialRegisterPassable] = __SomeImpl[Trait]
+comptime Some[Trait: TrivialRegisterPassable] = __SomeImpl[Trait, ...]
 
 # CHECK: lit.alias.decl *"myDouble{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<sugar_builtin(apply(:!lit.generator<("lhs": !Int, "rhs": !Int) -> !Int> @std::@builtin::@stubs::@Int::@"__add__(::Int,::Int)", *(0,0), *(0,0)), {_mlir_value = mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2)})>>
 comptime myDouble[x: Int] = myDependentDefaultAdd[x]
@@ -96,9 +96,9 @@ fn implicit_conversions():
     # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> {{.*}}#kgen.gen<
     expect_two_ints[myDefaultAdd]()
     # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> #kgen.gen<
-    expect_two_ints[myIntFMA[z=2]]()
+    expect_two_ints[myIntFMA[z=2, ...]]()
     # CHECK-NEXT: :!lit.generator<<"x": !Int, "y": !Int>!Int> {{.*}}#kgen.gen<
-    expect_two_ints[myIntFMA[x=2]]()
+    expect_two_ints[myIntFMA[x=2, ...]]()
 
 
 # CHECK-LABEL: lit.fn @"test_type_equality()"
@@ -136,9 +136,9 @@ fn test_type_inference():
 # CHECK-LABEL: fn @"partial_binding()"
 fn partial_binding():
     # CHECK: lit.alias.decl *"myIntMulPlus3{{.*}}": !lit.generator<<"x": !Int, "y": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(0,1), "_mlir_value">){{.*}}, 3)}
-    comptime myIntMulPlus3 = myIntFMA[z=3]
+    comptime myIntMulPlus3 = myIntFMA[z=3, ...]
     # CHECK: lit.alias.decl *"myIntMul2Plus3{{.*}}": !lit.generator<<"x": !Int>!Int> = <#kgen.gen<{{.*}}{_mlir_value = add({{.*}}mul(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, 2){{.*}}, 3)}
-    comptime myIntMul2Plus3 = myIntMulPlus3[y=2]
+    comptime myIntMul2Plus3 = myIntMulPlus3[y=2, ...]
     # CHECK: lit.alias.decl *"myEleven{{.*}}": !Int = <{11}>
     comptime myEleven = myIntMul2Plus3[x=4]
 
@@ -146,7 +146,7 @@ fn partial_binding():
 # CHECK-LABEL: fn @"nested_generators()"
 fn nested_generators():
     # CHECK-NEXT: lit.alias.decl *"myCurriedIntAdd{{.*}}": !lit.generator<<"x": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">)}
-    comptime myCurriedIntAdd[x: Int] = myIntAdd[x]
+    comptime myCurriedIntAdd[x: Int] = myIntAdd[x, _]
 
     # CHECK-NEXT: lit.alias.decl *"myRenamedCurriedIntAdd{{.*}}": !lit.generator<<"a": !Int>!lit.generator<<"y": !Int>!Int>> = <#kgen.gen<#kgen.gen<{{.*}}{_mlir_value = add(#lit.struct.extract<:!Int *(0,0), "_mlir_value">, #lit.struct.extract<:!Int *(1,0), "_mlir_value">)}
     comptime myRenamedCurriedIntAdd[a: Int] = myCurriedIntAdd[a]

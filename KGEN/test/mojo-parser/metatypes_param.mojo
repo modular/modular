@@ -73,7 +73,7 @@ fn unbound_alias():
 fn partially_bound_alias():
     # COM: Test partially binding a type.
     # CHECK: [[PBOUND:\*"PartiallyBound.*]]: meta<!lit.struct<#TwoParam <:!Int {1}, :!Int ?>, <"y": !Int>>> = <{{.*}}@TwoParam<:!Int {1}, :!Int ?>>
-    comptime PartiallyBound = TwoParam[1]
+    comptime PartiallyBound = TwoParam[1, _]
 
     # COM: Test taking a function from a partially bound type.
     # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.generator<<"y": !Int, +>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<:!Int {1}, :!Int ?>>
@@ -97,7 +97,7 @@ fn partially_bound_alias():
 fn partially_bound_kw():
     # COM: Test partially binding the parameters out-of-order with keywords.
     # CHECK: TwoParam <:!Int ?, :!Int {1}>
-    comptime PartiallyBound = TwoParam[y=1]
+    comptime PartiallyBound = TwoParam[y=1, ...]
     # CHECK: TwoParam <:!Int {2}, :!Int {1}>
     comptime FullyBound = PartiallyBound[x=2]
 
@@ -108,7 +108,7 @@ fn partially_bound_kw():
 
 # CHECK-LABEL: lit.fn @"partial_autoparam
 # CHECK-SAME: <?, [[X:.*]]: !Int>(%value: !lit.struct<#TwoParam <:!Int [[X]], :!Int {1}>>
-fn partial_autoparam(value: TwoParam[y=1]):
+fn partial_autoparam(value: TwoParam[y=1, ...]):
     comptime first = value.x
     comptime second = value.y
 
@@ -123,7 +123,7 @@ struct ParamVarArg[F: Int, *I: Int](TrivialRegisterPassable):
         # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <:!Int ?, :variadic<!Int> ?>, <"F": !Int, "I": variadic<!Int> pos_vararg>>
         comptime Unbound = ParamVarArg
         # CHECK: lit.alias.decl {{.*}}BoundSome{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> ?>
-        comptime BoundSome = Unbound[1]
+        comptime BoundSome = Unbound[1, ...]
         # CHECK: lit.alias.decl {{.*}}BoundFinal{{.*}}: {{.*}}ParamVarArg <:!Int {1}, :variadic<!Int> [{3}, {4}]>
         comptime BoundFinal = BoundSome[3, 4]
 
@@ -147,13 +147,15 @@ fn direct_binding():
     # CHECK: alias.decl *"a{{.*}} meta<!lit.struct<#DependentParam <?, ?, :!lit.struct<#ParamType <?>> ?>, <"a": index, "b": index, "c": !lit.struct<#ParamType <*(0,1)>>
     comptime a = DependentParam
     # CHECK: alias.decl *"b{{.*}} meta<!lit.struct<#DependentParam <1, ?, :!lit.struct<#ParamType <?>> ?>, <"b": index, "c": !lit.struct<#ParamType <*(0,0)>>>>
-    comptime b = DependentParam[__mlir_attr.`1:index`]
+    comptime b = DependentParam[__mlir_attr.`1:index`, ...]
     # CHECK: alias.decl *"c{{.*}} meta<!lit.struct<#DependentParam <1, 2, :!lit.struct<#ParamType <2>> ?>, <"c": !lit.struct<#ParamType <2>>>
-    comptime c = DependentParam[__mlir_attr.`1:index`, __mlir_attr.`2:index`]
+    comptime c = DependentParam[__mlir_attr.`1:index`, __mlir_attr.`2:index`, _]
 
     # Test partial bind of StructType
     # CHECK: alias.decl *"d{{.*}} meta<!lit.struct<#DependentParam <1, 2, :!lit.struct<#ParamType <2>> ?>, <"c": !lit.struct<#ParamType <2>>>>
-    comptime d = DependentParam[__mlir_attr.`1:index`][__mlir_attr.`2:index`]
+    comptime d = DependentParam[__mlir_attr.`1:index`, ...][
+        __mlir_attr.`2:index`, _
+    ]
 
 
 # CHECK: lit.fn @"indirect_binding
@@ -162,9 +164,9 @@ fn indirect_binding():
     comptime a = DependentParam
     # Test indirect binds.
     # CHECK: lit.alias.decl [[b:\*"b.*"]]: meta<!lit.struct<#DependentParam <1, ?, :!lit.struct<#ParamType <?>> ?>, <"b": index, "c": !lit.struct<#ParamType <*(0,0)>>{{.*}}>> = <@metatypes_param::@DependentParam<1, ?, :!lit.struct<#ParamType <?>> ?>>
-    comptime b = a[__mlir_attr.`1:index`]
+    comptime b = a[__mlir_attr.`1:index`, ...]
     # CHECK: lit.alias.decl [[c:\*"c.*"]]: meta<!lit.struct<#DependentParam <1, 2, :!lit.struct<#ParamType <2>> ?>, <"c": !lit.struct<#ParamType <2>>{{.*}}>> = <@metatypes_param::@DependentParam<1, 2, :!lit.struct<#ParamType <2>> ?>>
-    comptime c = b[__mlir_attr.`2:index`]
+    comptime c = b[__mlir_attr.`2:index`, _]
     # CHECK: lit.alias.decl [[d:\*"d.*"]]: meta<!lit.struct<#DependentParam <1, 2, :!lit.struct<#ParamType <2>> *?>>> = <@metatypes_param::@DependentParam<1, 2, :!lit.struct<#ParamType <2>> *?>>
     comptime d = c[
         __mlir_attr[`#kgen.unknown : `, ParamType[__mlir_attr.`2:index`]]

@@ -10,7 +10,7 @@
 @no_inline
 fn agnostic_user[
     T: AnyType, dt: DType
-](b: UnsafePointer[T], dp: UnsafePointer[Scalar[dt]]):
+](b: UnsafePointer[T, _], dp: UnsafePointer[Scalar[dt], _]):
     print(Bool(b.bitcast[UInt32]()))
     print(Bool(dp.bitcast[UInt32]()))
 

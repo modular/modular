@@ -216,7 +216,7 @@ fn call_test_ref(mut s: String):
     var f1 = test_ref
 
     # expected-error @+1 {{cannot use parameterized function of type 'fn[mut: Bool, _, +, origin: Origin[mut=mut]](ref[_mlir_origin] arg: String) -> None' without binding all its parameters}}
-    var f2 = test_ref[True]
+    var f2 = test_ref[True, ...]
     # expected-error @+1 {{cannot call dynamic function with parameterized type}}
     f2(s)
 

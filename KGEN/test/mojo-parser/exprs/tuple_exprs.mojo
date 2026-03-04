@@ -151,7 +151,7 @@ fn swap_container_fields(mut v: Container[_]):
 
 # CHECK-LABEL: lit.fn @"returnTup0
 # CHECK-SAME: %__result__: !lit.ref<{{.*}}#Tuple <:variadic<!AnyType> []>
-fn returnTup0() -> Tuple:
+fn returnTup0() -> Tuple[]:
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}(%__result__)
     return ()
 

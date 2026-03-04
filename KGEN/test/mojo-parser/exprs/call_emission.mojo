@@ -351,7 +351,7 @@ fn pack_it[*Ts: AnyType](*args: *Ts) -> String:
     return String()
 
 
-fn also_broken(r: Pointer[String]) -> String:
+fn also_broken(r: Pointer[String, _]) -> String:
     return r[]
 
 

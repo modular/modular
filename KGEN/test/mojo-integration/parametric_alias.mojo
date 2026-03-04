@@ -21,13 +21,13 @@ fn just_print[n: Int]():
 
 
 @no_inline
-fn bind_unop_and_print[unop: type_of(myIntAdd[2])]():
+fn bind_unop_and_print[unop: type_of(myIntAdd[2, ...])]():
     just_print[unop[7]]()
 
 
 @no_inline
 fn bind_binop_and_print[binop: type_of(myIntAdd)]():
-    bind_unop_and_print[binop[5]]()
+    bind_unop_and_print[binop[5, ...]]()
 
 
 fn main():
@@ -36,6 +36,6 @@ fn main():
     # CHECK: 35
     bind_binop_and_print[myIntMul]()
     # CHECK: 37
-    bind_binop_and_print[myIntFMA[z=2]]()
+    bind_binop_and_print[myIntFMA[z=2, ...]]()
     # CHECK: 17
-    bind_binop_and_print[myIntFMA[y=2]]()
+    bind_binop_and_print[myIntFMA[y=2, ...]]()

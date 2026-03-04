@@ -121,7 +121,7 @@ void ParamBindings::operator=(ParamBindings &&other) {
   ctadPogs = other.ctadPogs;
   numKwOnlyCtadParams = other.numKwOnlyCtadParams;
   numPosCtadParams = other.numPosCtadParams;
-  doNotApplyDefaults = other.doNotApplyDefaults;
+  bindingKind = other.bindingKind;
 }
 
 SMLoc ParamBindings::getExprLoc() const { return getExpr()->getLoc(); }
@@ -207,59 +207,10 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
   return paramBindings;
 }
 
-ParameterExprArrayAttr ParamBindings::concretizeStructTypeFromDefaults(
-    ASTDecl &declScope, ASTType type, const ExprNode *expr) {
-
-  SharedState &shared = declScope.getShared();
-  ASTDecl *structDecl = type.getDecl(shared);
-  assert(structDecl && "expected a struct declaration");
-  auto structDeclOp = cast<StructDeclOp>(structDecl->getIfOperation());
-
-  // TODO: we don't really need a parameter binding here, we should probably
-  // refactoring ParamInf such that it can handle inference without a parameter
-  // binding.
-  ParamBindings paramBindings(declScope, expr);
-
-  std::optional<MojoInflightDiag> diag;
-  auto getDiags = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
-    diag = shared.emitError(loc ? *loc : paramBindings.getExprLoc());
-    return *diag;
-  };
-  ParamInf inference(paramBindings, structDeclOp.getSignature().getParamTypes(),
-                     structDeclOp.getSignature().getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, /*partial=*/false,
-                     getDiags, structDecl);
-
-  for (auto [idx, value] : llvm::enumerate(type.getParamBindings())) {
-    // Unbound here means to be inferred.
-    if (isa<UnboundAttr>(value))
-      continue;
-    inference.evaluator.overwriteIndexBinding(idx, value);
-  }
-
-  // Now try to finalize it with defaults.
-  if (succeeded(inference.inferFromDefaults()) &&
-      succeeded(inference.finalizeWithUnbound())) {
-    // If succeeded, Simply return all the binding from the inference.
-    return ParameterExprArrayAttr::get(declScope.getContext(),
-                                       inference.getInferredValues());
-  }
-
-  if (diag) {
-    diag->attachNote(structDecl->getLoc())
-        << "'" << *structDecl->getUserNameIfOperation() << "' declared here";
-    return {};
-  }
-
-  // Emit diagnostics for unprovable constraints if no other diagnostics were
-  // emitted.
-  assert(!inference.unprovableConstraints.empty());
-  emitUnprovableConstraintsFromFitness(Fitness{inference.unprovableConstraints},
-                                       shared, expr->getLoc(), structDecl);
-  return {};
-}
-
 void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
+  assert(!isa_and_nonnull<EllipsisAttr>(value.getIfPValue().get()) &&
+         "ellipsis is not allowed as a binding value, set the BindingKind to "
+         "kWithEllipsis instead");
   parameters.add(name, {value, expr});
 }
 
@@ -269,7 +220,7 @@ void ParamBindings::add(const ExprNode *expr, AnyValue value, StringAttr name) {
 
 ParameterExprArrayAttr
 ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
-                                 PogListAttr paramList, bool partial) const {
+                                 PogListAttr paramList) const {
   std::optional<MojoInflightDiag> diag;
   auto getDiag = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
     // Ignore any errors.
@@ -280,8 +231,7 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
 
   // The inference diagnostics will be unused.
   ParamInf inference(*this, paramTypes, paramList,
-                     /*allowImplicitConversions=*/true, /*partial=*/partial,
-                     getDiag,
+                     /*allowImplicitConversions=*/true, getDiag,
                      /*declIfDirect=*/nullptr);
 
   if (failed(inference.inferForStruct()))
@@ -293,10 +243,10 @@ ParamBindings::tryVerifyBindings(ArrayRef<Type> paramTypes,
 }
 
 ParameterExprArrayAttr
-ParamBindings::verifyStructBindings(ASTDecl &structDecl, TypeSignatureType sig,
-                                    bool partial) const {
+ParamBindings::verifyStructBindings(ASTDecl &structDecl,
+                                    TypeSignatureType sig) const {
   auto [bindingValuesAttr, fitness, diag] = verifyBindingsWithDiag(
-      sig.getParamTypes(), sig.getParamListAttrs(), &structDecl, partial);
+      sig.getParamTypes(), sig.getParamListAttrs(), &structDecl);
 
   if (diag) {
     diag->attachNote(structDecl.getLoc())
@@ -317,8 +267,7 @@ ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITGeneratorType sig,
                               ASTDecl *declIfKnown) const {
   auto [newBindings, fitness, diag] = verifyBindingsWithDiag(
-      sig.getInputParamTypes(), sig.getMetadata(), declIfKnown,
-      /*partial=*/true);
+      sig.getInputParamTypes(), sig.getMetadata(), declIfKnown);
 
   if (declIfKnown && diag) {
     assert(isa<FnOp>(declIfKnown->getIfOperation()));
@@ -339,16 +288,14 @@ std::tuple<ParameterExprArrayAttr, ParamBindings::Fitness,
            std::optional<MojoInflightDiag>>
 ParamBindings::verifyBindingsWithDiag(ArrayRef<Type> expectedParamTypes,
                                       PogListAttr paramListAttr,
-                                      ASTDecl *declIfKnown,
-                                      bool partial) const {
+                                      ASTDecl *declIfKnown) const {
   std::optional<MojoInflightDiag> diag;
   auto getDiags = [&](std::optional<SMLoc> loc) -> MojoInflightDiag & {
     diag = shared.emitError(loc ? *loc : getExprLoc());
     return *diag;
   };
   ParamInf inference(*this, expectedParamTypes, paramListAttr,
-                     /*allowImplicitConversions=*/true, /*partial=*/partial,
-                     getDiags, declIfKnown);
+                     /*allowImplicitConversions=*/true, getDiags, declIfKnown);
 
   if (failed(inference.inferForStruct())) {
     return {nullptr, Fitness{std::move(inference.unprovableConstraints)},

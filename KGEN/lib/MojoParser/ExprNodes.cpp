@@ -1391,9 +1391,14 @@ static AnyValue emitSingleParamExpr(const Operand &operand,
   return emitter.emitExpr(operand.expr, context);
 }
 
-static LogicalResult parseParameterBindings(ArrayRef<Operand> operands,
-                                            IREmitter &emitter,
-                                            ParamBindings &paramBindings) {
+static LogicalResult parseParameterBindings(
+    ArrayRef<Operand> operands, IREmitter &emitter,
+    ParamBindings &paramBindings,
+    ParamBindings::BindingKind initialBindingKind = ParamBindings::kStandard) {
+  // When parsing a user-defined binding, we always start with the most
+  // conservative binding kind.
+  paramBindings.bindingKind = initialBindingKind;
+
   bool seenEllipsis = false;
   for (auto op : operands) {
     auto value = emitSingleParamExpr(op, emitter, EC_TypeParamValue);
@@ -1407,9 +1412,14 @@ static LogicalResult parseParameterBindings(ArrayRef<Operand> operands,
              << "parameter after `...` must be passed by keyword"
              << op.expr->getRange();
     }
-    seenEllipsis |= isa_and_nonnull<EllipsisAttr>(value.getIfPValue().get());
-    paramBindings.add(op.expr, value, op.name);
+    if (isa_and_nonnull<EllipsisAttr>(value.getIfPValue().get())) {
+      paramBindings.relaxBindingKindTo(ParamBindings::kWithEllipsis);
+      seenEllipsis = true;
+    } else {
+      paramBindings.add(op.expr, value, op.name);
+    }
   }
+
   return success();
 }
 
@@ -1417,7 +1427,8 @@ static LogicalResult parseParameterBindings(ArrayRef<Operand> operands,
 /// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
 static PValue substituteParametersIntoUserDefinedType(
     PValue typeValue, const ExprNode *expr, ArrayRef<Operand> operands,
-    SMLoc lhsLoc, SMLoc rhsLoc, IREmitter &emitter) {
+    SMLoc lhsLoc, SMLoc rhsLoc, IREmitter &emitter,
+    ParamBindings::BindingKind initialBindingKind) {
   auto metaType = sugarCast<StructMetaType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
 
@@ -1428,14 +1439,14 @@ static PValue substituteParametersIntoUserDefinedType(
   TypeSignatureType sig = metaType.getSignature();
 
   ParamBindings paramBindings(emitter.getDeclScope(), expr);
-  if (failed(parseParameterBindings(operands, emitter, paramBindings)))
+  if (failed(parseParameterBindings(operands, emitter, paramBindings,
+                                    initialBindingKind)))
     return {};
 
   // Check the bindings.
-  // FIXME: The error messages are bad for partial binding, because the
-  // diagnostic emitter points to the original struct definition.
+  // Now we see a `[]`, it must be a concrete binding.
   ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings.verifyStructBindings(*typeDecl, sig, /*partial=*/true);
+      paramBindings.verifyStructBindings(*typeDecl, sig);
   if (!bindingValuesAttr)
     return {};
 
@@ -1446,14 +1457,15 @@ static PValue substituteParametersIntoUserDefinedType(
 }
 
 /// Bind parameter operands to a callable parameter.
-static PValue bindToGeneratorValue(PValue callable, LITGeneratorType sig,
-                                   const ExprNode *expr,
-                                   ArrayRef<Operand> operands,
-                                   IREmitter &emitter,
-                                   const SourceRange &range) {
+static PValue
+bindToGeneratorValue(PValue callable, LITGeneratorType sig,
+                     const ExprNode *expr, ArrayRef<Operand> operands,
+                     IREmitter &emitter, const SourceRange &range,
+                     ParamBindings::BindingKind initialBindingKind) {
   // Build up a ParamBindings set to validate and check the bindings.
   ParamBindings paramBindings(emitter.getDeclScope(), expr);
-  if (failed(parseParameterBindings(operands, emitter, paramBindings)))
+  if (failed(parseParameterBindings(operands, emitter, paramBindings,
+                                    initialBindingKind)))
     return {};
 
   // Check the bindings.
@@ -1917,6 +1929,9 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     // as it uses similar logic.
     auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
                                                       baseRVType, this);
+    /// Only bind the `Self`, leave the rest unbound.
+    bindings.relaxBindingKindTo(ParamBindings::kWithEllipsis);
+
     auto result = OverloadSetUValue::create(
         spelling, memberDecls, std::move(bindings), CallSyntax::kDirectCall);
 
@@ -2661,20 +2676,26 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     }
 
     // If this is a parametric PValue, this is binding parameter values to the
-    // generator value.
-    if (auto sig = sugarDynCast<LITGeneratorType>(baseType)) {
-      PValue result = bindToGeneratorValue(value, sig, this, operands, emitter,
-                                           getIndexRange());
-      if (!result)
-        return {};
-      return emitter.emitResult(result, this, dest);
-    }
+    // generator value. Or if the sub-value is an unbound Type, try binding
+    // parameters to it! Handle user-defined types and custom MLIR types.
+    if (sugarIsa<LITGeneratorType>(baseType) ||
+        (baseValue.getIfTypeValue() && sugarIsa<StructMetaType>(baseType))) {
+      ParamBindings::BindingKind bindingKind = ParamBindings::kStandard;
+      // In the form of S[xxx]() or S[xxx].field, we make it more admissible.
+      if (dest.getContext() == ExprContext::EC_CallCalleeValue ||
+          dest.getContext() == ExprContext::EC_AttributeRefBase)
+        bindingKind = ParamBindings::kContextual;
 
-    // If the sub-value is an unbound Type, try binding parameters to it! Handle
-    // user-defined types and custom MLIR types.
-    if (baseValue.getIfTypeValue() && sugarIsa<StructMetaType>(baseType)) {
-      PValue result = substituteParametersIntoUserDefinedType(
-          value, this, operands, lsquareLoc, rsquareLoc, emitter);
+      PValue result = [&]() -> PValue {
+        if (auto sig = sugarDynCast<LITGeneratorType>(baseType)) {
+          return bindToGeneratorValue(value, sig, this, operands, emitter,
+                                      getIndexRange(), bindingKind);
+        }
+        return substituteParametersIntoUserDefinedType(value, this, operands,
+                                                       lsquareLoc, rsquareLoc,
+                                                       emitter, bindingKind);
+      }();
+
       return emitter.emitResult(result, this, dest);
     }
   }

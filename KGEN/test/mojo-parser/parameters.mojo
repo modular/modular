@@ -255,7 +255,7 @@ fn infer_implicit_params():
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {1}, :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     partial_bind(one, two)
 
-fn implicit_params_with_var_params[*Ts: Int](s: TwoParams[1]): pass
+fn implicit_params_with_var_params[*Ts: Int](s: TwoParams[1, _]): pass
 
 # CHECK-LABEL: lit.fn @"test_implicit_params_with_var_params
 fn test_implicit_params_with_var_params():
@@ -629,7 +629,7 @@ fn bind_overloaded_fn[f: fn[f: fn () -> None] () -> None]():
     comptime h = f[f=overloaded_function]
 
     # CHECK-NEXT: bind_twice{{.*}}<:!lit.generator<() -> !kgen.none> {{.*}}@"overloaded_function()", :!lit.generator<(!Int, |) -> !kgen.none> {{.*}}overloaded_function(::Int)")>
-    comptime bound = bind_twice[overloaded_function][overloaded_function]
+    comptime bound = bind_twice[overloaded_function, overloaded_function]
 
     # CHECK-NEXT: variadic_func_param{{.*}}<:variadic<{{.*}}> [{{.*}}@"overloaded_function()", {{.*}}@"overloaded_function()"]>
     comptime bind_variadic = variadic_func_param[overloaded_function, overloaded_function]
@@ -733,7 +733,7 @@ fn useParamVariadics():
   # var fnLet = fnWithVariadics
 
   # CHECK-NEXT: %a = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> []>
-  var a: StructWithVariadics
+  var a: StructWithVariadics[]
   # CHECK-NEXT: %b = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> [{1}]>
   var b: StructWithVariadics[1]
   # CHECK-NEXT: %c = lit.var.decl {{.*}} : !lit.ref<{{.*}}StructWithVariadics <:variadic<!Int> [{1}, {2}]>
@@ -785,7 +785,7 @@ struct MyList[T: ImplicitlyCopyable]:
     fn __init__(out self, *values: Self.T): pass
 
 # Infer-only parameters should be bindable with keywords
-comptime ImmMyStringSlice = MyStringSlice[mut=False]
+comptime ImmMyStringSlice = MyStringSlice[mut=False, ...]
 struct MyStringSlice[mut: Bool, //, origin: Origin[mut=mut]]:  pass
 
 # This only binds to immutable things.
@@ -820,7 +820,7 @@ fn form_reference_to_overloaded():
     # CHECK-NEXT: @"parameter_overloading[[[INT:.*Int]]]()"<:!Int {1}>
     comptime refresult = parameter_overloading[1]
     # CHECK-NEXT: !lit.generator<<"other": !Int>() -> !kgen.none> = <{{.*}}@"partial_parameter_overloading[[[INT]],[[INT]]]()"<:!Int {1}, :!Int ?>
-    comptime partial = partial_parameter_overloading[1]
+    comptime partial = partial_parameter_overloading[1, _]
 
 ##===----------------------------------------------------------------------===##
 # Parameter Inference
@@ -1523,7 +1523,7 @@ fn funct_partial_binding[x: Empty, F: fn[t: Empty, s: Empty] () -> None]():
     # CHECK: !lit.generator<<"u": !Empty>() -> !kgen.none> = <rebind(
     # CHECK-SAME: :!lit.generator<<"s": !Empty>() -> !kgen.none>
     # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, :!Empty x, :!Empty ?))>
-    comptime H: fn[u: Empty] () -> None = F[x]
+    comptime H: fn[u: Empty] () -> None = F[x, _]
 
 struct StructWithSpecificSelfInitTypes[size: Int]:
     fn __init__(out self: StructWithSpecificSelfInitTypes[0]): pass
@@ -1572,7 +1572,7 @@ struct AutoParamDefault[value: Int, param: Int, default: Int = param]:
     fn method(self, other: AutoParamDefault[Self.value, ...]): pass
 
 # CHECK-LABEL: lit.fn @"implicit_conversion_overload
-fn implicit_conversion_overload(x: AutoParamDefault[1], ptr: ParamType[1]):
+fn implicit_conversion_overload(x: AutoParamDefault[1, ...], ptr: ParamType[1]):
     # CHECK: call {{.*}}method{{.*}}(%x, %ptr)
     x.method(ptr)
 
@@ -1744,10 +1744,10 @@ struct TakesBool[B: Bool]:
     pass
 struct XOrigin[mut: Bool, *, value: TakesBool[mut]]:
     pass
-struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT]]:
+struct TakesXOrigin[MUT: Bool, //, O: XOrigin[MUT, ...]]:
 
     # This should be fine, even though MUT is from the struct.
-    fn foo[P: XOrigin[Self.MUT]](self):
+    fn foo[P: XOrigin[Self.MUT, ...]](self):
         pass
 
 struct HasInferred[a: XOrigin]:

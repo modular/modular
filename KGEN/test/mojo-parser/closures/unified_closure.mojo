@@ -604,6 +604,7 @@ fn addTrivialRegisterPassable(x: Int):
 # COM: Verify top-level function symbols get conformance for count's closure
 # COM: trait.
 
+
 @fieldwise_init
 struct ToyBool:
     var value: Int
@@ -633,14 +634,14 @@ struct MiniSpan[dtype_tag: Int]:
     ](self, func: F) -> Int:
         return 0
 
+
 # CHECK: lit.struct.decl @"fn[w: Int](vec: ToySIMD[1, w]) -> ToyMask[1, w]_{{.*}}"
 # CHECK: kgen.conformance @"fn[w: Int](vec: ToySIMD[dtype_tag, w]) -> ToyMask[dtype_tag, w]" {
 # CHECK: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK: kgen.witness "dtype_tag" : !Int = {1}
 
-fn is_vec_a[
-    w: Int
-](vec: ToySIMD[1, w]) -> ToyMask[1, w]:
+
+fn is_vec_a[w: Int](vec: ToySIMD[1, w]) -> ToyMask[1, w]:
     _ = vec
     return ToyMask[1, w](0)
 
@@ -692,6 +693,7 @@ struct MiniSpan[dtype_tag: Int]:
 # CHECK: kgen.witness "dtype_tag" : !Int = {1}
 fn repro_capturing():
     var capture = 0
+
     fn is_vec_a_capturing[
         u: Int
     ](vec: ToySIMD[1, u]) unified {var capture} -> ToyMask[1, u]:
@@ -738,6 +740,7 @@ struct Store[E: ElemLike]:
 # CHECK: kgen.witness "E" : !ElemLike = !ConcreteElem
 fn repro_nested_type_param():
     var capture = 0
+
     fn apply_concrete[
         n: Int
     ](item: Box[ConcreteElem, n]) unified {var capture} -> Box[ConcreteElem, n]:
@@ -753,7 +756,8 @@ fn repro_nested_type_param():
 
 # COM: Verify that custom types (the result type !kgen.none in this case) are compared using equality
 
-fn print(x:Int):
+
+fn print(x: Int):
     pass
 
 
@@ -772,7 +776,9 @@ def main() raises:
     var x = 42
 
     @always_inline
-    fn my_func[simd_width: Int, rank: Int, alignment: Int = 1]() unified {read x}:
+    fn my_func[
+        simd_width: Int, rank: Int, alignment: Int = 1
+    ]() unified {read x}:
         print(x)
 
     callee[simd_width=4](10, 11, my_func)
@@ -795,6 +801,7 @@ struct V[dtype: Int, width: Int](RegisterPassable):
 # CHECK: kgen.rebind %{{.*}} : {{.*}}{42}{{.*}} to {{.*}}_dtype{{.*}}
 # CHECK-NEXT: lit.return
 
+
 # CHECK: kgen.conformance @"fn[width: Int]() -> V[dtype, width] register_passable" {
 # CHECK-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator
 # CHECK-NEXT: kgen.witness "dtype" :{{.*}} = {42}
@@ -806,9 +813,7 @@ fn callee[
 
 
 fn rebindResult():
-    fn my_closure[
-        width: Int
-    ]() unified register_passable {} -> V[42, width]:
+    fn my_closure[width: Int]() unified register_passable {} -> V[42, width]:
         return V[42, width](0)
 
     callee[42](my_closure)
@@ -844,6 +849,7 @@ fn variadic_callee[
 # CHECK:   kgen.witness "rank" : !Int = {2}
 fn repro_variadic_attr():
     var x = 10
+
     fn my_map_fn(
         point: ToyIndex[2],
     ) unified {read x} -> Tuple[ToyIndex[2], ToyIndex[2]]:
@@ -858,10 +864,12 @@ fn repro_variadic_attr():
 # COM: to #kgen.param.expr<apply, ...> containing #lit.struct constants, which
 # COM: requires recursive matching through both composite attr types.
 
+
 @fieldwise_init
 struct Pair(RegisterPassable):
     var a: Int
     var b: Int
+
 
 @fieldwise_init
 struct Container[p: Pair](RegisterPassable):
@@ -881,6 +889,7 @@ fn struct_callee[
 # CHECK:   kgen.witness "tag" : !Int = {2}
 fn repro_struct_attr():
     var x = 10
+
     fn my_fn() unified {read x} -> Container[Pair(2, 0)]:
         return Container[Pair(2, 0)](x)
 
@@ -916,8 +925,8 @@ fn symbol_callee[
 # CHECK:   kgen.witness "__call__{{.*}}" : !lit.generator
 fn repro_symbol_attr():
     var x = 10
+
     fn my_fn() unified {read x} -> Dispatch[identity]:
         return Dispatch[identity](x)
 
     symbol_callee[1, type_of(my_fn)](my_fn)
-

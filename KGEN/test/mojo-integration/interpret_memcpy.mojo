@@ -9,8 +9,8 @@ from std.sys import llvm_intrinsic, size_of
 
 
 fn memcpy(
-    dst: UnsafePointer[mut=True, Int],
-    src: UnsafePointer[Int],
+    dst: UnsafePointer[mut=True, Int, _],
+    src: UnsafePointer[Int, _],
     count: Int,
 ):
     var byte_count = count * size_of[Int]()

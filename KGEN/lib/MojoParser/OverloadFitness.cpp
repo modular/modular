@@ -544,8 +544,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
 
   auto [bindings, fitness, diag] =
       callable.paramBindings.verifyBindingsWithDiag(
-          signature.getInputParamTypes(), signature.getMetadata(), candidate,
-          /*partial=*/true);
+          signature.getInputParamTypes(), signature.getMetadata(), candidate);
   if (!bindings) {
     // If no diagnostics were emitted, this must be an inconclusive fitness.
     if (!diag) {
@@ -686,7 +685,7 @@ OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
 
   ParamInf inference(callable.paramBindings, signature.getInputParamTypes(),
                      signature.getParamListAttrs(), allowImplicitConversions,
-                     /*partial=*/false, getDiag, funcIfDirect);
+                     getDiag, funcIfDirect);
   // Check if we're calling a closure's __call__ method and need to set
   // captured closure parameters.
   SmallVectorImpl<ClosureParamCapture> *implicitParams =

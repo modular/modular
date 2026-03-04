@@ -21,7 +21,9 @@ struct MemExample(ImplicitlyCopyable):
         pass
 
     # expected-error @+1 {{'self.y' is uninitialized at the implicit return from this function}}
-    fn __init__(out self, *, copy: Self):  # expected-note {{'self' declared here}}
+    fn __init__(
+        out self, *, copy: Self  # expected-note {{'self' declared here}}
+    ):
         self.x = copy.x
 
     fn noop(self):
@@ -238,22 +240,25 @@ fn uninitialized_result(c: Bool, out out: MemExample):
 fn test_unreachable_after_abort():
     abort()
     # expected-warning @+1 {{unreachable code after function that never returns}}
-    var x = 4+5
+    var x = 4 + 5
+
 
 @no_inline
 fn throwonly() raises -> Never:
     abort()
 
+
 fn test_unreachable_after_throwonly() raises:
     throwonly()
     # expected-warning @+1 {{unreachable code after function that never returns}}
-    var x = 4+5
+    var x = 4 + 5
 
 
 fn test_unreachable_after_comptime_assert_false():
     comptime assert False
     # expected-warning @+1 {{unreachable code after compile-time assertion failure}}
     return
+
 
 ##===----------------------------------------------------------------------===##
 # Complex aggregates
@@ -269,7 +274,7 @@ struct TwoRegs(ImplicitlyCopyable):
         self.reg2 = RegExample()
 
 
-struct TwoRegsRP(RegisterPassable, Copyable):
+struct TwoRegsRP(Copyable, RegisterPassable):
     var reg1: RegExample
     var reg2: RegExample
 
@@ -371,6 +376,7 @@ fn test_no_unused_warning() -> Int:
     # This is syntactically a use, but n is a parameter, so the warning does show up.
     return s.n
 
+
 struct TestUnused[T: RPTTrait](TrivialRegisterPassable):
     var thing: Self.T
 
@@ -379,9 +385,9 @@ struct TestUnused[T: RPTTrait](TrivialRegisterPassable):
         self.thing = other.thing
         _ = self.thing
 
+
 trait RPTTrait(TrivialRegisterPassable):
     pass
-
 
 
 ##===----------------------------------------------------------------------===##
@@ -431,7 +437,7 @@ struct WrapperNestedInt:
 
 
 @fieldwise_init
-struct TrivialRange(TrivialRegisterPassable, Iterator):
+struct TrivialRange(Iterator, TrivialRegisterPassable):
     comptime Element = Int
 
     fn __iter__(self) -> Self:
@@ -480,7 +486,7 @@ fn testConditionalMut(cond: __mlir_type.i1):
 # address space.
 fn bad_addr_space[
     addr_space: AddressSpace
-](ptr: UnsafePointer[MemExample, address_space=addr_space]):
+](ptr: UnsafePointer[MemExample, address_space=addr_space, ...]):
     # expected-error @+1 {{cannot destroy value in non-default address space}}
     _ = __get_address_as_owned_value(ptr.address)
 
@@ -524,7 +530,7 @@ fn test_cannot_consume_indirect_references():
 # ===----------------------------------------------------------------------=== #
 
 
-fn get_inout_ref(mut x: String) -> ref [x] String:
+fn get_inout_ref(mut x: String) -> ref[x] String:
     return x
 
 
@@ -627,12 +633,17 @@ fn test_linear_type() raises:
 
     tok2^.consume()
 
+
 # MOCO-2984: Unexpected interaction between Linear types and ImplicitlyCopyable
 @fieldwise_init
 @explicit_destroy
 struct ImpCopyableLinear(ImplicitlyCopyable):
-    fn __init__(out self, *, copy: Self): pass
-    fn destroy(deinit self): pass
+    fn __init__(out self, *, copy: Self):
+        pass
+
+    fn destroy(deinit self):
+        pass
+
 
 fn test_imp_copyable_linear(var x: ImpCopyableLinear, var y: ImpCopyableLinear):
     # Generates an implicit copy ctor
