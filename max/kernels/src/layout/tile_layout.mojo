@@ -10,7 +10,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Mixed layout implementation that unifies compile-time and runtime indices."""
+"""Provides a mixed compile-time/runtime layout system for tensor memory mapping.
+
+This module provides a layout system where some dimensions can be known at
+compile time and others determined at runtime, enabling ergonomic layout
+definitions while maintaining performance through compile-time specialization.
+
+Key components:
+
+- [`TensorLayout`](/mojo/kernels/layout/tile_layout/TensorLayout): Trait
+  defining the interface for all mixed layouts.
+- [`Layout`](/mojo/kernels/layout/tile_layout/Layout): Primary struct
+  implementing a layout with mixed compile-time and runtime dimensions.
+- [`row_major`](/mojo/kernels/layout/tile_layout/row_major): Create a
+  row-major layout from a shape.
+- [`col_major`](/mojo/kernels/layout/tile_layout/col_major): Create a
+  column-major layout from a shape.
+- [`blocked_product`](/mojo/kernels/layout/tile_layout/blocked_product):
+  Create a hierarchical blocked layout from block and tiler layouts.
+- [`zipped_divide`](/mojo/kernels/layout/tile_layout/zipped_divide): Divide
+  a layout into inner and outer components by a tile shape.
+
+You can import these APIs from the `layout` package:
+
+```mojo
+from layout.tile_layout import Layout, TensorLayout, row_major, col_major
+```
+"""
 
 from std.os import abort
 from std.sys.intrinsics import _type_is_eq
@@ -44,27 +70,74 @@ from .layout import Layout as LegacyLayout
 
 
 trait TensorLayout(TrivialRegisterPassable):
+    """Trait defining the interface for mixed compile-time/runtime layouts.
+
+    Implementors map logical multi-dimensional coordinates to linear memory
+    indices, with support for dimensions that are known at compile time or
+    determined at runtime.
+    """
+
     comptime rank: Int
+    """The number of dimensions in the layout."""
     comptime flat_rank: Int
+    """The number of dimensions after flattening nested coordinates."""
     comptime shape_known: Bool
+    """Whether all shape dimensions are known at compile time."""
     comptime stride_known: Bool
+    """Whether all stride dimensions are known at compile time."""
     comptime all_dims_known: Bool = Self.shape_known and Self.stride_known
+    """Whether all shape and stride dimensions are known at compile time."""
     comptime static_shape[i: Int]: Int
+    """Returns the compile-time value of the i-th shape dimension.
+
+    Parameters:
+        i: The dimension index.
+    """
     comptime static_stride[i: Int]: Int
+    """Returns the compile-time value of the i-th stride dimension.
+
+    Parameters:
+        i: The dimension index.
+    """
     comptime _shape_types: Variadic.TypesOfTrait[CoordLike]
     comptime _stride_types: Variadic.TypesOfTrait[CoordLike]
 
     fn shape[i: Int](self) -> Self._shape_types[i]:
+        """Returns the i-th shape dimension.
+
+        Parameters:
+            i: The dimension index.
+
+        Returns:
+            The shape value for dimension `i`.
+        """
         ...
 
     fn stride[i: Int](self) -> Self._stride_types[i]:
+        """Returns the i-th stride dimension.
+
+        Parameters:
+            i: The dimension index.
+
+        Returns:
+            The stride value for dimension `i`.
+        """
         ...
 
     fn product(self) -> Int:
+        """Returns the total number of elements in the layout's domain.
+
+        Returns:
+            The product of all shape dimensions.
+        """
         ...
 
     fn size(self) -> Int:
-        """Returns the total number of elements. Alias for product()."""
+        """Returns the total number of elements. Alias for `product()`.
+
+        Returns:
+            The product of all shape dimensions.
+        """
         ...
 
     fn __call__[
@@ -74,8 +147,12 @@ trait TensorLayout(TrivialRegisterPassable):
     ](self, index: index_type) -> Scalar[linear_idx_type]:
         """Maps a logical coordinate to a linear memory index.
 
+        Parameters:
+            index_type: The coordinate type.
+            linear_idx_type: The data type for the returned linear index.
+
         Args:
-            index: An IntTuple representing the logical coordinates to map.
+            index: The logical coordinates to map.
 
         Returns:
             The linear memory index corresponding to the given coordinates.
@@ -98,7 +175,8 @@ trait TensorLayout(TrivialRegisterPassable):
             idx: The linear memory index to convert to coordinates.
 
         Returns:
-            A Coord containing the logical coordinates corresponding to the linear index.
+            A Coord containing the logical coordinates corresponding to
+            the linear index.
 
         Examples:
             For a layout with shape (3, 4) and row-major strides:
@@ -109,9 +187,19 @@ trait TensorLayout(TrivialRegisterPassable):
         ...
 
     fn shape_coord(self) -> Coord[*Self._shape_types]:
+        """Returns the full shape as a `Coord`.
+
+        Returns:
+            A Coord containing all shape dimensions.
+        """
         ...
 
     fn stride_coord(self) -> Coord[*Self._stride_types]:
+        """Returns the full stride as a `Coord`.
+
+        Returns:
+            A Coord containing all stride dimensions.
+        """
         ...
 
     fn make_dynamic[
@@ -120,12 +208,25 @@ trait TensorLayout(TrivialRegisterPassable):
         _CoordToDynamic[dtype, *Self._shape_types],
         _CoordToDynamic[dtype, *Self._stride_types],
     ]:
+        """Converts all dimensions to runtime values of the given dtype.
+
+        Parameters:
+            dtype: The data type for the resulting `RuntimeInt` values.
+
+        Returns:
+            A new Layout with all dimensions as `RuntimeInt[dtype]`.
+        """
         ...
 
 
 comptime RowMajorLayout[*shape_types: CoordLike] = Layout[
     shape_types, _RowMajor[*shape_types]
 ]
+"""A `Layout` with row-major (C-order) strides computed from the shape.
+
+Parameters:
+    shape_types: The types for the shape dimensions.
+"""
 
 
 struct Layout[
@@ -150,19 +251,34 @@ struct Layout[
     """The stride of the layout as a Coord."""
 
     comptime rank = Variadic.size(Self.shape_types)
+    """The number of dimensions in the layout."""
     comptime flat_rank = Variadic.size(_Flattened[*Self.shape_types])
+    """The number of dimensions after flattening nested coordinates."""
     comptime shape_known = Coord[*Self.shape_types].all_dims_known
+    """Whether all shape dimensions are known at compile time."""
     comptime stride_known = Coord[*Self.stride_types].all_dims_known
+    """Whether all stride dimensions are known at compile time."""
     comptime _flat_shape_types = _Flattened[*Self.shape_types]
     comptime _flat_stride_types = _Flattened[*Self.stride_types]
     comptime static_shape[i: Int]: Int = Self._flat_shape_types[i].static_value
+    """Returns the compile-time value of the i-th flattened shape dimension.
+
+    Parameters:
+        i: The dimension index.
+    """
     comptime static_stride[i: Int]: Int = Self._flat_stride_types[
         i
     ].static_value
+    """Returns the compile-time value of the i-th flattened stride dimension.
+
+    Parameters:
+        i: The dimension index.
+    """
     comptime _shape_types: Variadic.TypesOfTrait[CoordLike] = Self.shape_types
     comptime _stride_types: Variadic.TypesOfTrait[CoordLike] = Self.stride_types
 
     comptime static_product = Coord[*Self.shape_types].static_product
+    """The compile-time product of all shape dimensions."""
 
     fn __init__(
         out self,
@@ -196,8 +312,12 @@ struct Layout[
     ](self, index: index_type) -> Scalar[linear_idx_type]:
         """Maps a logical coordinate to a linear memory index.
 
+        Parameters:
+            index_type: The coordinate type.
+            linear_idx_type: The data type for the returned linear index.
+
         Args:
-            index: An IntTuple representing the logical coordinates to map.
+            index: The logical coordinates to map.
 
         Returns:
             The linear memory index corresponding to the given coordinates.
@@ -274,6 +394,9 @@ struct Layout[
         For a layout with shape `(m, n)` and stride `(r, s)`, this returns
         `(m-1)*r + (n-1)*s + 1`, representing the memory footprint.
 
+        Parameters:
+            linear_idx_type: The data type for the returned size value.
+
         Returns:
             The size of the memory region required by the layout.
         """
@@ -282,6 +405,11 @@ struct Layout[
         )
 
     fn to_layout(self) -> LegacyLayout:
+        """Converts this mixed layout to a legacy `Layout` using `IntTuple`.
+
+        Returns:
+            A legacy `Layout` with the same shape and stride.
+        """
         return LegacyLayout(
             coord_to_int_tuple(self._shape),
             coord_to_int_tuple(self._stride),
@@ -322,7 +450,7 @@ struct Layout[
 
         Examples:
             ```mojo
-            from layout._layout import row_major
+            from layout.tile_layout import row_major
             var layout = row_major[3, 4]()  # All compile-time
             var dynamic = layout.make_dynamic[DType.int64]()
             # dynamic has RuntimeInt[DType.int64] for all dimensions
@@ -334,15 +462,41 @@ struct Layout[
         )
 
     fn shape[i: Int](self) -> Self._shape_types[i]:
+        """Returns the i-th shape dimension.
+
+        Parameters:
+            i: The dimension index.
+
+        Returns:
+            The shape value for dimension `i`.
+        """
         return self._shape[i]
 
     fn stride[i: Int](self) -> Self._stride_types[i]:
+        """Returns the i-th stride dimension.
+
+        Parameters:
+            i: The dimension index.
+
+        Returns:
+            The stride value for dimension `i`.
+        """
         return self._stride[i]
 
     fn shape_coord(self) -> Coord[*Self._shape_types]:
+        """Returns the full shape as a `Coord`.
+
+        Returns:
+            A Coord containing all shape dimensions.
+        """
         return self._shape
 
     fn stride_coord(self) -> Coord[*Self._stride_types]:
+        """Returns the full stride as a `Coord`.
+
+        Returns:
+            A Coord containing all stride dimensions.
+        """
         return self._stride
 
 
@@ -380,6 +534,17 @@ comptime _RowMajorMapper[
 
 @always_inline
 fn row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
+    """Creates a row-major layout from a shape `Coord`.
+
+    Row-major means the rightmost dimension has stride 1, and each preceding
+    dimension has stride equal to the product of all following dimensions.
+
+    Args:
+        shape: The shape as a Coord.
+
+    Returns:
+        A Layout with row-major strides.
+    """
     # Flatten the shape and compute row-major strides on the flattened representation
     # For now, we keep both shape and strides flat (not nested)
 
@@ -427,6 +592,14 @@ fn row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
 
 @always_inline("nodebug")
 fn row_major[*idxs: Int]() -> RowMajorLayout[*_IntToComptimeInt[*idxs]]:
+    """Creates a row-major layout from compile-time shape dimensions.
+
+    Parameters:
+        idxs: The shape dimensions as compile-time integers.
+
+    Returns:
+        A Layout with row-major strides.
+    """
     var shape = Coord[*_IntToComptimeInt[*idxs]]()
     return row_major(shape)
 
@@ -438,6 +611,14 @@ fn row_major(
     shape_types=Variadic.types[type_of(idx)],
     stride_types=Variadic.types[ComptimeInt[1]],
 ]:
+    """Creates a 1D row-major layout from a compile-time dimension.
+
+    Args:
+        idx: The shape dimension as a `ComptimeInt`.
+
+    Returns:
+        A 1D Layout with stride 1.
+    """
     return Layout(Coord(idx), Coord(Idx[1]()))
 
 
@@ -448,6 +629,14 @@ fn row_major(
     shape_types=Variadic.types[type_of(idx)],
     stride_types=Variadic.types[ComptimeInt[1]],
 ]:
+    """Creates a 1D row-major layout from a runtime dimension.
+
+    Args:
+        idx: The shape dimension as a `RuntimeInt`.
+
+    Returns:
+        A 1D Layout with stride 1.
+    """
     return Layout(Coord(idx), Coord(Idx[1]()))
 
 
@@ -459,6 +648,11 @@ fn row_major(
 comptime ColMajorLayout[*shape_types: CoordLike] = Layout[
     shape_types, _ColMajor[*shape_types]
 ]
+"""A `Layout` with column-major (Fortran-order) strides computed from the shape.
+
+Parameters:
+    shape_types: The types for the shape dimensions.
+"""
 
 
 comptime _ColMajor[*element_types: CoordLike] = _ReduceVariadicAndIdxToVariadic[
@@ -564,7 +758,7 @@ fn col_major[*idxs: Int]() -> ColMajorLayout[*_IntToComptimeInt[*idxs]]:
     Example:
 
     ```mojo
-    from layout._layout import col_major
+    from layout.tile_layout import col_major
 
     var layout = col_major[3, 4]()
     # shape: (3, 4), stride: (1, 3)
@@ -581,7 +775,14 @@ fn col_major(
     shape_types=Variadic.types[type_of(idx)],
     stride_types=Variadic.types[ComptimeInt[1]],
 ]:
-    """Create a 1D column-major layout (same as row-major for 1D)."""
+    """Creates a 1D column-major layout from a compile-time dimension.
+
+    Args:
+        idx: The shape dimension as a `ComptimeInt`.
+
+    Returns:
+        A 1D Layout with stride 1.
+    """
     return Layout(Coord(idx), Coord(Idx[1]()))
 
 
@@ -592,7 +793,14 @@ fn col_major(
     shape_types=Variadic.types[type_of(idx)],
     stride_types=Variadic.types[ComptimeInt[1]],
 ]:
-    """Create a 1D column-major layout (same as row-major for 1D)."""
+    """Creates a 1D column-major layout from a runtime dimension.
+
+    Args:
+        idx: The shape dimension as a `RuntimeInt`.
+
+    Returns:
+        A 1D Layout with stride 1.
+    """
     return Layout(Coord(idx), Coord(Idx[1]()))
 
 
@@ -603,6 +811,22 @@ fn zipped_divide[
     LayoutType._stride_types,
     tile.element_types,
 ]:
+    """Divides a layout into inner (tile) and outer (number-of-tiles) parts.
+
+    Given a layout and a tile shape, produces a hierarchical layout where the
+    inner component has the tile shape with the original strides, and the outer
+    component has shape = original_shape / tile with scaled strides.
+
+    Parameters:
+        LayoutType: The type of the input layout.
+        tile: The tile shape to divide by.
+
+    Args:
+        layout: The layout to divide.
+
+    Returns:
+        A `ZippedDivideLayout` with inner and outer components.
+    """
     var shape = layout.shape_coord()
     var outer_shape = Coord[
         *_Divide[LayoutType._shape_types, tile.element_types]
@@ -655,6 +879,16 @@ comptime ZippedDivideLayout[
         Coord[*_Multiply[stride_types, tile]],  # outer_stride = stride * tile
     ],
 ]
+"""Type alias for the result of `zipped_divide`.
+
+Splits a layout into inner (tile-sized) and outer (number-of-tiles)
+components.
+
+Parameters:
+    shape_types: Shape types of the original layout.
+    stride_types: Stride types of the original layout.
+    tile: Shape types of the tile used to divide the layout.
+"""
 
 
 # ===----------------------------------------------------------------------=== #
@@ -734,7 +968,7 @@ fn blocked_product[
     Example:
 
     ```mojo
-    from layout._layout import row_major, blocked_product
+    from layout.tile_layout import row_major, blocked_product
 
     # Create a 2x2 block layout
     var block = row_major[2, 2]()

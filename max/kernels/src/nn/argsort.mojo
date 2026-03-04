@@ -22,7 +22,7 @@ from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu
 from layout import Coord, Idx, TileTensor
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils.index import IndexList, StaticTuple

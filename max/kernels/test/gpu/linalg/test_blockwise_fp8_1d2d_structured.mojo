@@ -36,7 +36,7 @@ from layout import (
 from layout._fillers import random
 from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from structured_kernels.tile_types import (
     GMEMLayout1D,
 )

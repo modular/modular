@@ -76,7 +76,7 @@ from structured_kernels.tile_types import (
     SMemTileArrayWithLayout,
     SMemTileArray2DRowMajor,
 )
-from layout._layout import Layout as _Layout, row_major
+from layout.tile_layout import Layout as _Layout, row_major
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )

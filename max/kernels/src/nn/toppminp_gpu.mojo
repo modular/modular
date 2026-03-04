@@ -22,7 +22,7 @@ from std.gpu.host.dim import Dim
 from std.gpu.memory import external_memory
 from std.random import Random
 from layout import Coord, CoordLike, Idx, TileTensor
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from std.memory import bitcast, stack_allocation
 from nn.softmax import _softmax_gpu
 from nn.topk import (

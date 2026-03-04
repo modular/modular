@@ -38,7 +38,7 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue

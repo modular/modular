@@ -97,7 +97,7 @@ from std.sys import align_of, simd_width_of, size_of
 
 from buffer import NDBuffer
 from layout import Coord, Idx, TileTensor
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,

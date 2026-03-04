@@ -38,7 +38,11 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.int_tuple import IntTuple
-from layout._layout import Layout as InternalLayout, TensorLayout, row_major
+from layout.tile_layout import (
+    Layout as InternalLayout,
+    TensorLayout,
+    row_major,
+)
 from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
@@ -171,7 +175,7 @@ fn store_fragment_to_smem[
 
     comptime if transpose_c:
         # Use new Layout directly instead of RuntimeLayout wrapper
-        from layout._layout import Layout as NewLayout
+        from layout.tile_layout import Layout as NewLayout
         from layout import Coord, Idx
 
         comptime trans_layout = NewLayout(

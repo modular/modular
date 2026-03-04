@@ -38,7 +38,7 @@ from std.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from std.gpu.sync import named_barrier, syncwarp
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from layout import TileTensor
 from structured_kernels.tile_types import (
     TMATile,

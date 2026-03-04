@@ -20,7 +20,7 @@ from layout.coord import (
     ComptimeInt,
     RuntimeInt,
 )
-from layout._layout import Layout as InternalLayout
+from layout.tile_layout import Layout as InternalLayout
 from layout import TileTensor
 
 

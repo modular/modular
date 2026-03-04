@@ -47,7 +47,7 @@ from layout import (
     RuntimeLayout,
     TileTensor,
 )
-from layout._layout import Layout as TileLayout, row_major
+from layout.tile_layout import Layout as TileLayout, row_major
 from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList

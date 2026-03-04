@@ -38,7 +38,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx
@@ -55,7 +55,7 @@ from ..structured_kernels.epilogue_components import (
     tma_wait_pipelined,
 )
 from structured_kernels.barriers import WarpGroupBarrier
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from linalg.structuring import SMemTileArray, SMemTile
 from linalg.matmul.gpu.sm100.matmul import stsm_helper
 

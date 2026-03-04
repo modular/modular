@@ -33,7 +33,7 @@ from std.utils import IndexList
 
 from .swizzle import Swizzle, make_ldmatrix_swizzle
 
-from ._layout import (
+from .tile_layout import (
     Layout,
     RowMajorLayout,
     TensorLayout,
@@ -111,7 +111,7 @@ struct TileTensor[
     Example:
 
     ```mojo
-    from layout._layout import row_major
+    from layout.tile_layout import row_major
     from layout import TileTensor
     from layout import Idx
 
@@ -297,7 +297,7 @@ struct TileTensor[
 
         ```mojo
         from std.gpu.host import DeviceContext, DeviceBuffer
-        from layout._layout import row_major
+        from layout.tile_layout import row_major
         from layout import TileTensor
         from layout import Idx
 
@@ -346,7 +346,7 @@ struct TileTensor[
 
         ```mojo
         from std.gpu.host import DeviceContext, HostBuffer
-        from layout._layout import row_major
+        from layout.tile_layout import row_major
         from layout import TileTensor
         from layout import Idx
 
@@ -633,7 +633,7 @@ struct TileTensor[
 
         ```mojo
         from layout import TileTensor
-        from layout._layout import row_major
+        from layout.tile_layout import row_major
 
         def main() raises:
             var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
@@ -887,7 +887,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout._layout import row_major
+        from layout.tile_layout import row_major
         from layout import TileTensor
 
         var storage = InlineArray[Float32, 16](uninitialized=True)
@@ -1031,7 +1031,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout._layout import row_major
+        from layout.tile_layout import row_major
         from layout import TileTensor
 
         def main() raises:
@@ -1045,7 +1045,7 @@ struct TileTensor[
         avoid warnings about an unused value:
 
         ```mojo
-        from layout._layout import row_major
+        from layout.tile_layout import row_major
         from layout import TileTensor
 
         var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
@@ -1171,7 +1171,7 @@ struct TileTensor[
         For a 3D tensor, you can slice all three dimensions:
 
         ```mojo
-        from layout._layout import row_major
+        from layout.tile_layout import row_major
         from layout import TileTensor
         comptime layout_3d = row_major[16, 16, 16]()
         var stack = InlineArray[UInt8, layout_3d.static_product](fill=0)
@@ -1486,7 +1486,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout._layout import row_major
+        from layout.tile_layout import row_major
         from layout import TileTensor
 
         var storage = InlineArray[Float32, 12](uninitialized=True)
@@ -1548,7 +1548,7 @@ struct TileTensor[
         Example:
 
         ```mojo
-        from layout._layout import row_major
+        from layout.tile_layout import row_major
         from layout import TileTensor
         from layout import Idx, Coord
 
@@ -1651,7 +1651,7 @@ struct TileTensor[
         Examples:
             ```mojo
             from layout import TileTensor
-            from layout._layout import row_major
+            from layout.tile_layout import row_major
             var storage = InlineArray[Float32, 12](uninitialized=True)
             var tensor = TileTensor(Span(storage), row_major[3, 4]())
             var dynamic = tensor.make_dynamic[DType.int64]()

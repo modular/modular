@@ -17,7 +17,7 @@ import std.sys
 from std.gpu import thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.compile import _compile_code, get_gpu_target
-from layout._layout import Layout
+from layout.tile_layout import Layout
 from layout import Idx, Coord
 from layout.int_tuple import IntTuple
 from std.memory import LegacyUnsafePointer

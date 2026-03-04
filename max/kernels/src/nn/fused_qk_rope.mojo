@@ -29,7 +29,7 @@ from layout.coord import (
     ComptimeInt,
     coord_to_index_list,
 )
-from layout._layout import TensorLayout, RowMajorLayout, Layout, row_major
+from layout.tile_layout import TensorLayout, RowMajorLayout, Layout, row_major
 from layout import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 

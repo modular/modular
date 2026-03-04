@@ -61,7 +61,7 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from layout._layout import row_major
+from layout.tile_layout import row_major
 
 
 fn simple_init() -> Bool:

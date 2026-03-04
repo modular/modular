@@ -18,7 +18,7 @@ from std.collections.optional import Optional
 from std.builtin.variadics import Variadic
 
 from layout import Coord, TileTensor, Idx
-from layout._layout import TensorLayout, Layout, row_major
+from layout.tile_layout import TensorLayout, Layout, row_major
 from layout.coord import _CoordToDynamic
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,

@@ -30,7 +30,7 @@ from std.gpu import (
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, CoordLike, Idx, TileTensor, coord_to_index_list
-from layout._layout import TensorLayout, Layout as TileLayout, row_major
+from layout.tile_layout import TensorLayout, Layout as TileLayout, row_major
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
 from std.utils.index import StaticTuple

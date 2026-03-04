@@ -31,7 +31,7 @@ from std.gpu.memory import AddressSpace
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.sync import syncwarp
 from layout import Coord, Idx, TileTensor, stack_allocation
-from layout._layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout, row_major
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 

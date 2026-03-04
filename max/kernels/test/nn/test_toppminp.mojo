@@ -20,7 +20,7 @@ from std.random import random_float64
 from std.algorithm.functional import parallelize_over_rows
 from std.benchmark import Bench, Bencher, BenchId
 from layout import Coord, Idx, TileTensor
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from nn.toppminp import min_p_sampling, top_p_sampling
 from std.testing import assert_equal
 

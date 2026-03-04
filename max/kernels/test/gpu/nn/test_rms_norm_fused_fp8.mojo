@@ -25,7 +25,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout.int_tuple import fill_like
 from std.memory import LegacyUnsafePointer, bitcast
 from std.runtime.asyncrt import DeviceContextPtr

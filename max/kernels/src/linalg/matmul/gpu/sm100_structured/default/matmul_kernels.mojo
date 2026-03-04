@@ -58,7 +58,7 @@ from std.gpu.primitives.grid_controls import (
 from std.gpu.sync import syncwarp
 from std.gpu.compute.arch.tcgen05 import *
 from layout import Layout as LegacyLayout, LayoutTensor, TileTensor
-from layout._layout import (
+from layout.tile_layout import (
     Layout as _NewLayout,
     TensorLayout,
     row_major,
@@ -72,7 +72,7 @@ from structured_kernels.tile_types import (
     static_row_major,
     tma_desc_layout_3d,
 )
-from layout._layout import RowMajorLayout, _IntToComptimeInt
+from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
     tile_layout_k_major,

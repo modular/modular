@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.itertools import product
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import TileTensor
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from std.testing import assert_equal

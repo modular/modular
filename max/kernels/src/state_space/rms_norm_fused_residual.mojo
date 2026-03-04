@@ -39,7 +39,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from layout._layout import Layout as TileLayout, row_major
+from layout.tile_layout import Layout as TileLayout, row_major
 from std.random import Random
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr

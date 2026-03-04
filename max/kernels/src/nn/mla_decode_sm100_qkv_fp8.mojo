@@ -61,7 +61,7 @@ from std.gpu.primitives.warp import _vote_nvidia_helper
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout.layout import Layout
 from layout.swizzle import make_ldmatrix_swizzle
 from std.memory import bitcast

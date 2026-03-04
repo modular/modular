@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 from std.testing import assert_equal

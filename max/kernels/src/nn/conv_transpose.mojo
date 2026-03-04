@@ -43,7 +43,7 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from layout._layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout, row_major
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv import _get_cudnn_meta, check_cudnn_error

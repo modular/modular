@@ -18,7 +18,7 @@ from std.random import random_si64
 from std.sys import simd_width_of, size_of
 
 from std.benchmark import Bench, Bencher, BenchId
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import Coord, Idx, TileTensor
 from nn.gather_scatter import gather_reduce
 

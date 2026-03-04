@@ -57,7 +57,7 @@ from layout.coord import (
     RuntimeInt,
     _DimsToCoordLike,
 )
-from layout._layout import Layout, TensorLayout, row_major
+from layout.tile_layout import Layout, TensorLayout, row_major
 from .smem_types import SMemTileArray as LTSMemTileArray
 from std.utils.index import IndexList
 from std.memory import LegacyUnsafePointer, stack_allocation
@@ -246,7 +246,7 @@ Parameters:
     alignment: Memory alignment (default 128 for shared memory).
 """
 
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 
 
 @parameter

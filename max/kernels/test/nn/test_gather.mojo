@@ -18,7 +18,7 @@
 
 from std.sys import simd_width_of
 
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import TileTensor
 from nn.gather_scatter import gather
 

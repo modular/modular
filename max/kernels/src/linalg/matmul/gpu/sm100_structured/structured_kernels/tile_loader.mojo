@@ -40,7 +40,7 @@ from structured_kernels.tile_types import SMemTile2D, TMATile
 
 # Import variadic types for TileTensor load overload
 from std.builtin.variadics import Variadic
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 
 
 struct TileLoaderTMA[

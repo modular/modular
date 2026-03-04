@@ -35,7 +35,7 @@ from layout.coord import (
     ComptimeInt,
     coord_to_index_list,
 )
-from layout._layout import row_major, TensorLayout, Layout
+from layout.tile_layout import row_major, TensorLayout, Layout
 from layout import TileTensor
 from std.math import ceildiv, gcd, exp
 from std.memory import stack_allocation

@@ -19,7 +19,7 @@ from std.algorithm.functional import elementwise
 from buffer import NDBuffer
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, TileTensor
-from layout._layout import Layout, row_major
+from layout.tile_layout import Layout, row_major
 from linalg.bmm import _batched_matmul_gpu
 
 from std.random import rand

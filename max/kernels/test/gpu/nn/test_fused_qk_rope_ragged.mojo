@@ -26,7 +26,7 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout._fillers import random
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from std.memory import memcpy
 
 from nn.fused_qk_rope import fused_qk_rope_ragged

@@ -22,7 +22,7 @@ from std.algorithm.functional import tile
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from layout import Coord, Idx, TileTensor, UNKNOWN_VALUE, coord_to_index_list
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from std.memory import memcpy
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id

@@ -104,7 +104,7 @@ from ..structured_kernels.tile_pipeline import (
     ConsumerTiles,
     BlockScaledTilePayload,
 )
-from layout._layout import RowMajorLayout, _IntToComptimeInt
+from layout.tile_layout import RowMajorLayout, _IntToComptimeInt
 from structured_kernels.tile_types import (
     TMATile,
     internal_k_major_128B,

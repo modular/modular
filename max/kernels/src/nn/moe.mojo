@@ -33,7 +33,7 @@ from std.gpu import (
 from std.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from std.gpu.host.info import is_gpu
 from layout import Coord, CoordLike, Idx, coord_to_index_list
-from layout._layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout, row_major
 from layout.tile_tensor import TileTensor, stack_allocation as tensor_alloc
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel

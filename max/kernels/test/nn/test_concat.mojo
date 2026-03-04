@@ -13,7 +13,7 @@
 
 
 from layout import Coord, CoordLike, Idx, TileTensor
-from layout._layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout, row_major
 from nn.concat import _concat_parallel, _concat_serial, concat
 
 from std.utils import Index, IndexList, StaticTuple

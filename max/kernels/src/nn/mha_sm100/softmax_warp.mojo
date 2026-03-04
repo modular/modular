@@ -38,7 +38,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAllocation,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import stack_allocation as tt_stack_allocation
 from layout.swizzle import make_swizzle
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier

@@ -15,7 +15,7 @@ from std.math import isclose
 
 from std.gpu.host import DeviceContext
 from layout import Coord, CoordLike, TileTensor, coord
-from layout._layout import row_major
+from layout.tile_layout import row_major
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
 from std.testing import assert_almost_equal

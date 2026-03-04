@@ -630,7 +630,7 @@ fn grouped_block_scaled_matmul[
     comptime num_threads = 32 * 7
 
     # ===== Create TileTensor wrappers for kernel args =====
-    from layout._layout import row_major as new_row_major
+    from layout.tile_layout import row_major as new_row_major
     from std.memory import UnsafePointer as NewPtr
 
     var a_ptrs_tt = type_of(matmul_kernel).GroupPtrTile(

@@ -83,7 +83,7 @@ from nn.sm100_attention_utils import (
     MBarPipeline,
     sub_ftz,
 )
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import stack_allocation as tt_stack_allocation
 from nn.mha_fa3_utils import KVTMATile
 from std.builtin.device_passable import DevicePassable

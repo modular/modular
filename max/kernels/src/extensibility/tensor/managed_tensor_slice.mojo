@@ -29,7 +29,7 @@ from std.gpu.host.info import is_cpu
 from std.gpu.host.info import is_gpu as _is_gpu
 from layout import LayoutTensor, TileTensor
 from layout.coord import Coord, _DimsToCoordLike
-from layout._layout import Layout as TileLayout
+from layout.tile_layout import Layout as TileLayout
 from std.memory import LegacyUnsafePointer
 
 comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
@@ -1116,7 +1116,7 @@ struct ManagedTensorSlice[
 
         return {
             self.unsafe_ptr().unsafe_origin_cast[MutExternalOrigin](),
-            layout._layout.Layout(shape_tuple, stride_tuple),
+            layout.tile_layout.Layout(shape_tuple, stride_tuple),
         }
 
     fn write_to(self, mut writer: Some[Writer]):

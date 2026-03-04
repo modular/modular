@@ -19,7 +19,7 @@ from std.gpu import block_idx, global_idx
 from std.gpu.host import DeviceContext, DeviceBuffer
 from kv_cache.types import KVCacheT
 from layout import Coord, Idx, TileTensor
-from layout._layout import Layout, TensorLayout, row_major
+from layout.tile_layout import Layout, TensorLayout, row_major
 from nn.mha import MHAConfig, _kernel_mask
 from nn.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu

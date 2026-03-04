@@ -47,7 +47,7 @@ from layout.coord import (
     RuntimeInt,
     coord_to_index_list,
 )
-from layout._layout import Layout, TensorLayout, row_major
+from layout.tile_layout import Layout, TensorLayout, row_major
 from layout import TileTensor
 from std.memory import stack_allocation
 from register import register_internal

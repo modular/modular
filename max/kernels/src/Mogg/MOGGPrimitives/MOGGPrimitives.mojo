@@ -30,7 +30,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from std.memory import memcpy
 
 from nn.concat import concat

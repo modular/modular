@@ -31,7 +31,7 @@ from layout import (
     UNKNOWN_VALUE,
     coord_to_index_list,
 )
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
 from buffer import NDBuffer

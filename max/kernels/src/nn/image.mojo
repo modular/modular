@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import Coord, Idx, TileTensor, coord
-from layout._layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout, row_major
 
 from std.utils.index import IndexList
 

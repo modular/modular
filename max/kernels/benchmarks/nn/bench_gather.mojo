@@ -17,7 +17,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from std.random import rand, randint
 
 from std.benchmark import *
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import Coord, TileTensor
 from nn.gather_scatter import gather_elements
 

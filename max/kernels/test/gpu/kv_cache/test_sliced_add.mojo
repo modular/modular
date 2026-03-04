@@ -13,7 +13,7 @@
 
 from std.gpu.host import DeviceContext
 from layout import Coord, Layout, RuntimeLayout, TileTensor
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout._utils import ManagedLayoutTensor
 from nn.slice import sliced_add
 

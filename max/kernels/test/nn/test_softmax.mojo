@@ -21,7 +21,7 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
 )
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from nn.softmax import logsoftmax, softmax_2_pass
 
 from std.testing import assert_equal

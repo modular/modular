@@ -41,7 +41,7 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.tma_async import TMATensorTile, create_tensor_tile, create_tma_tile
-from layout._layout import Layout as TileLayout, row_major, TensorLayout
+from layout.tile_layout import Layout as TileLayout, row_major, TensorLayout
 from layout.coord import (
     Coord,
     CoordLike,

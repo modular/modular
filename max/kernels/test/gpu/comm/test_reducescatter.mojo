@@ -15,7 +15,7 @@ from std.sys import size_of, simd_width_of
 from std.itertools import product
 
 from layout import Coord, Idx, TileTensor
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from std.collections import Optional
 from comm import Signal, MAX_GPUS
 from comm.sync import enable_p2p

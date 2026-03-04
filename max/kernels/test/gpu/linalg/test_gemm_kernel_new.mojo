@@ -33,7 +33,7 @@ from layout.layout_tensor import (
 )
 
 from layout import TileTensor, stack_allocation
-from layout._layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout, row_major
 from layout.coord import (
     Coord,
     coord,

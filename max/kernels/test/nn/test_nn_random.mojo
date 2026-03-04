@@ -13,7 +13,7 @@
 
 from std.random import seed
 
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import TileTensor
 from nn.randn import random_normal
 

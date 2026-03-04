@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout.coord import Coord, DynamicCoord, Idx
-from layout._layout import Layout, TensorLayout
+from layout.tile_layout import Layout, TensorLayout
 from layout import TileTensor
 from register import register_internal
 

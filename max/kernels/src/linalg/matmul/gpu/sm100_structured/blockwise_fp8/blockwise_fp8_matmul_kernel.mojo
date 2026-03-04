@@ -50,7 +50,7 @@ from std.gpu.sync import (
     syncwarp,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from layout import TileTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,

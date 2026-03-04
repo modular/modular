@@ -76,7 +76,7 @@ fn test_scheduler_kernel[
     """Kernel that iterates over all tiles and records their coordinates."""
     # Convert LayoutTensor to TileTensor for the scheduler
     from std.memory import UnsafePointer as NewPtr
-    from layout._layout import row_major as new_row_major
+    from layout.tile_layout import row_major as new_row_major
 
     var problem_sizes_tt = _ProblemSizesTile[max_groups](
         ptr=NewPtr[Scalar[DType.int32], MutAnyOrigin](

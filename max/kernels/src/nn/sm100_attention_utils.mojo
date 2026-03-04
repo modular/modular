@@ -49,7 +49,7 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from layout._layout import Layout as InternalLayout, row_major
+from layout.tile_layout import Layout as InternalLayout, row_major
 from layout import TileTensor
 from layout import stack_allocation as tt_stack_allocation
 from layout.tma_async import PipelineState, SharedMemBarrier

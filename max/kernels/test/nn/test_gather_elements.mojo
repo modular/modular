@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import TileTensor
 from nn.gather_scatter import gather_elements
 from std.testing import assert_equal

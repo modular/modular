@@ -17,7 +17,7 @@ from std.math import ceildiv
 
 from layout import Idx, Layout, RuntimeLayout, TileTensor, UNKNOWN_VALUE
 from layout.layout_tensor import LayoutTensor
-from layout._layout import row_major
+from layout.tile_layout import row_major
 
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute

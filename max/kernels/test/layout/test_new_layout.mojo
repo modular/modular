@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._layout import (
+from layout.tile_layout import (
     Layout,
     ZippedDivideLayout,
     BlockedProductLayout,

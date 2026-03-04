@@ -34,7 +34,7 @@ from std.math import clamp, floor
 
 from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
-from layout._layout import TensorLayout
+from layout.tile_layout import TensorLayout
 from layout.tile_tensor import TileTensor
 
 

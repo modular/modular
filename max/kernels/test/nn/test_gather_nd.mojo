@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import Coord, TileTensor
 from nn.gather_scatter import _gather_nd_impl, gather_nd_shape
 

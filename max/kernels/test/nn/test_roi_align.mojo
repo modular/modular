@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._layout import row_major
+from layout.tile_layout import row_major
 from layout import TileTensor
 from nn.roi_align import roi_align_nhwc
 from std.testing import *
