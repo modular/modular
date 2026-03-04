@@ -13,9 +13,9 @@
 
 from std.math import align_up
 from std.sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
     has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
@@ -58,7 +58,7 @@ fn _get_run_name[
     K: Optional[Int] = None,
 ](b: Int, m: Int, n: Int, k: Int) -> String:
     var vendor_str = "vendor_bmm" if use_vendor_blas else "bmm"
-    var type_str = String(t"({dtype}) : ")
+    var type_str = String("(", dtype, ") : ")
     # B
     var b_str = String(b, "" if B else "_dynamic")
     # M
@@ -68,11 +68,19 @@ fn _get_run_name[
     # K
     var k_str = String(k, "" if K else "_dynamic")
 
-    var transpose_b_str = String(t"/transpose_b={transpose_b}")
+    var transpose_b_str = String("/transpose_b=", transpose_b)
 
-    return (
-        t"{vendor_str}{type_str}{b_str} x {m_str} x {n_str} x"
-        t" {k_str}{transpose_b_str}"
+    return String(
+        vendor_str,
+        type_str,
+        b_str,
+        " x ",
+        m_str,
+        " x ",
+        n_str,
+        " x ",
+        k_str,
+        transpose_b_str,
     )
 
 
@@ -374,17 +382,17 @@ fn create_bmm_bench[
 
 
 def main() raises:
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
     var b = Int(arg_parse("B", 1))
     var m = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int["K", 1]()
+    comptime N = get_defined_int["N", 1]()
+    comptime K = get_defined_int["K", 1]()
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
     comptime transpose_b = False
-    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
+    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
 
     var bench = Bench()
     with DeviceContext() as ctx:

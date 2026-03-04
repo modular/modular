@@ -17,7 +17,7 @@ See https://tvm.apache.org/ffi/get_started/stable_c_abi.html.
 All implementations are based on that reference material.
 """
 
-import format
+import std.format
 
 from .dlpack import DLTensor
 
@@ -41,7 +41,7 @@ struct TVMFFIAny(Copyable, Movable):
 
     def __init__[
         rank: Int, dtype: DType
-    ](out self, tensor_ptr: UnsafePointer[DLTensor[rank, dtype]],):
+    ](out self, tensor_ptr: UnsafePointer[DLTensor[rank, dtype], _],):
         """Construct from a pointer to a DLTensor.
 
         The caller must ensure the pointed-to DLTensor outlives this

@@ -2912,6 +2912,9 @@ fn generic_flare_mla_decode_kv_cache_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    scalar_args_buf: LayoutTensor[
+        mut=False, DType.int64, address_space = AddressSpace.GENERIC, ...
+    ],
     context: DeviceContextPtr,
 ) raises:
     @always_inline
@@ -2952,6 +2955,7 @@ fn generic_flare_mla_decode_kv_cache_ragged[
             layer_idx,
             scale,
             output,
+            scalar_args_buf,
             context,
         )
 
@@ -2973,6 +2977,9 @@ fn _flare_mla_decode_kv_cache_ragged[
     layer_idx: UInt32,
     scale: Float32,
     output: LayoutTensor[mut=True, address_space = AddressSpace.GENERIC, ...],
+    scalar_args_buf: LayoutTensor[
+        mut=False, DType.int64, address_space = AddressSpace.GENERIC, ...
+    ],
     context: DeviceContextPtr,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
@@ -2980,11 +2987,12 @@ fn _flare_mla_decode_kv_cache_ragged[
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
         input_row_offsets: The start and end position of each Q entry in the batch.
-        kv_collection: The Collection object storing out KVCache entries for this layer
-        layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection
+        kv_collection: The Collection object storing out KVCache entries for this layer.
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_collection.
         scale: The scaled factor in scaled-dot product attention. Usually rsqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
+        scalar_args_buf: Buffer containing scalar arguments for device graph capture.
         context: Pointer containing the runtime context for the target device.
     """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
@@ -2992,9 +3000,13 @@ fn _flare_mla_decode_kv_cache_ragged[
     var layer_idx_cast = Int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
+    var scalar_args_buf_lt = rebind[
+        LayoutTensor[DType.int64, Layout.row_major(4), MutAnyOrigin]
+    ](scalar_args_buf)
+
     @parameter
     @always_inline
-    @__copy_capture(k)
+    @__copy_capture(k, scalar_args_buf_lt)
     fn _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[rank = q.rank, ragged=True](
             output,
@@ -3004,6 +3016,7 @@ fn _flare_mla_decode_kv_cache_ragged[
             input_row_offsets,
             scale,
             context.get_device_context(),
+            scalar_args_buf=scalar_args_buf_lt,
         )
 
     dispatch_mask[

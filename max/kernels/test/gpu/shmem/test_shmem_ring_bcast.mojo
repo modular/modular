@@ -18,7 +18,7 @@ from std.os.path import dirname
 from std.pathlib import Path, cwd
 from std.subprocess import run
 from std.ffi import c_int
-from std.sys.param_env import env_get_string
+from std.sys.defines import get_defined_string
 
 from std.gpu.host.device_attribute import DeviceAttribute
 from std.gpu.host.dim import Dim

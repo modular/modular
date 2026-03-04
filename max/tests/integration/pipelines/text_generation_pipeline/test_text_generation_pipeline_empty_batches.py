@@ -25,6 +25,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.interfaces import ModelOutputs
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 
 
@@ -38,7 +39,7 @@ def pipeline() -> TextGenerationPipeline[TextContext]:
                 kv_cache=KVCacheConfig(enable_prefix_caching=False),
                 max_length=100,
             ),
-            max_batch_size=2,
+            runtime=PipelineRuntimeConfig(max_batch_size=2),
         ),
         task=PipelineTask.TEXT_GENERATION,
     )

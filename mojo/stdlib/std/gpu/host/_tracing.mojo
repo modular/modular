@@ -21,7 +21,7 @@ from std.sys import (
 )
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle, _try_find_dylib
-from std.sys.param_env import env_get_int
+from std.sys.defines import get_defined_int
 
 from std.utils.variant import Variant
 
@@ -414,13 +414,13 @@ struct _RangePop:
 fn _is_enabled_details() -> Bool:
     return (
         has_accelerator()
-        and env_get_int["MODULAR_ENABLE_GPU_PROFILING_DETAILED", 0]() == 1
+        and get_defined_int["MODULAR_ENABLE_GPU_PROFILING_DETAILED", 0]() == 1
     )
 
 
 fn _is_enabled() -> Bool:
     return has_accelerator() and (
-        env_get_int["MODULAR_ENABLE_GPU_PROFILING", 0]() == 1
+        get_defined_int["MODULAR_ENABLE_GPU_PROFILING", 0]() == 1
         or _is_enabled_details()
     )
 

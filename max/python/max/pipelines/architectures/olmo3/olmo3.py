@@ -24,7 +24,7 @@ from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
 from max.nn.module_v3 import Module
 from max.nn.module_v3.common_layers.mlp import MLP
@@ -224,9 +224,8 @@ class Olmo3(Module[[Tensor, Tensor, Tensor], tuple[Tensor]]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> tuple[Tensor]:
-        kv_values = [arg._graph_value for arg in variadic_args]
-        kv_collections = unflatten_ragged_mha_decode_inputs(
-            kv_values, n_devices=self.kv_params.n_devices
+        kv_collections = unflatten_ragged_attention_inputs(
+            variadic_args, n_devices=self.kv_params.n_devices
         )
         return self.language_model(
             tokens, kv_collections[0], return_n_logits, input_row_offsets

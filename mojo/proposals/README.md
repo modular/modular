@@ -52,6 +52,7 @@ These proposals have been implemented and are part of Mojo today.
 | [upgrading-value-decorator](upgrading-value-decorator.md) | Trait-based replacement for `@value` |
 | [value-ownership](value-ownership.md) | Value ownership design (historical) |
 | [variable-bindings](variable-bindings.md) | `var` and `ref` bindings design |
+| [explicit-std-imports](explicit-std-imports.md) | Require explicit `std.` prefix for standard library imports |
 | [where_clauses](where_clauses.md) | Where clauses for generic constraints |
 
 ## Accepted Proposals

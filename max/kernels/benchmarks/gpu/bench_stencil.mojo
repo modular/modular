@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import env_get_dtype, env_get_int, env_get_string
+from std.sys import get_defined_dtype, get_defined_int, get_defined_string
 
 from std.algorithm.functional import stencil, stencil_gpu
 from std.benchmark import (
@@ -726,17 +726,17 @@ fn bench_stencil_avg_pool_padded[
 
 
 def main() raises:
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
-    comptime batch_size = env_get_int["batch_size", 128]()
-    comptime input_height = env_get_int["input_height", 1024]()
-    comptime input_width = env_get_int["input_width", 1024]()
-    comptime num_channels = env_get_int["num_channels", 3]()
-    comptime pool_window_h = env_get_int["pool_window_h", 3]()
-    comptime pool_window_w = env_get_int["pool_window_w", 3]()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime batch_size = get_defined_int["batch_size", 128]()
+    comptime input_height = get_defined_int["input_height", 1024]()
+    comptime input_width = get_defined_int["input_width", 1024]()
+    comptime num_channels = get_defined_int["num_channels", 3]()
+    comptime pool_window_h = get_defined_int["pool_window_h", 3]()
+    comptime pool_window_w = get_defined_int["pool_window_w", 3]()
 
-    comptime pad_h = env_get_int["pad_h", 0]()
-    comptime pad_w = env_get_int["pad_w", 0]()
-    comptime method = env_get_string["method", "max_pool"]()
+    comptime pad_h = get_defined_int["pad_h", 0]()
+    comptime pad_w = get_defined_int["pad_w", 0]()
+    comptime method = get_defined_string["method", "max_pool"]()
 
     var m = Bench()
     with DeviceContext() as ctx:

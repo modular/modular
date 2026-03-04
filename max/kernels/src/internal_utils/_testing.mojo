@@ -85,8 +85,8 @@ fn assert_almost_equal[
     dtype: DType,
     //,
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     msg: String = "",
     *,
@@ -151,8 +151,8 @@ fn assert_equal[
     dtype: DType,
     //,
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     msg: String = "",
     *,
@@ -210,8 +210,8 @@ fn assert_with_measure[
         Int,
     ) -> Float64,
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     msg: String = "",
     *,

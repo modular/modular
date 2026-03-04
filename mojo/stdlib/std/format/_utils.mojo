@@ -23,7 +23,7 @@ from std.os import abort
 from std.reflection.type_info import _unqualified_type_name
 from std.sys import align_of, size_of
 from std.sys.info import is_gpu
-from std.sys.param_env import env_get_int
+from std.sys.defines import get_defined_int
 
 from std.bit import byte_swap
 from std.memory import Span, bitcast, memcpy
@@ -384,10 +384,12 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         self._writer[].write_string(")")
 
 
-comptime HEAP_BUFFER_BYTES = env_get_int["HEAP_BUFFER_BYTES", 2048]()
+comptime HEAP_BUFFER_BYTES = get_defined_int["HEAP_BUFFER_BYTES", 2048]()
 """How much memory to pre-allocate for the heap buffer, will abort if exceeded."""
 
-comptime STACK_BUFFER_BYTES = UInt(env_get_int["STACK_BUFFER_BYTES", 4096]())
+comptime STACK_BUFFER_BYTES = UInt(
+    get_defined_int["STACK_BUFFER_BYTES", 4096]()
+)
 """The size of the stack buffer for IO operations from CPU."""
 
 
@@ -569,10 +571,10 @@ fn _hex_digits_to_hex_chars(
     Examples:
 
     ```mojo
-    %# from memory import memset_zero
-    %# from testing import assert_equal
-    %# from utils import StringSlice
-    %# from io.write import _hex_digits_to_hex_chars
+    %# from std.memory import memset_zero
+    %# from std.testing import assert_equal
+    %# from std.utils import StringSlice
+    %# from std.io.write import _hex_digits_to_hex_chars
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()

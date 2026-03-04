@@ -310,7 +310,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         self.data = copy.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False]):
+fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
     """Prefetches a TMA descriptor into the constant cache.
 
     Issues a hardware prefetch instruction to bring the TMA descriptor into

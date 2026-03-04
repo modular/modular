@@ -100,7 +100,7 @@ fn mandelbrot(
     tensor[row, col] = iters
 
 
-def draw_mandelbrot(tensor: LayoutTensor[int_dtype, layout]) raises:
+def draw_mandelbrot(tensor: LayoutTensor[int_dtype, layout, ...]) raises:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
     for row in range(GRID_HEIGHT):

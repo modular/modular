@@ -27,7 +27,7 @@ from std.gpu.memory import AddressSpace
 
 from ..block_scaled.block_scaled_smem import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
-from ..structured_kernels.pipeline_storage import SmemPipelineBundleNoClc
+from structured_kernels.pipeline_storage import SmemPipelineBundleNoClc
 
 
 struct Grouped1D1DSmem[
