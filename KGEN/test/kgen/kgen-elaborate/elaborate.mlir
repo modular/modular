@@ -2508,3 +2508,45 @@ kgen.generator export @foo() -> ()  {
   kgen.call @conformance_check<:type #kgen.type<typevalue<#kgen.genref<@S1>>, struct<() memoryOnly>>>() : () -> ()
   kgen.return
 }
+
+// -----
+
+// COM: data_to_str elaboration (two versions tested during Int->SIMD unification)
+
+// CHECK-LABEL: kgen.func @test_data_to_str
+kgen.generator @test_data_to_str() {
+  kgen.param.declare s1: struct<(pointer<none>, index)> = <{ string_address("hello"), 5 }>
+  // CHECK-NEXT: = kgen.param.constant: string = <"hello">
+  %0 = kgen.param.constant: string = <data_to_str(:struct<(pointer<none>, index)> s1, [])>
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @test_data_to_str_concat
+kgen.generator @test_data_to_str_concat() {
+  kgen.param.declare s1: struct<(pointer<none>, index)> = <{ string_address("hello"), 5 }>
+  kgen.param.declare s2: struct<(pointer<none>, index)> = <{ string_address(" world"), 6 }>
+  // CHECK-NEXT: = kgen.param.constant: string = <"hello world">
+  %0 = kgen.param.constant: string = <data_to_str(:struct<(pointer<none>, index)> s1, [s2])>
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @test_data_to_str_scalar_index
+kgen.generator @test_data_to_str_scalar_index() {
+  kgen.param.declare s1: struct<(pointer<none>, scalar<index>)> = <{ string_address("hello"), 5 }>
+  // CHECK-NEXT: = kgen.param.constant: string = <"hello">
+  %0 = kgen.param.constant: string = <data_to_str(:struct<(pointer<none>, scalar<index>)> s1, [])>
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @test_data_to_str_concat_scalar_index
+kgen.generator @test_data_to_str_concat_scalar_index() {
+  kgen.param.declare s1: struct<(pointer<none>, scalar<index>)> = <{ string_address("hello"), 5 }>
+  kgen.param.declare s2: struct<(pointer<none>, scalar<index>)> = <{ string_address(" world"), 6 }>
+  // CHECK-NEXT: = kgen.param.constant: string = <"hello world">
+  %0 = kgen.param.constant: string = <data_to_str(:struct<(pointer<none>, scalar<index>)> s1, [s2])>
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}
