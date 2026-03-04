@@ -24,7 +24,13 @@
 from std.collections import OptionalReg
 
 from std.random import randint, randn, seed
-from std.sys import align_of, env_get_int, env_get_dtype, simd_width_of, size_of
+from std.sys import (
+    align_of,
+    get_defined_int,
+    get_defined_dtype,
+    simd_width_of,
+    size_of,
+)
 
 from std.benchmark import (
     Bench,
@@ -54,7 +60,7 @@ from std.utils import IndexList
 
 fn legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32], n_tokens: Int):
+](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
@@ -431,14 +437,16 @@ fn bench_dispatch[
 
 
 def main() raises:
-    comptime hidden_size = env_get_int["hidden_size", 3584]()
-    comptime top_k = env_get_int["top_k", 8]()
-    comptime n_experts = env_get_int["n_experts", 256]()
-    comptime n_ranks = env_get_int["n_ranks", 8]()
-    comptime n_tokens_per_rank = env_get_int["n_tokens_per_rank", 128]()
-    comptime num_gpus = env_get_int["num_gpus", 8]()
-    comptime token_dtype = env_get_dtype["token_dtype", DType.float8_e4m3fn]()
-    comptime scales_dtype = env_get_dtype["scales_dtype", DType.float32]()
+    comptime hidden_size = get_defined_int["hidden_size", 3584]()
+    comptime top_k = get_defined_int["top_k", 8]()
+    comptime n_experts = get_defined_int["n_experts", 256]()
+    comptime n_ranks = get_defined_int["n_ranks", 8]()
+    comptime n_tokens_per_rank = get_defined_int["n_tokens_per_rank", 128]()
+    comptime num_gpus = get_defined_int["num_gpus", 8]()
+    comptime token_dtype = get_defined_dtype[
+        "token_dtype", DType.float8_e4m3fn
+    ]()
+    comptime scales_dtype = get_defined_dtype["scales_dtype", DType.float32]()
 
     var m = Bench()
     var bencher_rank = m.check_mpirun()

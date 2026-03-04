@@ -89,6 +89,7 @@ class ChatMessage:
     source: MessageSource
     content: str
     num_tokens: int
+    delay_until_next_message: float | None = None
 
 
 @dataclass
@@ -119,11 +120,13 @@ def build_chat_message(
     prompt: str,
     tokenizer: PreTrainedTokenizerBase,
     num_tokens: int | None = None,
+    delay_until_next_message: float | None = None,
 ) -> ChatMessage:
     return ChatMessage(
         source,
         prompt,
         num_tokens or estimate_num_tokens(tokenizer, prompt),
+        delay_until_next_message,
     )
 
 

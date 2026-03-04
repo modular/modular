@@ -148,48 +148,85 @@ def test_tensor_from_dlpack() -> None:
     assert list(npt.shape) == t.shape
 
 
+def test_tensor_constructor_preserves_dlpack_dtype() -> None:
+    """Tensor(array) inherits the array's dtype without silent casting."""
+    arr_f32 = np.ones([3, 4], dtype=np.float32)
+    t_f32 = Tensor(arr_f32, device=CPU())
+    assert t_f32.dtype == DType.float32
+    assert t_f32.real
+
+    arr_i16 = np.array([1, 2, 3], dtype=np.int16)
+    t_i16 = Tensor(arr_i16, device=CPU())
+    assert t_i16.dtype == DType.int16
+    assert list(t_i16.shape) == [3]
+
+    arr_f64 = np.zeros([2, 2], dtype=np.float64)
+    t_f64 = Tensor(arr_f64, device=CPU())
+    assert t_f64.dtype == DType.float64
+
+
+def test_tensor_constructor_dlpack_conflicting_dtype_raises() -> None:
+    """Tensor(array, dtype=...) raises when dtype conflicts with the array's dtype."""
+    arr = np.ones([4], dtype=np.float32)
+    with pytest.raises(ValueError, match="DType must match"):
+        Tensor(arr, dtype=DType.float64, device=CPU())
+
+
 def test_functional_in_graph() -> None:
     with Graph("test_functional") as graph:
         graph.output(F.constant(1, dtype=DType.float32, device=DeviceRef.CPU()))
 
 
-def test_constant_default_dtype() -> None:
-    t = Tensor.constant(1, device=CPU())
+def test_tensor_default_dtype() -> None:
+    t = Tensor(1, device=CPU())
     assert t.dtype == _default_dtype(CPU())
     assert t.device == CPU()
 
     assert DType.float64 != _default_dtype(CPU())
     with default_dtype(DType.float64):
-        t = Tensor.constant(1, device=CPU())
+        t = Tensor(1, device=CPU())
     assert t.dtype == DType.float64
 
 
-def test_constant_default_device() -> None:
-    t = Tensor.constant(1)
+def test_tensor_default_device() -> None:
+    t = Tensor(1)
     assert t.device == _default_device()
     assert t.dtype == _default_dtype(_default_device())
 
 
 def test_defaults_like() -> None:
-    t = Tensor.constant(1, dtype=DType.float64)
+    t = Tensor(1, dtype=DType.float64)
     with defaults_like(t):
-        t2 = Tensor.constant(1)
+        t2 = Tensor(1)
         assert t.type == t2.type
     with defaults_like(t.type):
-        t3 = Tensor.constant(1)
+        t3 = Tensor(1)
         assert t.type == t3.type
 
 
 @pytest.mark.skipif(
     not accelerator_count(), reason="requires at least 2 devices"
 )
-def test_constant_default_device_context() -> None:
+def test_tensor_default_device_context() -> None:
     assert _default_device() != CPU()
     with default_device(CPU()):
-        t = Tensor.constant(1)
+        t = Tensor(1)
 
     assert t.device == CPU()
     assert t.dtype == _default_dtype(CPU())
+
+
+def test_tensor_constant_deprecated() -> None:
+    import warnings
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        t = Tensor.constant(1, device=CPU())
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "Tensor.constant" in str(w[0].message)
+    assert t.dtype == _default_dtype(CPU())
+    assert t.device == CPU()
 
 
 def test_realized_tensor_as_buffer() -> None:

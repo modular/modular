@@ -1506,7 +1506,7 @@ comptime _AllEqual[
 ] = _ReduceVariadicAndIdxToValue[
     BaseVal = Variadic.values[False],
     VariadicType=element_types,
-    Reducer = _AllEqualReducer[T],
+    Reducer = _AllEqualReducer[T, ...],
 ][
     0
 ]
@@ -1582,7 +1582,7 @@ comptime _DimsToCoordLike[
 ] = _ReduceValueAndIdxToVariadic[
     BaseVal = Variadic.empty_of_trait[CoordLike],
     VariadicType = dims.value.value,
-    Reducer = _DimToCoordLikeMapper[dtype],
+    Reducer = _DimToCoordLikeMapper[dtype, ...],
 ]
 """Converts a variadic of Dim values to a variadic of CoordLike types.
 
@@ -1635,7 +1635,7 @@ comptime _IntTupleToCoordLike[
     VariadicType = Variadic.types[
         T=CoordLike, *_Splatted[RuntimeInt[dtype], len(tuple)]
     ],
-    Reducer = _IntTupleToCoordLikeMapper[dtype, tuple],
+    Reducer = _IntTupleToCoordLikeMapper[dtype, tuple, ...],
 ]
 """Converts a variadic of Dim values to a variadic of CoordLike types.
 
@@ -1734,7 +1734,7 @@ comptime _CoordToDynamic[
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal = Variadic.empty_of_trait[CoordLike],
     VariadicType=element_types,
-    Reducer = _CoordToDynamicMapper[dtype],
+    Reducer = _CoordToDynamicMapper[dtype, ...],
 ]
 """Converts a variadic of CoordLike types to all RuntimeInt[dtype].
 All elements are converted to RuntimeInt[dtype], regardless of their original type.
@@ -1798,7 +1798,7 @@ comptime _Idx2CrdResultTypes[
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal = Variadic.empty_of_trait[CoordLike],
     VariadicType=shape_types,
-    Reducer = _Idx2CrdResultMapper[out_dtype, idx_type, stride_types],
+    Reducer = _Idx2CrdResultMapper[out_dtype, idx_type, stride_types, ...],
 ]
 """Computes the result types for idx2crd based on shape, stride, and index.
 
@@ -2272,7 +2272,7 @@ comptime _Multiply[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Lhs,
-    Mapper = _MultiplyMapper[Rhs=Rhs],
+    Mapper = _MultiplyMapper[Rhs=Rhs, ...],
 ]
 
 
@@ -2289,7 +2289,7 @@ comptime _MultiplyByScalar[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Types,
-    Mapper = _MultiplyByScalarMapper[scalar=scalar],
+    Mapper = _MultiplyByScalarMapper[scalar=scalar, ...],
 ]
 """Multiply each element in Types by a scalar value.
 
@@ -2315,7 +2315,7 @@ comptime _Divide[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Lhs,
-    Mapper = _DivideMapper[Rhs=Rhs],
+    Mapper = _DivideMapper[Rhs=Rhs, ...],
 ]
 
 comptime _CeilDivMapper[
@@ -2334,5 +2334,5 @@ comptime _CeilDiv[
 ] = _MapVariadicAndIdxToType[
     To=CoordLike,
     VariadicType=Lhs,
-    Mapper = _CeilDivMapper[Rhs=Rhs],
+    Mapper = _CeilDivMapper[Rhs=Rhs, ...],
 ]

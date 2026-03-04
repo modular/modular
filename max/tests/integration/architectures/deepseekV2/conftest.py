@@ -27,10 +27,12 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.multi_latent_attention import (
     LatentAttentionWithRope,
+    MLADecodeMetadata,
 )
+from max.nn.kernels import compute_mla_dispatch_args_scalar
 from max.nn.kv_cache import (
     KVCacheParams,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -99,6 +101,7 @@ def _generate_latent_attention_max_outputs(
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
     latent_attention = LatentAttentionWithRope(
@@ -143,9 +146,28 @@ def _generate_latent_attention_max_outputs(
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = unflatten_ragged_mha_decode_inputs(
+            kv_collection = unflatten_ragged_attention_inputs(
                 graph.inputs[2:], n_devices=1
             )[0]
+
+            # Compute MLA decode metadata for decode/auto graph mode.
+            batch_size = ops.shape_to_tensor(
+                input_row_offsets.shape
+            ) - ops.constant(1, DType.int64, device=DeviceRef.CPU())
+            max_cache_valid_length = ops.cast(
+                kv_collection.max_lengths[0, 1], DType.int64
+            ).reshape([1])
+            q_max_seq_len = ops.constant(
+                1, DType.int64, device=DeviceRef.CPU()
+            ).reshape([1])
+            gpu_args = compute_mla_dispatch_args_scalar(
+                batch_size,
+                max_cache_valid_length,
+                q_max_seq_len,
+                num_heads=config.num_attention_heads,
+                device=DeviceRef.GPU(),
+            )
+            mla_decode_metadata = MLADecodeMetadata(scalar_args=gpu_args)
 
             result = latent_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
@@ -153,6 +175,7 @@ def _generate_latent_attention_max_outputs(
                 kv_collection,
                 freqs_cis=rope.freqs_cis,
                 input_row_offsets=input_row_offsets,
+                mla_decode_metadata=mla_decode_metadata,
             )
             graph.output(result)
         return graph
@@ -181,7 +204,7 @@ def _generate_latent_attention_max_outputs(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-            kv_inputs = kv_manager.runtime_inputs([batch])[0]
+            kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -203,7 +226,7 @@ def _generate_latent_attention_max_outputs(
 
     for ctx in batch:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_inputs = kv_manager.runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)

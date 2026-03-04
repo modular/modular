@@ -38,7 +38,7 @@ Configuration:
 
 Architecture:
     The connector-based architecture separates concerns:
-    - Manager (_TPPagedKVCacheManager) owns device tensors and block allocation
+    - Manager (PagedKVCacheManager) owns device tensors and block allocation
     - Connector (LMCacheConnector) handles external tier operations via LMCacheEngine
 
     The connector uses MAXGPUConnector to bridge MAX's Buffer tensors with

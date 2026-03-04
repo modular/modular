@@ -40,6 +40,7 @@ from max.pipelines import (
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, SamplingConfig
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from test_common.mocks import mock_estimate_memory_footprint
 from transformers import AutoConfig
 
@@ -487,7 +488,7 @@ def test_text_and_vision_tokenizer_stores_eos_token_ids(
         model=MAXModelConfig(
             model_path=model_path, trust_remote_code=True, max_length=100
         ),
-        max_batch_size=1,
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
     gemma_3_eos_token_ids = {1, 106}

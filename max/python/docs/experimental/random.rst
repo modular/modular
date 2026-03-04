@@ -6,6 +6,9 @@
 
 .. py:currentmodule:: max.experimental
 
+Functions for generating random tensors with configurable distributions,
+data types, and target devices.
+
 .. automodule:: max.experimental.random
    :members:
    :undoc-members:

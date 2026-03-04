@@ -98,8 +98,8 @@ struct SumKernelBenchmarkParams:
 
     fn __init__(
         out self,
-        out_ptr: UnsafePointer[mut=True, Int32],
-        a_ptr: UnsafePointer[mut=True, Int32],
+        out_ptr: UnsafePointer[mut=True, Int32, _],
+        a_ptr: UnsafePointer[mut=True, Int32, _],
     ):
         self.out_ptr = out_ptr
         self.a_ptr = a_ptr

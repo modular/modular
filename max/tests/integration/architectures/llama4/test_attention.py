@@ -22,7 +22,7 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn import RotaryEmbedding
 from max.nn.kv_cache import (
     KVCacheParams,
-    unflatten_ragged_mha_decode_inputs,
+    unflatten_ragged_attention_inputs,
 )
 from max.pipelines.architectures.llama4.layers.attention import (
     _Llama4TextAttention,
@@ -206,7 +206,7 @@ def generate_max_outputs(
             ),
         ) as graph:
             inputs, input_row_offsets, cache_positions, *kv_cache = graph.inputs
-            kv_collections = unflatten_ragged_mha_decode_inputs(
+            kv_collections = unflatten_ragged_attention_inputs(
                 kv_cache, n_devices=kv_params.n_devices
             )
             graph.output(
@@ -224,8 +224,8 @@ def generate_max_outputs(
         batch = [create_text_context(np.empty(input_seq_len))]
         kv_manager.claim(batch[0].request_id, replica_idx=0)
         kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-        kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
-        assert kv_runtime_inputs.mha_decode_dispatch_metadata is not None
+        kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+        assert kv_runtime_inputs.attention_dispatch_metadata is not None
         cache_positions_input = np.arange(input_seq_len, dtype=np.uint32)
         outputs.append(
             compiled.execute(
@@ -238,7 +238,7 @@ def generate_max_outputs(
                 kv_runtime_inputs.cache_lengths.to(device),
                 kv_runtime_inputs.lookup_table.to(device),
                 kv_runtime_inputs.max_lengths,
-                kv_runtime_inputs.mha_decode_dispatch_metadata,
+                kv_runtime_inputs.attention_dispatch_metadata,
             )[0]
         )
     return outputs

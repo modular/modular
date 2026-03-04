@@ -325,8 +325,8 @@ fn _index_tensor_impl[
         comptime assert data_coord.flat_rank == data.flat_rank
         var out_coord = Coord(output_idx)
         comptime assert out_coord.flat_rank == output.flat_rank
-        output.store[width=simd_width](
-            out_coord, data.load[width=simd_width](data_coord)
+        output.store[width=simd_width, alignment=1](
+            out_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
     comptime compile_target = _current_target() if is_cpu[
@@ -533,7 +533,7 @@ fn advanced_indexing_getitem[
 
         var out_coord = Coord(output_index)
         comptime assert out_coord.flat_rank == out_tensor.flat_rank
-        out_tensor.store[width=width](
+        out_tensor.store[width=width, alignment=1](
             out_coord,
             input_tensor_fn[width=width](input_index),
         )
@@ -752,7 +752,7 @@ fn advanced_indexing_setitem_inplace[
 
         var input_tensor_coord = Coord(input_tensor_indices)
         comptime assert input_tensor_coord.flat_rank == input_tensor.flat_rank
-        input_tensor.store[width=width](
+        input_tensor.store[width=width, alignment=1](
             input_tensor_coord,
             updates_tensor_fn[width=width](
                 rebind[IndexList[updates_rank]](iteration_indices)
