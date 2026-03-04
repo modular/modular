@@ -74,7 +74,6 @@ modular_py_library(
             "//max/python/max/pipelines",
             "//max/python/max/serve",
             "//max/tests/integration/graph:modular_graph_test",
-            "//max/tests/integration/test_common",
             requirement("torch"),
             requirement("transformers"),
             requirement("hypothesis"),
