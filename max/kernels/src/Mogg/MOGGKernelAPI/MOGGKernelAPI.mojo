@@ -11094,12 +11094,12 @@ struct MergeRaggedTensors:
         ctx: DeviceContextPtr,
     ) raises:
         merge_ragged_tensors[rank=rank, target=target](
-            output.to_layout_tensor(),
-            output_row_offsets.to_layout_tensor(),
-            a.to_layout_tensor(),
-            a_row_offsets.to_layout_tensor(),
-            b.to_layout_tensor(),
-            b_row_offsets.to_layout_tensor(),
+            output.to_tile_tensor[DType.int64](),
+            output_row_offsets.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            a_row_offsets.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            b_row_offsets.to_tile_tensor[DType.int64](),
             ctx,
         )
 
