@@ -21,6 +21,23 @@ using namespace M;
 using namespace KGEN;
 using namespace POP;
 
+/// Get the value of a scalar index-like parameter value.
+/// This is a temporary helper utility during the Int->SIMD unification project.
+/// After it's done, we should remove the IntegerAttr case.
+ErrorOr<int64_t> POP::getScalarIndexValue(TypedAttr value) {
+  if (auto intAttr = dyn_cast<IntegerAttr>(value))
+    return intAttr.getInt();
+  if (auto simdAttr = dyn_cast<POP::SIMDAttr>(value)) {
+    ArrayRef<DTypeValue> values = simdAttr.getValues();
+    if (values.size() != 1)
+      return Error("expected a scalar SIMD value");
+    if (!values.front().getDType().isIndex())
+      return Error("expected an index-typed SIMD value");
+    return values.front().getIndexVal();
+  }
+  return Error("expected an integer or scalar SIMD");
+}
+
 /// Verify a conversion between a SIMD type and an MLIR builtin type.
 /// Conversions are assumed to be bi-directional. In error messages, the
 /// direction of the conversion is controlled by the `fromSimd` parameter.

@@ -18,6 +18,11 @@
 
 namespace M::KGEN::POP {
 
+/// Get the value of a scalar index-like parameter value.
+/// This is a temporary helper utility during the Int->SIMD unification project.
+/// After it's done, we should remove the IntegerAttr case.
+ErrorOr<int64_t> getScalarIndexValue(TypedAttr value);
+
 /// Verify a conversion between a SIMD type and an MLIR builtin type.
 /// Conversions are assumed to be bi-directional. In error messages, the
 /// direction of the conversion is controlled by the `fromSimd` parameter.

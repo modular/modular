@@ -9,6 +9,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "KGEN/POPDialect/POPUtils.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
@@ -552,12 +553,17 @@ static StringAttr getBytesOf(MemoryBlobAttr value, size_t numBytes) {
 FailureOr<StringAttr> IREvaluatorContext::evaluateStringPart(TypedAttr part,
                                                              bool reset) {
   // Get the two parts of the struct, StructExtract will fold.
-  auto lengthAttr = dyn_cast<IntegerAttr>(StructExtractAttr::get(part, 1));
-  if (!lengthAttr) {
-    emitError({*errorLoc, "'data_to_str' length didn't resolve to a constant"});
+  TypedAttr lengthAttr = StructExtractAttr::get(part, 1);
+  ErrorOr<int64_t> lengthOr = POP::getScalarIndexValue(lengthAttr);
+  if (lengthOr.isError()) {
+    emitError(
+        {*errorLoc,
+         Error(Twine("'data_to_str' length didn't resolve to a constant: ") +
+               lengthOr.getError())});
     return failure();
   }
-  size_t numBytes = lengthAttr.getInt();
+
+  size_t numBytes = *lengthOr;
   if (!numBytes)
     return {StringAttr::get("", StringType::get(mlirCtx))};
 
