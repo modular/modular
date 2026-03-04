@@ -12,7 +12,10 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = ["test_vision_processor.py"],
+        exclude = [
+            "test_vision_processor.py",
+            "test_vision_transformer_eval.py",
+        ],
     ),
     exec_properties = {
         "test.resources:gpu-memory": "4",
@@ -50,5 +53,42 @@ modular_py_test(
         requirement("pillow"),
         requirement("torch"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_transformer_eval",
+    size = "enormous",
+    srcs = [
+        "conftest.py",
+        "test_vision_transformer_eval.py",
+    ],
+    env_inherit = ["HF_TOKEN"],
+    exec_properties = {
+        "test.resources:gpu-memory": "24",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    tags = [
+        "gpu",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("datasets"),
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("safetensors"),
+        requirement("torch"),
     ],
 )

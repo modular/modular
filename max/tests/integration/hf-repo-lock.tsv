@@ -89,6 +89,7 @@ modularai/Llama-3.2-1B-Instruct-Extended-Vocab	3fbafaf0d01d34f5fc9967e217bcbda45
 modularai/SmolLM-135M-Instruct-FP32	1ade67aacf72511c94c55529056f7222c1c0b586
 modularai/llama-3	04d5a76d896e71429f2d042bdb2e5956c649cb41
 modularai/replit-code-1.5	5613bc2a56586347736c8825e5287659b1a17794
+moonshotai/Kimi-K2.5	3367c8d1c68584429fab7faf845a32d5195b6ac1
 neubla/tiny-random-LlamaForCausalLM	1c81a3fba044af78df253edc66bdbab183184932
 nvidia/DeepSeek-R1-0528-NVFP4-v2	25a138f28f49022958b9f2d205f9b7de0cdb6e18
 nvidia/DeepSeek-V3.1-NVFP4	68b4a17cce1482e94030ca00dacda3dec4c6359d
