@@ -19,7 +19,12 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Device,
+    DevicePinnedBuffer,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
@@ -393,6 +398,7 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
         This should avoid any device synchronization or copy operations.
         """
         assert isinstance(prev_model_inputs, Llama3Inputs)
+        assert self._input_row_offsets_prealloc is not None
         row_offsets_size = prev_model_inputs.input_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
 
@@ -424,15 +430,20 @@ class LlamaModelBase(PipelineModelWithKVCache[TextContext]):
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
-        # We do this to avoid materializing and copying a buffer with each multistep step
+        # We do this to avoid materializing and copying a buffer with each multistep step.
+        # Skip in virtual device mode (warm-cache/cross-compilation) since
+        # VirtualDeviceContext does not support memAlloc.
         assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(
-                self.pipeline_config.runtime.max_batch_size + 1, dtype=np.uint32
-            )
-        ).to(self.devices[0])
+        self._input_row_offsets_prealloc: Buffer | None = None
+        if not is_virtual_device_mode():
+            self._input_row_offsets_prealloc = Buffer.from_numpy(
+                np.arange(
+                    self.pipeline_config.runtime.max_batch_size + 1,
+                    dtype=np.uint32,
+                )
+            ).to(self.devices[0])
 
         timer = CompilationTimer("model")
         graph = self._build_graph(self.weights, self.adapter)
