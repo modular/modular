@@ -29,9 +29,7 @@ from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.float8_config import (
-    Float8Config,
-)
+from max.nn.float8_config import Float8Config
 from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
@@ -285,7 +283,7 @@ def generate_max_outputs_fp4(
     kv_manager.alloc(batch[0], replica_idx=0)
     kv_runtime_inputs = kv_manager.runtime_inputs(
         cast(list[list[TextGenerationContext]], [batch])
-    )[0]
+    ).inputs[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     # Prepare inputs - flatten batch and sequence dimensions

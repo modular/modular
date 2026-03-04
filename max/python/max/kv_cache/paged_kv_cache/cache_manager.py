@@ -28,7 +28,12 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.kv_cache import KVCacheBuffer, KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache import (
+    KVCacheBuffer,
+    KVCacheInputs,
+    KVCacheInputsPerDevice,
+    KVCacheParams,
+)
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import (
@@ -327,7 +332,7 @@ class PagedKVCacheManager:
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
-    ) -> Sequence[RaggedKVCacheInputs]:
+    ) -> Sequence[KVCacheInputsPerDevice]:
         """Gets runtime inputs for a batch of requests.
 
         Args:
@@ -503,7 +508,7 @@ class PagedKVCacheManager:
         else:
             cpu_metadata = resolved_metadata.to_buffer()
 
-        ret_list: list[RaggedKVCacheInputs] = []
+        ret_list: list[KVCacheInputsPerDevice] = []
         for tp_shard in range(len(replica.devices)):
             cache_lengths_device = cache_lengths_by_device[tp_shard]
             lookup_table_device = lut_table_by_device[tp_shard]
@@ -522,7 +527,7 @@ class PagedKVCacheManager:
                 metadata = cpu_metadata
 
             ret_list.append(
-                RaggedKVCacheInputs(
+                KVCacheInputsPerDevice(
                     blocks=replica.device_buffer.values[tp_shard],
                     cache_lengths=cache_lengths_device,
                     lookup_table=lookup_table_device,
@@ -542,7 +547,7 @@ class PagedKVCacheManager:
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
-    ) -> list[RaggedKVCacheInputs]:
+    ) -> KVCacheInputs:
         """Gets the graph inputs for per-replica batches of requests.
 
         This method will raise a RuntimeError if any request has insufficient blocks
@@ -558,7 +563,7 @@ class PagedKVCacheManager:
             raise ValueError(
                 f"Number of batches must match number of replicas. Expected {len(self._replica)}, got {len(batches)}"
             )
-        ret_list: list[RaggedKVCacheInputs] = []
+        ret_list: list[KVCacheInputsPerDevice] = []
         for replica_idx, ctxs in enumerate(batches):
             ret_list.extend(
                 self._runtime_inputs_for_replica(
@@ -568,7 +573,7 @@ class PagedKVCacheManager:
                     max_cache_length=max_cache_length,
                 )
             )
-        return ret_list
+        return KVCacheInputs(inputs=ret_list)
 
     def alloc_dummy(
         self,
@@ -668,9 +673,9 @@ class PagedKVCacheManager:
     @traced
     def increment_cache_lengths(
         self,
-        kv_cache_inputs: Sequence[RaggedKVCacheInputs],
+        kv_cache_inputs: KVCacheInputs,
         prev_model_inputs: Any,
-    ) -> Sequence[RaggedKVCacheInputs]:
+    ) -> KVCacheInputs:
         """Increments cache lengths for the given inputs and returns updated inputs."""
         return self.increment_cache_lengths_processor.execute(
             kv_cache_inputs,

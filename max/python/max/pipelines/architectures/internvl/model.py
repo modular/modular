@@ -33,10 +33,7 @@ from max.graph.weights import (
     WeightsAdapter,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -727,7 +724,6 @@ class InternVLModel(
 
         # Prepare KV cache inputs as list of tensors
         assert model_inputs.kv_cache_inputs
-        kv_cache_inputs_list = list(model_inputs.kv_cache_inputs)
 
         # Execute language model with text and image embeddings
         language_outputs = self.language_model.execute(
@@ -737,7 +733,7 @@ class InternVLModel(
             *image_embeddings,
             *image_token_indices,
             *model_inputs.signal_buffers,
-            *kv_cache_inputs_list,
+            *model_inputs.kv_cache_inputs,
         )
 
         # Return model outputs based on what the language model returns

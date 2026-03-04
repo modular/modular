@@ -26,12 +26,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-    RaggedKVCacheInputs,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -357,7 +352,6 @@ class Llama4Model(
         context_batch = replica_batches[0]
 
         assert kv_cache_inputs is not None
-        kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
 
         # This needs to be replaced with actual input preparation
         # Get input_row_offsets: start and end position of each batch in the
@@ -372,11 +366,9 @@ class Llama4Model(
 
         # Create cache positions for each token.
         cache_positions = []
-        ragged_kv_cache_inputs = cast(
-            RaggedKVCacheInputs, kv_cache_inputs.kv_cache_inputs[0]
-        )
+        device_kv_cache_inputs = kv_cache_inputs.inputs[0]
         for n, ctx in enumerate(context_batch):
-            cache_length = ragged_kv_cache_inputs.cache_lengths.to_numpy()[n]
+            cache_length = device_kv_cache_inputs.cache_lengths.to_numpy()[n]
             cache_positions.append(
                 np.arange(
                     cache_length,
@@ -419,16 +411,13 @@ class Llama4Model(
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
 
         # Create cache positions for each token.
-        kv_cache_inputs = cast(
-            KVCacheInputsSequence, prev_model_inputs.kv_cache_inputs
-        )
-        ragged_kv_cache_inputs = cast(
-            RaggedKVCacheInputs, kv_cache_inputs.kv_cache_inputs[0]
-        )
+        kv_cache_inputs = prev_model_inputs.kv_cache_inputs
+        assert kv_cache_inputs is not None
+        device_kv_cache_inputs = kv_cache_inputs.inputs[0]
         return Llama4Inputs(
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
-            cache_positions=ragged_kv_cache_inputs.cache_lengths,
+            cache_positions=device_kv_cache_inputs.cache_lengths,
             signal_buffers=self.signal_buffers,
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
+            kv_cache_inputs=kv_cache_inputs,
         )

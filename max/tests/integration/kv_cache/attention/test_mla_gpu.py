@@ -20,14 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kernels import (
-    flare_mla_decompress_k_cache,
-    flare_mla_prefill_plan,
-)
-from max.nn.kv_cache import (
-    KVCacheParams,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kernels import flare_mla_decompress_k_cache, flare_mla_prefill_plan
+from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
@@ -112,7 +106,7 @@ def test_mla_prefill_plan() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_inputs = kv_manager.runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     results = model.execute(input_row_offsets.to(device0), *kv_inputs)
 
@@ -244,12 +238,17 @@ def test_mla_decompress_k_cache() -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
-    assert kv_runtime_inputs.attention_dispatch_metadata is not None
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
     new_blocks = torch.randn(
-        size=kv_runtime_inputs.blocks.shape, dtype=torch.float32
+        size=kv_runtime_inputs.inputs[0].blocks.shape, dtype=torch.float32
     )
+
+    kv_runtime_inputs.inputs[0].blocks = Buffer.from_numpy(
+        new_blocks.numpy()
+    ).to(device0)
+
+    assert kv_runtime_inputs.inputs[0].attention_dispatch_metadata is not None
 
     weight = (
         torch.randn(size=weight_type.shape.static_dims, dtype=torch.float32)
@@ -259,8 +258,7 @@ def test_mla_decompress_k_cache() -> None:
     results = model.execute(
         input_row_offsets.to(device0),
         Buffer.from_numpy(weight.numpy()).to(device0),
-        Buffer.from_numpy(new_blocks.numpy()).to(device0),
-        *kv_runtime_inputs[1:],
+        *kv_runtime_inputs,
     )
 
     # With page-aligned spans and 256-token chunks, chunk 0 covers request 0 and 1.

@@ -160,7 +160,7 @@ def test_kv_cache_ragged_attention(
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     @modular_graph_test(

@@ -24,7 +24,7 @@ from max.graph import DeviceRef
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn import Signals
-from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache import KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -167,13 +167,13 @@ def test_increment_cache_lengths() -> None:
     kv_cache_inputs = kv_manager.runtime_inputs(batches_by_replica)
 
     # Check that the cache lengths are initialized to 0.
-    assert len(kv_cache_inputs) == 2
+    assert len(kv_cache_inputs.inputs) == 2
 
     # For testing, assign the cache lengths to some arbitrary values.
-    kv_cache_inputs[0].cache_lengths = Buffer.from_numpy(
+    kv_cache_inputs.inputs[0].cache_lengths = Buffer.from_numpy(
         np.array([10, 25], dtype=np.uint32)
     ).to(Accelerator(0))
-    kv_cache_inputs[1].cache_lengths = Buffer.from_numpy(
+    kv_cache_inputs.inputs[1].cache_lengths = Buffer.from_numpy(
         np.array([32], dtype=np.uint32)
     ).to(Accelerator(1))
 
@@ -194,13 +194,12 @@ def test_increment_cache_lengths() -> None:
     new_kv_cache_inputs = kv_manager.increment_cache_lengths(
         kv_cache_inputs, prev_model_inputs
     )
-    assert len(new_kv_cache_inputs) == 2
-    assert isinstance(new_kv_cache_inputs[0], RaggedKVCacheInputs)
-    assert isinstance(new_kv_cache_inputs[1], RaggedKVCacheInputs)
+    assert len(new_kv_cache_inputs.inputs) == 2
     np.testing.assert_equal(
-        new_kv_cache_inputs[0].cache_lengths.to_numpy(),
+        new_kv_cache_inputs.inputs[0].cache_lengths.to_numpy(),
         np.array([10 + 3, 25 + 4]),
     )
     np.testing.assert_equal(
-        new_kv_cache_inputs[1].cache_lengths.to_numpy(), np.array([32 + 7])
+        new_kv_cache_inputs.inputs[1].cache_lengths.to_numpy(),
+        np.array([32 + 7]),
     )

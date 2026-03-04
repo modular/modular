@@ -25,11 +25,7 @@ from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import LogProbabilities
 from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -457,7 +453,6 @@ class Gemma3Model(
 
         context_batch = replica_batches[0]
         assert kv_cache_inputs is not None
-        assert isinstance(kv_cache_inputs, KVCacheInputsSequence)
 
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.

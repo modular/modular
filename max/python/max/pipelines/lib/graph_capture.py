@@ -33,9 +33,9 @@ from max.engine import InferenceSession, Model
 from max.nn.kv_cache import (
     AttentionDispatchMetadataScalars,
     AttentionDispatchResolver,
-    KVCacheInputsSequence,
+    KVCacheInputs,
+    KVCacheInputsPerDevice,
     KVCacheParams,
-    RaggedKVCacheInputs,
 )
 
 from .interfaces import ModelInputs, ModelOutputs
@@ -57,23 +57,17 @@ _PARTITION_PROBE_GRANULARITY = 256
 
 def _ragged_kv_inputs_from_model_inputs(
     model_inputs: ModelInputs,
-) -> tuple[RaggedKVCacheInputs, ...]:
+) -> tuple[KVCacheInputsPerDevice, ...]:
     kv = model_inputs.kv_cache_inputs
     if kv is None:
         raise ValueError(
-            "Overlap graph capture requires RaggedKVCacheInputs, but "
+            "Overlap graph capture requires KVCacheInputs, but "
             "model_inputs.kv_cache_inputs is None."
         )
-    seq = kv.kv_cache_inputs if isinstance(kv, KVCacheInputsSequence) else [kv]
+    seq = kv.inputs
     if not seq:
         raise ValueError("Expected at least one KV cache input for replay.")
-    for item in seq:
-        if not isinstance(item, RaggedKVCacheInputs):
-            raise TypeError(
-                "Expected RaggedKVCacheInputs for overlap graph capture, got "
-                f"{type(item).__name__}."
-            )
-    return tuple(seq)  # type: ignore[arg-type]
+    return tuple(seq)
 
 
 def attention_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
@@ -85,7 +79,7 @@ def attention_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
     if metadata is None:
         raise ValueError(
             "Expected attention_dispatch_metadata in "
-            "RaggedKVCacheInputs for overlap graph capture."
+            "KVCacheInputs for overlap graph capture."
         )
     num_partitions = int(metadata.to_numpy()[2])
     if num_partitions < 1:
@@ -98,7 +92,7 @@ def attention_graph_key_from_inputs(model_inputs: ModelInputs) -> GraphKey:
 
 def _create_model_inputs_with_dispatch_metadata(
     model_inputs: ModelInputs,
-    source_ragged: Sequence[RaggedKVCacheInputs],
+    source_ragged: Sequence[KVCacheInputsPerDevice],
     dispatch_metadata: AttentionDispatchMetadataScalars,
 ) -> ModelInputs:
     """Returns a copy of *model_inputs* with capture dispatch metadata."""
@@ -108,7 +102,7 @@ def _create_model_inputs_with_dispatch_metadata(
     # MHA: a single CPU buffer is shared across all shards.
     gpu_buf = dispatch_metadata.device_buffer
     cpu_buf = None if gpu_buf is not None else dispatch_metadata.to_buffer()
-    capture_ragged: list[RaggedKVCacheInputs] = []
+    capture_ragged: list[KVCacheInputsPerDevice] = []
     for kv in source_ragged:
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
@@ -126,13 +120,7 @@ def _create_model_inputs_with_dispatch_metadata(
             )
         )
     result = copy.copy(model_inputs)
-    kv_inputs = model_inputs.kv_cache_inputs
-    if isinstance(kv_inputs, KVCacheInputsSequence):
-        result.kv_cache_inputs = KVCacheInputsSequence(
-            kv_cache_inputs=capture_ragged
-        )
-    else:
-        result.kv_cache_inputs = capture_ragged[0]
+    result.kv_cache_inputs = KVCacheInputs(inputs=capture_ragged)
     return result
 
 

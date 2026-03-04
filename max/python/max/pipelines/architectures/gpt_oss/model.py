@@ -28,7 +28,6 @@ from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
 from max.nn.kv_cache import (
     KVCacheInputs,
-    KVCacheInputsSequence,
     KVCacheParams,
 )
 from max.nn.transformer import ReturnLogits
@@ -388,7 +387,6 @@ class GptOssModel(
 
         context_batch = replica_batches[0]
         assert kv_cache_inputs is not None
-        kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
 
         # This needs to be replaced with actual input preparation
         # Get input_row_offsets: start and end position of each batch in the

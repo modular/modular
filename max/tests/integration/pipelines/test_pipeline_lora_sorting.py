@@ -30,11 +30,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TokenBuffer,
 )
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext, TTSContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -78,12 +74,10 @@ class MockModelInputs(ModelInputs):
     def __init__(
         self,
         batch_size: int,
-        kv_cache_inputs: KVCacheInputsSequence | None = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self._batch_size = batch_size
-        self.kv_cache_inputs = kv_cache_inputs or KVCacheInputsSequence(
-            kv_cache_inputs=[]
-        )
+        self.kv_cache_inputs = MagicMock()
         self.return_n_logits = 1
 
     @property
@@ -164,12 +158,9 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
 
         context_batch = replica_batches[0]
         del return_n_logits
-        kv_seq = None
-        if isinstance(kv_cache_inputs, KVCacheInputsSequence):
-            kv_seq = kv_cache_inputs
         return MockModelInputs(
             batch_size=len(context_batch),
-            kv_cache_inputs=kv_seq,
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     def prepare_next_token_inputs(
@@ -179,15 +170,9 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
     ) -> ModelInputs:
         del next_tokens
         mock_prev = cast(MockModelInputs, prev_model_inputs)
-        kv_inputs = mock_prev.kv_cache_inputs
-        if isinstance(kv_inputs, KVCacheInputsSequence):
-            return MockModelInputs(
-                batch_size=mock_prev.active_batch_size,
-                kv_cache_inputs=kv_inputs,
-            )
         return MockModelInputs(
             batch_size=mock_prev.active_batch_size,
-            kv_cache_inputs=None,
+            kv_cache_inputs=mock_prev.kv_cache_inputs,
         )
 
 

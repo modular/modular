@@ -75,12 +75,7 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import (
-    Buffer,
-    DeviceEvent,
-    DevicePinnedBuffer,
-    load_devices,
-)
+from max.driver import Buffer, DeviceEvent, DevicePinnedBuffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Dim, Graph, SymbolicDim, TensorType, ops
@@ -104,19 +99,12 @@ from max.interfaces.tokens import TokenBuffer
 from max.kv_cache import PagedKVCacheManager
 from max.kv_cache.registry import load_multi_kv_managers
 from max.nn import kernels
-from max.nn.kv_cache import (
-    KVCacheInputsSequence,
-    KVCacheParams,
-    MultiKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
 
-from .text_generation import (
-    TextGenerationPipelineInterface,
-    load_kv_manager,
-)
+from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .utils import (
     get_eos_tokens,
     get_weight_paths,
@@ -523,9 +511,7 @@ class OverlapTextGenerationPipeline(
                 model_inputs = (
                     self._pipeline_model.prepare_initial_token_inputs(
                         replica_batches=replica_batches,
-                        kv_cache_inputs=KVCacheInputsSequence(
-                            kv_cache_inputs=kv_cache_inputs
-                        ),
+                        kv_cache_inputs=kv_cache_inputs,
                     )
                 )
             yield model_inputs
@@ -610,9 +596,7 @@ class OverlapTextGenerationPipeline(
         with Tracer("prepare_initial_token_inputs"):
             model_inputs = self._pipeline_model.prepare_initial_token_inputs(
                 replica_batches=inputs.batches,
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs
-                ),
+                kv_cache_inputs=kv_cache_inputs,
             )
 
         if debug_verify_replay_enabled:
@@ -620,10 +604,8 @@ class OverlapTextGenerationPipeline(
             # runtime-shaped KV inputs used for debug verification.
             debug_verify_model_inputs = copy.copy(model_inputs)
             debug_verify_model_inputs.update(
-                kv_cache_inputs=KVCacheInputsSequence(
-                    kv_cache_inputs=self._kv_manager.runtime_inputs(
-                        inputs.batches, num_steps=1
-                    )
+                kv_cache_inputs=self._kv_manager.runtime_inputs(
+                    inputs.batches, num_steps=1
                 )
             )
 

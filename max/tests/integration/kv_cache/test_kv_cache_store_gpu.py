@@ -19,15 +19,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kernels import (
-    store_k_cache_padded,
-    store_k_cache_ragged,
-)
+from max.nn.kernels import store_k_cache_padded, store_k_cache_ragged
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParams,
     KVCacheQuantizationConfig,
     PagedCacheValues,
-    RaggedKVCacheInputs,
 )
 from max.nn.no_opaque_kernels import (
     PagedKVCacheTensorsNoOpaque,
@@ -58,14 +55,14 @@ def _make_session_and_kv_manager() -> tuple[Accelerator, PagedKVCacheManager]:
 
 def _allocate_batch(
     kv_manager: PagedKVCacheManager, prompt_lens: list[int]
-) -> RaggedKVCacheInputs:
+) -> KVCacheInputsPerDevice:
     batch = []
     for prompt_len in prompt_lens:
         context = create_text_context(np.empty(prompt_len, dtype=np.int64))
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
-    return kv_manager.runtime_inputs([batch])[0]
+    return kv_manager.runtime_inputs([batch]).inputs[0]
 
 
 def test_kv_cache_store_ragged_executes() -> None:

@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
@@ -31,7 +30,7 @@ from max.interfaces import (
     TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import (
     ModelInputs,
@@ -310,9 +309,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         base_inputs = model.prepare_initial_token_inputs(
             replica_batches=replica_batches,
-            kv_cache_inputs=KVCacheInputsSequence(
-                kv_cache_inputs=kv_cache_inputs
-            ),
+            kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
 
@@ -400,9 +397,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         inputs = model.prepare_initial_token_inputs(
             replica_batches=replica_batches,
-            kv_cache_inputs=KVCacheInputsSequence(
-                kv_cache_inputs=kv_cache_inputs
-            ),
+            kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
 
@@ -419,7 +414,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_tokens: Buffer | None,
         merged_offsets: Buffer | None,
         host_merged_offsets: Buffer | None = None,
-        kv_cache_inputs: KVCacheInputs | Sequence[KVCacheInputs] | None = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
     ) -> tuple[ModelInputs, int]:
         """Prepare batch for target model verification of draft tokens.
 
@@ -454,18 +449,9 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
                 replica_batches, num_steps
             )
 
-        kv_cache_updated_inputs: KVCacheInputs
-        if isinstance(kv_cache_inputs, Sequence):
-            kv_cache_updated_inputs = KVCacheInputsSequence(
-                kv_cache_inputs=kv_cache_inputs,
-            )
-        else:
-            assert isinstance(kv_cache_inputs, KVCacheInputs)
-            kv_cache_updated_inputs = kv_cache_inputs
-
         inputs = model.prepare_initial_token_inputs(
             replica_batches=replica_batches,
-            kv_cache_inputs=kv_cache_updated_inputs,
+            kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
 
@@ -490,7 +476,7 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         merged_offsets: Buffer | None = None,
         hidden_states: list[Buffer] | None = None,
         host_merged_offsets: Buffer | None = None,
-        kv_cache_inputs: KVCacheInputs | Sequence[KVCacheInputs] | None = None,
+        kv_cache_inputs: KVCacheInputs | None = None,
         shift_next_tokens: npt.NDArray[np.int64] | None = None,
     ) -> tuple[ModelInputs, int]:
         """Prepare batch for model execution.
@@ -601,17 +587,11 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
             generated_tokens = new_generated_tokens
             generated_logits = new_generated_logits
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
+
+            assert curr_step_inputs.kv_cache_inputs is not None
+            curr_step_inputs.kv_cache_inputs = (
                 self._draft_kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
+                    curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
             )
@@ -838,17 +818,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
 
         target_outputs = self._target_model.execute(model_inputs=target_inputs)
 
-        assert isinstance(
-            target_inputs.kv_cache_inputs, KVCacheInputsSequence
-        ), (
-            "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-        )
-        assert isinstance(
-            target_inputs.kv_cache_inputs.kv_cache_inputs, list
-        ), "increment_cache_lengths instantiates and passes this as a list"
-        target_inputs.kv_cache_inputs.kv_cache_inputs = (
+        assert target_inputs.kv_cache_inputs is not None
+        target_inputs.kv_cache_inputs = (
             self._target_kv_manager.increment_cache_lengths(
-                target_inputs.kv_cache_inputs.kv_cache_inputs,
+                target_inputs.kv_cache_inputs,
                 target_inputs,
             )
         )
@@ -940,13 +913,10 @@ class EAGLESpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
         draft_outputs = self._draft_model.execute(model_inputs=draft_ce_inputs)
 
-        assert isinstance(
-            draft_ce_inputs.kv_cache_inputs, KVCacheInputsSequence
-        )
-        assert isinstance(draft_ce_inputs.kv_cache_inputs.kv_cache_inputs, list)
-        draft_ce_inputs.kv_cache_inputs.kv_cache_inputs = (
+        assert draft_ce_inputs.kv_cache_inputs is not None
+        draft_ce_inputs.kv_cache_inputs = (
             self._draft_kv_manager.increment_cache_lengths(
-                draft_ce_inputs.kv_cache_inputs.kv_cache_inputs,
+                draft_ce_inputs.kv_cache_inputs,
                 draft_ce_inputs,
             )
         )

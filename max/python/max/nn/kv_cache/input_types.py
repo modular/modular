@@ -16,16 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Generic,
-    Protocol,
-    TypeAlias,
-    TypeGuard,
-    cast,
-    overload,
-    runtime_checkable,
-)
+from typing import Any, Generic, Protocol, TypeAlias, cast, runtime_checkable
 
 from max.driver import Buffer
 from max.dtype import DType
@@ -277,72 +268,10 @@ class MultiKVCacheInputSymbols(
         return items
 
 
-_T = TypeVar("_T")
-
-
-def _is_sequence_of(x: Any, ty: type[_T]) -> TypeGuard[Sequence[_T]]:
-    return isinstance(x, Sequence) and all(isinstance(item, ty) for item in x)
-
-
 @dataclass
-class KVCacheInputs:
-    """A base class that holds KV cache related (Tensor) inputs.
-
-    It is meant to be subclassed by concrete KV cache input types.
-    For example, here's a derived class for a text KV cache manager:
-
-    .. code-block:: python
-
-        @dataclass
-        class RaggedKVCacheInputs(KVCacheInputs):
-            blocks: Buffer
-            cache_lengths: Buffer
-            lookup_table: Buffer
-            max_lengths: Buffer
-    """
-
-    def __iter__(self) -> Iterator[Buffer]:
-        """Iterates through each Type in order."""
-        for field in self.__dataclass_fields__:
-            value = getattr(self, field)
-            if value is None:
-                continue
-            if isinstance(value, KVCacheInputs):
-                yield from value
-            elif _is_sequence_of(value, KVCacheInputs):
-                for item in value:
-                    yield from item
-            else:
-                assert isinstance(value, Buffer)
-                yield value
-
-    @overload
-    def __getitem__(self, index: int) -> Buffer: ...
-
-    @overload
-    def __getitem__(self, index: slice) -> Sequence[Buffer]: ...
-
-    def __getitem__(self, index: Any) -> Any:
-        return list(self)[index]
-
-    def __len__(self) -> int:
-        count = 0
-        # Iterate over all fields in the dataclass. If we run into a sequence of
-        # KVCacheInputs, we expand and recursively call `len` on the KVCacheInputs
-        # elements.
-        for field in self.__dataclass_fields__:
-            value = getattr(self, field)
-            if _is_sequence_of(value, KVCacheInputs):
-                count += sum(len(x) for x in value)
-            else:
-                count += 1
-        return count
-
-
-@dataclass
-class RaggedKVCacheInputs(KVCacheInputs):
-    """``RaggedKVCacheInputs`` is a class that holds the inputs for
-    KV cache when used together with ragged tensors.
+class KVCacheInputsPerDevice:
+    """``KVCacheInputsPerDevice`` is a class that holds the KV cache inputs for
+    a single device.
     """
 
     blocks: Buffer
@@ -352,13 +281,35 @@ class RaggedKVCacheInputs(KVCacheInputs):
     kv_scales: Buffer | None = None  # Scale tensor for FP8 quantization
     attention_dispatch_metadata: Buffer | None = None
 
+    def __iter__(self) -> Iterator[Buffer]:
+        yield from self.as_list()
+
+    def as_list(self) -> list[Buffer]:
+        return [
+            self.blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_lengths,
+            *((self.kv_scales,) if self.kv_scales else ()),
+            *(
+                (self.attention_dispatch_metadata,)
+                if self.attention_dispatch_metadata
+                else ()
+            ),
+        ]
+
 
 @dataclass
-class KVCacheInputsSequence(KVCacheInputs):
-    """``KVCacheInputsSequence`` is a sequence of :obj:`KVCacheInputs`.
+class KVCacheInputs:
+    """``KVCacheInputs`` is a sequence of :obj:`KVCacheInputsPerDevice`.
 
-    It is primarily used in our multistep execution to represent batched
-    KVCacheInputs.
+    The number of `KVCacheInputsPerDevice` in the sequence is equal to the
+    number of devices used to run the model. For example, if the model is run
+    with DP=2 + TP=4 then there will be 8 items in the list.
     """
 
-    kv_cache_inputs: Sequence[KVCacheInputs]
+    inputs: Sequence[KVCacheInputsPerDevice]
+
+    def __iter__(self) -> Iterator[Buffer]:
+        for input in self.inputs:
+            yield from input

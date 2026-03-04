@@ -204,7 +204,7 @@ def generate_max_outputs(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     output = compiled.execute(

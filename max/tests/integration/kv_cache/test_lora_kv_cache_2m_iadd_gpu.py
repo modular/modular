@@ -207,7 +207,7 @@ def run_kv_cache_2m_iadd(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     compiled.execute(
         to_max_tensor(kv_lora_output, device),

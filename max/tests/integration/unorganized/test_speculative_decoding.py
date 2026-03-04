@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -27,7 +26,7 @@ from max.interfaces import (
     SamplingParams,
     TokenBuffer,
 )
-from max.nn.kv_cache import RaggedKVCacheInputs
+from max.nn.kv_cache import KVCacheInputs
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.core import TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
@@ -339,10 +338,10 @@ def test_kv_cache_claiming_protocol() -> None:
 
     def track_runtime_inputs(
         batches: list[list[TextContext]], num_steps: int
-    ) -> Sequence[RaggedKVCacheInputs]:
+    ) -> KVCacheInputs:
         request_ids = [ctx.request_id for batch in batches for ctx in batch]
         call_order.append(("runtime_inputs", request_ids, num_steps))
-        return []
+        return KVCacheInputs(inputs=[])
 
     mock_kv_manager.claim.side_effect = track_claim
     mock_kv_manager.runtime_inputs.side_effect = track_runtime_inputs

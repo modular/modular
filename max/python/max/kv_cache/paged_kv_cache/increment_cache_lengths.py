@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -24,7 +23,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.comm import Signals
-from max.nn.kv_cache import KVCacheParams, RaggedKVCacheInputs
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice, KVCacheParams
 from max.nn.kv_cache.data_parallelism_utils import (
     split_input_row_offsets,
     split_into_groups,
@@ -128,9 +127,9 @@ def _execute_ragged_increment_cache_lengths_graph(
     params: KVCacheParams,
     devices: list[Device],
     use_comm_kernel: bool,
-    kv_cache_inputs: Sequence[RaggedKVCacheInputs],
+    kv_cache_inputs: KVCacheInputs,
     prev_model_inputs: Any,
-) -> Sequence[RaggedKVCacheInputs]:
+) -> KVCacheInputs:
     """Prepares cache inputs for the next token in multistep execution.
 
     Updates the cache lengths for the next inference step without requiring device
@@ -149,16 +148,18 @@ def _execute_ragged_increment_cache_lengths_graph(
     Returns:
         Updated cache input tuples with incremented lengths.
     """
-    blocks = [kv_cache_inputs[i].blocks for i in range(len(devices))]
+    blocks = [kv_cache_inputs.inputs[i].blocks for i in range(len(devices))]
     cache_lengths = [
-        kv_cache_inputs[i].cache_lengths for i in range(len(devices))
+        kv_cache_inputs.inputs[i].cache_lengths for i in range(len(devices))
     ]
     lookup_table = [
-        kv_cache_inputs[i].lookup_table for i in range(len(devices))
+        kv_cache_inputs.inputs[i].lookup_table for i in range(len(devices))
     ]
-    kv_scales = [kv_cache_inputs[i].kv_scales for i in range(len(devices))]
+    kv_scales = [
+        kv_cache_inputs.inputs[i].kv_scales for i in range(len(devices))
+    ]
     attention_dispatch_metadata = [
-        kv_cache_inputs[i].attention_dispatch_metadata
+        kv_cache_inputs.inputs[i].attention_dispatch_metadata
         for i in range(len(devices))
     ]
     devices_per_replica = split_into_groups(
@@ -202,7 +203,7 @@ def _execute_ragged_increment_cache_lengths_graph(
     start_idx = 0
     for replica_devices in devices_per_replica:
         # max_lengths is host allocated and the same across each replica.
-        max_lengths = kv_cache_inputs[start_idx].max_lengths
+        max_lengths = kv_cache_inputs.inputs[start_idx].max_lengths
 
         # Advance to the next step of the max_lengths tensor.
         updated_max_lengths = max_lengths[1:, :]
@@ -220,7 +221,7 @@ def _execute_ragged_increment_cache_lengths_graph(
         updated_metadata_cpu = Buffer.from_numpy(metadata_np)
 
         # Return our updated batch.
-        assert isinstance(kv_cache_inputs, list)
+        assert isinstance(kv_cache_inputs.inputs, list)
         for i in range(len(replica_devices)):
             updated_cache_length = updated_cache_lengths[start_idx + i]
             assert isinstance(updated_cache_length, Buffer)
@@ -230,7 +231,7 @@ def _execute_ragged_increment_cache_lengths_graph(
                 dev_metadata = updated_metadata_cpu.to(orig.device)
             else:
                 dev_metadata = updated_metadata_cpu
-            kv_cache_inputs[start_idx + i] = RaggedKVCacheInputs(
+            kv_cache_inputs.inputs[start_idx + i] = KVCacheInputsPerDevice(
                 blocks=blocks[start_idx + i],
                 cache_lengths=updated_cache_length,
                 lookup_table=lookup_table[start_idx + i],
@@ -265,9 +266,9 @@ class IncrementCacheLengthsProcessor:
 
     def execute(
         self,
-        kv_cache_inputs: Sequence[RaggedKVCacheInputs],
+        kv_cache_inputs: KVCacheInputs,
         prev_model_inputs: Any,
-    ) -> Sequence[RaggedKVCacheInputs]:
+    ) -> KVCacheInputs:
         """Runs the increment cache lengths graph and returns updated cache inputs."""
         return _execute_ragged_increment_cache_lengths_graph(
             self._model,

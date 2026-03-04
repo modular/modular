@@ -15,14 +15,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, final
 
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationInputs, TextGenerationOutput
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsSequence
 from max.pipelines.core import TextContext, reserve_token_space_for_batch
 from max.pipelines.lib.interfaces import ModelInputs, PipelineModel
 from max.profiler import traced
@@ -89,9 +87,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             return (
                 model.prepare_initial_token_inputs(
                     replica_batches=replica_batches,
-                    kv_cache_inputs=KVCacheInputsSequence(
-                        kv_cache_inputs=kv_cache_inputs
-                    ),
+                    kv_cache_inputs=kv_cache_inputs,
                     return_n_logits=return_n_logits,
                 ),
                 num_steps,
@@ -100,20 +96,13 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             assert merged_draft_tokens is not None
             assert merged_draft_offsets is not None
             assert draft_inputs is not None
-            kv_cache_updated_inputs: KVCacheInputs
-            if isinstance(kv_cache_inputs, Sequence):
-                kv_cache_updated_inputs = KVCacheInputsSequence(
-                    kv_cache_inputs=kv_cache_inputs,
-                )
-            else:
-                kv_cache_updated_inputs = kv_cache_inputs
             draft_inputs.update(
                 tokens=merged_draft_tokens,
                 input_row_offsets=merged_draft_offsets,
                 signal_buffers=getattr(
                     self._target_model, "signal_buffers", []
                 ),
-                kv_cache_inputs=kv_cache_updated_inputs,
+                kv_cache_inputs=kv_cache_inputs,
                 return_n_logits=Buffer.from_numpy(
                     np.array([return_n_logits], dtype=np.int64)
                 ),
@@ -178,17 +167,10 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             generated_logits = new_generated_logits
 
             # Increment cache lengths.
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs, KVCacheInputsSequence
-            ), (
-                "prepare_batch instantiates and passes this as a KVCacheInputsSequence"
-            )
-            assert isinstance(
-                curr_step_inputs.kv_cache_inputs.kv_cache_inputs, list
-            ), "increment_cache_lengths instantiates and passes this as a list"
-            curr_step_inputs.kv_cache_inputs.kv_cache_inputs = (
+            assert curr_step_inputs.kv_cache_inputs is not None
+            curr_step_inputs.kv_cache_inputs = (
                 self._draft_kv_manager.increment_cache_lengths(
-                    curr_step_inputs.kv_cache_inputs.kv_cache_inputs,
+                    curr_step_inputs.kv_cache_inputs,
                     curr_step_inputs,
                 )
             )

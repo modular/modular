@@ -20,11 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from max.driver import (
-    Buffer,
-    DevicePinnedBuffer,
-    is_virtual_device_mode,
-)
+from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
@@ -77,7 +73,6 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        kv_cache_inputs = tuple(self.kv_cache_inputs or ())
         return (
             self.tokens,
             self.input_row_offsets,
@@ -85,7 +80,7 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *kv_cache_inputs,
+            *(self.kv_cache_inputs or ()),
             *self.batch_context_lengths,
             *self.ep_inputs,
         )

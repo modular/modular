@@ -275,7 +275,7 @@ def _build_and_execute_attention_graph(
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch])[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     result = model.execute(

@@ -325,7 +325,7 @@ def generate_qwen3_max_outputs(
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
-    kv_cache_runtime = kv_manager.runtime_inputs([batch])[0]
+    kv_cache_runtime = kv_manager.runtime_inputs([batch]).inputs[0]
     assert kv_cache_runtime.attention_dispatch_metadata is not None
 
     result = compiled.execute(
