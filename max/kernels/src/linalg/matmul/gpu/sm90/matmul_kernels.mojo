@@ -41,7 +41,14 @@ from std.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
-from layout import Coord, Idx, IntTuple, Layout, LayoutTensor
+from layout import (
+    Coord,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    row_major,
+)
 from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import (
@@ -76,7 +83,7 @@ from structured_kernels.tile_types import (
     SMemTileArrayWithLayout,
     SMemTileArray2DRowMajor,
 )
-from layout.tile_layout import Layout as _Layout, row_major
+from layout.tile_layout import Layout as _Layout
 from structured_kernels.pipeline import (
     ProducerConsumerPipeline,
 )

@@ -39,8 +39,14 @@ from layout._utils import idx2crd
 from layout.int_tuple import UNKNOWN_VALUE
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from layout import Coord, Idx, RuntimeInt, coord_to_index_list
-from layout.tile_layout import RowMajorLayout, row_major
+from layout import (
+    Coord,
+    Idx,
+    RuntimeInt,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import RowMajorLayout
 from layout.tile_tensor import (
     TileTensor,
     TensorLayout,

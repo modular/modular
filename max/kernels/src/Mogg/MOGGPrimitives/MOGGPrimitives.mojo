@@ -29,8 +29,8 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout.tile_layout import row_major
 from std.memory import memcpy
 
 from nn.concat import concat

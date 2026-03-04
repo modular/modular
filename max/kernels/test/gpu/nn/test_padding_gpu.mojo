@@ -12,8 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor
-from layout.tile_layout import row_major
+from layout import Coord, Idx, TileTensor, row_major
 
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant

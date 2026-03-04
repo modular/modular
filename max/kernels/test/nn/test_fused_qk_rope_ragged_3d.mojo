@@ -29,8 +29,9 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout.tile_layout import Layout as TileLayout, row_major
+from layout.tile_layout import Layout as TileLayout
 from std.memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_3d_goldens import (

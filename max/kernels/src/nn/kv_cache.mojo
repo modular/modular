@@ -32,8 +32,8 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    row_major,
 )
-from layout.tile_layout import row_major
 from linalg.matmul import elementwise_epilogue_type, matmul
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (

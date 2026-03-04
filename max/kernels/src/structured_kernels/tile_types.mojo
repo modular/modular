@@ -39,6 +39,7 @@ from layout import (
     LayoutTensor,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 from layout.int_tuple import IntTuple
 from layout.tma_async import (
@@ -57,7 +58,7 @@ from layout.coord import (
     RuntimeInt,
     _DimsToCoordLike,
 )
-from layout.tile_layout import Layout, TensorLayout, row_major
+from layout.tile_layout import Layout, TensorLayout
 from .smem_types import SMemTileArray as LTSMemTileArray
 from std.utils.index import IndexList
 from std.memory import LegacyUnsafePointer, stack_allocation

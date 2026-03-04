@@ -13,8 +13,7 @@
 
 
 from std.gpu.host import DeviceContext
-from layout import Idx, TileTensor
-from layout.tile_layout import row_major
+from layout import Idx, TileTensor, row_major
 
 from nn.argsort import argsort
 from std.testing import assert_equal

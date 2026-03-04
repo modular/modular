@@ -30,8 +30,8 @@ from std.gpu.compute.mma import st_matrix
 from std.gpu.sync import async_copy_arrive
 from layout.int_tuple import IntTuple
 from layout.layout import UNKNOWN_VALUE, Layout
-from layout.tile_layout import Layout as InternalLayout, row_major
-from layout import TileTensor
+from layout.tile_layout import Layout as InternalLayout
+from layout import TileTensor, row_major
 from layout.layout_tensor import (
     LayoutTensor,
     copy_local_to_shared,

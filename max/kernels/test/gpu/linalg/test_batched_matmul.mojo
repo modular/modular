@@ -18,8 +18,8 @@ import linalg.matmul.vendor.blas as vendor_blas
 from std.algorithm.functional import elementwise
 from buffer import NDBuffer
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, TileTensor
-from layout.tile_layout import Layout, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import Layout
 from linalg.bmm import _batched_matmul_gpu
 
 from std.random import rand

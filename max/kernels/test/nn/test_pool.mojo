@@ -14,8 +14,7 @@
 from std.sys import simd_width_of
 
 from layout._fillers import arange
-from layout.tile_layout import row_major
-from layout import TileTensor
+from layout import TileTensor, row_major
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
 from std.testing import assert_almost_equal, assert_equal
 

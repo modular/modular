@@ -47,8 +47,8 @@ from layout.coord import (
     RuntimeInt,
     coord_to_index_list,
 )
-from layout.tile_layout import Layout, TensorLayout, row_major
-from layout import TileTensor
+from layout.tile_layout import Layout, TensorLayout
+from layout import TileTensor, row_major
 from std.memory import stack_allocation
 from register import register_internal
 from std.runtime.asyncrt import DeviceContextPtr, parallelism_level

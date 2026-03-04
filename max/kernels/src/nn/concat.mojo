@@ -26,8 +26,14 @@ from std.algorithm.functional import (
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.gpu.host.info import is_cpu, is_valid_target
-from layout import Coord, Idx, TileTensor, coord_to_index_list
-from layout.tile_layout import TensorLayout, row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import TensorLayout
 from std.memory import memcpy
 from std.runtime.asyncrt import DeviceContextPtr
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id

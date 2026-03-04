@@ -16,8 +16,7 @@ from std.math import rsqrt
 from std.sys import simd_width_of
 
 from std.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, Idx, TileTensor
-from layout.tile_layout import row_major
+from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import *
 from std.testing import assert_almost_equal, assert_true
 

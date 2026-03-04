@@ -30,8 +30,8 @@ from layout import (
     TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
+    row_major,
 )
-from layout.tile_layout import row_major
 from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
 from buffer import NDBuffer

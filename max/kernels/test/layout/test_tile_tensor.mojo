@@ -12,8 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer, Dim, DimList
-from layout.tile_layout import Layout, row_major
-from layout import ComptimeInt, Coord, Idx, RuntimeInt, TileTensor
+from layout.tile_layout import Layout
+from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
+    RuntimeInt,
+    TileTensor,
+    row_major,
+)
 from layout.int_tuple import IntTuple
 from layout.swizzle import Swizzle
 from std.math import ceildiv

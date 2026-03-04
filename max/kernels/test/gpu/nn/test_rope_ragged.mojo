@@ -13,8 +13,14 @@
 
 from std.gpu.host import DeviceContext, DeviceBuffer, HostBuffer
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TileTensor, coord
-from layout.tile_layout import Layout, row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord,
+    row_major,
+)
+from layout.tile_layout import Layout
 from nn.rope import rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,

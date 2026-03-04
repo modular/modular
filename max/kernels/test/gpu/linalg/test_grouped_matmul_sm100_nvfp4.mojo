@@ -59,9 +59,9 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from layout.tile_layout import row_major
 
 
 fn simple_init() -> Bool:

@@ -35,10 +35,11 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
-from layout.tile_layout import TensorLayout, row_major
+from layout.tile_layout import TensorLayout
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx
 from layout.swizzle import make_swizzle
 from layout.tma_async import TMATensorTile

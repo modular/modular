@@ -13,8 +13,7 @@
 
 from std.gpu.host import DeviceContext, HostBuffer
 from layout._fillers import arange
-from layout.tile_layout import row_major
-from layout import TileTensor
+from layout import TileTensor, row_major
 from nn.pool import (
     PoolMethod,
     avg_pool,

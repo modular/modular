@@ -36,12 +36,12 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
 from layout.int_tuple import IntTuple
 from layout.tile_layout import (
     Layout as InternalLayout,
     TensorLayout,
-    row_major,
 )
 from layout.layout import blocked_product, zipped_divide, upcast
 from layout.runtime_tuple import idx2crd, crd2idx as rt_crd2idx

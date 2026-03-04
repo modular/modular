@@ -52,8 +52,7 @@ from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from internal_utils import CacheBustingBuffer, arg_parse
 
-from layout import Coord, TileTensor
-from layout.tile_layout import row_major
+from layout import Coord, TileTensor, row_major
 from nn.normalization import rms_norm_fused_fp8
 from std.runtime.asyncrt import DeviceContextPtr
 from std.utils import IndexList

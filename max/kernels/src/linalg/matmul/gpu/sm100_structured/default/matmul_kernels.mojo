@@ -57,11 +57,10 @@ from std.gpu.primitives.grid_controls import (
 )
 from std.gpu.sync import syncwarp
 from std.gpu.compute.arch.tcgen05 import *
-from layout import Layout as LegacyLayout, LayoutTensor, TileTensor
+from layout import Layout as LegacyLayout, LayoutTensor, TileTensor, row_major
 from layout.tile_layout import (
     Layout as _NewLayout,
     TensorLayout,
-    row_major,
     ComptimeInt,
     CoordLike,
 )

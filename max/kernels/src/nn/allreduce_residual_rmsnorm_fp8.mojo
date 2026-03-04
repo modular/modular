@@ -73,8 +73,8 @@ from std.gpu import (
 )
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
-from layout import Coord, Idx, TileTensor
-from layout.tile_layout import TensorLayout, row_major
+from layout import Coord, Idx, TileTensor, row_major
+from layout.tile_layout import TensorLayout
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 

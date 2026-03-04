@@ -37,8 +37,8 @@ from layout import (
     RuntimeTuple,
     TileTensor,
     UNKNOWN_VALUE,
+    row_major,
 )
-from layout.tile_layout import row_major
 from layout.int_tuple import IntTuple
 from layout.layout_tensor import zipped_divide, upcast
 from layout.runtime_tuple import crd2idx as rt_crd2idx

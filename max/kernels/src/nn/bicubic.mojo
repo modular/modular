@@ -20,8 +20,15 @@ from std.math import clamp, floor
 
 from std.gpu.host.info import is_gpu
 from std.gpu import block_dim, block_idx, thread_idx
-from layout import Coord, Idx, TileTensor, coord, coord_to_index_list
-from layout.tile_layout import TensorLayout, row_major
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    coord,
+    coord_to_index_list,
+    row_major,
+)
+from layout.tile_layout import TensorLayout
 from std.runtime.asyncrt import DeviceContextPtr
 from std.utils import Index
 from std.itertools import product
