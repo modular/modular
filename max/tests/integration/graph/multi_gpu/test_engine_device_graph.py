@@ -144,7 +144,7 @@ def test_multi_device_replay_rejects_mixed_keys() -> None:
 
     with pytest.raises(
         RuntimeError,
-        match="mixed per-stream graph keys are not supported",
+        match="mixed per-device graph keys are not supported",
     ):
         model.replay(mixed_keys, input0_a, input1_b)
 
