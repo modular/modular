@@ -152,7 +152,7 @@ class PostprocessAndDecode(Module[..., Tensor]):
         decoded = F.permute(
             decoded, (0, 2, 3, 1)
         )  # (B, C, H, W) -> (B, H, W, C)
-        return F.transfer_to(decoded, DeviceRef.CPU())
+        return decoded
 
     def input_types(self) -> tuple[TensorType, ...]:
         return (
