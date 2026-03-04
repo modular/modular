@@ -80,7 +80,7 @@ class Flux2ModelInputs:
     num_inference_steps: int
     """Number of denoising steps to run."""
 
-    num_images_per_prompt: int
+    num_visuals_per_prompt: int
     """Number of images to generate per prompt."""
 
     input_image: npt.NDArray[np.uint8] | None
@@ -103,11 +103,11 @@ class Flux2ModelInputs:
                 f"num_inference_steps must be a positive int. Got {self.num_inference_steps!r}"
             )
         if (
-            not isinstance(self.num_images_per_prompt, int)
-            or self.num_images_per_prompt <= 0
+            not isinstance(self.num_visuals_per_prompt, int)
+            or self.num_visuals_per_prompt <= 0
         ):
             raise ValueError(
-                f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
+                f"num_visuals_per_prompt must be > 0. Got {self.num_visuals_per_prompt!r}"
             )
 
 
@@ -197,13 +197,13 @@ class Flux2Pipeline(DiffusionPipeline):
 
         # Retrieve cached guidance, if possible.
         guidance_key = (
-            f"{context.num_images_per_prompt}_{context.guidance_scale}"
+            f"{context.num_visuals_per_prompt}_{context.guidance_scale}"
         )
         if guidance_key in self._cached_guidance:
             guidance = self._cached_guidance[guidance_key]
         else:
             guidance = Tensor.full(
-                [context.num_images_per_prompt],
+                [context.num_visuals_per_prompt],
                 context.guidance_scale,
                 device=device,
                 dtype=self.transformer.config.dtype,
@@ -243,7 +243,7 @@ class Flux2Pipeline(DiffusionPipeline):
             height=context.height,
             width=context.width,
             num_inference_steps=context.num_inference_steps,
-            num_images_per_prompt=context.num_images_per_prompt,
+            num_visuals_per_prompt=context.num_visuals_per_prompt,
             input_image=context.input_image,
         )
 
@@ -486,7 +486,7 @@ class Flux2Pipeline(DiffusionPipeline):
     def prepare_prompt_embeddings(
         self,
         tokens: Tensor,
-        num_images_per_prompt: int = 1,
+        num_visuals_per_prompt: int = 1,
     ) -> tuple[Tensor, Tensor]:
         """Create prompt embeddings and text position IDs for the transformer.
 
@@ -496,7 +496,7 @@ class Flux2Pipeline(DiffusionPipeline):
 
         Args:
             tokens: Token ID tensor of shape (S,) on the text encoder device.
-            num_images_per_prompt: Number of image generations per prompt.
+            num_visuals_per_prompt: Number of image generations per prompt.
 
         Returns:
             A tuple of:
