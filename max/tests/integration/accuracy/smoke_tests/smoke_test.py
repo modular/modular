@@ -106,14 +106,18 @@ def _load_hf_repo_lock() -> dict[str, str]:
     return db
 
 
-def test_single_request(model: str, task: str) -> None:
+def test_single_request(model: str, task: str, disable_timeouts: bool) -> None:
     is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
 
+    # Initial req can be slow for huge models
+    connect_timeout, read_timeout = (
+        (None, None) if disable_timeouts else (30, 180)
+    )
     r = requests.post(
         URL,
         json={"model": model, "messages": m, "max_tokens": 8},
-        timeout=(30, 180),  # Initial req can be slow for huge models
+        timeout=(connect_timeout, read_timeout),
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
@@ -262,7 +266,12 @@ def safe_model_name(model: str) -> str:
 
 
 def call_eval(
-    model: str, task: str, *, max_concurrent: int, num_questions: int
+    model: str,
+    task: str,
+    *,
+    max_concurrent: int,
+    num_questions: int,
+    disable_timeouts: bool,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
@@ -287,6 +296,15 @@ def call_eval(
 
     interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
 
+    model_args: dict[str, str] = {
+        "model": model,
+        "base_url": URL,
+        "num_concurrent": str(max_concurrent),
+        "max_retries": "1",
+    }
+    if disable_timeouts:
+        model_args["timeout"] = "86400"
+
     include_path = str(Path(__file__).parent.resolve() / "tasks")
     with TemporaryDirectory() as tempdir:
         eval_cmd = [
@@ -294,7 +312,7 @@ def call_eval(
             f"--tasks={task}",
             "--model=local-chat-completions",
             "--log_samples",
-            f"--model_args=model={model},base_url={URL},num_concurrent={max_concurrent},max_retries=1",
+            f"--model_args={','.join(f'{k}={v}' for k, v in model_args.items())}",
             "--apply_chat_template",
             f"--output_path={tempdir}",
             f"--limit={num_questions}",
@@ -306,7 +324,7 @@ def call_eval(
 
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
-        check_call(args, timeout=600)
+        check_call(args, timeout=None if disable_timeouts else 600)
 
         return parse_eval_results(Path(tempdir))
 
@@ -527,6 +545,12 @@ def write_results(
         '"--device-graph-capture --max-batch-size=16"'
     ),
 )
+@click.option(
+    "--disable-timeouts",
+    is_flag=True,
+    default=False,
+    help="Disable all timeouts. Useful when debugging hangs.",
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
@@ -536,6 +560,7 @@ def smoke_test(
     max_concurrent: int,
     num_questions: int,
     serve_extra_args: str,
+    disable_timeouts: bool,
 ) -> None:
     """
     Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
@@ -590,9 +615,12 @@ def smoke_test(
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
     all_samples = []
-    timeout = 900
-    if is_deepseek(model):
+    if disable_timeouts:
+        timeout = sys.maxsize
+    elif is_deepseek(model):
         timeout = 1800
+    else:
+        timeout = 900
 
     server_process, startup_time = start_server(cmd, timeout)
     try:
@@ -600,12 +628,13 @@ def smoke_test(
         write_github_output("startup_time", f"{startup_time:.2f}")
 
         for task in tasks:
-            test_single_request(model, task)
+            test_single_request(model, task, disable_timeouts=disable_timeouts)
             result, samples = call_eval(
                 model,
                 task,
                 max_concurrent=max_concurrent,
                 num_questions=num_questions,
+                disable_timeouts=disable_timeouts,
             )
             if print_responses:
                 print_samples(samples, print_cot)
