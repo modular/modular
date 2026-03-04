@@ -569,10 +569,10 @@ fn _hex_digits_to_hex_chars(
     Examples:
 
     ```mojo
-    %# from memory import memset_zero
-    %# from testing import assert_equal
-    %# from utils import StringSlice
-    %# from io.write import _hex_digits_to_hex_chars
+    %# from std.memory import memset_zero
+    %# from std.testing import assert_equal
+    %# from std.utils import StringSlice
+    %# from std.io.write import _hex_digits_to_hex_chars
     items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
     comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
