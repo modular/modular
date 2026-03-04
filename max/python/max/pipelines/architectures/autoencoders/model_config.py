@@ -61,6 +61,17 @@ class AutoencoderKLConfig(AutoencoderKLConfigBase):
                 "device": DeviceRef.from_device(devices[0]),
             }
         )
+
+        # Z-Image/Flux pipelines use decode-time inverse scaling:
+        # latents = (latents / scaling_factor) + shift_factor.
+        # Keep config deterministic by normalizing missing/None shift_factor.
+        if init_dict.get("shift_factor") is None:
+            init_dict["shift_factor"] = 0.0
+
+        # Guard against invalid decode-time divide-by-zero.
+        if "scaling_factor" in init_dict and float(init_dict["scaling_factor"]) == 0.0:
+            raise ValueError("`scaling_factor` must be non-zero.")
+
         return AutoencoderKLConfig(**init_dict)
 
 
@@ -102,4 +113,10 @@ class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
                 "device": DeviceRef.from_device(devices[0]),
             }
         )
+
+        if init_dict.get("shift_factor") is None:
+            init_dict["shift_factor"] = 0.0
+        if "scaling_factor" in init_dict and float(init_dict["scaling_factor"]) == 0.0:
+            raise ValueError("`scaling_factor` must be non-zero.")
+
         return AutoencoderKLFlux2Config(**init_dict)
