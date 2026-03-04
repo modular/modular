@@ -894,8 +894,10 @@ struct Span[
 
             comptime if simd_width_of[dtype]() >= width:
                 for _ in range((length - processed) // width):
-                    var mask = (ptr + processed).load[width=width]().eq(
-                        SIMD[dtype, width](value)
+                    var mask = (
+                        (ptr + processed)
+                        .load[width=width]()
+                        .eq(SIMD[dtype, width](value))
                     )
                     count += mask.reduce_bit_count()
                     processed += width
